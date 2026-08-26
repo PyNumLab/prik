@@ -9,7 +9,8 @@ re-derived from native declarations or backend output.
 
 from __future__ import annotations
 
-from prik.policy.ownership import OwnershipOwner, SetterAction, TransferMode
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
+from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ClassConstructorKind,
     EntrypointOptionalityAction,
@@ -676,7 +677,9 @@ class WrapperDocstringBuilder:
             for argument in arguments
             if argument.projects_result and argument.result_position is not None
         }
-        by_position.update((result.result_position, result) for result in results)
+        # A ``Hidden`` result is written by the native call but never published,
+        # so it is not part of the documented Python signature.
+        by_position.update((result.result_position, result) for result in results if result.python_returned)
         return tuple(by_position[position] for position in sorted(by_position))
 
     def _result_summary(self, outputs: tuple[ArgumentTransferPlan | ResultPlan, ...]) -> str:
@@ -716,6 +719,7 @@ class WrapperDocstringBuilder:
         nullable = optional or argument.binding.nullable
         lines = [f"{argument.binding.python_name} : {self._type(argument, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(argument.array))
+        lines.extend(self._native_c_array_storage_lines(argument))
         lines.extend(self._optional_lines(argument))
         lines.extend(self._mutation_lines(argument))
         if argument.datatype_family is DatatypeFamily.DERIVED or argument.array is not None:
@@ -723,6 +727,15 @@ class WrapperDocstringBuilder:
         if argument.native_array_handle is not None:
             lines.append(f"    Descriptor ownership: {argument.native_array_handle.descriptor_ownership.value}.")
         return tuple(lines)
+
+    @staticmethod
+    def _native_c_array_storage_lines(argument: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Document an exact NumPy dtype already selected by completed policy."""
+        c_type = argument.binding.native_array_element_c_type
+        if c_type is None:
+            return ()
+        storage = NativeCArrayStorageRegistry.type_for(c_type, argument.semantic_type_name)
+        return (f"    Accepts exact {storage.python_type_name} element storage for the native C {c_type} pointer.",)
 
     def _output_lines(
         self,
@@ -791,8 +804,9 @@ class WrapperDocstringBuilder:
         """Describe completed native mutation and copy-return projection behavior.
 
         Non-mutating arguments produce no note.  Copy returns, projected
-        updates, and in-place storage each retain their established wording;
-        the helper does not infer mutability from datatype or intent.
+        updates, call-local scalar addresses, and in-place storage each retain
+        their established wording; the helper does not infer mutability from
+        datatype or intent.
         """
         if not argument.mutates_native:
             return ()
@@ -803,6 +817,14 @@ class WrapperDocstringBuilder:
             )
         if argument.projects_result:
             return ("    Native code may update this value; the updated value is returned.",)
+        if argument.binding.python_action is PythonBarrierAction.SCALAR_VALUE:
+            # A Python scalar has no caller storage to write through: the
+            # completed plan converts it into a call-local native value, so a
+            # native write lands in that temporary and is never read back.
+            return (
+                "    Native code may update its call-local copy.",
+                "    The update is not visible in Python.",
+            )
         return ("    Native code may update the supplied storage in place.",)
 
     def _raise_lines(

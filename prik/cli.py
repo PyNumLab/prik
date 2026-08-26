@@ -14,10 +14,10 @@ from prik import __version__
 from prik.parsers.c.cli import attach_preprocessing_recipe, expand_c_paths, format_c_report, parse_c_report
 from prik.parsers.c.models import CParseError
 from prik.parsers.c.parser import CParser
-from prik.parsers.fortran.cli import _format_report
+from prik.parsers.fortran.cli import _format_report, _limit_items
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
-from prik.semantics.c2ir import c_project_to_semantic_modules
+from prik.semantics.c2ir import c_project_to_semantic_modules, select_c_export_functions
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
@@ -27,7 +27,12 @@ from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeReport,
     probe_fortran_type_expressions_cached,
 )
-from prik.pipeline.type_mapping_report import c_type_mapping_markdown, fortran_type_mapping_markdown
+from prik.pipeline.type_mapping_report import (
+    c_type_mapping_report,
+    expression_probe_markdown,
+    fortran_type_mapping_report,
+    type_mapping_markdown,
+)
 from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
@@ -68,7 +73,7 @@ _POINTS_EXAMPLE_HELP = (
     "    https://pynumlab.github.io/prik/#see-it-in-action\n"
 )
 _CLI_HELP_DESCRIPTION = (
-    "Build Python extensions from Fortran and inspect native interface artifacts.\n\n"
+    "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts.\n\n"
     "commands:\n"
     "  parse       Inspect source declarations and parser facts\n"
     "  semantics   Convert source code to language-neutral semantic IR\n"
@@ -121,7 +126,11 @@ _PARSE_HELP_EPILOG = (
     "    python3 -m prik parse points.f90 --show-vars --print-limit 50\n"
     "\n"
     "  C header as JSON:\n"
-    "    python3 -m prik parse path/to/api.h --language c --json\n\n"
+    "    python3 -m prik parse path/to/api.h --language c --json\n"
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik parse points.f90 --out report.txt\n"
+    "    python3 -m prik parse points.f90 --json --out report.json\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
 )
 _SEMANTICS_HELP_EPILOG = (
@@ -132,8 +141,15 @@ _SEMANTICS_HELP_EPILOG = (
     "  C header:\n"
     "    python3 -m prik semantics path/to/api.h --language c\n"
     "\n"
-    "  Save semantic IR:\n"
-    "    python3 -m prik semantics points.f90 --out semantics.json\n\n"
+    "  Shorten a large human-readable summary:\n"
+    "    python3 -m prik semantics points.f90 --print-limit 20\n"
+    "\n"
+    "  Complete semantic IR as JSON on standard output:\n"
+    "    python3 -m prik semantics points.f90 --json\n"
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik semantics points.f90 --out summary.txt\n"
+    "    python3 -m prik semantics points.f90 --json --out semantics.json\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
 )
 _GENERATE_HELP_EPILOG = (
@@ -150,13 +166,20 @@ _GENERATE_HELP_EPILOG = (
 )
 _PROBE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
-    "  Basic target probes:\n"
+    "  Target datatype mapping table:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13\n"
     "    python3 -m prik probe --language c --compiler gcc-13\n"
     "\n"
-    "  Human-readable mapping table:\n"
+    "  Complete measured report as JSON:\n"
+    "    python3 -m prik probe --language fortran --compiler gfortran-13 --json\n"
+    "\n"
+    "  Measure specific Fortran expressions in either format:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
-    "      --format markdown\n"
+    '      --expr "selected_real_kind(15,307)"\n'
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik probe --language c --compiler cc --out types.md\n"
+    "    python3 -m prik probe --language c --compiler cc --json --out types.json\n"
     "\n"
     "  Probe flags that change default kinds:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
@@ -359,10 +382,18 @@ def _parse_report(paths: list[str], preprocessing: PreprocessingConfig | None = 
     return out
 
 
-def _convert_c_project(project, *, c_standard_type_report: dict[str, object] | None):
-    if c_standard_type_report is None:
-        return c_project_to_semantic_modules(project)
-    return c_project_to_semantic_modules(project, standard_type_report=c_standard_type_report)
+def _convert_c_project(
+    project,
+    *,
+    c_standard_type_report: dict[str, object] | None,
+    export_symbols: tuple[str, ...] | None = None,
+):
+    modules = (
+        c_project_to_semantic_modules(project)
+        if c_standard_type_report is None
+        else c_project_to_semantic_modules(project, standard_type_report=c_standard_type_report)
+    )
+    return modules if export_symbols is None else select_c_export_functions(modules, export_symbols)
 
 
 def _c_standard_type_report(
@@ -408,6 +439,8 @@ class _SemanticPipelineContext:
     fortran_type_probe_runner: list[str] | None = None
     fortran_type_probe_cache_dir: str | None = None
     refresh_fortran_type_probe: bool = False
+    assume_intent_in_scalars: bool = False
+    export_symbols: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -441,6 +474,8 @@ def _converted_semantic_files(
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
+    assume_intent_in_scalars: bool = False,
+    export_symbols: tuple[str, ...] | None = None,
 ) -> list[tuple[Path, list[object]]]:
     context = _SemanticPipelineContext(
         paths=paths,
@@ -454,6 +489,8 @@ def _converted_semantic_files(
         fortran_type_probe_runner=fortran_type_probe_runner,
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+        export_symbols=export_symbols,
     )
     pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
     parsed = pipeline.parser(context)
@@ -470,6 +507,8 @@ def _semantic_report(
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
+    assume_intent_in_scalars: bool = False,
+    export_symbols: tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
     converted_files = _converted_semantic_files(
@@ -481,6 +520,8 @@ def _semantic_report(
         fortran_type_probe_runner=fortran_type_probe_runner,
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+        export_symbols=export_symbols,
     )
     return _semantic_payload_for_converted_files(converted_files)
 
@@ -525,7 +566,11 @@ def _convert_c_semantic_sources(
         c_standard_type_report = _c_standard_type_report(context.preprocessing)
     modules_by_source = {
         module.origin.native_name: [module]
-        for module in _convert_c_project(parsed_sources.parsed, c_standard_type_report=c_standard_type_report)
+        for module in _convert_c_project(
+            parsed_sources.parsed,
+            c_standard_type_report=c_standard_type_report,
+            export_symbols=context.export_symbols,
+        )
     }
     return [(path, modules_by_source[str(path)]) for path in parsed_sources.source_paths]
 
@@ -567,6 +612,7 @@ def _convert_fortran_semantic_sources(
             standalone_module_name=p.stem,
             compile_time_values=compile_time_values,
             wrapped_derived_types=wrapped_derived_types,
+            assume_intent_in_scalars=context.assume_intent_in_scalars,
             **({"type_facts": type_facts} if type_facts is not None else {}),
         )
         converted_files.append((p, modules))
@@ -587,6 +633,7 @@ _SOURCE_SEMANTIC_PIPELINES = {
 
 def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
     from prik.pipeline.pyi import emit_module_stubs
+    from prik.printers import emit_module
 
     out: dict[str, dict] = {}
     available_modules = [module for _p, modules in converted_files for module in modules]
@@ -594,6 +641,17 @@ def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
     for p, modules in converted_files:
         if _is_fortran_semantic_file(modules):
             out[str(p)] = _fortran_contract_payload(Path(p), modules, available_modules)
+            continue
+        if _is_c_semantic_file(modules):
+            # A generated C starter contract preserves raw source facts, even
+            # for a form that the direct-only wrapper policy will later block.
+            # ``--pyi`` is contract extraction, not wrapper planning.
+            module_stubs = {module.name: emit_module(module).strip() for module in modules}
+            out[str(p)] = {
+                "semantic_modules": [asdict(module) for module in modules],
+                "pyi": "\n\n".join(module_stubs.values()).strip(),
+                "pyi_modules": module_stubs,
+            }
             continue
         stubs = emit_module_stubs(modules, available_modules=available_modules)
         module_stubs = {module.name: stubs[module.name] for module in modules}
@@ -610,6 +668,11 @@ def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
 
 def _is_fortran_semantic_file(modules) -> bool:
     return any(getattr(getattr(module, "origin", None), "source_language", None) == "fortran" for module in modules)
+
+
+def _is_c_semantic_file(modules) -> bool:
+    """Return whether modules came from C source contract extraction."""
+    return any(getattr(getattr(module, "origin", None), "source_language", None) == "c" for module in modules)
 
 
 def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[str, object]:
@@ -839,6 +902,10 @@ def _path_is_fortran_source(path: str) -> bool:
     return Path(path).suffix.lower() in _FORTRAN_SOURCE_SUFFIXES
 
 
+def _path_is_c_source(path: str) -> bool:
+    return Path(path).suffix.lower() == ".c"
+
+
 def _path_is_pyi_contract(path: str) -> bool:
     return Path(path).suffix.lower() == ".pyi"
 
@@ -859,7 +926,9 @@ def _native_link_options_used(args: argparse.Namespace) -> bool:
     return bool(
         getattr(args, "no_compile_input_sources", False)
         or getattr(args, "native_fortran_sources", None)
+        or getattr(args, "native_c_sources", None)
         or getattr(args, "native_compile_flags", None)
+        or getattr(args, "native_c_compile_flags", None)
         or getattr(args, "native_objects", None)
         or getattr(args, "native_libraries", None)
         or getattr(args, "native_link_items", None)
@@ -901,14 +970,25 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         parser.error("A .pyi wrapper build accepts exactly one entry contract")
     if getattr(args, "no_compile_input_sources", False):
         parser.error("--no-compile-input-sources applies only to source-driven wrapper builds")
+    if getattr(args, "assume_intent_in_scalars", False):
+        parser.error(
+            "--assume-intent-in-scalars interprets a missing Fortran intent; a semantic .pyi contract "
+            "already states its own results, so edit the contract instead"
+        )
+    if getattr(args, "export_symbols", None):
+        parser.error(
+            "--export-symbols selects declarations while reading C source; a semantic .pyi contract "
+            "already states its public functions"
+        )
     if not (
         getattr(args, "native_fortran_sources", None)
+        or getattr(args, "native_c_sources", None)
         or getattr(args, "native_objects", None)
         or getattr(args, "native_libraries", None)
         or getattr(args, "native_link_items", None)
     ):
         parser.error(
-            "A .pyi wrapper build requires --native-fortran-sources, --native-objects, "
+            "A .pyi wrapper build requires --native-fortran-sources, --native-c-sources, --native-objects, "
             "--native-library, or --native-link-item"
         )
 
@@ -934,27 +1014,42 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
         )
     if _native_link_options_used(args):
         parser.error("--build-manifest replays saved native inputs; do not pass native build flags")
-    if getattr(args, "strict_wrapper_names", False) or _wrapper_compile_options_used(args):
+    if (
+        getattr(args, "strict_wrapper_names", False)
+        or getattr(args, "assume_intent_in_scalars", False)
+        or getattr(args, "export_symbols", None)
+        or _wrapper_compile_options_used(args)
+    ):
         parser.error("--build-manifest replays saved wrapper behavior and compiler flags")
 
 
 def _validate_source_wrapper_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    language = args.language
+    label = "C" if language == "c" else "Fortran"
+    source_check = _path_is_c_source if language == "c" else _path_is_fortran_source
     if not args.paths:
-        parser.error("A wrapper build expects at least one Fortran source, source directory, or semantic .pyi contract")
-    unsupported = [path for path in args.paths if not Path(path).is_dir() and not _path_is_fortran_source(path)]
+        parser.error(
+            f"A wrapper build expects at least one {label} source, source directory, or semantic .pyi contract"
+        )
+    unsupported = [path for path in args.paths if not Path(path).is_dir() and not source_check(path)]
     if unsupported:
         parser.error(
-            "A wrapper build expects recognized Fortran source suffixes or one semantic .pyi contract; "
+            f"A wrapper build expects recognized {label} source suffixes or one semantic .pyi contract; "
             f"unsupported input: {unsupported[0]}"
         )
-    empty_directories = [path for path in args.paths if Path(path).is_dir() and not _collect_extensions(Path(path))]
+    collect = (lambda path: sorted(path.rglob("*.c"))) if language == "c" else _collect_extensions
+    empty_directories = [path for path in args.paths if Path(path).is_dir() and not collect(Path(path))]
     if empty_directories:
-        parser.error(f"A wrapper build found no recognized Fortran sources under: {empty_directories[0]}")
+        parser.error(f"A wrapper build found no recognized {label} sources under: {empty_directories[0]}")
     if not getattr(args, "no_compile_input_sources", False):
         return
-    if not (getattr(args, "native_fortran_sources", None) or _prebuilt_native_link_input_used(args)):
+    if not (
+        getattr(args, "native_fortran_sources", None)
+        or getattr(args, "native_c_sources", None)
+        or _prebuilt_native_link_input_used(args)
+    ):
         parser.error(
-            "--no-compile-input-sources requires --native-fortran-sources, --native-objects, "
+            "--no-compile-input-sources requires --native-fortran-sources, --native-c-sources, --native-objects, "
             "--native-library, or --native-link-item"
         )
 
@@ -974,8 +1069,6 @@ def _validate_wrapper_out(args: argparse.Namespace, parser: argparse.ArgumentPar
 def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if not _is_wrapper_build(args):
         return
-    if args.language != "fortran":
-        parser.error("Compiled wrappers and generate --sources/--makefile currently require --language fortran")
     if args.command == "generate" and args.out is not None:
         parser.error("generate --sources/--makefile uses --out-dir, not --out")
     if args.command == "build":
@@ -994,11 +1087,57 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
 
 def _validate_c_main_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.language != "c":
+        if getattr(args, "export_symbols", None):
+            parser.error("--export-symbols is supported only with --language c")
         return
-    if args.command == "build":
-        parser.error("C input supports parse, semantics, and generate --pyi; compiled C wrappers are not implemented")
     if args.command == "parse" and args.show_vars:
         parser.error("--show-vars is Fortran-only and is not supported for --language c")
+
+
+def _read_c_export_symbols(path: str | Path) -> tuple[str, ...]:
+    """Read one fail-closed C function allowlist from a UTF-8 text file."""
+    source = Path(path)
+    try:
+        lines = source.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"Cannot read --export-symbols file {source}: {exc}") from exc
+
+    symbols = []
+    locations: dict[str, int] = {}
+    for line_number, raw_line in enumerate(lines, start=1):
+        symbol = raw_line.split("#", 1)[0].strip()
+        if not symbol:
+            continue
+        valid = (
+            symbol.isascii()
+            and (symbol[0].isalpha() or symbol[0] == "_")
+            and all(character.isalnum() or character == "_" for character in symbol)
+        )
+        if not valid:
+            raise ValueError(f"Invalid C identifier in --export-symbols file {source}:{line_number}: {symbol!r}")
+        previous = locations.get(symbol)
+        if previous is not None:
+            raise ValueError(
+                f"Repeated C function name in --export-symbols file {source}:{line_number}: "
+                f"{symbol!r} first appeared on line {previous}"
+            )
+        locations[symbol] = line_number
+        symbols.append(symbol)
+    if not symbols:
+        raise ValueError(f"--export-symbols file contains no C function names: {source}")
+    return tuple(symbols)
+
+
+def _complete_c_export_symbol_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Resolve the CLI file once for every downstream semantic/build path."""
+    path = getattr(args, "export_symbols", None)
+    args._resolved_export_symbols = None
+    if path is None:
+        return
+    try:
+        args._resolved_export_symbols = _read_c_export_symbols(path)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 def _validate_output_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -1022,15 +1161,42 @@ def _validate_pyi_generation_options(args: argparse.Namespace, parser: argparse.
         parser.error(f"generate --pyi cannot use {', '.join(invalid)}")
 
 
+def _validate_semantic_stage_source_inputs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Require source-stage commands to receive at least one source file.
+
+    Wrapper builds separately accept a semantic ``.pyi`` contract.  The
+    ``semantics`` and ``generate --pyi`` commands instead create their output
+    from native source, so filtering a contract out of their source list must
+    be a diagnostic rather than an empty report.
+    """
+    if not (args.semantics or args.pyi):
+        return
+
+    source_suffixes = _SOURCE_SUFFIXES_BY_LANGUAGE[args.language]
+    unsupported = tuple(
+        Path(raw) for raw in args.paths if not Path(raw).is_dir() and Path(raw).suffix.lower() not in source_suffixes
+    )
+    command = "semantics" if args.semantics else "generate --pyi"
+    if unsupported:
+        parser.error(
+            f"{command} expects recognized {args.language} source suffixes; unsupported input: {unsupported[0]}"
+        )
+
+    if not _source_paths_for_semantic_pipeline(args.paths, language=args.language):
+        parser.error(f"{command} found no recognized {args.language} sources in the supplied inputs")
+
+
 def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None:
     if not args.paths and getattr(args, "build_manifest", None) is None:
         parser.error("Source input is required unless --build-manifest is used")
 
     _validate_pyi_generation_options(args, parser)
+    _validate_semantic_stage_source_inputs(args, parser)
     _validate_wrapper_build_options(args, parser)
     _validate_c_main_options(args, parser)
 
     _validate_output_options(args, parser)
+    _complete_c_export_symbol_options(args, parser)
     return args.print_limit
 
 
@@ -1048,6 +1214,10 @@ def _semantic_stage_options(
     options: dict[str, object] = {"language": args.language}
     if c_standard_type_report is not None:
         options["c_standard_type_report"] = c_standard_type_report
+    if getattr(args, "assume_intent_in_scalars", False):
+        options["assume_intent_in_scalars"] = True
+    if getattr(args, "_resolved_export_symbols", None) is not None:
+        options["export_symbols"] = args._resolved_export_symbols
     return options
 
 
@@ -1099,6 +1269,10 @@ def _cli_native_compile_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
     return _cli_compiler_flags(raw_flags, option_name="--native-compile-flags")
 
 
+def _cli_native_c_compile_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
+    return _cli_compiler_flags(raw_flags, option_name="--native-c-compile-flags")
+
+
 def _positive_compile_jobs(value: str) -> int:
     try:
         jobs = int(value)
@@ -1120,6 +1294,17 @@ def _cli_wrapper_fortran_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
 
 def _cli_wrapper_c_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
     return _cli_compiler_flags(raw_flags, option_name="--wrapper-c-flags")
+
+
+def _with_link_time_optimization(flags: tuple[str, ...], args) -> tuple[str, ...]:
+    """Append ``-flto`` when the build asked for link-time optimization.
+
+    Requested flags follow the compiler profile, so this adds LTO without
+    replacing the selected optimization profile.
+    """
+    if not getattr(args, "lto", False) or "-flto" in flags:
+        return flags
+    return (*flags, "-flto")
 
 
 def _wrapper_shared_library_alias_path(result, raw_out: str | None) -> Path:
@@ -1226,17 +1411,26 @@ def _run_stage_reports_with_diagnostics(args: argparse.Namespace, preprocessing:
 
 
 def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig):
-    from prik.pipeline.build import build_fortran_extension, build_pyi_extension, build_pyi_extension_from_manifest
+    from prik.pipeline.build import (
+        _build_manifest_native_language,
+        build_c_extension,
+        build_fortran_extension,
+        build_pyi_extension,
+        build_pyi_extension_from_manifest,
+    )
 
     def record_total_build_time(elapsed: float) -> None:
         args._verbose_total_build_time = elapsed
 
     total_build_time_reporter = record_total_build_time if getattr(args, "verbose", False) else None
     if _wrapper_build_uses_manifest(args):
+        manifest_language = _build_manifest_native_language(args.build_manifest)
+        selected_compiler = getattr(args, "compiler", None)
         result = build_pyi_extension_from_manifest(
             args.build_manifest,
             output_name=_wrapper_output_name(args),
-            input_compiler=getattr(args, "compiler", None),
+            input_compiler=selected_compiler if manifest_language == "fortran" else None,
+            input_c_compiler=selected_compiler if manifest_language == "c" else None,
             include_dirs=getattr(args, "include_dirs", None),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
@@ -1250,8 +1444,16 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         result = build_pyi_extension(
             args.paths[0],
             input_compiler=preprocessing.compiler or "gfortran",
+            input_c_compiler=(preprocessing.compiler or "cc") if args.language == "c" else None,
+            native_language=args.language,
             native_fortran_sources=getattr(args, "native_fortran_sources", None),
-            native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
+            native_fortran_flags=_with_link_time_optimization(
+                _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+            ),
+            native_c_sources=getattr(args, "native_c_sources", None),
+            native_c_flags=_with_link_time_optimization(
+                _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+            ),
             native_objects=getattr(args, "native_objects", None),
             native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
             native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
@@ -1260,13 +1462,61 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             output_name=_wrapper_output_name(args),
             output_dir=getattr(args, "out_dir", None),
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+            collision_adapters=getattr(args, "collision_adapters", None),
+            collision_adapter_all=getattr(args, "collision_adapter_all", False),
+            positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
-            wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
-            wrapper_c_flags=_cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)),
+            wrapper_fortran_flags=_with_link_time_optimization(
+                _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+            ),
+            wrapper_c_flags=_with_link_time_optimization(
+                _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+            ),
+            _on_total_build_time=total_build_time_reporter,
+        )
+        return _copy_wrapper_shared_library_alias(args, result)
+
+    if args.language == "c":
+        result = build_c_extension(
+            args.paths,
+            output_dir=getattr(args, "out_dir", None),
+            output_name=_wrapper_output_name(args),
+            input_c_compiler=getattr(args, "compiler", None),
+            preprocessing=preprocessing,
+            export_symbols=getattr(args, "_resolved_export_symbols", None),
+            input_compiler="gfortran",
+            native_c_sources=getattr(args, "native_c_sources", None),
+            native_c_flags=_with_link_time_optimization(
+                _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+            ),
+            native_fortran_sources=getattr(args, "native_fortran_sources", None),
+            native_fortran_flags=_with_link_time_optimization(
+                _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+            ),
+            native_objects=getattr(args, "native_objects", None),
+            native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
+            native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
+            native_library_dirs=getattr(args, "native_library_dirs", None),
+            native_include_dirs=_cli_build_include_dirs(args),
+            strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+            collision_adapters=getattr(args, "collision_adapters", None),
+            collision_adapter_all=getattr(args, "collision_adapter_all", False),
+            positional_only=getattr(args, "positional_only", False),
+            makefile=getattr(args, "makefile", False),
+            generate_sources=getattr(args, "generate_sources", False),
+            jobs=getattr(args, "jobs", None),
+            verbose=1 if getattr(args, "verbose", False) else 0,
+            wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
+            wrapper_fortran_flags=_with_link_time_optimization(
+                _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+            ),
+            wrapper_c_flags=_with_link_time_optimization(
+                _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+            ),
             _on_total_build_time=total_build_time_reporter,
         )
         return _copy_wrapper_shared_library_alias(args, result)
@@ -1277,9 +1527,19 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         output_name=_wrapper_output_name(args),
         preprocessing=preprocessing,
         strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+        collision_adapters=getattr(args, "collision_adapters", None),
+        collision_adapter_all=getattr(args, "collision_adapter_all", False),
+        positional_only=getattr(args, "positional_only", False),
+        assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
-        native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
+        native_fortran_flags=_with_link_time_optimization(
+            _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+        ),
+        native_c_sources=getattr(args, "native_c_sources", None),
+        native_c_flags=_with_link_time_optimization(
+            _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+        ),
         native_objects=getattr(args, "native_objects", None),
         native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
         native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
@@ -1290,8 +1550,12 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
         wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
-        wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
-        wrapper_c_flags=_cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)),
+        wrapper_fortran_flags=_with_link_time_optimization(
+            _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+        ),
+        wrapper_c_flags=_with_link_time_optimization(
+            _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+        ),
         _on_total_build_time=total_build_time_reporter,
     )
     return _copy_wrapper_shared_library_alias(args, result)
@@ -1322,6 +1586,116 @@ def _run_wrap_build_with_diagnostics(args: argparse.Namespace, preprocessing: Pr
             raise
         print(f"prik: error: {exc}", file=sys.stderr)
     return None
+
+
+def _semantic_rank_text(rank: int) -> str:
+    """Render an argument rank as an index suffix, or nothing for a scalar."""
+    return f"[{','.join([':'] * rank)}]" if rank > 0 else ""
+
+
+def _semantic_argument_text(argument: dict) -> str:
+    """Render one completed semantic argument for the human report.
+
+    The mode reflects the policy decision the wrapper will implement, not the
+    declared Fortran intent, and ownership appears only when it is not the
+    ordinary borrowed case.
+    """
+    semantic_type = argument.get("semantic_type") or {}
+    ownership = semantic_type.get("ownership") or {}
+    dtype = semantic_type.get("dtype") or semantic_type.get("name") or "?"
+    parts = [f"{dtype}{_semantic_rank_text(int(semantic_type.get('rank') or 0))}"]
+    if ownership.get("ownership") and ownership["ownership"] != "borrowed":
+        parts.append(str(ownership["ownership"]))
+    parts.append("inout" if ownership.get("mutable") else "in")
+    if argument.get("optional"):
+        parts.append("optional")
+    return f"{argument.get('name', '?')}: {' '.join(parts)}"
+
+
+def _semantic_function_line(function: dict) -> str:
+    """Render one semantic function signature line."""
+    arguments = ", ".join(_semantic_argument_text(item) for item in function.get("arguments") or [])
+    return_type = function.get("return_type") or {}
+    result = f" -> {return_type.get('dtype') or return_type.get('name')}" if return_type else ""
+    return f"        - {function.get('name', '?')}({arguments}){result}"
+
+
+def _semantic_module_lines(module: dict, print_limit: int | None) -> list[str]:
+    """Render one semantic module block with its functions and classes."""
+    functions = module.get("functions") or []
+    classes = module.get("classes") or []
+    variables = module.get("variables") or []
+    lines = [
+        f"    - module {module.get('name', '?')} "
+        f"(functions={len(functions)}, classes={len(classes)}, variables={len(variables)})"
+    ]
+    if functions:
+        lines.append(f"      Functions: {len(functions)}")
+        visible, hidden = _limit_items(functions, print_limit)
+        lines.extend(_semantic_function_line(function) for function in visible)
+        if hidden > 0:
+            lines.append(f"        ... {hidden} more functions")
+    if classes:
+        lines.append(f"      Classes: {len(classes)}")
+        visible, hidden = _limit_items(classes, print_limit)
+        for item in visible:
+            fields = len(item.get("fields") or [])
+            methods = len(item.get("methods") or [])
+            lines.append(f"        - class {item.get('name', '?')} (fields={fields}, methods={methods})")
+        if hidden > 0:
+            lines.append(f"        ... {hidden} more classes")
+    return lines
+
+
+def _format_semantic_report(semantic_report: dict[str, dict], *, print_limit: int | None = None) -> str:
+    """Format the per-file semantic IR report as a stable, human-readable tree.
+
+    This is the default ``semantics`` rendering; ``--json`` remains the
+    complete record. Each argument shows its semantic dtype, rank, ownership,
+    and mutability, which are the policy decisions a parse report cannot show.
+    """
+    lines: list[str] = []
+    for fname, payload in semantic_report.items():
+        lines.append(f"File: {fname}")
+        modules = payload.get("semantic_modules") or []
+        lines.append(f"  Semantic modules: {len(modules)}")
+        visible, hidden = _limit_items(modules, print_limit)
+        for module in visible:
+            lines.extend(_semantic_module_lines(module, print_limit))
+        if hidden > 0:
+            lines.append(f"    ... {hidden} more modules")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _format_main_report(
+    args: argparse.Namespace,
+    payload: dict,
+    parse_payload: dict[str, dict] | None,
+    semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
+) -> str:
+    """Render the active stage selection in the requested format.
+
+    ``--json`` selects the complete record for every stage; otherwise each
+    stage renders its own human-readable report. The result is identical
+    whether it is printed or written with ``--out``.
+    """
+    if args.json:
+        return json.dumps(payload, indent=2)
+    if args.pyi:
+        return _format_pyi_report(semantic_payload or {})
+    if args.semantics:
+        return _format_semantic_report(semantic_payload or {}, print_limit=print_limit)
+    if args.parse:
+        if args.language == "c":
+            return format_c_report(parse_payload or {}, print_limit=print_limit)
+        return _format_report(
+            parse_payload or {},
+            show_vars=args.show_vars or args.vars_limit is not None,
+            print_limit=print_limit,
+        )
+    return json.dumps(payload, indent=2)
 
 
 def _select_main_payload(args: argparse.Namespace, parse_payload, semantic_payload):
@@ -1451,34 +1825,52 @@ def _write_json_output(args: argparse.Namespace, payload: dict) -> None:
         Path(fname).with_suffix(".json").write_text(json.dumps({fname: report}, indent=2), encoding="utf-8")
 
 
+def _write_text_output(
+    args: argparse.Namespace,
+    payload: dict,
+    parse_payload: dict[str, dict] | None,
+    semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
+) -> None:
+    """Write the human-readable report to ``--out``.
+
+    With a path the whole report is written there; with no path each input
+    source receives a sibling ``.txt`` file holding only its own report.
+    """
+    if args.out:
+        text = _format_main_report(args, payload, parse_payload, semantic_payload, print_limit)
+        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        return
+    for fname, report in payload.items():
+        one_file = {fname: report}
+        text = _format_main_report(args, one_file, one_file, one_file, print_limit)
+        Path(fname).with_suffix(".txt").write_text(text + "\n", encoding="utf-8")
+
+
 def _write_main_output(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
     payload: dict,
+    parse_payload: dict[str, dict] | None,
     semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
 ) -> bool:
+    """Write the selected format to ``--out``, or report that stdout owns it.
+
+    ``--out`` chooses only the destination: the rendered content is whatever
+    ``--json`` and the active stage already selected.
+    """
     if args.out is None:
         return False
     if args.json and args.pyi:
         parser.error("--out cannot be used with both --json and --pyi")
     if args.pyi:
         _write_pyi_output(args, semantic_payload or {})
-    else:
+    elif args.json:
         _write_json_output(args, payload)
+    else:
+        _write_text_output(args, payload, parse_payload, semantic_payload, print_limit)
     return True
-
-
-def _print_parse_output(args: argparse.Namespace, parse_payload: dict, print_limit: int | None) -> None:
-    if args.language == "c":
-        print(format_c_report(parse_payload, print_limit=print_limit))
-        return
-    print(
-        _format_report(
-            parse_payload,
-            show_vars=args.show_vars or args.vars_limit is not None,
-            print_limit=print_limit,
-        )
-    )
 
 
 def _print_main_output(
@@ -1488,12 +1880,11 @@ def _print_main_output(
     semantic_payload: dict[str, dict] | None,
     print_limit: int | None,
 ) -> None:
+    text = _format_main_report(args, payload, parse_payload, semantic_payload, print_limit)
     if args.pyi and not args.json:
-        print_pyi_output(_format_pyi_report(semantic_payload or {}))
-    elif args.parse and not (args.semantics or args.json or args.pyi):
-        _print_parse_output(args, parse_payload or {}, print_limit)
-    else:
-        print(json.dumps(payload, indent=2))
+        print_pyi_output(text)
+        return
+    print(text)
 
 
 def _print_wrap_build_output(args: argparse.Namespace, result) -> None:
@@ -1612,7 +2003,9 @@ def _add_paths(
     if help_text is None:
         help_text = "Source file(s) or a source directory"
         if build_inputs:
-            help_text = "Fortran source file(s) or one semantic .pyi contract; omit with --build-manifest"
+            help_text = (
+                "Fortran or supported C source file(s), or one semantic .pyi contract; omit with --build-manifest"
+            )
         elif allow_manifest:
             help_text = "Source file(s), one .pyi contract, or a source directory; omit with --build-manifest"
     parser.add_argument(
@@ -1754,6 +2147,32 @@ def _add_include_exposure_options(
     )
 
 
+def _add_semantic_interpretation_options(
+    parser: argparse.ArgumentParser,
+    *,
+    group_title: str = "semantic interpretation options",
+) -> None:
+    """Add options that change how source facts are read into semantic IR.
+
+    These belong to every command that produces semantic IR, because they
+    change the IR itself rather than a later wrapper or build choice.
+    """
+    group = parser.add_argument_group(group_title)
+    group.add_argument(
+        "--assume-intent-in-scalars",
+        action="store_true",
+        help=(
+            "Treat a primitive scalar dummy that declares no intent as intent(in) instead of the "
+            "conservative intent(inout) default, so its value is not returned; a declared intent always wins"
+        ),
+    )
+    group.add_argument(
+        "--export-symbols",
+        metavar="FILE",
+        help="Select exact reachable C functions from a UTF-8 name file; C semantic commands only",
+    )
+
+
 def _add_wrapper_behavior_options(
     parser: argparse.ArgumentParser,
     *,
@@ -1804,7 +2223,7 @@ def _add_native_compilation_options(group: argparse._ArgumentGroup) -> None:
     group.add_argument(
         "--no-compile-input-sources",
         action="store_true",
-        help="Read positional Fortran sources without compiling them; require an explicit native implementation",
+        help="Read positional sources without compiling them; require an explicit native implementation",
     )
     group.add_argument(
         "--native-fortran-sources",
@@ -1815,12 +2234,28 @@ def _add_native_compilation_options(group: argparse._ArgumentGroup) -> None:
         help="Additional Fortran sources to compile without exposing them in the Python API",
     )
     group.add_argument(
+        "--native-c-sources",
+        dest="native_c_sources",
+        action="extend",
+        nargs="+",
+        metavar="PATH",
+        help="Additional C sources to compile without exposing them in the Python API",
+    )
+    group.add_argument(
         "--native-compile-flags",
         dest="native_compile_flags",
         action="extend",
         nargs="+",
         metavar="FLAG",
         help='Native compiler flags (for example, "-O3 -fopenmp")',
+    )
+    group.add_argument(
+        "--native-c-compile-flags",
+        dest="native_c_compile_flags",
+        action="extend",
+        nargs="+",
+        metavar="FLAG",
+        help='C implementation compiler flags (for example, "-O3 -std=c11")',
     )
 
 
@@ -1856,6 +2291,29 @@ def _add_extension_link_options(group: argparse._ArgumentGroup) -> None:
         nargs="+",
         metavar="DIR",
         help="Library search and runtime directories",
+    )
+    group.add_argument(
+        "--lto",
+        action="store_true",
+        help="Add -flto to generated and native compilation and to the extension link",
+    )
+    group.add_argument(
+        "--collision-adapter",
+        dest="collision_adapters",
+        action="extend",
+        nargs="+",
+        metavar="NAME",
+        help="Call native symbol NAME through a forwarder defined outside the binding unit",
+    )
+    group.add_argument(
+        "--collision-adapter-all",
+        action="store_true",
+        help="Call every direct C symbol through a forwarder, not only selected names",
+    )
+    group.add_argument(
+        "--positional-only",
+        action="store_true",
+        help="Expose wrappers whose arguments are all required as positional-only arg0..argN",
     )
 
 
@@ -1904,13 +2362,20 @@ _PIPELINE_DEFAULTS = {
     "build_manifest": None,
     "no_compile_input_sources": False,
     "native_fortran_sources": None,
+    "native_c_sources": None,
     "native_compile_flags": None,
+    "native_c_compile_flags": None,
     "jobs": None,
     "native_objects": None,
     "native_libraries": None,
     "native_link_items": None,
     "native_library_dirs": None,
     "strict_wrapper_names": False,
+    "lto": False,
+    "collision_adapters": None,
+    "collision_adapter_all": False,
+    "positional_only": False,
+    "assume_intent_in_scalars": False,
     "wrapper_compiler_debug": False,
     "wrapper_fortran_flags": None,
     "wrapper_c_flags": None,
@@ -1924,6 +2389,7 @@ _PIPELINE_DEFAULTS = {
     "compile_commands": None,
     "public_includes": None,
     "private_includes": None,
+    "export_symbols": None,
 }
 
 
@@ -1937,13 +2403,13 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
     _add_paths(
         positional_group,
         metavar="INPUT",
-        help_text="Fortran source file(s), one source directory, or exactly one semantic .pyi contract",
+        help_text="Fortran or C source file(s), one source directory, or exactly one semantic .pyi contract",
     )
     input_group = parser.add_argument_group("input selection")
     _add_language_option(
         input_group,
-        choices=("fortran",),
-        help_text="Input language (default: fortran)",
+        choices=("fortran", "c"),
+        help_text="Input language (default: fortran; use c for direct C wrappers)",
     )
     parser.set_defaults(language="fortran")
     _add_build_manifest_option(input_group)
@@ -1961,11 +2427,12 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
 
     _add_preprocessing_options(
         parser,
-        languages=("fortran",),
+        languages=("fortran", "c"),
         group_title="compiler options",
-        compiler_help="Compiler used throughout the extension build (default: gfortran)",
+        compiler_help="Fortran or C compiler used throughout the extension build (default: gfortran or cc)",
         include_help="Add a compiler include search directory; repeat as needed",
     )
+    _add_semantic_interpretation_options(parser)
     _add_wrapper_behavior_options(parser, group_title="wrapper options")
     native_group = parser.add_argument_group("native options")
     _add_native_compilation_options(native_group)
@@ -1993,10 +2460,16 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         "paths",
         nargs="*",
         metavar="INPUT",
-        help="Fortran source file(s) or one semantic .pyi contract",
+        help="Fortran or supported C source file(s), or one semantic .pyi contract",
     )
 
     build_group = parser.add_argument_group("build options")
+    build_group.add_argument(
+        "--language",
+        choices=("fortran", "c"),
+        metavar="{fortran,c}",
+        help="Input language (default: fortran; use c for direct C wrappers)",
+    )
     build_group.add_argument(
         "--out",
         metavar="NAME",
@@ -2010,7 +2483,7 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
     build_group.add_argument(
         "--compiler",
         metavar="COMPILER",
-        help="Input-language compiler used throughout the extension build; default: gfortran",
+        help="Input-language compiler used throughout the extension build; default: gfortran, or cc with --language c",
     )
     build_group.add_argument(
         "-I",
@@ -2026,7 +2499,15 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         action="extend",
         nargs="+",
         metavar="FLAG",
-        help="Native implementation compiler flags, for example --native-compile-flags=-O3",
+        help="Fortran implementation compiler flags, for example --native-compile-flags=-O3",
+    )
+    build_group.add_argument(
+        "--native-c-compile-flags",
+        dest="native_c_compile_flags",
+        action="extend",
+        nargs="+",
+        metavar="FLAG",
+        help="C implementation compiler flags, for example --native-c-compile-flags=-O3",
     )
     build_group.add_argument(
         "--jobs",
@@ -2041,6 +2522,43 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="NAME",
         help=("Link against NAME; for example, --native-library openblas passes -lopenblas to the linker"),
+    )
+    build_group.add_argument(
+        "--lto",
+        action="store_true",
+        help=(
+            "Add -flto to generated and native compilation and to the extension link, "
+            "so a collision adapter can be inlined away"
+        ),
+    )
+    build_group.add_argument(
+        "--collision-adapter",
+        dest="collision_adapters",
+        action="extend",
+        nargs="+",
+        metavar="NAME",
+        help=(
+            "Call native symbol NAME through a forwarder in a separate translation unit, "
+            "so the binding never declares a name Python.h already declares"
+        ),
+    )
+    build_group.add_argument(
+        "--collision-adapter-all",
+        action="store_true",
+        help="Apply --collision-adapter to every direct C symbol",
+    )
+    build_group.add_argument(
+        "--positional-only",
+        action="store_true",
+        help=(
+            "Expose wrappers whose arguments are all required as positional-only, naming them "
+            "arg0..argN so a native declaration's parameter names stay out of the Python API"
+        ),
+    )
+    build_group.add_argument(
+        "--assume-intent-in-scalars",
+        action="store_true",
+        help="Treat a scalar dummy with no declared intent as intent(in), so its value is not returned",
     )
     build_group.add_argument(
         "--verbose",
@@ -2070,7 +2588,7 @@ def _build_parser(argv: list[str]) -> argparse.ArgumentParser:
     parser = _new_cli_parser(
         prog="python3 -m prik",
         usage=_BUILD_USAGE,
-        description="Build a Python extension from Fortran source or a semantic .pyi contract.",
+        description="Build a Python extension from Fortran source, a supported C API, or a semantic .pyi contract.",
         epilog=_BUILD_HELP_EPILOG,
         argv=argv,
     )
@@ -2121,7 +2639,7 @@ def _parse_parser(argv: list[str]) -> argparse.ArgumentParser:
     _add_output_options(
         output_group,
         json_help="Print the parse report as JSON instead of human-readable text",
-        out_help="Write combined JSON to PATH; with no PATH, write one .json file beside each input source",
+        out_help="Write the report to PATH; with no PATH, write one file beside each input source",
         out_metavar="PATH",
     )
     diagnostic_group = parser.add_argument_group("diagnostic options")
@@ -2158,11 +2676,19 @@ def _semantics_parser(argv: list[str]) -> argparse.ArgumentParser:
         include_help="Add a preprocessing include search directory; repeat as needed",
     )
     _add_include_exposure_options(parser, group_title="C include options")
+    _add_semantic_interpretation_options(parser)
+    report_group = parser.add_argument_group("report options")
+    report_group.add_argument(
+        "--print-limit",
+        type=int,
+        metavar="N",
+        help="Show at most N items in each repeated human-readable report section",
+    )
     output_group = parser.add_argument_group("output options")
     _add_output_options(
         output_group,
-        allow_json=False,
-        out_help=("Write combined JSON to PATH; with no PATH, write one .json file beside each input source"),
+        json_help="Print the semantic report as JSON instead of human-readable text",
+        out_help=("Write the report to PATH; with no PATH, write one file beside each input source"),
         out_metavar="PATH",
     )
     diagnostic_group = parser.add_argument_group("diagnostic options")
@@ -2220,6 +2746,7 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         include_help="Add an include search directory; repeat as needed",
     )
     _add_include_exposure_options(parser, group_title="C include options")
+    _add_semantic_interpretation_options(parser)
     _add_wrapper_behavior_options(parser, group_title="wrapper options")
     native_group = parser.add_argument_group("native options")
     _add_native_compilation_options(native_group)
@@ -2260,19 +2787,13 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
         help="Native or cross compiler used to build the probe",
     )
     target.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Output measured JSON facts or a Markdown type mapping table",
-    )
-    target.add_argument(
         "--expr",
         "--expression",
         dest="expressions",
         action="append",
         default=[],
         metavar="EXPR",
-        help="Evaluate a Fortran integer expression in JSON output; repeat as needed",
+        help="Measure a Fortran integer expression instead of the mapping table; repeat as needed",
     )
     compiler = parser.add_argument_group("execution options")
     compiler.add_argument(
@@ -2325,6 +2846,11 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
     compiler.add_argument("--cache-dir", metavar="DIR", help="Read and write reusable probe results under DIR")
     compiler.add_argument("--refresh", action="store_true", help="Ignore reusable results and probe again")
     output = parser.add_argument_group("output options")
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the measured report as JSON instead of the human-readable table",
+    )
     output.add_argument("--out", metavar="PATH", help="Write the probe report to PATH instead of standard output")
     diagnostic = parser.add_argument_group("diagnostic options")
     _add_diagnostic_controls(diagnostic)
@@ -2356,19 +2882,14 @@ def _argv_uses_option(argv: list[str], option: str) -> bool:
     return any(value == option or value.startswith(f"{option}=") for value in argv)
 
 
-def _probe_output(args: argparse.Namespace) -> str:
-    target_options = {
-        "runner": args.runner or None,
-        "cache_dir": args.cache_dir,
-        "refresh": args.refresh,
-    }
-    if args.format == "markdown":
-        unsupported = bool(args.include_dirs or args.defines or args.undefs or args.std or args.expressions)
-        if unsupported:
-            raise ValueError("--format markdown accepts compiler, compiler arguments, runner, cache, and refresh only")
-        generator = c_type_mapping_markdown if args.language == "c" else fortran_type_mapping_markdown
-        return generator(compiler=args.compiler, compiler_args=args.compiler_args, **target_options)
+def _probe_expression_output(args: argparse.Namespace, target_options: dict[str, object]) -> str:
+    """Measure the requested Fortran expressions and render the chosen format.
 
+    Preprocessing options apply here because each expression is compiled from
+    generated source. The measured report is the record; Markdown converts it.
+    """
+    if args.language == "c":
+        raise ValueError("--expr is supported only for --language fortran")
     config = PreprocessingConfig(
         mode="compiler",
         compiler=args.compiler,
@@ -2378,13 +2899,45 @@ def _probe_output(args: argparse.Namespace) -> str:
         std=args.std,
         compiler_args=args.compiler_args,
     )
-    if args.language == "c":
-        if args.expressions:
-            raise ValueError("--expr is supported only for --language fortran")
-        report = probe_c_standard_types_cached(config, **target_options)
-    else:
-        report = probe_fortran_type_expressions_cached(config, args.expressions, **target_options)
-    return json.dumps(report.to_dict(), indent=2)
+    report = probe_fortran_type_expressions_cached(config, args.expressions, **target_options)
+    if args.json:
+        return json.dumps(report.to_dict(), indent=2)
+    return expression_probe_markdown(report)
+
+
+def _probe_mapping_output(args: argparse.Namespace, target_options: dict[str, object]) -> str:
+    """Measure the standard type mapping table and render the chosen format.
+
+    The mapping inventory is fixed, so preprocessing options cannot affect it
+    and are rejected instead of silently ignored. The measured report is the
+    record; Markdown converts it.
+    """
+    if args.include_dirs or args.defines or args.undefs or args.std:
+        raise ValueError(
+            "the type mapping report accepts compiler, compiler arguments, runner, cache, "
+            "and refresh only; add --expr to probe preprocessed expressions"
+        )
+    builder = c_type_mapping_report if args.language == "c" else fortran_type_mapping_report
+    report = builder(compiler=args.compiler, compiler_args=args.compiler_args, **target_options)
+    if args.json:
+        return json.dumps(report, indent=2)
+    return type_mapping_markdown(report)
+
+
+def _probe_output(args: argparse.Namespace) -> str:
+    """Select the probe report and serialize it in the requested format.
+
+    ``--expr`` selects the measured expression report; without it the standard
+    type mapping table is measured. Both reports support both formats.
+    """
+    target_options = {
+        "runner": args.runner or None,
+        "cache_dir": args.cache_dir,
+        "refresh": args.refresh,
+    }
+    if args.expressions:
+        return _probe_expression_output(args, target_options)
+    return _probe_mapping_output(args, target_options)
 
 
 def _run_probe_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
@@ -2430,7 +2983,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     parse_payload, semantic_payload = reports
     payload = _select_main_payload(args, parse_payload, semantic_payload)
-    if _write_main_output(args, parser, payload, semantic_payload):
+    if _write_main_output(args, parser, payload, parse_payload, semantic_payload, print_limit):
         return 0
     _print_main_output(args, payload, parse_payload, semantic_payload, print_limit)
     return 0

@@ -12,7 +12,7 @@ DOCUMENTATION_SMOKE_TESTS = (
     "tests/docs/test_user_content.py",
 )
 WRAPPER_SMOKE_TEST = (
-    "tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::"
+    "tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py::"
     "test_fortran_wrapper_default_module_name_does_not_collide_with_root_function"
 )
 REQUIRED_TESTS = ("tests/tools", "tests/workflows")

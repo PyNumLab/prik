@@ -13,13 +13,10 @@ from tests.fortran._support.generated_contracts import (
     source_contract_case,
 )
 
-DATA_TYPE_CONTRACTS = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "baseline" / "contracts"
-ARRAY_CONTRACTS = Path(__file__).parents[2] / "arrays" / "end_to_end" / "fixtures" / "baseline" / "contracts"
+DATA_TYPE_CONTRACTS = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
 CASES = (
     source_contract_case(DATA_TYPE_CONTRACTS, "fbind_value_f90.f90"),
     source_contract_case(DATA_TYPE_CONTRACTS, "fmath.f"),
-    source_contract_case(ARRAY_CONTRACTS, "fmath_arrays.f"),
-    source_contract_case(ARRAY_CONTRACTS, "fmath_arrays_f90.f90"),
     source_contract_case(DATA_TYPE_CONTRACTS, "fmath_f90.f90"),
 )
 

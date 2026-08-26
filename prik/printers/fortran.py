@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+import textwrap
+
 from prik.codegen.nodes import (
     FortranAllocate,
     FortranAssignment,
@@ -224,10 +226,32 @@ class FortranSourcePrinter(ClassVisitor):
         lines.extend(self._indented(self.visit(declaration)) for declaration in node.declarations)
         lines.extend(self._indented(self.visit(interface)) for interface in node.interfaces if not interface.abstract)
         lines.append("contains")
-        lines.extend(self._indented(self.visit(procedure)) for procedure in node.procedures)
+        for procedure in node.procedures:
+            # One blank line before each procedure keeps a long generated module
+            # scannable; without it every procedure abuts the previous `end`.
+            lines.append("")
+            lines.append(self._indented(self.visit(procedure)))
         lines.append(f"end module {node.name}")
-        lines.extend(self.visit(procedure) for procedure in node.standalone_procedures)
+        for procedure in node.standalone_procedures:
+            lines.append("")
+            lines.append(self.visit(procedure))
         return "\n".join(lines)
+
+    @staticmethod
+    def _doc_comment_lines(doc: tuple[str, ...]) -> list[str]:
+        """Render one procedure's explanatory prose as wrapped Fortran line comments.
+
+        Free-form Fortran caps a line at 132 columns, and a generated procedure
+        is indented inside its module, so prose is wrapped well short of that
+        rather than emitted as one long line.
+        """
+        lines: list[str] = []
+        for entry in doc:
+            if not entry:
+                lines.append("!")
+                continue
+            lines.extend(f"! {chunk}" for chunk in textwrap.wrap(entry, width=96) or [""])
+        return lines
 
     def _visit_FortranUse(self, node: FortranUse) -> str:
         """Render one Fortran use statement and wrap a long ONLY list."""
@@ -249,7 +273,7 @@ class FortranSourcePrinter(ClassVisitor):
         optional internal procedures in Fortran's required source order.
         """
         signature = self._function_signature(node)
-        lines = [signature, *self._fortran_function_specification(node)]
+        lines = [*self._doc_comment_lines(node.doc), signature, *self._fortran_function_specification(node)]
         lines.extend(self._indented(self.visit(statement)) for statement in node.body)
         if node.internal_procedures:
             lines.append("contains")

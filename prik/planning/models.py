@@ -67,6 +67,7 @@ from prik.policy.models import (
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorInterop,
+    CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
     NativeArrayDefaultConstruction,
@@ -186,6 +187,31 @@ class GeneratedSupportProcedureEntrypointPlan(StageRecord):
     implementation_owner: GeneratedSupportProcedureImplementationOwner
 
 
+@dataclass
+class DirectCABITypePlan(StageRecord):
+    """One exact C declaration type copied from completed policy."""
+
+    source_spelling: str | None
+    scalar_type_name: str | None
+    pointer_depth: int
+    qualifiers: tuple[str, ...]
+    const: bool
+    # Scalar values whose native declaration differs from canonical contract
+    # storage are converted at the call boundary. Exact NumPy storage already
+    # has the native representation, so its completed decision remains false.
+    converts_to_contract_storage: bool = False
+
+
+@dataclass
+class DirectCABIPlan(StageRecord):
+    """Direct C ABI declaration facts consumed by binding lowering only."""
+
+    calling_convention: str
+    result_transport: str
+    result: DirectCABITypePlan | None
+    parameters: tuple[DirectCABITypePlan, ...]
+
+
 # ============================================================================
 # Derived types and generated class surfaces
 # ============================================================================
@@ -299,7 +325,7 @@ class DerivedMemberPathPlan(StageRecord):
 class DerivedTypePlan(StageRecord):
     """Describe one namespace-owned runtime wrapper type for a native derived type.
 
-    The planner supplies identity, native naming, fields, and finalizers;
+    The planner supplies identity, native naming, fields, and abstractness;
     generated class assembly uses this record as the authoritative type shape.
     """
 
@@ -311,9 +337,8 @@ class DerivedTypePlan(StageRecord):
     native_scope: str
     python_names: tuple[str, ...]
     fields: tuple[DerivedFieldPlan, ...]
-    finalizers: tuple[str, ...]
     bind_c: bool
-    sequence: bool
+    abstract: bool = False
 
 
 @dataclass
@@ -567,6 +592,20 @@ class NativeArrayHandlePlan(StageRecord):
 
 
 @dataclass
+class CharacterLocalPlan(StageRecord):
+    """Describe the adapter-local storage one scalar character value needs.
+
+    The C ABI does not change with the native attribute; the adapter local
+    does.  ``descriptor_kind`` is the attribute the local carries, and
+    ``release`` names the deallocation the adapter still owns afterwards.
+    """
+
+    descriptor_kind: NativeArrayDescriptorKind | None
+    deferred_length: bool
+    release: CharacterLocalRelease
+
+
+@dataclass
 class ScalarDescriptorResultPlan(StageRecord):
     """Describe a nullable rank-zero descriptor result and its copy/release contract."""
 
@@ -576,6 +615,7 @@ class ScalarDescriptorResultPlan(StageRecord):
     copy_reason: str
     release_owner: OwnershipOwner
     presence_role: str
+    may_be_unallocated: bool = False
 
 
 @dataclass
@@ -612,6 +652,13 @@ class BindingStatusErrorPlan(StageRecord):
     message_role: str | None
     success: int
     exception_kind: PythonExceptionKind
+    # Owner path of the visible Python argument whose caller-supplied buffer
+    # carries the message. Mutually exclusive with ``message_role``, which names
+    # a projected native output the binding itself materialized.
+    message_argument: str | None = None
+    # Declared capacity of a hidden message, which bounds the binding's read of
+    # fixed-length native character storage.
+    message_character_length: int | None = None
 
 
 @dataclass
@@ -686,6 +733,7 @@ class BindingModuleVariablePlan(StageRecord):
     setter_action: SetterAction
     initializer: Any
     constant_value: Any
+    setter_converts_characters: bool = False
 
 
 @dataclass
@@ -729,6 +777,7 @@ class ModuleVariablePlan(StageRecord):
     array: ArrayHandoffPlan | None
     native_array_handle: NativeArrayHandlePlan | None
     derived: DerivedModuleObjectPlan | None = None
+    character_length: int | None = None
     docstring: str | None = None
 
 
@@ -747,6 +796,9 @@ class BindingFunctionPlan(StageRecord):
     status_error: BindingStatusErrorPlan | None
     argument_conversion_order: tuple[str, ...]
     public: bool = True
+    # A positional-only binding parses its arguments from the call tuple alone,
+    # so it declares no keyword list and installs no METH_KEYWORDS entry.
+    accepts_keyword_arguments: bool = True
 
 
 @dataclass
@@ -772,6 +824,11 @@ class NativeEntrypointFunctionPlan(StageRecord):
     parameters: tuple[NativeEntrypointParameterPlan, ...]
     results: tuple[NativeEntrypointResultPlan, ...]
     projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...]
+    direct_c_abi: DirectCABIPlan | None = None
+    # A selected symbol is reached through a forwarder defined in a separate
+    # translation unit that never includes Python.h, so the binding's own
+    # declaration of ``symbol_name`` cannot collide with a header declaration.
+    collision_adapter_symbol: str | None = None
 
 
 @dataclass
@@ -819,6 +876,7 @@ class BindingArgumentPlan(StageRecord):
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    native_array_element_c_type: str | None = None
 
 
 @dataclass
@@ -855,6 +913,7 @@ class BridgeArgumentPlan(StageRecord):
     codegen_action: CodegenAction
     data_action: BridgeDataAction
     copy_reason: str | None
+    character_local: CharacterLocalPlan | None = None
 
 
 @dataclass
@@ -884,6 +943,12 @@ class NativeEntrypointResultPlan(StageRecord):
     native_array_handle: NativeArrayHandlePlan | None
     scalar_descriptor: ScalarDescriptorResultPlan | None
     passing: EntrypointPassingConvention
+    native_scalar_c_type: str | None = None
+    updates_argument: bool = False
+    # Set only on a direct-C hidden character output: the binding owns a buffer
+    # of this many bytes and passes ``char *``.  A bridged route leaves it None
+    # and keeps the adapter's owned-allocation protocol.
+    character_capacity: int | None = None
 
 
 @dataclass
@@ -946,6 +1011,7 @@ class NativeEntrypointProjectedSlotPlan(StageRecord):
     value_kind: str
     symbolic_role: str
     object_kind: ObjectKind | None
+    native_scalar_c_type: str | None = None
     scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
@@ -1168,6 +1234,24 @@ class ArgumentTransferPlan(StageRecord):
     bridge: BridgeArgumentPlan | None
     projected_call_slot: NativeEntrypointProjectedSlotPlan
     transformations: tuple[TransformationPlan, ...] = ()
+    native_storage_c_type: str | None = None
+    character_allows_embedded_nul: bool = False
+
+    @property
+    def projects_character_descriptor_update(self) -> bool:
+        """Report whether this input also returns its replaced value as a result.
+
+        The completed bridge fact ``character_local`` belongs only to a
+        call-local ``allocatable`` or ``pointer`` character input, so an input
+        that also occupies a Python result position returns through the matching
+        ``updates_argument`` result rather than through argument writeback.
+        """
+        return bool(
+            self.bridge is not None
+            and self.bridge.character_local is not None
+            and self.bridge.character_local.descriptor_kind is not None
+            and self.projects_result
+        )
 
 
 @dataclass
@@ -1178,6 +1262,11 @@ class ResultPlan(StageRecord):
     share the corresponding function-wide projected slot. Binding, entrypoint,
     and bridge facets hold their completed projection, transport, and
     production choices.
+
+    ``updates_argument`` carries the completed policy fact that this result is
+    the reallocated value of a Python-visible ``character(len=:), allocatable``
+    argument.  Such a result shares that argument's native call slot instead of
+    owning a result slot of its own.
     """
 
     owner_path: str
@@ -1185,6 +1274,9 @@ class ResultPlan(StageRecord):
     datatype_family: DatatypeFamily
     source_kind: str
     result_position: int
+    # False for a ``Hidden`` slot: the native call still produces the value, but
+    # the binding builds no Python object from it.
+    python_returned: bool
     character_length: int | None
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
@@ -1202,6 +1294,7 @@ class ResultPlan(StageRecord):
     scalar_descriptor: ScalarDescriptorResultPlan | None = None
     derived: DerivedHandoffPlan | None = None
     transformations: tuple[TransformationPlan, ...] = ()
+    updates_argument: bool = False
 
 
 @dataclass

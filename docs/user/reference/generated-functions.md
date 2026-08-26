@@ -9,7 +9,7 @@ publication: draft
 
 # Generated Functions Reference
 
-prik exposes supported Fortran functions, subroutines, and type-bound
+PRIK exposes supported Fortran functions, subroutines, and type-bound
 procedures as Python callables. The generated semantic `.pyi` contract is the
 authoritative signature: it records the Python-visible argument list, return
 shape, native argument projection, dtype, rank, mutability, and visibility.
@@ -103,7 +103,7 @@ message outputs follow the behavior described in
 
 ## Overloads
 
-prik overload metadata is not `typing.overload`. The generated semantic
+PRIK overload metadata is not `typing.overload`. The generated semantic
 contract keeps one public name and links each public implementation back to a
 specific native procedure:
 
@@ -135,14 +135,10 @@ coexist on one declaration; native projection metadata belongs to the linked
 specific procedure. An overload-level `@bind(...)` overrides the native call
 target without replacing that linked contract.
 
-## Evidence And Maintenance
+## Evidence
 
 Function and subroutine call surfaces are covered by
-[`test_edited_call_surfaces.py`](../../../tests/fortran/pyi_contracts/calls_and_results/end_to_end/test_edited_call_surfaces.py),
+[`test_edited_call_surfaces.py`](../../../tests/fortran/infrastructure/semantic_pyi/contracts/calls_and_results/end_to_end/test_edited_call_surfaces.py),
 [`test_documented_function_journeys.py`](../../../tests/fortran/functions/end_to_end/test_documented_function_journeys.py),
 [`test_optional_runtime.py`](../../../tests/fortran/optional_arguments/end_to_end/test_optional_runtime.py), and
 [`test_generic_interfaces.py`](../../../tests/fortran/generic_interfaces/end_to_end/test_generic_interfaces.py).
-
-When a callable signature rule changes, update this page together with the
-semantic `.pyi` reference, the owning feature's reviewed contract fixtures,
-and the relevant user-guide workflow.

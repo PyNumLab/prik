@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-COMMON_BLOCK_F90_SOURCE = FIXTURES / "fcommon_block_f90.f90"
+COMMON_BLOCK_F90_SOURCE = FIXTURES / "native" / "fcommon_block_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

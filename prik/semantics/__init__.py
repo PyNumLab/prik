@@ -24,6 +24,7 @@ from .c2ir import (
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
+    select_c_export_functions,
 )
 from .pyi2ir import convert_pyi_to_ir
 
@@ -43,4 +44,5 @@ __all__ = (
     "fortran_module_to_semantic_module",
     "fortran_project_to_semantic_modules",
     "resolve_semantic_compile_time_values",
+    "select_c_export_functions",
 )

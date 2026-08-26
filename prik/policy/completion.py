@@ -21,6 +21,7 @@ from prik.policy.ownership import (
     ObjectKind,
     SetterAction,
     default_ownership_policy,
+    is_character_descriptor_update,
     ownership_context_for_argument,
 )
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
@@ -29,6 +30,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    EXPLICIT_C_EXPORT_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
@@ -104,6 +106,7 @@ def complete_semantic_policies(
     semantic_ir: models.SemanticModule | Iterable[models.SemanticModule],
     *,
     strict_wrapper_names: bool = False,
+    positional_only: bool = False,
 ) -> list[models.SemanticModule]:
     """Complete policy decisions for semantic modules after parser-to-IR conversion.
 
@@ -111,8 +114,10 @@ def complete_semantic_policies(
     either one module or any iterable of modules, mutates each in place, and
     returns an ordered list of those same objects for pipeline chaining.
     ``strict_wrapper_names`` is forwarded to export and class-surface policy
-    validation.  Invalid or incomplete semantic contracts raise ``ValueError``
-    rather than leaving a lower stage to choose a fallback.
+    validation.  ``positional_only`` completes a keyword-free Python surface
+    where every argument is required.  Invalid or incomplete semantic contracts
+    raise ``ValueError`` rather than leaving a lower stage to choose a
+    fallback.
 
     This shared post-IR boundary completes entry export reachability, ownership,
     transfer, destruction, mutability/writeback, projection, nullability,
@@ -129,7 +134,138 @@ def complete_semantic_policies(
 
         # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
+    _reject_ineligible_direct_c_operations(modules)
+    for module in modules:
+        if positional_only:
+            _complete_positional_only_surface(module)
     return modules
+
+
+def _complete_positional_only_surface(module: models.SemanticModule) -> None:
+    """Complete a keyword-free Python surface for one module.
+
+    A positional-only callable exposes no argument names, so the names a native
+    declaration happens to use -- reserved spellings such as ``__x``, or none at
+    all -- stop being part of the Python API.  Policy therefore renames the
+    visible arguments to their position and records that the binding takes no
+    keywords.  A function with an optional argument keeps keywords, because
+    skipping one still requires naming the rest.
+    """
+    if module.overload_sets or any(semantic_class.overload_sets for semantic_class in module.classes):
+        raise ValueError("A positional-only surface does not support overload sets, which dispatch on keywords")
+    declarations = [*module.functions]
+    declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
+    for function in declarations:
+        policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
+        if not isinstance(policy, FunctionWrapperPolicy) or not _accepts_positional_only_call(policy):
+            continue
+        function.metadata[models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] = replace(
+            policy,
+            arguments=tuple(
+                replace(argument, python_name=f"arg{argument.python_position}") for argument in policy.arguments
+            ),
+            accepts_keyword_arguments=False,
+        )
+
+
+def _accepts_positional_only_call(policy: FunctionWrapperPolicy) -> bool:
+    """Report whether every visible argument of one function must be supplied."""
+    return all(argument.optional_mode in _REQUIRED_ARGUMENT_MODES for argument in policy.arguments)
+
+
+_REQUIRED_ARGUMENT_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR})
+
+
+_C_DIRECT_DIAGNOSTIC_PREFIX = "C_DIRECT_"
+_DEFERRED_C_DIRECT_DIAGNOSTIC_CODES = frozenset(
+    {"C_DIRECT_UNPROBED_PRIMITIVE_ABI", "C_DIRECT_UNRESOLVED_PRIMITIVE_ABI"}
+)
+
+
+def _reject_ineligible_direct_c_operations(modules: Iterable[models.SemanticModule]) -> None:
+    """Raise C primitive-lane diagnostics before wrapper planning can begin.
+
+    The direct-only C lane has no adapter to fall back to, so a declaration of
+    the wrapped translation unit that this lane cannot reach is an error rather
+    than a silently omitted export.  That covers module variables and class
+    surfaces too, because a C module has no generated accessor route for them.
+    A blocker every language shares -- an unexported concrete procedure behind
+    an overload set, for example -- is left to planning.
+    """
+    diagnostics = tuple(diagnostic for module in modules for diagnostic in _c_direct_policy_diagnostics(module))
+    if not diagnostics:
+        return
+
+    # Unmeasured primitive identities are expected during the pre-probe pass.
+    # Prefer any declaration whose failure is intrinsic so one deferred
+    # operation cannot hide a callback, aggregate, or native global in a later
+    # declaration or module.
+    owner_path, blockers, _codes = next(
+        (diagnostic for diagnostic in diagnostics if not diagnostic[2].issubset(_DEFERRED_C_DIRECT_DIAGNOSTIC_CODES)),
+        diagnostics[0],
+    )
+    details = "; ".join(blockers)
+    raise ValueError(f"C direct operation {owner_path!r} is unsupported before wrapper planning: {details}")
+
+
+def _c_direct_policy_diagnostics(
+    module: models.SemanticModule,
+) -> tuple[tuple[str, tuple[str, ...], frozenset[str]], ...]:
+    """Collect direct-C blockers for one completed semantic module."""
+    diagnostics: list[tuple[str, tuple[str, ...], frozenset[str]]] = []
+    declarations = [*module.functions]
+    declarations.extend(procedure for group in module.overload_sets for procedure in group.procedures)
+    declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
+    for function in declarations:
+        if not _is_wrapped_c_declaration(module, function):
+            continue
+        policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
+        if not isinstance(policy, FunctionWrapperPolicy) or policy.supported:
+            continue
+        if not any(blocker.startswith(_C_DIRECT_DIAGNOSTIC_PREFIX) for blocker in policy.blockers):
+            # A shared policy fact such as an unexported concrete procedure is
+            # not a C lane limitation.  Planning already decides those the same
+            # way it does for Fortran, so only this lane's own diagnostics stop
+            # the build here.
+            continue
+        codes = frozenset(re.findall(r"C_DIRECT_[A-Z0-9_]+", "; ".join(policy.blockers)))
+        diagnostics.append((policy.owner_path, policy.blockers, codes))
+    for variable in module.variables:
+        if not _is_wrapped_c_declaration(module, variable):
+            continue
+        blocker = _c_module_variable_blocker(variable)
+        diagnostics.append((f"{module.name}.{variable.name}", (blocker,), frozenset({blocker.partition(":")[0]})))
+    for semantic_class in module.classes:
+        if not _is_wrapped_c_declaration(module, semantic_class):
+            continue
+        blocker = f"C_DIRECT_AGGREGATE_TYPE:{semantic_class.name}"
+        diagnostics.append((f"{module.name}.{semantic_class.name}", (blocker,), frozenset({"C_DIRECT_AGGREGATE_TYPE"})))
+    return tuple(diagnostics)
+
+
+def _c_module_variable_blocker(variable: models.SemanticVariable) -> str:
+    """Name the post-Goal-3 C surface one module variable would require."""
+    if variable.origin.source_kind == "enum_constant":
+        return f"C_DIRECT_ENUM_CONSTANT:{variable.name}"
+    if variable.origin.source_kind == "macro":
+        return f"C_DIRECT_MACRO_CONSTANT:{variable.name}"
+    return f"C_DIRECT_NATIVE_GLOBAL_STATE:{variable.name}"
+
+
+def _is_wrapped_c_declaration(module: models.SemanticModule, node) -> bool:
+    """Return whether one C declaration belongs to the wrapped translation unit.
+
+    A declaration expanded from an include is normally inspection-only. An
+    export-symbol selection marks the exact included functions the user chose,
+    making those declarations part of the direct C surface without changing
+    their source provenance.
+    """
+    if node.origin.source_language != "c":
+        return False
+    if node.metadata.get(EXPLICIT_C_EXPORT_METADATA):
+        return True
+    filename = node.origin.source_location.get("filename") if isinstance(node.origin.source_location, dict) else None
+    return not (isinstance(filename, str) and filename != module.origin.native_name)
 
 
 # Entry export reachability
@@ -465,11 +601,15 @@ def _complete_class_method_policies(
     """
     type_bound_targets = _type_bound_target_names(module_functions)
     module_targets = {str(function.native_name or function.name) for function in module_functions}
+    private_module_targets = {
+        str(function.native_name or function.name) for function in module_functions if function.visibility == "private"
+    }
     for semantic_class in class_nodes:
         _complete_one_class_method_policy(
             semantic_class,
             type_bound_targets,
             module_targets,
+            private_module_targets,
             derived_types,
             polymorphic_variants,
         )
@@ -488,6 +628,7 @@ def _complete_one_class_method_policy(
     semantic_class: models.SemanticClass,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -522,6 +663,7 @@ def _complete_one_class_method_policy(
         derived,
         type_bound_targets,
         module_targets,
+        private_module_targets,
         derived_types,
         polymorphic_variants,
     )
@@ -584,6 +726,7 @@ def _complete_class_overload_methods(
     derived: DerivedTypePolicy,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -603,6 +746,7 @@ def _complete_class_overload_methods(
                 generic_bindings,
                 type_bound_targets,
                 module_targets,
+                private_module_targets,
                 derived_types,
                 polymorphic_variants,
             )
@@ -615,6 +759,7 @@ def _complete_one_class_overload_method(
     generic_bindings: dict[str, str],
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -636,12 +781,20 @@ def _complete_one_class_overload_method(
         else None,
     )
     overload_kind = str(procedure.metadata.get(models.OVERLOAD_KIND_METADATA, "generic"))
+    # An overload dispatches through a native generic only when its own name is
+    # one. `__init__` is a Python name with no native counterpart, so a
+    # constructor candidate falls back to the specific procedure it selects --
+    # or, when that specific is private and therefore unreachable by name, to
+    # the constructor generic Fortran names for the type itself.
+    dispatches_through_overload_name = overload_kind != "generic" and overload.name != "__init__"
+    if not bind_target and overload.name == "__init__" and native_name in private_module_targets:
+        bind_target = derived.native_type_name
     native_dispatch_name = (
         str(bind_target)
         if bind_target
         else (
             str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
-            if overload_kind != "generic"
+            if dispatches_through_overload_name
             else None
         )
     )
@@ -888,8 +1041,23 @@ def _polymorphic_variant_map(
         return candidate == base or any(extends(parent, base) for parent in bases.get(candidate, ()))
 
     identities = tuple(surface.type_identity for surface in surfaces)
+    # An abstract type has no instance, so it is never the dynamic type a caller
+    # can supply; it stays a dispatch base without becoming one of its own cases.
+    abstract_identities = {
+        surface.type_identity
+        for semantic_class, surface in zip(class_nodes, surfaces, strict=False)
+        if any(
+            str(attribute).casefold() == "abstract"
+            for attribute in semantic_class.metadata.get("fortran_type_attributes", ())
+        )
+    }
     return {
-        base: tuple(candidate for candidate in reversed(identities) if extends(candidate, base)) for base in identities
+        base: tuple(
+            candidate
+            for candidate in reversed(identities)
+            if extends(candidate, base) and candidate not in abstract_identities
+        )
+        for base in identities
     }
 
 
@@ -947,6 +1115,7 @@ def _complete_function(
             ownership_context_for_argument(function, argument),
             owner_path=f"{owner_path}.{argument.name}",
         )
+        _complete_update_result_ownership(argument)
     if function.return_type is not None:
         _validate_maybe_unallocated_return(function, owner_path)
         decision = default_ownership_policy.decide_semantic_type(function.return_type, OwnershipContext.result())
@@ -989,11 +1158,11 @@ def _complete_native_status_error_policy(function: models.SemanticFunction, owne
     message_name = raw_policy.get("message")
     message = None
     if message_name is not None:
-        message = _native_status_output(function, owner_path, message_name, subject="message")
+        message = _native_status_output(function, owner_path, message_name, subject="message", allow_visible=True)
         if message.rank != 0 or message.semantic_type_name != "String":
             raise ValueError(
                 f"Function {function.name!r} raises message target {message.name!r} "
-                "must be a scalar string hidden output"
+                "must be a scalar string hidden output or visible argument"
             )
         if message.owner_path == status.owner_path:
             raise ValueError(f"Function {function.name!r} raises status and message targets must be distinct")
@@ -1012,30 +1181,29 @@ def _native_status_output(
     output_name: object,
     *,
     subject: str,
+    allow_visible: bool = False,
 ) -> NativeStatusOutputPolicy:
-    """Return one completed hidden output selected by a runtime policy."""
+    """Return one completed output selected by a runtime policy.
+
+    A status is always a hidden projected output.  A message may instead name a
+    visible argument, which lets the caller supply the buffer the native code
+    writes into; the declared storage then carries its own capacity.
+    """
+    noun = "a hidden output or visible argument" if allow_visible else "a hidden output"
     if not isinstance(output_name, str) or not output_name:
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
-    mappings = tuple(
-        mapping
-        for mapping in function.projection
-        if (
-            mapping.python_position is None
-            and isinstance(mapping.result_position, int)
-            and output_name in {mapping.python_name, mapping.native_name}
-        )
-    )
-    if len(mappings) != 1:
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
-    mapping = mappings[0]
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
+    mapping = _sole_status_output_mapping(function, output_name, allow_visible=allow_visible)
+    if mapping is None or not isinstance(mapping.native_position, int):
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
     argument = next((item for item in function.arguments if item.name == mapping.python_name), None)
-    if argument is None or not isinstance(mapping.native_position, int):
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
+    if argument is None:
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
+    visible = isinstance(mapping.python_position, int)
     decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
-    if not isinstance(decision, OwnershipDecision) or not _is_compatible_status_handoff(decision):
+    if not isinstance(decision, OwnershipDecision) or not _is_compatible_status_handoff(decision, visible=visible):
         raise ValueError(
             f"Function {function.name!r} raises {subject} target {output_name!r} "
-            "has no compatible completed hidden-output handoff"
+            f"has no compatible completed {'visible-argument' if visible else 'hidden-output'} handoff"
         )
     semantic_type = argument.semantic_type
     return NativeStatusOutputPolicy(
@@ -1047,11 +1215,55 @@ def _native_status_output(
         semantic_type_name=semantic_type.name,
         rank=int(semantic_type.rank or 0),
         character_length=_fixed_character_length(semantic_type),
+        python_position=mapping.python_position if visible else None,
     )
 
 
-def _is_compatible_status_handoff(decision: OwnershipDecision) -> bool:
-    """Report whether a hidden scalar/string result has a valid status handoff action."""
+def _is_status_output_mapping(mapping: models.ProjectionMapping, *, allow_visible: bool) -> bool:
+    """Report whether one mapping projects a status output this policy accepts.
+
+    A hidden projected output carries a result position and no Python position.
+    A visible argument is accepted only where the caller may supply the buffer.
+    """
+    if mapping.python_position is None and isinstance(mapping.result_position, int):
+        return True
+    return allow_visible and isinstance(mapping.python_position, int)
+
+
+def _sole_status_output_mapping(
+    function: models.SemanticFunction,
+    output_name: str,
+    *,
+    allow_visible: bool,
+) -> models.ProjectionMapping | None:
+    """Return the one projection mapping named by a status target, if unambiguous."""
+    mappings = tuple(
+        mapping
+        for mapping in function.projection
+        if output_name in {mapping.python_name, mapping.native_name}
+        and _is_status_output_mapping(mapping, allow_visible=allow_visible)
+    )
+    return mappings[0] if len(mappings) == 1 else None
+
+
+_VISIBLE_STATUS_STRING_ACTIONS = frozenset(
+    {
+        # A caller-supplied NumPy bytes buffer the native code writes in place.
+        CodegenAction.IN_PLACE_ARGUMENT,
+        # A borrowed Python ``str`` payload; the contract states what C expects.
+        CodegenAction.CALL_LOCAL_INPUT,
+    }
+)
+
+
+def _is_compatible_status_handoff(decision: OwnershipDecision, *, visible: bool = False) -> bool:
+    """Report whether a scalar/string argument has a valid status handoff action."""
+    if visible:
+        return bool(
+            decision.kind is ObjectKind.STRING
+            and decision.python_visible
+            and decision.codegen_action in _VISIBLE_STATUS_STRING_ACTIONS
+        )
     expected_action = {
         ObjectKind.SCALAR: CodegenAction.DIRECT_VALUE,
         ObjectKind.STRING: CodegenAction.COPY_OUT,
@@ -1436,9 +1648,7 @@ def _native_array_handle_operations(
         return ()
     if descriptor_kind == "allocatable":
         operations = {"allocated", "to_numpy"}
-        if handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor", "owned_result_descriptor"} or (
-            context.is_argument and context.writes_argument
-        ):
+        if _handle_releases_its_own_storage(handle_kind, context):
             operations.add("deallocate")
             if not _is_deferred_character_array(semantic_type):
                 operations.add("resize")
@@ -1447,11 +1657,31 @@ def _native_array_handle_operations(
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if _pointer_policy_allows_allocate(pointer_policy):
         operations.add("allocate")
-    if _pointer_policy_allows_deallocate(pointer_policy):
+    if _handle_releases_its_own_storage(handle_kind, context) or _pointer_policy_allows_deallocate(pointer_policy):
         operations.add("deallocate")
     if _pointer_policy_allows_resize(pointer_policy):
         operations.add("resize")
     return tuple(sorted(operations))
+
+
+def _handle_releases_its_own_storage(handle_kind: str, context: OwnershipContext) -> bool:
+    """Report whether one handle exposes manual release of the storage it names.
+
+    Releasing is offered wherever the equivalent Fortran is an ordinary
+    ``deallocate`` on the same entity: a result the wrapper received, a module
+    or field descriptor, and a mutable argument.  A read-only input is excluded,
+    because freeing storage the caller supplied is not the caller's intent.
+
+    The operation is manual in both handle families.  prik never releases native
+    storage on its own, so withholding the operation does not protect anything;
+    it only removes the caller's ability to free storage the native procedure
+    handed over, which is exactly what a Fortran caller would deallocate.
+    """
+    return handle_kind in {
+        "borrowed_module_descriptor",
+        "borrowed_field_descriptor",
+        "owned_result_descriptor",
+    } or (context.is_argument and context.writes_argument)
 
 
 def _is_deferred_character_array(semantic_type: models.SemanticType) -> bool:
@@ -1739,6 +1969,36 @@ def _complete_variable(
     variable.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = decision
     _complete_prototype_reference_policy(variable.semantic_type, owner_path=owner_path or variable.name)
     _complete_native_array_handle_variable_policy(variable, context)
+
+
+def _complete_update_result_ownership(argument: models.SemanticArgument) -> None:
+    """Complete the projected result facet of one caller-supplied string update.
+
+    A ``character(len=:), allocatable, intent(inout)`` dummy owns two decisions:
+    the argument facet already resolved above converts the caller's ``str`` into
+    call-local native storage, and this facet describes the freshly allocated
+    value the native procedure leaves behind.  The result facet is resolved from
+    the same native output context an ``intent(out)`` dummy uses, so every later
+    stage validates and lowers it exactly like one hidden descriptor output.
+    Arguments outside that lane keep a single decision.
+    """
+    argument.metadata.pop(models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA, None)
+    decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    if not isinstance(decision, OwnershipDecision):
+        return
+    if not is_character_descriptor_update(argument.semantic_type.metadata, decision):
+        return
+    argument.metadata[models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA] = (
+        default_ownership_policy.decide_semantic_variable(
+            argument,
+            OwnershipContext.argument(
+                reads_argument=False,
+                writes_argument=True,
+                projects_result=True,
+                python_visible=False,
+            ),
+        )
+    )
 
 
 def _complete_accessor_policies(variable: models.SemanticVariable, context: OwnershipContext) -> None:

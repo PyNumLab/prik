@@ -10,7 +10,7 @@ from tests.fortran._support.generated_contracts import (
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CASE = GeneratedContractCase(
     name="fenums_f90",
-    inputs=(FIXTURES / "fenums_f90.f90",),
+    inputs=(FIXTURES / "native" / "fenums_f90.f90",),
     expected_package=FIXTURES / "contracts" / "fenums_f90",
 )
 

@@ -114,6 +114,16 @@ name can exist in two modules, while duplicate names at one sibling level are
 rejected by the slicer validation.
 """
 
+
+def _binding_visibility(attributes: list[str], default_visibility: str) -> str:
+    """Return a type-bound binding's accessibility from its attributes and the type default."""
+    if "private" in attributes:
+        return "private"
+    if "public" in attributes:
+        return "public"
+    return default_visibility
+
+
 _REGEX: dict[str, re.Pattern[str]] = {
     "type": re.compile(
         r"^(integer|real|complex|logical|character|double\s+(?:precision|complex))\b\s*(\([^)]*\))?\s*(.*)$",
@@ -144,10 +154,14 @@ _REGEX: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
     "legacy_parameter": re.compile(r"^parameter\s*\(\s*(?P<body>.*)\s*\)$", re.IGNORECASE),
+    "construct_name": re.compile(r"^[A-Za-z_]\w*\s*:(?!:)\s*(?P<body>.+)$"),
     "derived_type": re.compile(r"^type\s*(?P<attrs>(?:,\s*[^:]+)?)::\s*(?P<name>\w+)(?:\s*\([^)]*\))?$", re.IGNORECASE),
     "type_field": re.compile(r"^type\s*\(\s*(?P<dtype>\w+(?:\s*\([^)]*\))?)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
     "class_field": re.compile(r"^class\s*\(\s*(?P<dtype>\w+(?:\s*\([^)]*\))?)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
-    "procedure_binding": re.compile(r"^procedure\s*(?:,\s*[^:]*)?::\s*(?P<names>.*)$", re.IGNORECASE),
+    "procedure_binding": re.compile(
+        r"^procedure\s*(?:\(\s*(?P<iface>\w+)\s*\))?\s*(?:,\s*[^:]*)?::\s*(?P<names>.*)$",
+        re.IGNORECASE,
+    ),
     "procedure_dummy": re.compile(r"^procedure\s*\(\s*(?P<iface>\w+)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
     "module": re.compile(r"^module\s+(?P<name>\w+)\s*$", re.IGNORECASE),
     "submodule": re.compile(r"^submodule\s*\(\s*(?P<parent>[^)]+?)\s*\)\s*(?P<name>\w+)\s*$", re.IGNORECASE),
@@ -1168,6 +1182,11 @@ class _SourceUnitScanner:
         labeled = re.match(r"^\d+\s+(?P<body>.*)$", stripped)
         if labeled:
             stripped = labeled.group("body").strip()
+            if not stripped:
+                return False
+        named_construct = _REGEX["construct_name"].match(stripped)
+        if named_construct:
+            stripped = named_construct.group("body").strip()
             if not stripped:
                 return False
         lowered = stripped.lower()
@@ -3651,7 +3670,8 @@ class FortranParser(ClassVisitor):
             if "sequence" not in dtype.attributes:
                 dtype.attributes.append("sequence")
             return
-        if stripped.lower() == "private":
+        if stripped.lower() in {"private", "public"}:
+            dtype.component_visibility = stripped.lower()
             return
         if self._source_unit_scanner.is_openmp_declarative_directive(stripped):
             raise FortranParseError(
@@ -3661,6 +3681,7 @@ class FortranParser(ClassVisitor):
                 source_line=source_line,
                 code="PARSE_UNSUPPORTED_OPENMP_DIRECTIVE",
             )
+        field_count = len(dtype.fields)
         parsed = self._helper_parse_declaration_line(
             stripped,
             scope,
@@ -3671,6 +3692,7 @@ class FortranParser(ClassVisitor):
             parse_character_star=False,
         )
         if parsed:
+            self._apply_default_component_visibility(dtype, stripped, first_new_field=field_count)
             return
         if "::" not in stripped and not self._source_unit_scanner.looks_like_declaration_or_spec(stripped):
             _raise_invalid_fortran_syntax_line(
@@ -3688,6 +3710,28 @@ class FortranParser(ClassVisitor):
             code="PARSE_UNSUPPORTED_DECLARATION",
         )
 
+    @staticmethod
+    def _apply_default_component_visibility(
+        dtype: FortranDerivedType,
+        declaration: str,
+        *,
+        first_new_field: int,
+    ) -> None:
+        """Apply a type's component-accessibility default to newly parsed components.
+
+        A component keeps the accessibility written on its own declaration; the
+        `private` or `public` statement in the type's specification part only
+        supplies the default for components that do not state one.
+        """
+        if dtype.component_visibility != "private":
+            return
+        attribute_text = declaration.split("::", 1)[0].lower() if "::" in declaration else ""
+        if re.search(r"\bpublic\b", attribute_text):
+            return
+        for component in dtype.fields[first_new_field:]:
+            if component.visibility == "public":
+                component.visibility = "private"
+
     def _parse_derived_type_contains_line(
         self,
         line: str,
@@ -3698,14 +3742,23 @@ class FortranParser(ClassVisitor):
         source_line: str | None = None,
     ) -> None:
         """Parse type-bound procedure and generic bindings after `contains`."""
+        if line.strip().lower() in {"private", "public"}:
+            dtype.binding_visibility = line.strip().lower()
+            return
+
         proc_binding = _REGEX["procedure_binding"].match(line)
         if proc_binding:
             binding_names = split_csv(proc_binding.group("names"))
             dtype.methods.extend(binding_names)
             left = line.split("::", 1)[0]
             attrs = [a.strip().lower() for a in split_csv(left.split(",", 1)[1] if "," in left else "")]
+            visibility = _binding_visibility(attrs, dtype.binding_visibility)
+            interface_name = proc_binding.group("iface")
             for name in binding_names:
-                dtype.procedure_bindings.append({"name": name, "attrs": attrs})
+                binding = {"name": name, "attrs": attrs, "visibility": visibility}
+                if interface_name:
+                    binding["interface"] = interface_name
+                dtype.procedure_bindings.append(binding)
             return
 
         if line.lower().startswith("generic") and "::" in line and "=>" in line:
@@ -3714,7 +3767,14 @@ class FortranParser(ClassVisitor):
             attrs = [a.strip().lower() for a in split_csv(attr_txt)] if attr_txt else []
             lhs, rhs_txt = [x.strip() for x in right.split("=>", 1)]
             rhs = [r.strip() for r in split_csv(rhs_txt)]
-            dtype.generic_bindings.append({"name": lhs, "targets": rhs, "attrs": attrs})
+            dtype.generic_bindings.append(
+                {
+                    "name": lhs,
+                    "targets": rhs,
+                    "attrs": attrs,
+                    "visibility": _binding_visibility(attrs, dtype.binding_visibility),
+                }
+            )
             return
 
         if re.match(r"^final\s*::\s*[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*\s*$", line, re.IGNORECASE):

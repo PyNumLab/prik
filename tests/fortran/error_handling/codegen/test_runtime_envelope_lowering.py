@@ -11,7 +11,7 @@ from prik.planning import WrapperPlanner
 
 
 RECURSION_CONTRACT = (
-    Path("tests/fortran/error_handling/end_to_end/fixtures/runtime/contracts")
+    Path("tests/fortran/error_handling/end_to_end/fixtures/contracts")
     / "fruntime_recursion_f90"
     / "fruntime_recursion_f90.pyi"
 )

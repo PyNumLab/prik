@@ -13,7 +13,7 @@ FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CASES = tuple(
     GeneratedContractCase(
         name,
-        (FIXTURES / f"{name}.f90",),
+        (FIXTURES / "native" / f"{name}.f90",),
         FIXTURES / "contracts" / name,
     )
     for name in ("fallocatable_views_f90", "fscalar_allocatables_f90")

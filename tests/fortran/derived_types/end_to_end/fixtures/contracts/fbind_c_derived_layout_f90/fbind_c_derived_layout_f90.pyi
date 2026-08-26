@@ -1,6 +1,6 @@
-from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_abi, native_call, native_type
+from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_abi, native_call
 
-@native_type(attributes=('bind(c)',))
+@native_abi("c")
 class point:
     def __init__(
         self,
@@ -12,7 +12,7 @@ class point:
     x: Float64
     axis: Int32
 
-@native_type(attributes=('bind(c)',))
+@native_abi("c")
 class tagged_point:
     def __init__(
         self,

@@ -9,7 +9,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-BORROWED_FINALIZER_F90_SOURCE = FIXTURES / "fborrowed_finalizer_f90.f90"
+BORROWED_FINALIZER_F90_SOURCE = FIXTURES / "native" / "fborrowed_finalizer_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

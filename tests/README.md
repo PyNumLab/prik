@@ -1,15 +1,16 @@
 # Test Suite Map
 
-Product-behavior tests are organized language first. Fortran tests are then
-organized by documented feature and pipeline stage:
+Product-behavior tests are organized language first. Within a language,
+documented language features use a feature-first, stage-second layout:
 
 ```text
-tests/fortran/<documented-feature>/<owning-stage>/
+tests/<language>/<language-feature>/<owning-stage>/
 ```
 
-Documentation is the top-level `tests/docs/` feature. Only other genuinely
-internal product behavior mirrors its production package below
-`tests/fortran/infrastructure/`. Maintainer tooling has the independent
+Parsing, preprocessing, command-line handling, semantic IR and `.pyi`
+conversion, build orchestration, and other cross-feature mechanisms are
+infrastructure. They live below `tests/<language>/infrastructure/`, even when
+they also have user documentation. Maintainer tooling has the independent
 `tests/tools/` owner, while exceptional automation-safety checks live under
 `tests/workflows/`.
 Generated C and CPython binding code used by a Fortran wrapper remains evidence
@@ -20,7 +21,7 @@ language.
 | --- | --- | --- |
 | [`tests/docs/`](docs/README.md) | Documentation publication, link integrity, executable examples, and public reference synchronization | `python3 -m pytest -q tests/docs` |
 | [`tests/fortran/`](fortran/README.md) | Fortran input, semantic `.pyi` wrapper contracts, generated bridge/binding behavior, and Fortran runtime features | `python3 -m pytest -q tests/fortran` |
-| [`tests/c/`](c/README.md) | C input-language inspection behavior | `python3 -m pytest -q tests/c` |
+| [`tests/c/`](c/README.md) | C input-language parsing, semantics, direct policy, codegen, build integration, and compiled runtime behavior; parser coverage is broader than runtime support | `python3 -m pytest -q tests/c` |
 | [`tests/tools/`](tools/README.md) | Maintainer commands and CI support scripts | `python3 -m pytest -q tests/tools` |
 | [`tests/workflows/`](workflows/README.md) | Exceptional safety properties for repository automation | `python3 -m pytest -q tests/workflows` |
 
@@ -31,9 +32,7 @@ locally; activate it once per clone with `git config core.hooksPath .githooks`.
 GitHub Actions runs the checks again as the shared enforcement boundary.
 
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
-page to its final directory and focused command. The cleanup contract and
-progress gates live in
-[`../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md).
+page to its final directory and focused command.
 
 ## Ownership contract
 
@@ -74,15 +73,17 @@ semantic tests preserve names, imports, and native callable provenance; the
 arrays policy tests classify dependency roles and unsupported native calls; and
 the arrays end-to-end tests compile representative dimensions, inquiry forms,
 reductions, conditionals, powers, and logical-kind arrays. Contract-batch
-reconciliation belongs with `tests/fortran/semantic_pyi_format/`, where
-editable `.pyi` imports and prototypes are exercised.
+reconciliation belongs with `tests/fortran/infrastructure/semantic_pyi/`,
+where editable `.pyi` imports and prototypes are exercised.
 
-Public cross-feature capabilities have explicit owners:
-`source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and
-`semantic_ir/`. Only internal frameworks with no honest public-capability owner
-belong under `tests/fortran/infrastructure/`. A user-visible behavior stays
-with its feature even when its test crosses several pipeline stages. Minimized
-real-world parser interactions belong under `source_parsing/parsing/`; full
+Cross-feature mechanisms have explicit infrastructure owners. `parsing/`,
+`preprocessing/`, `cli/`, `semantic_ir/`, `semantic_pyi/`, and `building/` own
+shared pipeline behavior; the remaining owners mirror their production package
+(`policy/`, `codegen/`, `printers/`, `naming/`, `pipeline/`, `runtime/`,
+`utilities/`). `tests/fortran/README.md` and `tests/c/README.md` carry the
+complete per-language tables. A user-visible language behavior stays with its
+feature even when its test crosses several pipeline stages. Minimized
+real-world parser interactions belong under `infrastructure/parsing/`; full
 third-party snapshots are temporary analysis inputs, not permanent fixtures.
 
 ## Independent suite gates
@@ -97,11 +98,13 @@ python3 -m pytest -q tests/tools
 python3 -m pytest -q tests/workflows
 ```
 
-The full-library BLAS/LAPACK integration nodes and the complete correctness
-projects in `examples/blas/` and `examples/lapack/` remain in the dedicated
-real-library job. The BLAS and LAPACK sources are owned by
-`examples/blas/native/` and `examples/lapack/native/`; LAPACK is not part of
-the default local verification command.
+The maintained BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, and
+TA-Lib projects remain in the dedicated real-library job. Their complete
+correctness tests live under the corresponding
+`examples/<language>/<project>/tests/` owner; focused FFTPACK and MINPACK
+native-source integration also lives under
+`tests/fortran/infrastructure/building/end_to_end/real_libraries/`. LAPACK is
+not part of the default local verification command.
 
 ## Markers
 
@@ -110,14 +113,15 @@ selection:
 
 - `fortran_end_to_end` selects every compiled, imported, and called Fortran
   feature test, and nothing else;
-- `real_library` selects only the dedicated BLAS correctness example and
-  BLAS/LAPACK native-source end-to-end integration tests;
+- `real_library` selects the maintained BLAS, LAPACK, FFTPACK, MINPACK,
+  BSPLINE-FORTRAN, and direct-C libm and TA-Lib projects, plus their focused
+  native-source integration nodes;
 - `property`, `regression`, `benchmark`, and `slow` retain their ordinary
   meanings; and
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset
   declared by `tests/fortran/conftest.py`.
 
-The smoke suite is eight exact nodes reused from ordinary feature end-to-end
+The smoke suite is eight exact nodes reused from ordinary Fortran end-to-end
 tests. Strict mode requires a resolved compiler, rejects skips and xfails, and
 prints the selected nodes with their mechanism and compilation fixture:
 
@@ -157,15 +161,16 @@ CLI/API diagnostic test only when propagation is itself public behavior.
 Feature-local fixtures live below their feature; cross-feature helpers require
 an explicit infrastructure owner.
 
-After choosing feature ownership, place genuinely internal mechanisms under
-their owning production package when that makes the invariant easier to find:
+First decide whether the invariant is a language feature or a cross-feature
+mechanism. For a cross-feature mechanism, place it under its infrastructure
+owner when that makes the invariant easier to find:
 
 ```text
 tests/fortran/infrastructure/<production-package>/test_<production-module>.py
 ```
 
 For example, `prik/policy/ownership.py` uses
-`infrastructure/semantics/test_ownership.py`, while
+`infrastructure/policy/test_ownership.py`, while
 `prik/planning/planner.py` uses `infrastructure/codegen/test_planner.py`;
 language source printers use `infrastructure/printers/` and the wrapper
 orchestrator uses `infrastructure/pipeline/test_wrapper_generator.py`.

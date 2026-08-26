@@ -22,7 +22,7 @@ FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 
 
 def _source_semantic_module(filename: str, *, module_name: str):
-    source = FIXTURES / filename
+    source = FIXTURES / "native" / filename
     parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)

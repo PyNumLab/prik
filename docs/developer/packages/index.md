@@ -13,8 +13,8 @@ The [architecture](../architecture.md) shows how PRIK moves from inputs to an
 importable extension. This page groups the build stages that transform those
 inputs and the supporting components they depend on. Each guide maps one
 architecture component to its `prik` source package, local modules, and tests.
-The [codebase map](../codebase-map.md) provides the complementary module and
-hotspot inventory.
+The [codebase map](../codebase-map.md) is the complementary
+concern-to-module inventory.
 
 ## Build Workflow and Stages
 
@@ -24,8 +24,8 @@ the stages below.
 | Component | Responsibility | Relevant changes |
 | --- | --- | --- |
 | [`prik.pipeline`](pipeline.md) | Composes wrapper, contract, report, artifact, and build workflows. | Public build workflows, artifact layout, or cross-stage orchestration. |
-| [`prik.preprocessing`](preprocessing.md) | Prepares Fortran input and measures target facts. | Includes, provenance, parser input, or target probes. |
-| [`prik.parsers`](parsers.md) | Records Fortran and semantic-`.pyi` syntax facts. | Declarations, locations, parser diagnostics, or raw `.pyi` AST. |
+| [`prik.preprocessing`](preprocessing.md) | Prepares Fortran and C input and measures target facts. | Includes, directives, provenance, parser input, or target probes. |
+| [`prik.parsers`](parsers.md) | Records Fortran, C, and semantic-`.pyi` syntax facts. | Declarations, locations, parser diagnostics, project models, or raw `.pyi` AST. |
 | [`prik.semantics`](semantics.md) | Builds the shared language-neutral semantic model. | Semantic types, shapes, origins, or raw contract metadata. |
 | [`prik.policy`](policy.md) | Completes interoperability and support decisions. | Ownership, projection, lifecycle, exports, or support choices. |
 | [`prik.planning`](planning.md) | Projects completed policy into backend-neutral wrapper plans. | Planned operations, ordering, namespaces, or backend views. |
@@ -49,5 +49,7 @@ Each guide records the same local contract:
 3. Direct-execution examples and the behavior they demonstrate.
 4. Focused tests, change routes, and invariants.
 
-The guides cover the current Fortran-wrapper route. The C-input frontend is
-deferred material and does not change the generated CPython C binding backend.
+The guides keep the broader Fortran route and the direct-C route explicit while
+pointing detailed support claims to the published
+[C support](../../user/language-support/c-support.md) boundary. Parser and
+semantic acceptance remain broader than direct-C runtime support.

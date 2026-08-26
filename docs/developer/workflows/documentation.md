@@ -9,11 +9,10 @@ publication: reviewed
 
 # Documentation Maintenance
 
-PRIK has two active documentation areas: `docs/user/` for product users and
+PRIK has two published documentation areas: `docs/user/` for product users and
 `docs/developer/` for contributors and maintainers. `mkdocs.yml` defines the
 page order, and `docs_theme/nav.html` makes each expandable section label open
 its first page while its **+** control expands or collapses the section.
-`old_docs/` is historical material outside the site.
 
 ## Write The Right Contract
 
@@ -50,6 +49,42 @@ and the edited-contract build command below the latter.
 3. Add it to `mkdocs.yml` in its intended reading order and update necessary
    index or contextual links.
 4. Keep related source, tests, commands, and limitations accurate.
+
+## Site Configuration
+
+`mkdocs.yml` builds `docs/` into `.artifacts/site/`, so generated output stays
+out of the repository root. It owns the complete navigation tree and loads
+`tools/mkdocs_publication.py`, the hook that enforces publication state:
+
+- only pages whose front matter says `publication: reviewed` reach production,
+  and a draft area index withholds that whole area;
+- links between documentation pages stay site-relative; and
+- links to source, tests, and other repository evidence outside `docs/` are
+  rewritten to GitHub, because those files are not part of the site.
+
+Local stylesheets and scripts under `docs/stylesheets/` and
+`docs/javascripts/` own presentation only — sidebar and body layout, code-block
+copy controls, example tabs, and FAQ behavior. Treat them as site assets, not
+as documented contracts.
+
+## Example Markers
+
+Every Python fence in `docs/` is parsed, and one that imports from
+`prik.contracts` is additionally loaded as a semantic `.pyi` contract. An HTML
+comment on the line before a fence changes how it is treated:
+
+| Marker | Meaning |
+| --- | --- |
+| `<!-- prik-doc-test: run \| exact -->` | Execute the command in the fence. `exact` also compares its output. |
+| `<!-- prik-doc-test-output -->` | The fence holds captured output, not source. It is skipped by the Python audit. |
+| `<!-- prik-doc-source: PATH -->` | The fence mirrors a repository file and must match it. Append `::FUNCTION` to select one top-level function together with its decorators. |
+| `<!-- prik-doc-contract: invalid -->` | The fence is a negative example; loading it must fail. |
+
+Use `prik-doc-contract: invalid` when a page teaches a diagnostic by showing
+the contract that triggers it — the marker turns the rejection into evidence
+instead of a broken example. A contract fence with no marker must load, so a
+snippet that only illustrates part of a contract needs enough context to stand
+on its own.
 
 ## Verify Locally
 

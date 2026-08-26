@@ -4,8 +4,8 @@
        width="450">
 </p>
 
-**PRIK (Python Runtime Interop Kit)** generates native Python bindings from Fortran projects,
-producing importable extensions and editable `.pyi` contracts that let you shape Pythonic APIs.
+**PRIK (Python Runtime Interop Kit)** generates native Python bindings for
+Fortran and C code.
 
 [![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
 [![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)
@@ -16,20 +16,16 @@ It preserves modules, derived types, arrays, callbacks, and native behavior
 while letting you reshape the resulting Python API through editable `.pyi`
 contracts instead of writing low-level binding code.
 
-**Project status: Alpha.** Core Fortran wrapper workflows are
-implemented and tested across supported compilers, but public APIs may still
-change before `1.0`.
+**Project status: Alpha.** Core Fortran workflows and the currently supported
+C wrapper features are implemented and tested across supported compilers, but
+public APIs may still change before `1.0`.
 
-**PRIK starts with Fortran-to-Python.** Its semantic contract model is designed
-to support more native languages over time.
-
-<!-- PRIK_C_DOCS_START
-Fortran-to-Python wrapper generation plus wrapper-oriented parser and semantic
-interface tooling for Fortran and C. PRIK builds importable CPython extensions
-from Fortran sources, extracts native declarations into language-neutral
-semantic IR, emits editable `.pyi` interfaces, and reports unsupported or
-incomplete contracts before code generation.
-PRIK_C_DOCS_END -->
+PRIK supports both languages. Fortran currently has the broader, more mature
+wrapper surface. C provides a focused direct-ABI lane for primitive values,
+one-level pointers, NumPy arrays, and strings. In both languages, editable
+`.pyi` contracts let you shape the Python API. See [C
+Support](https://pynumlab.github.io/prik/user/language-support/c-support/) for
+C examples and current limits.
 
 [Read the documentation](https://pynumlab.github.io/prik/) for installation,
 the user guide, examples, and reference material.
@@ -40,7 +36,9 @@ the user guide, examples, and reference material.
 - [Proven on real libraries](#proven-on-real-libraries)
 - [Key Features](#key-features)
 - [Performance](#performance)
-- [Current limitations](#current-limitations)
+- [Current Fortran limitations](#current-fortran-limitations)
+- [C support](#c-support)
+- [Current C limitations](#current-c-limitations)
 - [Installation & Quick Start](#installation--quick-start)
 - [How it works](#how-it-works)
 - [Python API](#python-api)
@@ -59,7 +57,7 @@ python3 -m prik points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/building/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none
@@ -123,15 +121,15 @@ class point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
-    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` keeps the original native target while the declaration's
-placement and name define the Python-facing API. `Pass()` supplies the
-receiver (`self`) to the native call; `Addr(Arg(...))` passes the remaining
-arguments by address as required by the native calling convention.
+`@bind("move")` is needed because `translate` has a different Python name.
+`norm_squared` needs no `@bind`: matching Python and native names select the
+same procedure. `Pass()` supplies the receiver (`self`) to the native call;
+`Addr(Arg(...))` passes the remaining arguments by address as required by the
+native calling convention.
 
 Build from the contract:
 
@@ -159,19 +157,23 @@ without changing the underlying Fortran implementation.
 
 ## Proven on real libraries
 
-The maintained projects build real numerical libraries with PRIK and validate
-their Python behavior, not just whether the generated wrapper compiles.
+PRIK builds and numerically tests seven maintained libraries, not just generated
+wrappers.
 
-| Project | Validated surface | Capabilities demonstrated |
+| Project | Native language and PRIK input | Validated surface |
 | --- | --- | --- |
-| [BLAS](examples/blas/README.md) | All 155 discovered routines | Scalar, vector, and matrix operations; increments and leading dimensions; in-place updates; independent expectations and f2py comparisons |
-| [LAPACK](examples/lapack/README.md) | Complete implementation corpus with 127 reviewed double-precision routines | Linear solves, factorizations, eigenproblems, singular values, work arrays, and large multi-source linking |
-| [FFTPACK](examples/fftpack/README.md) | All 31 public procedures | Fourier, cosine, and sine transforms; low-level workspaces; in-place arrays; allocatable results; NumPy and SciPy oracles |
-| [MINPACK](examples/minpack/README.md) | All 22 public procedures | Python callbacks; nonlinear and least-squares solvers; Jacobian and workspace writeback; immutable module constants |
+| [BLAS](examples/fortran/blas/README.md) | Fortran source/interfaces | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
+| [LAPACK](examples/fortran/lapack/README.md) | Fortran source/interfaces | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
+| [FFTPACK](examples/fortran/fftpack/README.md) | Fortran source/interfaces | 31 Fourier, cosine, and sine transform procedures |
+| [MINPACK](examples/fortran/minpack/README.md) | Fortran source/interfaces | 22 nonlinear and least-squares procedures, including callbacks |
+| [BSPLINE-FORTRAN](examples/fortran/bspline/README.md) | Fortran source/interfaces | 15 interpolation routines and modern Fortran classes |
+| [libm](examples/c/libm/README.md) | C declarations from `<math.h>`; link compiled platform libm | 60 target-generated ISO C99 math functions |
+| [TA-Lib](examples/c/ta_lib/README.md) | C declarations from `ta_libc.h`; link compiled `libta-lib` | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
 
-Together they exercise arrays, callbacks, workspaces, in-place mutation,
-allocatable results, module constants, and multi-file linking. The dedicated
-Real Libraries CI lane builds and tests all four projects.
+The **Real Libraries Portability** workflow runs all seven on Linux x86-64,
+Linux ARM64, macOS Intel, and macOS ARM64 with Python 3.12. See the [Examples
+Gallery](docs/user/examples/index.md#tested-platforms) for the compiler matrix;
+each project guide also records its own tested platforms.
 
 ## Key Features
 
@@ -208,22 +210,134 @@ charts below come from the latest successfully deployed benchmark snapshot.
 
 [See the complete results, test environment, and one-command reproduction instructions.](https://pynumlab.github.io/prik/user/performance/)
 
-## Current limitations
+## Current Fortran limitations
 
-PRIK does not yet support:
+PRIK rejects these forms rather than wrapping them unsafely. Most fail before
+code generation with a diagnostic naming the boundary and the reason.
 
-- arrays of derived types;
-- procedure pointers, including procedure-pointer module variables and callbacks
-  retained after the wrapped call; or
-- polymorphic outputs, mutable polymorphic arguments, polymorphic arrays,
-  unlimited polymorphism (`class(*)`), abstract types, and deferred bindings.
+**Types and arrays**
+
+- arrays of derived types, and assumed-type `type(*)` arrays;
+- parameterized derived types such as `type :: buffer_type(k, n)`;
+- character arrays that cannot be represented as a fixed-width NumPy bytes
+  dtype, and `allocatable` and `pointer` character *fields*.
+- real and complex storage wider than the target's `long double`. NumPy's
+  `longdouble` is whatever the target C compiler provides, so `real(10)` and C
+  `long double` are supported while IEEE quad `real(16)` is refused on a target
+  whose `long double` is x87 extended precision. The diagnostic names the
+  measured mantissa width on both sides.
+
+**Procedures and polymorphism**
+
+- procedure-pointer module variables, and
+  callbacks retained after the wrapped call returns;
+- polymorphic outputs, mutable polymorphic arguments, polymorphic
+  `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`).
+
+The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
+records the full support status of every feature with its evidence. The
+[C support guide](https://pynumlab.github.io/prik/user/language-support/c-support/)
+states the direct C lane's current boundary.
+
+## C support
+
+PRIK builds C and Fortran code into importable Python extensions. For C,
+generated binding code calls your exported symbol **directly** — no
+ABI-conversion adapter and no Fortran bridge in between. The one exception is
+opt-in: `--collision-adapter NAME` writes a small forwarding translation unit
+when one of your headers declares a name that `Python.h` also declares.
+
+C has no `intent` and no shape information, so a bare `double *` could be one
+value, a mutable output, or an array. PRIK never guesses: it generates a
+conservative contract from the source, and you edit it to say what the pointer
+actually means.
+
+Create `stats.c`:
+
+```c
+#include <stddef.h>
+
+double mean(const double *values, size_t count) {
+    double total = 0.0;
+    for (size_t i = 0; i < count; ++i) {
+        total += values[i];
+    }
+    return count == 0 ? 0.0 : total / (double)count;
+}
+
+void extremes(const double *values, size_t count, double *low, double *high) {
+    *low = values[0];
+    *high = values[0];
+    for (size_t i = 1; i < count; ++i) {
+        if (values[i] < *low) { *low = values[i]; }
+        if (values[i] > *high) { *high = values[i]; }
+    }
+}
+```
+
+Generate a starter contract:
+
+```bash
+python3 -m prik generate --pyi --language c stats.c --out edited.pyi
+```
+
+Then edit `edited.pyi` so `values` is an array, `count` is derived from it,
+and the two output pointers become Python results:
+
+```python
+from prik.contracts import Arg, Float64, Return, Returns, native_call
+
+@native_call([Arg(0), Arg(0).shape[0]])
+def mean(values: Float64[:]) -> Float64: ...
+
+@native_call([Arg(0), Arg(0).shape[0], Return("low", 0), Return("high", 1)])
+def extremes(values: Float64[:]) -> tuple[Returns["low", Float64], Returns["high", Float64]]: ...
+```
+
+```bash
+python3 -m prik --language c edited.pyi --native-c-sources stats.c --out stats
+```
+
+```python
+import numpy as np
+import stats
+
+values = np.array([3.0, 1.0, 4.0, 1.0, 5.0])
+
+print(stats.mean(values))      # 2.8
+print(stats.extremes(values))  # (np.float64(1.0), np.float64(5.0))
+```
+
+`count` never appears in the Python signature — the contract derives it from
+the array — and the two output pointers come back as a tuple instead of being
+passed in. `mean` and `extremes` need no `@bind` because their Python and C
+names match; use `@bind("native_name")` only when they differ. The same rule
+applies to Fortran contracts.
+
+### What C support covers
+
+The direct C lane supports target-probed arithmetic scalars and `void`,
+C-contiguous NumPy arrays of ranks 1–15, and both read-only and writable C
+strings. Contracts can also rename or reorder calls, derive lengths and shapes,
+return native outputs, overload Python names, and turn status codes into Python
+exceptions.
+
+### Current C limitations
+
+The direct C lane does not yet cover arrays of strings, multi-level pointers,
+structs, unions, function pointers, or callbacks. Unsupported declarations
+stop before wrapper generation or compilation; parsing a declaration alone does
+not promise that it can be built.
+
+[Read the C support guide for executable source, `.pyi`, CLI, and Python API
+examples.](https://pynumlab.github.io/prik/user/language-support/c-support/)
 
 ## Installation & Quick Start
 
 PRIK requires **Python 3.10 or newer**, NumPy, Python development headers,
-standard build tools, and Fortran and C compilers. GNU Fortran is the default
-and is tested on Linux and macOS. LLVM Flang is tested on both platforms;
-Intel IFX is tested on Linux.
+standard build tools, and a compiler for the code being wrapped. GNU Fortran is
+the default Fortran compiler and is tested on Linux and macOS. LLVM Flang is
+tested on both platforms; Intel IFX is tested on Linux.
 
 Install the published PRIK package in a virtual environment:
 
@@ -319,12 +433,11 @@ The custom wrapper flags appear in the relevant command lines:
 ## How it works
 
 ```text
-Fortran sources
+Fortran or supported C sources
   -> compiler preprocessing and target-type probing
-  -> Fortran parser
-  -> semantic IR construction
-  -> post-IR policy completion and ordered wrapper plan
-  -> direct native-bridge and Python-binding lowering
+  -> language parser and semantic IR construction
+  -> completed policy and wrapper plan
+  -> generated Python binding, with a Fortran bridge where needed
   -> native compilation and shared-library link
   -> importable Python extension
 ```
@@ -334,11 +447,12 @@ For diagnostic and inspection commands beyond the main build path, start with
 
 ## Python API
 
-Root entrypoints cover normal Fortran extension builds. Advanced parsing,
-semantic conversion, and `.pyi` emission use their owning packages:
+Root entrypoints cover Fortran and supported direct C extension builds.
+Advanced parsing, semantic conversion, and `.pyi` emission use their owning
+packages:
 
 ```python
-from prik import build_fortran_extension
+from prik import build_c_extension, build_fortran_extension
 
 result = build_fortran_extension(
     "points.f90",
@@ -348,6 +462,10 @@ result = build_fortran_extension(
 print(result.module_name)
 print(result.shared_library)
 ```
+
+Use `build_c_extension("api.c", output_dir="build")` for the source-driven C
+lane, or `build_pyi_extension(..., native_language="c", native_c_sources=[...])`
+for an authored C contract. The C support guide shows complete examples.
 
 ## Development
 
@@ -389,13 +507,11 @@ notice when redistributed.
 ## Documentation
 
 - **[Documentation](https://pynumlab.github.io/prik/)** — Learn how to install and use PRIK
+- **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
+- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Direct C ABI scope, contracts, CLI, Python API, and executable examples
+- **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
+- **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — What is supported, partially supported, or planned
+- **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions
 - **[Changelog](CHANGELOG.md)** — User-visible changes by release
-<!--
-- **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
-- **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
-- **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
-- **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
-- **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
--->

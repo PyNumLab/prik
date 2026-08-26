@@ -164,6 +164,20 @@ class CExpressionStatement(StageRecord):
 
 
 @dataclass
+class CGoto(StageRecord):
+    """C jump to a function-local cleanup label."""
+
+    label: str
+
+
+@dataclass
+class CLabel(StageRecord):
+    """C function-local label used by shared cleanup paths."""
+
+    name: str
+
+
+@dataclass
 class CAllowThreadsBegin(StageRecord):
     """Release the CPython GIL immediately before one native call."""
 
@@ -178,8 +192,8 @@ class CIf(StageRecord):
     """C conditional with recursively printable statement bodies."""
 
     condition: CodeExpression
-    body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CReturn, ...] = ()
-    else_body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CReturn, ...] = ()
+    body: tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CFor | CReturn, ...] = ()
+    else_body: tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CFor | CReturn, ...] = ()
 
 
 @dataclass
@@ -230,6 +244,8 @@ class CFunction(StageRecord):
     body: tuple[
         CDeclaration
         | CExpressionStatement
+        | CGoto
+        | CLabel
         | CAllowThreadsBegin
         | CAllowThreadsEnd
         | CIf
@@ -240,6 +256,7 @@ class CFunction(StageRecord):
         ...,
     ] = ()
     storage: str | None = None
+    doc: tuple[str, ...] = ()
 
 
 @dataclass
@@ -450,6 +467,7 @@ class FortranFunction(StageRecord):
     ] = ()
     is_subroutine: bool = False
     internal_procedures: tuple[FortranFunction, ...] = ()
+    doc: tuple[str, ...] = ()
 
 
 @dataclass

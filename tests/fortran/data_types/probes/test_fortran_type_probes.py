@@ -522,6 +522,7 @@ end module solver_mod
             "prik",
             "semantics",
             str(source),
+            "--json",
             "--compiler",
             compiler,
         ],
@@ -559,6 +560,7 @@ end module defaults
             "prik",
             "semantics",
             str(source),
+            "--json",
             "--compiler",
             compiler,
             "--compiler-arg=-fdefault-integer-8",
@@ -580,3 +582,56 @@ end module defaults
     assert semantic_types["legacy_value"]["name"] == "Complex128"
     assert semantic_types["scale"]["metadata"]["fortran_type_fact_source"] == "compiler_probe"
     assert semantic_types["legacy_value"]["metadata"]["fortran_type_fact_source"] == "legacy_star_storage"
+
+
+def test_probe_skips_expressions_naming_project_symbols():
+    """The probe program cannot `use` a module that has not been compiled yet.
+
+    An expression naming a kind parameter declared elsewhere in the project is
+    left out of the probe rather than compiled into a program that cannot
+    resolve it. Expressions built only from intrinsic names are still probed.
+    """
+    assert fortran_type_probe.probe_can_resolve_expression("selected_real_kind(15, 307)")
+    assert fortran_type_probe.probe_can_resolve_expression("storage_size(1_4, kind=int32)")
+    assert not fortran_type_probe.probe_can_resolve_expression("storage_size(1_ip, kind=ip)")
+    assert not fortran_type_probe.probe_can_resolve_expression("wp")
+
+    requirements = [
+        {"expression": "real64"},
+        {"expression": "storage_size(1_ip, kind=ip)"},
+        {"expression": "selected_int_kind(9)"},
+    ]
+    assert fortran_type_probe_expressions(requirements) == ["real64", "selected_int_kind(9)"]
+
+
+def test_probe_source_compiles_for_a_module_using_imported_kind_parameters(tmp_path):
+    """A parameter defined from an imported kind must not break the whole probe."""
+    source = tmp_path / "imported_kinds.f90"
+    source.write_text(
+        """
+module imported_kinds_kinds
+  use,intrinsic :: iso_fortran_env
+  implicit none
+  private
+  integer,parameter,public :: ip = int32
+end module imported_kinds_kinds
+
+module imported_kinds
+  use imported_kinds_kinds, only: ip
+  implicit none
+  integer(ip),parameter :: int_size = storage_size(1_ip, kind=ip)
+contains
+  integer(ip) function bits()
+    bits = int_size
+  end function bits
+end module imported_kinds
+""",
+        encoding="utf-8",
+    )
+
+    project = parse_fortran_project([str(source)])
+    expressions = fortran_type_probe_expressions(collect_semantic_compile_time_requirements(project))
+
+    assert "storage_size(1_ip, kind=ip)" not in expressions
+    assert "int32" in expressions
+    build_fortran_type_probe_source(expressions)

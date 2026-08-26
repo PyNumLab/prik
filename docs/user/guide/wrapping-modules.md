@@ -1,6 +1,6 @@
 ---
 title: Wrapping Modules
-description: How prik exposes Fortran modules as Python namespaces with procedures, variables, and state
+description: How PRIK exposes Fortran modules as Python namespaces with procedures, variables, and state
 audience: users
 prerequisites: data types, first wrapped module
 related: wrapping-functions.md, memory-management.md, building-shared-library.md
@@ -114,7 +114,7 @@ and
 ## Flatten Module Namespaces
 
 The package entry `__init__.pyi` controls the Python import layout. Suppose an
-extension named `library` contains two Fortran modules. prik generates:
+extension named `library` contains two Fortran modules. PRIK generates:
 
 ```python
 # __init__.pyi

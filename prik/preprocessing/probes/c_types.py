@@ -177,6 +177,16 @@ def build_c_standard_type_probe_source() -> str:
            _Alignof(type) * (size_t)CHAR_BIT, \
            precision, max_exp)
 
+#define PRIK_PRINT_COMPLEX(name, type, precision, max_exp) \
+    printf("\"" name "\":{\"header\":\"<builtin>\",\"available\":true," \
+           "\"kind\":\"arithmetic\",\"underlying_c_type\":\"%s\"," \
+           "\"bits\":%zu,\"alignment_bits\":%zu,\"precision_bits\":%d," \
+           "\"max_binary_exponent\":%d}", \
+           PRIK_BASE_TYPE((type)0), \
+           sizeof(type) * (size_t)CHAR_BIT, \
+           _Alignof(type) * (size_t)CHAR_BIT, \
+           precision, max_exp)
+
 int main(void) {
     printf("{\"types\":{");
     PRIK_PRINT_ARITHMETIC("_Bool", "<builtin>", _Bool);
@@ -209,18 +219,60 @@ int main(void) {
     printf(",");
     PRIK_PRINT_REAL("long double", long double, LDBL_MANT_DIG, LDBL_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("float _Complex", "<builtin>", float _Complex);
+    PRIK_PRINT_COMPLEX("float _Complex", float _Complex, FLT_MANT_DIG, FLT_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("double _Complex", "<builtin>", double _Complex);
+    PRIK_PRINT_COMPLEX("double _Complex", double _Complex, DBL_MANT_DIG, DBL_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("long double _Complex", "<builtin>", long double _Complex);
+    PRIK_PRINT_COMPLEX("long double _Complex", long double _Complex, LDBL_MANT_DIG, LDBL_MAX_EXP);
     printf(",");
     PRIK_PRINT_ARITHMETIC("size_t", "stddef.h", size_t);
+    printf(",");
+#ifdef INT8_MAX
+    PRIK_PRINT_ARITHMETIC("int8_t", "stdint.h", int8_t);
+#else
+    printf("\"int8_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT16_MAX
+    PRIK_PRINT_ARITHMETIC("int16_t", "stdint.h", int16_t);
+#else
+    printf("\"int16_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT32_MAX
+    PRIK_PRINT_ARITHMETIC("int32_t", "stdint.h", int32_t);
+#else
+    printf("\"int32_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT64_MAX
+    PRIK_PRINT_ARITHMETIC("int64_t", "stdint.h", int64_t);
+#else
+    printf("\"int64_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT8_MAX
+    PRIK_PRINT_ARITHMETIC("uint8_t", "stdint.h", uint8_t);
+#else
+    printf("\"uint8_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT16_MAX
+    PRIK_PRINT_ARITHMETIC("uint16_t", "stdint.h", uint16_t);
+#else
+    printf("\"uint16_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
     printf(",");
 #ifdef UINT32_MAX
     PRIK_PRINT_ARITHMETIC("uint32_t", "stdint.h", uint32_t);
 #else
     printf("\"uint32_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT64_MAX
+    PRIK_PRINT_ARITHMETIC("uint64_t", "stdint.h", uint64_t);
+#else
+    printf("\"uint64_t\":{\"header\":\"stdint.h\",\"available\":false}");
 #endif
     printf(",");
     PRIK_PRINT_ARITHMETIC("time_t", "time.h", time_t);

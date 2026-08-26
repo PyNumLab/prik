@@ -5,8 +5,9 @@ This directory contains active tests for the implemented partial C parser.
 Guidelines:
 
 - keep these tests separate from the Fortran parser tests
-- keep wrapper-plan support diagnostics under the owning Fortran feature's
-  `codegen/` stage, not under C parser tests
+- keep wrapper policy, plan, codegen, and runtime behavior under the owning
+  `tests/c/<feature>/<stage>/` or C infrastructure owner, not under these parser
+  snapshot fixtures
 - add parser snapshots only when the corresponding schema and preprocessing
   recipe are stable
 - keep the checked-in cJSON regression inputs active while a separately pinned
@@ -46,7 +47,7 @@ Fatal diagnostic fixtures live in `tests/c/fixtures/native/errors/parser/` and t
 expected metadata lives in `fixtures/errors/`. Regenerate them with:
 
 ```bash
-C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/parsing/test_c_error_fixture_suite.py
+C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/infrastructure/parsing/test_c_error_fixture_suite.py
 ```
 
 The standalone error generator remains available for targeted refreshes, and

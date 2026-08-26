@@ -8,6 +8,8 @@ completed by earlier stages.
 from __future__ import annotations
 
 
+import textwrap
+
 from prik.codegen.nodes import (
     CAllowThreadsBegin,
     CAllowThreadsEnd,
@@ -20,9 +22,11 @@ from prik.codegen.nodes import (
     CFunction,
     CFunctionPointerType,
     CFunctionPrototype,
+    CGoto,
     CHeader,
     CIf,
     CInclude,
+    CLabel,
     CMacroDefinition,
     CMethodDefEntry,
     CMethodDefTable,
@@ -96,7 +100,8 @@ class CSourcePrinter(ClassVisitor):
         """Render one C function definition with each body statement indented."""
         prefix = f"{node.storage} " if node.storage else ""
         body = "\n".join(self._indented(self.visit(statement)) for statement in node.body)
-        return f"{prefix}{self._signature(node.return_type, node.name, node.parameters)} {{\n{body}\n}}"
+        doc = "".join(f"/* {chunk} */\n" for line in node.doc for chunk in (textwrap.wrap(line, width=96) or [""]))
+        return f"{doc}{prefix}{self._signature(node.return_type, node.name, node.parameters)} {{\n{body}\n}}"
 
     def _visit_CFunctionPrototype(self, node: CFunctionPrototype) -> str:
         """Render one C prototype using the shared signature renderer."""
@@ -286,6 +291,14 @@ class CSourcePrinter(ClassVisitor):
     def _visit_CExpressionStatement(self, node: CExpressionStatement) -> str:
         """Render one C expression statement and add its terminating semicolon."""
         return f"{node.expression.text};"
+
+    def _visit_CGoto(self, node: CGoto) -> str:
+        """Render one jump to a function-local cleanup label."""
+        return f"goto {node.label};"
+
+    def _visit_CLabel(self, node: CLabel) -> str:
+        """Render one function-local cleanup label."""
+        return f"{node.name}:"
 
     def _visit_CAllowThreadsBegin(self, _node: CAllowThreadsBegin) -> str:
         """Render the opening CPython thread-release macro without a semicolon."""

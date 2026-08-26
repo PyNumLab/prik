@@ -4,7 +4,7 @@ audience: users, advanced users, developers
 prerequisites: semantic IR reference, wrapper build workflow
 related: index.md, semantic-ir.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Semantic `.pyi` Format
@@ -13,14 +13,12 @@ For the supported edit workflow and runtime consequences of changing a
 contract, including ownership and destruction examples, see
 [Editing `.pyi` contracts](pyi-contracts/index.md).
 
-<!-- PRIK_C_DOCS_START
-Semantic `.pyi` files are prik's editable wrapper contract. They are valid
+Semantic `.pyi` files are PRIK's editable wrapper contract. They are valid
 Python stub files, but they are not meant to be clean static-type-checker stubs.
-They preserve native type, storage, ownership, shape and visibility facts that a
-wrapper generator needs. The implemented Fortran wrapper uses the same semantic
-contract internally; the wrapper backend for user-supplied C inputs remains
-future work.
-PRIK_C_DOCS_END -->
+They preserve the native type, storage, ownership, shape, and visibility facts
+a wrapper generator needs. Both source languages use this same contract: the
+Fortran wrapper for its full surface, and C for the subset described in
+[C Support](../language-support/c-support.md).
 
 The normal wrapper workflow accepts recognizable Fortran source without a
 stage flag. A `.pyi`-driven wrapper workflow is also available for the
@@ -30,24 +28,32 @@ inputs with the native artifact flags. The `.pyi` input selects the wrapper
 stage automatically and remains the source of truth for the Python API; native
 source is not reparsed to reconstruct the contract.
 
-The implemented subset and remaining parity limits are stated in this
-reference and summarized later in Language Support.
+This reference states the implemented subset and its parity limits; the
+[language feature matrix](../language-support/feature-matrix.md) summarizes
+them alongside every other supported form.
 
 Status terms used below:
 
-- **Generated**: emitted today by `--pyi` or
-  `codegen.printers.pyi_printer`.
+- **Generated**: emitted today by `generate --pyi`.
 - **Loaded**: accepted today by `prik.parsers.pyi` and converted back to
   semantic IR.
 - **Planning**: can be lowered by the implemented wrapper planner once its
   semantic policy is complete.
 - **Build input**: accepted by the `.pyi` wrapper build for the implemented
   subset when the required native artifacts are supplied.
-- **Roadmap**: design direction, not implemented wrapper behavior.
 
-Parser-related pull requests that change `prik/parsers/pyi/` or its focused
-loading tests should update this reference when the documented behavior
-changes.
+## Find The Contract You Need
+
+| Task | Start here |
+| --- | --- |
+| Understand files, imports, and native placement | [File Shape](#file-shape) and [Contract Files And Native Procedure Placement](#contract-files-and-native-procedure-placement) |
+| Choose scalar, string, array, or storage syntax | [Semantic Type Names](#semantic-type-names), [Character Length And Shape](#character-length-and-shape), and [Storage Contracts](#storage-contracts) |
+| Express ownership, lifetime, or boundary behavior | [Metadata With `Annotated`](#metadata-with-annotated) and the [editing workflow](pyi-contracts/index.md) |
+| Edit calls, arguments, outputs, or hidden slots | [Functions, Methods And Returns](#functions-methods-and-returns) and [Projection Metadata](#projection-metadata) |
+| Edit classes, constructors, methods, or overloads | [Classes And Native ABI](#classes-and-native-abi) and [Generic Procedure Overloads](#generic-procedure-overloads) |
+| Work with allocatable or pointer array handles | [Allocatable Array Handles](#allocatable-array-handles) and [Pointer Array Handles](#pointer-array-handles) |
+| Author or inspect a C contract | [C Source Inspection Contracts](#c-source-inspection-contracts) and [C Support](../language-support/c-support.md) |
+| Diagnose a rejected contract | [Misuse, Diagnostics And Risk](#misuse-diagnostics-and-risk) and [Rejected Or Not Yet Supported](#rejected-or-not-yet-supported) |
 
 ## Contract Imports
 
@@ -92,7 +98,7 @@ Edited contracts may use any non-conflicting local alias imported from
 `prik.contracts`.
 
 Bare-name compatibility is not part of the format. Contract files must import
-every prik or re-exported typing form they use.
+every PRIK or re-exported typing form they use.
 
 The user-facing Fortran, semantic `.pyi`, Python, and NumPy mapping is documented
 in [Data Types](../guide/data-types.md). The underlying semantic model is
@@ -118,17 +124,19 @@ Failures should happen at the earliest layer that has enough information:
   missing or incompatible `@bind` / `@overload` targets, public declarations that
   expose private types, or native-placement facts that contradict the contract
   file shape.
-- **Unsupported policy** fails during wrapper planning or lowering: ownership,
-  lifetime, replacement, pointer reassociation, callback lifetime, coercion, or
-  allocation behavior that prik cannot yet express safely.
+- **Unsupported policy** fails during post-IR policy completion, before wrapper
+  planning: ownership, lifetime, replacement, pointer reassociation, callback
+  lifetime, coercion, or allocation behavior that PRIK cannot yet express
+  safely. Planning validates the completed contract; lowerers only implement
+  the selected mechanisms and must not discover or replace semantic policy.
 - **Native artifact mismatches** fail during compile, link, import, or runtime
-  execution. prik can validate the `.pyi` contract structure; it cannot prove
+  execution. PRIK can validate the `.pyi` contract structure; it cannot prove
   that an arbitrary caller-supplied object, archive, or shared library implements
   the declared ABI.
 
 Actionable diagnostics should name the contract path when available, the
 declaration or import being processed, the invalid fact, and the expected
-documented form. When prik can continue only by guessing, it should report an
+documented form. When PRIK can continue only by guessing, it should report an
 error instead of guessing.
 
 When a `.pyi` file is converted from disk, syntax diagnostics use Python's
@@ -147,7 +155,7 @@ behavior, write a projected return contract such as
 `Returns["name", String[n]]`.
 
 Future unsafe, coercion, or copy/readback modes must be explicit `.pyi` metadata.
-prik must not infer them from malformed syntax or from a declaration that merely
+PRIK must not infer them from malformed syntax or from a declaration that merely
 looks risky.
 
 `Immutable` marks a Python-visible value as replace-only: native code may write a
@@ -156,6 +164,7 @@ place. `Transfer("borrowed_view")` requests no-copy shared storage. Combining
 `Immutable` with a writable borrowed view is contradictory and fails while
 loading the `.pyi` contract:
 
+<!-- prik-doc-contract: invalid -->
 ```python
 from prik.contracts import Annotated, Float64, Immutable, Transfer
 
@@ -323,11 +332,13 @@ from prik.contracts import Float64, bind, native_abi
 def step(value: Float64) -> Float64: ...
 ```
 
-The ABI marker is valid on module and standalone procedures, class methods,
-overload declarations, and exact callable prototypes. Each declaration still
-retains its Fortran placement and source identity. The marker records an input
-fact only: post-IR policy decides independently whether an operation is safe to
-call directly or requires a generated Fortran adapter.
+The ABI marker is valid on Fortran derived-type classes, module and standalone
+procedures, class methods, overload declarations, and exact callable
+prototypes. On a class it records that the native type is declared `bind(C)`;
+on a callable it records that the native entrypoint uses the C ABI. Each
+declaration still retains its Fortran placement and source identity. The marker
+records an input fact only: post-IR policy decides independently whether an
+operation is safe to call directly or requires a generated Fortran adapter.
 
 `@native_call` remains necessary only when the Python signature hides, inserts,
 or reorders original native-procedure arguments. It is route-neutral: its
@@ -341,12 +352,12 @@ Ordinary semantic types are the native type contract. `Int32`, `Float64`,
 as `Allocatable` are not duplicated with source-language spellings.
 Write the Python boundary shape directly as `T`, `T[()]`, `T[:]`, `Addr(T)`,
 or `WrappedType`.
-`Final[T]` remains the module-variable and constant spelling. `@native_type(...)`
-is emitted only when a derived type has irreducible attributes or finalizers.
+`Final[T]` remains the module-variable and constant spelling. A native teardown
+operation is a class-body declaration marked with `@destroy`.
 
 These facts are structurally validated before `.pyi` wrapper code generation.
 They are declarations about the supplied native artifacts, not binary
-introspection: prik cannot prove that an arbitrary opaque binary actually uses
+introspection: PRIK cannot prove that an arbitrary opaque binary actually uses
 the declared ABI.
 
 ### Contained Module Procedures
@@ -541,13 +552,10 @@ assumed-size declaration, source-generated contracts use declared prefix
 extents such as `Float64[n, Flat]`; edited contracts may use `:` when the Python
 actual should provide that prefix extent.
 
-<!-- PRIK_C_DOCS_START
 C-order flat storage can be expressed for native routines that consume a raw
 flat buffer while the Python contract validates a multidimensional C-contiguous
 view:
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
 ```python
 
 from prik.contracts import Addr, Annotated, Flat, Float64, Int32, ORDER_C, standalone
@@ -559,20 +567,17 @@ def row_sums(
     result: Float64[Flat],
 ) -> None: ...
 ```
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
 Here `values` is not a literal Fortran dummy declaration such as `real ::
 values(*, 3)`, which Fortran does not allow. It is a Python storage contract:
 the wrapper validates a C-contiguous `(n, 3)` view, constructs the corresponding
 rank-2 Fortran bridge view over the same storage, and passes it to the native
 assumed-size dummy. The native routine's `values(*)` dummy receives the
 flattened element sequence and interprets the elements in row-major order.
-PRIK_C_DOCS_END -->
 
 ### Native Artifacts And Link Resolution
 
-Semantic contracts do not map to native artifacts by filename. prik must never
+Semantic contracts do not map to native artifacts by filename. PRIK must never
 assume that `name.pyi` is implemented by `name.o`:
 
 - one entry `.pyi` may require several objects and libraries;
@@ -740,7 +745,7 @@ from .module2 import *
 
 The entry filename chooses the compiled extension and shared-library name by
 default. For `__init__.pyi`, the resolved containing directory name is used;
-calling prik as either `foo/__init__.pyi` or `__init__.pyi` from inside `foo/`
+calling PRIK as either `foo/__init__.pyi` or `__init__.pyi` from inside `foo/`
 therefore selects `foo`. Wrapper `--out NAME`
 overrides that inference and controls the extension filename,
 `PyInit_<name>` symbol, and Python import name.
@@ -775,7 +780,7 @@ arguments.
 
 ### Contract Import Graph
 
-prik parses the entry as a restricted semantic stub; it does not execute Python
+PRIK parses the entry as a restricted semantic stub; it does not execute Python
 code. Every relative import is resolved recursively to a sibling `.pyi` or a
 package `__init__.pyi`, producing the complete transitive contract graph before
 wrapper planning or code generation. Files that both declare native objects and import
@@ -815,9 +820,7 @@ builds must not disagree about namespace placement.
 
 ## Semantic Type Names
 
-<!-- PRIK_C_DOCS_START
 The public annotations use semantic names, not raw C or Fortran spellings:
-PRIK_C_DOCS_END -->
 
 | Family | Names |
 | --- | --- |
@@ -841,7 +844,6 @@ boundary. A numbered name additionally records native Boolean storage bits so
 language-specific lowering can preserve the native declaration without
 exposing a language spelling such as a Fortran kind in the Python API.
 
-<!-- PRIK_C_DOCS_START
 `Unknown` is intentionally rejected in `.pyi` annotations. Generated stubs must
 resolve or block unsupported source types instead of emitting unknown contracts.
 Current C callback placeholders such as `CFunctionPointer` can appear in
@@ -931,37 +933,75 @@ procedure entity from the generated abstract signature.
 Optional callback dummies and allocatable, pointer, or polymorphic callback
 dummies and results are currently rejected during policy completion.
 
-Before wrapper planning, prik completes these declarations into explicit
+Before wrapper planning, PRIK completes these declarations into explicit
 callback ABI, primitive-scalar value projection, non-scalar reference
 writeback, result, context-lifecycle, thread/GIL, cleanup,
 and fatal-error actions. The generated C trampoline and Fortran adapter consume
 that completed record directly.
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
-Character annotations have two axes. The first `String[...]` subscription is
-the character length, and any second subscription is scalar-storage or array
-shape:
+## Character Length And Shape
 
-- `String`: scalar string with assumed, deferred, or otherwise non-fixed length.
-- `String[8]`: scalar fixed-length string with length 8.
-- `String[:][:]`: rank-one array of non-fixed-length strings.
-- `String[8][:]`: rank-one array of fixed-length strings.
-- `String[8][()]`: mutable scalar fixed-length string storage.
+A `String` annotation carries two independent facts. The first subscription is
+the character length; the second, when present, is the scalar-storage or array
+shape.
 
-Bare `String[:]` is invalid because it omits the shape axis and is ambiguous:
-use `String` for a scalar non-fixed string, `String[:][:]` for an array of
-non-fixed strings, or `String[n]` for a scalar fixed-length string. Source kind
-names are already resolved into semantic dtypes, so generated contracts do not
-import `iso_c_binding`, `iso_fortran_env`, or their kind constants.
-PRIK_C_DOCS_END -->
+| Contract | Character length | Python/storage shape |
+| --- | --- | --- |
+| `String` | assumed | scalar |
+| `String[...]` | assumed | scalar |
+| `String[8]` | explicit `8` | scalar |
+| `String[n]` | explicit `n` | scalar |
+| `String[:]` | deferred | scalar |
+| `String[8][()]` | explicit `8` | rank-0 storage |
+| `String[8][:]` | explicit `8` | contiguous rank-1 |
+| `String[8][::]` | explicit `8` | stride-aware rank-1 |
+| `String[8][n]` | explicit `8` | extent `n` |
+| `String[...][:]` | assumed | contiguous rank-1 |
+| `String[...][::]` | assumed | stride-aware rank-1 |
+| `String[...][n]` | assumed | extent `n` |
+| `String[:][:]` | deferred | contiguous rank-1 |
+| `String[:][::]` | deferred | stride-aware rank-1 |
+
+Bare `String` is the scalar shorthand for `String[...]`. Because an array always
+spells its length first, a single subscription is never a shape: `String[::]` is
+rejected with a diagnostic naming the second-subscription form.
+
+The three lengths mean different things at the native boundary:
+
+- `String[...]` is `character(len=*)`: the actual argument fixes the length for
+  the call, and native code cannot change it.
+- `String[8]` is `character(len=8)`: the length is part of the contract, and the
+  wrapper requires exactly that many encoded bytes.
+- `String[:]` is `character(len=:)`: the length is established by allocation and
+  may change during the call, so the dummy also needs `allocatable` or
+  `pointer` storage. A `String[:]` output is `None` when it is unallocated.
+
+The length is independent of the descriptor attribute. `Allocatable(Arg(i))`
+and `Pointer(Arg(i))` name the attribute of the native dummy, and either one
+combines with `String[n]` or `String[:]`:
+
+```python
+@native_call([Allocatable(Arg(0))])
+def grow(value: String[:] | None) -> Returns["value", String[:]] | None: ...
+
+@native_call([Pointer(Arg(0))])
+def relabel(value: String[4] | None) -> Returns["value", String[4]] | None: ...
+
+@native_call([], result=Allocatable(Return(0)))
+def build() -> String[:] | None: ...
+```
+
+A scalar character dummy with either attribute is a `str` argument that also
+projects a result, because the native procedure may replace the storage rather
+than write through it. The projected result is `None` when the procedure leaves
+the dummy unallocated or unassociated.
 
 ## Python And Native Boundaries
 
 Semantic `.pyi` annotations describe two related but separate boundaries:
 
 - the Python boundary: what the caller passes to the generated wrapper;
-- the native boundary: how prik lowers that value into the native call.
+- the native boundary: how PRIK lowers that value into the native call.
 
 Some types have one normal native representation. Array storage, scalar storage,
 and scalar character values are always lowered as storage addresses. Bare numeric
@@ -974,10 +1014,11 @@ arguments, or scalar by-address projection differs from the default lowering.
 | Contract | Python boundary | Default native boundary |
 | --- | --- | --- |
 | `Float64` | `np.float64(...)` | scalar value |
-| `@native_call([Addr(Arg(i))])` with `Float64` | `np.float64(...)` | address of prik's call-local native scalar slot |
+| `@native_call([Addr(Arg(i))])` with `Float64` | `np.float64(...)` | address of PRIK's call-local native scalar slot |
 | `Float64[()]` | rank-zero NumPy array with dtype `np.float64` | storage address |
 | `Float64[n]`, `Float64[:]`, `Float64[:, :]` | NumPy array storage | data address |
-| `String[n]` | Python `str` whose encoded length is exactly `n` | address of prik's call-local fixed-width character storage |
+| `String[n]` | Python `str` whose encoded length is exactly `n` | address of PRIK's call-local fixed-width character storage |
+| `String[:]` | Python `str`; `None` when an output is unallocated | deferred-length character local built by the generated adapter, carrying the attribute `Allocatable(...)` or `Pointer(...)` names |
 | `String[n][:]`, `String[:][:]` | NumPy bytes array storage | character array descriptor/data contract |
 | `String[n][()]` | rank-zero NumPy bytes array with dtype `S<n>` | fixed-width character storage copied back into the NumPy array when native code mutates it |
 | `Addr(Float64)`, `Addr(Float64[n])`, `Addr(String[n])` | integer raw address such as `array.ctypes.data` or a `ctypes` buffer address | that raw address |
@@ -1005,9 +1046,9 @@ def dot(a: Float64, b: Float64) -> Float64: ...
 ```
 
 `T[()]` represents rank-zero NumPy storage. For arguments, the caller passes an
-addressable rank-0 NumPy array with the declared dtype; prik validates the
+addressable rank-0 NumPy array with the declared dtype; PRIK validates the
 object and uses its data storage for the native call. For direct or projected
-results, prik returns a rank-0 NumPy array instead of collapsing the contract to
+results, PRIK returns a rank-0 NumPy array instead of collapsing the contract to
 a scalar value:
 
 ```python
@@ -1041,7 +1082,7 @@ bounds. Native lower bounds, upper bounds, and source-dimension spellings are
 not part of the semantic `.pyi` format.
 
 `String[n]` represents a Python `str` at the Python boundary. Its encoded byte
-length must be exactly `n`; prik does not pad or truncate the public value. prik
+length must be exactly `n`; PRIK does not pad or truncate the public value. PRIK
 converts it to call-local fixed-width character storage and passes that storage
 address to native code. If a returned `Returns["name", String[n]]` item is
 present, native mutation is copied back into a replacement Python `str`;
@@ -1054,6 +1095,12 @@ caller passes a rank-zero NumPy fixed-width bytes array:
 from prik.contracts import String
 
 def rewrite_label(label: String[8][()]) -> None: ...
+```
+
+The caller then supplies that storage:
+
+```python
+import numpy as np
 
 label = np.array("abcdefgh", dtype="S8")
 rewrite_label(label)
@@ -1066,13 +1113,13 @@ arrays are rejected.
 Type-level `Addr(T)` represents an integer raw address supplied by the Python
 caller. It is valid only for a primitive scalar pointee, a fixed-length
 `String[n]`, or an array whose rank and every extent are resolved by literals
-or visible scalar arguments. It is an advanced unsafe contract: prik casts the
+or visible scalar arguments. It is an advanced unsafe contract: PRIK casts the
 address according to the declared pointee type, but it cannot prove the address
 lifetime, true dtype, alignment, length, or ownership. The pointer value itself
 does not carry string length or array shape. Integer zero becomes a null
 pointer without a conversion error, negative integers are forwarded through
 the platform pointer conversion, and an out-of-range integer raises
-`OverflowError`. prik likewise resolves raw-array extent expressions without a
+`OverflowError`. PRIK likewise resolves raw-array extent expressions without a
 positivity check. Calling native code with an invalid address or pointee shape
 is the caller's responsibility and may crash the process:
 
@@ -1125,7 +1172,6 @@ argv: Addr[3](Int8)
 
 Array storage uses NumPy-style subscriptions:
 
-<!-- PRIK_C_DOCS_START
 ```python
 from prik.contracts import Annotated, Flat, Float64, ORDER_C
 
@@ -1138,7 +1184,6 @@ flat_matrix: Float64[3, Flat]
 c_flat_matrix: Annotated[Float64[Flat, 3], ORDER_C]
 rank_polymorphic: Float64[...]
 ```
-PRIK_C_DOCS_END -->
 
 Dimension entries have the following meaning:
 
@@ -1213,7 +1258,6 @@ NumPy construction. Caller-provided arrays retain their actual extent fields;
 the C binding validates rank and layout but does not call the native
 specification function or duplicate the callee's explicit-extent contract.
 
-<!-- PRIK_C_DOCS_START
 `Flat` must appear exactly once at either edge of a concrete-rank array.
 `Float64[Flat]` is the rank-one assumed-size storage contract: the Python side
 accepts any contiguous rank from 1 through 15 and flattens that storage sequence
@@ -1234,7 +1278,6 @@ the symmetric multidimensional forms are `Float64[rows, Flat]` for
 Fortran-contiguous storage and
 `Annotated[Float64[Flat, columns], ORDER_C]` for C-contiguous storage. The
 bridge reverses the latter's extents to construct its Fortran storage view.
-PRIK_C_DOCS_END -->
 
 The Python argument may provide more storage than the declared explicit
 dimensions describe, but the wrapper passes it to native code without a stride
@@ -1282,10 +1325,7 @@ Generated canonical metadata:
 | `Transfer("copy_return" | "snapshot_copy" | "borrowed_view" | "call_local" | "in_place" | "by_value" | "wrapper_instance" | "blocked")` | explicit boundary transfer override for the wrapper ownership policy |
 | `Destruction("python_refcount" | "wrapper_dealloc" | "native_owner" | "caller" | "call_local" | "none" | "blocked")` | explicit destruction override for the wrapper ownership policy |
 | `PointerPolicy(...)` | complete pointer policy: `nullable`, `transfer`, `target_owner`, `lifetime`, `deallocation`, `shape_source`, `contiguity`, `reassociation`, `aliasing`, and `mutability` |
-
-<!-- PRIK_C_DOCS_START
 | `ORDER_ANY` | edited contract accepts either C or Fortran orientation |
-PRIK_C_DOCS_END -->
 
 Loaded compatibility metadata:
 
@@ -1293,14 +1333,11 @@ Loaded compatibility metadata:
 | --- | --- |
 | `Contiguous` | source provenance says the array is contiguous |
 | `ArrayCategory("...")` | source array category provenance |
-| `FortranAllocatable` | older scalar character allocatable metadata; generated contracts use `Allocatable[String]` |
-
-<!-- PRIK_C_DOCS_START
+| `FortranAllocatable` | older scalar character allocatable metadata; generated contracts use `Allocatable[String[:]]` |
 | `ORDER_F` | explicit Fortran-oriented storage in a C contract |
 | `ORDER_C` | explicit C-oriented storage in a Fortran contract |
 Plain multidimensional C contracts default to `ORDER_C`; generated contracts
 omit that marker and retain only an intentional alternate layout.
-PRIK_C_DOCS_END -->
 
 Without `COPY_F`, `ORDER_C` is zero-copy and native Fortran observes the
 reversed-axis storage view. With `COPY_F`, the binding performs both copy-in and
@@ -1479,7 +1516,7 @@ Transfer modes:
 | --- | --- | --- | --- |
 | `Transfer("by_value")` | A scalar value crosses as a Python value; no shared native storage is exposed. | `Destruction("python_refcount")` for the returned Python object. | `def count() -> Annotated[Int32, Ownership("python"), Transfer("by_value"), Destruction("python_refcount")]: ...` |
 | `Transfer("call_local")` | The wrapper creates or associates storage only for one native call. Python does not receive persistent native storage. | `Destruction("call_local")` for bridge temporaries, or `Destruction("none")` when no generated storage is owned. | `def use_value(value: Annotated[Float64, Ownership("temporary"), Transfer("call_local"), Destruction("call_local")]) -> None: ...` |
-| `Transfer("in_place")` | Native code writes through caller-provided mutable Python storage. The same Python object observes the mutation. | `Destruction("caller")`; prik must not free caller storage. | `def scale(values: Annotated[Float64[:], Ownership("caller"), Transfer("in_place"), Destruction("caller")]) -> None: ...` |
+| `Transfer("in_place")` | Native code writes through caller-provided mutable Python storage. The same Python object observes the mutation. | `Destruction("caller")`; PRIK must not free caller storage. | `def scale(values: Annotated[Float64[:], Ownership("caller"), Transfer("in_place"), Destruction("caller")]) -> None: ...` |
 | `Transfer("copy_return")` | Native output is copied or read back into a fresh Python-visible return value. The original Python object is not mutated unless separately declared. | `Destruction("python_refcount")` after Python owns the copy. | `def read_values() -> Annotated[Float64[:], Ownership("python"), Transfer("copy_return"), Destruction("python_refcount")]: ...` |
 | `Transfer("snapshot_copy")` | Python receives a detached copy of current native state. Later native changes do not update it, and Python writes do not mutate native storage. This transfer name does not by itself make a returned NumPy array read-only. | `Destruction("python_refcount")` for the detached copy. | `def read_values() -> Annotated[Float64[:], Ownership("python"), Transfer("snapshot_copy"), Destruction("python_refcount")]: ...` |
 | `Transfer("borrowed_view")` | Python receives a no-copy view of storage owned somewhere else. Writes may mutate that storage when the value is mutable and the backend supports writable views. | Usually `Destruction("native_owner")` or `Destruction("wrapper_dealloc")`; Python does not free the borrowed target. | `module_values: Annotated[Allocatable[Float64[:]], Aliased, Ownership("native"), Transfer("borrowed_view"), Destruction("native_owner")]` |
@@ -1493,9 +1530,9 @@ Destruction policies:
 | `Destruction("python_refcount")` | Python, NumPy, or a generated base capsule releases the Python-owned copy when references are gone. |
 | `Destruction("wrapper_dealloc")` | The generated wrapper deallocator releases the native instance or storage owned by that wrapper. |
 | `Destruction("native_owner")` | Native module state or an external native owner releases the storage; Python only borrows it. |
-| `Destruction("caller")` | The Python caller owns the object passed into the wrapper; prik may mutate it but must not destroy it. |
+| `Destruction("caller")` | The Python caller owns the object passed into the wrapper; PRIK may mutate it but must not destroy it. |
 | `Destruction("call_local")` | The generated bridge releases the temporary before the wrapped call returns. |
-| `Destruction("none")` | No persistent owned storage is created by prik for this boundary value. This is not a claim that no native storage exists. |
+| `Destruction("none")` | No persistent owned storage is created by PRIK for this boundary value. This is not a claim that no native storage exists. |
 | `Destruction("blocked")` | Release ownership is unknown, contradictory, or unimplemented, so wrapper generation must stop. |
 
 Contradictions are contract errors, not implementation choices. For example,
@@ -1611,11 +1648,10 @@ The listed names are documentation and convenience constants. Procedure
 arguments and returns that use native enum types are emitted as the underlying
 integer type.
 
-<!-- PRIK_C_DOCS_START
-C enumerators use the same integer-constant contract.
-PRIK_C_DOCS_END -->
+C source inspection contracts use the same integer-constant contract for C
+enumerators. It does not make C enum constants direct-C wrapper exports.
 
-## Classes And Native Type Markers
+## Classes And Native ABI
 
 Fortran derived types and ordinary semantic classes use normal class syntax:
 
@@ -1627,9 +1663,47 @@ class particle:
     position: Float64[3]
 ```
 
-<!-- PRIK_C_DOCS_START
-C aggregate identity is explicit through base markers:
-PRIK_C_DOCS_END -->
+Fortran `bind(C)` derived types use the same ABI marker as `bind(C)`
+procedures:
+
+```python
+from prik.contracts import Float64, native_abi
+
+@native_abi("c")
+class point:
+    x: Float64
+```
+
+On a class, `@native_abi("c")` records type interoperability; it does not expose
+the native field layout directly. This fact can make an interoperable
+derived-type reference eligible for a direct `bind(C)` call. The Fortran
+`sequence` attribute is not serialized into semantic `.pyi` because it does not
+affect wrapper policy or lowering. Accessibility and abstractness use the
+separate `@private` and `@abstract` decorators.
+
+A native teardown operation is declared inside its owning class:
+
+```python
+from prik.contracts import destroy
+
+class owned_buffer:
+    @destroy
+    def release_owned_buffer(self) -> None: ...
+```
+
+`@destroy` is a language-neutral lifecycle role, not an exposed Python method.
+The declaration takes only `self` and returns `None`. Its name is the native
+operation by default; an edited contract may add `@bind("native_name")` when
+those names differ, but no other callable decorator is valid. Post-IR policy
+decides how the selected native backend performs destruction. Fortran source
+generation uses this role for each procedure named by a type's `FINAL`
+declaration; native deallocation invokes the applicable procedure. The role can
+represent C or C++ teardown entrypoints when those class wrapper routes
+implement them, but it does not make C aggregates or C++ classes buildable
+today.
+
+C source inspection contracts preserve aggregate identity through base markers.
+They record C source facts; they do not enable direct-C aggregate wrappers:
 
 ```python
 from prik.contracts import CStruct, CUnion, Float64, Int32, Opaque, UInt32
@@ -1648,17 +1722,12 @@ class context(CStruct, Opaque):
 | Marker | Meaning |
 | --- | --- |
 | `Opaque` | type identity is known, but fields/layout are intentionally hidden |
-
-<!-- PRIK_C_DOCS_START
 | `CStruct` | native C `struct` |
 | `CUnion` | native C `union` |
 | `CAnonymous` | generated nested anonymous C aggregate type |
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
 Anonymous C aggregate members are represented as nested classes plus a generated
 field that marks the anonymous member:
-PRIK_C_DOCS_END -->
 
 ```python
 from prik.contracts import Annotated, CAnonymous, CAnonymousMember, CStruct, CUnion, Float32, Int
@@ -1672,10 +1741,8 @@ class flags(CStruct):
     tag: Int
 ```
 
-<!-- PRIK_C_DOCS_START
 The generated field preserves that the anonymous union is a real C member even
 though C exposes its fields through the containing aggregate.
-PRIK_C_DOCS_END -->
 
 External opaque types can live in separate owner stubs:
 
@@ -1755,7 +1822,7 @@ native argument list. The list itself is exhaustive: once `@native_call` is
 present, every native dummy position must have exactly one entry in native
 order; native arguments are never inferred from leftovers.
 
-For bare numeric scalar values, `Addr(Arg(i))` means prik first converts the
+For bare numeric scalar values, `Addr(Arg(i))` means PRIK first converts the
 Python argument to its native scalar representation and then passes the address
 of that native slot. It does not mean the user passed a reference.
 
@@ -1811,7 +1878,7 @@ from prik.contracts import Returns, String
 def string_inout(label: String[8]) -> Returns["label", String[8]]: ...
 ```
 
-The caller passes a Python `str`; prik creates fixed-width character storage,
+The caller passes a Python `str`; PRIK creates fixed-width character storage,
 passes its address, and returns a replacement string because the signature asks
 for one.
 
@@ -1863,7 +1930,7 @@ def solve(
 ```
 
 This form exposes the native argument order directly. Python callers allocate
-`status` as a rank-0 NumPy array and inspect it after the call; prik does not
+`status` as a rank-0 NumPy array and inspect it after the call; PRIK does not
 synthesize a return value for that output slot. The raw `Addr(Float64)`
 arguments require callers to pass addresses directly; use visible `T`
 plus `@native_call([Addr(Arg(i))])` when callers should pass ordinary scalar
@@ -1880,9 +1947,9 @@ Python method name requires `@bind("native_name")`.
 
 ## Generic Procedure Overloads
 
-The prik semantic `.pyi` format uses `@overload("specific_name")` to link one
+The PRIK semantic `.pyi` format uses `@overload("specific_name")` to link one
 Python-visible declaration to an ordinary concrete procedure declaration. This
-decorator is prik metadata; it is not `typing.overload` and must not be imported
+decorator is PRIK metadata; it is not `typing.overload` and must not be imported
 from `typing`.
 
 ```python
@@ -1903,6 +1970,14 @@ def convert(value: Int32) -> Int32: ...
 @bind("convert")
 @overload("convert_real")
 def convert(value: Float64) -> Float64: ...
+
+@private
+@native_call([Pass(), Addr(Arg(0))])
+def accumulator_add_integer(self: accumulator, value: Int32) -> None: ...
+
+@private
+@native_call([Pass(), Addr(Arg(0))])
+def accumulator_add_real(self: accumulator, value: Float64) -> None: ...
 
 class accumulator:
     @bind("add")
@@ -1954,7 +2029,7 @@ def convert_number(value: Int32) -> Int32: ...
 ```
 
 `@private` controls Python visibility only. For edited standalone contracts,
-prik cannot infer whether the linked native procedure is accessible. A direct
+PRIK cannot infer whether the linked native procedure is accessible. A direct
 call to a Fortran-private specific therefore fails during the native build.
 
 Python method names recover the native generic for ordinary operators. When
@@ -1962,24 +2037,27 @@ two distinct Fortran generics share one Python method, the decorator also
 carries the otherwise unrecoverable operator spelling:
 
 ```python
-from prik.contracts import Bool, overload
+from prik.contracts import Arg, Bool, Pass, native_call, overload, private
 
-@overload("equivalent_values", generic="operator(.eqv.)")
-def __eq__(self, other: value) -> Bool: ...
+@private
+@native_call([Pass(), Arg(0)])
+def equivalent_values(self: value, other: value) -> Bool: ...
+
+class value:
+    @overload("equivalent_values", generic="operator(.eqv.)")
+    def __eq__(self, other: value) -> Bool: ...
 ```
 
 For class methods, `generic=` is restricted to a compatible operator or
 assignment generic. It is emitted for `.eqv.` and `.neqv.`, which would
 otherwise be indistinguishable from `operator(==)` and `operator(/=)`.
 
-<!-- PRIK_C_DOCS_START
 The generated C extension exposes one callable for each generic name. It
 dispatches before conversion using the wrapped scalar dtype, array element
 dtype and rank, or wrapped derived-type class. It does not use implicit numeric
 coercion to choose an overload. Array shape, bounds, and layout are validated
 by the selected concrete wrapper, but they do not distinguish overloads;
 overloads that differ only in those properties are rejected during generation.
-PRIK_C_DOCS_END -->
 
 Each specific keeps its declared Python call shape. The generated dispatcher
 normalizes positional and keyword arguments against each candidate, then uses
@@ -1987,14 +2065,12 @@ the candidate's exact typed predicates. A call that matches no specific raises
 `TypeError`; duplicate runtime dtype/rank/class signatures are a deterministic
 generation error.
 
-<!-- PRIK_C_DOCS_START
 Wrapped derived types dispatch by their generated extension class. Fortran
 `extends` relationships create the corresponding Python extension-type
 inheritance graph. Ordinary overload predicates remain exact-class predicates;
 closed scalar `class(base), intent(in)` dispatch separately enumerates the
 supported descendants most-derived first. User-defined Python subclasses are
 not part of this runtime contract.
-PRIK_C_DOCS_END -->
 
 ## Defined Operators And Assignment
 
@@ -2030,7 +2106,6 @@ Operand positions are fixed:
 | unary method | `self` is the only operand |
 | comparison method | `self` is the Python left operand; reflected comparison metadata restores native order |
 
-<!-- PRIK_C_DOCS_START
 Return annotations must equal the concrete procedure result. The generated C
 extension dispatches the Python slot before conversion by dtype, rank, and
 wrapped extension class. Operator slots also accept a native Python scalar when
@@ -2039,7 +2114,6 @@ family; this is needed when Python or NumPy invokes a reflected slot with a
 built-in scalar. No match raises `TypeError`, and indistinguishable candidates
 fail during generation. Three-argument `pow(value, exponent, modulus)` is not a
 Fortran operator form and raises `TypeError`.
-PRIK_C_DOCS_END -->
 
 Mappings:
 
@@ -2055,7 +2129,7 @@ Mappings:
 | `operator(.and.)`, `operator(.or.)`, `operator(.not.)` | `__and__`/`__rand__`, `__or__`/`__ror__`, `__invert__` |
 | `operator(.eqv.)`, `operator(.neqv.)` | `__eq__`, `__ne__` |
 
-prik does not infer in-place methods such as `__iadd__`. Python's fallback
+PRIK does not infer in-place methods such as `__iadd__`. Python's fallback
 therefore applies: an expression such as `value += other` may replace the
 Python reference with the ordinary operator result rather than invoking
 Fortran defined assignment.
@@ -2286,7 +2360,7 @@ counter: Int32 = 41
 ```
 
 The default is an import-time native initializer, not a `Final` constant. When
-the extension module is imported, prik applies the value through the completed
+the extension module is imported, PRIK applies the value through the completed
 native setter policy. Later reads and writes still use the current native module
 storage. This initializer form is only for scalar module variables with a
 write-through setter; non-scalar or read-only declarations remain explicit
@@ -2303,7 +2377,7 @@ nmax: Final[Int32] = 12
 ```
 
 If a Fortran `parameter` initializer is an expression, generated `.pyi` emits a
-default only after prik has resolved that expression to a literal. Unresolved
+default only after PRIK has resolved that expression to a literal. Unresolved
 native expressions are kept out of the active `.pyi` default:
 
 ```fortran
@@ -2330,7 +2404,6 @@ no native setter. Mutating that Python wrapper cannot modify the Fortran
 parameter. Derived constants whose fields cannot be copied safely fail policy
 completion explicitly instead of being treated as `Aliased` module variables.
 
-<!-- PRIK_C_DOCS_START
 Allocatable array function results and non-optional allocatable output array
 arguments use owned-handle policy. The generated binding transfers the native
 result into persistent standard C descriptor storage and the handle releases
@@ -2338,7 +2411,6 @@ that storage on `close()` or finalization; it does not return or copy a
 compiler-private Fortran descriptor record. Optional allocatable output dummies
 remain visible so the caller can omit them and make native `present(...)`
 false.
-PRIK_C_DOCS_END -->
 
 Supported top-level allocatable writable descriptor arguments use
 `Allocatable[T[...]]` handle policy. `| None` on the annotation means the handle
@@ -2453,6 +2525,7 @@ Loaded projection entries:
 | `Allocatable(Arg(i))`, `Pointer(Arg(i))` | native argument is a nullable call-local scalar descriptor initialized from Python argument `i`; `None` means present but unallocated or unassociated |
 | `Return(i)` | native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Return("name", i)` | named native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
+| `Hidden("name", T)` | native output of type `T` that a decorator consumes, so it never appears in the return annotation |
 | `Allocatable(Return(...))`, `Pointer(Return(...))` | native output dummy is a nullable scalar descriptor copied to the selected Python result slot |
 | `Pass()` | implicit class instance: a method receiver or newly allocated constructor object |
 | `Int32(1)`, `Float64(0.5)`, `Bool(False)`, `String[1]("N")` | hidden native literal with an explicit ABI type |
@@ -2482,7 +2555,10 @@ relevant backend explicitly implements them.
 
 ## Current Generated Coverage
 
-Generated `.pyi` currently covers these exact-contract areas:
+### Fortran Wrapper Contracts
+
+Generated `.pyi` from Fortran source currently covers these exact-contract
+areas:
 
 | Area | Generated behavior |
 | --- | --- |
@@ -2496,21 +2572,37 @@ Generated `.pyi` currently covers these exact-contract areas:
 | Module variables | direct module-level annotations; native accessors remain internal |
 | Native array descriptor handles | `Allocatable[T[...]]` and `Pointer[T[...]]` handles for module variables, supported fields, and descriptor arguments; owned allocatable result handles; unallocated or unassociated state remains inside the handle |
 | Constants | `Final[T]` module variables |
-| Fortran derived types | classes with fields and methods; `@native_type` only for irreducible attributes or finalizers |
+| Fortran derived types | classes with fields and methods; class-level `@native_abi("c")` for `bind(C)` types and `@destroy` declarations for native final procedures |
 | Fortran defined operators | Python data-model methods plus explicit named-operator methods |
 | Fortran defined assignment | explicit mutating `assign(...)` overloads |
 | Opaque types | `Opaque` classes and owner-module dependency stubs |
 | Imports | retained contract dependencies with aliases; source kind modules are omitted after dtype resolution |
 | Callbacks | named `@prototype` declarations with exact direction and transport |
-
-<!-- PRIK_C_DOCS_START
-| C primitive scalars | compiler-probed semantic dtype names when a target report is supplied |
-| C and Fortran enums | module-level `Final[...]` integer constants |
+| Fortran enum constants | module-level `Final[...]` integer constants |
 | Fortran generic interfaces | explicit `@overload("specific")` links with C-extension dtype/rank dispatch |
-| C structs/unions | `CStruct` and `CUnion` classes |
-| C anonymous aggregate members | nested `CAnonymous` classes plus `CAnonymousMember` fields |
-| Incomplete C callbacks | placeholder type that wrapper planning reports as incomplete |
-PRIK_C_DOCS_END -->
+
+### C Source Inspection Contracts
+
+`generate --pyi --language c` records C source facts in a semantic `.pyi`
+contract for inspection and contract editing. Representing a form there does
+not make it part of the direct-C wrapper lane: source builds apply policy before
+wrapper planning and reject forms outside the subset in [C Support](../language-support/c-support.md).
+The generated contract is a conservative starting point; the build-status
+column also includes supported meanings that must be authored explicitly because
+C pointer syntax does not determine Python shape, storage, ownership, or output
+projection.
+
+| C source fact | Semantic `.pyi` representation | Direct-C build status |
+| --- | --- | --- |
+| `void`, arithmetic, and C99 complex values | compiler-probed semantic dtype names, retaining exact C identity where the ABI requires it | Supported within the documented direct-C subset. |
+| One-level primitive pointers and arrays | pointer or known-array facts in generated contracts; authored `Addr(Arg(...))`, rank-zero `T[()]`, shaped `T[...]`, `Returns[...]`, and shape projections where needed | Supported as a scalar address, rank-zero storage, projected result, or C-contiguous array when the complete contract satisfies [C Support](../language-support/c-support.md#what-is-supported). |
+| Rank-zero character pointers | authored `String` or `String[n]` call storage and projections | Supported for the documented rank-zero input, writable-storage, and projected-result forms; general pointer/string ownership is not inferred. |
+| Hidden outputs and status results | typed hidden storage in `@native_call`, projected `Returns[...]`, and `@raises(...)` | Supported for documented primitive and string contracts with complete storage and projection. |
+| Renaming, argument order, and overloads | `@bind`, ordered `@native_call`, and exact `@overload` candidates | Supported when every candidate stays within the direct-C subset and is distinguishable by dtype and rank. |
+| Enum constants | module-level `Final[...]` integer constants | Rejected as C native globals before wrapper planning. |
+| Structs, unions, and opaque aggregates | `CStruct`, `CUnion`, and `Opaque` classes | Rejected before wrapper planning. |
+| Anonymous aggregate members | nested `CAnonymous` classes plus `CAnonymousMember` fields | Rejected with their containing aggregate before wrapper planning. |
+| Callback and function-pointer declarations | placeholder contract type | Rejected before wrapper planning. |
 
 Loaded but usually not generated from source today:
 
@@ -2542,36 +2634,25 @@ ambiguous, unsafe, or stale before wrapper lowering:
 - nested enum declarations.
 - ordinary function bodies instead of `...`.
 - unsupported decorators other than `@private`, `@bind`, `@native_abi("c")`, `@standalone`,
-  `@native_call`, `@native_type`,
+  `@native_call`, `@destroy`,
   `@overload("specific")`, the class-operator `generic=` form, `@raises`,
   `@nogil`, and `@staticmethod`.
 - bare `@overload` or `typing.overload`; overload links require one concrete
   procedure name.
 - `@overload(...)` combined with `@native_call(...)`; the linked concrete
   procedure owns native projection metadata.
-- `@native_abi(...)` with a value other than `"c"`, on a class or value, or in
-  a C-native contract; the decorator is only the source-free spelling of a
-  Fortran procedure's `bind(C)` ABI.
+- `@native_abi(...)` with a value other than `"c"`, on a value, or in a
+  C-native contract; the decorator is the source-free spelling of a Fortran
+  procedure or derived type's `bind(C)` ABI.
 
 ## Remaining Format And Runtime Work
 
 Ordered `@native_call` lowering, typed hidden outputs, array validation, and
 completed ownership/action dispatch are implemented parts of the current
-Fortran wrapper path. They are not future roadmap items.
+Fortran wrapper path. They are implemented behavior, not merely planned work.
 
 Remaining public gaps include broader polymorphic `class(...)` representation,
 pointer-return lifetime cases that still lack a provable owner, and clean
 IDE/type-checker stubs that do not lose the semantic wrapper contract. The
 [language feature matrix](../language-support/feature-matrix.md) is the
 authoritative current support summary.
-
-<!-- PRIK_C_DOCS_START
-1. Make C and Fortran callbacks/procedure pointers first-class by preserving
-   complete named prototypes from source.
-2. Add explicit pointer ownership, borrow, nullability, output-buffer and
-   copy/readback policy so pointer-heavy C APIs can move beyond blockers.
-3. Strengthen Fortran character kind, hidden-length ABI, and `bind(c)`
-   byte-string metadata beyond the existing `String[n]` fixed-length contract.
-4. Expand aggregate layout metadata for C bitfields, C attributes, Fortran
-   `bind(c)`, `sequence`, and by-value aggregate ABI checks.
-PRIK_C_DOCS_END -->

@@ -5,6 +5,7 @@ backend-neutral wrapper plan.
 
 | File | Owns |
 | --- | --- |
+| `entrypoints.py` | Projection and registration of generated support-procedure entrypoints and their structured C ABI. |
 | `models.py` | Typed wrapper-plan records shared by all generated backends. |
 | `planner.py` | Mechanical projection from completed policy into those records. |
 

@@ -1,8 +1,9 @@
 # C Parser Package
 
-This package owns C source facts for inspection workflows. It parses C inputs,
-preserves declarations and diagnostics, and feeds semantic conversion. It does
-not own runtime wrapping of user-supplied C libraries.
+This package owns C source facts for inspection and direct-C wrapper workflows.
+It parses C inputs, preserves declarations and diagnostics, and feeds semantic
+conversion. Runtime support remains narrower than parser acceptance and is
+decided after semantic conversion; this package does not own that policy.
 
 Its canonical import namespace is `prik.parsers.c`. The stable convenience
 functions `parse_c_file` and `parse_c_project` are imported from that package,
@@ -24,12 +25,16 @@ not own preprocessing.
 
 ## Tests And Docs
 
-- Deferred reference: `docs/developer/deferred/c-parser.md`
-- User recipe: `docs/user/examples/recipes/inspect-c-api.md`
+- Public support boundary: `docs/user/language-support/c-support.md`
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
-- Parser tests: `tests/c/fixtures/parser/`
-- Semantic handoff tests: `tests/c/semantics/conversion/`
+- Parser tests: `tests/c/infrastructure/parsing/`
+- Semantic handoff tests: `tests/c/infrastructure/semantic_ir/semantics/`
+- Direct-C policy, codegen, and runtime tests: `tests/c/primitive_scalars/`,
+  `tests/c/primitive_pointers/`, `tests/c/primitive_strings/`, and
+  `tests/c/symbol_collisions/`
 
-Runtime C-input wrapping is future backend work. Keep C docs clear about the
-current boundary: parse, semantic IR, and `.pyi` are implemented;
-compiled wrappers for user C inputs are not.
+Compiled C-input wrappers are implemented for the direct-C subset published in
+the C support guide. Keep contributor claims equally clear in both directions:
+parser and semantic inspection cover more declarations than runtime wrapping,
+while the documented scalar, pointer, array, string, output, status, and
+collision-forwarder paths have compiled evidence.

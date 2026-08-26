@@ -112,6 +112,7 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
             "result_position": None,
             "value_kind": "",
             "value": None,
+            "native_cast": None,
         }
     ]
     assert semantic_module.origin.source_language == "fortran"
@@ -120,6 +121,78 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     assert semantic_module.origin.source_kind == "module"
     assert converter.visit(FortranDerivedType(name="default_t")).visibility == "public"
     assert converter.visit(FortranVariable(name="local", base_type="derived", kind="state_t")).name == "state_t"
+
+
+def test_abstract_type_identity_is_module_qualified_and_available_project_wide():
+    abstract_type = FortranDerivedType(
+        name="item_t",
+        module="abstract_owner",
+        attributes=["abstract"],
+    )
+    abstract_owner = FortranModule(
+        name="abstract_owner",
+        derived_types=[abstract_type],
+    )
+    imported_argument = FortranArgument(
+        name="value",
+        base_type="derived",
+        kind="item_t",
+        procedure="consume",
+    )
+    consumer = FortranModule(
+        name="consumer",
+        uses={"abstract_owner": [FortranUseMapping(source="item_t")]},
+        procedures=[
+            FortranProcedureSignature(
+                name="consume",
+                kind="subroutine",
+                module="consumer",
+                arguments=[imported_argument],
+            )
+        ],
+    )
+    concrete_type = FortranDerivedType(name="item_t", module="concrete_owner")
+    concrete_argument = FortranArgument(
+        name="value",
+        base_type="derived",
+        kind="item_t",
+        procedure="consume",
+    )
+    concrete_owner = FortranModule(
+        name="concrete_owner",
+        derived_types=[concrete_type],
+        procedures=[
+            FortranProcedureSignature(
+                name="consume",
+                kind="subroutine",
+                module="concrete_owner",
+                arguments=[concrete_argument],
+            )
+        ],
+    )
+    project = FortranProject(
+        files=[
+            FortranFile(modules=[consumer]),
+            FortranFile(modules=[concrete_owner]),
+            FortranFile(modules=[abstract_owner]),
+        ],
+        modules={
+            "consumer": consumer,
+            "concrete_owner": concrete_owner,
+            "abstract_owner": abstract_owner,
+        },
+        derived_types={
+            "concrete_owner.item_t": concrete_type,
+            "abstract_owner.item_t": abstract_type,
+        },
+    )
+
+    modules = {module.name: module for module in fortran_project_to_semantic_modules(project)}
+
+    imported = modules["consumer"].functions[0].arguments[0].semantic_type
+    concrete = modules["concrete_owner"].functions[0].arguments[0].semantic_type
+    assert imported.metadata["fortran_abstract_type"] is True
+    assert "fortran_abstract_type" not in concrete.metadata
 
 
 def test_imported_derived_type_is_an_opaque_external_reference_by_default():

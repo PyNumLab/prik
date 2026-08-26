@@ -1,6 +1,6 @@
 ---
 title: Wrapping Functions
-description: How prik wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
+description: How PRIK wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
 audience: users
 prerequisites: data types, first wrapped function
 related: wrapping-subroutines.md, arrays.md

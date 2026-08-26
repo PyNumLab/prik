@@ -127,7 +127,7 @@ _GNU_C = _language(
     "gcc",
     "mpicc",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC",),
     standard_flags=("-std=c99",),
     openmp={"flags": ("-fopenmp",), "libs": ("gomp",)},
@@ -137,7 +137,7 @@ _GNU_CXX = _language(
     "g++",
     "mpic++",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops"),
+    release_flags=("-O3",),
     general_flags=("-fPIC",),
     standard_flags=("--std=c++20",),
     openmp={"flags": ("-fopenmp",), "libs": ("gomp",)},
@@ -147,7 +147,7 @@ _GNU_FORTRAN = _language(
     "gfortran",
     "mpif90",
     debug_flags=("-fcheck=bounds", "-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-cpp"),
     optional_general_flags=("-ftrampoline-impl=heap",),
     standard_flags=("-std=f2003",),
@@ -160,7 +160,7 @@ _INTEL_C = _language(
     "icx",
     "mpiicx",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC",),
     standard_flags=("-std=c99",),
     openmp={"flags": ("-qopenmp",)},
@@ -170,7 +170,7 @@ _INTEL_CXX = _language(
     "icpx",
     "mpiicpx",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops"),
+    release_flags=("-O3",),
     general_flags=("-fPIC",),
     standard_flags=("--std=c++20",),
     openmp={"flags": ("-qopenmp",)},
@@ -180,7 +180,7 @@ _INTEL_FORTRAN = _language(
     "ifx",
     "mpiifx",
     debug_flags=("-check", "bounds", "-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-fpp"),
     standard_flags=("-std=f2003",),
     module_output_flag="-module",
@@ -192,7 +192,7 @@ _PGI_C = _language(
     "pgcc",
     "pgcc",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-Munroll", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC",),
     standard_flags=("-std=c99",),
     openmp={"flags": ("-mp",)},
@@ -202,7 +202,7 @@ _PGI_FORTRAN = _language(
     "pgfortran",
     "pgfortran",
     debug_flags=("-Mbounds", "-g", "-O0"),
-    release_flags=("-O3", "-Munroll", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-cpp"),
     standard_flags=("-Mstandard",),
     module_output_flag="-module",
@@ -214,7 +214,7 @@ _NVIDIA_C = _language(
     "nvc",
     "mpicc",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-Munroll", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC",),
     standard_flags=("-std=c99",),
     openmp={"flags": ("-mp",)},
@@ -224,7 +224,7 @@ _NVIDIA_CXX = _language(
     "nvc++",
     "mpic++",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-Munroll"),
+    release_flags=("-O3",),
     general_flags=("-fPIC",),
     standard_flags=("--std=c++20",),
     openmp={"flags": ("-mp",)},
@@ -234,7 +234,7 @@ _NVIDIA_FORTRAN = _language(
     "nvfortran",
     "mpifort",
     debug_flags=("-Mbounds", "-g", "-O0"),
-    release_flags=("-O3", "-Munroll", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-cpp"),
     standard_flags=("-Mstandard",),
     module_output_flag="-module",
@@ -249,7 +249,7 @@ _LLVM_C = _language(
     "clang",
     "mpicc",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops", "-DNDEBUG"),
+    release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC",),
     standard_flags=("-std=c99",),
     openmp=_CLANG_OPENMP,
@@ -259,7 +259,7 @@ _LLVM_CXX = _language(
     "clang++",
     "mpic++",
     debug_flags=("-g", "-O0"),
-    release_flags=("-O3", "-funroll-loops"),
+    release_flags=("-O3",),
     general_flags=("-fPIC",),
     standard_flags=("--std=c++20",),
     openmp=_CLANG_OPENMP,
@@ -303,6 +303,28 @@ _FORTRAN_COMPILER_FAMILIES = (
     ("ifx", "intel", "icx"),
 )
 
+_C_COMPILER_FAMILIES = (
+    ("nvc", "nvidia"),
+    ("pgcc", "PGI"),
+    ("gcc", "GNU"),
+    ("clang", "LLVM"),
+    ("icx", "intel"),
+    ("icc", "intel"),
+)
+
+# Ordered banner markers, most specific vendor first: an Intel or NVIDIA driver
+# is Clang- or LLVM-derived and says so, and GNU's banner names its foundation
+# rather than the ``gcc`` program when it was invoked as ``cc``.
+_C_VERSION_BANNER_FAMILIES = (
+    ("intel(r)", ("icx", "intel")),
+    ("nvidia", ("nvc", "nvidia")),
+    ("nvc ", ("nvc", "nvidia")),
+    ("pgcc ", ("pgcc", "PGI")),
+    ("clang", ("clang", "LLVM")),
+    ("free software foundation", ("gcc", "GNU")),
+    ("gcc", ("gcc", "GNU")),
+)
+
 
 def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
     """Return the compiler token, profile, and matching C executable name."""
@@ -312,6 +334,53 @@ def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
             return token, vendor, c_executable
     supported = ", ".join(token for token, _vendor, _c_executable in _FORTRAN_COMPILER_FAMILIES)
     raise ValueError(f"Unknown Fortran compiler family for {executable!r}; expected one of: {supported}")
+
+
+def c_compiler_family(executable: str) -> tuple[str, str]:
+    """Return the C-driver token and compiler profile for ``executable``.
+
+    C-only extension builds deliberately choose this route instead of treating
+    a C executable as a misspelled Fortran driver.  Mixed-language builds keep
+    using :func:`fortran_compiler_family`, because the Fortran runtime then
+    owns the final link driver.
+
+    A vendor-named driver is recognized from its name alone.  A generic POSIX
+    name such as ``cc`` names no vendor, so callers resolve it with
+    :func:`c_compiler_family_from_version` instead of guessing one.
+    """
+    family = c_compiler_family_from_name(executable)
+    if family is not None:
+        return family
+    raise ValueError(f"Unknown C compiler family for {executable!r}; expected one of: {_supported_c_tokens()}")
+
+
+def c_compiler_family_from_name(executable: str) -> tuple[str, str] | None:
+    """Return the C family a vendor-named executable states, if its name states one."""
+    name = Path(executable).name
+    for token, vendor in _C_COMPILER_FAMILIES:
+        if re.search(rf"(?:^|-){re.escape(token)}(?:-|$)", name):
+            return token, vendor
+    return None
+
+
+def c_compiler_family_from_version(version_text: str) -> tuple[str, str] | None:
+    """Return the C family a compiler's own version banner identifies.
+
+    ``cc`` is a POSIX name for whichever C compiler the platform installs, and
+    on some platforms it is a real program rather than a link to a vendor-named
+    one.  The banner is the compiler's own statement of what it is, so it
+    settles the vendor without assuming a platform default.
+    """
+    banner = version_text.casefold()
+    for marker, family in _C_VERSION_BANNER_FAMILIES:
+        if marker in banner:
+            return family
+    return None
+
+
+def _supported_c_tokens() -> str:
+    """Return the recognized C driver names for a diagnostic."""
+    return ", ".join(token for token, _vendor in _C_COMPILER_FAMILIES)
 
 
 if __name__ == "__main__":

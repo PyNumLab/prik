@@ -82,7 +82,10 @@ def test_string_addresses_dispatch_to_named_binding_and_bridge_lowering():
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "void bind_c_storage(void * label);" in c_source
+    # NumPy-backed storage reports the caller's itemsize beside the address; a
+    # raw address has no Python object to measure, so it carries only the width
+    # the contract declared.
+    assert "void bind_c_storage(void * label, int64_t label_length);" in c_source
     assert "PyArray_TYPE((PyArrayObject *)bound_label_obj) != NPY_STRING" in c_source
     assert "PyArray_NDIM((PyArrayObject *)bound_label_obj) != 0" in c_source
     assert "PyArray_ITEMSIZE((PyArrayObject *)bound_label_obj) != 8" in c_source
@@ -95,23 +98,26 @@ def test_string_addresses_dispatch_to_named_binding_and_bridge_lowering():
     assert "bound_label = PyLong_AsVoidPtr(bound_label_obj);" in c_source
     assert "prik_malloc" not in c_source
 
-    assert 'subroutine bind_c_storage(bound_label) bind(c, name="bind_c_storage")' in bridge_source
+    assert 'subroutine bind_c_storage(bound_label, label_length) bind(c, name="bind_c_storage")' in bridge_source
     assert 'subroutine bind_c_raw(bound_label) bind(c, name="bind_c_raw")' in bridge_source
     assert bridge_source.count("type(c_ptr), value :: bound_label") == 2
-    assert bridge_source.count("character(kind=c_char, len=8) :: label") == 2
-    assert bridge_source.count("call c_f_pointer(bound_label, label_bytes, [8])") == 2
+    assert "integer(c_int64_t), value :: label_length" in bridge_source
+    assert "character(kind=c_char, len=label_length) :: label" in bridge_source
+    assert "call c_f_pointer(bound_label, label_bytes, [label_length])" in bridge_source
+    assert "label_bytes(1:label_length) = transfer(label, label_bytes(1:label_length))" in bridge_source
+    assert bridge_source.count("character(kind=c_char, len=8) :: label") == 1
+    assert bridge_source.count("call c_f_pointer(bound_label, label_bytes, [8])") == 1
     assert bridge_source.count("label = transfer(label_bytes, label)") == 2
     assert "call native_storage(label)" in bridge_source
     assert "call native_raw(label)" in bridge_source
-    assert bridge_source.count("label_bytes(1:8) = transfer(label, label_bytes(1:8))") == 2
-    assert "label_length" not in bridge_source
+    assert bridge_source.count("label_bytes(1:8) = transfer(label, label_bytes(1:8))") == 1
     assert "c_null_char" not in "\n".join(line for line in bridge_source.splitlines() if "label_bytes" in line)
 
 
 @pytest.mark.parametrize(
     ("edit", "diagnostic"),
     [
-        ("missing-length", "invalid-string-storage-length"),
+        ("missing-raw-length", "invalid-string-raw-address-length"),
         ("wrong-owner", "invalid-string-storage-owner"),
         ("runtime-length-role", "unexpected-string-storage-length-handoff"),
         ("wrong-copy-reason", "invalid-string-storage-copy-reason"),
@@ -125,9 +131,11 @@ def test_string_address_plan_edits_fail_before_backend_lowering(edit: str, diagn
     functions = _functions(plan)
     storage = functions["storage"].arguments[0]
     raw = functions["raw"].arguments[0]
-    if edit == "missing-length":
-        storage.character_length = None
-        storage.projected_call_slot.character_length = None
+    if edit == "missing-raw-length":
+        # Only a raw address still needs the declared width: NumPy-backed
+        # storage may leave it assumed and report the itemsize instead.
+        raw.character_length = None
+        raw.projected_call_slot.character_length = None
     elif edit == "wrong-owner":
         storage.ownership_owner = OwnershipOwner.NATIVE
     elif edit == "runtime-length-role":

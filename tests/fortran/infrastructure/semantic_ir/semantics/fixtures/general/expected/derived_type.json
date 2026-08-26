@@ -1,0 +1,365 @@
+{
+  "semantic_modules": [
+    {
+      "name": "particle_mod",
+      "functions": [
+        {
+          "name": "touch",
+          "native_name": "touch",
+          "arguments": [
+            {
+              "name": "p",
+              "semantic_type": {
+                "name": "particle",
+                "rank": 0,
+                "dtype": "particle",
+                "shape": [],
+                "constraints": [],
+                "coercions": [],
+                "ownership": {
+                  "ownership": "borrowed",
+                  "mutable": true,
+                  "aliasing": true
+                },
+                "metadata": {},
+                "storage": {
+                  "kind": "reference",
+                  "read_only": false,
+                  "mutable": true,
+                  "pointer_depth": 1,
+                  "ownership": "borrowed",
+                  "array": null,
+                  "calling_convention": null,
+                  "metadata": {}
+                },
+                "origin": {
+                  "source_language": "fortran",
+                  "native_name": "p",
+                  "native_abi": null,
+                  "native_symbol": null,
+                  "native_scope": null,
+                  "source_kind": "variable",
+                  "source_type": "type(particle)",
+                  "source_location": {},
+                  "metadata": {
+                    "rank": 0,
+                    "shape": [],
+                    "lower_bounds": [],
+                    "upper_bounds": [],
+                    "allocatable": false,
+                    "pointer": false,
+                    "target": false,
+                    "contiguous": false,
+                    "optional": false,
+                    "value": false
+                  }
+                }
+              },
+              "visibility": "public",
+              "default_value": null,
+              "metadata": {},
+              "origin": {
+                "source_language": "fortran",
+                "native_name": "p",
+                "native_abi": null,
+                "native_symbol": null,
+                "native_scope": "touch",
+                "source_kind": "argument",
+                "source_type": "type(particle)",
+                "source_location": {},
+                "metadata": {
+                  "rank": 0,
+                  "shape": [],
+                  "lower_bounds": [],
+                  "upper_bounds": [],
+                  "allocatable": false,
+                  "pointer": false,
+                  "target": false,
+                  "contiguous": false,
+                  "optional": false,
+                  "value": false
+                }
+              },
+              "optional": false
+            }
+          ],
+          "return_type": null,
+          "locals": [],
+          "contracts": [],
+          "projection": [
+            {
+              "python_name": "p",
+              "native_name": "p",
+              "native_position": 0,
+              "python_position": 0,
+              "result_position": null,
+              "value_kind": "",
+              "value": null,
+              "native_cast": null
+            }
+          ],
+          "metadata": {},
+          "visibility": "public",
+          "origin": {
+            "source_language": "fortran",
+            "native_name": "touch",
+            "native_abi": null,
+            "native_symbol": null,
+            "native_scope": "particle_mod",
+            "source_kind": "subroutine",
+            "source_type": null,
+            "source_location": {},
+            "metadata": {}
+          }
+        }
+      ],
+      "prototypes": [],
+      "overload_sets": [],
+      "classes": [
+        {
+          "name": "particle",
+          "native_name": "particle",
+          "fields": [
+            {
+              "name": "id",
+              "semantic_type": {
+                "name": "Int32",
+                "rank": 0,
+                "dtype": "Int32",
+                "shape": [],
+                "constraints": [],
+                "coercions": [],
+                "ownership": {
+                  "ownership": "borrowed",
+                  "mutable": false,
+                  "aliasing": true
+                },
+                "metadata": {},
+                "storage": null,
+                "origin": {
+                  "source_language": "fortran",
+                  "native_name": "id",
+                  "native_abi": null,
+                  "native_symbol": null,
+                  "native_scope": null,
+                  "source_kind": "variable",
+                  "source_type": "integer",
+                  "source_location": {},
+                  "metadata": {
+                    "rank": 0,
+                    "shape": [],
+                    "lower_bounds": [],
+                    "upper_bounds": [],
+                    "allocatable": false,
+                    "pointer": false,
+                    "target": false,
+                    "contiguous": false,
+                    "optional": false,
+                    "value": false
+                  }
+                }
+              },
+              "visibility": "public",
+              "default_value": null,
+              "metadata": {},
+              "origin": {
+                "source_language": "fortran",
+                "native_name": "id",
+                "native_abi": null,
+                "native_symbol": null,
+                "native_scope": null,
+                "source_kind": "field",
+                "source_type": "integer",
+                "source_location": {},
+                "metadata": {
+                  "rank": 0,
+                  "shape": [],
+                  "lower_bounds": [],
+                  "upper_bounds": [],
+                  "allocatable": false,
+                  "pointer": false,
+                  "target": false,
+                  "contiguous": false,
+                  "optional": false,
+                  "value": false
+                }
+              }
+            },
+            {
+              "name": "x",
+              "semantic_type": {
+                "name": "Float64",
+                "rank": 1,
+                "dtype": "Float64",
+                "shape": [
+                  "3"
+                ],
+                "constraints": [],
+                "coercions": [],
+                "ownership": {
+                  "ownership": "borrowed",
+                  "mutable": false,
+                  "aliasing": true
+                },
+                "metadata": {},
+                "storage": {
+                  "kind": "array",
+                  "read_only": false,
+                  "mutable": false,
+                  "pointer_depth": 0,
+                  "ownership": "borrowed",
+                  "array": {
+                    "rank": 1,
+                    "shape": [
+                      "3"
+                    ],
+                    "lower_bounds": [],
+                    "upper_bounds": [],
+                    "source_shape": [
+                      "3"
+                    ],
+                    "category": "explicit_shape",
+                    "order": null,
+                    "copy_order": null,
+                    "axes": [
+                      "dense"
+                    ],
+                    "contiguous": true,
+                    "allocatable": false,
+                    "pointer": false,
+                    "metadata": {}
+                  },
+                  "calling_convention": null,
+                  "metadata": {}
+                },
+                "origin": {
+                  "source_language": "fortran",
+                  "native_name": "x",
+                  "native_abi": null,
+                  "native_symbol": null,
+                  "native_scope": null,
+                  "source_kind": "variable",
+                  "source_type": "real(kind=8)",
+                  "source_location": {},
+                  "metadata": {
+                    "rank": 1,
+                    "shape": [
+                      "3"
+                    ],
+                    "lower_bounds": [
+                      "1"
+                    ],
+                    "upper_bounds": [
+                      "3"
+                    ],
+                    "allocatable": false,
+                    "pointer": false,
+                    "target": false,
+                    "contiguous": false,
+                    "optional": false,
+                    "value": false
+                  }
+                }
+              },
+              "visibility": "public",
+              "default_value": null,
+              "metadata": {},
+              "origin": {
+                "source_language": "fortran",
+                "native_name": "x",
+                "native_abi": null,
+                "native_symbol": null,
+                "native_scope": null,
+                "source_kind": "field",
+                "source_type": "real(kind=8)",
+                "source_location": {},
+                "metadata": {
+                  "rank": 1,
+                  "shape": [
+                    "3"
+                  ],
+                  "lower_bounds": [
+                    "1"
+                  ],
+                  "upper_bounds": [
+                    "3"
+                  ],
+                  "allocatable": false,
+                  "pointer": false,
+                  "target": false,
+                  "contiguous": false,
+                  "optional": false,
+                  "value": false
+                }
+              }
+            }
+          ],
+          "methods": [],
+          "destructors": [],
+          "overload_sets": [],
+          "base_classes": [],
+          "contracts": [],
+          "metadata": {
+            "fortran_type_attributes": [],
+            "fortran_component_order": [
+              "id",
+              "x"
+            ],
+            "fortran_component_facts": [
+              {
+                "name": "id",
+                "source_type": "integer",
+                "kind": "",
+                "rank": 0,
+                "shape": [],
+                "allocatable": false,
+                "pointer": false,
+                "target": false
+              },
+              {
+                "name": "x",
+                "source_type": "real(kind=8)",
+                "kind": "8",
+                "rank": 1,
+                "shape": [
+                  "3"
+                ],
+                "allocatable": false,
+                "pointer": false,
+                "target": false
+              }
+            ],
+            "fortran_layout_policy": "accessors",
+            "fortran_direct_layout": false
+          },
+          "visibility": "public",
+          "origin": {
+            "source_language": "fortran",
+            "native_name": "particle",
+            "native_abi": null,
+            "native_symbol": null,
+            "native_scope": "particle_mod",
+            "source_kind": "derived_type",
+            "source_type": null,
+            "source_location": {},
+            "metadata": {}
+          }
+        }
+      ],
+      "variables": [],
+      "imports": [],
+      "metadata": {},
+      "origin": {
+        "source_language": "fortran",
+        "native_name": "particle_mod",
+        "native_abi": null,
+        "native_symbol": null,
+        "native_scope": "particle_mod",
+        "source_kind": "module",
+        "source_type": null,
+        "source_location": {},
+        "metadata": {}
+      }
+    }
+  ]
+}

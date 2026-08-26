@@ -17,7 +17,7 @@ CONTRACT_ROOT = FIXTURES / "contracts"
 CASES = tuple(
     GeneratedContractCase(
         name,
-        (FIXTURES / f"{name}.f90",),
+        (FIXTURES / "native" / f"{name}.f90",),
         CONTRACT_ROOT / name,
     )
     for name in (

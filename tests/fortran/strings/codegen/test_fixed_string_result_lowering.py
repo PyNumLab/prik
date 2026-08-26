@@ -181,12 +181,35 @@ def mixed() -> tuple[String[8], Int32]: ...
     assert "Py_DECREF(result_0_obj);" in c_source
 
 
+def test_fixed_string_result_failure_releases_later_unpublished_native_results():
+    module = parse_pyi_text(
+        """
+@native_call([Return("left", 0), Return("right", 1)])
+def mixed() -> tuple[String[8], String[8]]: ...
+""",
+        module_name="multiple_string_results",
+    )
+    complete_semantic_policies(module)
+    c_source = next(
+        source.text
+        for source in WrapperGenerator().generate(WrapperPlanner().build(module)).sources
+        if source.path.suffix == ".c"
+    )
+
+    first_failure = c_source[c_source.index("if (left == NULL)") : c_source.index("result_0_obj =")]
+    first_conversion_failure = c_source[
+        c_source.index("if (result_0_obj == NULL)") : c_source.index("if (right == NULL)")
+    ]
+    assert "if (right != NULL) { free(right); right = NULL; }" in first_failure
+    assert "if (right != NULL) { free(right); right = NULL; }" in first_conversion_failure
+
+
 def test_fixed_string_result_policy_blocks_status_error_until_failure_release_is_planned():
     module = parse_pyi_text(
         """
 @raises(status="status", success=0)
-@native_call([Return("label", 0), Return("status", 1)])
-def label() -> tuple[String[8], Int32]: ...
+@native_call([Return("label", 0), Hidden("status", Int32)])
+def label() -> String[8]: ...
 """,
         module_name="string_result_with_status",
     )

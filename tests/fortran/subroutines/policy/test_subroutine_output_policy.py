@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
+from tests.fortran._support.paths import FORTRAN_ROOT
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
 from prik.preprocessing import PreprocessingConfig
@@ -14,10 +15,19 @@ from prik.policy.construction import (
     completed_function_wrapper_policy,
 )
 
-FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
+FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/contracts/fmath/__init__.pyi")
 
 
-CALLS_NATIVE = Path(__file__).parents[2] / "pyi_contracts" / "calls_and_results" / "end_to_end" / "fixtures" / "native"
+CALLS_NATIVE = (
+    FORTRAN_ROOT
+    / "infrastructure"
+    / "semantic_pyi"
+    / "contracts"
+    / "calls_and_results"
+    / "end_to_end"
+    / "fixtures"
+    / "native"
+)
 
 
 def _source_semantic_module(filename: str, *, module_name: str):

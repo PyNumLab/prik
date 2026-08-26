@@ -11,16 +11,17 @@ publication: reviewed
 
 ## Purpose And Boundaries
 
-`prik/preprocessing/` turns original Fortran source into parser input and
-measures the compiler-dependent facts that semantic conversion needs. It owns
-compiler invocation, source provenance, native `INCLUDE` expansion, and
-target probes. It does not parse declarations, construct semantic IR, choose
-semantic scalar identities, or complete wrapper policy.
+`prik/preprocessing/` turns native source into parser input and measures the
+compiler-dependent facts that semantic conversion needs. It owns compiler
+invocation, source provenance, language-specific source preparation, and target
+probes. It does not parse declarations, construct semantic IR, choose semantic
+scalar identities, or complete wrapper policy.
 
-The package contains early C-frontend modules: `c.py` collects raw directive
-metadata and `probes/c_types.py` measures C ABI facts. C support is not yet
-complete; a future C frontend may build on them. They do not participate in
-the current Fortran wrapper path.
+For C inputs, `c.py` records raw directive metadata and prepares compiler-
+preprocessed parser input, while `probes/c_types.py` measures target ABI facts.
+They keep the same boundaries as their Fortran counterparts;
+[C support](../../user/language-support/c-support.md) owns the public wrapping
+boundary.
 
 ## A Fortran Source Through This Stage
 
@@ -53,10 +54,10 @@ prik/preprocessing/
 ├── __init__.py
 ├── source.py
 ├── fortran.py
-├── c.py                         deferred C inspection support
+├── c.py                         C source preparation
 └── probes/
     ├── fortran_types.py
-    └── c_types.py               deferred C inspection support
+    └── c_types.py               C target ABI probes
 ```
 
 ## Directory Tour
@@ -66,7 +67,9 @@ prik/preprocessing/
 | [`prik/preprocessing/__init__.py`](../../../prik/preprocessing/__init__.py) | Re-exports the supported shared source-preparation records, adapters, and entrypoints. | The shared preprocessing import surface changes. |
 | [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `preprocess_source()` is the compiler-backed route. `PreprocessingConfig` selects its command; `PreprocessResult` returns expanded text, provenance, and diagnostics. | Compiler adapters, invocations, recipes, mappings, dependencies, macros, or diagnostics change. |
 | [`prik/preprocessing/fortran.py`](../../../prik/preprocessing/fortran.py) | `expand_native_fortran_includes()` turns remaining textual `INCLUDE` statements into parser input while retaining mappings and diagnostics. | Native Fortran include discovery or expansion changes. |
+| [`prik/preprocessing/c.py`](../../../prik/preprocessing/c.py) | Collects C directive and include metadata and normalizes prepared C source without interpreting declarations. | C directive provenance, include metadata, or parser preparation changes. |
 | [`prik/preprocessing/probes/fortran_types.py`](../../../prik/preprocessing/probes/fortran_types.py) | `evaluate_fortran_type_requirements()` and `evaluate_fortran_type_facts()` turn semantic requirements into cached compiler measurements; `FortranTypeProbeReport` retains values and recipe. | Fortran fact generation, validation, cache identity, or semantic-facing probe results change. |
+| [`prik/preprocessing/probes/c_types.py`](../../../prik/preprocessing/probes/c_types.py) | Probes and caches the selected C target's standard scalar sizes, alignments, identities, and ABI recipe. | C target measurement, validation, cache identity, or cross-target execution changes. |
 
 ## Module Workflows
 
@@ -116,9 +119,9 @@ identity encoded in its recipe and cache key.
 
 ## Run The Workflows
 
-`source.py` demonstrates the source-preparation handoff. Its complete direct
-example also prints a small C source-preparation demonstration; C frontend
-support remains future work.
+`source.py` demonstrates the shared source-preparation handoff. Its complete
+direct example also prints a small C source-preparation demonstration; that is
+the preparation route used by the implemented C frontend.
 
 ```bash
 python3 prik/preprocessing/source.py
@@ -189,17 +192,22 @@ compiler, rather than PRIK, supplied the fact.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) | Adapters, recipes, mappings, native includes, diagnostics, and parser handoffs. |
-| [Parser boundaries](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) | Prepared source reaches parsing with preserved facts and unsupported raw constructs stop at the correct boundary. |
+| [Fortran preprocessing](../../../tests/fortran/infrastructure/preprocessing/) | Adapters, recipes, mappings, native includes, diagnostics, and parser handoffs. |
+| [Parser boundaries](../../../tests/fortran/infrastructure/preprocessing/test_parser_boundaries.py) | Prepared source reaches parsing with preserved facts and unsupported raw constructs stop at the correct boundary. |
 | [Fortran type probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) | Compiler facts, requirement evaluation, cache separation, and report validation. |
+| [C preprocessing](../../../tests/c/infrastructure/preprocessing/) | C recipes, directives, includes, provenance, compiler execution, and parser handoffs. |
+| [C type probes](../../../tests/c/data_types/probes/) | Target C scalar facts, cache behavior, validation, and cross-target recipes. |
 
 ## Change Routes
 
 - Change compiler expansion, commands, provenance, recipes, or diagnostics in
   `source.py`.
 - Change native Fortran `INCLUDE` behavior in `fortran.py`.
+- Change C directive and include preparation in `c.py`.
 - Change compiler-measured Fortran facts or cache identity in
   `probes/fortran_types.py`.
+- Change compiler-measured C ABI facts or cache identity in
+  `probes/c_types.py`.
 - Change stable scalar identity in `semantics/`, backend dtype projection in
   `codegen/`, and wrapper behavior in the later owning stage.
 

@@ -15,8 +15,10 @@ from prik.codegen import (
     CExpressionStatement,
     CFunction,
     CFunctionPrototype,
+    CGoto,
     CHeader,
     CInclude,
+    CLabel,
     CModule,
     CParameter,
     CReturn,
@@ -102,6 +104,23 @@ def test_source_printers_render_complete_c_header_and_fortran_modules():
     assert "use iso_c_binding, only: c_double" in fortran_source
     assert 'function bind_c_add_r8(x) result(result) bind(c, name="ADD_R8")' in fortran_source
     assert "real(c_double), value :: x" in fortran_source
+
+
+def test_c_source_printer_renders_function_local_cleanup_jumps():
+    function = CFunction(
+        name="wrap_outputs",
+        return_type="PyObject *",
+        body=(
+            CGoto("prik_output_cleanup_1"),
+            CLabel("prik_output_cleanup_1"),
+            CReturn(CodeExpression("NULL")),
+        ),
+    )
+
+    source = CSourcePrinter().doprint(function)
+
+    assert "goto prik_output_cleanup_1;" in source
+    assert "prik_output_cleanup_1:" in source
 
 
 def test_source_printers_reject_wrapper_plan_models():

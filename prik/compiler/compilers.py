@@ -20,7 +20,14 @@ import subprocess
 import threading
 import warnings
 
-from prik.compiler.compiler_profiles import available_compilers, fortran_compiler_family, vendors
+from prik.compiler.compiler_profiles import (
+    available_compilers,
+    c_compiler_family,
+    c_compiler_family_from_name,
+    c_compiler_family_from_version,
+    fortran_compiler_family,
+    vendors,
+)
 from prik.compiler.objects import ObjectFile
 
 __all__ = ("Compiler", "get_condaless_search_path")
@@ -49,30 +56,48 @@ class Compiler:
         cls,
         executable: str = "gfortran",
         *,
+        c_executable: str | None = None,
         debug: bool = False,
         execute_commands: bool = True,
         search_path: str | None = None,
     ) -> Compiler:
-        """Create the coherent vendor toolchain selected by one Fortran driver."""
+        """Create a mixed toolchain whose final link uses one Fortran driver.
+
+        When ``c_executable`` is omitted, the Fortran driver's matching C
+        compiler is selected. An explicit C executable keeps C probing and C
+        compilation on the same driver while Fortran still owns the link.
+        """
         resolved_fortran = shutil.which(executable, path=search_path)
         if resolved_fortran is None:
             raise FileNotFoundError(f"Could not find compiler executable: {executable}")
 
         token, vendor, default_c = fortran_compiler_family(resolved_fortran)
-        fortran_name = Path(resolved_fortran).name
-        c_names = tuple(dict.fromkeys((fortran_name.replace(token, default_c, 1), default_c)))
-        c_candidates = (
-            *(str(Path(resolved_fortran).parent / name) for name in c_names),
-            *c_names,
-        )
-        resolved_c = next(
-            (candidate for name in c_candidates if (candidate := shutil.which(name, path=search_path)) is not None),
-            None,
-        )
+        if c_executable is None:
+            fortran_name = Path(resolved_fortran).name
+            c_names = tuple(dict.fromkeys((fortran_name.replace(token, default_c, 1), default_c)))
+            c_candidates = (
+                *(str(Path(resolved_fortran).parent / name) for name in c_names),
+                *c_names,
+            )
+            resolved_c = next(
+                (candidate for name in c_candidates if (candidate := shutil.which(name, path=search_path)) is not None),
+                None,
+            )
+        else:
+            c_names = (c_executable,)
+            resolved_c = shutil.which(c_executable, path=search_path)
         if resolved_c is None:
+            if c_executable is not None:
+                raise FileNotFoundError(f"Could not find C compiler executable: {c_executable}")
             names = ", ".join(c_names)
             raise FileNotFoundError(
                 f"Could not find the {vendor} C compiler matching {resolved_fortran}: expected {names}"
+            )
+        _c_token, c_vendor = cls._c_family(resolved_c)
+        if c_vendor != vendor:
+            raise ValueError(
+                f"Mixed-language builds require one compiler family; "
+                f"{resolved_fortran} selects {vendor}, but {resolved_c} selects {c_vendor}"
             )
         return cls(
             vendor,
@@ -81,6 +106,63 @@ class Compiler:
             search_path=search_path,
             executables={"fortran": resolved_fortran, "c": resolved_c},
         )
+
+    @classmethod
+    def from_c_executable(
+        cls,
+        executable: str = "cc",
+        *,
+        debug: bool = False,
+        execute_commands: bool = True,
+        search_path: str | None = None,
+    ) -> Compiler:
+        """Create a C-only toolchain without inventing a Fortran dependency."""
+        resolved_c = shutil.which(executable, path=search_path)
+        if resolved_c is None:
+            raise FileNotFoundError(f"Could not find compiler executable: {executable}")
+        _token, vendor = cls._c_family(resolved_c)
+        return cls(
+            vendor,
+            debug=debug,
+            execute_commands=execute_commands,
+            search_path=search_path,
+            executables={"c": resolved_c},
+        )
+
+    @classmethod
+    def _c_family(cls, resolved_c: str) -> tuple[str, str]:
+        """Identify one C driver from its name, or from its own version banner.
+
+        A generic POSIX name such as ``cc`` may be a real program rather than a
+        link to a vendor-named driver, so the name alone cannot classify it.
+        Asking the compiler keeps the vendor a measured fact instead of a
+        platform guess.
+        """
+        family = c_compiler_family_from_name(str(Path(resolved_c).resolve())) or c_compiler_family_from_name(
+            str(resolved_c)
+        )
+        if family is not None:
+            return family
+        family = c_compiler_family_from_version(cls._version_banner(resolved_c))
+        if family is not None:
+            return family
+        # Reuse the established diagnostic, now that neither route identified it.
+        return c_compiler_family(str(Path(resolved_c).resolve()))
+
+    @staticmethod
+    @cache
+    def _version_banner(executable: str) -> str:
+        """Return a compiler's ``--version`` output, or empty text when it fails."""
+        try:
+            completed = subprocess.run(
+                (executable, "--version"),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return ""
+        return f"{completed.stdout}\n{completed.stderr}"
 
     def __init__(
         self,
@@ -109,6 +191,10 @@ class Compiler:
 
         with self._command_log_lock:
             return tuple(self._command_log)
+
+    def resolved_executable(self, language: str) -> str:
+        """Return the resolved compiler executable selected for ``language``."""
+        return self._executable(self._language(language), ())
 
     def compile_object(self, object_file: ObjectFile, *, verbose: bool | int = False) -> tuple[str, ...]:
         """Compile exactly one source file into its declared object path."""

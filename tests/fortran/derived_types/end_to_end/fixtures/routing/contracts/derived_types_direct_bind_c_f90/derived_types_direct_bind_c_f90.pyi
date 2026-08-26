@@ -1,6 +1,6 @@
-from prik.contracts import Float64, native_abi, native_type
+from prik.contracts import Float64, native_abi
 
-@native_type(attributes=('bind(c)',))
+@native_abi("c")
 class point:
     def __init__(
         self,

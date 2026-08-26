@@ -9,10 +9,13 @@ semantic policy completion; they do not choose wrapper implementation policy.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 import re
 from pathlib import Path
 from typing import Any
 
+from prik.contracts import NATIVE_C_SCALAR_CASTS
+from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_CAST_METADATA
 from prik.semantics.scalar_types import BOOLEAN_STORAGE_BITS
 
 from prik.parsers.c.models import (
@@ -77,6 +80,7 @@ from prik.semantics.models import (
 
 _IDENTIFIER_RE = re.compile(r"[^0-9A-Za-z_]+")
 _C_IDENTIFIER_TOKEN_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+_C_EXPORT_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _C_INTEGER_LITERAL_SUFFIX_RE = re.compile(r"(?<![0-9A-Za-z_.])((?:0[xX][0-9A-Fa-f]+|\d+))[uUlL]+(?![0-9A-Za-z_.])")
 _C_OCTAL_LITERAL_RE = re.compile(r"(?<![0-9A-Za-z_.])0([0-7]+)(?![0-9A-Za-z_.])")
 _INTEGER_EXPRESSION_CHARS_RE = re.compile(r"[0-9A-Za-z_+\-*/%<>&|^~()\s]+")
@@ -149,6 +153,33 @@ _PRIMITIVE_TYPE_FACT_NAMES: dict[type[CType], str] = {
     CFloatComplex: "float _Complex",
     CDoubleComplex: "double _Complex",
     CLongDoubleComplex: "long double _Complex",
+}
+
+_PRIMITIVE_NATIVE_CAST_NAMES = {
+    primitive: next(name for name, spelling in NATIVE_C_SCALAR_CASTS.items() if spelling == c_spelling)
+    for primitive, c_spelling in _PRIMITIVE_TYPE_FACT_NAMES.items()
+}
+
+_CANONICAL_C_TYPE_FACT_NAMES = {
+    "Bool": "_Bool",
+    "Bool8": "_Bool",
+    "Bool16": "_Bool",
+    "Bool32": "_Bool",
+    "Bool64": "_Bool",
+    "Int8": "int8_t",
+    "Int16": "int16_t",
+    "Int32": "int32_t",
+    "Int64": "int64_t",
+    "UInt8": "uint8_t",
+    "UInt16": "uint16_t",
+    "UInt32": "uint32_t",
+    "UInt64": "uint64_t",
+    "Float32": "float",
+    "Float64": "double",
+    "Float128": "long double",
+    "Complex64": "float _Complex",
+    "Complex128": "double _Complex",
+    "Complex256": "long double _Complex",
 }
 
 _STANDARD_TYPE_FALLBACKS = {
@@ -368,6 +399,18 @@ class CToIRConverter(ClassVisitor):
             "specifiers": list(function.specifiers),
             "prototype_style": function.prototype_style,
             "is_definition": function.is_definition,
+            # This is source provenance, not a wrapper decision.  Policy
+            # consumes it later to choose an exact direct C declaration or a
+            # documented blocker before planning starts.
+            "c_abi": {
+                "calling_convention": "c",
+                "variadic": function.is_variadic,
+                "result": self._c_abi_type_facts(function.result_type),
+                "parameters": [
+                    self._c_abi_type_facts(parameter.declared_type or parameter.type, name=parameter.name)
+                    for parameter in function.parameters
+                ],
+            },
         }
         return SemanticFunction(
             name=function.name,
@@ -380,6 +423,7 @@ class CToIRConverter(ClassVisitor):
                     native_name=parameter.name or argument.name,
                     native_position=index,
                     python_position=index,
+                    native_cast=argument.semantic_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA),
                 )
                 for index, (parameter, argument) in enumerate(zip(function.parameters, arguments, strict=False))
             ],
@@ -711,7 +755,10 @@ class CToIRConverter(ClassVisitor):
         return self._callback_placeholder(type_)
 
     def _visit_CUnknownType(self, type_: CUnknownType, *, owner: str | None = None, **_context) -> SemanticType:
-        """Preserve an unresolved C spelling as an explicit semantic type."""
+        """Resolve a probed standard typedef or preserve an unknown C spelling."""
+        standard = self._standard_semantic_type(type_.spelling)
+        if standard is not None:
+            return standard
         return self._unresolved_type(type_.spelling, owner=owner, source_type=self._type_text(type_))
 
     def _visit_CVoid(self, type_: CVoid, **_context) -> SemanticType:
@@ -772,12 +819,54 @@ class CToIRConverter(ClassVisitor):
             metadata["c_primitive"] = "int"
             metadata["c_type_fact"] = fact
             metadata["c_type_fact_source"] = fact_source
+        native_cast = self._required_native_scalar_cast(type_, dtype)
+        if native_cast is not None:
+            metadata[NATIVE_C_SCALAR_CAST_METADATA] = native_cast
         return SemanticType(
             name=semantic_name,
             dtype=dtype,
             metadata=metadata,
             origin=origin,
         )
+
+    def _required_native_scalar_cast(self, type_: CType, semantic_name: str) -> str | None:
+        """Return the exact C primitive marker when canonical storage is a distinct C type."""
+        if not self.standard_type_facts:
+            return None
+        primitive_name = _PRIMITIVE_TYPE_FACT_NAMES.get(type(type_))
+        native_cast = _PRIMITIVE_NATIVE_CAST_NAMES.get(type(type_))
+        canonical_name = _CANONICAL_C_TYPE_FACT_NAMES.get(semantic_name)
+        if primitive_name is None or native_cast is None or canonical_name is None:
+            return None
+        source_fact = self.standard_type_facts.get(primitive_name)
+        canonical_fact = self.standard_type_facts.get(canonical_name)
+        if not isinstance(source_fact, dict) or not isinstance(canonical_fact, dict):
+            return None
+        source_spelling = self._underlying_c_type(primitive_name)
+        canonical_spelling = self._underlying_c_type(canonical_name)
+        return None if self._compatible_c_scalar_spelling(source_spelling, canonical_spelling) else native_cast
+
+    def _underlying_c_type(self, name: str) -> str:
+        fact = self.standard_type_facts.get(name)
+        if isinstance(fact, dict):
+            underlying = fact.get("underlying_c_type")
+            if isinstance(underlying, str) and underlying:
+                return underlying
+        return name
+
+    @staticmethod
+    def _compatible_c_scalar_spelling(left: str, right: str) -> bool:
+        """Compare equivalent builtin spellings without collapsing distinct integer types."""
+        aliases = {
+            "bool": "_Bool",
+            "signed": "int",
+            "signed int": "int",
+            "unsigned": "unsigned int",
+            "float complex": "float _Complex",
+            "double complex": "double _Complex",
+            "long double complex": "long double _Complex",
+        }
+        return aliases.get(left, left) == aliases.get(right, right)
 
     def _return_type(self, type_: CType, *, owner: str) -> SemanticType | None:
         """Convert a function result, using ``None`` for by-value C ``void``."""
@@ -1674,6 +1763,36 @@ class CToIRConverter(ClassVisitor):
             return type_.reference_name
         return type(type_).__name__
 
+    @classmethod
+    def _c_abi_type_facts(cls, type_: CType, *, name: str | None = None) -> dict[str, object]:
+        """Return the exact source facts needed by direct-C policy.
+
+        A declaration name is removed only from the final declarator position;
+        the preserved spelling retains all qualifiers, pointer levels, and C
+        complex/typedef spelling.  Arrays and function pointers stay marked as
+        source facts so policy can reject them without lowering a partial ABI.
+        """
+        source_spelling = cls._type_text(type_)
+        if name:
+            source_spelling = re.sub(
+                rf"\b{re.escape(name)}\b(?=\s*(?:\[[^]]*\]\s*)*$)",
+                "",
+                source_spelling,
+            ).strip()
+        components = list(type_.components) if isinstance(type_, CComposedType) else [type_]
+        pointer_components = [component for component in components if isinstance(component, CPointer)]
+        qualifiers = tuple(
+            qualifier.spelling for component in components for qualifier in getattr(component, "qualifiers", ())
+        )
+        return {
+            "source_spelling": source_spelling,
+            "pointer_depth": len(pointer_components),
+            "qualifiers": qualifiers,
+            "const": "const" in qualifiers,
+            "has_array_declarator": any(isinstance(component, CArray) for component in components),
+            "has_function_pointer": any(isinstance(component, CFunctionType) for component in components),
+        }
+
     @staticmethod
     def _type_metadata(type_: CType) -> dict[str, Any]:
         """Return parser model kind and direct qualifier facts for a semantic type origin."""
@@ -1827,6 +1946,126 @@ def c_project_to_semantic_modules(
     return CToIRConverter(standard_type_report=standard_type_report).visit(project)
 
 
+def select_c_export_functions(
+    modules: Iterable[SemanticModule],
+    symbols: Iterable[str],
+) -> list[SemanticModule]:
+    """Restrict C semantic IR to an exact, fail-closed function allowlist.
+
+    The selection happens after ordinary include exposure has recorded source
+    provenance and before policy completion. Selected functions receive one
+    explicit-export marker so a declaration from an included system header is
+    intentionally treated as part of the wrapped translation unit. Every
+    other declaration category is removed from the selected semantic surface.
+    """
+    selected_modules = list(modules)
+    requested = _validated_c_export_symbols(symbols)
+    functions_by_symbol, non_function_symbols = _c_export_candidates(selected_modules)
+    _validate_c_export_resolution(requested, functions_by_symbol, non_function_symbols)
+    selected = set(requested)
+    for module in selected_modules:
+        _apply_c_export_selection(module, selected)
+    return selected_modules
+
+
+def _validated_c_export_symbols(symbols: Iterable[str]) -> tuple[str, ...]:
+    """Return unique C identifiers or raise one request-level diagnostic."""
+    requested = tuple(symbols)
+    if not requested:
+        raise ValueError("C export-symbol selection requires at least one function name")
+    invalid = [symbol for symbol in requested if _C_EXPORT_IDENTIFIER_RE.fullmatch(symbol) is None]
+    seen: set[str] = set()
+    repeated = []
+    for symbol in requested:
+        if symbol in seen and symbol not in repeated:
+            repeated.append(symbol)
+        seen.add(symbol)
+    problems = tuple(
+        problem
+        for problem in (
+            _c_export_problem("invalid C identifiers", invalid),
+            _c_export_problem("repeated names", repeated),
+        )
+        if problem is not None
+    )
+    if problems:
+        raise ValueError("C export-symbol selection failed: " + "; ".join(problems))
+    return requested
+
+
+def _c_export_problem(label: str, names: Iterable[str]) -> str | None:
+    """Format one populated export-selection problem category."""
+    values = tuple(names)
+    return f"{label}: {', '.join(values)}" if values else None
+
+
+def _c_export_candidates(
+    modules: Iterable[SemanticModule],
+) -> tuple[dict[str, list[SemanticFunction]], set[str]]:
+    """Index reachable functions and names from all other declaration kinds."""
+    functions_by_symbol: dict[str, list[SemanticFunction]] = {}
+    non_function_symbols: set[str] = set()
+    for module in modules:
+        for function in module.functions:
+            symbol = _c_function_symbol(function)
+            functions_by_symbol.setdefault(symbol, []).append(function)
+        for declaration in (*module.variables, *module.classes, *module.prototypes, *module.overload_sets):
+            if symbol := _c_non_function_symbol(declaration):
+                non_function_symbols.add(symbol)
+    return functions_by_symbol, non_function_symbols
+
+
+def _c_function_symbol(function: SemanticFunction) -> str:
+    """Return the exact native lookup key for one C semantic function."""
+    return str(function.origin.native_name or function.native_name or function.name)
+
+
+def _c_non_function_symbol(declaration: object) -> str | None:
+    """Return one non-function declaration name when it has one."""
+    name = getattr(declaration, "name", None)
+    origin = getattr(declaration, "origin", None)
+    native_name = getattr(origin, "native_name", None)
+    return str(native_name or name) if native_name or name else None
+
+
+def _validate_c_export_resolution(
+    requested: tuple[str, ...],
+    functions_by_symbol: dict[str, list[SemanticFunction]],
+    non_function_symbols: set[str],
+) -> None:
+    """Fail unless every requested name identifies exactly one function."""
+    missing = [
+        symbol for symbol in requested if symbol not in functions_by_symbol and symbol not in non_function_symbols
+    ]
+    non_functions = [
+        symbol for symbol in requested if symbol not in functions_by_symbol and symbol in non_function_symbols
+    ]
+    ambiguous = [symbol for symbol in requested if len(functions_by_symbol.get(symbol, ())) > 1]
+    problems = tuple(
+        problem
+        for problem in (
+            _c_export_problem("unknown names", missing),
+            _c_export_problem("non-function names", non_functions),
+            _c_export_problem("ambiguous function names", ambiguous),
+        )
+        if problem is not None
+    )
+    if problems:
+        raise ValueError("C export-symbol selection failed: " + "; ".join(problems))
+
+
+def _apply_c_export_selection(module: SemanticModule, selected: set[str]) -> None:
+    """Promote selected functions and clear every other declaration category."""
+    module.functions = [function for function in module.functions if _c_function_symbol(function) in selected]
+    for function in module.functions:
+        function.visibility = "public"
+        function.metadata[EXPLICIT_C_EXPORT_METADATA] = True
+    module.prototypes = []
+    module.overload_sets = []
+    module.classes = []
+    module.variables = []
+
+
 def c_project_to_semantic_module(
     project: CProject,
     *,
@@ -1855,6 +2094,7 @@ __all__ = (
     "c_project_to_semantic_modules",
     "c_struct_to_semantic_class",
     "c_type_to_semantic_type",
+    "select_c_export_functions",
 )
 
 

@@ -1,6 +1,6 @@
 ---
 title: Arrays
-description: NumPy array shape, layout, strides, and validation in prik
+description: NumPy array shape, layout, strides, and validation in PRIK
 audience: users
 prerequisites: data types
 related: strings.md, allocatables.md, pointers.md, wrapping-subroutines.md
@@ -10,16 +10,16 @@ publication: reviewed
 
 # Arrays
 
-prik exposes Fortran arrays as **NumPy arrays**.
+PRIK exposes Fortran arrays as **NumPy arrays**.
 Each generated contract defines the accepted dtype, shape, layout,
-writeability, and strides. prik validates these rules before native code runs.
+writeability, and strides. PRIK validates these rules before native code runs.
 
 This page starts with normal Fortran-order arrays. It then covers C-order
 arrays, `COPY_F`, `Flat` storage, and strided views.
 
 Small `intent` note for this page: `intent(in)` reads an array,
 `intent(inout)` mutates it, and `intent(out)` fills caller-provided storage.
-Without `intent`, prik conservatively uses the `intent(inout)` rule. The
+Without `intent`, PRIK conservatively uses the `intent(inout)` rule. The
 subroutines page covers the full return rules.
 
 ---
@@ -254,7 +254,7 @@ Result:
 [2. 4. 6. 8.]
 ```
 
-## What prik Validates
+## What PRIK Validates
 
 - Exact NumPy dtype (`np.float64`, `np.int32`, ...)
 - Correct rank and shape (including expressions such as `rows, columns`)
@@ -262,7 +262,7 @@ Result:
 - Writeability for `intent(out)` or `intent(inout)` arrays
 - Declared stride pattern for stride-aware contracts
 
-**prik does not silently cast, copy, transpose, or convert rejected caller
+**PRIK does not silently cast, copy, transpose, or convert rejected caller
 layouts.** A mismatch raises `TypeError` before native code runs. A generated
 Boolean contract still accepts only `np.bool_` storage; when its numbered
 `Bool8`-`Bool64` element type records a different native logical width, the
@@ -285,7 +285,7 @@ values = np.asfortranarray(data, dtype=np.float64)
 values = np.ones(shape, dtype=np.float64, order="F")
 ```
 
-prik rejects C-contiguous matrices for a Fortran-contiguous contract.
+PRIK rejects C-contiguous matrices for a Fortran-contiguous contract.
 This gives the native routine the layout it expects.
 
 ---
@@ -379,7 +379,7 @@ def sum_columns(
 ) -> None: ...
 ```
 
-prik copies the input to Fortran order before the native call.
+PRIK copies the input to Fortran order before the native call.
 The routine returns the original column sums:
 
 ```python
@@ -400,7 +400,7 @@ print(result)  # [111. 222. 333.]
 
 `ORDER_C` validates the caller's layout.
 `COPY_F` creates the Fortran-order temporary while preserving logical axes.
-For output arrays, prik copies the result back to the caller's C-order storage.
+For output arrays, PRIK copies the result back to the caller's C-order storage.
 
 ---
 
@@ -443,7 +443,7 @@ Storage order controls flattening:
 `Flat` rejects strided slices; dtype and contiguity rules still apply.
 
 `Flat` can appear at one edge of a multidimensional contract.
-Other axes remain visible. prik collapses the remaining Python axes into one
+Other axes remain visible. PRIK collapses the remaining Python axes into one
 native extent.
 
 For `real(8) :: values(rows, *)`, the generated contract is:
@@ -484,12 +484,12 @@ Use `::` for an assumed-shape axis that accepts F-contiguous arrays and
 positive-stride views without copying:
 
 ```python
-from prik.contracts import Float64, Returns
+from prik.contracts import Float64
 
 def scale_visible_rows(
     values: Float64[::, ::],
     out: Float64[::, ::],
-) -> Returns["out", Float64[::, ::]]: ...
+) -> None: ...
 ```
 
 Here, only the first Python axis is sliced:
@@ -511,7 +511,7 @@ print(out)
 #  [21. 45. 69.]]
 ```
 
-prik passes the base address, extents, and positive element strides. Reversed
+PRIK passes the base address, extents, and positive element strides. Reversed
 slices, broadcasted views, and C-order strided matrices are rejected for this
 Fortran-oriented contract. Strides are not an order workaround.
 

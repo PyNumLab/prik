@@ -38,9 +38,13 @@ public procedures and module state through Python. Start with
 Build the public Fortran sources with PRIK and link their native dependencies
 into the same extension. The
 [shared-library guide](../guide/building-shared-library.md) explains the build
-options, while the tested [BLAS](../examples/blas-wrapper.md),
-[FFTPACK](../examples/fftpack-wrapper.md), and
-[MINPACK](../examples/minpack-wrapper.md) examples show complete libraries.
+options, while the tested [BLAS](../examples/fortran/blas-wrapper.md),
+[LAPACK](../examples/fortran/lapack-wrapper.md), [FFTPACK](../examples/fortran/fftpack-wrapper.md),
+[MINPACK](../examples/fortran/minpack-wrapper.md), and
+[BSPLINE-FORTRAN](../examples/fortran/bspline-wrapper.md) examples show complete
+libraries. The [example gallery](../examples/index.md) also includes direct-C
+[libm](../examples/c/libm-wrapper.md) and
+[TA-Lib](../examples/c/ta-lib-wrapper.md).
 
 </details>
 
@@ -67,29 +71,18 @@ silently copied. See [Pass NumPy Arrays to Fortran](../guide/arrays.md).
 <summary>Should I use PRIK or f2py?</summary>
 
 Use [NumPy's f2py](https://numpy.org/doc/stable/f2py/) when its established
-generated API—or an editable
-[`.pyf` signature](https://numpy.org/doc/stable/f2py/signature-file.html)—is
+generated API — or an editable
+[`.pyf` signature](https://numpy.org/doc/stable/f2py/signature-file.html) — is
 enough for your project.
 
-Choose PRIK when you want to design the Python API, not just generate a wrapper.
-Its editable [semantic `.pyi` contract](../reference/pyi-contracts/index.md) is
-a simpler, more Pythonic place to rename or hide exports, flatten modules,
-reorder or hide native arguments, and return native outputs as Python results.
+Choose PRIK when you want to design the Python API rather than only generate a
+wrapper: its editable [semantic `.pyi` contract](../reference/pyi-contracts/index.md)
+renames, hides, flattens, and reprojects the surface, and it treats
+[NumPy arrays](../guide/arrays.md) as complete contracts covering dtype, rank,
+shape, layout, strides, and mutation. PRIK is alpha, so check the
+[feature matrix](../language-support/feature-matrix.md) for exact limits.
 
-PRIK treats [NumPy arrays](../guide/arrays.md) as complete API contracts: dtype,
-rank, shape, memory layout, contiguity, strides, mutation, and copy behavior are
-all explicit. This includes
-[supported positive-stride views](../guide/arrays.md#strided-views) without
-copying.
-
-PRIK also covers important Fortran features: supported
-[derived types](../guide/wrapping-derived-types.md) as Python classes,
-[allocatables](../guide/allocatables.md), documented
-[pointer forms](../guide/pointers.md), native errors as
-[Python exceptions](../guide/error-handling.md), and
-[overloaded procedures](../guide/generic-interfaces.md). PRIK is currently
-alpha, so check the linked guides for exact limitations. The
-[performance results](../performance.md) cover only their measured runtime and
-clean-build workloads.
+The [side-by-side comparison](../performance.md#should-i-use-prik-or-f2py)
+covers the trade-off in full, with measured runtime and build-time results.
 
 </details>

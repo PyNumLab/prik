@@ -14,14 +14,19 @@ import ast
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+import numpy
+
 from immutabledict import immutabledict
 
+from prik.contracts import NATIVE_C_SCALAR_CASTS
 from prik.naming import NamingPolicy
 from prik.semantics import models
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    NATIVE_C_SCALAR_CAST_METADATA,
+    NULLABLE_ANNOTATION_METADATA,
     SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
 )
@@ -43,6 +48,10 @@ from prik.policy.ownership import (
     SetterAction,
     StorageMode,
     TransferMode,
+    character_descriptor_kind,
+    declared_character_length,
+    is_character_descriptor_update,
+    uses_deferred_character_length,
 )
 from prik.policy.models import (
     FIXED_STRING_RESULT_COPY_REASON,
@@ -57,6 +66,8 @@ from prik.policy.models import (
     LOGICAL_SCALAR_KIND_COPY_REASON,
     LOGICAL_ARRAY_KIND_COPY_REASON,
     NativeEntrypointAction,
+    DirectCABITypePolicy,
+    DirectCABIPolicy,
     EntrypointPassingConvention,
     EntrypointOptionalityAction,
     EntrypointProjectionAction,
@@ -113,6 +124,8 @@ from prik.policy.models import (
     OverloadCandidatePolicy,
     OverloadPolicy,
     ClassSurfacePolicy,
+    CharacterLocalPolicy,
+    CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayHandleKind,
     NativeDescriptorHandoffABI,
@@ -167,12 +180,34 @@ _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
         "Int16",
         "Int32",
         "Int64",
+        "UInt8",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+        "SizeT",
         "Float32",
         "Float64",
+        "Float128",
         "Complex64",
         "Complex128",
+        "Complex256",
     }
 )
+
+# Two 128-bit reals differ only in mantissa width: x87 extended precision and
+# IEEE binary128 share a storage size. Whether either is representable depends
+# on the build target's ``long double``, so the decision reads measured facts
+# rather than the source language.
+_EXTENDED_PRECISION_SCALAR_TYPES = frozenset({"Float128", "Complex256"})
+
+# Binding-owned extent, length, presence, and workspace slots record the Python
+# position of the argument they are derived from, but they never transport it.
+_DERIVED_NATIVE_CALL_SLOT_KINDS = frozenset({"computed", "work"})
+
+# Qualifiers describe the native view of a pointee, not the call-local storage
+# that receives a converted Python value, so they are dropped whole rather than
+# by substring, which would corrupt a spelling that merely contains one.
+_C_POINTEE_QUALIFIER_WORDS = frozenset({"const", "restrict", "__restrict", "__restrict__", "volatile", "_Atomic"})
 
 _NUMPY_DTYPE_NAMES = {
     **dict.fromkeys(BOOLEAN_SEMANTIC_TYPE_NAMES, "bool"),
@@ -180,10 +215,17 @@ _NUMPY_DTYPE_NAMES = {
     "Int16": "int16",
     "Int32": "int32",
     "Int64": "int64",
+    "UInt8": "uint8",
+    "UInt16": "uint16",
+    "UInt32": "uint32",
+    "UInt64": "uint64",
+    "SizeT": "uintp",
     "Float32": "float32",
     "Float64": "float64",
+    "Float128": "longdouble",
     "Complex64": "complex64",
     "Complex128": "complex128",
+    "Complex256": "clongdouble",
 }
 
 
@@ -377,18 +419,15 @@ def build_derived_type_policy(
         str(attribute).casefold() for attribute in semantic_class.metadata.get("fortran_type_attributes", ())
     }
     deferred_bindings = tuple(semantic_class.metadata.get("fortran_deferred_bindings", ()))
+    abstract = "abstract" in type_attributes
     blockers = tuple(
         [*(f"field {name!r} is missing completed derived-field policy" for name in missing)]
         + [reason for field in fields for reason in field.blockers]
         + (
-            ["abstract derived types need a non-instantiable Python class policy"]
-            if "abstract" in type_attributes
+            [f"deferred type-bound procedure {name!r} needs a declaring abstract type" for name in deferred_bindings]
+            if not abstract
             else []
         )
-        + [
-            f"deferred type-bound procedure {name!r} needs an override and dispatch policy"
-            for name in deferred_bindings
-        ]
     )
     exports = completed_python_exports(semantic_class, semantic_class.name)
     native_type_name = str(semantic_class.native_name or semantic_class.name)
@@ -402,11 +441,12 @@ def build_derived_type_policy(
         python_exports=exports,
         python_names=tuple(export.name for export in exports),
         fields=fields,
-        finalizers=tuple(str(item) for item in semantic_class.metadata.get("fortran_final_procedures", ())),
+        destructors=tuple(str(item.native_name or item.name) for item in semantic_class.destructors),
         bind_c=bool(semantic_class.metadata.get("fortran_bind_c")),
-        sequence=bool(semantic_class.metadata.get("fortran_sequence")),
         supported=not blockers,
         blockers=blockers,
+        abstract=abstract,
+        deferred_bindings=deferred_bindings,
     )
 
 
@@ -559,7 +599,28 @@ def _class_constructor_policy(
     owner_path: str,
     derived: DerivedTypePolicy,
 ) -> tuple[ConstructorPolicy, tuple[str, ...]]:
-    """Select exactly one constructor surface from the semantic contract."""
+    """Select exactly one constructor surface from the semantic contract.
+
+    An abstract native type has no constructor at all: Fortran forbids an
+    instance of it, so the generated class exposes its inherited surface while
+    only a concrete extension can be created.
+    """
+    if derived.abstract:
+        return (
+            ConstructorPolicy(
+                kind=ClassConstructorKind.ABSENT,
+                fields=(),
+                target_owner_path=None,
+                overload_name=None,
+                call=None,
+                lifecycle=(),
+                rejection_message=(
+                    f"{semantic_class.name} is an abstract native type and cannot be instantiated; "
+                    "create one of its concrete extensions instead"
+                ),
+            ),
+            (),
+        )
     bound = tuple(
         method
         for method in semantic_class.methods
@@ -997,6 +1058,7 @@ def _module_variable_policy_base(
         "native_module": str(variable.origin.native_scope or module_name),
         "semantic_type_name": variable.semantic_type.name,
         "rank": int(variable.semantic_type.rank or 0),
+        "character_length": _character_length(variable.semantic_type),
     }
 
 
@@ -1126,7 +1188,7 @@ def _constant_array_module_variable_blockers(
         blockers.append("module parameter array is not public")
     if array is None or array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("module parameter array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("module parameter array requires a primitive numeric element type")
     expected_getter = (
         getter is not None
@@ -1168,7 +1230,7 @@ def _scalar_module_variable_policy(
         getter_action=getter_action,
         getter=getter,
         setter_action=setter.setter_action if setter is not None else SetterAction.OMIT,
-        native_assignment=_scalar_module_native_assignment(setter),
+        native_assignment=_scalar_module_native_assignment(setter, variable),
         setter=setter,
         descriptor_kind=descriptor_kind,
         initializer=(
@@ -1194,7 +1256,7 @@ def _ordinary_array_module_variable_blockers(
     blockers = []
     if array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("ordinary module array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("ordinary module array requires a primitive numeric element type")
     if not variable.semantic_type.metadata.get("aliased"):
         blockers.append("ordinary module array requires addressable Aliased target storage")
@@ -1248,6 +1310,9 @@ def completed_function_wrapper_policy(function: models.SemanticFunction) -> Func
             f"Semantic function {function.name!r} is missing completed wrapper policy; "
             "run complete_semantic_policies before wrapper planning"
         )
+    if not policy.supported:
+        details = "; ".join(policy.blockers) or "unsupported wrapper policy"
+        raise ValueError(f"Semantic function {policy.owner_path!r} has unsupported wrapper policy: {details}")
     if policy.entrypoint_action is None:
         raise ValueError(f"Semantic function {policy.owner_path!r} is missing completed native entrypoint action")
     if policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and not policy.entrypoint_symbol:
@@ -1265,9 +1330,6 @@ def completed_function_wrapper_policy(function: models.SemanticFunction) -> Func
         raise ValueError(
             f"Semantic function {policy.owner_path!r} has incomplete native entrypoint slots {incomplete_slots}"
         )
-    if not policy.supported:
-        details = "; ".join(policy.blockers) or "unsupported wrapper policy"
-        raise ValueError(f"Semantic function {policy.owner_path!r} has unsupported wrapper policy: {details}")
     return policy
 
 
@@ -1617,6 +1679,13 @@ def build_function_wrapper_policy(
     # Complete result representation and declaration call targets, then bind
     # every array-extent producer to its immutable role.
     results, result_blockers = _result_policies(context)
+    if function.origin.source_language == "c":
+        arguments, results, native_call_slots = _normalize_c_direct_scalar_identities(
+            function,
+            arguments,
+            results,
+            native_call_slots,
+        )
     declaration_callables = _function_declaration_callable_policies(function, owner_path)
     arguments, results, native_call_slots = _complete_function_array_extent_policies(
         function,
@@ -1664,6 +1733,17 @@ def build_function_wrapper_policy(
             slots=native_call_slots,
         )
     )
+    # Only a C-source operation carries an exact C declaration plan. A Fortran
+    # ``bind(C)`` procedure keeps its established backend-projected prototype,
+    # which is the only route that can lower strings, derived objects, and
+    # callbacks through the shared direct entrypoint.
+    direct_c_abi = (
+        _completed_direct_c_abi_policy(function, arguments, results, native_call_slots)
+        if entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and function.origin.source_language == "c"
+        else None
+    )
+    if function.origin.source_language == "c":
+        blockers = (*blockers, *entrypoint_diagnostics)
     return FunctionWrapperPolicy(
         owner_path=owner_path,
         python_exports=completed_python_exports(function, function.name),
@@ -1698,6 +1778,7 @@ def build_function_wrapper_policy(
         entrypoint_action=entrypoint_action,
         entrypoint_symbol=entrypoint_symbol,
         entrypoint_diagnostics=entrypoint_diagnostics,
+        direct_c_abi=direct_c_abi,
     )
 
 
@@ -1712,7 +1793,7 @@ def _complete_function_entrypoint_route(
 ) -> tuple[
     list[ArgumentPolicy],
     tuple[NativeCallSlotPolicy, ...],
-    NativeEntrypointAction,
+    NativeEntrypointAction | None,
     str,
     tuple[str, ...],
 ]:
@@ -1725,12 +1806,19 @@ def _complete_function_entrypoint_route(
         results=results,
         slots=slots,
     )
+    is_c_operation = function.origin.source_language == "c"
     entrypoint_action = (
         NativeEntrypointAction.DIRECT_C_ABI
         if not entrypoint_diagnostics
+        else None
+        if is_c_operation
         else NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
     )
-    arguments = [_complete_entrypoint_argument_route(argument, entrypoint_action) for argument in arguments]
+    # C policy errors deliberately have no adapter action.  The preliminary
+    # route below exists only to finish the policy record; planning rejects the
+    # completed unsupported record before it can emit an artifact.
+    completed_action = entrypoint_action or NativeEntrypointAction.DIRECT_C_ABI
+    arguments = [_complete_entrypoint_argument_route(argument, completed_action) for argument in arguments]
     optionality_by_position = {argument.native_position: argument.entrypoint_optionality for argument in arguments}
     slots = tuple(
         replace(slot, entrypoint_optionality=optionality_by_position[slot.native_position])
@@ -1746,6 +1834,80 @@ def _complete_function_entrypoint_route(
     return arguments, slots, entrypoint_action, entrypoint_symbol, entrypoint_diagnostics
 
 
+def _normalize_c_direct_scalar_identities(
+    function: models.SemanticFunction,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[ResultPolicy, ...], tuple[NativeCallSlotPolicy, ...]]:
+    """Copy target-resolved C scalar identities into completed lowering policy.
+
+    C's public ``Int`` spelling intentionally survives semantic conversion,
+    while the measured storage identity (for example ``Int32``) is what the
+    shared NumPy and binding path consumes.  This is policy normalization, not
+    backend inference; source spelling remains in ``c_abi`` provenance.
+    """
+    # Argument identity is keyed by name: a route-neutral projection may
+    # reorder native slots, so a positional map would resolve one argument's
+    # Python conversion against another argument's declared type.
+    by_name = {argument.name: _c_direct_scalar_name(argument.semantic_type) for argument in function.arguments}
+    semantic_by_name = {argument.name: argument for argument in function.arguments}
+    slots_by_name = {slot.python_name: slot for slot in slots if slot.python_name is not None}
+    normalized_arguments = [
+        replace(
+            argument,
+            semantic_type_name=by_name.get(argument.name) or argument.semantic_type_name,
+            native_storage_c_type=(
+                _c_direct_argument_storage_type(
+                    function,
+                    argument.native_position,
+                    semantic_argument=semantic_by_name.get(argument.name),
+                )
+                or (
+                    slots_by_name[argument.name].native_scalar_c_type
+                    if argument.name in slots_by_name and slots_by_name[argument.name].value_kind == "addr"
+                    else None
+                )
+            ),
+            native_array_element_c_type=(
+                slots_by_name[argument.name].native_scalar_c_type
+                if argument.ownership.kind is ObjectKind.NUMPY_ARRAY and argument.name in slots_by_name
+                else None
+            ),
+            # A C payload is bytes plus whatever length the contract passes.
+            # Refusing an embedded NUL would impose a terminator convention
+            # that belongs to the C author, not to PRIK.
+            character_allows_embedded_nul=argument.semantic_type_name == "String",
+        )
+        for argument in arguments
+    ]
+    return_name = _c_direct_scalar_name(function.return_type)
+
+    def normalize_result(result: ResultPolicy) -> ResultPolicy:
+        if result.source_kind == "direct_return" and return_name is not None:
+            return replace(
+                result,
+                semantic_type_name=return_name,
+                direct_result_abi=DirectResultABI.NATIVE_SCALAR,
+                bridge_data_action=BridgeDataAction.DIRECT_TRANSFER,
+                bridge_copy_reason=None,
+            )
+        projected_name = by_name.get(result.native_name)
+        return replace(result, semantic_type_name=projected_name) if projected_name is not None else result
+
+    normalized_results = tuple(normalize_result(result) for result in results)
+    # Only a slot that transports one visible argument inherits that argument's
+    # identity.  A binding-owned extent, length, presence, or literal slot owns
+    # its own completed type and must keep it.
+    normalized_slots = tuple(
+        replace(slot, semantic_type_name=by_name.get(slot.python_name) or slot.semantic_type_name)
+        if slot.python_name is not None
+        else slot
+        for slot in slots
+    )
+    return normalized_arguments, normalized_results, normalized_slots
+
+
 def _complete_entrypoint_argument_route(
     argument: ArgumentPolicy,
     action: NativeEntrypointAction,
@@ -1755,7 +1917,20 @@ def _complete_entrypoint_argument_route(
     return replace(
         argument,
         entrypoint_pass_character_length=(
-            uses_adapter and argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+            uses_adapter
+            and (
+                argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+                # Rank-zero NumPy string storage always reports the caller's
+                # itemsize beside the address, declared width or not, so the
+                # adapter has one shape to receive. A raw string address is the
+                # exception: the caller hands over a bare integer with no Python
+                # object to measure, so its width can only be the declared one.
+                or (
+                    argument.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
+                    and argument.semantic_type_name == "String"
+                    and argument.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
+                )
+            )
         ),
         entrypoint_pass_array_metadata=(uses_adapter and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER),
         entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
@@ -1845,7 +2020,14 @@ def _argument_entrypoint_passing(
     """Complete one C parameter transport from already completed boundary facts."""
     if callback is not None:
         return EntrypointPassingConvention.RUNTIME_HANDLE
-    direct_c_abi = function.origin.source_language == "fortran" and function.origin.native_abi == "c"
+    if function.origin.source_language == "c" and _c_source_pointer_depth_for_argument(function, argument) == 1:
+        # Source C's conservative ``T *`` default is one scalar local whose
+        # address crosses the direct entrypoint. Array promotion is an edited
+        # semantic contract and arrives below through ARRAY_BUFFER instead.
+        return EntrypointPassingConvention.POINTER_REFERENCE
+    direct_c_abi = (function.origin.source_language == "fortran" and function.origin.native_abi == "c") or (
+        function.origin.source_language == "c"
+    )
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
         return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     if argument.optional:
@@ -1879,7 +2061,9 @@ def _argument_entrypoint_optionality(
         return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
     if _argument_passes_by_value(argument, slot):
         return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
-    if function.origin.source_language == "fortran" and function.origin.native_abi == "c":
+    if (function.origin.source_language == "fortran" and function.origin.native_abi == "c") or (
+        function.origin.source_language == "c"
+    ):
         return EntrypointOptionalityAction.NULL_POINTER
     return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
 
@@ -1986,7 +2170,9 @@ def _direct_c_abi_ineligibility(
     results: tuple[ResultPolicy, ...],
     slots: tuple[NativeCallSlotPolicy, ...],
 ) -> tuple[str, ...]:
-    """Return central reasons an operation must keep its generated Fortran adapter."""
+    """Return completed direct-route blockers without choosing an adapter."""
+    if function.origin.source_language == "c":
+        return _direct_c_operation_ineligibility(function, arguments=arguments, results=results, slots=slots)
     if function.origin.source_language != "fortran" or function.origin.native_abi != "c":
         return ("original procedure has no Fortran C ABI fact",)
 
@@ -2004,6 +2190,446 @@ def _direct_c_abi_ineligibility(
     for slot in slots:
         reasons.extend(_direct_slot_ineligibility(slot))
     return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_array_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
+    """Validate the selected one-level C-pointer NumPy-array mechanism."""
+    reasons = []
+    if argument.rank < 1 or argument.rank > 15:
+        reasons.append(f"C_DIRECT_ARRAY_RANK:{argument.name}")
+    if argument.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or argument.array is None:
+        reasons.append(f"C_DIRECT_ARRAY_CONTRACT:{argument.name}")
+    if argument.entrypoint_passing is not EntrypointPassingConvention.POINTER_REFERENCE:
+        reasons.append(f"C_DIRECT_ARRAY_PASSING:{argument.name}")
+    if argument.native_array_handle is not None or argument.derived is not None or argument.callback is not None:
+        reasons.append(f"C_DIRECT_ARRAY_CONTRACT:{argument.name}")
+    if argument.transformations:
+        reasons.append(f"C_DIRECT_ARRAY_TRANSFORMATION:{argument.name}")
+    if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if argument.rank > 1 and argument.array is not None and argument.array.order != "ORDER_C":
+        reasons.append(f"C_DIRECT_ARRAY_ORDER:{argument.name}")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_operation_ineligibility(
+    function: models.SemanticFunction,
+    *,
+    arguments: tuple[ArgumentPolicy, ...],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[str, ...]:
+    """Return fail-closed blockers for the initial direct-only C lane."""
+    semantic_arguments = {argument.name: argument for argument in function.arguments}
+    reasons: list[str] = [
+        *_direct_c_callable_ineligibility(function),
+        *(
+            reason
+            for argument in arguments
+            for reason in _direct_c_argument_source_ineligibility(
+                function,
+                argument,
+                semantic_arguments[argument.name],
+            )
+        ),
+    ]
+    if function.return_type is not None and function.return_type.metadata.get("c_type_fact_source") == "fallback":
+        reasons.append("C_DIRECT_UNPROBED_PRIMITIVE_ABI:return")
+    for argument in arguments:
+        if argument.native_array_element_c_type == "_Bool":
+            reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
+        if _is_c_string_argument(argument):
+            reasons.extend(_direct_c_string_ineligibility(argument))
+        elif argument.rank > 0:
+            reasons.extend(_direct_c_array_ineligibility(argument))
+        else:
+            reasons.extend(_direct_argument_ineligibility(argument))
+    for result in results:
+        if result.semantic_type_name == "String":
+            # Only argument character contracts are adopted. A projected string
+            # result would need the owned-allocation protocol the Fortran
+            # adapter provides, and C has no adapter to allocate it.
+            reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_RESULT:{result.owner_path.rsplit('.', 1)[-1]}")
+        reasons.extend(_direct_result_ineligibility(result))
+    for slot in slots:
+        reasons.extend(
+            _direct_slot_ineligibility(
+                slot,
+                # Only a slot that transports one visible argument carries an
+                # adopted C character contract; a hidden output does not.
+                character_representation_is_binding_owned=slot.python_name is not None,
+            )
+        )
+    return tuple(dict.fromkeys(reasons))
+
+
+def _is_c_string_argument(argument: ArgumentPolicy) -> bool:
+    """Return whether one completed C argument carries a character contract."""
+    return argument.semantic_type_name == "String"
+
+
+def _direct_c_string_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
+    """Validate the adopted rank-zero C character forms.
+
+    A C ``char *`` is a pointer to bytes; the terminator convention belongs to
+    the C author.  ``String`` hands over Python's own NUL-terminated buffer for
+    a read-only input, and rank-zero string storage hands over the caller's
+    NumPy bytes untouched.  Anything else stays fail-closed.
+    """
+    reasons = []
+    if argument.rank != 0:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.handoff_mode not in {ArgumentHandoffMode.CHARACTER_BUFFER, ArgumentHandoffMode.OPAQUE_ADDRESS}:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.entrypoint_passing is not EntrypointPassingConvention.POINTER_REFERENCE:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if argument.transformations or argument.derived is not None or argument.callback is not None:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.writable and argument.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
+        # A borrowed Python payload is immutable and may be interned, so only
+        # caller-owned NumPy storage may be written through.
+        reasons.append(f"C_DIRECT_IMMUTABLE_STRING_WRITEBACK:{argument.name}")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_callable_ineligibility(function: models.SemanticFunction) -> tuple[str, ...]:
+    """Return the direct-C blockers owned by one operation's own declaration."""
+    raw_abi = function.metadata.get("c_abi")
+    source_abi = raw_abi if isinstance(raw_abi, dict) else {}
+    result_facts = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else {}
+    reasons = []
+    if isinstance(raw_abi, dict):
+        if source_abi.get("calling_convention") != "c":
+            reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+        if source_abi.get("variadic"):
+            reasons.append("C_DIRECT_VARIADIC_FUNCTION")
+    if "static" in function.metadata.get("storage", ()):
+        reasons.append("C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL")
+    if function.origin.native_abi not in {None, "c"}:
+        reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+    if function.return_type is not None:
+        if _c_direct_scalar_name(function.return_type) is None:
+            reasons.append("C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:return")
+        if _c_source_pointer_depth(function, result=True) > 0:
+            reasons.append("C_DIRECT_POINTER_RESULT")
+    if {"volatile", "_Atomic"} & set(result_facts.get("qualifiers", ())):
+        reasons.append("C_DIRECT_UNSUPPORTED_QUALIFIER:return")
+    return tuple(reasons)
+
+
+def _direct_c_argument_source_ineligibility(
+    function: models.SemanticFunction,
+    argument: ArgumentPolicy,
+    semantic_argument: models.SemanticArgument,
+) -> tuple[str, ...]:
+    """Return the direct-C blockers one argument's preserved source facts prove."""
+    semantic_type = semantic_argument.semantic_type
+    source_type = _c_source_type_facts(function, argument.native_position)
+    pointer_depth = int(source_type.get("pointer_depth", _c_pointer_depth(semantic_type)))
+    storage = semantic_type.storage
+    reasons = []
+    if semantic_type.name == "CFunctionPointer" or source_type.get("has_function_pointer"):
+        reasons.append(f"C_DIRECT_CALLBACK:{argument.name}")
+    if source_type.get("has_array_declarator"):
+        reasons.append(f"C_DIRECT_ARRAY_DECLARATOR:{argument.name}")
+    if {"volatile", "_Atomic"} & set(source_type.get("qualifiers", ())):
+        reasons.append(f"C_DIRECT_UNSUPPORTED_QUALIFIER:{argument.name}")
+    if pointer_depth > 1:
+        reasons.append(f"C_DIRECT_POINTER_DEPTH:{argument.name}")
+    if _argument_declares_nullable_c_pointer(argument, semantic_type):
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if storage is not None and storage.metadata.get("address_role") == "raw":
+        reasons.append(f"C_DIRECT_RAW_ADDRESS:{argument.name}")
+    if _c_direct_scalar_name(semantic_type) is None and not _is_c_string_argument(argument):
+        reasons.append(f"C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:{argument.name}")
+    if argument.rank > 0 and semantic_type.name in {"Bool", "Bool8"}:
+        reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
+    if pointer_depth and source_type.get("const") and _argument_requests_native_write(argument):
+        reasons.append(f"C_DIRECT_CONST_POINTER_OUTPUT:{argument.name}")
+    if semantic_type.metadata.get("c_type_fact_source") == "fallback":
+        reasons.append(f"C_DIRECT_UNPROBED_PRIMITIVE_ABI:{argument.name}")
+    return tuple(reasons)
+
+
+def _argument_declares_nullable_c_pointer(argument: ArgumentPolicy, semantic_type: models.SemanticType) -> bool:
+    """Return whether one C argument was written as a nullable value.
+
+    Subscripted storage loses its ``| None`` spelling during conversion, so the
+    recorded annotation fact stands in for it.
+    """
+    return bool(
+        argument.nullable
+        or argument.optional
+        or " | None" in semantic_type.name
+        or semantic_type.metadata.get(NULLABLE_ANNOTATION_METADATA)
+    )
+
+
+def _argument_requests_native_write(argument: ArgumentPolicy) -> bool:
+    """Return whether a completed contract expects native writes to be visible."""
+    return bool(argument.writable or argument.projects_result or argument.array_copy_out)
+
+
+def _c_direct_scalar_name(semantic_type: models.SemanticType | None) -> str | None:
+    """Return the resolved lowering identity without replacing public C spelling."""
+    if semantic_type is None:
+        return None
+    candidate = semantic_type.dtype or semantic_type.name
+    return str(candidate) if candidate in _PLAN_PRIMITIVE_SCALAR_TYPES else None
+
+
+def _c_source_type_facts(function: models.SemanticFunction, native_position: int) -> dict[str, object]:
+    raw_abi = function.metadata.get("c_abi")
+    if not isinstance(raw_abi, dict):
+        return {}
+    parameters = raw_abi.get("parameters")
+    if not isinstance(parameters, list) or not 0 <= native_position < len(parameters):
+        return {}
+    value = parameters[native_position]
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _c_source_pointer_depth(function: models.SemanticFunction, *, result: bool) -> int:
+    raw_abi = function.metadata.get("c_abi")
+    if not isinstance(raw_abi, dict):
+        return _c_pointer_depth(function.return_type) if result else 0
+    value = raw_abi.get("result") if result else None
+    return int(value.get("pointer_depth", 0)) if isinstance(value, dict) else 0
+
+
+def _c_source_pointer_depth_for_argument(
+    function: models.SemanticFunction,
+    argument: models.SemanticArgument,
+) -> int:
+    """Return one source C parameter's preserved pointer depth."""
+    position = argument.metadata.get("native_position")
+    if not isinstance(position, int):
+        return 0
+    return int(_c_source_type_facts(function, position).get("pointer_depth", 0))
+
+
+def _c_direct_argument_storage_type(
+    function: models.SemanticFunction,
+    native_position: int,
+    *,
+    semantic_argument: models.SemanticArgument | None = None,
+) -> str | None:
+    """Return the policy-selected local C scalar type for a source C argument.
+
+    The source declaration remains the direct entrypoint prototype, while this
+    spelling owns scalar storage passed through a pointer.  Matching it avoids
+    aliasing a normalized ``int64_t`` local as a distinct source type such as
+    ``long long``.  A type written through a typedef resolves to its underlying
+    builtin spelling, because the binding cannot declare a name that only the
+    user's headers define.  ``const`` and ``restrict`` qualify the native view,
+    not the temporary that receives Python input before the call.
+    """
+    resolved = _c_typedef_resolved_spelling(
+        semantic_argument.semantic_type if semantic_argument is not None else None,
+        pointer_depth=0,
+        const=False,
+    )
+    if resolved is not None:
+        return resolved
+    source_type = _c_source_type_facts(function, native_position)
+    spelling = source_type.get("source_spelling")
+    if not isinstance(spelling, str):
+        return None
+    base = spelling.split("*", maxsplit=1)[0]
+    words = [word for word in base.split() if word not in _C_POINTEE_QUALIFIER_WORDS]
+    return " ".join(words) or None
+
+
+def _c_pointer_depth(semantic_type: models.SemanticType | None) -> int:
+    return int(semantic_type.storage.pointer_depth) if semantic_type is not None and semantic_type.storage else 0
+
+
+def _completed_direct_c_abi_policy(
+    function: models.SemanticFunction,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> DirectCABIPolicy:
+    """Copy the selected C declaration facts into immutable policy output."""
+    raw_abi = function.metadata.get("c_abi")
+    source_abi = raw_abi if isinstance(raw_abi, dict) else {}
+    parameter_source = source_abi.get("parameters") if isinstance(source_abi.get("parameters"), list) else []
+    semantic_arguments_by_name = {argument.name: argument for argument in function.arguments}
+    argument_policies_by_name = {argument.name: argument for argument in arguments}
+
+    def slot_semantic_type(slot: NativeCallSlotPolicy) -> models.SemanticType | None:
+        """Return the declared type of the argument one slot transports.
+
+        A binding-owned extent, length, presence, or literal slot names no
+        argument and keeps its own completed identity, so it returns ``None``
+        rather than borrowing the type of the argument it was derived from.
+        """
+        if slot.python_name is None:
+            return None
+        semantic_argument = semantic_arguments_by_name.get(slot.python_name)
+        return semantic_argument.semantic_type if semantic_argument is not None else None
+
+    parameters = tuple(
+        _direct_c_abi_type_policy(
+            parameter_source[slot.native_position]
+            if slot.native_position < len(parameter_source) and isinstance(parameter_source[slot.native_position], dict)
+            else None,
+            semantic_type=slot_semantic_type(slot),
+            semantic_type_name=slot.semantic_type_name,
+            pointer_depth=(0 if slot.entrypoint_passing is EntrypointPassingConvention.C_VALUE else 1),
+            # A hidden output slot is storage the callee writes into.
+            writes_output=slot.source_kind == "result",
+            native_scalar_c_type=slot.native_scalar_c_type,
+            converts_to_contract_storage=(
+                slot.native_scalar_c_type is not None
+                and (
+                    slot.python_name not in argument_policies_by_name
+                    or argument_policies_by_name[slot.python_name].native_array_element_c_type is None
+                )
+            ),
+        )
+        for slot in sorted(slots, key=lambda item: item.native_position)
+    )
+    direct_result = next((result for result in results if result.source_kind == "direct_return"), None)
+    result_source = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else None
+    result = (
+        _direct_c_abi_type_policy(
+            result_source,
+            semantic_type=function.return_type,
+            semantic_type_name=None,
+            pointer_depth=0,
+            native_scalar_c_type=_native_scalar_c_type(function.return_type),
+        )
+        if direct_result is not None and function.return_type is not None
+        else None
+    )
+    return DirectCABIPolicy(
+        calling_convention=str(source_abi.get("calling_convention", "c")),
+        result_transport="value" if result is not None else "void",
+        result=result,
+        parameters=parameters,
+    )
+
+
+def _direct_c_abi_type_policy(
+    source: dict[str, object] | None,
+    *,
+    semantic_type: models.SemanticType | None,
+    semantic_type_name: str | None,
+    pointer_depth: int,
+    writes_output: bool = False,
+    native_scalar_c_type: str | None = None,
+    converts_to_contract_storage: bool | None = None,
+) -> DirectCABITypePolicy:
+    """Normalize preserved source facts or the canonical source-free C form."""
+    if semantic_type_name == "String":
+        return _direct_c_character_abi_type_policy(source, semantic_type=semantic_type, writes_output=writes_output)
+    scalar_name = _c_direct_scalar_name(semantic_type) or semantic_type_name
+    if scalar_name is None:
+        raise ValueError("C direct ABI policy requires a resolved primitive scalar")
+    if scalar_name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        raise ValueError(f"C direct ABI policy requires a supported scalar, not {scalar_name!r}")
+    source = source or {}
+    source_pointer_depth = int(source.get("pointer_depth", pointer_depth))
+    contract_spelling = semantic_type.metadata.get("c_abi_spelling") if semantic_type is not None else None
+    # A source-free contract has no declaration text, but target-sized standard
+    # types still name an exact C spelling.  Preserve that spelling at every
+    # pointer depth instead of replacing ``int *`` or ``size_t *`` with a
+    # same-width fixed-width typedef in the generated prototype.
+    native_spelling = None
+    if native_scalar_c_type is not None:
+        native_spelling = (
+            f"{native_scalar_c_type} {'*' * source_pointer_depth}" if source_pointer_depth else native_scalar_c_type
+        )
+    contract_declaration = (
+        f"{contract_spelling} {'*' * source_pointer_depth}"
+        if isinstance(contract_spelling, str) and source_pointer_depth
+        else contract_spelling
+    )
+    preserved = source.get("source_spelling") or native_spelling or contract_declaration
+    qualifiers = tuple(str(item) for item in source.get("qualifiers", ()))
+    const = bool(source.get("const", False))
+    declarable = _c_typedef_resolved_spelling(semantic_type, pointer_depth=source_pointer_depth, const=const)
+    return DirectCABITypePolicy(
+        source_spelling=declarable or (str(preserved) if preserved else None),
+        scalar_type_name=scalar_name,
+        pointer_depth=source_pointer_depth,
+        qualifiers=qualifiers,
+        const=const,
+        converts_to_contract_storage=(
+            native_scalar_c_type is not None if converts_to_contract_storage is None else converts_to_contract_storage
+        ),
+    )
+
+
+def _direct_c_character_abi_type_policy(
+    source: dict[str, object] | None,
+    *,
+    semantic_type: models.SemanticType | None,
+    writes_output: bool = False,
+) -> DirectCABITypePolicy:
+    """Return the exact C declaration for one rank-zero character contract.
+
+    A borrowed Python payload is read-only, so it is declared ``const char *``.
+    Caller-owned NumPy storage may be written by the callee and is declared
+    ``char *``.  The contract states which one it is; PRIK never infers it from
+    a C declaration it cannot see.
+    """
+    source = source or {}
+    mutable = writes_output or bool(
+        semantic_type is not None and semantic_type.storage is not None and semantic_type.storage.mutable
+    )
+    preserved = source.get("source_spelling")
+    spelling = str(preserved) if isinstance(preserved, str) and preserved else ("char *" if mutable else "const char *")
+    return DirectCABITypePolicy(
+        source_spelling=spelling,
+        scalar_type_name="String",
+        pointer_depth=int(source.get("pointer_depth", 1)),
+        qualifiers=tuple(str(item) for item in source.get("qualifiers", ())),
+        const=bool(source.get("const", not mutable)),
+    )
+
+
+def _native_scalar_c_type(semantic_type: models.SemanticType | None) -> str | None:
+    """Resolve one semantic native-call cast marker to its exact C spelling."""
+    marker = semantic_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA) if semantic_type is not None else None
+    return NATIVE_C_SCALAR_CASTS.get(marker) if isinstance(marker, str) else None
+
+
+def _c_typedef_resolved_spelling(
+    semantic_type: models.SemanticType | None,
+    *,
+    pointer_depth: int,
+    const: bool,
+) -> str | None:
+    """Return the underlying builtin spelling of a type written through a typedef.
+
+    The generated binding declares the entrypoint prototype itself, so a
+    typedef name that only the user's own headers define cannot appear there.
+    A typedef is exactly its underlying type, so substituting the probed
+    builtin spelling preserves width, signedness, and representation instead of
+    choosing a nearby one; the typedef chain stays recorded on the semantic
+    type as provenance.
+    """
+    if semantic_type is None or not semantic_type.metadata.get("c_typedefs"):
+        return None
+    primitive = semantic_type.metadata.get("c_primitive") or _c_underlying_type_spelling(semantic_type)
+    if not isinstance(primitive, str) or not primitive:
+        return None
+    declared = f"const {primitive}" if const else primitive
+    return f"{declared} {'*' * pointer_depth}" if pointer_depth else declared
+
+
+def _c_underlying_type_spelling(semantic_type: models.SemanticType) -> str | None:
+    """Return the probed builtin spelling recorded for a standard C typedef."""
+    for key in ("c_standard_type_fact", "c_type_fact"):
+        fact = semantic_type.metadata.get(key)
+        underlying = fact.get("underlying_c_type") if isinstance(fact, dict) else None
+        if isinstance(underlying, str) and underlying:
+            return underlying
+    return None
 
 
 def _direct_operation_ineligibility(
@@ -2112,16 +2738,27 @@ def _direct_result_ineligibility(result: ResultPolicy) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def _direct_slot_ineligibility(slot: NativeCallSlotPolicy) -> tuple[str, ...]:
-    """Return direct-route blockers owned by one completed call projection."""
+def _direct_slot_ineligibility(
+    slot: NativeCallSlotPolicy,
+    *,
+    character_representation_is_binding_owned: bool = False,
+) -> tuple[str, ...]:
+    """Return direct-route blockers owned by one completed call projection.
+
+    A Fortran character actual needs adapter-side representation work beyond a
+    single element.  A C character contract does not: the binding itself hands
+    over the caller's bytes, so its caller sets
+    ``character_representation_is_binding_owned``.
+    """
     reasons = []
     if slot.projection_action is EntrypointProjectionAction.BLOCKED:
         reasons.append(f"native-call slot {slot.native_position} has no binding projection action")
     if slot.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
         reasons.append(f"native-call slot {slot.native_position} has no C passing convention")
-    if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not (
-        slot.semantic_type_name == "String" and slot.character_length == 1
-    ):
+    character_slot = slot.semantic_type_name == "String" and (
+        character_representation_is_binding_owned or slot.character_length == 1
+    )
+    if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not character_slot:
         reasons.append(f"native-call slot {slot.native_position} requires adapter representation work")
     return tuple(reasons)
 
@@ -2266,8 +2903,21 @@ def _native_call_slot_for_python_position(
     slots: tuple[NativeCallSlotPolicy, ...],
     python_position: int,
 ) -> NativeCallSlotPolicy | None:
-    """Find the completed native-call slot owned by one visible argument."""
-    return next((slot for slot in slots if slot.python_position == python_position), None)
+    """Find the completed native-call slot owned by one visible argument.
+
+    A binding-owned producer such as ``Arg(i).shape[0]`` or ``Len(Arg(i))``
+    records the Python position of the argument it measures, so it is skipped
+    here.  Matching the first position-equal slot would otherwise hand an array
+    its own extent slot and lower the buffer as a by-value scalar.
+    """
+    return next(
+        (
+            slot
+            for slot in slots
+            if slot.python_position == python_position and slot.source_kind not in _DERIVED_NATIVE_CALL_SLOT_KINDS
+        ),
+        None,
+    )
 
 
 def _argument_policy(
@@ -2393,6 +3043,7 @@ def _argument_policy(
             python_visible=decision.python_visible,
             result_position=boundary.result_position,
             character_length=_character_length(argument.semantic_type),
+            character_local=_character_local_policy(argument.semantic_type, decision),
             array=array_policy,
             native_array_actual=_native_array_actual_policy(argument, decision, array_policy),
             native_array_handle=_native_array_handle_wrapper_policy(
@@ -2646,9 +3297,19 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
         function.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
         result_path,
     )
-    scalar_descriptor = _scalar_descriptor_result_policy(return_type, decision)
+    scalar_descriptor = _scalar_descriptor_result_policy(
+        return_type,
+        decision,
+        may_be_unallocated=_scalar_descriptor_kind(return_type) == "allocatable",
+    )
     blockers = list(_result_blockers(return_type, decision))
-    if scalar_descriptor is not None and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE:
+    if (
+        scalar_descriptor is not None
+        and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+        and decision.kind is not ObjectKind.STRING
+    ):
+        # A character result is moved out through an allocatable dummy, which
+        # makes allocation testable; other scalars have no such completed move.
         blockers.append(
             "direct allocatable scalar function results cannot preserve unallocated state; "
             "use an allocatable hidden output projection"
@@ -2748,6 +3409,11 @@ def _hidden_result_policies(context: _FunctionPolicyContext) -> tuple[_ResultPol
     return tuple(policies)
 
 
+def _update_result_ownership(argument: models.SemanticArgument) -> OwnershipDecision | None:
+    """Return the completed result facet of one caller-supplied string update, if any."""
+    return _ownership_decision(argument, models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA)
+
+
 def _hidden_result_projection_index(
     function: models.SemanticFunction,
 ) -> dict[str, models.ProjectionMapping]:
@@ -2774,7 +3440,7 @@ def _hidden_result_ownership(
     argument: models.SemanticArgument,
     suppressed_outputs: frozenset[str],
 ) -> OwnershipDecision | None:
-    """Return ownership only when an argument is an exposed hidden result.
+    """Return ownership only when an argument is an exposed native output.
 
     The helper receives one possible native output dummy and the owner paths
     reserved by runtime status handling.  Source parsing may originally have
@@ -2784,8 +3450,18 @@ def _hidden_result_ownership(
     reserved path.  For example, hidden ``value`` returns its decision, while
     hidden ``status`` returns ``None`` when ``module.proc.status`` appears in
     ``suppressed_outputs``.
+
+    A caller-supplied string descriptor update is the one shape whose
+    result facet is a second completed decision rather than the argument's own,
+    so a Python-visible argument reaches this stage through
+    ``RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA``.  That facet is an
+    ordinary native output: it carries ``python_visible=False`` and is completed,
+    validated, and lowered exactly like an ``intent(out)`` descriptor result.
     """
-    decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    decision = _update_result_ownership(argument) or _ownership_decision(
+        argument,
+        models.RESOLVED_OWNERSHIP_POLICY_METADATA,
+    )
     if decision is None or not (decision.projects_result and not decision.python_visible):
         return None
     if f"{context.owner_path}.{argument.name}" in suppressed_outputs:
@@ -2896,6 +3572,7 @@ def _hidden_result_candidate(
             character_length=_character_length(argument.semantic_type),
             array=_array_handoff_policy(argument.semantic_type),
             source_kind="hidden_output",
+            python_returned=not argument.metadata.get(models.HIDDEN_NATIVE_OUTPUT_METADATA),
             native_name=mapping.native_name or argument.name,
             native_position=mapping.native_position,
             result_position=int(mapping.result_position),
@@ -2907,6 +3584,7 @@ def _hidden_result_candidate(
                 if native_array_handle is not None or scalar_descriptor is not None
                 else EntrypointPassingConvention.OUTPUT_STORAGE
             ),
+            updates_argument=_update_result_ownership(argument) is not None,
         ),
         tuple(blockers),
     )
@@ -3134,6 +3812,7 @@ def _projected_argument_slot(
             python_name=mapping.python_name or argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=value_kind,
+            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
             native_barrier_action=native_barrier_action,
             codegen_action=codegen_action,
             bridge_data_action=bridge_data_action,
@@ -3221,6 +3900,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=mapping.python_name,
                 native_name=mapping.native_name or f"result_{native_position}",
                 value_kind=mapping.value_kind,
+                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3241,6 +3921,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=argument.name,
                 native_name=mapping.native_name or argument.name,
                 value_kind=mapping.value_kind,
+                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3287,6 +3968,7 @@ def _hidden_result_native_call_slot_policy(
             python_name=argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=mapping.value_kind,
+            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
             native_barrier_action=decision.native_barrier_action,
             codegen_action=decision.codegen_action,
             bridge_data_action=bridge_data_action,
@@ -3614,6 +4296,15 @@ def _derived_object_storage(
     return DerivedObjectStorage.DIRECT
 
 
+# An abstract type has no instances of its own. Every origin that would declare
+# storage of that exact type -- a wrapper-owned holder, or a module variable --
+# has nothing to hold, so only a plain concrete object address stays reachable.
+# The adapter converts that address to the extension's own type and passes it to
+# the `class(...)` dummy through the polymorphic discriminator.
+_ABSTRACT_REACHABLE_STORAGES = frozenset({DerivedObjectStorage.DIRECT})
+_ABSTRACT_INCOMPATIBLE_STORAGES = frozenset(DerivedObjectStorage) - _ABSTRACT_REACHABLE_STORAGES
+
+
 def _derived_call_policy(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
@@ -3627,8 +4318,19 @@ def _derived_call_policy(
         argument.semantic_type,
         native_value=_native_by_value_argument(argument),
     )
+    abstract_dummy = bool(argument.semantic_type.metadata.get("fortran_abstract_type"))
     cases = tuple(
         _derived_call_case(category, storage, projects_result=decision.projects_result)
+        if not (abstract_dummy and storage in _ABSTRACT_INCOMPATIBLE_STORAGES)
+        else _derived_incompatible_case(
+            storage,
+            "abstract-owner-storage",
+            (
+                f"{argument.semantic_type.name} is an abstract type; a "
+                f"{storage.value.replace('_', ' ')} actual would declare storage of that exact "
+                "type, which has no instance. Pass a concrete extension instead."
+            ),
+        )
         for storage in DerivedObjectStorage
     )
     writeback = {
@@ -3991,6 +4693,10 @@ def _scalar_or_string_argument_shape_blockers(
     string_value = _is_plan_string_value_type(argument.semantic_type)
     if not (_is_first_lane_scalar_type(argument.semantic_type) or string_value):
         blockers.append(f"argument {argument.name!r} is not a first-lane primitive scalar")
+    precision_blocker = _extended_precision_blocker(argument.semantic_type)
+    if precision_blocker is not None:
+        blockers.append(f"argument {argument.name!r}: {precision_blocker}")
+    blockers.extend(_character_descriptor_blockers(argument, decision))
     if not decision.python_visible:
         blockers.append(f"argument {argument.name!r} is not Python-visible")
     expected_kind = ObjectKind.STRING if string_value else ObjectKind.SCALAR
@@ -4362,7 +5068,11 @@ def _string_value_boundary_blockers(
             f"argument {argument.name!r} string action is {decision.codegen_action.value}, "
             "not a call-local input or copy-in/out replacement"
         )
-    if decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT and decision.projects_result:
+    if (
+        decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+        and decision.projects_result
+        and not is_character_descriptor_update(argument.semantic_type.metadata, decision)
+    ):
         blockers.append(f"argument {argument.name!r} call-local string input unexpectedly projects a result")
     if decision.codegen_action is CodegenAction.COPY_IN_OUT:
         blockers.extend(_string_replacement_blockers(argument, decision))
@@ -4420,7 +5130,11 @@ def _string_address_ownership_blockers(
 ) -> tuple[str, ...]:
     """Validate ownership shared by fixed storage and raw-address forms."""
     blockers = []
-    if _character_length(argument.semantic_type) is None:
+    if _character_length(argument.semantic_type) is None and expected_storage is not StorageMode.ALIAS:
+        # Rank-zero string storage may leave the capacity assumed: the caller's
+        # NumPy buffer carries its own itemsize, which the binding hands to the
+        # boundary beside the address. Other address forms still need a
+        # declared length.
         blockers.append(f"argument {argument.name!r} {label} requires a fixed positive character length")
     if decision.owner is not OwnershipOwner.CALLER:
         blockers.append(f"argument {argument.name!r} {label} owner is {decision.owner.value}, not caller")
@@ -4496,7 +5210,14 @@ def _argument_projection_blockers(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
 ) -> tuple[str, ...]:
-    """Return projected-result action blockers for one argument."""
+    """Return projected-result action blockers for one argument.
+
+    A projected argument normally replaces or mutates caller-visible storage.
+    The deferred-length string update instead keeps a call-local input and
+    returns the reallocated value through its own completed result facet.
+    """
+    if is_character_descriptor_update(argument.semantic_type.metadata, decision):
+        return ()
     if decision.projects_result and decision.codegen_action not in {
         CodegenAction.COPY_IN_OUT,
         CodegenAction.IN_PLACE_ARGUMENT,
@@ -4601,6 +5322,9 @@ def _scalar_result_blockers(
         blockers.append(f"result has blocked ownership policy: {decision.blocker or decision.reason}")
     if not _is_first_lane_scalar_type(semantic_type):
         blockers.append("result is not a first-lane primitive scalar")
+    precision_blocker = _extended_precision_blocker(semantic_type)
+    if precision_blocker is not None:
+        blockers.append(f"result: {precision_blocker}")
     if decision.kind is not ObjectKind.SCALAR:
         blockers.append(f"result policy kind is {decision.kind.value}, not scalar")
     if decision.codegen_action is not CodegenAction.DIRECT_VALUE:
@@ -4903,7 +5627,7 @@ def _fixed_string_result_ownership_blockers(
     if (decision.boundary_storage_mode or decision.storage_mode) is not StorageMode.STACK:
         blockers.append(f"{label} boundary storage is not stack")
     if decision.nullable:
-        blockers.append(f"{label} is nullable outside deferred string results")
+        blockers.append(f"{label} is nullable outside descriptor string results")
     return tuple(blockers)
 
 
@@ -4934,9 +5658,16 @@ def _result_position_blockers(
     results: tuple[ResultPolicy, ...],
     arguments: list[ArgumentPolicy] | tuple[ArgumentPolicy, ...] = (),
 ) -> tuple[str, ...]:
-    """Require native results and visible writebacks to cover one public order."""
+    """Require native results and visible writebacks to cover one public order.
+
+    A deferred-length string update contributes its position through the result
+    facet that carries the reallocated value, so counting the argument again
+    would report a duplicate for one public output.
+    """
     positions = tuple(result.result_position for result in results) + tuple(
-        argument.result_position for argument in arguments if argument.projects_result
+        argument.result_position
+        for argument in arguments
+        if argument.projects_result and not argument.projects_character_descriptor_update
     )
     if not positions:
         return ()
@@ -4959,6 +5690,11 @@ def _function_shape_blockers(
         blockers.append("function locals are outside the first scalar lane")
     if function.contracts:
         blockers.append("function contracts are outside the first scalar lane")
+    has_native_c_scalar_cast = any(mapping.native_cast is not None for mapping in function.projection) or bool(
+        function.return_type is not None and function.return_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA)
+    )
+    if has_native_c_scalar_cast and function.origin.source_language != "c":
+        blockers.append("native C scalar casts require a C native contract")
     return tuple(blockers)
 
 
@@ -4988,19 +5724,109 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
     blockers = []
     if policy.status.semantic_type_name != "Int32":
         blockers.append("native status error projection requires an Int32 status in the current plan lane")
-    if policy.message is not None and policy.message.character_length is None:
+    if (
+        policy.message is not None
+        and policy.message.character_length is None
+        and policy.message.python_position is None
+    ):
+        # Only a hidden message is allocated by the binding, so only a hidden
+        # message needs the contract to state the width. A visible argument
+        # brings its own storage.
         blockers.append("native status error message requires a fixed positive character length")
     return tuple(blockers)
 
 
+def _has_deferred_character_length(semantic_type: models.SemanticType) -> bool:
+    """Return whether one character value declares a deferred length parameter."""
+    return uses_deferred_character_length(semantic_type.metadata)
+
+
+def _character_local_policy(
+    semantic_type: models.SemanticType,
+    decision: OwnershipDecision,
+) -> CharacterLocalPolicy | None:
+    """Complete the adapter-local storage one caller-supplied character input needs.
+
+    The binding always hands the adapter a byte buffer and a length, so the
+    only open decision is the Fortran local that buffer is materialized into.
+    A dummy with no descriptor attribute keeps a fixed-length local; an
+    ``allocatable`` or ``pointer`` dummy needs a local carrying the same
+    attribute, and a ``pointer`` local is adapter-allocated storage the adapter
+    must also release.
+    """
+    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+        return None
+    plain = CharacterLocalPolicy(
+        descriptor_kind=None,
+        deferred_length=False,
+        release=CharacterLocalRelease.NONE,
+    )
+    if decision.codegen_action is CodegenAction.COPY_IN_OUT:
+        # A replacement writes back through the caller's own buffer, so its
+        # local is the fixed-length storage that buffer already sizes.
+        return plain
+    if decision.codegen_action is not CodegenAction.CALL_LOCAL_INPUT:
+        return None
+    descriptor = character_descriptor_kind(semantic_type.metadata)
+    if descriptor is None:
+        return None if _has_deferred_character_length(semantic_type) else plain
+    return CharacterLocalPolicy(
+        descriptor_kind=NativeArrayDescriptorKind(descriptor),
+        deferred_length=_has_deferred_character_length(semantic_type),
+        release=_character_local_release(descriptor, decision),
+    )
+
+
+def _character_local_release(descriptor: str, decision: OwnershipDecision) -> CharacterLocalRelease:
+    """Return who frees the adapter-local character storage after the call.
+
+    An ``allocatable`` local is released by the compiler when the adapter
+    returns.  A ``pointer`` local is storage the adapter allocated itself: a
+    read-only dummy cannot change its association, so the adapter always frees
+    it, while an update dummy may be reassociated or deallocated by the native
+    procedure and is freed only while it still identifies that allocation.
+    """
+    if descriptor != "pointer":
+        return CharacterLocalRelease.NONE
+    if decision.projects_result:
+        return CharacterLocalRelease.DEALLOCATE_IF_RETAINED
+    return CharacterLocalRelease.DEALLOCATE
+
+
+def _character_descriptor_blockers(
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+) -> tuple[str, ...]:
+    """Restrict descriptor and deferred-length character arguments to completed lanes.
+
+    A Python-visible ``allocatable`` or ``pointer`` character dummy is wrapped
+    as one call-local input, optionally paired with the projected result an
+    update returns.  Any other action has no completed conversion, so it stops
+    here instead of reaching an adapter with nothing to build.  A deferred
+    length additionally requires one of those attributes, because
+    ``character(len=:)`` is not a declarable local without it.
+    """
+    semantic_type = argument.semantic_type
+    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+        return ()
+    descriptor = character_descriptor_kind(semantic_type.metadata)
+    deferred = _has_deferred_character_length(semantic_type)
+    if not (descriptor or deferred):
+        return ()
+    label = f"argument {argument.name!r}"
+    if descriptor is None:
+        return (f"{label} is a deferred-length character argument without an allocatable or pointer attribute",)
+    if decision.codegen_action is not CodegenAction.CALL_LOCAL_INPUT:
+        return (
+            f"{label} is an {descriptor} character argument with action {decision.codegen_action.value}; "
+            "only a call-local input, alone or with a projected update result, is wrapped",
+        )
+    return ()
+
+
 def _character_length(semantic_type: models.SemanticType) -> int | None:
     """Return a positive fixed Fortran character length, normalizing accepted metadata spellings."""
-    value = semantic_type.metadata.get("fortran_character_length")
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    if isinstance(value, str) and value.strip().isdigit() and int(value.strip()) > 0:
-        return int(value.strip())
-    return None
+    return declared_character_length(semantic_type.metadata)
 
 
 def _lifecycle_policies(
@@ -5011,6 +5837,10 @@ def _lifecycle_policies(
     blockers: list[str] = []
     for argument in arguments:
         if not argument.projects_result:
+            continue
+        # A string descriptor update publishes its value through the
+        # projected descriptor result, so it owns no writeback phase.
+        if argument.projects_character_descriptor_update:
             continue
         if argument.result_position is None:
             blockers.append(f"argument {argument.name!r} writeback is missing a result position")
@@ -5077,12 +5907,56 @@ def _ownership_decision(owner: object, metadata_key: str) -> OwnershipDecision |
 
 def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
     """Report whether a rank-zero primitive uses the supported ordinary scalar lane."""
-    scalar_name = semantic_type.dtype or semantic_type.name
     return bool(
         int(semantic_type.rank or 0) == 0
         and not _is_scalar_storage_type(semantic_type)
         and semantic_type.name != "String"
-        and scalar_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and _is_plan_primitive_value_type(semantic_type)
+    )
+
+
+def _is_plan_primitive_value_type(semantic_type: models.SemanticType) -> bool:
+    """Use resolved storage dtype when a source spelling keeps a public alias."""
+    return (semantic_type.dtype or semantic_type.name) in _PLAN_PRIMITIVE_SCALAR_TYPES
+
+
+def _target_long_double_mantissa_bits() -> int:
+    """Return the build target's ``long double`` mantissa width, implicit bit included."""
+    return int(numpy.finfo(numpy.longdouble).nmant) + 1
+
+
+def _measured_mantissa_bits(semantic_type: models.SemanticType) -> int | None:
+    """Return the compiler-measured mantissa width recorded for one scalar.
+
+    The C probe reports ``precision_bits`` from ``LDBL_MANT_DIG`` and the
+    Fortran probe reports ``digits``; both count the implicit bit. A contract
+    that declares the type without a source language carries neither.
+    """
+    for fact_key, field in (("c_type_fact", "precision_bits"), ("fortran_type_fact", "digits")):
+        fact = semantic_type.metadata.get(fact_key)
+        if isinstance(fact, Mapping):
+            measured = fact.get(field)
+            if isinstance(measured, int) and measured > 0:
+                return int(measured)
+    return None
+
+
+def _extended_precision_blocker(semantic_type: models.SemanticType) -> str | None:
+    """Refuse an extended-precision scalar whose measured format the target cannot hold.
+
+    ``Float128`` names the target's ``long double``, which NumPy exposes as
+    ``longdouble``. A source declaring a wider mantissa -- Fortran ``real(16)``
+    on a target whose ``long double`` is x87 extended precision -- has no NumPy
+    representation, and its storage size cannot reveal that on its own.
+    """
+    if semantic_type.name not in _EXTENDED_PRECISION_SCALAR_TYPES:
+        return None
+    measured = _measured_mantissa_bits(semantic_type)
+    if measured is None or measured == _target_long_double_mantissa_bits():
+        return None
+    return (
+        f"{semantic_type.name} declares a {measured}-bit mantissa but this target's long double "
+        f"provides {_target_long_double_mantissa_bits()} bits"
     )
 
 
@@ -5146,6 +6020,7 @@ def _scalar_descriptor_result_policy(
     decision: OwnershipDecision,
     *,
     descriptor_kind: str | None = None,
+    may_be_unallocated: bool = False,
 ) -> ScalarDescriptorResultPolicy | None:
     """Project one completed nullable rank-zero descriptor copy policy."""
     if decision.kind is ObjectKind.DERIVED_TYPE:
@@ -5161,6 +6036,7 @@ def _scalar_descriptor_result_policy(
         nullable=decision.nullable,
         copy_reason=SCALAR_DESCRIPTOR_RESULT_COPY_REASON,
         release_owner=OwnershipOwner.PYTHON,
+        may_be_unallocated=may_be_unallocated,
     )
 
 
@@ -5752,11 +6628,20 @@ def _scalar_module_getter_blockers(
     """Validate one completed scalar or literal-string getter."""
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
-    if not (_is_first_lane_scalar_type(variable.semantic_type) or literal_string):
+    character_value = getter_action is ModuleGetterAction.CHARACTER_VALUE
+    # A descriptor character module variable reaches Python through the same
+    # nullable snapshot a descriptor scalar uses, carrying a runtime width.
+    character_snapshot = (
+        getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT and variable.semantic_type.name == "String"
+    )
+    string_getter = literal_string or character_value
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter or character_snapshot):
         blockers.append("module variable is not a primitive rank-zero scalar")
-    expected_getter_kind = ObjectKind.STRING if literal_string else ObjectKind.SCALAR
+    if character_value and _character_length(variable.semantic_type) is None:
+        blockers.append("character module variable requires one declared length")
+    expected_getter_kind = ObjectKind.STRING if string_getter else ObjectKind.SCALAR
     supported_getter_actions = (
-        {CodegenAction.COPY_OUT} if literal_string else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
+        {CodegenAction.COPY_OUT} if string_getter else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
     )
     if getter is None:
         blockers.append("module variable is missing completed getter policy")
@@ -5831,10 +6716,13 @@ def _scalar_module_setter_blockers(
             return ("scalar constant must omit native setter assignment",)
         return ()
     if setter.setter_action is SetterAction.WRITE_THROUGH:
-        if setter.assignment_mode is not AssignmentMode.VALUE_COPY:
+        if setter.assignment_mode not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
             return ("write-through scalar setter requires value-copy native assignment",)
-        if setter.python_barrier_action is not PythonBarrierAction.SCALAR_VALUE:
-            return ("write-through scalar setter requires scalar-value Python conversion",)
+        expected_python_action = (
+            PythonBarrierAction.STRING_VALUE if setter.kind is ObjectKind.STRING else PythonBarrierAction.SCALAR_VALUE
+        )
+        if setter.python_barrier_action is not expected_python_action:
+            return (f"write-through scalar setter requires {expected_python_action.value} Python conversion",)
         return ()
     if setter.setter_action is SetterAction.REJECT_REPLACEMENT:
         if descriptor_kind is None:
@@ -5855,7 +6743,22 @@ def _scalar_module_getter_action(
         return ModuleGetterAction.CONSTANT_VALUE
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
+    if _is_fixed_length_character_scalar(variable):
+        # A character value cannot cross the C ABI by value, so it copies
+        # through a fixed-width byte buffer the way a character field does.
+        return ModuleGetterAction.CHARACTER_VALUE
     return ModuleGetterAction.DIRECT_VALUE
+
+
+def _is_fixed_length_character_scalar(variable: models.SemanticVariable) -> bool:
+    """Return whether one module variable is a rank-zero declared-length character."""
+    semantic_type = variable.semantic_type
+    return bool(
+        semantic_type.name == "String"
+        and int(semantic_type.rank or 0) == 0
+        and _character_length(semantic_type) is not None
+        and character_descriptor_kind(semantic_type.metadata) is None
+    )
 
 
 def _source_parameter_needs_native_getter(variable: models.SemanticVariable) -> bool:
@@ -5872,10 +6775,17 @@ def _source_parameter_needs_native_getter(variable: models.SemanticVariable) -> 
 
 def _scalar_module_native_assignment(
     setter: OwnershipDecision | None,
+    variable: models.SemanticVariable,
 ) -> AssignmentMode:
-    """Project the completed native setter action for bridge lowering."""
+    """Project the completed native setter action for bridge lowering.
+
+    A character value has no by-value C ABI, so its write is a distinct native
+    mechanism rather than the same value copy a numeric scalar uses.
+    """
     if setter is None or setter.setter_action is not SetterAction.WRITE_THROUGH:
         return AssignmentMode.NONE
+    if setter.assignment_mode is AssignmentMode.VALUE_COPY and _is_fixed_length_character_scalar(variable):
+        return AssignmentMode.CHARACTER_COPY
     return setter.assignment_mode
 
 
@@ -6237,7 +7147,8 @@ def _is_scalar_derived_type(semantic_type: models.SemanticType) -> bool:
     """Return whether semantic facts name a concrete rank-zero custom type."""
     return bool(
         int(semantic_type.rank or 0) == 0
-        and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String", "Void"}
+        and semantic_type.name not in {"String", "Void"}
+        and not _is_plan_primitive_value_type(semantic_type)
         and semantic_type.name not in {"Procedure", "Callback", "FunctionPointer", "CFunctionPointer"}
     )
 
@@ -6253,7 +7164,9 @@ def _is_descriptor_backed_scalar_derived_type(semantic_type: models.SemanticType
 def _is_derived_value_array(semantic_type: models.SemanticType) -> bool:
     """Return whether an array contains custom derived values rather than primitives."""
     return bool(
-        int(semantic_type.rank or 0) > 0 and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}
+        int(semantic_type.rank or 0) > 0
+        and semantic_type.name != "String"
+        and not _is_plan_primitive_value_type(semantic_type)
     )
 
 
@@ -6363,6 +7276,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         flatten_python_storage=_array_handoff_flattens_python_storage(array),
         flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
+        character=semantic_type.name == "String",
         category=array.category,
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )
@@ -6438,8 +7352,10 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
     scalar_storage = _is_scalar_storage_array_policy(array_policy)
-    supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
-        semantic_type.name == "String" and array_policy.itemsize is not None and not scalar_storage
+    # A character array may leave its width assumed: every element of a NumPy
+    # ``S`` array shares one itemsize, which already travels beside the buffer.
+    supported_element = _is_plan_primitive_value_type(semantic_type) or (
+        semantic_type.name == "String" and not scalar_storage
     )
     supported_rank = array_policy.rank is None or 1 <= array_policy.rank <= 15 or scalar_storage
     return bool(
@@ -6469,7 +7385,7 @@ def _is_phase6_raw_array_address_type(semantic_type: models.SemanticType) -> boo
         return False
     if len(policy.shape) != policy.rank or len(policy.axes) != policy.rank:
         return False
-    supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
+    supported_element = _is_plan_primitive_value_type(semantic_type) or (
         semantic_type.name == "String" and policy.itemsize is not None
     )
     return supported_element and all(item not in {":", "::Strided", "...", "Flat"} for item in policy.shape)
@@ -6501,6 +7417,7 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         native_order=order,
         contiguous=True,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,
+        character=semantic_type.name == "String",
         category="raw_address",
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )

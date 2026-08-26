@@ -16,16 +16,17 @@ from tests.fortran._support.wrapper_build import (
 )
 from prik import build_pyi_extension
 from prik.runtime.handles import AllocatableArray
+from tests.fortran._support.paths import FORTRAN_ROOT
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDITED_CONTRACTS = FIXTURES / "edited_contracts"
-DERIVED_BOUNDARY_F90_SOURCE = FIXTURES / "fderived_boundary_f90.f90"
+DERIVED_BOUNDARY_F90_SOURCE = FIXTURES / "native" / "fderived_boundary_f90.f90"
 CONTRACT = EDITED_CONTRACTS / "opaque_boundary" / "__init__.pyi"
-PLAIN_MODULE_SOURCE = FIXTURES / "fmodule_derived_snapshot_f90.f90"
+PLAIN_MODULE_SOURCE = FIXTURES / "native" / "fmodule_derived_snapshot_f90.f90"
 PLAIN_MODULE_CONTRACT = EDITED_CONTRACTS / "module_live_proxy" / "__init__.pyi"
-ALIASED_MODULE_SOURCE = FIXTURES / "fmodule_derived_alias_f90.f90"
+ALIASED_MODULE_SOURCE = FIXTURES / "native" / "fmodule_derived_alias_f90.f90"
 ALIASED_MODULE_CONTRACT = EDITED_CONTRACTS / "module_aliased_proxy" / "__init__.pyi"
-DERIVED_CONSTANT_SOURCE = Path(__file__).parents[2] / "modules" / "end_to_end" / "fixtures" / "fmodule_vars_f90.f90"
+DERIVED_CONSTANT_SOURCE = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures" / "native" / "fmodule_vars_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
 DERIVED_CONSTANT_CONTRACT = """\
 from prik.contracts import Final, Int32
@@ -119,9 +120,9 @@ contains
 end module derived_value_arguments
 """
 VALUE_AND_OPTIONAL_CONTRACT = """\
-from prik.contracts import Arg, Float64, Returns, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Returns, Value, native_abi, native_call
 
-@native_type(attributes=("bind(c)",))
+@native_abi("c")
 class point:
     x: Float64
     y: Float64
@@ -170,11 +171,11 @@ contains
 end module derived_borrowed_finalizer
 """
 BORROWED_FINALIZER_CONTRACT = """\
-from prik.contracts import Int32, native_type
+from prik.contracts import Int32, destroy
 
-@native_type(finalizers=("cleanup_child",))
 class child:
-    pass
+    @destroy
+    def cleanup_child(self) -> None: ...
 
 class parent:
     value: child

@@ -1,6 +1,6 @@
 ---
 title: PRIK — Python Runtime Interop Kit
-description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
+description: PRIK generates native Python bindings for Fortran and C code.
 audience: users
 prerequisites: none
 related: user/getting-started/index.md, user/getting-started/installation.md, user/performance.md, developer/architecture.md
@@ -14,16 +14,18 @@ publication: reviewed
        width="500">
 </p>
 
-**PRIK (Python Runtime Interop Kit)** generates native Python
-bindings for Fortran, with editable `.pyi` contracts for shaping
-Pythonic APIs.
+**PRIK (Python Runtime Interop Kit)** generates native Python bindings for
+Fortran and C code.
 
-**Project status: Alpha.** Core Fortran wrapper workflows are
-implemented and tested across supported compilers, but public APIs may still
-change before `1.0`.
+**Project status: Alpha.** Core Fortran workflows and the currently supported
+C wrapper features are implemented and tested across supported compilers, but
+public APIs may still change before `1.0`.
 
-**PRIK starts with Fortran-to-Python.** Its semantic contract model is designed
-to support more native languages over time.
+PRIK supports both languages. Fortran currently has the broader, more mature
+wrapper surface. C support currently includes primitive scalar types, pointers,
+and arrays. In both languages, editable `.pyi` contracts let you shape the
+Python API. See [C Support](user/language-support/c-support.md) for C examples
+and current limits.
 
 ---
 
@@ -39,7 +41,7 @@ python3 -m pip install prik
 
 Create `scale.f90`:
 
-<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/scale.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/building/end_to_end/fixtures/native/scale.f90 -->
 ```fortran
 real(8) function scale(value, factor) result(output)
   real(8), intent(in) :: value
@@ -67,6 +69,41 @@ print(result)  # 7.5
 
 No manual binding code is required. PRIK derives the native wrapper and a
 readable Python signature from the Fortran source.
+
+## From C to Python in one command
+
+Create `native_math.c`:
+
+```c
+double add(double left, double right) {
+    return left + right;
+}
+```
+
+Build an importable extension:
+
+```bash
+python3 -m prik --language c native_math.c \
+  --compiler cc \
+  --out native_math \
+  --out-dir build
+```
+
+Call the generated Python API:
+
+```python
+import sys
+
+import numpy as np
+
+sys.path.insert(0, "build")
+import native_math
+
+print(native_math.add(np.float64(3.0), np.float64(2.5)))  # 5.5
+```
+
+This source build also writes an editable contract. For C pointers, arrays,
+and authored contracts, see [C Support](user/language-support/c-support.md).
 
 ## Shape the Python API
 
@@ -188,15 +225,15 @@ class point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
-    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` keeps the original native target while the declaration's
-placement and name define the Python-facing API. `Pass()` supplies the
-receiver (`self`) to the native call; `Addr(Arg(...))` passes the remaining
-arguments by address as required by the native calling convention.
+`@bind("move")` maps the Python-facing `translate` method to the native
+`move` procedure. `norm_squared` needs no `@bind` because its Python and
+native names already match. `Pass()` supplies the receiver (`self`) to the
+native call; `Addr(Arg(...))` passes the remaining arguments by address as
+required by the native calling convention.
 
 Build from the contract:
 
@@ -241,21 +278,25 @@ Same Fortran source, but a more natural Python API: module procedures become met
 - **Clear limits:** unsupported contracts fail before wrapper generation with
   actionable diagnostics.
 
-## Proven on real Fortran libraries
+## Proven on real libraries
 
-The maintained examples wrap and numerically validate
-[BLAS](user/examples/blas-wrapper.md),
-[LAPACK](user/examples/lapack-wrapper.md),
-[FFTPACK](user/examples/fftpack-wrapper.md), and
-[MINPACK](user/examples/minpack-wrapper.md). The reproducible
-[performance comparison](user/performance.md) measures PRIK and NumPy's f2py
-against the same Fortran kernels.
+The maintained example suite covers five Fortran libraries—
+[BLAS](user/examples/fortran/blas-wrapper.md),
+[LAPACK](user/examples/fortran/lapack-wrapper.md),
+[FFTPACK](user/examples/fortran/fftpack-wrapper.md),
+[MINPACK](user/examples/fortran/minpack-wrapper.md), and
+[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md)—and two C
+libraries: [libm](user/examples/c/libm-wrapper.md) and
+[TA-Lib](user/examples/c/ta-lib-wrapper.md). Each project has a complete build
+and numerical validation workflow, including its tested platforms and
+toolchains, in the [Examples Gallery](user/examples/index.md).
 
 ## Measured against NumPy's f2py
 
-The published benchmark compares both tools on the same Fortran sources and
-the same machine. The charts show the current published snapshot. Results are
-specific to its machine and toolchain, which are documented with the full results.
+The reproducible [performance comparison](user/performance.md) measures PRIK
+and NumPy's f2py against the same Fortran kernels on the same machine. The
+charts show the current published snapshot. Results are specific to its
+machine and toolchain, which are documented with the full results.
 
 **Runtime-call performance** — values above `1.0×` favor PRIK.
 
@@ -276,6 +317,10 @@ values below `1.0×` favor f2py.
 
 [Install PRIK →](user/getting-started/installation.md){ .prik-primary-cta }
 [Read Getting Started →](user/getting-started/index.md){ .prik-primary-cta }
+
+**Wrapping a supported C API?**
+
+[Read C Support →](user/language-support/c-support.md){ .prik-primary-cta }
 
 **Working on PRIK itself?**
 

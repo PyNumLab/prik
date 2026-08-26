@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import (
 from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
-ARRAY_CONTRACTS_F90_SOURCE = FIXTURES / "farray_contracts_f90.f90"
+ARRAY_CONTRACTS_F90_SOURCE = FIXTURES / "native" / "farray_contracts_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 _MAX_WRAPPER_TEST_RANK = 15
 

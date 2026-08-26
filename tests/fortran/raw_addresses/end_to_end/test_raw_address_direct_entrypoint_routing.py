@@ -16,7 +16,7 @@ def _build(tmp_path: Path, stem: str):
         tmp_path,
         module_name=stem,
         source_text=(FIXTURES / "native" / f"{stem}.f90").read_text(encoding="utf-8"),
-        contract_text=(FIXTURES / "contracts" / f"{stem}.pyi").read_text(encoding="utf-8"),
+        contract_text=(FIXTURES / "contracts" / stem / f"{stem}.pyi").read_text(encoding="utf-8"),
     )
 
 

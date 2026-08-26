@@ -16,7 +16,7 @@ from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "array_ops.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "array_ops.f90"
 
 
 def test_edited_pyi_selects_direct_c_storage_or_fortran_copy_semantics(tmp_path: Path):

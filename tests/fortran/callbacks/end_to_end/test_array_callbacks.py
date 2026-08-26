@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CALLBACK_ARRAY_F90_SOURCE = FIXTURES / "fcallback_array_f90.f90"
+CALLBACK_ARRAY_F90_SOURCE = FIXTURES / "native" / "fcallback_array_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

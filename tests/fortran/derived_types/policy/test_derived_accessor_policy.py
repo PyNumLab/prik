@@ -6,6 +6,7 @@ from prik.semantics.models import (
     RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA,
     SemanticClass,
     SemanticConstraint,
+    SemanticDestructor,
     SemanticField,
     SemanticModule,
     SemanticVariable,
@@ -36,7 +37,8 @@ from prik.semantics.models import (
 from prik.policy.models import ModuleObjectAccessMechanism
 
 
-def test_abstract_type_and_deferred_binding_fail_in_completed_derived_policy():
+def test_abstract_type_completes_as_a_non_instantiable_derived_policy():
+    """An abstract type is supported and records that it has no instances."""
     semantic_class = SemanticClass(
         "shape",
         metadata={
@@ -49,11 +51,35 @@ def test_abstract_type_and_deferred_binding_fail_in_completed_derived_policy():
     complete_semantic_policies(module)
 
     policy = semantic_class.metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA]
-    assert policy.supported is False
-    assert policy.blockers == (
-        "abstract derived types need a non-instantiable Python class policy",
-        "deferred type-bound procedure 'area' needs an override and dispatch policy",
+    assert policy.supported is True
+    assert policy.blockers == ()
+    assert policy.abstract is True
+    assert policy.deferred_bindings == ("area",)
+
+
+def test_native_destructor_reaches_completed_derived_type_policy():
+    semantic_class = SemanticClass(
+        "owned_buffer",
+        destructors=[SemanticDestructor("release_owned_buffer")],
     )
+    module = SemanticModule("buffers", classes=[semantic_class])
+
+    complete_semantic_policies(module)
+
+    policy = semantic_class.metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA]
+    assert policy.destructors == ("release_owned_buffer",)
+
+
+def test_deferred_binding_without_an_abstract_type_is_refused():
+    """Only an abstract type may declare a binding it does not implement."""
+    semantic_class = SemanticClass("shape", metadata={"fortran_deferred_bindings": ["area"]})
+    module = SemanticModule("shapes", classes=[semantic_class])
+
+    complete_semantic_policies(module)
+
+    policy = semantic_class.metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA]
+    assert policy.supported is False
+    assert policy.blockers == ("deferred type-bound procedure 'area' needs a declaring abstract type",)
 
 
 def test_derived_field_setter_policy_uses_value_copy_write_through():

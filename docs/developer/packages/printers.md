@@ -125,6 +125,7 @@ module bind_c_printer_demo_wrapper
   use printer_demo, only: native_double_value => DOUBLE_VALUE
   implicit none
 contains
+
   function bind_c_double_value(value) result(result) bind(c, name="DOUBLE_VALUE")
     real(c_double), value :: value
     real(c_double) :: result
@@ -163,8 +164,8 @@ wrapper policy.
 | Evidence | What it establishes |
 | --- | --- |
 | [Native source printers](../../../tests/fortran/infrastructure/printers/test_source_printers.py) | C and Fortran serialization, rejection of wrapper plans, line wrapping, literal preservation, and unsplittable-line diagnostics. |
-| [Semantic `.pyi` conversion smoke](../../../tests/fortran/semantic_pyi_format/pipeline/test_pyi_printer_conversion_smoke.py) | Emitted contract fixtures can be parsed and converted through the normal semantic-`.pyi` route. |
-| [`.pyi` imports and packages](../../../tests/fortran/semantic_pyi_format/pipeline/test_pyi_printer_imports_and_packages.py) | Isolated emission state, imports, aliases, packages, name collisions, and opaque dependencies. |
+| [Semantic `.pyi` conversion smoke](../../../tests/fortran/infrastructure/semantic_pyi/pipeline/test_pyi_printer_conversion_smoke.py) | Emitted contract fixtures can be parsed and converted through the normal semantic-`.pyi` route. |
+| [`.pyi` imports and packages](../../../tests/fortran/infrastructure/semantic_pyi/pipeline/test_pyi_printer_imports_and_packages.py) | Isolated emission state, imports, aliases, packages, name collisions, and opaque dependencies. |
 
 ## Change Routes
 

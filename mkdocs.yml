@@ -1,5 +1,5 @@
 site_name: PRIK — Bring Native Code to Python
-site_description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
+site_description: PRIK generates native Python bindings for Fortran and C code.
 site_url: https://pynumlab.github.io/prik/
 repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub
@@ -33,8 +33,6 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
-exclude_docs: |
-  old_docs/**
 nav:
   - Home: index.md
   - About: user/about.md
@@ -67,39 +65,19 @@ nav:
           - Error Handling & Diagnostics: user/guide/error-handling.md
           - Building the Shared Library: user/guide/building-shared-library.md
       - Performance: user/performance.md
-      - Tutorials:
-          - Overview: user/tutorials/index.md
-          - Large Fortran Codebase: user/tutorials/large-fortran-codebase.md
-          - Modern Fortran Project: user/tutorials/modern-fortran-project.md
-          - Numerical Solver: user/tutorials/numerical-solver.md
-          - Packaging: user/tutorials/packaging.md
-          - Scientific Library: user/tutorials/scientific-library.md
       - Examples:
           - Overview: user/examples/index.md
-          - BLAS Wrapper: user/examples/blas-wrapper.md
-          - LAPACK Wrapper: user/examples/lapack-wrapper.md
-          - FFTPACK Wrapper: user/examples/fftpack-wrapper.md
-          - MINPACK Wrapper: user/examples/minpack-wrapper.md
-          - CFD Mini Example: user/examples/cfd-mini-example.md
-          - MPI Example: user/examples/mpi-example.md
-          - Object-Oriented Fortran: user/examples/object-oriented-fortran.md
-          - ODE Solver: user/examples/ode-solver.md
-          - OpenMP Example: user/examples/openmp-example.md
-          - Recipes:
-              - Build and Import With the Python API: user/examples/recipes/build-and-import-python-api.md
-              - Inspect a Fortran API: user/examples/recipes/inspect-fortran-api.md
-              # PRIK_C_DOCS: - Inspect a C API: user/examples/recipes/inspect-c-api.md
-              - Work With Semantic .pyi Contracts: user/examples/recipes/semantic-pyi-contracts.md
-              - Control CLI Output: user/examples/recipes/control-cli-output.md
-              - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
-              - Use Compiler Preprocessing Options: user/examples/recipes/compiler-preprocessing.md
+          - Fortran:
+              - BLAS Wrapper: user/examples/fortran/blas-wrapper.md
+              - LAPACK Wrapper: user/examples/fortran/lapack-wrapper.md
+              - FFTPACK Wrapper: user/examples/fortran/fftpack-wrapper.md
+              - MINPACK Wrapper: user/examples/fortran/minpack-wrapper.md
+              - BSPLINE-FORTRAN Wrapper: user/examples/fortran/bspline-wrapper.md
+          - C:
+              - libm Wrapper: user/examples/c/libm-wrapper.md
+              - TA-Lib Wrapper: user/examples/c/ta-lib-wrapper.md
       - Troubleshooting:
-          - Overview: user/troubleshooting/index.md
-          - Installation Issues: user/troubleshooting/installation-issues.md
           - Compiler Issues: user/troubleshooting/compiler-issues.md
-          - Build Issues: user/troubleshooting/build-issues.md
-          - Runtime Issues: user/troubleshooting/runtime-issues.md
-          - Platform-Specific Issues: user/troubleshooting/platform-specific-issues.md
       - FAQ: user/faq/index.md
       - Reference:
           - Overview: user/reference/index.md
@@ -120,6 +98,8 @@ nav:
           - Configuration Files: user/reference/configuration-files.md
       - Language Support:
           - Overview: user/language-support/index.md
+          - Fortran: user/language-support/fortran-support.md
+          - C: user/language-support/c-support.md
           - Feature Matrix: user/language-support/feature-matrix.md
   - Developer Documentation:
       - Overview: developer/index.md
@@ -150,10 +130,3 @@ nav:
           - Quality Assurance: developer/workflows/quality-assurance.md
           - Pull Request Checks: developer/workflows/ci.md
           - Documentation Maintenance: developer/workflows/documentation.md
-      # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
-      - Roadmaps:
-          - Overview: developer/roadmap/index.md
-          - Native Entrypoint and Adapter Adoption: developer/roadmap/native-entrypoint-adoption-checklist.md
-          - Language-First Test Suite and Fortran Cleanup: developer/roadmap/fortran-test-suite-cleanup-checklist.md
-          - Documentation Content: developer/roadmap/documentation-content-checklist.md
-          - Semantic .pyi Wrapper: developer/roadmap/semantic-pyi-wrapper-checklist.md

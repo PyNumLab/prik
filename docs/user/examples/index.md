@@ -2,52 +2,78 @@
 title: Examples Gallery
 audience: users
 prerequisites: getting started
-related: ../tutorials/index.md, ../guide/building-shared-library.md
+related: ../guide/building-shared-library.md, ../language-support/c-support.md, ../reference/cli-commands.md, ../reference/python-api.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Examples Gallery
 
-This section includes checked recipes and four complete real-library examples:
-BLAS, LAPACK, FFTPACK, and MINPACK. Each one provides build commands, Python
-usage, and numerical checks for its public routines.
+This section includes seven complete real-library examples: BLAS, LAPACK,
+FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, and TA-Lib. Each one provides build
+commands, Python usage, and numerical checks for its public routines.
 
-The larger project examples below are placeholders for future complete runnable
-projects. Each one must include source, build command, import command, runtime
-check, limitations, and test evidence before it is marked maintained.
+The native-language boundary is deliberately explicit:
 
-## Choose a page
+| Native language | Examples | What PRIK consumes |
+| --- | --- | --- |
+| Fortran | BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN | Fortran source and interfaces, which the native build compiles and the wrapper exposes |
+| C | libm, TA-Lib | Public C header declarations plus an already compiled library to link; implementation `.c` files are not wrapper inputs |
+
+For libm, the declaration source is the platform's `<math.h>` and the linked
+implementation is the platform math library. For TA-Lib, the declaration
+source is its public `ta_libc.h` and the linked implementation is compiled
+`libta-lib`.
+
+## Tested platforms
+
+The **Real Libraries Portability** workflow runs every example with Python
+3.12 on Linux and macOS, using both x86-64/Intel and ARM64 runners. Compiler
+coverage differs by project:
+
+| Library | Linux compiler coverage | macOS compiler coverage | Architectures |
+| --- | --- | --- | --- |
+| BLAS | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| LAPACK | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| FFTPACK | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| MINPACK | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| BSPLINE-FORTRAN | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| libm | GCC 13 and Clang 18 | Apple Clang and GNU GCC 13 | x86-64/Intel and ARM64 |
+| TA-Lib | GCC 13 | Apple Clang | x86-64/Intel and ARM64 |
+
+The C compiler beside each Fortran compiler builds the generated Python
+binding. BLAS and LAPACK also receive their maintainer full-surface audits on
+Linux x86-64. Native Windows/MSVC is outside the current portability matrix.
+
+For a smaller first workflow, start with one of the checked guides below. Each
+links to a complete source, build, import, or result path, rather than a
+draft-only recipe.
+
+## Fortran libraries
+
+These examples build the supplied Fortran sources and generate bindings from
+their source-level declarations and interfaces.
 
 | Goal | Page |
 | --- | --- |
-| Build and import a first extension | [First Wrapped Function](../getting-started/first-wrapped-function.md) |
-| Build from several ordered sources | [Building the Shared Library](../guide/building-shared-library.md#multiple-source-files) |
-| Generate and edit `Makefile.prik` | [Building the Shared Library](../guide/building-shared-library.md#use-a-makefile) |
-| Build through Python code | [Build and import with the Python API](recipes/build-and-import-python-api.md) |
-| Inspect a Fortran API | [Inspect a Fortran API](recipes/inspect-fortran-api.md) |
-<!-- PRIK_C_DOCS_START
-| Inspect a C API | [Inspect a C API](recipes/inspect-c-api.md) |
-PRIK_C_DOCS_END -->
-| Work with semantic `.pyi` contracts | [Work with semantic `.pyi` contracts](recipes/semantic-pyi-contracts.md) |
-| Control command output | [Control CLI output](recipes/control-cli-output.md) |
-| Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
-| Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
-| Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
-| Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](lapack-wrapper.md) |
-| Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |
-| Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](minpack-wrapper.md) |
+| Build and validate the complete Reference BLAS | [BLAS wrapper](fortran/blas-wrapper.md) |
+| Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](fortran/lapack-wrapper.md) |
+| Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fortran/fftpack-wrapper.md) |
+| Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](fortran/minpack-wrapper.md) |
+| Build and validate modern Fortran classes and 15 interpolation routines | [BSPLINE-FORTRAN wrapper](fortran/bspline-wrapper.md) |
 
-## Planned Project Examples
+## C libraries
 
-- [ODE solver](ode-solver.md)
-- [CFD mini-example](cfd-mini-example.md)
-- [Object-oriented Fortran example](object-oriented-fortran.md)
-- [MPI example](mpi-example.md)
-- [OpenMP example](openmp-example.md)
+These examples obtain declarations from a public C header and link the
+generated extension to an existing compiled library. PRIK does not compile the
+library's implementation sources as part of the wrapper build.
 
-## TODO
+| Goal | Page |
+| --- | --- |
+| Wrap 60 target-generated ISO C99 math routines from a system library | [libm wrapper](c/libm-wrapper.md) |
+| Wrap and reference-check all 322 TA-Lib double and float-input indicators | [TA-Lib wrapper](c/ta-lib-wrapper.md) |
 
-- TODO: Add further runnable checked examples one at a time.
-- TODO: Keep examples with unavailable runtime support marked not yet
-  implemented.
+For smaller introductory workflows, start with [First Wrapped
+Function](../getting-started/first-wrapped-function.md), [First Wrapped
+Module](../getting-started/first-wrapped-module.md), or the [C support
+guide](../language-support/c-support.md).

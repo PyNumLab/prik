@@ -9,6 +9,14 @@ examples, build or CI workflows, benchmark methodology, or documented
 limitations. Keep entries concise and outcome-focused; do not add release
 notes for internal cleanup that has no visible effect.
 
+Treat developer documentation as durable guides, not as per-change
+implementation logs. Do not update developer pages merely because code changed,
+and do not add incidental low-level details that are unnecessary for following
+the documented architecture or maintainer workflow. Update them only when a
+documented contract, ownership boundary, workflow, or limitation changes; keep
+routine implementation findings in the review summary or a concise CHANGELOG
+entry when appropriate.
+
 Ignore:
 - *.f90
 - *.f95
@@ -80,6 +88,24 @@ the selected plan requires a genuinely new emitted-code mechanism; those
 generators should otherwise keep reusing and dispatching existing planned
 paths.
 
+To answer an ABI question, or to decide whether something belongs in the
+binding or in the Fortran bridge, first ask: **how would this work for a
+`bind(C)` procedure, where there is no bridge at all?** A direct entrypoint has
+only the binding and the user's C ABI symbol, so whatever the direct route must
+do is binding-owned by definition. The bridge then owns exactly the remainder:
+the work that makes an ordinary non-`bind(C)` procedure reachable through that
+same completed plan. Deriving the boundary this way keeps one shared entrypoint
+contract for both routes instead of two parallel designs.
+
+The question is still decisive when the form cannot be `bind(C)` at all. A
+Fortran type that no interoperable interface can declare — a deferred-length
+`character(len=:)` dummy, for example, which the standard rejects in a
+`bind(C)` interface because character dummies there must have length 1 — proves
+that a generated Fortran adapter is mandatory rather than optional, and names
+what that adapter has to construct: the non-interoperable local the native
+dummy requires. Record that reasoning with the completed policy so the bridge
+implements a decided mechanism rather than rediscovering it.
+
 After every implementation task, the final summary must include a breakdown of
 the stages that actually changed. Relevant stages include parsing, semantic IR
 construction, post-IR policy completion, wrapper planning/direct lowering, binding
@@ -98,7 +124,7 @@ Changes limited to wrapper planning, direct bridge/binding lowering, or native
 compilation should use the focused owners under
 `tests/fortran/infrastructure/codegen/`, feature-local
 `tests/fortran/*/codegen/` directories, and
-`tests/fortran/building_shared_library/compiling/` as applicable. Include the
+`tests/fortran/infrastructure/building/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
 Do not run LAPACK wrapper tests locally unless the user explicitly asks for them. Local verification may run everything else, including BLAS-only real-library tests; leave LAPACK coverage to GitHub Actions by default.

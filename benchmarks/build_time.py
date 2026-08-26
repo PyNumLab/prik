@@ -24,7 +24,7 @@ import pyperf
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 RESULTS_ROOT = BENCHMARK_ROOT / "results"
-BLAS_SOURCE_ROOT = REPOSITORY_ROOT / "examples" / "blas" / "native"
+BLAS_SOURCE_ROOT = REPOSITORY_ROOT / "examples" / "fortran" / "blas" / "native"
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
 DEVELOPMENT_FLAGS = "-O0"
 OPTIMIZED_FLAGS = "-O3 -march=native -mtune=native"

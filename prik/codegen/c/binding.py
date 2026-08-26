@@ -63,9 +63,11 @@ from prik.codegen.nodes import (
     CFunction,
     CFunctionPointerType,
     CFunctionPrototype,
+    CGoto,
     CHeader,
     CIf,
     CInclude,
+    CLabel,
     CMacroDefinition,
     CMethodDefEntry,
     CMethodDefTable,
@@ -80,6 +82,7 @@ from prik.codegen.nodes import (
     CodeExpression,
 )
 from prik.codegen.overloads import OverloadPlanQueries
+from prik.naming.native_symbols import COLLISION_ADAPTER_STORAGE
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -91,6 +94,7 @@ from prik.planning.models import (
     DerivedHandoffPlan,
     DerivedMemberPathPlan,
     DerivedTypePlan,
+    DirectCABITypePlan,
     FunctionPlan,
     LifecycleActionPlan,
     ModulePlan,
@@ -109,7 +113,7 @@ from prik.planning.models import (
     OverloadPlan,
     ResultPlan,
 )
-from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry, PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
 
 
@@ -161,6 +165,24 @@ class _COverloadDispatch:
     public: bool
 
 
+_BINDING_GETTER_SUMMARIES = {
+    ModuleGetterAction.CONSTANT_VALUE: "The value is a constant placed in the module dictionary at import.",
+    ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Builds a Python object from the compiler-evaluated constant.",
+    ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: "Copies the parameter array into one read-only NumPy array.",
+    ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
+    ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
+    ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
+    ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
+    ModuleGetterAction.DERIVED_OBJECT: "Returns the generated wrapper object for the native value.",
+}
+
+_BINDING_SETTER_SUMMARIES = {
+    SetterAction.WRITE_THROUGH: "Validates the incoming object and writes it into native storage.",
+    SetterAction.REJECT_REPLACEMENT: "Replacement is rejected; the attribute is read-only.",
+    SetterAction.OMIT: "No setter is exposed.",
+}
+
+
 class CBindingGenerator(ClassVisitor):
     """Build the CPython C half of a wrapper from validated binding-plan views.
 
@@ -173,6 +195,7 @@ class CBindingGenerator(ClassVisitor):
 
     _SHARD_MIN_FUNCTIONS = 128
     _SHARD_TARGET_FUNCTIONS = 32
+    _SHARED_OUTPUT_CLEANUP_MIN_RESULTS = 4
 
     def require_supported(self, plan: ModulePlan) -> None:
         """Preflight primitive spellings needed by an already-validated plan.
@@ -381,9 +404,66 @@ class CBindingGenerator(ClassVisitor):
         """
         module = self.binding_module(plan)
         function_groups = self._binding_function_shards(plan)
-        if not function_groups:
-            return (module,)
-        return self._sharded_binding_modules(plan, module, function_groups)
+        modules = (module,) if not function_groups else self._sharded_binding_modules(plan, module, function_groups)
+        adapters = self._collision_adapter_module(plan)
+        return (*modules, adapters) if adapters is not None else modules
+
+    def _collision_adapter_module(self, plan: ModulePlan) -> CModule | None:
+        """Build the translation unit that forwards collision-adapted symbols.
+
+        The unit deliberately includes no Python header, so its declaration of
+        each native symbol is the only one in scope and cannot conflict with a
+        declaration ``Python.h`` would otherwise have brought in.
+        """
+        adapted = self._collision_adapted_functions(plan)
+        if not adapted:
+            return None
+        return CModule(
+            name=f"{plan.binding.owner_path}_adapters",
+            includes=(
+                CInclude("stdint.h"),
+                CInclude("stdbool.h"),
+                CInclude("complex.h"),
+                CInclude("stddef.h"),
+            ),
+            declarations=tuple(self._collision_adapter_native_prototype(function) for function in adapted),
+            functions=tuple(self._collision_adapter_function(function) for function in adapted),
+        )
+
+    def _collision_adapted_functions(self, plan: ModulePlan) -> tuple[FunctionPlan, ...]:
+        """Return one function per adapted symbol, in stable emission order.
+
+        Several Python callables may name the same native symbol, so the
+        forwarder is defined once per symbol rather than once per callable.
+        """
+        adapted: dict[str, FunctionPlan] = {}
+        for function in self._functions(plan):
+            symbol = function.entrypoint.collision_adapter_symbol
+            if symbol is not None:
+                adapted.setdefault(symbol, function)
+        return tuple(adapted.values())
+
+    def _collision_adapter_native_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
+        """Declare the native symbol under its own name inside the adapter unit."""
+        return replace(self._entrypoint_prototype(plan), name=plan.entrypoint.symbol_name)
+
+    def _collision_adapter_function(self, plan: FunctionPlan) -> CFunction:
+        """Define the forwarder the binding calls in place of the native symbol."""
+        prototype = self._entrypoint_prototype(plan)
+        call = CodeExpression(
+            f"({plan.entrypoint.symbol_name})({', '.join(parameter.name for parameter in prototype.parameters)})"
+        )
+        body = (CExpressionStatement(call),) if prototype.return_type == "void" else (CReturn(call),)
+        return CFunction(
+            name=prototype.name,
+            return_type=prototype.return_type,
+            parameters=prototype.parameters,
+            body=body,
+            # A hidden forwarder is not part of the extension's exported ABI, so
+            # link-time optimization may inline it and drop the definition. An
+            # exported one is interposable and must survive the link.
+            storage=COLLISION_ADAPTER_STORAGE,
+        )
 
     def _sharded_binding_modules(
         self,
@@ -649,11 +729,9 @@ class CBindingGenerator(ClassVisitor):
         return (
             bool(tuple(self._variables(plan)))
             or any(function.arguments or function.results for function in self._functions(plan))
-            or any(
-                field.object_kind is ObjectKind.NUMPY_ARRAY
-                for derived in self._derived_types(plan)
-                for field in derived.fields
-            )
+            # Every published component converts through the bundled helpers, so a
+            # type whose module exposes only `bind(C)` procedures still needs them.
+            or any(derived.fields for derived in self._derived_types(plan))
         )
 
     def _module_needs_allocator(self, plan: ModulePlan) -> bool:
@@ -697,6 +775,11 @@ class CBindingGenerator(ClassVisitor):
             CInclude("stdint.h"),
             CInclude("stdbool.h"),
             CInclude("complex.h"),
+            # A preserved direct-C declaration may spell a standard typedef such
+            # as ``size_t`` or ``ptrdiff_t``, so the entrypoint prototype needs
+            # its defining header rather than whatever ``Python.h`` happens to
+            # pull in on one platform.
+            *((CInclude("stddef.h"),) if self._module_declares_direct_c_entrypoints(plan) else ()),
             *((CInclude("stdatomic.h"),) if self._module_uses_derived_origin_ops(plan) else ()),
             *((CInclude("string.h"),) if self._module_uses_memory_copy(plan) else ()),
             *(
@@ -707,6 +790,15 @@ class CBindingGenerator(ClassVisitor):
             *(CInclude(header) for header in plan.required_headers),
             *self._module_native_support_includes(needs_native_support),
             CInclude(f"{plan.binding.owner_path}_wrapper.h", system=False),
+        )
+
+    @staticmethod
+    def _module_declares_direct_c_entrypoints(plan: ModulePlan) -> bool:
+        """Return whether any planned entrypoint carries preserved C declarations."""
+        return any(
+            function.entrypoint.direct_c_abi is not None
+            for namespace in plan.namespaces
+            for function in namespace.functions
         )
 
     def _module_uses_string_values(self, plan: ModulePlan) -> bool:
@@ -2359,6 +2451,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             self._generated_support_procedure_entrypoint_prototype(operation)
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for operation in self._generated_support_procedure_entrypoints_for(
                 f"{derived.owner_path}.{field.name}", "field:direct:"
@@ -2428,6 +2521,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             function
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for function in self._direct_field_functions(derived, field)
         )
@@ -5362,11 +5456,28 @@ class CBindingGenerator(ClassVisitor):
         owner = re.sub(r"\W", "_", plan.owner_path).casefold()
         return f"prik_release_native_handle_{owner}"
 
+    @staticmethod
+    def _documented(functions: tuple[CFunction, ...], *doc: str) -> tuple[CFunction, ...]:
+        """Attach explanatory prose to generated functions that carry none."""
+        return tuple(function if function.doc else replace(function, doc=doc) for function in functions)
+
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Lower binding-owned getter and setter actions into C functions."""
+        # The binding facet names the Python attribute and the C symbols it
+        # calls; the native Fortran variable belongs to the bridge facet and is
+        # deliberately not read here.
+        name = plan.binding.python_names[0]
         return (
-            *self._lower_module_getter(plan),
-            *self._lower_module_setter(plan),
+            *self._documented(
+                self._lower_module_getter(plan),
+                f"Read module attribute '{name}'.",
+                _BINDING_GETTER_SUMMARIES.get(plan.binding.getter_action, ""),
+            ),
+            *self._documented(
+                self._lower_module_setter(plan),
+                f"Assign module attribute '{name}'.",
+                _BINDING_SETTER_SUMMARIES.get(plan.binding.setter_action, ""),
+            ),
         )
 
     def _lower_module_getter(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
@@ -5381,6 +5492,8 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.CHARACTER_VALUE:
+                return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
                 return self._lower_module_getter_nullable_snapshot(plan)
             case ModuleGetterAction.BORROWED_ARRAY_VIEW:
@@ -5423,8 +5536,85 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def _module_character_length(self, plan: ModuleVariablePlan) -> int:
+        """Return the declared width one character module accessor copies."""
+        length = plan.character_length
+        if length is None or length <= 0:
+            raise ValueError(f"Character module variable {plan.owner_path!r} has no declared length")
+        return length
+
+    def _lower_module_getter_character_value(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Copy one fixed native character module variable into an independent Python string."""
+        length = self._module_character_length(plan)
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration(f"value[{length + 1}]", "char"),
+                    CExpressionStatement(CodeExpression(f"{self._module_bridge_getter_name(plan)}(value)")),
+                    CExpressionStatement(CodeExpression(f"value[{length}] = '\\0'")),
+                    CReturn(CodeExpression(f'PyUnicode_DecodeUTF8(value, {length}, "strict")')),
+                ),
+            ),
+        )
+
+    def _lower_module_setter_character_value(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Validate and copy one exact-width Python string into native module storage.
+
+        The setter reports failure with ``-1`` rather than ``NULL``: a module
+        attribute assignment is an ``int`` slot, not a returned object.
+        """
+        length = self._module_character_length(plan)
+        name = plan.binding.python_names[0]
+        return (
+            CFunction(
+                self._module_setter_name(plan),
+                "int",
+                parameters=(CParameter("value_obj", "PyObject *"),),
+                storage="static",
+                body=(
+                    CIf(
+                        CodeExpression("!PyUnicode_Check(value_obj)"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Expected str for module variable {name}")'
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
+                    CDeclaration(
+                        "value",
+                        "const char *",
+                        CodeExpression("PyUnicode_AsUTF8AndSize(value_obj, &value_length)"),
+                    ),
+                    CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression("-1")),)),
+                    CIf(
+                        CodeExpression(f"value_length != {length} || (Py_ssize_t)strlen(value) != value_length"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Module variable {name} must encode to '
+                                    f'exactly {length} bytes without embedded NUL")'
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression(f"{self._module_bridge_setter_name(plan)}(value)")),
+                    CReturn(CodeExpression("0")),
+                ),
+            ),
+        )
+
     def _lower_module_getter_nullable_snapshot(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Return None or a detached Python copy from a nullable native snapshot."""
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return self._lower_module_getter_nullable_character_snapshot(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         return (
             CFunction(
@@ -5457,13 +5647,69 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def _lower_module_getter_nullable_character_snapshot(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[CFunction, ...]:
+        """Decode one nullable detached character snapshot, or report absence.
+
+        An unallocated descriptor and a failed allocation are different
+        outcomes: the first is ``None``, the second is a ``MemoryError``, and
+        only the reported width separates them.
+        """
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration("length", "int64_t", CodeExpression("0")),
+                    CDeclaration(
+                        "data",
+                        "void *",
+                        CodeExpression(f"{self._module_bridge_getter_name(plan)}(&length)"),
+                    ),
+                    CIf(
+                        CodeExpression("data == NULL"),
+                        body=(
+                            CIf(
+                                CodeExpression("length > 0"),
+                                body=(CReturn(CodeExpression("PyErr_NoMemory()")),),
+                            ),
+                            CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
+                        ),
+                    ),
+                    CDeclaration(
+                        "result",
+                        "PyObject *",
+                        CodeExpression('PyUnicode_DecodeUTF8((const char *)data, (Py_ssize_t)length, "strict")'),
+                    ),
+                    CExpressionStatement(CodeExpression("free(data)")),
+                    CReturn(CodeExpression("result")),
+                ),
+            ),
+        )
+
     def _lower_module_getter_borrowed_array_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Create one live Fortran-ordered NumPy alias over fixed module storage."""
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
-        scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        # A character element is a fixed-width bytes dtype whose width the
+        # Fortran variable reports, so it carries an itemsize instead of naming
+        # a NumPy scalar type macro.
+        character = plan.datatype_family is DatatypeFamily.STRING
+        if character:
+            element_size = "itemsize"
+            numpy_type = "NPY_STRING"
+            numpy_itemsize = "(int)itemsize"
+        else:
+            scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+            element_size = f"sizeof({scalar.c_spelling})"
+            numpy_type = str(scalar.numpy_type_macro)
+            numpy_itemsize = "0"
         owner = self._module_native_array_owner_name(plan)
+        width = ("itemsize",) if character else ()
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
         strides = "strides"
         return (
@@ -5472,12 +5718,13 @@ class CBindingGenerator(ClassVisitor):
                 "PyObject *",
                 storage="static",
                 body=(
-                    *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in extents),
+                    *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in (*width, *extents)),
                     CDeclaration(
                         "data",
                         "void *",
                         CodeExpression(
-                            f"{self._module_bridge_getter_name(plan)}({', '.join(f'&{name}' for name in extents)})"
+                            f"{self._module_bridge_getter_name(plan)}"
+                            f"({', '.join(f'&{name}' for name in (*width, *extents))})"
                         ),
                     ),
                     CDeclaration(
@@ -5486,7 +5733,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression("{" + ", ".join(extents) + "}"),
                     ),
                     CDeclaration(f"{strides}[{array.rank}]", "npy_intp"),
-                    CExpressionStatement(CodeExpression(f"{strides}[0] = (npy_intp)sizeof({scalar.c_spelling})")),
+                    CExpressionStatement(CodeExpression(f"{strides}[0] = (npy_intp){element_size}")),
                     *(
                         CExpressionStatement(
                             CodeExpression(f"{strides}[{axis}] = {strides}[{axis - 1}] * dimensions[{axis - 1}]")
@@ -5497,8 +5744,8 @@ class CBindingGenerator(ClassVisitor):
                         "result",
                         "PyObject *",
                         CodeExpression(
-                            f"PyArray_New(&PyArray_Type, {array.rank}, dimensions, {scalar.numpy_type_macro}, "
-                            f"{strides}, data, 0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | "
+                            f"PyArray_New(&PyArray_Type, {array.rank}, dimensions, {numpy_type}, "
+                            f"{strides}, data, {numpy_itemsize}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | "
                             "NPY_ARRAY_WRITEABLE, NULL)"
                         ),
                     ),
@@ -5798,6 +6045,8 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_setter_write_through(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Return a Python-to-native scalar write-through helper."""
+        if plan.binding.setter_converts_characters:
+            return self._lower_module_setter_character_value(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         return (
             CFunction(
@@ -5853,11 +6102,12 @@ class CBindingGenerator(ClassVisitor):
         output_nodes = self._output_nodes(plan, context)
         return CFunction(
             name=self._binding_function_name(plan),
+            doc=self._binding_function_doc(plan),
             return_type="PyObject *",
-            parameters=self._binding_parameters(),
+            parameters=self._binding_parameters(plan),
             storage="static",
             body=(
-                self._keyword_declaration(plan),
+                *self._keyword_declarations(plan),
                 *argument_declarations,
                 *alias_declarations,
                 *self._callback_context_declarations(plan),
@@ -5928,6 +6178,20 @@ class CBindingGenerator(ClassVisitor):
             return tuple(arguments[owner_path] for owner_path in plan.binding.argument_conversion_order)
         except KeyError as error:
             raise ValueError(f"Unknown binding argument conversion owner {error.args[0]!r}") from None
+
+    def _binding_function_doc(self, plan: FunctionPlan) -> tuple[str, ...]:
+        """Describe one CPython wrapper: its Python name and the symbol it calls.
+
+        A reader opening the generated binding sees the Python entry point and
+        the native symbol it reaches without cross-referencing the plan.
+        """
+        lines = [
+            f"Python callable '{plan.binding.python_name}'.",
+            f"Calls the native entrypoint '{plan.entrypoint.symbol_name}'.",
+        ]
+        if plan.binding.release_gil:
+            lines.append("Releases the GIL around the native call.")
+        return tuple(lines)
 
     def _visit_ArgumentTransferPlan(
         self,
@@ -6357,6 +6621,26 @@ class CBindingGenerator(ClassVisitor):
         if scalar_type.numpy_type_macro is None:
             raise ValueError(f"Unsupported scalar input type {plan.semantic_type_name!r}")
         names = context.arguments[plan.owner_path]
+        storage_type = plan.native_storage_c_type or scalar_type.c_spelling
+        if storage_type != scalar_type.c_spelling:
+            converted_name = f"{names.value_name}_converted"
+            return (
+                CDeclaration(names.object_name, "PyObject *"),
+                CDeclaration(converted_name, scalar_type.c_spelling),
+                CDeclaration(names.value_name, storage_type),
+                self._scalar_exact_unpack_statement(
+                    scalar_type,
+                    names.object_name,
+                    converted_name,
+                    (
+                        f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
+                        f"{scalar_type.python_type_name} for argument {plan.binding.python_name}. "
+                        f"Received <class '%s'>\", Py_TYPE({names.object_name})->tp_name)"
+                    ),
+                    "NULL",
+                ),
+                CExpressionStatement(CodeExpression(f"{names.value_name} = ({storage_type}){converted_name}")),
+            )
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, scalar_type.c_spelling),
@@ -6406,7 +6690,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
-        """Allocate and populate one mutable string call buffer."""
+        """Validate one replacement string before call-local allocation."""
         names = context.arguments[plan.owner_path]
         source_name = f"{names.value_name}_source"
         return (
@@ -6415,7 +6699,6 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(names.value_name, "char *", CodeExpression("NULL")),
             CDeclaration(names.length_name, "Py_ssize_t", CodeExpression("0")),
             *self._required_string_validation_nodes(plan, names, source_name),
-            *self._string_replacement_allocation_nodes(plan, names, source_name),
         )
 
     def _string_replacement_allocation_nodes(
@@ -6423,6 +6706,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
         source_name: str,
+        failure_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CExpressionStatement | CIf, ...]:
         """Allocate and copy one validated mutable string payload."""
         return (
@@ -6432,6 +6716,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{names.value_name} == NULL"),
                 body=(
+                    *failure_cleanup,
                     CExpressionStatement(
                         CodeExpression(
                             f'PyErr_SetString(PyExc_MemoryError, "Unable to allocate mutable string buffer '
@@ -6467,11 +6752,17 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f"{payload_name} = PyUnicode_AsUTF8AndSize({names.object_name}, &{names.length_name})")
             ),
             CExpressionStatement(CodeExpression(f"if ({payload_name} == NULL) return NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} cannot contain '
-                    'embedded NUL"); return NULL; }'
+            *(
+                ()
+                if plan.character_allows_embedded_nul
+                else (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} cannot contain '
+                            'embedded NUL"); return NULL; }'
+                        )
+                    ),
                 )
             ),
         ]
@@ -6568,7 +6859,7 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         array_object = f"(PyArrayObject *){names.object_name}"
         direct_nodes = (
-            self._array_validation_statement(plan, names),
+            self._array_validation_statement(plan, names, object_kind_checked=True),
             *self._array_shape_checks(plan, context, array_object),
             *self._array_extraction_nodes(plan, names, array_object),
         )
@@ -6713,6 +7004,8 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
+        *,
+        object_kind_checked: bool = False,
     ) -> CExpressionStatement:
         """Call compact validation with selectors from the completed plan."""
         handoff = plan.array
@@ -6721,9 +7014,12 @@ class CBindingGenerator(ClassVisitor):
         numpy_type, python_type = self._array_dtype_selectors(plan, handoff)
         minimum_rank, maximum_rank = self._array_rank_bounds(handoff)
         layout = self._array_layout_selector(handoff)
+        helper = "prik_array_validate_ndarray" if object_kind_checked else "prik_array_validate"
+        value = f"(PyArrayObject *){names.object_name}" if object_kind_checked else names.object_name
         return CExpressionStatement(
             CodeExpression(
-                f"if (prik_array_validate({names.object_name}, {numpy_type}, {minimum_rank}, {maximum_rank}, "
+                f"if ({helper}({value}, {numpy_type}, "
+                f"{minimum_rank}, {maximum_rank}, "
                 f'{layout}, {int(handoff.contiguous is True)}, {int(plan.binding.writable)}, "{python_type}", '
                 f'"{plan.binding.python_name}") < 0) return NULL'
             )
@@ -6737,6 +7033,17 @@ class CBindingGenerator(ClassVisitor):
         """Return compact helper dtype selectors from completed array facts."""
         if plan.datatype_family is DatatypeFamily.STRING:
             return "NPY_STRING", f"numpy.bytes_[{handoff.itemsize}]"
+        return CBindingGenerator._numeric_array_dtype_selectors(plan)
+
+    @staticmethod
+    def _numeric_array_dtype_selectors(plan: ArgumentTransferPlan) -> tuple[str, str]:
+        """Return canonical or policy-selected exact native NumPy storage."""
+        if plan.binding.native_array_element_c_type is not None:
+            native = NativeCArrayStorageRegistry.type_for(
+                plan.binding.native_array_element_c_type,
+                plan.semantic_type_name,
+            )
+            return native.numpy_type_macro, native.python_type_name
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         if scalar_type.numpy_type_macro is None or scalar_type.python_type_name is None:
             raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
@@ -6841,18 +7148,21 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = (int64_t)PyArray_NDIM({array})"))
             )
         if handoff.itemsize_role is not None:
-            nodes.extend(
-                (
-                    CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t)PyArray_ITEMSIZE({array})")),
+            nodes.append(
+                CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t)PyArray_ITEMSIZE({array})"))
+            )
+            # An assumed width accepts whatever the caller's array declares; only
+            # a stated width is checked against it.
+            if handoff.itemsize is not None:
+                nodes.append(
                     CExpressionStatement(
                         CodeExpression(
                             f"if ({names.itemsize_name} != {handoff.itemsize}) {{ PyErr_SetString(PyExc_TypeError, "
                             f'"Argument {plan.binding.python_name} must have NumPy bytes dtype itemsize '
                             f'{handoff.itemsize}"); return NULL; }}'
                         )
-                    ),
+                    )
                 )
-            )
         if handoff.flatten_python_storage:
             nodes.extend(self._flat_array_extraction_nodes(handoff, names, array))
             return tuple(nodes)
@@ -7022,19 +7332,16 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Validate and borrow one rank-zero NumPy scalar data address."""
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-        if scalar_type.numpy_type_macro is None:
-            raise ValueError(f"Unsupported scalar storage type {plan.semantic_type_name!r}")
+        numpy_type, expected = self._numeric_array_dtype_selectors(plan)
         names = context.arguments[plan.owner_path]
         array = f"(PyArrayObject *){names.object_name}"
-        expected = scalar_type.python_type_name
         nodes = [
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
             CExpressionStatement(
                 CodeExpression(
                     f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != "
-                    f"{scalar_type.numpy_type_macro} || PyArray_NDIM({array}) != 0) {{ "
+                    f"{numpy_type} || PyArray_NDIM({array}) != 0) {{ "
                     f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray of type '
                     f"{expected} for argument {plan.binding.python_name}. Received <class '%s'>\", "
                     f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
@@ -7074,12 +7381,18 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Validate and borrow one rank-zero fixed-width NumPy bytes buffer."""
-        if plan.character_length is None or plan.character_length <= 0:
-            raise ValueError(f"String storage {plan.owner_path!r} is missing a fixed length")
+        """Validate and borrow one rank-zero NumPy bytes buffer.
+
+        A declared capacity is checked against the array's itemsize.  An
+        assumed capacity accepts any ``S`` width, because the caller's buffer
+        states its own size and the binding passes that storage untouched.
+        """
+        if plan.character_length is not None and plan.character_length <= 0:
+            raise ValueError(f"String storage {plan.owner_path!r} has a non-positive length")
         names = context.arguments[plan.owner_path]
         array = f"(PyArrayObject *){names.object_name}"
         length = plan.character_length
+        expected = f"S{length}" if length is not None else "S"
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
@@ -7087,17 +7400,23 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(
                     f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != NPY_STRING || "
                     f"PyArray_NDIM({array}) != 0) {{ "
-                    f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray with dtype S{length} '
+                    f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray with dtype {expected} '
                     f"for argument {plan.binding.python_name}. Received <class '%s'>\", "
                     f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
                 )
             ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (PyArray_ITEMSIZE({array}) != {length}) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must use itemsize '
-                    f'{length}"); return NULL; }}'
+            *(
+                (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"if (PyArray_ITEMSIZE({array}) != {length}) {{ "
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must use itemsize '
+                            f'{length}"); return NULL; }}'
+                        )
+                    ),
                 )
+                if length is not None
+                else ()
             ),
             CExpressionStatement(
                 CodeExpression(
@@ -7796,10 +8115,7 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(names.value_name, "char *", CodeExpression("NULL")),
                 CIf(
                     CodeExpression(f"{names.object_name} != Py_None"),
-                    body=(
-                        *self._required_string_validation_nodes(plan, names, source_name),
-                        *self._string_replacement_allocation_nodes(plan, names, source_name),
-                    ),
+                    body=self._required_string_validation_nodes(plan, names, source_name),
                 ),
             )
         raise ValueError(f"Unsupported optional C string action for {plan.owner_path!r}: {action!r}")
@@ -7855,34 +8171,65 @@ class CBindingGenerator(ClassVisitor):
         *,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...] = (),
+        failure_label: str | None = None,
+        pending_native_cleanup: tuple[CExpressionStatement, ...] = (),
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Lower one result through its completed binding action."""
-        return self._lower_result(plan, context, failure_cleanup)
+        return self._lower_result(
+            plan,
+            context,
+            failure_cleanup,
+            failure_label,
+            pending_native_cleanup,
+        )
 
     def _lower_result(
         self,
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None,
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Dispatch one completed binding result action explicitly."""
         if plan.scalar_descriptor is not None:
-            return self._lower_result_scalar_descriptor(plan, context, failure_cleanup)
+            return self._lower_result_scalar_descriptor(
+                plan,
+                context,
+                failure_cleanup,
+                pending_native_cleanup,
+            )
         if plan.native_array_handle is not None:
-            return self._lower_result_owned_native_array_handle(plan, context, failure_cleanup)
+            return self._lower_result_owned_native_array_handle(
+                plan,
+                context,
+                failure_cleanup,
+                pending_native_cleanup,
+            )
         match plan.object_kind:
             case ObjectKind.NUMPY_ARRAY:
-                return self._lower_result_array_copy(plan, context, failure_cleanup)
+                return self._lower_result_array_copy(plan, context, failure_cleanup, pending_native_cleanup)
             case ObjectKind.STRING:
-                return self._lower_result_fixed_string(plan, context, failure_cleanup)
+                return self._lower_result_fixed_string(plan, context, failure_cleanup, pending_native_cleanup)
             case ObjectKind.SCALAR:
                 if plan.binding.codegen_action is CodegenAction.DIRECT_VALUE:
-                    return self._lower_result_direct_value(plan, context, failure_cleanup)
+                    return self._lower_result_direct_value(
+                        plan,
+                        context,
+                        failure_cleanup,
+                        failure_label,
+                        pending_native_cleanup,
+                    )
                 raise ValueError(
                     f"Unsupported C scalar result action for {plan.owner_path!r}: {plan.binding.codegen_action!r}"
                 )
             case ObjectKind.DERIVED_TYPE:
-                return self._lower_result_derived(plan, context, failure_cleanup)
+                return self._lower_result_derived(
+                    plan,
+                    context,
+                    failure_cleanup,
+                    pending_native_cleanup,
+                )
             case _:
                 raise ValueError(f"Unsupported C result object kind for {plan.owner_path!r}: {plan.object_kind!r}")
 
@@ -7892,6 +8239,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Copy one nullable descriptor payload into a detached Python value."""
         native_name = self._result_native_name(plan, context)
@@ -7914,6 +8262,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{native_name} == NULL"),
                 body=(
+                    *pending_native_cleanup,
                     *prior_cleanup,
                     CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
                     CReturn(CodeExpression("NULL")),
@@ -7921,9 +8270,10 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(CodeExpression(f"{python_name} = {conversion.text}")),
             CExpressionStatement(CodeExpression(f"free({native_name})")),
+            CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
             CIf(
                 CodeExpression(f"{python_name} == NULL"),
-                body=(*prior_cleanup, CReturn(CodeExpression("NULL"))),
+                body=(*pending_native_cleanup, *prior_cleanup, CReturn(CodeExpression("NULL"))),
             ),
         )
         return (
@@ -7944,6 +8294,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Transfer persistent CFI owner storage into one runtime handle."""
         descriptor_name = self._owned_result_descriptor_name(plan, context)
@@ -7965,14 +8316,28 @@ class CBindingGenerator(ClassVisitor):
                 descriptor_name,
                 cleanup,
                 failure_cleanup,
+                pending_native_cleanup,
             ),
             CExpressionStatement(CodeExpression(f"{prefix}_ops = PyDict_New()")),
             CIf(
                 CodeExpression(f"{prefix}_ops == NULL"),
-                body=(*cleanup, *self._decref_names(failure_cleanup), CReturn(CodeExpression("NULL"))),
+                body=(
+                    *cleanup,
+                    *pending_native_cleanup,
+                    *self._decref_names(failure_cleanup),
+                    CReturn(CodeExpression("NULL")),
+                ),
             ),
         ]
-        nodes.extend(self._owned_native_array_ops_dictionary_nodes(plan, prefix, cleanup, failure_cleanup))
+        nodes.extend(
+            self._owned_native_array_ops_dictionary_nodes(
+                plan,
+                prefix,
+                cleanup,
+                failure_cleanup,
+                pending_native_cleanup,
+            )
+        )
         nodes.extend(
             (
                 CExpressionStatement(
@@ -7985,6 +8350,7 @@ class CBindingGenerator(ClassVisitor):
                     body=(
                         CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                         *cleanup,
+                        *pending_native_cleanup,
                         *self._decref_names(failure_cleanup),
                         CReturn(CodeExpression("NULL")),
                     ),
@@ -7999,6 +8365,7 @@ class CBindingGenerator(ClassVisitor):
                         CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_owner)")),
                         CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                         *cleanup,
+                        *pending_native_cleanup,
                         *self._decref_names(failure_cleanup),
                         CReturn(CodeExpression("NULL")),
                     ),
@@ -8016,6 +8383,7 @@ class CBindingGenerator(ClassVisitor):
                         CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_owner)")),
                         CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                         *cleanup,
+                        *pending_native_cleanup,
                         *self._decref_names(failure_cleanup),
                         CReturn(CodeExpression("NULL")),
                     ),
@@ -8041,7 +8409,11 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                 CIf(
                     CodeExpression(f"{python_name} == NULL"),
-                    body=(*self._decref_names(failure_cleanup), CReturn(CodeExpression("NULL"))),
+                    body=(
+                        *pending_native_cleanup,
+                        *self._decref_names(failure_cleanup),
+                        CReturn(CodeExpression("NULL")),
+                    ),
                 ),
             )
         )
@@ -8053,6 +8425,7 @@ class CBindingGenerator(ClassVisitor):
         descriptor_name: str,
         cleanup: tuple[CExpressionStatement, ...],
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CIf, ...]:
         """Re-establish empty numeric pointer storage before publishing it.
 
@@ -8085,6 +8458,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"{status_name} != CFI_SUCCESS"),
                         body=(
                             *cleanup,
+                            *pending_native_cleanup,
                             *self._decref_names(failure_cleanup),
                             CExpressionStatement(
                                 CodeExpression(
@@ -8105,6 +8479,7 @@ class CBindingGenerator(ClassVisitor):
         prefix: str,
         cleanup: tuple[CExpressionStatement | CIf, ...],
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CExpressionStatement | CIf, ...]:
         """Populate a result handle's operation dictionary from planned roles."""
         handle = result.native_array_handle
@@ -8123,6 +8498,7 @@ class CBindingGenerator(ClassVisitor):
                         body=(
                             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                             *cleanup,
+                            *pending_native_cleanup,
                             *self._decref_names(failure_cleanup),
                             CReturn(CodeExpression("NULL")),
                         ),
@@ -8135,6 +8511,7 @@ class CBindingGenerator(ClassVisitor):
                             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_operation)")),
                             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
                             *cleanup,
+                            *pending_native_cleanup,
                             *self._decref_names(failure_cleanup),
                             CReturn(CodeExpression("NULL")),
                         ),
@@ -8150,6 +8527,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Transfer one bridge-owned fixed-shape buffer into a NumPy capsule owner."""
         handoff = plan.array
@@ -8182,6 +8560,7 @@ class CBindingGenerator(ClassVisitor):
                             'PyErr_SetString(PyExc_MemoryError, "Unable to allocate copy-return output array.")'
                         )
                     ),
+                    *pending_native_cleanup,
                     *decrefs,
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -8202,6 +8581,8 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f"{python_name} == NULL"),
                 body=(
                     CExpressionStatement(CodeExpression(f"free({native_name})")),
+                    CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
+                    *pending_native_cleanup,
                     *decrefs,
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -8210,7 +8591,7 @@ class CBindingGenerator(ClassVisitor):
                 python_name,
                 base_name,
                 native_name,
-                failure_cleanup=decrefs,
+                failure_cleanup=(*pending_native_cleanup, *decrefs),
             ),
         )
 
@@ -8298,6 +8679,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        pending_native_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Consume one bridge-owned NUL-terminated fixed string copy."""
         native_name = self._result_native_name(plan, context)
@@ -8319,11 +8701,12 @@ class CBindingGenerator(ClassVisitor):
                             CodeExpression(f'{python_name} = Py_BuildValue("s", (const char *){native_name})')
                         ),
                         CExpressionStatement(CodeExpression(f"free({native_name})")),
+                        CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
                     ),
                 ),
                 CIf(
                     CodeExpression(f"{python_name} == NULL"),
-                    body=(*decrefs, CReturn(CodeExpression("NULL"))),
+                    body=(*pending_native_cleanup, *decrefs, CReturn(CodeExpression("NULL"))),
                 ),
             )
         return (
@@ -8335,6 +8718,7 @@ class CBindingGenerator(ClassVisitor):
                             'PyErr_SetString(PyExc_MemoryError, "Unable to allocate copy-return output string.")'
                         )
                     ),
+                    *pending_native_cleanup,
                     *decrefs,
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -8345,9 +8729,10 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f'Py_BuildValue("s", (const char *){native_name})'),
             ),
             CExpressionStatement(CodeExpression(f"free({native_name})")),
+            CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
             CIf(
                 CodeExpression(f"{python_name} == NULL"),
-                body=(*decrefs, CReturn(CodeExpression("NULL"))),
+                body=(*pending_native_cleanup, *decrefs, CReturn(CodeExpression("NULL"))),
             ),
         )
 
@@ -8580,15 +8965,25 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None = None,
+        pending_native_cleanup: tuple[CExpressionStatement, ...] = (),
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Lower result direct value from the supplied completed binding records without inferring semantic policy."""
-        return self._lower_result_value(plan, context, failure_cleanup)
+        return self._lower_result_value(
+            plan,
+            context,
+            failure_cleanup,
+            failure_label,
+            pending_native_cleanup,
+        )
 
     def _lower_result_value(
         self,
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None = None,
+        pending_native_cleanup: tuple[CExpressionStatement, ...] = (),
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Convert one native result into its binding-owned Python consumer."""
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
@@ -8596,17 +8991,29 @@ class CBindingGenerator(ClassVisitor):
         python_name = context.python_results.get(plan.owner_path)
         if scalar_type.python_result_kind is None or python_name is None:
             raise ValueError(f"Unsupported scalar result type {plan.semantic_type_name!r}")
+        converted_name = native_name
+        conversion = ()
+        if plan.entrypoint.native_scalar_c_type is not None:
+            converted_name = f"{native_name}_contract"
+            conversion = (
+                CDeclaration(
+                    converted_name,
+                    scalar_type.c_spelling,
+                    CodeExpression(f"({scalar_type.c_spelling}){native_name}"),
+                ),
+            )
         return (
+            *conversion,
             CDeclaration(
                 python_name,
                 "PyObject *",
-                CodeExpression(self._scalar_result_expression(scalar_type, f"&{native_name}")),
+                CodeExpression(self._scalar_result_expression(scalar_type, f"&{converted_name}")),
             ),
             CIf(
                 CodeExpression(f"{python_name} == NULL"),
                 body=(
-                    *(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in failure_cleanup),
-                    CReturn(CodeExpression("NULL")),
+                    *pending_native_cleanup,
+                    *self._output_failure_nodes(failure_cleanup, failure_label),
                 ),
             ),
         )
@@ -8649,33 +9056,107 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+    ) -> tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CLabel | CReturn, ...]:
         """Convert every public output once, then aggregate by completed position."""
-        published, ordinary_writebacks, derived_results, scalar_results = self._output_conversion_groups(plan)
+        string_writebacks, published, ordinary_writebacks, derived_results, scalar_results = (
+            self._output_conversion_groups(plan)
+        )
+        output_count = sum(
+            len(group) for group in (string_writebacks, published, ordinary_writebacks, derived_results, scalar_results)
+        )
+        shared_cleanup = output_count >= self._SHARED_OUTPUT_CLEANUP_MIN_RESULTS
         converted: list[str] = []
         nodes = []
 
-        # Published temporaries are converted first so every later failure owns
-        # an ordinary Python reference that can be released uniformly.
-        for action in published:
-            nodes.extend(self._writeback_value_nodes(plan, action, context, tuple(converted)))
+        def failure_label() -> str | None:
+            """Name the suffix that owns the already-converted prefix."""
+            if not shared_cleanup or not converted:
+                return None
+            return self._output_cleanup_label(len(converted))
+
+        # Mutable string buffers are converted and released first. Every later
+        # output failure then owns only ordinary Python references.
+        for action in string_writebacks:
+            nodes.extend(
+                self._writeback_value_nodes(
+                    plan,
+                    action,
+                    context,
+                    tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
             converted.append(context.python_results[action.owner_path])
 
-        for position, result in enumerate(derived_results):
-            pending = self._derived_native_storage_cleanup_nodes(derived_results[position + 1 :], context)
-            nodes.extend(self._lower_result_derived(result, context, tuple(converted), pending))
-            converted.append(context.python_results[result.owner_path])
+        # Published temporaries follow so later failures own ordinary Python
+        # references that can be released uniformly.
+        for action in published:
+            nodes.extend(
+                self._writeback_value_nodes(
+                    plan,
+                    action,
+                    context,
+                    tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
+            converted.append(context.python_results[action.owner_path])
 
-        for result in scalar_results:
-            nodes.extend(self.visit(result, context=context, failure_cleanup=tuple(converted)))
+        ordered_results = (*derived_results, *scalar_results)
+        for position, result in enumerate(ordered_results):
+            pending = self._native_result_failure_cleanup_nodes(ordered_results[position + 1 :], context)
+            nodes.extend(
+                self.visit(
+                    result,
+                    context=context,
+                    failure_cleanup=tuple(converted),
+                    failure_label=failure_label(),
+                    pending_native_cleanup=pending,
+                )
+            )
             converted.append(context.python_results[result.owner_path])
 
         for action in ordinary_writebacks:
-            nodes.extend(self._writeback_value_nodes(plan, action, context, tuple(converted)))
+            nodes.extend(
+                self._writeback_value_nodes(
+                    plan,
+                    action,
+                    context,
+                    tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
             converted.append(context.python_results[action.owner_path])
 
-        ordered = tuple(context.python_results[owner] for owner, _position in self._output_owners(plan))
-        nodes.extend(self._python_result_aggregation_nodes(ordered, context))
+        # A ``Hidden`` result is lowered exactly like a published one so that
+        # every release the ordinary path performs still happens; only the
+        # Python object it produced is dropped instead of being aggregated.
+        for result in plan.results:
+            if not result.python_returned:
+                nodes.append(
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({context.python_results[result.owner_path]})"))
+                )
+                if shared_cleanup:
+                    nodes.append(
+                        CExpressionStatement(CodeExpression(f"{context.python_results[result.owner_path]} = NULL"))
+                    )
+        hidden_owners = {result.owner_path for result in plan.results if not result.python_returned}
+        ordered = tuple(
+            context.python_results[owner]
+            for owner, _position in self._output_owners(plan)
+            if owner not in hidden_owners
+        )
+        aggregate_failure_label = self._output_cleanup_label(len(converted)) if shared_cleanup and converted else None
+        nodes.extend(
+            self._python_result_aggregation_nodes(
+                ordered,
+                context,
+                failure_cleanup=tuple(converted),
+                failure_label=aggregate_failure_label,
+            )
+        )
+        if shared_cleanup:
+            nodes.extend(self._output_cleanup_chain(tuple(converted)))
         return tuple(nodes)
 
     def _output_conversion_groups(
@@ -8684,16 +9165,24 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[
         tuple[LifecycleActionPlan, ...],
         tuple[LifecycleActionPlan, ...],
+        tuple[LifecycleActionPlan, ...],
         tuple[ResultPlan, ...],
         tuple[ResultPlan, ...],
     ]:
         """Partition completed outputs into their ordered conversion leaves."""
         writebacks = self._ordered_output_writebacks(plan)
         published = tuple(action for action in writebacks if self._publishes_array_replacement(plan, action))
-        ordinary = tuple(action for action in writebacks if action not in published)
+        strings = tuple(
+            action
+            for action in writebacks
+            if action.binding is not None
+            and action.binding.codegen_action is CodegenAction.COPY_IN_OUT
+            and action.binding.datatype_family is DatatypeFamily.STRING
+        )
+        ordinary = tuple(action for action in writebacks if action not in published and action not in strings)
         derived = tuple(result for result in plan.results if result.object_kind is ObjectKind.DERIVED_TYPE)
         scalar = tuple(result for result in plan.results if result.object_kind is not ObjectKind.DERIVED_TYPE)
-        return published, ordinary, derived, scalar
+        return strings, published, ordinary, derived, scalar
 
     def _mixed_string_writeback_nodes(
         self,
@@ -8701,6 +9190,7 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        failure_label: str | None = None,
     ) -> tuple:
         """Convert one projected fixed string without terminating aggregation."""
         source = self._argument_for_role(plan, action.source_role)
@@ -8708,16 +9198,23 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Mixed output {action.owner_path!r} is not a fixed string")
         names = context.arguments[source.owner_path]
         target = context.python_results[action.owner_path]
-        cleanup = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted)
         conversion = CExpressionStatement(
             CodeExpression(f'{target} = Py_BuildValue("s", (const char *){names.value_name})')
         )
-        failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
+        failure = CIf(
+            CodeExpression(f"{target} == NULL"),
+            body=(
+                *self._string_replacement_cleanup_nodes(plan, context),
+                *self._native_result_failure_cleanup_nodes(plan.results, context),
+                *self._output_failure_nodes(converted, failure_label),
+            ),
+        )
         if source.binding.optional_mode is OptionalMode.REQUIRED:
             return (
                 CDeclaration(target, "PyObject *", CodeExpression("NULL")),
                 conversion,
                 CExpressionStatement(CodeExpression(f"free({names.value_name})")),
+                CExpressionStatement(CodeExpression(f"{names.value_name} = NULL")),
                 failure,
             )
         if source.binding.optional_mode is OptionalMode.NULLABLE_VALUE:
@@ -8732,6 +9229,7 @@ class CBindingGenerator(ClassVisitor):
                     else_body=(
                         conversion,
                         CExpressionStatement(CodeExpression(f"free({names.value_name})")),
+                        CExpressionStatement(CodeExpression(f"{names.value_name} = NULL")),
                         failure,
                     ),
                 ),
@@ -8747,7 +9245,6 @@ class CBindingGenerator(ClassVisitor):
         if not any(argument.derived_call is not None for argument in plan.arguments):
             return ()
         fault = "prik_derived_after_native_fault"
-        derived_results = self._required_derived_results(plan)
         return (
             CDeclaration(
                 fault,
@@ -8757,9 +9254,9 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{fault} != NULL && {fault}[0] != '\\0' && {fault}[0] != '0'"),
                 body=(
+                    *self._string_replacement_cleanup_nodes(plan, context),
                     *self._binding_transformation_cleanup_nodes(plan, context),
-                    *self._derived_native_storage_cleanup_nodes(derived_results, context),
-                    *self._owned_result_descriptor_failure_nodes(plan, context),
+                    *self._native_result_failure_cleanup_nodes(plan.results, context),
                     CExpressionStatement(
                         CodeExpression(
                             'PyErr_SetString(PyExc_RuntimeError, "injected derived failure after native return")'
@@ -8781,7 +9278,9 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{self._derived_status_name(context.arguments[argument.owner_path])} != 0"),
                 body=(
+                    *self._string_replacement_cleanup_nodes(plan, context),
                     *self._binding_transformation_cleanup_nodes(plan, context),
+                    *self._native_result_failure_cleanup_nodes(plan.results, context),
                     *self._one_derived_call_error_nodes(argument, context),
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -8831,17 +9330,29 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Materialize copied runtime-width character outputs into persistent CFI owners."""
         nodes = []
+        failure_cleanup = (
+            *self._string_replacement_cleanup_nodes(plan, context),
+            *self._binding_transformation_cleanup_nodes(plan, context),
+            *self._native_result_failure_cleanup_nodes(plan.results, context),
+        )
         for result in sorted(plan.results, key=lambda item: item.result_position):
             if not self._is_owned_deferred_character_result(result):
                 continue
             native_name = self._result_native_name(result, context)
-            nodes.extend(self._one_owned_deferred_character_materialization(result, native_name))
+            nodes.extend(
+                self._one_owned_deferred_character_materialization(
+                    result,
+                    native_name,
+                    failure_cleanup,
+                )
+            )
         return tuple(nodes)
 
     def _one_owned_deferred_character_materialization(
         self,
         result: ResultPlan,
         native_name: str,
+        failure_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Copy one bridge-owned character payload into its handle-owned descriptor."""
         handle = result.native_array_handle
@@ -8860,6 +9371,8 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f"{descriptor} == NULL"),
                 body=(
                     CExpressionStatement(CodeExpression(f"free({native_name})")),
+                    CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
+                    *failure_cleanup,
                     CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -8876,6 +9389,8 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression(f"free({descriptor})")),
                     CExpressionStatement(CodeExpression(f"{descriptor} = NULL")),
                     CExpressionStatement(CodeExpression(f"free({native_name})")),
+                    CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
+                    *failure_cleanup,
                     CExpressionStatement(
                         CodeExpression(
                             'PyErr_SetString(PyExc_RuntimeError, "failed to establish deferred character owner")'
@@ -8907,6 +9422,8 @@ class CBindingGenerator(ClassVisitor):
                             CExpressionStatement(CodeExpression(f"free({descriptor})")),
                             CExpressionStatement(CodeExpression(f"{descriptor} = NULL")),
                             CExpressionStatement(CodeExpression(f"free({native_name})")),
+                            CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
+                            *failure_cleanup,
                             CExpressionStatement(
                                 CodeExpression(
                                     'PyErr_SetString(PyExc_RuntimeError, "failed to allocate deferred character owner")'
@@ -8935,9 +9452,9 @@ class CBindingGenerator(ClassVisitor):
             return ()
         native_names = tuple(self._result_native_name(result, context) for result in derived)
         cleanup = [
-            *self._derived_native_storage_cleanup_nodes(derived, context),
-            *self._owned_result_descriptor_failure_nodes(plan, context),
+            *self._string_replacement_cleanup_nodes(plan, context),
             *self._binding_transformation_cleanup_nodes(plan, context),
+            *self._native_result_failure_cleanup_nodes(plan.results, context),
         ]
         return (
             CIf(
@@ -8990,6 +9507,44 @@ class CBindingGenerator(ClassVisitor):
             if result.derived is not None
         )
 
+    def _native_result_failure_cleanup_nodes(
+        self,
+        results: tuple[ResultPlan, ...],
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Release unpublished native result storage through its planned owner."""
+        nodes = []
+        for result in reversed(results):
+            if result.object_kind is ObjectKind.DERIVED_TYPE:
+                nodes.extend(self._derived_native_storage_cleanup_nodes((result,), context))
+                continue
+            native_name = self._result_native_name(result, context)
+            if self._is_owned_native_array_result(result):
+                nodes.extend(
+                    self._owned_descriptor_failure_cleanup(
+                        result,
+                        self._owned_result_descriptor_name(result, context),
+                    )
+                )
+                if self._is_owned_deferred_character_result(result):
+                    nodes.append(self._free_native_result_node(native_name))
+                continue
+            if result.entrypoint.character_capacity is not None:
+                continue
+            if result.scalar_descriptor is not None or result.object_kind in {
+                ObjectKind.STRING,
+                ObjectKind.NUMPY_ARRAY,
+            }:
+                nodes.append(self._free_native_result_node(native_name))
+        return tuple(nodes)
+
+    @staticmethod
+    def _free_native_result_node(native_name: str) -> CExpressionStatement:
+        """Free one nullable native result pointer and clear its local owner."""
+        return CExpressionStatement(
+            CodeExpression(f"if ({native_name} != NULL) {{ free({native_name}); {native_name} = NULL; }}")
+        )
+
     def _derived_result_destroy_bridge_name(self, result: ResultPlan) -> str:
         """Return the binding-local derived result destroy bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
         if result.derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER:
@@ -9002,21 +9557,27 @@ class CBindingGenerator(ClassVisitor):
         self,
         converted: tuple[str, ...],
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        *,
+        failure_cleanup: tuple[str, ...] | None = None,
+        failure_label: str | None = None,
+    ) -> tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CReturn, ...]:
         """Return one object directly or assemble ordered tuple ownership."""
+        if not converted:
+            # Every output was hidden, so the call publishes nothing. The macro
+            # increfs before returning; a bare ``Py_None`` would leak a
+            # decrement onto the singleton.
+            return (CExpressionStatement(CodeExpression("Py_RETURN_NONE")),)
         if len(converted) == 1:
             return (CReturn(CodeExpression(converted[0])),)
         aggregate = context.python_result_name
         if aggregate is None:
             raise ValueError("Multiple Python results have no aggregate binding role")
+        cleanup = converted if failure_cleanup is None else failure_cleanup
         return (
             CDeclaration(aggregate, "PyObject *", CodeExpression(f"PyTuple_New({len(converted)})")),
             CIf(
                 CodeExpression(f"{aggregate} == NULL"),
-                body=(
-                    *(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted),
-                    CReturn(CodeExpression("NULL")),
-                ),
+                body=self._output_failure_nodes(cleanup, failure_label),
             ),
             *(
                 CExpressionStatement(CodeExpression(f"PyTuple_SET_ITEM({aggregate}, {position}, {name})"))
@@ -9038,6 +9599,10 @@ class CBindingGenerator(ClassVisitor):
             or direct_result.object_kind is not ObjectKind.SCALAR
             or direct_result.scalar_descriptor is not None
         ):
+            direct_c_result = plan.entrypoint.direct_c_abi.result if plan.entrypoint.direct_c_abi is not None else None
+            if direct_c_result is not None and direct_c_result.converts_to_contract_storage:
+                contract_type = PrimitiveScalarTypeRegistry.type_for(direct_result.semantic_type_name)
+                call = f"({contract_type.c_spelling}){call}"
             expression = f"{context.result_name} = {call}"
         else:
             raise ValueError(f"Scalar result {direct_result.owner_path!r} has no completed direct-result ABI")
@@ -9086,12 +9651,10 @@ class CBindingGenerator(ClassVisitor):
         policy = plan.binding.status_error
         status_name = context.native_outputs[policy.status_role]
         condition = CodeExpression(f"{status_name} != {policy.success}")
-        derived_cleanup = self._derived_native_storage_cleanup_nodes(
-            tuple(result for result in plan.results if result.object_kind is ObjectKind.DERIVED_TYPE),
-            context,
-        )
         transformation_cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        if policy.message_role is None:
+        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
+        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
+        if policy.message_role is None and policy.message_argument is None:
             return (
                 CIf(
                     condition,
@@ -9102,41 +9665,128 @@ class CBindingGenerator(ClassVisitor):
                                 f"(int){status_name})"
                             )
                         ),
+                        *string_cleanup,
                         *transformation_cleanup,
-                        *derived_cleanup,
+                        *native_result_cleanup,
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
             )
-        message_name = context.native_outputs[policy.message_role]
-        message_object = f"{message_name}_obj"
-        return (
-            CIf(
-                CodeExpression(f"{message_name} == NULL"),
-                body=(
-                    CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
-                    *transformation_cleanup,
-                    *derived_cleanup,
-                    CReturn(CodeExpression("NULL")),
+        message_capacity: str | None = None
+        if policy.message_argument is not None:
+            # The caller supplied the buffer, so the binding neither owns nor
+            # frees it; it only reads what the native call left behind. The read
+            # is bounded by the caller's own capacity because a native writer is
+            # not obliged to terminate: Fortran blank-pads fixed-length
+            # character storage and never writes a NUL.
+            names = context.arguments[policy.message_argument]
+            message_name = names.value_name
+            message_plan = next(
+                argument for argument in plan.arguments if argument.owner_path == policy.message_argument
+            )
+            message_capacity = (
+                f"PyArray_ITEMSIZE((PyArrayObject *){names.object_name})"
+                if message_plan.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
+                else names.length_name
+            )
+            binding_owned = True
+        else:
+            message_name = context.native_outputs[policy.message_role]
+            # A binding-owned buffer is never NULL and is never freed here; only
+            # the adapter's owned-allocation protocol hands back memory the
+            # binding owns.
+            binding_owned = any(
+                result.character_capacity is not None and result.native_result_role == policy.message_role
+                for result in plan.entrypoint.results
+            )
+            # A hidden message occupies fixed-length native character storage,
+            # which Fortran blank-pads to the declared width. Bounding the read
+            # by that width drops the padding instead of reporting it.
+            if policy.message_character_length is not None:
+                message_capacity = str(policy.message_character_length)
+        # A visible argument already owns ``<name>_obj`` for its Python object,
+        # so the exception string needs a distinct local there.
+        message_object = f"{message_name}_status_text" if policy.message_argument is not None else f"{message_name}_obj"
+        if binding_owned:
+            # Nothing needs freeing, so the Python string is built only on the
+            # failure path instead of on every successful call.
+            message_value = (
+                f"PyUnicode_FromString((const char *){message_name})"
+                if message_capacity is None
+                else (f"prik_status_message_text((const char *){message_name}, (Py_ssize_t)({message_capacity}))")
+            )
+            return (
+                CIf(
+                    condition,
+                    body=(
+                        CDeclaration(
+                            message_object,
+                            "PyObject *",
+                            CodeExpression(message_value),
+                        ),
+                        CIf(
+                            CodeExpression(f"{message_object} == NULL"),
+                            body=(
+                                *string_cleanup,
+                                *transformation_cleanup,
+                                *native_result_cleanup,
+                                CReturn(CodeExpression("NULL")),
+                            ),
+                        ),
+                        CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
+                        CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
+                        *string_cleanup,
+                        *transformation_cleanup,
+                        *native_result_cleanup,
+                        CReturn(CodeExpression("NULL")),
+                    ),
                 ),
+            )
+        return (
+            *(
+                ()
+                if binding_owned
+                else (
+                    CIf(
+                        CodeExpression(f"{message_name} == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
+                            *string_cleanup,
+                            *transformation_cleanup,
+                            *native_result_cleanup,
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                )
             ),
             CDeclaration(
                 message_object,
                 "PyObject *",
-                CodeExpression(f"PyUnicode_FromString((const char *){message_name})"),
+                CodeExpression(
+                    f"PyUnicode_FromString((const char *){message_name})"
+                    if message_capacity is None
+                    else f"prik_status_message_text((const char *){message_name}, (Py_ssize_t)({message_capacity}))"
+                ),
             ),
-            CExpressionStatement(CodeExpression(f"free({message_name})")),
+            *(() if binding_owned else (CExpressionStatement(CodeExpression(f"free({message_name})")),)),
+            *(() if binding_owned else (CExpressionStatement(CodeExpression(f"{message_name} = NULL")),)),
             CIf(
                 CodeExpression(f"{message_object} == NULL"),
-                body=(*transformation_cleanup, *derived_cleanup, CReturn(CodeExpression("NULL"))),
+                body=(
+                    *string_cleanup,
+                    *transformation_cleanup,
+                    *native_result_cleanup,
+                    CReturn(CodeExpression("NULL")),
+                ),
             ),
             CIf(
                 condition,
                 body=(
                     CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
+                    *string_cleanup,
                     *transformation_cleanup,
-                    *derived_cleanup,
+                    *native_result_cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
@@ -9149,6 +9799,8 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        *,
+        failure_label: str | None = None,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Convert one planned writeback without terminating output aggregation."""
         if action.binding is None:
@@ -9160,8 +9812,20 @@ class CBindingGenerator(ClassVisitor):
             return self._identity_writeback_value_nodes(source, action, context, converted)
         if action.binding.codegen_action is CodegenAction.COPY_IN_OUT:
             if action.binding.datatype_family is DatatypeFamily.STRING:
-                return self._mixed_string_writeback_nodes(plan, action, context, converted)
-            return self._scalar_writeback_value_nodes(source, action, context, converted)
+                return self._mixed_string_writeback_nodes(
+                    plan,
+                    action,
+                    context,
+                    converted,
+                    failure_label=failure_label,
+                )
+            return self._scalar_writeback_value_nodes(
+                source,
+                action,
+                context,
+                converted,
+                failure_label=failure_label,
+            )
         raise ValueError(f"Unsupported C writeback action for {action.owner_path!r}: {action.binding.codegen_action!r}")
 
     def _identity_writeback_value_nodes(
@@ -9205,18 +9869,28 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        *,
+        failure_label: str | None = None,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Convert one mutated scalar storage value for combined aggregation."""
         names = context.arguments[source.owner_path]
         scalar_type = PrimitiveScalarTypeRegistry.type_for(action.binding.semantic_type_name)
         target = context.python_results[action.owner_path]
-        cleanup = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted)
+        value_name, contract_conversion = self._scalar_writeback_contract_storage(source, names, scalar_type)
         conversion = CExpressionStatement(
-            CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{names.value_name}')}")
+            CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{value_name}')}")
         )
-        failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
+        failure = CIf(
+            CodeExpression(f"{target} == NULL"),
+            body=self._output_failure_nodes(converted, failure_label),
+        )
         if source.entrypoint.descriptor_output_presence_role is None:
-            return (CDeclaration(target, "PyObject *", CodeExpression("NULL")), conversion, failure)
+            return (
+                CDeclaration(target, "PyObject *", CodeExpression("NULL")),
+                *contract_conversion,
+                conversion,
+                failure,
+            )
         return (
             CDeclaration(target, "PyObject *", CodeExpression("NULL")),
             CIf(
@@ -9225,7 +9899,26 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
                     CExpressionStatement(CodeExpression(f"{target} = Py_None")),
                 ),
-                else_body=(conversion, failure),
+                else_body=(*contract_conversion, conversion, failure),
+            ),
+        )
+
+    @staticmethod
+    def _scalar_writeback_contract_storage(
+        source: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        scalar_type,
+    ) -> tuple[str, tuple[CDeclaration, ...]]:
+        """Convert an exact native scalar local back to public contract storage."""
+        storage_type = source.native_storage_c_type or scalar_type.c_spelling
+        if storage_type == scalar_type.c_spelling:
+            return names.value_name, ()
+        contract_name = f"{names.value_name}_contract"
+        return contract_name, (
+            CDeclaration(
+                contract_name,
+                scalar_type.c_spelling,
+                CodeExpression(f"({scalar_type.c_spelling}){names.value_name}"),
             ),
         )
 
@@ -9434,6 +10127,12 @@ class CBindingGenerator(ClassVisitor):
             f"{local}_polymorphic",
         )
 
+    def _keyword_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
+        """Return the keyword table one wrapper needs, or nothing when it takes none."""
+        if not plan.binding.accepts_keyword_arguments:
+            return ()
+        return (self._keyword_declaration(plan),)
+
     def _keyword_declaration(self, plan: FunctionPlan) -> CDeclaration:
         """Build keyword declaration from the supplied completed binding records; emitted nodes only project completed binding actions."""
         keywords = ", ".join(
@@ -9452,6 +10151,8 @@ class CBindingGenerator(ClassVisitor):
         units = "O" * len(required) + ("|" if optional else "") + "O" * len(optional)
         targets = ", ".join(f"&{context.arguments[item.owner_path].object_name}" for item in arguments)
         suffix = f", {targets}" if targets else ""
+        if not plan.binding.accepts_keyword_arguments:
+            return CExpressionStatement(CodeExpression(f'if (!PyArg_ParseTuple(args, "{units}"{suffix})) return NULL'))
         return CExpressionStatement(
             CodeExpression(f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{units}", kwlist{suffix})) return NULL')
         )
@@ -9559,11 +10260,18 @@ class CBindingGenerator(ClassVisitor):
                     )
                 )
                 continue
+            if result.character_capacity is not None:
+                # One extra byte so a callee that terminates its own output
+                # cannot write past the buffer the contract asked for.
+                declarations.append(
+                    CDeclaration(f"{name}[{result.character_capacity + 1}]", "char", CodeExpression("{0}"))
+                )
+                continue
             if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
                 declarations.append(CDeclaration(name, "void *", CodeExpression("NULL")))
                 continue
             scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-            declarations.append(CDeclaration(name, scalar_type.c_spelling))
+            declarations.append(CDeclaration(name, result.native_scalar_c_type or scalar_type.c_spelling))
         return tuple(declarations)
 
     def _native_call_setup_nodes(
@@ -9571,7 +10279,7 @@ class CBindingGenerator(ClassVisitor):
         plan: FunctionPlan,
         context: _CFunctionContext,
     ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Allocate persistent standard-descriptor storage selected by result plans."""
+        """Allocate planned call-local and persistent native storage."""
         nodes = list(self._binding_transformation_setup_nodes(plan, context))
         initialized = []
         transformation_cleanup = self._binding_transformation_cleanup_nodes(plan, context)
@@ -9633,7 +10341,66 @@ class CBindingGenerator(ClassVisitor):
                 )
             )
             initialized.append((result, descriptor))
+        nodes.extend(self._string_replacement_setup_nodes(plan, context))
         return tuple(nodes)
+
+    def _string_replacement_setup_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement | CIf, ...]:
+        """Allocate mutable string buffers only after every argument is valid."""
+        cleanup = (
+            *self._string_replacement_cleanup_nodes(plan, context),
+            *self._owned_result_descriptor_failure_nodes(plan, context),
+            *self._binding_transformation_cleanup_nodes(plan, context),
+        )
+        nodes = []
+        for argument in self._string_replacement_arguments(plan):
+            names = context.arguments[argument.owner_path]
+            allocation = self._string_replacement_allocation_nodes(
+                argument,
+                names,
+                f"{names.value_name}_source",
+                cleanup,
+            )
+            if argument.binding.optional_mode is OptionalMode.REQUIRED:
+                nodes.extend(allocation)
+                continue
+            if argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE:
+                nodes.append(CIf(CodeExpression(f"{names.object_name} != Py_None"), body=allocation))
+                continue
+            raise ValueError(
+                f"Unsupported string replacement presence for {argument.owner_path!r}: "
+                f"{argument.binding.optional_mode.value}"
+            )
+        return tuple(nodes)
+
+    @staticmethod
+    def _string_replacement_arguments(plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
+        """Return planned binding-owned mutable string buffers."""
+        return tuple(
+            argument
+            for argument in plan.arguments
+            if argument.object_kind is ObjectKind.STRING
+            and argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
+        )
+
+    def _string_replacement_cleanup_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Release every live mutable string call buffer and clear its owner."""
+        return tuple(
+            CExpressionStatement(
+                CodeExpression(
+                    f"if ({names.value_name} != NULL) {{ free({names.value_name}); {names.value_name} = NULL; }}"
+                )
+            )
+            for argument in reversed(self._string_replacement_arguments(plan))
+            for names in (context.arguments[argument.owner_path],)
+        )
 
     @staticmethod
     def _owned_native_array_cfi_attribute(handle: NativeArrayHandlePlan) -> str:
@@ -9728,6 +10495,8 @@ class CBindingGenerator(ClassVisitor):
         """Copy back ordinary temporaries and retain published replacements."""
         nodes = []
         cleanup = self._binding_transformation_cleanup_nodes(plan, context)
+        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
+        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
         for argument in plan.arguments:
             action = self._transformation_action(argument, WritebackPhase.COPY_OUT)
             if action is not TransformationAction.COPY_ARRAY_REPRESENTATION:
@@ -9739,7 +10508,12 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(
                         f"PyArray_CopyInto((PyArrayObject *){names.object_name}, (PyArrayObject *){temporary}) < 0"
                     ),
-                    body=(*cleanup, CReturn(CodeExpression("NULL"))),
+                    body=(
+                        *string_cleanup,
+                        *cleanup,
+                        *native_result_cleanup,
+                        CReturn(CodeExpression("NULL")),
+                    ),
                 )
             )
         nodes.extend(self._binding_transformation_success_cleanup_nodes(plan, context))
@@ -9753,9 +10527,7 @@ class CBindingGenerator(ClassVisitor):
         """Release temporaries whose successful path does not publish ownership."""
         return tuple(
             CExpressionStatement(
-                CodeExpression(
-                    f"Py_XDECREF({self._array_transformation_temp_name(context.arguments[item.owner_path])})"
-                )
+                CodeExpression(f"Py_CLEAR({self._array_transformation_temp_name(context.arguments[item.owner_path])})")
             )
             for item in reversed(plan.arguments)
             if self._has_transformation_phase(item, WritebackPhase.CLEANUP)
@@ -9771,9 +10543,7 @@ class CBindingGenerator(ClassVisitor):
         """Release every planned binding temporary exactly once."""
         return tuple(
             CExpressionStatement(
-                CodeExpression(
-                    f"Py_XDECREF({self._array_transformation_temp_name(context.arguments[item.owner_path])})"
-                )
+                CodeExpression(f"Py_CLEAR({self._array_transformation_temp_name(context.arguments[item.owner_path])})")
             )
             for item in reversed(plan.arguments)
             if self._has_transformation_phase(item, WritebackPhase.CLEANUP)
@@ -9826,6 +10596,39 @@ class CBindingGenerator(ClassVisitor):
         """Release already-created Python result objects on a later failure."""
         return tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in names)
 
+    def _output_failure_nodes(
+        self,
+        names: tuple[str, ...],
+        failure_label: str | None,
+    ) -> tuple[CExpressionStatement | CGoto | CReturn, ...]:
+        """Exit one failed output conversion through inline or shared cleanup."""
+        if failure_label is not None:
+            return (CGoto(failure_label),)
+        return (*self._decref_names(names), CReturn(CodeExpression("NULL")))
+
+    @staticmethod
+    def _output_cleanup_label(converted_count: int) -> str:
+        """Name the cleanup suffix for one successfully converted prefix."""
+        if converted_count < 1:
+            raise ValueError("Output cleanup labels require at least one converted result")
+        return f"prik_output_cleanup_{converted_count}"
+
+    def _output_cleanup_chain(
+        self,
+        converted: tuple[str, ...],
+    ) -> tuple[CLabel | CExpressionStatement | CReturn, ...]:
+        """Release a converted prefix through one fallthrough cleanup chain."""
+        nodes: list[CLabel | CExpressionStatement | CReturn] = []
+        for count in range(len(converted), 0, -1):
+            nodes.extend(
+                (
+                    CLabel(self._output_cleanup_label(count)),
+                    CExpressionStatement(CodeExpression(f"Py_XDECREF({converted[count - 1]})")),
+                )
+            )
+        nodes.append(CReturn(CodeExpression("NULL")))
+        return tuple(nodes)
+
     @staticmethod
     def _is_owned_native_array_result(result: ResultPlan | NativeEntrypointResultPlan) -> bool:
         """Return whether one result owns persistent standard-descriptor storage."""
@@ -9875,6 +10678,8 @@ class CBindingGenerator(ClassVisitor):
                 values.append(names.present_name)
             if argument.entrypoint.descriptor_output_role is not None:
                 values.extend((f"&{names.value_name}", f"&{self._descriptor_output_present_name(names)}"))
+            if slot.native_scalar_c_type is not None and slot.passing is EntrypointPassingConvention.C_VALUE:
+                values[0] = f"({slot.native_scalar_c_type}){values[0]}"
             return tuple(values)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_values(
@@ -10003,6 +10808,8 @@ class CBindingGenerator(ClassVisitor):
                 f"&{name}_itemsize",
                 *(f"&{name}_extent_{axis}" for axis in range(rank)),
             )
+        if result.character_capacity is not None:
+            return (name,)
         values = [name if self._is_owned_native_array_result(result) else f"&{name}"]
         if result.scalar_descriptor is not None:
             values.append(f"&{name}_present")
@@ -10080,6 +10887,12 @@ class CBindingGenerator(ClassVisitor):
         if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
             return (names.nullable_name,)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+            if plan.entrypoint.pass_character_length:
+                # Assumed-capacity storage reports the caller's own itemsize.
+                return (
+                    names.value_name,
+                    f"(int64_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name})",
+                )
             return (names.value_name,)
         if passing is EntrypointPassingConvention.C_VALUE:
             return (names.value_name,)
@@ -10146,6 +10959,17 @@ class CBindingGenerator(ClassVisitor):
             for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
             for parameter in self._entrypoint_parameter_declarations(plan, group)
         )
+        direct_c_abi = plan.entrypoint.direct_c_abi
+        if direct_c_abi is not None:
+            if len(parameters) != len(direct_c_abi.parameters):
+                raise ValueError(
+                    f"Direct C entrypoint {plan.owner_path!r} has {len(parameters)} planned parameters "
+                    f"but {len(direct_c_abi.parameters)} preserved C declarations"
+                )
+            parameters = tuple(
+                CParameter(parameter.name, self._direct_c_abi_declaration_type(abi_type))
+                for parameter, abi_type in zip(parameters, direct_c_abi.parameters, strict=True)
+            )
         return CFunctionPrototype(
             self._entrypoint_function_name(plan),
             self._entrypoint_return_type(plan),
@@ -10212,8 +11036,27 @@ class CBindingGenerator(ClassVisitor):
             )
         )
 
+    @staticmethod
+    def _direct_c_abi_declaration_type(abi_type: DirectCABITypePlan) -> str:
+        """Render one planned direct-C declaration type.
+
+        A preserved source spelling is emitted verbatim so the generated
+        prototype stays compatible with the user's declaration.  A source-free
+        contract preserves none, so the backend composes the canonical spelling
+        from the completed scalar identity and pointer depth.
+        """
+        if abi_type.source_spelling:
+            return abi_type.source_spelling
+        canonical = PrimitiveScalarTypeRegistry.type_for(abi_type.scalar_type_name).c_spelling
+        return f"{canonical} {'*' * abi_type.pointer_depth}" if abi_type.pointer_depth else canonical
+
     def _entrypoint_return_type(self, plan: FunctionPlan) -> str:
         """Return the direct entrypoint result type, or void for subroutines."""
+        direct_c_abi = plan.entrypoint.direct_c_abi
+        if direct_c_abi is not None:
+            if direct_c_abi.result is None:
+                return "void"
+            return self._direct_c_abi_declaration_type(direct_c_abi.result)
         result = self._direct_result(plan)
         if result is None:
             return "void"
@@ -10316,6 +11159,8 @@ class CBindingGenerator(ClassVisitor):
                 parameters.append(CParameter(f"{name}_present", "void *"))
             return tuple(parameters)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+            if argument.entrypoint.pass_character_length:
+                return (CParameter(name, "void *"), CParameter(f"{name}_length", "int64_t"))
             return (CParameter(name, "void *"),)
         scalar_type = self._scalar_entrypoint_argument_type(argument, passing=passing)
         if argument.entrypoint.pass_descriptor_presence:
@@ -10425,6 +11270,10 @@ class CBindingGenerator(ClassVisitor):
                     *(CParameter(f"{name}_extent_{axis}", "int64_t *") for axis in range(rank)),
                 )
             return (CParameter(name, "CFI_cdesc_t *"),)
+        if result.character_capacity is not None:
+            # Direct C: the binding owns the buffer, so the callee receives a
+            # plain ``char *`` rather than the adapter's owned-allocation slot.
+            return (CParameter(name, "char *"),)
         if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return (CParameter(name, "void **"),)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
@@ -10503,7 +11352,7 @@ class CBindingGenerator(ClassVisitor):
         return CFunctionPrototype(
             self._binding_function_name(plan),
             "PyObject *",
-            self._binding_parameters(),
+            self._binding_parameters(plan),
             None if external else "static",
         )
 
@@ -10800,7 +11649,7 @@ class CBindingGenerator(ClassVisitor):
                     CMethodDefEntry(
                         function.binding.python_name,
                         self._binding_function_name(function),
-                        "METH_VARARGS | METH_KEYWORDS",
+                        self._binding_method_flags(function),
                         function.binding.docstring,
                     )
                     for function in namespace.functions
@@ -10819,6 +11668,13 @@ class CBindingGenerator(ClassVisitor):
                 *self._derived_private_method_entries(namespace),
             ),
         )
+
+    @staticmethod
+    def _binding_method_flags(plan: FunctionPlan) -> str:
+        """Return the CPython call convention selected for one wrapper."""
+        if plan.binding.accepts_keyword_arguments:
+            return "METH_VARARGS | METH_KEYWORDS"
+        return "METH_VARARGS"
 
     def _overload_method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
         """Install public module dispatchers and private class dispatchers."""
@@ -10842,7 +11698,13 @@ class CBindingGenerator(ClassVisitor):
         for surface in namespace.classes:
             constructor = surface.constructor.overload
             if constructor is not None and id(constructor) not in seen:
-                dispatches.append(_COverloadDispatch(constructor, receiver=True, public=False))
+                # A constructor overload whose candidates are type-bound takes the
+                # receiver; one whose candidates are functions returning the type
+                # -- a Fortran `interface <typename>` -- does not.
+                constructor_receiver = bool(
+                    constructor.candidate_passed_objects and constructor.candidate_passed_objects[0]
+                )
+                dispatches.append(_COverloadDispatch(constructor, receiver=constructor_receiver, public=False))
                 seen.add(id(constructor))
             for overload in surface.overloads:
                 if id(overload) in seen:
@@ -11268,6 +12130,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             self._derived_field_method_name(derived, field, action)
             for derived in namespace.derived_types
+            if not derived.abstract
             for field in derived.fields
             for action in self._field_method_actions(field)
         )
@@ -11647,16 +12510,30 @@ class CBindingGenerator(ClassVisitor):
         array = variable.array
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {variable.owner_path!r} has no fixed array plan")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+        # A character element is a fixed-width bytes dtype whose width is the
+        # Fortran element length. The parameter reports that length itself, so
+        # a `len=*` declaration works the same as a declared one.
+        character = variable.datatype_family is DatatypeFamily.STRING
+        itemsize_name = f"{value_name}_itemsize"
+        if character:
+            allocation = (
+                f"(PyObject *)PyArray_New(&PyArray_Type, {array.rank}, {{dimensions}}, NPY_STRING, "
+                f"NULL, NULL, (int){itemsize_name}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
+            )
+        else:
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+            allocation = f"(PyObject *)PyArray_EMPTY({array.rank}, {{dimensions}}, {scalar_type.numpy_type_macro}, 1)"
+        width_names = (itemsize_name,) if character else ()
         extent_names = tuple(f"{value_name}_extent_{axis}" for axis in range(array.rank))
         dimensions = f"{value_name}_dimensions"
+        reported = (*width_names, *extent_names)
         return (
-            *(CDeclaration(extent, "int64_t", CodeExpression("0")) for extent in extent_names),
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in reported),
             CDeclaration(
                 value_name,
                 "void *",
                 CodeExpression(
-                    f"{self._module_bridge_getter_name(variable)}({', '.join(f'&{extent}' for extent in extent_names)})"
+                    f"{self._module_bridge_getter_name(variable)}({', '.join(f'&{name}' for name in reported)})"
                 ),
             ),
             CExpressionStatement(
@@ -11670,9 +12547,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 object_name,
                 "PyObject *",
-                CodeExpression(
-                    f"(PyObject *)PyArray_EMPTY({array.rank}, {dimensions}, {scalar_type.numpy_type_macro}, 1)"
-                ),
+                CodeExpression(allocation.format(dimensions=dimensions)),
             ),
             CExpressionStatement(CodeExpression(f"if ({object_name} == NULL) {{ Py_DECREF(mod); return NULL; }}")),
             CExpressionStatement(
@@ -11718,21 +12593,25 @@ class CBindingGenerator(ClassVisitor):
         number = complex(value)
         return f"({number.real!r} + {number.imag!r} * I)"
 
-    def _binding_parameters(self) -> tuple[CParameter, ...]:
+    def _binding_parameters(self, plan: FunctionPlan | None = None) -> tuple[CParameter, ...]:
         """Build binding parameters from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        return (
-            CParameter("self", "PyObject *"),
-            CParameter("args", "PyObject *"),
-            CParameter("kwargs", "PyObject *"),
-        )
+        parameters = (CParameter("self", "PyObject *"), CParameter("args", "PyObject *"))
+        if plan is not None and not plan.binding.accepts_keyword_arguments:
+            return parameters
+        return (*parameters, CParameter("kwargs", "PyObject *"))
 
     def _binding_function_name(self, plan: FunctionPlan) -> str:
         """Return the binding-local binding function name derived from the supplied completed binding records; this helper preserves completed policy."""
         return f"wrap_{plan.symbol_name}"
 
     def _entrypoint_function_name(self, plan: FunctionPlan) -> str:
-        """Return the shared C-ABI function symbol selected by planning."""
-        return plan.entrypoint.symbol_name
+        """Return the symbol the binding declares and calls for one entrypoint.
+
+        Planning selects a collision-adapter forwarder when the binding must
+        not declare the native symbol itself; the forwarder is defined in the
+        separate adapter translation unit built by :meth:`binding_modules`.
+        """
+        return plan.entrypoint.collision_adapter_symbol or plan.entrypoint.symbol_name
 
     def _module_getter_name(self, plan: ModuleVariablePlan) -> str:
         """Return the binding-local module getter name derived from the supplied completed binding records; this helper preserves completed policy."""

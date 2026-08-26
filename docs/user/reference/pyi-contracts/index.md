@@ -2,19 +2,19 @@
 title: Editing .pyi Contracts
 audience: users, advanced users
 prerequisites: generated .pyi contract, wrapper build workflow
-related: exports-and-modules.md, functions-and-classes.md, calls-and-results.md, ../semantic-pyi-format.md
+related: exports-and-modules.md, functions-and-classes.md, calls-and-results.md
 status: maintained
 publication: reviewed
 ---
 
 # Editing `.pyi` Contracts
 
-prik's generated `.pyi` files are editable wrapper contracts. They look like
+PRIK's generated `.pyi` files are editable wrapper contracts. They look like
 Python stubs, but they also describe native calls, storage, and results. Edit
 them to change the Python API without changing the native implementation.
 
-This section explains supported edits and their effect. The complete grammar
-will be covered by the Semantic `.pyi` Format reference.
+This section explains the supported editing subset and its effect. Start from
+the generated contract and make only the documented edits below.
 
 ## Workflow
 
@@ -35,7 +35,7 @@ python3 -m prik contracts/solver/__init__.pyi \
 
 You can provide compiled objects or libraries instead of source. In either
 case, the `.pyi` files define the Python API and the native files provide its
-implementation. prik does not reread the native source to restore declarations
+implementation. PRIK does not reread the native source to restore declarations
 you removed from the contract.
 
 Keep an unchanged generated copy while experimenting. It makes each edit easy
@@ -85,7 +85,7 @@ Some facts must continue to match the supplied implementation:
 - callback signature; and
 - required native imports.
 
-prik checks that the contract is internally consistent. It cannot prove that
+PRIK checks that the contract is internally consistent. It cannot prove that
 an arbitrary object or shared library has the binary interface described by
 the contract. A contract that gives false native facts may fail while
 building, importing, or calling the extension.
@@ -100,7 +100,7 @@ Before rebuilding:
 - Do not invent optionality, ownership, or a release method.
 - Rebuild and call the edited path once before making the next change.
 
-When prik rejects an incomplete or unsafe rule, fix the contract instead of
+When PRIK rejects an incomplete or unsafe rule, fix the contract instead of
 removing metadata until the build happens to pass.
 
 ## Understanding Errors

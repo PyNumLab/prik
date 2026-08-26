@@ -9,7 +9,7 @@ publication: draft
 
 # Generated Modules Reference
 
-prik preserves the native module namespace in the generated Python extension.
+PRIK preserves the native module namespace in the generated Python extension.
 Standalone procedures are exported from the extension root. Procedures,
 variables, constants, and classes declared inside a Fortran module are exported
 from that generated child module.
@@ -126,15 +126,11 @@ This keeps `extension.second_math.double_after_add(...)` available while also
 exporting `extension.fused_value(...)`. Star imports are explicit flattening
 requests; colliding names fail.
 
-## Evidence And Maintenance
+## Evidence
 
 Module package shape, child namespaces, variable access, and import policy are
 covered by
 [`test_module_variables_and_state.py`](../../../tests/fortran/modules/end_to_end/test_module_variables_and_state.py),
-[`test_contract_package_runtime.py`](../../../tests/fortran/semantic_pyi_format/end_to_end/test_contract_package_runtime.py),
-[`test_multi_source_builds.py`](../../../tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py), and
-[`test_source_generated_pyi_contracts.py`](../../../tests/fortran/building_shared_library/pipeline/test_source_generated_contracts.py).
-
-When module namespace behavior changes, update this page, generated package
-fixtures, [Semantic `.pyi` Format](semantic-pyi-format.md), and the module
-workflow page in the same change.
+[`test_contract_package_runtime.py`](../../../tests/fortran/infrastructure/semantic_pyi/end_to_end/test_contract_package_runtime.py),
+[`test_multi_source_builds.py`](../../../tests/fortran/infrastructure/building/end_to_end/test_multi_source_builds.py), and
+[`test_source_generated_pyi_contracts.py`](../../../tests/fortran/infrastructure/building/pipeline/test_source_generated_contracts.py).

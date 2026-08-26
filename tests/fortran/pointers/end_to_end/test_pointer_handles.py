@@ -1,6 +1,7 @@
 """Pointer argument, result, association, and handle-policy tests."""
 
 import gc
+import resource
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_and_import,
     _build_text_and_import,
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
@@ -22,7 +24,7 @@ from prik.runtime.handles import AllocatableArray, PointerArray
 pytestmark = pytest.mark.fortran_end_to_end
 
 FIXTURES = Path(__file__).parent / "fixtures"
-POINTERS_F90_SOURCE = FIXTURES / "fpointers_f90.f90"
+POINTERS_F90_SOURCE = FIXTURES / "native" / "fpointers_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 POINTER_CROSS_A_SOURCE = """\
 module fpointer_cross_a
@@ -612,3 +614,69 @@ def test_pointer_array_results_use_owned_descriptors_without_owning_targets(
     assert selected.closed is True
     assert absent.closed is True
     np.testing.assert_array_equal(values, np.array([1.0, 2.0, 3.0], dtype=np.float64))
+
+
+POINTER_RELEASE_SOURCE = """
+module fpointer_release_f90
+  implicit none
+  real(8), allocatable, target :: pool(:)
+contains
+  function mint(n) result(values)
+    integer(4), intent(in) :: n
+    real(8), pointer :: values(:)
+    allocate(values(n))
+    values = 1.0d0
+  end function mint
+
+  function borrow(n) result(values)
+    integer(4), intent(in) :: n
+    real(8), pointer :: values(:)
+    if (.not. allocated(pool)) allocate(pool(n))
+    pool = 2.0d0
+    values => pool
+  end function borrow
+end module fpointer_release_f90
+"""
+
+
+@pytest.mark.fortran_end_to_end
+def test_pointer_handle_releases_native_storage_when_the_caller_asks(tmp_path: Path):
+    """A pointer handle offers the release a Fortran caller would write itself.
+
+    prik never frees a native target on its own, so withholding the operation
+    only removes the caller's ability to free storage the procedure handed
+    over.  Reclaiming it has to be observable in the process, because an
+    unreleased target still reports the same handle state.
+    """
+    source = tmp_path / "native" / "fpointer_release_f90.f90"
+    source.parent.mkdir()
+    source.write_text(POINTER_RELEASE_SOURCE, encoding="utf-8")
+    module = _build_and_import(
+        source,
+        tmp_path,
+        {
+            "bind_c_fpointer_release_f90_wrapper.f90",
+            "fpointer_release_f90_wrapper.c",
+            "fpointer_release_f90_wrapper.h",
+        },
+    )
+
+    handle = module.mint(np.int32(4))
+    assert handle.associated is True
+    handle.deallocate()
+    assert handle.associated is False
+
+    def peak_kib() -> int:
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+    extent = np.int32(4096)
+    for _ in range(200):
+        module.mint(extent).deallocate()
+    baseline = peak_kib()
+    for _ in range(4000):
+        module.mint(extent).deallocate()
+    assert peak_kib() - baseline == 0
+
+    # A borrowed target is module storage the library keeps; releasing is the
+    # caller's decision there too, so only the untouched path is asserted.
+    assert module.borrow(np.int32(4)).associated is True

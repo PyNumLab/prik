@@ -81,7 +81,7 @@ end module defined_generics
 
 
 def test_fixed_form_generic_interface_preserves_specific_procedures():
-    parsed = parse_fortran_file(FIXTURES / "foverloads_fixed.f")
+    parsed = parse_fortran_file(FIXTURES / "native" / "foverloads_fixed.f")
     interface = parsed.modules[0].interfaces[0]
 
     assert interface.name == "convert"

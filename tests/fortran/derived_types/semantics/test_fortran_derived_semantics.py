@@ -119,10 +119,15 @@ end module lifecycle_mod
 
     assert state.fields[0].default_value == "7"
     assert state.fields[0].metadata["fortran_initializer"] == "7"
-    assert state.metadata["fortran_final_procedures"] == ["cleanup"]
+    assert [item.name for item in state.destructors] == ["cleanup"]
+    assert state.destructors[0].origin.source_language == "fortran"
+    assert state.destructors[0].origin.source_kind == "destructor"
     emitted = emit_module(module)
-    assert "@native_type(finalizers=('cleanup',))" in emitted
-    assert native_contract_issues(parse_pyi_text(emitted, module_name=module.name)) == []
+    assert "    @destroy\n    def cleanup(self) -> None: ..." in emitted
+    reloaded = parse_pyi_text(emitted, module_name=module.name)
+    assert reloaded.classes[0].methods == []
+    assert [item.name for item in reloaded.classes[0].destructors] == ["cleanup"]
+    assert native_contract_issues(reloaded) == []
 
 
 def test_bind_c_and_sequence_types_preserve_accessor_layout_metadata():
@@ -148,9 +153,12 @@ end module layout_mod
 
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
     point, tagged, ordered = module.classes
+    rendered = emit_module(module)
 
     assert point.metadata["fortran_type_attributes"] == ["bind(c)"]
-    assert "@native_type(attributes=('bind(c)',))" in emit_module(module)
+    assert '@native_abi("c")\nclass point:' in rendered
+    assert '@native_abi("c")\nclass tagged_point:' in rendered
+    assert "native_type" not in rendered
     assert point.metadata["fortran_bind_c"] is True
     assert point.metadata["fortran_layout_policy"] == "accessors"
     assert point.metadata["fortran_direct_layout"] is False
@@ -182,9 +190,12 @@ end module layout_mod
     assert tagged.fields[1].origin.source_type == "logical(kind=c_bool)"
     assert tagged.fields[2].origin.source_type == "complex(kind=c_double_complex)"
     assert ordered.metadata["fortran_type_attributes"] == ["sequence"]
-    assert "@native_type(attributes=('sequence',))" in emit_module(module)
     assert ordered.metadata["fortran_sequence"] is True
     assert ordered.metadata["fortran_layout_policy"] == "accessors"
+
+    reloaded = parse_pyi_text(rendered, module_name=module.name)
+    assert reloaded.classes[0].metadata["fortran_bind_c"] is True
+    assert "fortran_sequence" not in reloaded.classes[2].metadata
 
 
 def test_bind_c_derived_value_argument_is_accessor_routed():
@@ -293,3 +304,82 @@ end module polymorphic_source_mod
     assert module.functions[0].metadata["fortran_passed_object_name"] == "self"
     assert accept_value.origin.source_type == "class(base)"
     assert accept_value.metadata["fortran_polymorphic"] is True
+
+
+def test_declared_type_accessibility_wins_over_the_module_default():
+    """`type, public ::` states the type's own accessibility.
+
+    A module-level `private` default sets accessibility for symbols that do not
+    state one; it must not hide a type whose declaration says `public`.
+    """
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module exports_mod
+  implicit none
+  private
+  type,public :: exported
+    integer :: n = 0
+  end type exported
+  type :: defaulted
+    integer :: n = 0
+  end type defaulted
+end module exports_mod
+"""
+        )
+    )
+
+    visibility = {semantic_class.name: semantic_class.visibility for semantic_class in module.classes}
+    assert visibility == {"exported": "public", "defaulted": "private"}
+
+
+def test_private_components_carry_their_hidden_accessibility():
+    """The type's `private` statement is the default accessibility of its components."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module hidden_mod
+  implicit none
+  type,public :: partly
+    private
+    integer :: hidden = 0
+    integer,public :: shown = 0
+  end type partly
+end module hidden_mod
+"""
+        )
+    )
+
+    partly = module.classes[0]
+    assert {field.name: field.visibility for field in partly.fields} == {
+        "hidden": "private",
+        "shown": "public",
+    }
+
+
+def test_private_type_bound_procedures_stay_off_the_generated_class_surface():
+    """A binding hidden by the `private` statement after `contains` is not a method."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module bindings_mod
+  implicit none
+  type,public :: gated
+    integer :: n = 0
+  contains
+    private
+    procedure :: internal_step
+    procedure,public :: step => internal_step
+  end type gated
+contains
+  subroutine internal_step(self)
+    class(gated),intent(inout) :: self
+    self%n = self%n + 1
+  end subroutine internal_step
+end module bindings_mod
+"""
+        )
+    )
+
+    gated = module.classes[0]
+    assert [method.name for method in gated.methods if method.visibility == "public"] == ["step"]

@@ -290,6 +290,7 @@ class ProjectionMapping:
     result_position: int | None = None
     value_kind: str = ""
     value: Any = None
+    native_cast: str | None = None
 
 
 # ============================================================
@@ -398,8 +399,10 @@ PYTHON_METHOD_NAME_METADATA = "python_method_name"
 PYTHON_EXPORTS_METADATA = "python_exports"
 PYTHON_EXPORTS_PREPARED_METADATA = "python_exports_prepared"
 POLICY_COMPLETION_PREPARED_METADATA = "policy_completion_prepared"
+HIDDEN_NATIVE_OUTPUT_METADATA = "hidden_native_output"
 RESOLVED_OWNERSHIP_POLICY_METADATA = "resolved_ownership_policy"
 RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA = "resolved_return_ownership_policy"
+RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA = "resolved_update_result_ownership_policy"
 RESOLVED_CLASS_INSTANCE_POLICY_METADATA = "resolved_class_instance_policy"
 RESOLVED_CLASS_SELF_POLICY_METADATA = "resolved_class_self_policy"
 RESOLVED_DERIVED_FIELD_POLICY_METADATA = "resolved_derived_field_policy"
@@ -542,6 +545,7 @@ def _projection_key(
             mapping.result_position,
             mapping.value_kind,
             _native_projection_value_key(mapping.value, name_map),
+            mapping.native_cast,
         )
         for mapping in projection
         if _requires_explicit_projection_mapping(mapping)
@@ -549,6 +553,8 @@ def _projection_key(
 
 
 def _requires_explicit_projection_mapping(mapping: ProjectionMapping) -> bool:
+    if mapping.native_cast is not None:
+        return True
     if mapping.value_kind:
         return True
     if mapping.result_position is not None:
@@ -605,6 +611,21 @@ def _canonical_expression_text(text: str, name_map: dict[str, str]) -> str:
 
 
 @dataclass
+class SemanticDestructor:
+    """One native teardown operation owned by a semantic class.
+
+    Destructors are lifecycle declarations, not members of the Python-callable
+    method surface. Their native-language mechanism is selected by completed
+    policy after the frontend records the operation's identity.
+    """
+
+    name: str
+    native_name: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    origin: SemanticOrigin = field(default_factory=SemanticOrigin, compare=False)
+
+
+@dataclass
 class SemanticClass:
     name: str
 
@@ -613,6 +634,8 @@ class SemanticClass:
     fields: list[SemanticField] = field(default_factory=list)
 
     methods: list[SemanticMethod] = field(default_factory=list)
+
+    destructors: list[SemanticDestructor] = field(default_factory=list)
 
     overload_sets: list[ProcedureOverloadSet] = field(default_factory=list)
 

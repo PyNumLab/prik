@@ -21,7 +21,7 @@ def test_optional_dummy_attribute_is_preserved(
     procedure_name: str,
     argument_name: str,
 ):
-    source = FIXTURES.joinpath(fixture_name)
+    source = FIXTURES.joinpath("native", fixture_name)
     parsed = parse_fortran_file(source.read_text(encoding="utf-8"), filename=str(source))
     procedures = [
         *parsed.procedures,

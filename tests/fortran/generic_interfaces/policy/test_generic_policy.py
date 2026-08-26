@@ -12,7 +12,7 @@ from prik.semantics.models import (
 )
 from prik.policy.completion import complete_semantic_policies
 
-FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
+FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/contracts/fmath/__init__.pyi")
 
 
 def _source_semantic_module(filename: str, *, module_name: str):

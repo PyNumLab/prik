@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" role="img" aria-labelledby="title description">
+  <title id="title">PRIK vision overview</title>
+  <desc id="description">Native software is described by an editable semantic contract, completed into explicit policy, and generated as a predictable Python binding.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#607080"/>
+    </marker>
+    <style>
+      .stage-label { fill: #52616f; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .08em; }
+      .title { fill: #ffffff; font: 700 23px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail { fill: #ffffff; font: 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow { fill: none; stroke: #607080; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="278" rx="18" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
+
+  <text x="165" y="44" text-anchor="middle" class="stage-label">NATIVE INPUT</text>
+  <text x="455" y="44" text-anchor="middle" class="stage-label">SHARED MEANING</text>
+  <text x="745" y="44" text-anchor="middle" class="stage-label">ENFORCED BEHAVIOR</text>
+  <text x="1035" y="44" text-anchor="middle" class="stage-label">PYTHON SURFACE</text>
+
+  <g>
+    <rect x="40" y="66" width="250" height="150" rx="14" fill="#8250df" stroke="#6639ba" stroke-width="2"/>
+    <text x="165" y="119" text-anchor="middle" class="title">Native software</text>
+    <text x="165" y="151" text-anchor="middle" class="detail">Fortran · C · C++</text>
+    <text x="165" y="177" text-anchor="middle" class="detail">Rust · CUDA · more</text>
+  </g>
+
+  <path d="M290 141 H318" class="arrow"/>
+
+  <g>
+    <rect x="330" y="66" width="250" height="150" rx="14" fill="#0969da" stroke="#0550ae" stroke-width="2"/>
+    <text x="455" y="119" text-anchor="middle" class="title">Semantic contract</text>
+    <text x="455" y="153" text-anchor="middle" class="detail">editable .pyi</text>
+    <text x="455" y="179" text-anchor="middle" class="detail">explicit and reviewable</text>
+  </g>
+
+  <path d="M580 141 H608" class="arrow"/>
+
+  <g>
+    <rect x="620" y="66" width="250" height="150" rx="14" fill="#bc4c00" stroke="#953800" stroke-width="2"/>
+    <text x="745" y="119" text-anchor="middle" class="title">Completed policy</text>
+    <text x="745" y="153" text-anchor="middle" class="detail">coercion · validation</text>
+    <text x="745" y="179" text-anchor="middle" class="detail">ownership · lifetime</text>
+  </g>
+
+  <path d="M870 141 H898" class="arrow"/>
+
+  <g>
+    <rect x="910" y="66" width="250" height="150" rx="14" fill="#1a7f37" stroke="#116329" stroke-width="2"/>
+    <text x="1035" y="119" text-anchor="middle" class="title">Python binding</text>
+    <text x="1035" y="153" text-anchor="middle" class="detail">generated extension</text>
+    <text x="1035" y="179" text-anchor="middle" class="detail">predictable public API</text>
+  </g>
+</svg>

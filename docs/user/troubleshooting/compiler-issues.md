@@ -2,17 +2,40 @@
 title: Compiler Issues
 audience: users, contributors
 prerequisites: verification
-related: build-issues.md, platform-specific-issues.md
+related: ../getting-started/installation.md, ../guide/building-shared-library.md
 status: maintained
 publication: reviewed
 ---
 
 # Compiler Issues
 
-prik uses the Fortran compiler passed to `--compiler` and its matching C
-compiler to build the Python extension.
+For a Fortran build, PRIK uses the Fortran compiler passed to `--compiler` and
+its matching C compiler. A direct-C build uses the selected C compiler without
+requiring Fortran, unless explicit Fortran implementation sources make the
+final link mixed-language.
 
-## Verify Both Compilers
+## Direct-C Builds
+
+Select the C lane and its compiler explicitly when the input suffix does not
+already determine the language:
+
+```bash
+python3 -m prik api.c --language c --compiler clang \
+  --native-c-compile-flags="-O3 -std=c11" \
+  --out-dir build/api
+```
+
+`--native-c-compile-flags` applies to user C implementation sources;
+`--wrapper-c-flags` applies to the generated CPython binding and any selected
+collision forwarder. Use [C Support](../language-support/c-support.md) to decide
+whether a declaration is in the direct-C subset before debugging the compiler.
+If explicit Fortran sources make the link mixed-language, the C and Fortran
+drivers must belong to one supported family. When the C compiler is omitted,
+the selected Fortran driver supplies its matching C compiler, such as `gcc`
+for `gfortran`. PRIK rejects an explicitly supplied mixed-vendor pair instead
+of probing with one C compiler and silently compiling with another.
+
+## Verify A Fortran Compiler Pair
 
 Check both executables from the selected pair:
 
@@ -36,12 +59,12 @@ python3 -m prik solver.f90 \
 ```
 
 Versioned names such as `gfortran-13` and `flang-22` are recognized. If the
-matching C compiler is missing, prik stops with an explicit error rather than
+matching C compiler is missing, PRIK stops with an explicit error rather than
 using an incompatible compiler.
 
 ## Unsupported Compiler Family
 
-If the name is not recognized, prik lists the accepted compiler families. Use
+If the name is not recognized, PRIK lists the accepted compiler families. Use
 the compiler's standard executable name or choose another listed option.
 
 ## Compiler-Specific Flags

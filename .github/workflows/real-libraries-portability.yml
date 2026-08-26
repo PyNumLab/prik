@@ -1,0 +1,159 @@
+name: Real Libraries Portability
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-libraries-portability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  examples:
+    name: Real Libraries Portability · ${{ matrix.target }} · Python 3.12
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: Linux x86-64
+            cache_key: linux-x86-64
+            runner: ubuntu-24.04
+            fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
+            primary_c_compiler: gcc-13
+            secondary_c_compiler: clang-18
+          - target: Linux ARM64
+            cache_key: linux-arm64
+            runner: ubuntu-24.04-arm
+            fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
+            primary_c_compiler: gcc-13
+            secondary_c_compiler: clang-18
+          - target: macOS Intel
+            cache_key: macos-intel
+            runner: macos-15-intel
+            fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
+            primary_c_compiler: clang
+            secondary_c_compiler: gcc-13
+          - target: macOS ARM64
+            cache_key: macos-arm64
+            runner: macos-15
+            fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
+            primary_c_compiler: clang
+            secondary_c_compiler: gcc-13
+    env:
+      PRIK_REAL_LIBRARY_NATIVE_JOBS: "8"
+      PYTHONPATH: .
+      HYPOTHESIS_PROFILE: ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ubuntu native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gfortran-13 libblas-dev liblapack-dev
+      - name: Ensure macOS GNU compilers are available
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v "${{ matrix.fortran_compiler }}" >/dev/null 2>&1 || \
+             ! command -v "${{ matrix.fortran_c_compiler }}" >/dev/null 2>&1; then
+            brew install gcc@13
+          fi
+      - name: Configure GNU Fortran and C
+        shell: bash
+        run: |
+          compiler_dir="$RUNNER_TEMP/prik-example-compilers"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "${{ matrix.fortran_compiler }}")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "${{ matrix.fortran_c_compiler }}")" "$compiler_dir/gcc"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          echo "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR=$RUNNER_TEMP/prik-example-native" >> "$GITHUB_ENV"
+          echo "PRIK_TALIB_CACHE_DIR=$RUNNER_TEMP/prik-ta-lib-native" >> "$GITHUB_ENV"
+      - name: Install example dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]" \
+            "numpy==2.5.1" \
+            "meson==1.11.2" \
+            "ninja==1.13.0" \
+            "scipy==1.18.0"
+      - name: Restore compiled BLAS and LAPACK cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/prik-example-native
+          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/fortran/blas/native/**', 'examples/fortran/lapack/native/**', 'examples/fortran/lapack/support/**', 'examples/fortran/lapack/xblas_sources.txt') }}
+      - name: Restore pinned TA-Lib cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/prik-ta-lib-native
+          key: real-libraries-portability-${{ matrix.cache_key }}-ta-lib-v0.7.1-${{ hashFiles('examples/c/ta_lib/native_build.py') }}
+      - name: Show target and compilers
+        run: |
+          uname -a
+          python --version
+          gfortran --version
+          gcc --version
+          "${{ matrix.primary_c_compiler }}" --version
+          "${{ matrix.secondary_c_compiler }}" --version
+      - name: Run libm with ${{ matrix.primary_c_compiler }}
+        env:
+          PRIK_LIBM_CC: ${{ matrix.primary_c_compiler }}
+        run: |
+          source examples/c/libm/build_all.sh
+          python -m pytest -q examples/c/libm/tests
+      - name: Run libm with ${{ matrix.secondary_c_compiler }}
+        env:
+          PRIK_LIBM_CC: ${{ matrix.secondary_c_compiler }}
+        run: |
+          source examples/c/libm/build_all.sh
+          python -m pytest -q examples/c/libm/tests
+      - name: Run TA-Lib with ${{ matrix.primary_c_compiler }}
+        env:
+          PRIK_TALIB_CC: ${{ matrix.primary_c_compiler }}
+        run: |
+          source examples/c/ta_lib/build_all.sh
+          python -m pytest -q examples/c/ta_lib/tests
+      - name: Run BLAS example
+        run: |
+          source examples/fortran/blas/build_all.sh
+          python -m pytest -q examples/fortran/blas/tests
+          if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
+            python -m pytest -q examples/fortran/blas/ci/full_surface.py
+          fi
+      - name: Run LAPACK example
+        run: |
+          source examples/fortran/lapack/build_all.sh
+          python -m pytest -q examples/fortran/lapack/tests
+          if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
+            python -m pytest -q examples/fortran/lapack/ci/full_surface.py
+          fi
+      - name: Run FFTPACK example
+        run: |
+          source examples/fortran/fftpack/build_all.sh
+          python -m pytest -q examples/fortran/fftpack/tests
+      - name: Run MINPACK example
+        run: |
+          source examples/fortran/minpack/build_all.sh
+          python -m pytest -q examples/fortran/minpack/tests
+      - name: Run BSPLINE-FORTRAN example
+        run: |
+          source examples/fortran/bspline/build_all.sh
+          python -m pytest -q examples/fortran/bspline/tests

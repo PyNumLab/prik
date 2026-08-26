@@ -78,6 +78,23 @@ def projected(
     return WrapperPlanner().build(module)
 
 
+def _copy_f_status_plan():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Annotated, Arg, COPY_F, Float64, Hidden, Int32, ORDER_C, Returns, native_call, raises
+
+@raises(status="status", success=0)
+@native_call([Arg(0), Hidden("status", Int32)])
+def transform_status(
+    values: Annotated[Float64[2, 3], ORDER_C, COPY_F]
+) -> Returns["status", Int32]: ...
+""",
+        module_name="copy_f_status",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def _late_extent_external_plan():
     module = parse_pyi_text(
         """
@@ -254,9 +271,21 @@ def test_copy_f_lowering_keeps_numpy_copy_in_and_copy_out_out_of_the_bridge():
         "PyArray_CopyInto((PyArrayObject *)bound_values_obj, (PyArrayObject *)bound_values_representation) < 0"
         in c_source
     )
-    assert "Py_XDECREF(bound_values_representation)" in c_source
+    assert "Py_CLEAR(bound_values_representation)" in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
     assert "COPY_F" not in bridge_source
+
+
+def test_copy_f_status_cleanup_clears_the_released_temporary_before_error_cleanup():
+    artifacts = WrapperGenerator().generate(_copy_f_status_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    function_body = c_source[c_source.index("static PyObject * wrap_transform_status") :]
+
+    copyback = function_body.index("PyArray_CopyInto")
+    success_release = function_body.index("Py_CLEAR(bound_values_representation)", copyback)
+    status_check = function_body.index("if (status != 0)", success_release)
+    error_release = function_body.index("Py_CLEAR(bound_values_representation)", status_check)
+    assert copyback < success_release < status_check < error_release
 
 
 def test_copy_f_native_input_and_projected_identity_share_the_same_lifecycle_algorithm():

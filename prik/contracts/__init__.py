@@ -7,6 +7,7 @@ provide the small runtime constructors documented by prik.
 
 from __future__ import annotations
 
+from abc import abstractmethod as abstractmethod
 from typing import Annotated as Annotated, Any as Any, Final as Final
 
 import numpy as np
@@ -227,17 +228,79 @@ Pass = _expression
 PointerAssociation = _expression
 PointerPolicy = _expression
 Range = _expression
+Hidden = _expression
 Return = _expression
 SourceName = _expression
 Transfer = _expression
 Value = _expression
 Work = _expression
 
+
+NATIVE_C_SCALAR_CASTS: Final[dict[str, str]] = {
+    "CBool": "_Bool",
+    "CChar": "char",
+    "CSignedChar": "signed char",
+    "CUnsignedChar": "unsigned char",
+    "CShort": "short",
+    "CUnsignedShort": "unsigned short",
+    "CInt": "int",
+    "CUnsignedInt": "unsigned int",
+    "CLong": "long",
+    "CUnsignedLong": "unsigned long",
+    "CLongLong": "long long",
+    "CUnsignedLongLong": "unsigned long long",
+    "CFloat": "float",
+    "CDouble": "double",
+    "CLongDouble": "long double",
+    "CFloatComplex": "float _Complex",
+    "CDoubleComplex": "double _Complex",
+    "CLongDoubleComplex": "long double _Complex",
+}
+
+CBool = _expression
+CChar = _expression
+CSignedChar = _expression
+CUnsignedChar = _expression
+CShort = _expression
+CUnsignedShort = _expression
+CInt = _expression
+CUnsignedInt = _expression
+CLong = _expression
+CUnsignedLong = _expression
+CLongLong = _expression
+CUnsignedLongLong = _expression
+CFloat = _expression
+CDouble = _expression
+CLongDouble = _expression
+CFloatComplex = _expression
+CDoubleComplex = _expression
+CLongDoubleComplex = _expression
+
+
+def abstract(target):
+    """Mark a contract class as an abstract native type.
+
+    A class carrying this marker cannot be constructed: the native type is
+    declared ``abstract``, so only its concrete extensions have instances. It
+    is returned unchanged so the contract stays an ordinary Python stub.
+    """
+    return target
+
+
+def destroy(target):
+    """Mark a class-body declaration as a native destruction operation.
+
+    The declaration is semantic lifecycle metadata rather than a Python-callable
+    method. It is returned unchanged so the contract remains an ordinary Python
+    stub when imported by documentation or tooling.
+    """
+    return target
+
+
 bind = _decorator
 nogil = _decorator
 native_abi = _decorator
 native_call = _decorator
-native_type = _decorator
 overload = _decorator
 prototype = _decorator
 pure = _decorator
@@ -270,6 +333,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Bool64",
         "Bounded",
         "Byte",
+        *NATIVE_C_SCALAR_CASTS,
         "CAnonymous",
         "CAnonymousMember",
         "CEnum",
@@ -332,15 +396,18 @@ CONTRACT_SYMBOLS = frozenset(
         "Void",
         "Work",
         "WrappedType",
+        "abstract",
+        "abstractmethod",
         "bind",
+        "destroy",
         "nogil",
         "native_abi",
         "native_call",
-        "native_type",
         "overload",
         "prototype",
         "pure",
         "private",
+        "Hidden",
         "raises",
         "standalone",
     }

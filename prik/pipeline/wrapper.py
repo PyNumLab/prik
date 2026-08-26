@@ -241,6 +241,7 @@ class WrapperGenerator:
             started = time.perf_counter()
         c_modules = self._c_generator.binding_modules(plan)
         c_sources = tuple(self._c_printer.doprint(module) for module in c_modules)
+        c_module_names = tuple(module.name for module in c_modules)
         if progress is not None:
             progress("Generate binding source", time.perf_counter() - started)
 
@@ -269,6 +270,7 @@ class WrapperGenerator:
         return self._generated_wrapper(
             plan.owner_path,
             c_sources,
+            c_module_names,
             c_header_source,
             fortran_source,
             native_support_keys=(("binding_support",) if self._c_generator.requires_native_support(plan) else ()),
@@ -1355,7 +1357,9 @@ class WrapperGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one scalar module write-through setter."""
         diagnostics = []
-        if plan.bridge.native_assignment is not AssignmentMode.VALUE_COPY:
+        # A character write copies a byte buffer rather than a value, but it is
+        # the same write-through contract; every other mechanism is rejected.
+        if plan.bridge.native_assignment not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-module-native-assignment", plan.bridge.native_assignment)
             )
@@ -1436,6 +1440,7 @@ class WrapperGenerator:
             ),
             *self._duplicate_role_diagnostics(plan),
             *self._available_role_diagnostics(plan),
+            *self._argument_update_diagnostics(plan),
             *self._binding_conversion_order_diagnostics(plan),
             *self._function_output_diagnostics(plan),
             *self._string_result_aggregation_diagnostics(plan),
@@ -1460,6 +1465,42 @@ class WrapperGenerator:
         # Validate function-wide lifecycle coverage after every producer is known.
         diagnostics.extend(self._writeback_phase_diagnostics(plan))
         diagnostics.extend(self._string_writeback_diagnostics(plan))
+        return tuple(diagnostics)
+
+    def _argument_update_diagnostics(self, plan: FunctionPlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require every argument-update result to pair with a descriptor string input.
+
+        The replaced value is read back from the adapter local its argument
+        converts, so that pairing must exist and must be the completed
+        allocatable or pointer character-buffer input.  A result without it
+        would publish whichever storage the adapter happened to declare, which
+        compiles and imports while returning the pre-call value.
+        """
+        arguments = {argument.owner_path: argument for argument in plan.arguments}
+        diagnostics = []
+        for result in plan.results:
+            if not result.updates_argument:
+                continue
+            argument = arguments.get(result.owner_path)
+            if argument is None:
+                diagnostics.append(self._diagnostic(result.owner_path, "missing-update-result-argument", None))
+                continue
+            if not argument.projects_character_descriptor_update:
+                diagnostics.append(
+                    self._diagnostic(result.owner_path, "invalid-update-result-argument", argument.owner_path)
+                )
+            if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
+                diagnostics.append(
+                    self._diagnostic(
+                        result.owner_path,
+                        "invalid-update-result-argument-handoff",
+                        argument.entrypoint.handoff_mode.value,
+                    )
+                )
+            if any(action.owner_path == result.owner_path for action in plan.writeback_actions):
+                diagnostics.append(
+                    self._diagnostic(result.owner_path, "unexpected-update-result-writeback", result.result_position)
+                )
         return tuple(diagnostics)
 
     @staticmethod
@@ -1565,12 +1606,15 @@ class WrapperGenerator:
     def _expected_entrypoint_parameter_groups(plan: FunctionPlan) -> tuple[tuple[str, str], ...]:
         """Return the C-ABI parameter groups required by completed transfer facts."""
         argument_owners = {argument.owner_path for argument in plan.arguments}
+        updated_owners = {result.owner_path for result in plan.results if result.updates_argument}
         groups: list[tuple[str, str]] = []
         for slot in sorted(plan.entrypoint.projected_slots, key=lambda item: item.native_position):
             if slot.source_kind == "result":
                 groups.append((slot.owner_path, "hidden_result"))
             elif slot.owner_path in argument_owners:
                 groups.append((slot.owner_path, "argument"))
+                if slot.owner_path in updated_owners:
+                    groups.append((slot.owner_path, "hidden_result"))
             else:
                 groups.append((slot.owner_path, "projected_slot"))
         groups.extend(
@@ -1662,6 +1706,7 @@ class WrapperGenerator:
         expected_owners = {
             *(slot.owner_path for slot in plan.entrypoint.projected_slots if slot.source_kind == "result"),
             *(result.owner_path for result in plan.results if result.source_kind == "direct_return"),
+            *(result.owner_path for result in plan.results if result.updates_argument),
         }
         extra = tuple(
             result.owner_path for result in plan.entrypoint.results if result.owner_path not in expected_owners
@@ -3742,7 +3787,9 @@ class WrapperGenerator:
         if array is None:
             return ()
         if plan.datatype_family is DatatypeFamily.STRING:
-            if array.itemsize is None or array.itemsize <= 0 or array.itemsize_role is None:
+            # The role is mandatory because the runtime width always crosses;
+            # the literal is optional, because a contract may leave it assumed.
+            if array.itemsize_role is None or (array.itemsize is not None and array.itemsize <= 0):
                 return (self._diagnostic(plan.owner_path, "invalid-array-itemsize", array.itemsize),)
             return ()
         if array.itemsize is not None or array.itemsize_role is not None:
@@ -4023,9 +4070,14 @@ class WrapperGenerator:
         plan: ArgumentTransferPlan,
         label: str,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require one fixed plan length and prohibit a runtime length ABI role."""
+        """Require a plan length and prohibit a runtime length ABI role.
+
+        Assumed-capacity rank-zero storage states no width, so the plan instead
+        records that the caller's itemsize travels beside the address.
+        """
         diagnostics = []
-        if plan.character_length is None or plan.character_length <= 0:
+        assumed_capacity = plan.character_length is None and plan.entrypoint.pass_character_length
+        if not assumed_capacity and (plan.character_length is None or plan.character_length <= 0):
             diagnostics.append(
                 self._diagnostic(plan.owner_path, f"invalid-string-{label}-length", plan.character_length)
             )
@@ -4052,7 +4104,7 @@ class WrapperGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-string-copy-reason", plan.bridge.copy_reason))
         if action is CodegenAction.COPY_IN_OUT:
             diagnostics.extend(self._string_replacement_diagnostics(plan))
-        elif plan.projects_result:
+        elif plan.projects_result and not plan.projects_character_descriptor_update:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "call-local-string-projects-result", plan.result_position)
             )
@@ -4207,7 +4259,9 @@ class WrapperGenerator:
                     plan.bridge.codegen_action,
                 )
             )
-        if plan.source_kind == "direct_return":
+        if plan.updates_argument:
+            diagnostics.extend(self._update_result_diagnostics(plan, function_slots))
+        elif plan.source_kind == "direct_return":
             diagnostics.extend(self._direct_result_diagnostics(plan))
         elif plan.source_kind == "hidden_output":
             diagnostics.extend(self._hidden_result_diagnostics(plan, function_slots))
@@ -4337,10 +4391,6 @@ class WrapperGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-scalar-descriptor-runtime-length", descriptor.runtime_length)
             )
-        if descriptor.runtime_length and plan.character_length is not None:
-            diagnostics.append(
-                self._diagnostic(plan.owner_path, "fixed-length-scalar-descriptor-result", plan.character_length)
-            )
         return tuple(diagnostics)
 
     def _scalar_descriptor_ownership_diagnostics(
@@ -4391,9 +4441,18 @@ class WrapperGenerator:
         self,
         plan: ResultPlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate exact hidden-slot sharing or direct-result independence."""
+        """Validate exact hidden-slot sharing or direct-result independence.
+
+        An argument update shares the Python-visible input's slot, which carries
+        that input's own handoff rather than a descriptor, so its descriptor is
+        owned by the result record alone.
+        """
         descriptor = plan.scalar_descriptor
         if descriptor is None:
+            return ()
+        if plan.updates_argument:
+            if plan.projected_call_slot is None or plan.projected_call_slot.scalar_descriptor is not None:
+                return (self._diagnostic(plan.owner_path, "inconsistent-update-descriptor-native-slot", None),)
             return ()
         if plan.source_kind == "hidden_output":
             if plan.projected_call_slot is None or plan.projected_call_slot.scalar_descriptor is not descriptor:
@@ -4568,6 +4627,39 @@ class WrapperGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-direct-result-data-action", plan.bridge.data_action.value)
             )
+        return tuple(diagnostics)
+
+    def _update_result_diagnostics(
+        self,
+        plan: ResultPlan,
+        function_slots: dict[int, NativeEntrypointProjectedSlotPlan],
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one result that returns a Python-visible argument's new value.
+
+        Unlike a hidden output, this result has no native slot of its own: it
+        shares the input slot of the argument it updates, and that slot describes
+        the input handoff.  The checks therefore require the shared slot to be
+        that Python argument's slot at the same result position, and require the
+        descriptor that carries the reallocated storage to be present.  Its
+        pairing with a descriptor character input is validated once per
+        function by :meth:`_argument_update_diagnostics`.
+        """
+        slot = plan.projected_call_slot
+        if slot is None:
+            return (self._diagnostic(plan.owner_path, "missing-update-result-native-slot", None),)
+        diagnostics = []
+        if slot.source_kind == "result" or slot.python_position is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-update-result-native-slot", slot.source_kind))
+        if slot.result_position != plan.result_position:
+            diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-result-position", slot.result_position))
+        if function_slots.get(slot.native_position) is not slot:
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "inconsistent-function-result-slot", slot.native_position)
+            )
+        if plan.scalar_descriptor is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-update-result-descriptor", None))
+        if plan.bridge is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-update-result-adapter-facet", None))
         return tuple(diagnostics)
 
     def _hidden_result_diagnostics(
@@ -5479,6 +5571,7 @@ class WrapperGenerator:
             *self._argument_extent_roles(plan.arguments),
             *self._argument_descriptor_output_roles(plan.arguments),
             *self._native_slot_roles(plan.entrypoint.projected_slots, "result"),
+            *self._update_result_roles(plan.results),
             *self._direct_result_roles(plan.results),
             *self._declaration_callable_roles(plan.declaration_callables),
         )
@@ -5515,6 +5608,11 @@ class WrapperGenerator:
         return tuple(
             result.entrypoint.native_result_role for result in results if result.source_kind == "direct_return"
         )
+
+    @staticmethod
+    def _update_result_roles(results: tuple[ResultPlan, ...]) -> tuple[str, ...]:
+        """Return native result roles produced beside a Python-visible argument."""
+        return tuple(result.entrypoint.native_result_role for result in results if result.updates_argument)
 
     @staticmethod
     def _declaration_callable_roles(
@@ -5556,6 +5654,7 @@ class WrapperGenerator:
         self,
         module_name: str,
         c_sources: tuple[str, ...],
+        c_module_names: tuple[str, ...],
         c_header: str,
         fortran_source: str | None,
         native_support_keys: tuple[str, ...],
@@ -5565,16 +5664,14 @@ class WrapperGenerator:
     ) -> GeneratedWrapper:
         """Package rendered source text with the filenames owned by build integration.
 
-        Binding translation-unit paths preserve the primary file followed by
-        zero-padded worker shards. The returned wrapper places bridge, C
+        Each binding translation unit is named for the C module it renders, so
+        the primary file is followed by its zero-padded worker shards and then
+        any collision-adapter unit. The returned wrapper places bridge, C
         sources, and header text in that stable order; this helper does not
         write files or freeze the newly assembled source records.
         """
         # Name bridge, binding, and header files before pairing each with rendered text.
-        binding_sources = (
-            Path(f"{module_name}_wrapper.c"),
-            *(Path(f"{module_name}_wrapper_{index:03d}.c") for index in range(1, len(c_sources))),
-        )
+        binding_sources = tuple(Path(f"{name}.c") for name in c_module_names)
         bridge_sources = tuple(
             dict.fromkeys(
                 Path(path)

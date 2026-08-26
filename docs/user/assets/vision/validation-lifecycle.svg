@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 850" role="img" aria-labelledby="title description">
+  <title id="title">Coercion and validation lifecycle</title>
+  <desc id="description">Python input is checked for an allowed coercion, converted only when authorized, validated before the native call, marshalled to the ABI, called, interpreted, validated after the call, and exposed as Python results with writeback.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#607080"/>
+    </marker>
+    <style>
+      .phase { fill: #52616f; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .08em; }
+      .label { fill: #17212b; font: 700 18px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail { fill: #52616f; font: 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .number { fill: #ffffff; font: 700 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow { fill: none; stroke: #607080; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="848" rx="18" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
+
+  <rect x="54" y="40" width="184" height="342" rx="14" fill="#eef6ff" stroke="#b6d6f6" stroke-width="2"/>
+  <text x="146" y="76" text-anchor="middle" class="phase">PREPARE</text>
+  <text x="146" y="105" text-anchor="middle" class="detail">accept only what the</text>
+  <text x="146" y="126" text-anchor="middle" class="detail">contract permits</text>
+
+  <rect x="54" y="402" width="184" height="168" rx="14" fill="#f7f3ff" stroke="#d6c7f4" stroke-width="2"/>
+  <text x="146" y="438" text-anchor="middle" class="phase">NATIVE CALL</text>
+  <text x="146" y="467" text-anchor="middle" class="detail">cross the exact</text>
+  <text x="146" y="488" text-anchor="middle" class="detail">native ABI boundary</text>
+
+  <rect x="54" y="590" width="184" height="238" rx="14" fill="#edf8f0" stroke="#b8dfc2" stroke-width="2"/>
+  <text x="146" y="626" text-anchor="middle" class="phase">RETURN</text>
+  <text x="146" y="655" text-anchor="middle" class="detail">check native effects</text>
+  <text x="146" y="676" text-anchor="middle" class="detail">before exposure</text>
+
+  <g>
+    <rect x="300" y="34" width="820" height="66" rx="12" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <circle cx="336" cy="67" r="20" fill="#0969da"/>
+    <text x="336" y="73" text-anchor="middle" class="number">1</text>
+    <text x="374" y="73" class="label">Receive the Python input</text>
+  </g>
+  <path d="M710 100 V116" class="arrow"/>
+
+  <g>
+    <rect x="300" y="128" width="820" height="66" rx="12" fill="#eef6ff" stroke="#0969da" stroke-width="2"/>
+    <circle cx="336" cy="161" r="20" fill="#0969da"/>
+    <text x="336" y="167" text-anchor="middle" class="number">2</text>
+    <text x="374" y="167" class="label">Check whether an allowed coercion applies</text>
+  </g>
+  <path d="M710 194 V210" class="arrow"/>
+
+  <g>
+    <rect x="300" y="222" width="820" height="66" rx="12" fill="#eef6ff" stroke="#0969da" stroke-width="2"/>
+    <circle cx="336" cy="255" r="20" fill="#0969da"/>
+    <text x="336" y="261" text-anchor="middle" class="number">3</text>
+    <text x="374" y="261" class="label">Perform only the contract-authorized coercion</text>
+  </g>
+  <path d="M710 288 V304" class="arrow"/>
+
+  <g>
+    <rect x="300" y="316" width="820" height="66" rx="12" fill="#fff4e8" stroke="#bc4c00" stroke-width="2"/>
+    <circle cx="336" cy="349" r="20" fill="#bc4c00"/>
+    <text x="336" y="355" text-anchor="middle" class="number">4</text>
+    <text x="374" y="355" class="label">Validate call preconditions on the adapted value</text>
+  </g>
+  <path d="M710 382 V398" class="arrow"/>
+
+  <g>
+    <rect x="300" y="410" width="820" height="66" rx="12" fill="#f7f3ff" stroke="#8250df" stroke-width="2"/>
+    <circle cx="336" cy="443" r="20" fill="#8250df"/>
+    <text x="336" y="449" text-anchor="middle" class="number">5</text>
+    <text x="374" y="449" class="label">Marshal the accepted value for the native ABI</text>
+  </g>
+  <path d="M710 476 V492" class="arrow"/>
+
+  <g>
+    <rect x="300" y="504" width="820" height="66" rx="12" fill="#8250df" stroke="#6639ba" stroke-width="2"/>
+    <circle cx="336" cy="537" r="20" fill="#ffffff"/>
+    <text x="336" y="543" text-anchor="middle" style="fill: #6639ba; font: 700 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">6</text>
+    <text x="374" y="543" style="fill: #ffffff; font: 700 18px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">Execute the native call</text>
+  </g>
+  <path d="M710 570 V586" class="arrow"/>
+
+  <g>
+    <rect x="300" y="598" width="820" height="66" rx="12" fill="#edf8f0" stroke="#1a7f37" stroke-width="2"/>
+    <circle cx="336" cy="631" r="20" fill="#1a7f37"/>
+    <text x="336" y="637" text-anchor="middle" class="number">7</text>
+    <text x="374" y="637" class="label">Interpret native outputs and mutations</text>
+  </g>
+  <path d="M710 664 V680" class="arrow"/>
+
+  <g>
+    <rect x="300" y="692" width="820" height="66" rx="12" fill="#edf8f0" stroke="#1a7f37" stroke-width="2"/>
+    <circle cx="336" cy="725" r="20" fill="#1a7f37"/>
+    <text x="336" y="731" text-anchor="middle" class="number">8</text>
+    <text x="374" y="731" class="label">Validate postconditions and object invariants</text>
+  </g>
+  <path d="M710 758 V774" class="arrow"/>
+
+  <g>
+    <rect x="300" y="786" width="820" height="44" rx="12" fill="#1a7f37" stroke="#116329" stroke-width="2"/>
+    <circle cx="336" cy="808" r="17" fill="#ffffff"/>
+    <text x="336" y="813" text-anchor="middle" style="fill: #116329; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">9</text>
+    <text x="374" y="814" style="fill: #ffffff; font: 700 17px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">Expose Python results and complete writeback</text>
+  </g>
+</svg>

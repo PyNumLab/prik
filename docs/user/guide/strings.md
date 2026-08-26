@@ -1,6 +1,6 @@
 ---
 title: Strings
-description: Immutable strings, mutable character storage, and NumPy byte arrays in prik
+description: Immutable strings, mutable character storage, and NumPy byte arrays in PRIK
 audience: users
 prerequisites: data types, arrays
 related: data-types.md, arrays.md, raw-addresses.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Strings
 
-prik uses Python `str` for scalar character values.
+PRIK uses Python `str` for scalar character values.
 Mutable character storage uses fixed-width NumPy bytes arrays.
 
 The contract decides whether native mutation becomes a new `str` or changes
@@ -248,8 +248,108 @@ b'Xlpha   '
 - `String[8][()]` and `String[8][count]` require dtype `S8`.
 - A dummy without `intent` uses the conservative `intent(inout)` behavior.
 
-Mutable deferred-length scalar storage is not supported. Use a fixed-width
-buffer or an immutable replacement result.
+## Allocatable And Pointer Scalar Strings
+
+A scalar `character` dummy may carry the `allocatable` or `pointer` attribute,
+at a deferred length (`character(len=:)`) or a declared one
+(`character(len=8)`). Every combination is supported, in every direction:
+
+| Fortran dummy | Python surface |
+| --- | --- |
+| `intent(in)` | A `str` argument. |
+| `intent(out)` | A returned `str`, or `None` when the procedure leaves it unallocated or unassociated. |
+| `intent(inout)` | A `str` argument that also returns the value the procedure left behind, or `None`. |
+| function result | A returned `str`, or `None`. |
+
+The attribute never changes the Python surface, and it never changes how the
+value crosses into native code — a scalar string is always a byte buffer and a
+length. It changes only the storage PRIK builds inside the generated adapter,
+because an `allocatable` or `pointer` dummy will not accept a plain temporary as
+its actual argument.
+
+An update keeps its `str` argument and adds a return value, because the native
+procedure chooses the new value during the call and the caller's string cannot
+hold it:
+
+```fortran
+subroutine grow(value)
+  character(len=:), allocatable, intent(inout) :: value
+  if (allocated(value)) value = value // '!!!'
+end subroutine grow
+```
+
+```python
+print(grow("ab"))  # ab!!!
+```
+
+The Python string you pass is never modified; the reallocated value comes back
+as the result. A procedure that deallocates the dummy returns `None`, which is
+how you tell an unallocated result from an empty string:
+
+```python
+print(drop("abc"))  # None
+print(repr(empty_out("abc")))  # ''
+```
+
+### Pointer Dummies And Native Storage
+
+A `pointer` dummy needs an associated actual argument, so PRIK allocates a
+target for the call. What happens to that target afterwards is the native
+procedure's decision, and PRIK follows it:
+
+| The native procedure… | Python receives | PRIK's target |
+| --- | --- | --- |
+| writes through the pointer | the edited value | freed after the call |
+| leaves it alone | the value passed in | freed after the call |
+| deallocates it | `None` | already freed; not freed again |
+| nullifies it | `None` | orphaned by the procedure |
+| reassociates it elsewhere | the new target's value | orphaned by the procedure |
+
+PRIK copies the value out of whatever the dummy ends up holding. It then frees
+the target it allocated for that call, but only while it can still prove the
+dummy points at it. Anything else it leaves alone, because it cannot tell a
+static target from a fresh allocation or from storage the library still owns.
+Two consequences are worth planning for: a procedure that reassociates or
+nullifies the dummy orphans the target PRIK allocated for that call, and a
+procedure that returns a freshly allocated pointer each call leaks unless it
+also frees it. Prefer an
+`allocatable` dummy, whose release is unambiguous, when you control the Fortran
+side.
+
+### Spelling Them In A Contract
+
+In a semantic `.pyi` contract, the attribute is a `native_call` projection and
+the length is the first subscription after `String`:
+
+| Contract | Fortran |
+| --- | --- |
+| `String` | `character(len=*)` — the caller fixes the length |
+| `String[8]` | `character(len=8)` — exactly eight encoded bytes |
+| `String[:]` | `character(len=:)` — the length comes from allocation |
+
+So the procedure above generates:
+
+```python
+@native_call([Allocatable(Arg(0))])
+def grow(value: String[:] | None) -> Returns["value", String[:]] | None: ...
+```
+
+`Allocatable(...)` and `Pointer(...)` carry the attribute, and they wrap the
+argument, the projected output, or the result:
+
+```python
+@native_call([Pointer(Arg(0))])
+def edit(value: String[4] | None) -> Returns["value", String[4]] | None: ...
+
+@native_call([], result=Allocatable(Return(0)))
+def build() -> String[:] | None: ...
+```
+
+Arrays keep the length in that same first slot and add their shape second, as in
+`String[8][:]` or `Allocatable[String[:][:]]`. Keep the native call and
+storage declarations accurate when editing; [Calls and
+Results](../reference/pyi-contracts/calls-and-results.md) explains the shared
+argument and result rules.
 
 ## Next
 

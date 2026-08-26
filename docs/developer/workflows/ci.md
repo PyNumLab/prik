@@ -17,7 +17,7 @@ contributors need to administer.
 | --- | --- |
 | Static analysis | Linting, formatting, security, dead code, and changed-code complexity policy. |
 | Compiler and platform tests | Supported Python versions, Linux and macOS, GNU Fortran, IFX, and Flang. |
-| Real libraries | BLAS, LAPACK, FFTPACK, and MINPACK wrappers. |
+| Real Libraries Portability | Maintained real-library examples across the hosted Linux and macOS architecture/compiler matrix, with deep BLAS and LAPACK audits on Linux x86-64. |
 | Documentation and benchmarks | Required performance benchmark and generated snapshot, documentation tests, and a strict site build. |
 
 Run the applicable local checks from [Quality Assurance](quality-assurance.md)

@@ -39,7 +39,7 @@ repository-root `CONTRIBUTING.md`. The full contributor path is in
 
 | Need | Doc |
 | --- | --- |
-| Locate packages, modules, and hotspots | [Codebase Map](codebase-map.md) |
+| Find the modules that own a concern | [Codebase Map](codebase-map.md) |
 | Connect a capability to code and evidence | [Feature-to-Code Map](feature-to-code-map.md) |
 | Choose where tests live and what they prove | [Testing Strategy](testing-strategy.md) |
 | Contribute, verify locally, and open a PR | [Contributing workflow](workflows/contributing.md) |

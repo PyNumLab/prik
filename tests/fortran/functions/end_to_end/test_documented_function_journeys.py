@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 pytestmark = pytest.mark.fortran_end_to_end
 
 FIXTURES = Path(__file__).parent / "fixtures"
-FUNCTIONS_SOURCE = FIXTURES / "documented_functions.f90"
+FUNCTIONS_SOURCE = FIXTURES / "native" / "documented_functions.f90"
 
 
 def test_function_results_outputs_arrays_and_no_intent_replacements_follow_documented_order(

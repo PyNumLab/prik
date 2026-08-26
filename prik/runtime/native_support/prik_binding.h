@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "numpy_version.h"
 
@@ -74,6 +75,26 @@ typedef struct {
 #endif
 
 /* Release descriptor payload and storage at most once while retaining the record. */
+/* Build a Python string from caller-supplied status-message storage.
+
+   The read never passes ``capacity`` because a native writer is not obliged to
+   terminate. When it did terminate, the bytes are taken exactly as written;
+   when it did not, the storage is fixed-length padded (Fortran blank-pads
+   ``character(len=n)``), so trailing blanks and NULs are dropped. */
+static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t capacity)
+{
+    const char *terminator = (const char *)memchr(bytes, 0, (size_t)capacity);
+    Py_ssize_t length = capacity;
+    if (terminator != NULL) {
+        return PyUnicode_FromStringAndSize(bytes, (Py_ssize_t)(terminator - bytes));
+    }
+    while (length > 0 && (bytes[length - 1] == ' ' || bytes[length - 1] == '\0')) {
+        length -= 1;
+    }
+    return PyUnicode_FromStringAndSize(bytes, length);
+}
+
+
 static inline void prik_native_array_handle_release(prik_native_array_handle *handle)
 {
     void *descriptor;
@@ -381,8 +402,8 @@ PRIK_NO_INLINE static int prik_array_actual_unpack(
  * generated wrapper supplies completed policy selectors and retains its
  * call-local shape and ABI-field lowering.
  */
-static inline int prik_array_validate(
-    PyObject *value,
+static inline int prik_array_validate_ndarray(
+    PyArrayObject *array,
     int numpy_type,
     int minimum_rank,
     int maximum_rank,
@@ -392,7 +413,6 @@ static inline int prik_array_validate(
     const char *python_type,
     const char *argument_name)
 {
-    PyArrayObject *array;
     int axis;
     int rank;
     const char *expected_order;
@@ -405,16 +425,6 @@ static inline int prik_array_validate(
         PyErr_SetString(PyExc_RuntimeError, "prik generated invalid NumPy-array validation selectors");
         return -1;
     }
-    if (!PyArray_Check(value)) {
-        PyErr_Format(
-            PyExc_TypeError,
-            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
-            python_type,
-            argument_name,
-            Py_TYPE(value)->tp_name);
-        return -1;
-    }
-    array = (PyArrayObject *)value;
     rank = PyArray_NDIM(array);
     if (PyArray_TYPE(array) != numpy_type || rank < minimum_rank || rank > maximum_rank) {
         PyErr_Format(
@@ -422,7 +432,7 @@ static inline int prik_array_validate(
             "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
             python_type,
             argument_name,
-            Py_TYPE(value)->tp_name);
+            Py_TYPE((PyObject *)array)->tp_name);
         return -1;
     }
     if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {
@@ -480,6 +490,39 @@ static inline int prik_array_validate(
     return 0;
 }
 
+/* Validate an arbitrary Python argument before entering the shared ndarray core. */
+static inline int prik_array_validate(
+    PyObject *value,
+    int numpy_type,
+    int minimum_rank,
+    int maximum_rank,
+    int layout,
+    int require_contiguous,
+    int require_writeable,
+    const char *python_type,
+    const char *argument_name)
+{
+    if (!PyArray_Check(value)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
+            python_type,
+            argument_name,
+            Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    return prik_array_validate_ndarray(
+        (PyArrayObject *)value,
+        numpy_type,
+        minimum_rank,
+        maximum_rank,
+        layout,
+        require_contiguous,
+        require_writeable,
+        python_type,
+        argument_name);
+}
+
 /* Exact typed scalar input conversion. A mismatch deliberately sets no error. */
 static inline int prik_bool_unpack_exact(PyObject *value, bool *destination)
 {
@@ -524,10 +567,17 @@ static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
 
 static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
 {
+#if NPY_SIZEOF_LONG == 8
+    if (!PyArray_IsScalar(value, Long)) {
+        return -1;
+    }
+    *destination = (int64_t)PyArrayScalar_VAL(value, Long);
+#else
     if (!PyArray_IsScalar(value, Int64)) {
         return -1;
     }
     *destination = (int64_t)PyArrayScalar_VAL(value, Int64);
+#endif
     return 0;
 }
 
@@ -578,44 +628,90 @@ static inline int prik_bool_unpack(PyObject *value, bool *destination)
     return 0;
 }
 
+static inline int prik_signed_integer_unpack(
+    PyObject *value,
+    int64_t minimum,
+    int64_t maximum,
+    int64_t *destination)
+{
+    long long parsed = PyLong_AsLongLong(value);
+    if (PyErr_Occurred() != NULL) {
+        return -1;
+    }
+    if (parsed < (long long)minimum || parsed > (long long)maximum) {
+        PyErr_SetString(PyExc_OverflowError, "Python integer is outside the native signed-integer range");
+        return -1;
+    }
+    *destination = (int64_t)parsed;
+    return 0;
+}
+
+static inline int prik_unsigned_integer_unpack(
+    PyObject *value,
+    uint64_t maximum,
+    uint64_t *destination)
+{
+    unsigned long long parsed = PyLong_AsUnsignedLongLong(value);
+    if (PyErr_Occurred() != NULL) {
+        return -1;
+    }
+    if (parsed > (unsigned long long)maximum) {
+        PyErr_SetString(PyExc_OverflowError, "Python integer is outside the native unsigned-integer range");
+        return -1;
+    }
+    *destination = (uint64_t)parsed;
+    return 0;
+}
+
 static inline int prik_int8_unpack(PyObject *value, int8_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int8)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int8_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT8_MIN, INT8_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int8_t)parsed;
+    return 0;
 }
 
 static inline int prik_int16_unpack(PyObject *value, int16_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int16)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int16_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT16_MIN, INT16_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int16_t)parsed;
+    return 0;
 }
 
 static inline int prik_int32_unpack(PyObject *value, int32_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int32_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT32_MIN, INT32_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int32_t)parsed;
+    return 0;
 }
 
 static inline int prik_int64_unpack(PyObject *value, int64_t *destination)
 {
     if (PyArray_IsScalar(value, Int64)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int64_t)PyLong_AsLongLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    return prik_signed_integer_unpack(value, INT64_MIN, INT64_MAX, destination);
 }
 
 static inline int prik_float32_unpack(PyObject *value, float *destination)
@@ -786,6 +882,302 @@ static inline PyObject *prik_complex128_to_numpy(const double complex *value)
     PyObject *result = PyArrayScalar_New(CDouble);
     if (result != NULL) {
         PyArrayScalar_ASSIGN(result, CDouble, (npy_cdouble)*value);
+    }
+    return result;
+}
+
+/* Unsigned-integer and extended-precision scalar conversions.
+
+   NumPy dropped the ``Intp`` scalar tag, so ``size_t`` selects the fixed-width
+   tag that matches the target's pointer width instead. */
+
+static inline int prik_uint8_unpack_exact(PyObject *value, uint8_t *destination)
+{
+    if (!PyArray_IsScalar(value, UByte)) {
+        return -1;
+    }
+    *destination = (uint8_t)PyArrayScalar_VAL(value, UByte);
+    return 0;
+}
+
+static inline int prik_uint8_unpack(PyObject *value, uint8_t *destination)
+{
+    uint64_t parsed;
+    if (PyArray_IsScalar(value, UByte)) {
+        PyArray_ScalarAsCtype(value, destination);
+        return 0;
+    }
+    if (prik_unsigned_integer_unpack(value, UINT8_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint8_t)parsed;
+    return 0;
+}
+
+static inline PyObject *prik_uint8_to_python(const uint8_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint8_to_numpy(const uint8_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UByte);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UByte, (npy_uint8)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint16_unpack_exact(PyObject *value, uint16_t *destination)
+{
+    if (!PyArray_IsScalar(value, UShort)) {
+        return -1;
+    }
+    *destination = (uint16_t)PyArrayScalar_VAL(value, UShort);
+    return 0;
+}
+
+static inline int prik_uint16_unpack(PyObject *value, uint16_t *destination)
+{
+    uint64_t parsed;
+    if (PyArray_IsScalar(value, UShort)) {
+        PyArray_ScalarAsCtype(value, destination);
+        return 0;
+    }
+    if (prik_unsigned_integer_unpack(value, UINT16_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint16_t)parsed;
+    return 0;
+}
+
+static inline PyObject *prik_uint16_to_python(const uint16_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint16_to_numpy(const uint16_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UShort);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UShort, (npy_uint16)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint32_unpack_exact(PyObject *value, uint32_t *destination)
+{
+    if (!PyArray_IsScalar(value, UInt)) {
+        return -1;
+    }
+    *destination = (uint32_t)PyArrayScalar_VAL(value, UInt);
+    return 0;
+}
+
+static inline int prik_uint32_unpack(PyObject *value, uint32_t *destination)
+{
+    uint64_t parsed;
+    if (PyArray_IsScalar(value, UInt)) {
+        PyArray_ScalarAsCtype(value, destination);
+        return 0;
+    }
+    if (prik_unsigned_integer_unpack(value, UINT32_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint32_t)parsed;
+    return 0;
+}
+
+static inline PyObject *prik_uint32_to_python(const uint32_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UInt);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UInt, (npy_uint32)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destination)
+{
+#if NPY_SIZEOF_LONG == 8
+    if (!PyArray_IsScalar(value, ULong)) {
+        return -1;
+    }
+    *destination = (uint64_t)PyArrayScalar_VAL(value, ULong);
+#else
+    if (!PyArray_IsScalar(value, ULongLong)) {
+        return -1;
+    }
+    *destination = (uint64_t)PyArrayScalar_VAL(value, ULongLong);
+#endif
+    return 0;
+}
+
+static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
+{
+    if (PyArray_IsScalar(value, ULongLong)) {
+        PyArray_ScalarAsCtype(value, destination);
+        return 0;
+    }
+    return prik_unsigned_integer_unpack(value, UINT64_MAX, destination);
+}
+
+static inline PyObject *prik_uint64_to_python(const uint64_t *value)
+{
+    return PyLong_FromUnsignedLongLong(*value);
+}
+
+static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
+{
+#if NPY_SIZEOF_LONG == 8
+    PyObject *result = PyArrayScalar_New(ULong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULong, (npy_uint64)*value);
+    }
+#else
+    PyObject *result = PyArrayScalar_New(ULongLong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);
+    }
+#endif
+    return result;
+}
+
+static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
+{
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    if (!PyArray_IsScalar(value, ULong)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, ULong);
+#elif NPY_SIZEOF_INTP == 8
+    if (!PyArray_IsScalar(value, ULongLong)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, ULongLong);
+#else
+    if (!PyArray_IsScalar(value, UInt)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, UInt);
+#endif
+    return 0;
+}
+
+static inline int prik_uintp_unpack(PyObject *value, size_t *destination)
+{
+    uint64_t parsed;
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    if (PyArray_IsScalar(value, ULong)) {
+#elif NPY_SIZEOF_INTP == 8
+    if (PyArray_IsScalar(value, ULongLong)) {
+#else
+    if (PyArray_IsScalar(value, UInt)) {
+#endif
+        PyArray_ScalarAsCtype(value, destination);
+        return 0;
+    }
+    if (prik_unsigned_integer_unpack(value, SIZE_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (size_t)parsed;
+    return 0;
+}
+
+static inline PyObject *prik_uintp_to_python(const size_t *value)
+{
+    return PyLong_FromUnsignedLongLong((unsigned long long)*value);
+}
+
+static inline PyObject *prik_uintp_to_numpy(const size_t *value)
+{
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    PyObject *result = PyArrayScalar_New(ULong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULong, (npy_ulong)*value);
+    }
+#elif NPY_SIZEOF_INTP == 8
+    PyObject *result = PyArrayScalar_New(ULongLong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);
+    }
+#else
+    PyObject *result = PyArrayScalar_New(UInt);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UInt, (npy_uint32)*value);
+    }
+#endif
+    return result;
+}
+
+static inline int prik_longdouble_unpack_exact(PyObject *value, long double *destination)
+{
+    if (!PyArray_IsScalar(value, LongDouble)) {
+        return -1;
+    }
+    *destination = (long double)PyArrayScalar_VAL(value, LongDouble);
+    return 0;
+}
+
+static inline int prik_longdouble_unpack(PyObject *value, long double *destination)
+{
+    if (PyArray_IsScalar(value, LongDouble)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (long double)PyFloat_AsDouble(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_longdouble_to_python(const long double *value)
+{
+    return PyFloat_FromDouble((double)*value);
+}
+
+static inline PyObject *prik_longdouble_to_numpy(const long double *value)
+{
+    PyObject *result = PyArrayScalar_New(LongDouble);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, LongDouble, (npy_longdouble)*value);
+    }
+    return result;
+}
+
+static inline int prik_clongdouble_unpack_exact(PyObject *value, long double complex *destination)
+{
+    if (!PyArray_IsScalar(value, CLongDouble)) {
+        return -1;
+    }
+    *destination = (long double complex)PyArrayScalar_VAL(value, CLongDouble);
+    return 0;
+}
+
+static inline int prik_clongdouble_unpack(PyObject *value, long double complex *destination)
+{
+    if (PyArray_IsScalar(value, CLongDouble)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        Py_complex parsed = PyComplex_AsCComplex(value);
+        *destination = (long double)parsed.real + (long double)parsed.imag * _Complex_I;
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_clongdouble_to_python(const long double complex *value)
+{
+    return PyComplex_FromDoubles((double)creall(*value), (double)cimagl(*value));
+}
+
+static inline PyObject *prik_clongdouble_to_numpy(const long double complex *value)
+{
+    PyObject *result = PyArrayScalar_New(CLongDouble);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, CLongDouble, (npy_clongdouble)*value);
     }
     return result;
 }

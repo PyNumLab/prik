@@ -27,6 +27,20 @@ def with_scalar(n: Int32) -> tuple[Int32, Int32]: ...
     return WrapperPlanner().build(module)
 
 
+def _four_result_plan():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Addr, Arg, Int32, Return, native_call
+
+@native_call([Addr(Arg(0)), Return("one", 1), Return("two", 2), Return("three", 3)])
+def with_four_scalars(n: Int32) -> tuple[Int32, Int32, Int32, Int32]: ...
+""",
+        module_name="four_scalar_results",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def test_multiple_scalar_result_plan_has_ordered_binding_consumers_and_shared_hidden_slot():
     function = _multiple_result_plan().namespaces[0].functions[0]
     direct, hidden = function.results
@@ -61,6 +75,18 @@ def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_
     assert 'function bind_c_with_scalar(n, status) result(result) bind(c, name="bind_c_with_scalar")' in bridge_source
     assert "result = native_with_scalar(n, status)" in bridge_source
     assert "PyTuple" not in bridge_source
+
+
+def test_four_scalar_results_share_one_linear_failure_cleanup_suffix():
+    artifacts = WrapperGenerator().generate(_four_result_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+
+    assert "if (result_1_obj == NULL) {\n        goto prik_output_cleanup_1;\n    }" in c_source
+    assert "if (result_obj == NULL) {\n        goto prik_output_cleanup_4;\n    }" in c_source
+    for position in range(4, 0, -1):
+        assert f"prik_output_cleanup_{position}:" in c_source
+        assert c_source.count(f"Py_XDECREF(result_{position - 1}_obj);") == 1
+    assert "Py_DECREF(result_0_obj);" not in c_source
 
 
 def test_multiple_scalar_result_validation_rejects_position_and_consumer_drift():

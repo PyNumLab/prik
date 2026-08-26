@@ -11,10 +11,9 @@ from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.preprocessing import PreprocessingConfig, preprocess_source
 from prik.semantics.c2ir import c_project_to_semantic_module
 from prik.printers import emit_module
+from tests.c._support.paths import C_DATA_DIR, C_ROOT
 
 
-C_ROOT = Path(__file__).resolve().parents[1]
-C_DATA_DIR = C_ROOT / "fixtures" / "native"
 GENERAL_C_DIR = C_DATA_DIR / "general"
 C_PYI_FIXTURE_DIR = C_ROOT / "fixtures" / "pyi" / "general"
 C_SOURCE_SUFFIXES = {".c", ".h", ".i"}

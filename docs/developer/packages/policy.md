@@ -115,6 +115,13 @@ interoperable; otherwise it keeps the adapter route. Optional non-`VALUE`
 interoperable dummies use a nullable C pointer, while optional `VALUE` dummies
 remain adapter-backed.
 
+A C-source or explicitly C-native `.pyi` operation instead selects
+`DIRECT_C_ABI` only when completed direct-C policy supports its ABI and
+contract. The policy carries the native declaration identity, transport, and
+user symbol required downstream. An ineligible C operation raises its stable
+diagnostic before `WrapperPlanner` runs and never falls back to
+`GENERATED_FORTRAN_ADAPTER`.
+
 An immediate callback is directly interoperable only when both the containing
 procedure and its named callback prototype retain the Fortran C ABI marker,
 and every callback argument/result has a supported scalar C value or reference
@@ -311,8 +318,8 @@ generate source; that begins only after planning.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Policy completion](../../../tests/fortran/infrastructure/semantics/test_policy_completion.py) | Completion precedes lowering; accessor, projection, and missing-conversion failures remain explicit. |
-| [Wrapper policy](../../../tests/fortran/infrastructure/semantics/test_wrapper_policy.py) | Function, result, call-slot, array, export, status, and support policies are complete before planning. |
+| [Policy completion](../../../tests/fortran/infrastructure/policy/test_policy_completion.py) | Completion precedes lowering; accessor, projection, and missing-conversion failures remain explicit. |
+| [Wrapper policy](../../../tests/fortran/infrastructure/policy/test_wrapper_policy.py) | Function, result, call-slot, array, export, status, and support policies are complete before planning. |
 | [Ownership policy](../../../tests/fortran/memory_management/policy/test_memory_ownership_policy.py) | Contradictory explicit ownership contracts fail before lowering. |
 | [Descriptor handle policy](../../../tests/fortran/allocatables/policy/test_allocatable_handle_policy.py) | Allocatable descriptor-handle decisions, ownership, access, and support blockers. |
 | [Planner boundary](../../../tests/fortran/infrastructure/codegen/test_planner.py) | Planning rejects a missing completed wrapper policy instead of filling it in. |

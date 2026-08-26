@@ -11,6 +11,7 @@ from importlib.metadata import version as _distribution_version
 __version__ = _distribution_version("prik")
 
 _BUILD_EXPORTS = {
+    "build_c_extension",
     "build_fortran_extension",
     "build_pyi_extension",
     "build_pyi_extension_from_manifest",
@@ -27,6 +28,7 @@ def __getattr__(name: str):
 
 __all__ = (
     "__version__",
+    "build_c_extension",
     "build_fortran_extension",
     "build_pyi_extension",
     "build_pyi_extension_from_manifest",

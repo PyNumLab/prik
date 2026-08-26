@@ -12,7 +12,7 @@ later stages.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 
@@ -47,6 +47,7 @@ from prik.policy.models import (
     NativeArrayActualPolicy,
     NativeArrayDefaultConstruction,
     NativeArrayDefaultHandlePolicy,
+    CharacterLocalPolicy,
     NativeArrayHandleWrapperPolicy,
     NativeDescriptorHandoffABI,
     NativeDescriptorHandoffPolicy,
@@ -60,6 +61,7 @@ from prik.policy.models import (
     TransformationPolicy,
     WritebackPhase,
     NativeEntrypointAction,
+    DirectCABIPolicy,
 )
 from prik.policy.construction import (
     completed_class_surface_policy,
@@ -68,7 +70,7 @@ from prik.policy.construction import (
     completed_module_variable_policy,
 )
 from prik.policy.exports import PythonExportPolicy
-from prik.policy.ownership import NativeBarrierAction, SetterAction
+from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -118,6 +120,8 @@ from prik.planning.models import (
     NativeEntrypointArgumentPlan,
     NativeEntrypointCallbackPlan,
     NativeEntrypointFunctionPlan,
+    DirectCABIPlan,
+    DirectCABITypePlan,
     NativeEntrypointModulePlan,
     NativeEntrypointModuleVariablePlan,
     NativeEntrypointParameterPlan,
@@ -134,6 +138,7 @@ from prik.planning.models import (
     ProcedurePrototypePlan,
     ProcedurePrototypeResultPlan,
     ResultPlan,
+    CharacterLocalPlan,
     ScalarDescriptorResultPlan,
     TransformationPlan,
 )
@@ -153,11 +158,17 @@ _DATATYPE_FAMILIES = {
     "Int16": DatatypeFamily.INTEGER,
     "Int32": DatatypeFamily.INTEGER,
     "Int64": DatatypeFamily.INTEGER,
+    "UInt8": DatatypeFamily.INTEGER,
+    "UInt16": DatatypeFamily.INTEGER,
+    "UInt32": DatatypeFamily.INTEGER,
+    "UInt64": DatatypeFamily.INTEGER,
     "SizeT": DatatypeFamily.INTEGER,
     "Float32": DatatypeFamily.REAL,
     "Float64": DatatypeFamily.REAL,
+    "Float128": DatatypeFamily.REAL,
     "Complex64": DatatypeFamily.COMPLEX,
     "Complex128": DatatypeFamily.COMPLEX,
+    "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
 }
 
@@ -281,6 +292,22 @@ class WrapperPlanner(ClassVisitor):
     code generator validates and freezes it.
     """
 
+    def __init__(
+        self,
+        *,
+        collision_adapters: Iterable[str] = (),
+        collision_adapter_all: bool = False,
+    ) -> None:
+        """Record which native symbols the binding reaches through a forwarder.
+
+        ``collision_adapters`` names individual native symbols;
+        ``collision_adapter_all`` selects every direct C entrypoint. Only a
+        direct C symbol is eligible, because a generated bridge symbol is
+        already PRIK-owned and cannot collide with a header declaration.
+        """
+        self._collision_adapters = frozenset(collision_adapters)
+        self._collision_adapter_all = collision_adapter_all
+
     def visit(self, node, *args, **kwargs):
         """Project one completed policy record through its named handler."""
         return self._visit(node, *args, **kwargs)
@@ -289,6 +316,21 @@ class WrapperPlanner(ClassVisitor):
     def _visit_not_supported(node):
         """Reject inputs outside the completed semantic-policy vocabulary."""
         raise TypeError(f"WrapperPlanner does not support completed policy {type(node).__name__}")
+
+    def _collision_adapter_symbol(self, policy: FunctionWrapperPolicy) -> str | None:
+        """Return the forwarder symbol selected for one entrypoint, or ``None``.
+
+        Only a C-source direct entrypoint is eligible: it alone carries the
+        exact C declaration the adapter unit must reconstruct. A Fortran
+        ``bind(C)`` procedure keeps its backend-projected prototype, and a
+        generated bridge symbol is PRIK-owned and cannot collide.
+        """
+        if policy.entrypoint_action is not NativeEntrypointAction.DIRECT_C_ABI or policy.direct_c_abi is None:
+            return None
+        symbol_name = policy.entrypoint_symbol
+        if not (self._collision_adapter_all or symbol_name in self._collision_adapters):
+            return None
+        return NativeSymbolNames.collision_adapter(symbol_name)
 
     def build(self, module: models.SemanticModule) -> ModulePlan:
         """Build an editable wrapper plan from one policy-completed module.
@@ -579,9 +621,8 @@ class WrapperPlanner(ClassVisitor):
             native_scope=policy.native_scope,
             python_names=python_names,
             fields=planned_fields,
-            finalizers=policy.finalizers,
             bind_c=policy.bind_c,
-            sequence=policy.sequence,
+            abstract=policy.abstract,
         )
 
     # Generated class surfaces compose Phase 8 types and ordinary function plans.
@@ -1098,6 +1139,7 @@ class WrapperPlanner(ClassVisitor):
                 setter_action=policy.setter_action,
                 initializer=policy.initializer,
                 constant_value=policy.constant_value,
+                setter_converts_characters=policy.native_assignment is AssignmentMode.CHARACTER_COPY,
             ),
             entrypoint=NativeEntrypointModuleVariablePlan(
                 descriptor_kind=policy.descriptor_kind,
@@ -1110,6 +1152,7 @@ class WrapperPlanner(ClassVisitor):
                 native_getter_action=policy.getter_action,
                 native_assignment=policy.native_assignment,
             ),
+            character_length=policy.character_length,
             array=self._array_plan(policy.array, policy.owner_path),
             native_array_handle=self._native_array_handle_plan(policy.native_array_handle, policy.owner_path),
             derived=(
@@ -1163,7 +1206,11 @@ class WrapperPlanner(ClassVisitor):
         projected_slots = self._projected_slot_plans(policy)
         arguments = self._argument_plans(policy, projected_slots)
         results = self._result_plans(policy, projected_slots)
-        entrypoint_results = self._entrypoint_result_plans(results, projected_slots)
+        entrypoint_results = self._entrypoint_result_plans(
+            results,
+            projected_slots,
+            direct_c_abi=policy.direct_c_abi is not None,
+        )
         declaration_callables = tuple(self._declaration_callable_plan(item) for item in policy.declaration_callables)
         status_error = self._status_error_plan(policy.status_error, projected_slots)
 
@@ -1181,6 +1228,7 @@ class WrapperPlanner(ClassVisitor):
                 status_error=status_error,
                 argument_conversion_order=self._binding_argument_conversion_order(arguments),
                 public=public,
+                accepts_keyword_arguments=policy.accepts_keyword_arguments,
             ),
             entrypoint=NativeEntrypointFunctionPlan(
                 symbol_name=(
@@ -1196,6 +1244,8 @@ class WrapperPlanner(ClassVisitor):
                 ),
                 results=entrypoint_results,
                 projected_slots=projected_slots,
+                direct_c_abi=self._direct_c_abi_plan(policy.direct_c_abi),
+                collision_adapter_symbol=self._collision_adapter_symbol(policy),
             ),
             bridge=(
                 BridgeFunctionPlan(
@@ -1226,6 +1276,29 @@ class WrapperPlanner(ClassVisitor):
         )
 
     @staticmethod
+    def _direct_c_abi_plan(policy: DirectCABIPolicy | None) -> DirectCABIPlan | None:
+        """Project already-completed exact C ABI facts without reinterpreting them."""
+        if policy is None:
+            return None
+
+        def project(value):
+            return DirectCABITypePlan(
+                source_spelling=value.source_spelling,
+                scalar_type_name=value.scalar_type_name,
+                pointer_depth=value.pointer_depth,
+                qualifiers=value.qualifiers,
+                const=value.const,
+                converts_to_contract_storage=value.converts_to_contract_storage,
+            )
+
+        return DirectCABIPlan(
+            calling_convention=policy.calling_convention,
+            result_transport=policy.result_transport,
+            result=project(policy.result) if policy.result is not None else None,
+            parameters=tuple(project(item) for item in policy.parameters),
+        )
+
+    @staticmethod
     def _binding_argument_conversion_order(
         arguments: tuple[ArgumentTransferPlan, ...],
     ) -> tuple[str, ...]:
@@ -1253,12 +1326,17 @@ class WrapperPlanner(ClassVisitor):
     ) -> tuple[NativeEntrypointParameterPlan, ...]:
         """Record C-ABI parameter groups in emitted call/prototype order."""
         argument_owners = {argument.owner_path for argument in arguments}
+        updated_owners = {result.owner_path for result in results if result.updates_argument}
         groups: list[tuple[str, str, int | None]] = []
         for slot in sorted(projected_slots, key=lambda item: item.native_position):
             if slot.source_kind == "result":
                 groups.append((slot.owner_path, "hidden_result", slot.native_position))
             elif slot.owner_path in argument_owners:
                 groups.append((slot.owner_path, "argument", slot.native_position))
+                # A string update returns through its own output group, placed
+                # directly after the input it belongs to.
+                if slot.owner_path in updated_owners:
+                    groups.append((slot.owner_path, "hidden_result", slot.native_position))
             else:
                 groups.append((slot.owner_path, "projected_slot", slot.native_position))
         groups.extend(
@@ -1292,24 +1370,40 @@ class WrapperPlanner(ClassVisitor):
         self,
         results: tuple[ResultPlan, ...],
         projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
+        *,
+        direct_c_abi: bool = False,
     ) -> tuple[NativeEntrypointResultPlan, ...]:
         """Collect every C-ABI result, including binding-private status outputs."""
         public = {result.owner_path: result.entrypoint for result in results}
-        hidden = tuple(
-            public.get(slot.owner_path) or self._entrypoint_result_plan_from_slot(slot)
-            for slot in sorted(projected_slots, key=lambda item: item.native_position)
-            if slot.source_kind == "result"
-        )
+        hidden_items = []
+        for slot in sorted(projected_slots, key=lambda item: item.native_position):
+            if slot.source_kind != "result":
+                continue
+            result = public.get(slot.owner_path)
+            if result is None:
+                result = self._entrypoint_result_plan_from_slot(slot, direct_c_abi=direct_c_abi)
+            hidden_items.append(result)
+        hidden = tuple(hidden_items)
+        # A string update produces no result slot of its own; its output group
+        # travels beside the Python-visible argument it updates.
+        updates = tuple(result.entrypoint for result in results if result.updates_argument)
         direct = tuple(result.entrypoint for result in results if result.source_kind == "direct_return")
-        return (*hidden, *direct)
+        return (*hidden, *updates, *direct)
 
     @staticmethod
     def _entrypoint_result_plan_from_slot(
         slot: NativeEntrypointProjectedSlotPlan,
+        *,
+        direct_c_abi: bool = False,
     ) -> NativeEntrypointResultPlan:
         """Project one non-public hidden output into the shared C-ABI result view."""
         if slot.semantic_type_name is None or slot.datatype_family is None or slot.object_kind is None:
             raise ValueError(f"Hidden entrypoint result {slot.owner_path!r} has incomplete type facts")
+        character_capacity = (
+            slot.character_length
+            if direct_c_abi and slot.semantic_type_name == "String" and slot.character_length
+            else None
+        )
         return NativeEntrypointResultPlan(
             owner_path=slot.owner_path,
             parameter_name=slot.native_name.casefold(),
@@ -1325,6 +1419,8 @@ class WrapperPlanner(ClassVisitor):
             native_array_handle=slot.native_array_handle,
             scalar_descriptor=slot.scalar_descriptor,
             passing=slot.passing,
+            native_scalar_c_type=slot.native_scalar_c_type,
+            character_capacity=character_capacity,
         )
 
     @staticmethod
@@ -1453,6 +1549,7 @@ class WrapperPlanner(ClassVisitor):
                     value_kind=slot_policy.value_kind,
                     symbolic_role=role,
                     object_kind=slot_policy.object_kind,
+                    native_scalar_c_type=slot_policy.native_scalar_c_type,
                     scalar_logical_abi=slot_policy.scalar_logical_abi,
                     scalar_native_type=slot_policy.scalar_native_type,
                     array_logical_abi=slot_policy.array_logical_abi,
@@ -1582,6 +1679,8 @@ class WrapperPlanner(ClassVisitor):
             bridge=(self._bridge_argument_plan(policy) if projected_slot.adapter is not None else None),
             projected_call_slot=projected_slot,
             transformations=tuple(self.visit(item) for item in policy.transformations),
+            native_storage_c_type=policy.native_storage_c_type,
+            character_allows_embedded_nul=policy.character_allows_embedded_nul,
         )
 
     def _callback_handoff_plan(
@@ -1755,6 +1854,7 @@ class WrapperPlanner(ClassVisitor):
             nullable=policy.nullable,
             writable=policy.writable,
             descriptor_boundary=policy.descriptor_boundary,
+            native_array_element_c_type=policy.native_array_element_c_type,
         )
 
     def _entrypoint_argument_plan(
@@ -1788,6 +1888,17 @@ class WrapperPlanner(ClassVisitor):
         )
 
     @staticmethod
+    def _character_local_plan(policy: CharacterLocalPolicy | None) -> CharacterLocalPlan | None:
+        """Mechanically project the completed adapter-local character storage."""
+        if policy is None:
+            return None
+        return CharacterLocalPlan(
+            descriptor_kind=policy.descriptor_kind,
+            deferred_length=policy.deferred_length,
+            release=policy.release,
+        )
+
+    @staticmethod
     def _bridge_argument_plan(policy: ArgumentPolicy) -> BridgeArgumentPlan:
         """Project adapter-local conversion and original-dummy facts."""
         return BridgeArgumentPlan(
@@ -1796,6 +1907,7 @@ class WrapperPlanner(ClassVisitor):
             codegen_action=policy.codegen_action,
             data_action=policy.bridge_data_action,
             copy_reason=policy.bridge_copy_reason,
+            character_local=WrapperPlanner._character_local_plan(policy.character_local),
         )
 
     @staticmethod
@@ -1893,6 +2005,7 @@ class WrapperPlanner(ClassVisitor):
             semantic_type_name=policy.semantic_type_name,
             datatype_family=datatype_family,
             source_kind=policy.source_kind,
+            python_returned=policy.python_returned,
             result_position=policy.result_position,
             character_length=policy.character_length,
             object_kind=policy.ownership.kind,
@@ -1914,7 +2027,7 @@ class WrapperPlanner(ClassVisitor):
             ),
             entrypoint=NativeEntrypointResultPlan(
                 owner_path=policy.owner_path,
-                parameter_name=(policy.native_name.casefold() if policy.native_name is not None else None),
+                parameter_name=self._result_parameter_name(policy),
                 source_kind=policy.source_kind,
                 result_position=policy.result_position,
                 native_result_role=native_role,
@@ -1927,6 +2040,8 @@ class WrapperPlanner(ClassVisitor):
                 native_array_handle=native_array_handle,
                 scalar_descriptor=scalar_descriptor,
                 passing=policy.entrypoint_passing,
+                native_scalar_c_type=(projected_slot.native_scalar_c_type if projected_slot is not None else None),
+                updates_argument=policy.updates_argument,
             ),
             bridge=(
                 BridgeResultPlan(
@@ -1942,7 +2057,23 @@ class WrapperPlanner(ClassVisitor):
             projected_call_slot=projected_slot,
             scalar_descriptor=scalar_descriptor,
             transformations=tuple(self.visit(item) for item in policy.transformations),
+            updates_argument=policy.updates_argument,
         )
+
+    @staticmethod
+    def _result_parameter_name(policy: ResultPolicy) -> str | None:
+        """Return the C-ABI parameter name reserved for one result group.
+
+        A hidden output owns its dummy's name.  A result that updates a
+        Python-visible argument instead crosses the boundary beside that
+        argument's own input parameters, so its output group takes the
+        ``_output`` suffix already used for descriptor copyout rather than
+        colliding with the input's own name and length.
+        """
+        if policy.native_name is None:
+            return None
+        name = policy.native_name.casefold()
+        return f"{name}_output" if policy.updates_argument else name
 
     def _result_array_plan(
         self,
@@ -1974,8 +2105,14 @@ class WrapperPlanner(ClassVisitor):
         policy: ResultPolicy,
         projected_slot: NativeEntrypointProjectedSlotPlan | None,
     ) -> ScalarDescriptorResultPlan | None:
-        """Reuse exact hidden descriptor state or project one direct result."""
-        if projected_slot is not None:
+        """Reuse exact hidden descriptor state or project this result's own record.
+
+        A hidden output owns a dedicated result slot that already carries the
+        completed descriptor, and both views must stay identical.  A string
+        update instead shares its Python-visible argument's input slot, so its
+        descriptor comes from the result policy that owns it.
+        """
+        if projected_slot is not None and projected_slot.source_kind == "result":
             return projected_slot.scalar_descriptor
         return self._scalar_descriptor_result_plan(policy.scalar_descriptor, policy.owner_path)
 
@@ -2055,6 +2192,7 @@ class WrapperPlanner(ClassVisitor):
             copy_reason=policy.copy_reason,
             release_owner=policy.release_owner,
             presence_role=f"{owner_path}:present",
+            may_be_unallocated=policy.may_be_unallocated,
         )
 
     # Native-array-handle planning.
@@ -2322,8 +2460,12 @@ class WrapperPlanner(ClassVisitor):
         return f"{owner_path}:rank" if policy.rank is None else None
 
     def _array_itemsize_role(self, policy: ArrayHandoffPolicy, owner_path: str) -> str | None:
-        """Name the itemsize role only for fixed-width character arrays."""
-        return f"{owner_path}:itemsize" if policy.itemsize is not None else None
+        """Name the itemsize role for every character array.
+
+        The width crosses at runtime whether or not the contract declared it,
+        because each element of the caller's array shares one itemsize.
+        """
+        return f"{owner_path}:itemsize" if policy.character else None
 
     def _array_layout_roles(
         self,
@@ -2346,9 +2488,14 @@ class WrapperPlanner(ClassVisitor):
         if policy is None:
             return None
         roles = {slot.owner_path: slot.symbolic_role for slot in projected_slots}
+        # A visible message is read through its Python argument, so it has no
+        # projected slot to name.
+        visible_message = policy.message is not None and policy.message.python_position is not None
         try:
             status_role = roles[policy.status.owner_path]
-            message_role = roles[policy.message.owner_path] if policy.message is not None else None
+            message_role = (
+                roles[policy.message.owner_path] if policy.message is not None and not visible_message else None
+            )
         except KeyError as error:
             raise ValueError(f"Completed native status output {error.args[0]!r} has no native-call slot") from None
         return BindingStatusErrorPlan(
@@ -2356,6 +2503,10 @@ class WrapperPlanner(ClassVisitor):
             message_role=message_role,
             success=policy.success,
             exception_kind=policy.exception_kind,
+            message_argument=policy.message.owner_path if visible_message else None,
+            message_character_length=(
+                policy.message.character_length if policy.message is not None and not visible_message else None
+            ),
         )
 
     def _planned_bridge_slot(
@@ -2392,6 +2543,7 @@ class WrapperPlanner(ClassVisitor):
             *self._argument_extent_roles(arguments),
             *self._argument_descriptor_output_roles(arguments),
             *self._native_result_roles(projected_slots),
+            *self._update_result_roles(results),
             *self._direct_result_roles(results),
             *self._declaration_callable_roles(declaration_callables),
         )
@@ -2489,6 +2641,10 @@ class WrapperPlanner(ClassVisitor):
         return tuple(
             result.entrypoint.native_result_role for result in results if result.source_kind == "direct_return"
         )
+
+    def _update_result_roles(self, results: tuple[ResultPlan, ...]) -> tuple[str, ...]:
+        """Return roles produced by results that update a Python-visible argument."""
+        return tuple(result.entrypoint.native_result_role for result in results if result.updates_argument)
 
     def _datatype_family(self, semantic_type_name: str) -> DatatypeFamily:
         """Copy the backend-relevant family of one supported semantic type."""

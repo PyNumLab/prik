@@ -9,7 +9,7 @@ publication: reviewed
 
 # PRIK Architecture
 
-PRIK turns Fortran declarations into importable CPython extensions. It first
+PRIK turns native declarations into importable CPython extensions. It first
 records source facts, converts them into a language-neutral semantic model,
 completes the interoperability policy, plans the wrapper, and emits and builds
 the native code. Editable semantic `.pyi` contracts can enter the same process
@@ -32,13 +32,15 @@ result = build_fortran_extension("solver.f90", output_dir="build/solver")
 module = result.import_module()
 ```
 
-`prik.__init__` exposes `__version__` and the source-first and contract-first
-build entry points: `build_fortran_extension` and `build_pyi_extension`. The
-CLI enters through `python3 -m prik` and dispatches to the same stage owners.
-Its parser, semantic, and report commands intentionally stop before a complete
-wrapper build.
+`prik.__init__` exposes `__version__` and four public build entrypoints:
+`build_fortran_extension` for Fortran source, `build_c_extension` for the
+supported direct-C subset, `build_pyi_extension` for an authoritative semantic
+`.pyi` contract, and `build_pyi_extension_from_manifest` for replaying a saved
+contract build. The CLI enters through `python3 -m prik` and dispatches to the
+same stage owners. Its parser, semantic, and report commands intentionally stop
+before a complete wrapper build.
 
-The two input routes converge in semantic IR construction, then share policy,
+The three input routes converge in semantic IR construction, then share policy,
 planning, generation, and native compilation:
 
 <object class="prik-build-path" type="image/svg+xml" data="../assets/build-path.svg" aria-label="Interactive PRIK build path">
@@ -131,18 +133,22 @@ The architecture preserves these invariants:
 
 ## Input Routes
 
-PRIK has two supported ways to describe a wrapper. They converge at
-`SemanticModule` and use the same policy, planning, lowering, build, and
-runtime architecture afterward.
+Every input route converges at `SemanticModule` and uses the same policy,
+planning, lowering, build, and runtime architecture afterward.
 
 | Input | Enters through | Architectural role |
 | --- | --- | --- |
 | Fortran source | preprocessing, Fortran parsing, and Fortran-to-IR conversion | Source-first wrapper contract. |
 | Semantic `.pyi` | raw `.pyi` parsing and `.pyi`-to-IR conversion | Contract-first wrapper surface with explicit native implementation inputs. |
+| C source | preprocessing, C parsing, and C-to-IR conversion | Source-first wrapper contract for the direct-ABI subset. |
 
-The C-input frontend is deferred and is not part of the published contributor
-architecture. This does not affect PRIK's generated CPython C binding backend,
-which remains part of the supported Fortran-wrapper architecture.
+The C route is implemented for the direct-ABI subset published in
+[C support](../user/language-support/c-support.md); its parser accepts more
+declarations than that subset, and the rest fail in policy before planning.
+These guides describe the Fortran route in detail because it is the broader
+one; a separate contributor reference for the C frontend is not published yet.
+Do not confuse that frontend with the generated CPython C binding, which is the
+backend both routes share.
 
 ## Ownership and Evidence
 
@@ -153,10 +159,10 @@ lifetime, setters, and support belong to policy; completed wrapper operations
 belong to planning; and emitted mechanisms belong to code generation.
 
 Focused tests prove an invariant at its earliest owner. Public support claims
-also require end-to-end build, import, call, and behavior evidence. The
-[testing strategy](testing-strategy.md) records the complete evidence model;
-the [codebase map](codebase-map.md), [feature-to-code map](feature-to-code-map.md),
-and [architecture component guides](packages/index.md) record the detailed
-ownership.
-For package and module ownership, continue with the
-[Codebase Map](codebase-map.md).
+also require end-to-end build, import, call, and behavior evidence; the
+[testing strategy](testing-strategy.md) records that evidence model.
+
+For the modules behind each stage, continue with the
+[Codebase Map](codebase-map.md). To route a specific user-visible capability to
+its code and evidence, use the
+[Feature-to-Code Map](feature-to-code-map.md).

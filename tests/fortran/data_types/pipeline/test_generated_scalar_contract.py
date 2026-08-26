@@ -12,7 +12,7 @@ FEATURE_ROOT = Path(__file__).parents[1]
 FIXTURES = FEATURE_ROOT / "end_to_end" / "fixtures"
 CASE = GeneratedContractCase(
     name="fscalar_kinds_f90",
-    inputs=(FIXTURES / "fscalar_kinds_f90.f90",),
+    inputs=(FIXTURES / "native" / "fscalar_kinds_f90.f90",),
     expected_package=FIXTURES / "contracts" / "fscalar_kinds_f90",
 )
 

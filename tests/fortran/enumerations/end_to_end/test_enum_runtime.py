@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-ENUM_SOURCE = FIXTURES / "fenums_f90.f90"
+ENUM_SOURCE = FIXTURES / "native" / "fenums_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

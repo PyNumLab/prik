@@ -9,6 +9,7 @@ actions already projected into the plan.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 import re
 
@@ -41,6 +42,7 @@ from prik.policy.models import (
     ExternalDeclarationMode,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
+    CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
@@ -79,6 +81,7 @@ from prik.planning.models import (
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
+    CharacterLocalPlan,
     ClassSurfacePlan,
     DatatypeFamily,
     DeclarationCallablePlan,
@@ -104,6 +107,63 @@ from prik.planning.models import (
 )
 from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
+
+
+_MODULE_GETTER_SUMMARIES = {
+    ModuleGetterAction.CONSTANT_VALUE: "The value is a compile-time constant materialized by the binding.",
+    ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Returns the compiler-evaluated constant by value.",
+    ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: (
+        "Copies the parameter array into persistent storage and reports its width and extents."
+    ),
+    ModuleGetterAction.DIRECT_VALUE: "Returns the variable's current value.",
+    ModuleGetterAction.CHARACTER_VALUE: "Copies the characters into a fixed-width byte buffer.",
+    ModuleGetterAction.NULLABLE_SNAPSHOT: (
+        "Copies the value into C-owned storage, or reports a null pointer when it holds nothing."
+    ),
+    ModuleGetterAction.BORROWED_ARRAY_VIEW: "Returns the array's address plus its width and extents, without copying.",
+    ModuleGetterAction.DERIVED_OBJECT: "Returns the address of the derived object.",
+}
+
+_MODULE_ASSIGNMENT_SUMMARIES = {
+    AssignmentMode.NONE: "No native assignment is generated.",
+    AssignmentMode.VALUE_COPY: "Copies the incoming value into the variable.",
+    AssignmentMode.ALIAS: "Points the variable at the incoming storage.",
+}
+
+
+def _plan_semantic_type_names(node: object, _seen: set[int] | None = None) -> frozenset[str]:
+    """Collect every ``semantic_type_name`` reachable from a completed plan node.
+
+    The walk is exhaustive by construction rather than by enumerating plan
+    shapes, so a lowering mechanism that starts carrying a new scalar cannot
+    silently lose the ``iso_c_binding`` import that spells it.
+    """
+    seen = set() if _seen is None else _seen
+    if id(node) in seen:
+        return frozenset()
+    seen.add(id(node))
+    names: set[str] = set()
+    if isinstance(node, str | bytes):
+        return frozenset()
+    if isinstance(node, Mapping):
+        for key, value in node.items():
+            names |= _plan_semantic_type_names(key, seen)
+            names |= _plan_semantic_type_names(value, seen)
+        return frozenset(names)
+    if isinstance(node, Iterable):
+        for item in node:
+            names |= _plan_semantic_type_names(item, seen)
+        return frozenset(names)
+    fields = getattr(node, "__dataclass_fields__", None)
+    if fields is None:
+        return frozenset()
+    for field_name in fields:
+        value = getattr(node, field_name, None)
+        if field_name == "semantic_type_name" and isinstance(value, str):
+            names.add(value)
+        else:
+            names |= _plan_semantic_type_names(value, seen)
+    return frozenset(names)
 
 
 class FortranBridgeGenerator(ClassVisitor):
@@ -194,6 +254,11 @@ class FortranBridgeGenerator(ClassVisitor):
         self._derived_owner_paths = {
             derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
         }
+        # An abstract native type has no instances of its own, so an adapter
+        # reaches one only through a concrete extension's address.
+        self._abstract_backend_symbols = frozenset(
+            derived.backend_symbol for derived in self._derived_types(plan) if derived.abstract
+        )
         if plan.bridge is None:
             raise ValueError(f"Fortran lowering requires a bridge plan for {plan.owner_path!r}")
         self._bridge_allocatable_holder_owner_paths = frozenset(plan.bridge.allocatable_holder_type_owner_paths)
@@ -386,6 +451,17 @@ class FortranBridgeGenerator(ClassVisitor):
         if value.kind is NativeEntrypointABIValueKind.DESCRIPTOR:
             if value.semantic_type_name is None:
                 raise ValueError(f"Generated-support descriptor {value.role!r} has no element type")
+            if value.semantic_type_name == "String":
+                if value.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+                    # A bind(C) pointer character dummy has to declare deferred
+                    # length. Pointer assignment takes the length from the
+                    # target, so a declared-width array still associates.
+                    return "character(kind=c_char, len=:)"
+                # An allocatable descriptor dummy accepts a deferred-length
+                # actual only when it declares one, so the width the array
+                # declares is spelled.
+                length = ":" if value.character_length is None else str(value.character_length)
+                return f"character(kind=c_char, len={length})"
             return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
         try:
             return types[value.kind]
@@ -486,6 +562,7 @@ class FortranBridgeGenerator(ClassVisitor):
             *self._string_address_finalizers(plan),
             *self._direct_result_finalizers(plan),
             *self._native_output_finalizers(plan),
+            *self._character_local_release_finalizers(plan),
         )
         # Stage 3: wrap native execution in derived-result and carrier lifecycles.
         call_body = self._derived_result_execution(plan, result_name, native_body)
@@ -496,6 +573,7 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return FortranFunction(
             name=entrypoint_name,
+            doc=self._entrypoint_doc(plan, entrypoint_name),
             parameters=parameters,
             result_name=result_name,
             result_type=result_type,
@@ -516,6 +594,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._derived_result_allocation_declarations(plan),
             ),
             body=(
+                *self._character_local_initializers(plan),
                 *self._descriptor_initializers(plan),
                 *self._required_descriptor_initializers(plan),
                 *self._logical_scalar_argument_initializers(plan),
@@ -989,19 +1068,27 @@ class FortranBridgeGenerator(ClassVisitor):
         declarations = [FortranDeclaration("prik_derived_ready", "logical")]
         for argument in arguments:
             name = argument.entrypoint.parameter_name
-            native_type = f"type({self._derived_native_alias(argument.derived.backend_symbol)})"
+            abstract = argument.derived.backend_symbol in self._abstract_backend_symbols
+            declaration_kind = "class" if abstract else "type"
+            native_type = f"{declaration_kind}({self._derived_native_alias(argument.derived.backend_symbol)})"
             declarations.extend(
                 (
                     FortranDeclaration(name, native_type, ("pointer",)),
-                    FortranDeclaration(
-                        f"{name}_allocatable_holder",
-                        f"type({self._allocatable_holder_type_name(argument.derived.backend_symbol)})",
-                        ("pointer",),
-                    ),
-                    FortranDeclaration(
-                        f"{name}_pointer_holder",
-                        f"type({self._pointer_holder_type_name(argument.derived.backend_symbol)})",
-                        ("pointer",),
+                    *(
+                        ()
+                        if abstract
+                        else (
+                            FortranDeclaration(
+                                f"{name}_allocatable_holder",
+                                f"type({self._allocatable_holder_type_name(argument.derived.backend_symbol)})",
+                                ("pointer",),
+                            ),
+                            FortranDeclaration(
+                                f"{name}_pointer_holder",
+                                f"type({self._pointer_holder_type_name(argument.derived.backend_symbol)})",
+                                ("pointer",),
+                            ),
+                        )
                     ),
                     FortranDeclaration(f"{name}_call_pointer", native_type, ("pointer",)),
                     FortranDeclaration(f"{name}_transaction_address", "type(c_ptr)"),
@@ -1334,8 +1421,16 @@ class FortranBridgeGenerator(ClassVisitor):
         acquisition = FortranSelectCase(
             CodeExpression(f"bound_{name}_access"),
             (
-                FortranCase(5, self._one_derived_transaction_acquisition(argument, allocatable=True)),
-                FortranCase(6, self._one_derived_transaction_acquisition(argument, allocatable=False)),
+                *(
+                    (FortranCase(5, self._one_derived_transaction_acquisition(argument, allocatable=True)),)
+                    if self._uses_allocatable_holder(argument)
+                    else ()
+                ),
+                *(
+                    (FortranCase(6, self._one_derived_transaction_acquisition(argument, allocatable=False)),)
+                    if self._uses_pointer_holder(argument)
+                    else ()
+                ),
                 FortranCase(None, ()),
             ),
         )
@@ -1563,18 +1658,20 @@ class FortranBridgeGenerator(ClassVisitor):
         if argument.entrypoint.descriptor_output_role is not None:
             nodes.append(self._derived_argument_output_finalizer(argument))
         else:
-            nodes.extend(
-                (
+            if self._uses_allocatable_holder(argument):
+                nodes.append(
                     FortranIf(
                         CodeExpression(f"{name}_created .and. bound_{name}_access == 3_c_int"),
                         body=(FortranDeallocate(f"{name}_allocatable_holder"),),
-                    ),
+                    )
+                )
+            if self._uses_pointer_holder(argument):
+                nodes.append(
                     FortranIf(
                         CodeExpression(f"{name}_created .and. bound_{name}_access == 4_c_int"),
                         body=(FortranDeallocate(f"{name}_pointer_holder"),),
-                    ),
+                    )
                 )
-            )
         return tuple(nodes)
 
     def _derived_argument_output_finalizer(self, argument: ArgumentTransferPlan) -> FortranIf:
@@ -1973,11 +2070,33 @@ class FortranBridgeGenerator(ClassVisitor):
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Lower bridge-owned getter and setter actions into procedures."""
         if plan.bridge.native_getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
-            return self._lower_module_native_array_operations(plan)
+            return self._documented(
+                self._lower_module_native_array_operations(plan),
+                f"Runtime handle operations for native module variable '{plan.bridge.native_name}'.",
+                "Each is one operation the generated Python handle calls.",
+            )
         return (
-            *self._lower_module_getter(plan),
-            *self._lower_module_setter(plan),
+            *self._documented(
+                self._lower_module_getter(plan),
+                f"Read native module variable '{plan.bridge.native_name}'.",
+                _MODULE_GETTER_SUMMARIES.get(plan.bridge.native_getter_action, ""),
+            ),
+            *self._documented(
+                self._lower_module_setter(plan),
+                f"Write native module variable '{plan.bridge.native_name}'.",
+                _MODULE_ASSIGNMENT_SUMMARIES.get(plan.bridge.native_assignment, ""),
+            ),
         )
+
+    @staticmethod
+    def _documented(procedures: tuple[FortranFunction, ...], *doc: str) -> tuple[FortranFunction, ...]:
+        """Attach explanatory prose to generated procedures that carry none.
+
+        The text is emitted as leading comments so a reader opening the
+        generated module can tell what each procedure is for without
+        reconstructing it from the wrapper plan.
+        """
+        return tuple(procedure if procedure.doc else replace(procedure, doc=doc) for procedure in procedures)
 
     def _lower_module_getter(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Dispatch one completed bridge getter action explicitly."""
@@ -1991,6 +2110,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_array_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.CHARACTER_VALUE:
+                return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
                 return self._lower_module_getter_nullable_snapshot(plan)
             case ModuleGetterAction.BORROWED_ARRAY_VIEW:
@@ -2028,13 +2149,18 @@ class FortranBridgeGenerator(ClassVisitor):
     def _lower_module_derived_presence(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Expose descriptor state for one nullable typed module proxy."""
         storage = plan.derived.handoff.storage
-        inquiry = {
-            DerivedObjectStorage.MODULE_ALLOCATABLE: "allocated",
-            DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET: "allocated",
-            DerivedObjectStorage.MODULE_POINTER: "associated",
-        }.get(storage)
-        if inquiry is None:
+        if storage is DerivedObjectStorage.MODULE_PROXY:
             return ()
+        try:
+            inquiry = {
+                DerivedObjectStorage.MODULE_ALLOCATABLE: "allocated",
+                DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET: "allocated",
+                DerivedObjectStorage.MODULE_POINTER: "associated",
+            }[storage]
+        except KeyError as error:
+            raise ValueError(
+                f"Derived module object {plan.owner_path!r} has unsupported presence storage: {storage.value}"
+            ) from error
         name = self._module_derived_presence_bridge_name(plan)
         return (
             FortranFunction(
@@ -2533,7 +2659,7 @@ class FortranBridgeGenerator(ClassVisitor):
             parameters=(
                 FortranParameter(
                     "descriptor",
-                    self._module_native_array_element_type(plan),
+                    self._module_pointer_dummy_element_type(plan),
                     ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(out)"),
                 ),
             ),
@@ -2623,7 +2749,7 @@ class FortranBridgeGenerator(ClassVisitor):
             parameters=(
                 FortranParameter(
                     "source",
-                    self._module_native_array_element_type(plan),
+                    self._module_pointer_dummy_element_type(plan),
                     ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
                 ),
             ),
@@ -2672,10 +2798,48 @@ class FortranBridgeGenerator(ClassVisitor):
         return f"{intrinsic}({self._native_variable_name(plan)})"
 
     def _module_native_array_element_type(self, plan: ModuleVariablePlan) -> str:
-        """Return one numeric or deferred-character module-array element type."""
+        """Return one numeric or character module-array element type.
+
+        An allocatable or pointer dummy accepts a deferred-length actual only
+        when it declares one itself, so a declared-length character array
+        spells its own width rather than always deferring it.
+        """
+        if plan.datatype_family is DatatypeFamily.STRING:
+            length = ":" if plan.character_length is None else str(plan.character_length)
+            return f"character(kind=c_char, len={length})"
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+
+    def _module_pointer_dummy_element_type(self, plan: ModuleVariablePlan) -> str:
+        """Return the element type of one module pointer dummy.
+
+        A ``bind(C)`` pointer character dummy has to declare deferred length.
+        Pointer assignment then takes the length from the target, so a module
+        array that declares its own width still associates through it.
+        """
         if plan.datatype_family is DatatypeFamily.STRING:
             return "character(kind=c_char, len=:)"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+
+    def _module_descriptor_consumer_value_declaration(
+        self,
+        plan: ModuleVariablePlan,
+        rank: int,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Return the type and attributes of one descriptor-consumer value dummy.
+
+        A ``bind(C)`` allocatable character dummy has to declare deferred
+        length, while argument association requires the actual to be deferred
+        exactly when the dummy is. A module array that declares its own width
+        satisfies neither together, so it travels as an assumed-length
+        assumed-shape dummy whose descriptor still carries the element length.
+        The runtime never reaches this operation while the array is
+        unallocated: ``AllocatableArray.to_numpy`` and ``shape`` both return
+        early on ``allocated``.
+        """
+        dimension = self._array_dimension_attribute(rank)
+        if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
+            return "character(kind=c_char, len=*)", (dimension, "intent(in)")
+        return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(in)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
         """Return one planner-owned module native-array operation symbol."""
@@ -2697,6 +2861,56 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
+    def _module_character_length(self, plan: ModuleVariablePlan) -> int:
+        """Return the declared width one character module accessor copies."""
+        length = plan.character_length
+        if length is None or length <= 0:
+            raise ValueError(f"Character module variable {plan.owner_path!r} has no declared length")
+        return length
+
+    def _lower_module_getter_character_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy one fixed native character module variable into a C byte buffer.
+
+        A character value has no by-value C ABI, so it travels the same
+        fixed-width buffer a character field already uses.
+        """
+        length = self._module_character_length(plan)
+        name = self._module_bridge_getter_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(
+                    FortranParameter("value", "character(kind=c_char)", (f"dimension({length})", "intent(out)")),
+                ),
+                bind_name=name,
+                body=(
+                    FortranAssignment("value", CodeExpression(f"transfer({self._native_variable_name(plan)}, value)")),
+                ),
+                is_subroutine=True,
+            ),
+        )
+
+    def _lower_module_setter_character_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy one exact-width C byte buffer into a native character module variable."""
+        length = self._module_character_length(plan)
+        name = self._module_bridge_setter_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(
+                    FortranParameter("value", "character(kind=c_char)", (f"dimension({length})", "intent(in)")),
+                ),
+                bind_name=name,
+                body=(
+                    FortranAssignment(
+                        self._native_variable_name(plan),
+                        CodeExpression(f"transfer(value, {self._native_variable_name(plan)})"),
+                    ),
+                ),
+                is_subroutine=True,
+            ),
+        )
+
     def _lower_module_getter_constant_array_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Copy one compiler-owned parameter array into persistent bridge storage.
 
@@ -2707,16 +2921,26 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {plan.owner_path!r} has no fixed array plan")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         name = self._module_bridge_getter_name(plan)
         native = self._native_variable_name(plan)
         snapshot = "parameter_snapshot"
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
+        character = plan.datatype_family is DatatypeFamily.STRING
+        # A character parameter always knows its own width, even when the
+        # declaration spells `len=*` and takes it from an initializer prik does
+        # not evaluate, so the element length is read from the parameter itself.
+        element_type = (
+            f"character(kind=c_char, len=len({native}))"
+            if character
+            else PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+        )
+        width = ("itemsize",) if character else ()
         return (
             FortranFunction(
                 name=name,
                 parameters=tuple(
-                    FortranParameter(extent, "integer(c_int64_t)", ("intent(out)",)) for extent in extents
+                    FortranParameter(reported, "integer(c_int64_t)", ("intent(out)",))
+                    for reported in (*width, *extents)
                 ),
                 result_name="result",
                 result_type="type(c_ptr)",
@@ -2725,7 +2949,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 declarations=(
                     FortranDeclaration(
                         snapshot,
-                        scalar_type.fortran_spelling,
+                        element_type,
                         ("allocatable", "target", "save", self._array_dimension_attribute(array.rank)),
                     ),
                     FortranDeclaration("allocation_status", "integer(c_int)"),
@@ -2747,6 +2971,10 @@ class FortranBridgeGenerator(ClassVisitor):
                         CodeExpression("allocation_status == 0_c_int"),
                         body=(
                             FortranAssignment(snapshot, CodeExpression(native)),
+                            *(
+                                FortranAssignment("itemsize", CodeExpression(f"len({native}, kind=c_int64_t)"))
+                                for _ in width
+                            ),
                             *(
                                 FortranAssignment(
                                     extent,
@@ -2771,23 +2999,29 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
         name = self._module_bridge_getter_name(plan)
         native = self._native_variable_name(plan)
+        # A character element reports the width its own declaration carries,
+        # for the same reason a copied parameter does: the length belongs to
+        # the Fortran variable, not to anything the binding can restate.
+        width = ("itemsize",) if plan.datatype_family is DatatypeFamily.STRING else ()
+        extents = tuple(f"extent_{axis}" for axis in range(array.rank))
         return (
             FortranFunction(
                 name=name,
                 parameters=tuple(
-                    FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("intent(out)",))
-                    for axis in range(array.rank)
+                    FortranParameter(reported, "integer(c_int64_t)", ("intent(out)",))
+                    for reported in (*width, *extents)
                 ),
                 result_name="result",
                 result_type="type(c_ptr)",
                 bind_name=name,
                 body=(
+                    *(FortranAssignment("itemsize", CodeExpression(f"len({native}, kind=c_int64_t)")) for _ in width),
                     *(
                         FortranAssignment(
-                            f"extent_{axis}",
+                            extent,
                             CodeExpression(f"int(size({native}, {axis + 1}), c_int64_t)"),
                         )
-                        for axis in range(array.rank)
+                        for axis, extent in enumerate(extents)
                     ),
                     FortranAssignment("result", CodeExpression(f"c_loc({native})")),
                 ),
@@ -2800,7 +3034,69 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[FortranFunction, ...]:
         """Return a nullable detached snapshot through C-owned storage."""
         presence = "allocated" if plan.entrypoint.descriptor_kind == "allocatable" else "associated"
-        return self._lower_nullable_module_getter(plan, f"{presence}({self._native_variable_name(plan)})")
+        condition = f"{presence}({self._native_variable_name(plan)})"
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return self._lower_nullable_character_module_getter(plan, condition)
+        return self._lower_nullable_module_getter(plan, condition)
+
+    def _lower_nullable_character_module_getter(
+        self,
+        plan: ModuleVariablePlan,
+        condition: str,
+    ) -> tuple[FortranFunction, ...]:
+        """Build one nullable detached character snapshot with its runtime width.
+
+        A descriptor character has no width until it is allocated, so the
+        length travels beside the copied bytes rather than being known here.
+        """
+        name = self._module_bridge_getter_name(plan)
+        native = self._native_variable_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(FortranParameter("length", "integer(c_int64_t)", ("intent(out)",)),),
+                result_name="result",
+                result_type="type(c_ptr)",
+                bind_name=name,
+                declarations=(FortranDeclaration("copy", "character(kind=c_char)", ("pointer", "dimension(:)")),),
+                body=(
+                    FortranAssignment("result", CodeExpression("c_null_ptr")),
+                    FortranAssignment("length", CodeExpression("0_c_int64_t")),
+                    FortranIf(
+                        CodeExpression(condition),
+                        body=(
+                            FortranAssignment("length", CodeExpression(f"len({native}, kind=c_int64_t)")),
+                            FortranAssignment(
+                                "result",
+                                CodeExpression("c_malloc(max(1_c_size_t, int(length, c_size_t)))"),
+                            ),
+                            FortranIf(
+                                CodeExpression("c_associated(result)"),
+                                body=(
+                                    FortranCall(
+                                        "c_f_pointer",
+                                        (
+                                            CodeExpression("result"),
+                                            CodeExpression("copy"),
+                                            CodeExpression("[length]"),
+                                        ),
+                                    ),
+                                    FortranIf(
+                                        CodeExpression("length > 0_c_int64_t"),
+                                        body=(
+                                            FortranAssignment(
+                                                "copy(1:length)",
+                                                CodeExpression(f"transfer({native}, copy(1:length))"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
 
     def _lower_nullable_module_getter(
         self,
@@ -2853,6 +3149,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_setter_none(plan)
             case AssignmentMode.VALUE_COPY:
                 return self._lower_module_setter_value_copy(plan)
+            case AssignmentMode.CHARACTER_COPY:
+                return self._lower_module_setter_character_value(plan)
         raise ValueError(f"Unsupported Fortran module setter assignment for {plan.owner_path!r}: {action!r}")
 
     def _lower_module_setter_none(self, _plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
@@ -2872,6 +3170,44 @@ class FortranBridgeGenerator(ClassVisitor):
                 is_subroutine=True,
             ),
         )
+
+    def _entrypoint_doc(self, plan: FunctionPlan, entrypoint_name: str) -> tuple[str, ...]:
+        """Describe one adapter: who calls it, what it calls, and what it converts.
+
+        The adapter exists because the original procedure is not callable
+        across the C ABI as declared, so the summary names the conversions that
+        difference forces rather than restating the signature.
+        """
+        # Only bridge and entrypoint facts are read here: the Python-visible
+        # name belongs to the binding facet, which this generator never reads.
+        lines = [
+            f"Adapter for native procedure '{plan.bridge.native_name}'.",
+            f"Exported to the binding as the C symbol '{entrypoint_name}'.",
+        ]
+        work = self._entrypoint_doc_conversions(plan)
+        if work:
+            lines.append(f"Converts: {'; '.join(work)}.")
+        return tuple(lines)
+
+    def _entrypoint_doc_conversions(self, plan: FunctionPlan) -> tuple[str, ...]:
+        """Summarize the conversions this adapter performs, in argument order."""
+        notes: list[str] = []
+        for argument in plan.arguments:
+            name = argument.entrypoint.parameter_name
+            if argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
+                local = argument.bridge.character_local if argument.bridge is not None else None
+                attribute = local.descriptor_kind.value if local and local.descriptor_kind else "fixed-length"
+                article = "an" if attribute[0] in "aeiou" else "a"
+                notes.append(f"'{name}' byte buffer into {article} {attribute} character local")
+            elif argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+                notes.append(f"'{name}' buffer into a Fortran array actual")
+            elif argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+                notes.append(f"'{name}' native descriptor")
+        for result in plan.results:
+            if result.scalar_descriptor is not None:
+                role = "updated value" if result.updates_argument else "descriptor result"
+                notes.append(f"copies out the {role} for '{result.owner_path.rsplit('.', 1)[-1]}'")
+        return tuple(notes)
 
     def _visit_ArgumentTransferPlan(self, plan: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Lower one argument through the completed optional-mode action."""
@@ -3047,7 +3383,18 @@ class FortranBridgeGenerator(ClassVisitor):
             case ArgumentHandoffMode.TYPED_REFERENCE:
                 return self._lower_argument_required_typed_reference(plan)
             case ArgumentHandoffMode.OPAQUE_ADDRESS:
-                return self._lower_argument_required_opaque_address(plan)
+                return (
+                    *self._lower_argument_required_opaque_address(plan),
+                    *(
+                        (
+                            FortranParameter(
+                                f"{plan.entrypoint.parameter_name}_length", "integer(c_int64_t)", ("value",)
+                            ),
+                        )
+                        if plan.entrypoint.pass_character_length
+                        else ()
+                    ),
+                )
             case ArgumentHandoffMode.CHARACTER_BUFFER:
                 return self._lower_argument_string_value(plan)
         raise ValueError(f"Unsupported Fortran argument handoff for {plan.owner_path!r}: {mode!r}")
@@ -3464,6 +3811,11 @@ class FortranBridgeGenerator(ClassVisitor):
             return FortranCall(
                 self._owned_direct_array_result_collector_name(),
                 (CodeExpression(expression), CodeExpression("result")),
+            )
+        if self._uses_allocatable_character_result_collector(direct_result):
+            return FortranCall(
+                self._allocatable_character_result_collector_name(),
+                (CodeExpression(expression), CodeExpression("result_value")),
             )
         if self._uses_pointer_result_assignment(direct_result):
             return FortranPointerAssignment(result_name, CodeExpression(expression))
@@ -4333,8 +4685,14 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return the completed primitive or fixed-width character element type."""
         array = argument.array
         if argument.datatype_family is DatatypeFamily.STRING:
-            if array is None or array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Character array {argument.owner_path!r} has no fixed itemsize")
+            if array is None:
+                raise ValueError(f"Character array {argument.owner_path!r} has no shape plan")
+            if array.itemsize is None:
+                # Every element of the caller's array shares one width, which
+                # the ABI already reports beside the buffer.
+                return f"character(kind=c_char, len={argument.entrypoint.parameter_name}_itemsize)"
+            if array.itemsize <= 0:
+                raise ValueError(f"Character array {argument.owner_path!r} has a non-positive itemsize")
             return f"character(kind=c_char, len={array.itemsize})"
         return PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).fortran_spelling
 
@@ -4411,11 +4769,21 @@ class FortranBridgeGenerator(ClassVisitor):
             and argument.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
         )
 
-    def _string_address_length(self, plan: ArgumentTransferPlan) -> int:
-        """Return the fixed extent already completed in the shared plan."""
+    def _string_address_length(self, plan: ArgumentTransferPlan) -> str:
+        """Return the extent expression completed in the shared plan.
+
+        A declared width is spelled as a literal. Assumed-capacity storage has
+        no compile-time width, so the plan asks for the caller's itemsize
+        alongside the address and the extent names that runtime dummy.
+        """
+        if plan.entrypoint.pass_character_length:
+            # NumPy-backed storage reports the caller's own itemsize.
+            return f"{plan.entrypoint.parameter_name}_length"
+        # A raw address carries no measurable width, so the contract's is all
+        # there is.
         if plan.character_length is None or plan.character_length <= 0:
             raise ValueError(f"String address {plan.owner_path!r} is missing a fixed character length")
-        return plan.character_length
+        return str(plan.character_length)
 
     # String value bridge storage.
     def _string_value_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
@@ -4432,10 +4800,56 @@ class FortranBridgeGenerator(ClassVisitor):
                         "character(kind=c_char)",
                         ("pointer", "dimension(:)"),
                     ),
-                    FortranDeclaration(name, f"character(kind=c_char, len={name}_length)"),
+                    self._string_value_declaration(argument, name),
                 )
             )
+            if self._retains_character_local_seed(argument):
+                declarations.append(self._string_value_declaration(argument, f"{name}_seed"))
         return tuple(declarations)
+
+    @staticmethod
+    def _character_local(plan: ArgumentTransferPlan) -> CharacterLocalPlan:
+        """Return the completed adapter-local character storage for one input."""
+        local = plan.bridge.character_local
+        if local is None:
+            raise ValueError(f"String input {plan.owner_path!r} is missing completed character-local policy")
+        return local
+
+    @classmethod
+    def _retains_character_local_seed(cls, plan: ArgumentTransferPlan) -> bool:
+        """Report whether the adapter keeps a second pointer to the storage it allocated.
+
+        A pointer dummy the native procedure may reassociate makes the dummy an
+        unreliable handle on that allocation, so the completed release action
+        asks for a seed pointer to compare against afterwards.
+        """
+        return cls._character_local(plan).release is CharacterLocalRelease.DEALLOCATE_IF_RETAINED
+
+    @classmethod
+    def _string_value_declaration(cls, plan: ArgumentTransferPlan, name: str) -> FortranDeclaration:
+        """Declare the native character local selected by completed bridge policy.
+
+        The C ABI is a byte buffer and a length whatever the dummy declares, so
+        only the local changes: an ``allocatable`` or ``pointer`` dummy needs a
+        local carrying the same attribute, and a deferred-length dummy is not
+        interoperable at all, so no ``bind(C)`` interface could declare it.
+
+        A descriptor local also takes its fixed length from the plan rather than
+        from the runtime length beside the buffer.  Neither length is deferred
+        there, so the standard requires the actual and the dummy to agree, and
+        the declared length is what lets the compiler check that they do.
+        """
+        local = cls._character_local(plan)
+        if local.deferred_length:
+            length = ":"
+        elif local.descriptor_kind is not None and plan.character_length is not None:
+            length = str(plan.character_length)
+        else:
+            length = f"{plan.entrypoint.parameter_name}_length"
+        spelling = f"character(kind=c_char, len={length})"
+        if local.descriptor_kind is None:
+            return FortranDeclaration(name, spelling)
+        return FortranDeclaration(name, spelling, (local.descriptor_kind.value,))
 
     def _string_value_initializers(
         self,
@@ -4456,15 +4870,19 @@ class FortranBridgeGenerator(ClassVisitor):
     def _string_value_initializer_nodes(
         self,
         plan: ArgumentTransferPlan,
-    ) -> tuple[FortranCall | FortranAssignment, ...]:
+    ) -> tuple[FortranCall | FortranAssignment | FortranAllocate | FortranPointerAssignment, ...]:
         """Associate and materialize one present string payload."""
         name = plan.entrypoint.parameter_name
+        local = self._character_local(plan)
         extent = f"{name}_length + 1" if plan.bridge.codegen_action is CodegenAction.COPY_IN_OUT else f"{name}_length"
         source = (
             f"{name}_bytes(1:{name}_length)"
             if plan.bridge.codegen_action is CodegenAction.COPY_IN_OUT
             else f"{name}_bytes"
         )
+        # A deferred-length local has no length until it is allocated, so its
+        # mold spells the width instead of naming storage that does not exist.
+        mold = f"repeat(' ', {name}_length)" if local.deferred_length else name
         return (
             FortranCall(
                 "c_f_pointer",
@@ -4474,8 +4892,40 @@ class FortranBridgeGenerator(ClassVisitor):
                     CodeExpression(f"[{extent}]"),
                 ),
             ),
-            FortranAssignment(name, CodeExpression(f"transfer({source}, {name})")),
+            *self._character_local_allocation_nodes(plan, name),
+            FortranAssignment(name, CodeExpression(f"transfer({source}, {mold})")),
+            *self._character_local_seed_nodes(plan, name),
         )
+
+    def _character_local_allocation_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        name: str,
+    ) -> tuple[FortranAllocate, ...]:
+        """Allocate the adapter local that intrinsic assignment cannot establish.
+
+        Assignment allocates a deferred-length allocatable on its own, so only a
+        pointer local, and a fixed-length allocatable whose mold would otherwise
+        be unallocated storage, need an explicit allocation first.
+        """
+        local = self._character_local(plan)
+        if local.descriptor_kind is None:
+            return ()
+        if local.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE and local.deferred_length:
+            return ()
+        if local.deferred_length:
+            return (FortranAllocate(f"character(kind=c_char, len={name}_length) :: {name}"),)
+        return (FortranAllocate(name),)
+
+    def _character_local_seed_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        name: str,
+    ) -> tuple[FortranPointerAssignment, ...]:
+        """Record the allocation a reassociable pointer local started out holding."""
+        if not self._retains_character_local_seed(plan):
+            return ()
+        return (FortranPointerAssignment(f"{name}_seed", CodeExpression(name)),)
 
     def _string_value_finalizers(
         self,
@@ -4498,6 +4948,54 @@ class FortranBridgeGenerator(ClassVisitor):
                     nodes.extend(copyback)
                 continue
             raise ValueError(f"Unsupported Fortran string finalizer for {argument.owner_path!r}: {action!r}")
+        return tuple(nodes)
+
+    def _character_local_initializers(self, plan: FunctionPlan) -> tuple[FortranPointerAssignment, ...]:
+        """Disassociate pointer character locals before any presence branch runs.
+
+        An absent optional argument never reaches the allocation, so without
+        this the local's association status stays undefined and both the
+        copy-out test and the release test read it.
+        """
+        nodes = []
+        for argument in plan.arguments:
+            if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
+                continue
+            local = self._character_local(argument)
+            if local.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
+                continue
+            name = argument.entrypoint.parameter_name
+            nodes.append(FortranPointerAssignment(name, CodeExpression("null()")))
+            if self._retains_character_local_seed(argument):
+                nodes.append(FortranPointerAssignment(f"{name}_seed", CodeExpression("null()")))
+        return tuple(nodes)
+
+    def _character_local_release_finalizers(self, plan: FunctionPlan) -> tuple[FortranIf | FortranDeallocate, ...]:
+        """Free the character locals the adapter allocated, after every value is read.
+
+        Only a pointer local is adapter-owned storage; an allocatable local is
+        released by the compiler.  A read-only pointer dummy cannot change its
+        association, so its allocation is always the one still in hand.  An
+        update dummy may have been reassociated or deallocated by the native
+        procedure, so the adapter frees its allocation only while the dummy
+        still identifies it, leaving native-owned storage untouched.
+        """
+        nodes: list[FortranIf | FortranDeallocate] = []
+        for argument in plan.arguments:
+            if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
+                continue
+            release = self._character_local(argument).release
+            if release is CharacterLocalRelease.NONE:
+                continue
+            name = argument.entrypoint.parameter_name
+            # An absent optional argument skipped the allocation entirely, so
+            # every release is guarded by what the local actually holds.
+            condition = (
+                f"associated({name})"
+                if release is CharacterLocalRelease.DEALLOCATE
+                else f"associated({name}, {name}_seed)"
+            )
+            nodes.append(FortranIf(CodeExpression(condition), body=(FortranDeallocate(name),)))
         return tuple(nodes)
 
     def _lower_argument_string_copyback(
@@ -4682,6 +5180,46 @@ class FortranBridgeGenerator(ClassVisitor):
                 f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
                 f"{slot.adapter.bridge_data_action!r}"
             )
+        declarations.extend(self._argument_update_declarations(plan))
+        return tuple(declarations)
+
+    def _argument_update_results(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[tuple[ResultPlan, ArgumentTransferPlan], ...]:
+        """Pair each argument-update result with the input storage it returns.
+
+        A character descriptor update has no result call slot: the native
+        procedure receives the adapter's call-local input and may reallocate or
+        reassociate it, so the copied-out value is read from that same local.
+        """
+        arguments = {argument.owner_path: argument for argument in plan.arguments}
+        pairs = []
+        for result in sorted(plan.results, key=lambda item: item.result_position):
+            if not result.updates_argument:
+                continue
+            argument = arguments.get(result.owner_path)
+            if argument is None:
+                raise ValueError(f"Argument update {result.owner_path!r} has no completed input transfer")
+            if result.scalar_descriptor is None:
+                raise ValueError(f"Argument update {result.owner_path!r} has no completed descriptor result")
+            pairs.append((result, argument))
+        return tuple(pairs)
+
+    @staticmethod
+    def _argument_update_names(result: ResultPlan, argument: ArgumentTransferPlan) -> tuple[str, str]:
+        """Return the planned output-group name and the input local it reads."""
+        name = result.entrypoint.parameter_name
+        if name is None:
+            raise ValueError(f"Argument update {result.owner_path!r} has no entrypoint parameter name")
+        return name, argument.entrypoint.parameter_name
+
+    def _argument_update_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
+        """Declare detached-copy storage for every completed argument update."""
+        declarations = []
+        for result, argument in self._argument_update_results(plan):
+            name, value_name = self._argument_update_names(result, argument)
+            declarations.extend(self._scalar_descriptor_copy_declarations(result, name, value_name=value_name))
         return tuple(declarations)
 
     def _direct_result_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
@@ -4879,23 +5417,39 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
+        *,
+        value_name: str | None = None,
     ) -> tuple[FortranDeclaration, ...]:
-        """Declare helper-local storage selected by a scalar descriptor plan."""
+        """Declare helper-local storage selected by a scalar descriptor plan.
+
+        ``value_name`` names storage another facet already declares, as an
+        argument update does with its call-local input; only the detached copy
+        pointer is then declared here.
+        """
         descriptor = result.scalar_descriptor
         if descriptor is None:
             return ()
         attribute = "allocatable" if descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
-        value_name = f"{name}_value"
         copy_name = f"{name}_copy"
         if result.object_kind is ObjectKind.STRING:
+            copy = FortranDeclaration(copy_name, "character(kind=c_char)", ("pointer", "dimension(:)"))
+            if value_name is not None:
+                return (copy,)
+            # An allocatable or pointer dummy accepts a deferred-length actual
+            # only when it declares one itself, so the local mirrors the
+            # completed length instead of always deferring it.
+            length = ":" if result.character_length is None else str(result.character_length)
             return (
-                FortranDeclaration(value_name, "character(kind=c_char, len=:)", (attribute,)),
-                FortranDeclaration(copy_name, "character(kind=c_char)", ("pointer", "dimension(:)")),
+                FortranDeclaration(f"{name}_value", f"character(kind=c_char, len={length})", (attribute,)),
+                copy,
             )
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
+        copy = FortranDeclaration(copy_name, scalar_type.fortran_spelling, ("pointer",))
+        if value_name is not None:
+            return (copy,)
         return (
-            FortranDeclaration(value_name, scalar_type.fortran_spelling, (attribute,)),
-            FortranDeclaration(copy_name, scalar_type.fortran_spelling, ("pointer",)),
+            FortranDeclaration(f"{name}_value", scalar_type.fortran_spelling, (attribute,)),
+            copy,
         )
 
     # Ordinary-array result storage.
@@ -5061,9 +5615,66 @@ class FortranBridgeGenerator(ClassVisitor):
     def _direct_result_internal_procedures(self, plan: FunctionPlan) -> tuple[FortranFunction, ...]:
         """Return helper procedures needed by direct-result lowering."""
         result = self._direct_result(plan)
-        if result is None or not self._uses_owned_direct_array_result_collector(plan):
+        if result is None:
             return ()
-        return (self._owned_direct_array_result_collector(result),)
+        if self._uses_owned_direct_array_result_collector(plan):
+            return (self._owned_direct_array_result_collector(result),)
+        if self._uses_allocatable_character_result_collector(result):
+            return (self._allocatable_character_result_collector(result),)
+        return ()
+
+    @classmethod
+    def _uses_allocatable_character_result_collector(cls, result: ResultPlan | None) -> bool:
+        """Return whether a direct character result travels through the move helper.
+
+        Whether the storage may be absent is a completed policy fact, exactly as
+        it is for an owned array result; this only selects the lowering it asks
+        for.
+        """
+        descriptor = result.scalar_descriptor if result is not None else None
+        return bool(
+            result is not None
+            and descriptor is not None
+            and result.object_kind is ObjectKind.STRING
+            and descriptor.may_be_unallocated
+        )
+
+    @staticmethod
+    def _allocatable_character_result_collector_name() -> str:
+        """Return the fixed internal helper name for collecting allocatable character results."""
+        return "prik_collect_allocatable_character_result"
+
+    @classmethod
+    def _allocatable_character_result_collector(cls, result: ResultPlan) -> FortranFunction:
+        """Move an allocatable character function result without assigning it directly.
+
+        Intrinsic assignment reads the result, which is not permitted when the
+        function left it unallocated.  Receiving it through an allocatable dummy
+        makes allocation a testable fact, so an unallocated result becomes the
+        Python ``None`` the descriptor contract already describes rather than a
+        read of storage that was never established.
+        """
+        length = ":" if result.character_length is None else str(result.character_length)
+        element_type = f"character(kind=c_char, len={length})"
+        return FortranFunction(
+            name=cls._allocatable_character_result_collector_name(),
+            parameters=(
+                FortranParameter("value", element_type, ("allocatable",)),
+                FortranParameter("result", element_type, ("allocatable", "intent(out)")),
+            ),
+            body=(
+                FortranIf(
+                    CodeExpression("allocated(value)"),
+                    body=(
+                        FortranCall(
+                            "move_alloc",
+                            (CodeExpression("value"), CodeExpression("result")),
+                        ),
+                    ),
+                ),
+            ),
+            is_subroutine=True,
+        )
 
     def _owned_direct_array_result_collector(self, result: ResultPlan) -> FortranFunction:
         """Move a GNU allocatable function result without the crashing assignment path."""
@@ -5246,18 +5857,34 @@ class FortranBridgeGenerator(ClassVisitor):
                 f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
                 f"{slot.adapter.bridge_data_action!r}"
             )
+        nodes.extend(self._argument_update_finalizers(plan))
+        return tuple(nodes)
+
+    def _argument_update_finalizers(self, plan: FunctionPlan) -> tuple[FortranAssignment | FortranIf, ...]:
+        """Copy every reallocated call-local input into its C-owned output group."""
+        nodes: list[FortranAssignment | FortranIf] = []
+        for result, argument in self._argument_update_results(plan):
+            name, value_name = self._argument_update_names(result, argument)
+            nodes.extend(self._scalar_descriptor_copy_nodes(result, name, value_name=value_name))
         return tuple(nodes)
 
     def _scalar_descriptor_copy_nodes(
         self,
         result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
+        *,
+        value_name: str | None = None,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
-        """Copy one present scalar descriptor payload into C-owned storage."""
+        """Copy one present scalar descriptor payload into C-owned storage.
+
+        ``value_name`` overrides the native local read after the call, which an
+        argument update points at the call-local input the native procedure may
+        have reallocated.
+        """
         descriptor = result.scalar_descriptor
         if descriptor is None:
             return ()
-        value_name = f"{name}_value"
+        value_name = value_name or f"{name}_value"
         copy_name = f"{name}_copy"
         present = "allocated" if descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "associated"
         initializers: list[FortranAssignment | FortranIf] = [
@@ -5813,6 +6440,11 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.ALLOCATABLE_HOLDER)
 
     @staticmethod
+    def _uses_pointer_holder(argument: ArgumentTransferPlan) -> bool:
+        """Return whether the completed matrix keeps the pointer holder for one carrier."""
+        return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.POINTER_HOLDER)
+
+    @staticmethod
     def _uses_holder(argument: ArgumentTransferPlan, access: DerivedActualAccess) -> bool:
         """Return whether one completed derived matrix includes a holder row."""
         call = argument.derived_call
@@ -5836,6 +6468,7 @@ class FortranBridgeGenerator(ClassVisitor):
         return tuple(
             procedure
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
@@ -7533,11 +8166,7 @@ class FortranBridgeGenerator(ClassVisitor):
             name=self._module_descriptor_callback_interface_name(plan),
             imports=(self._iso_symbol(plan.semantic_type_name), "c_ptr"),
             parameters=(
-                FortranParameter(
-                    "value",
-                    self._module_native_array_element_type(plan),
-                    ("allocatable", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
-                ),
+                FortranParameter("value", *self._module_descriptor_consumer_value_declaration(plan, handle.array.rank)),
                 FortranParameter("context", "type(c_ptr)", ("value",)),
             ),
             is_subroutine=True,
@@ -7774,10 +8403,17 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare one completed scalar-derived output."""
         if slot.derived is None:
             raise ValueError(f"Derived output {slot.owner_path!r} has no handoff plan")
-        attribute = {
-            DerivedObjectStorage.ALLOCATABLE_HOLDER: ("allocatable",),
-            DerivedObjectStorage.POINTER_HOLDER: ("pointer",),
-        }.get(slot.derived.storage, ())
+        try:
+            attribute = {
+                DerivedObjectStorage.DIRECT: (),
+                DerivedObjectStorage.ALLOCATABLE_HOLDER: ("allocatable",),
+                DerivedObjectStorage.POINTER_HOLDER: ("pointer",),
+            }[slot.derived.storage]
+        except KeyError as error:
+            raise ValueError(
+                f"Derived output {slot.owner_path!r} has unsupported external-interface storage: "
+                f"{slot.derived.storage.value}"
+            ) from error
         return FortranParameter(
             slot.native_name.lower(),
             f"type({self._derived_native_alias(slot.derived.backend_symbol)})",
@@ -7818,10 +8454,17 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.object_kind is ObjectKind.DERIVED_TYPE:
             if result.derived is None:
                 raise ValueError(f"Derived result {result.owner_path!r} has no handoff plan")
-            attribute = {
-                DerivedObjectStorage.ALLOCATABLE_HOLDER: ", allocatable",
-                DerivedObjectStorage.POINTER_HOLDER: ", pointer",
-            }.get(result.derived.storage, "")
+            try:
+                attribute = {
+                    DerivedObjectStorage.DIRECT: "",
+                    DerivedObjectStorage.ALLOCATABLE_HOLDER: ", allocatable",
+                    DerivedObjectStorage.POINTER_HOLDER: ", pointer",
+                }[result.derived.storage]
+            except KeyError as error:
+                raise ValueError(
+                    f"Derived result {result.owner_path!r} has unsupported external-interface storage: "
+                    f"{result.derived.storage.value}"
+                ) from error
             return f"type({self._derived_native_alias(result.derived.backend_symbol)}){attribute}"
         return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).fortran_spelling
 
@@ -8062,10 +8705,17 @@ class FortranBridgeGenerator(ClassVisitor):
             "Int16": "c_int16_t",
             "Int32": "c_int32_t",
             "Int64": "c_int64_t",
+            "UInt8": "c_int8_t",
+            "UInt16": "c_int16_t",
+            "UInt32": "c_int32_t",
+            "UInt64": "c_int64_t",
+            "SizeT": "c_size_t",
             "Float32": "c_float",
             "Float64": "c_double",
+            "Float128": "c_long_double",
             "Complex64": "c_float_complex",
             "Complex128": "c_double_complex",
+            "Complex256": "c_long_double_complex",
             "String": "c_char",
         }
         return symbols[semantic_type_name]
@@ -8093,11 +8743,26 @@ class FortranBridgeGenerator(ClassVisitor):
             "c_size_t",
             "c_sizeof",
         ]
+        symbols.extend(self._extended_precision_iso_symbols(plan))
         if self._uses_c_function_pointer_symbols(plan):
             symbols.extend(("c_funptr", "c_f_procpointer"))
         if self._uses_derived_interop_symbols(plan):
             symbols.extend(("c_funloc", "c_funptr", "c_f_procpointer"))
         return tuple(dict.fromkeys(symbols))
+
+    def _extended_precision_iso_symbols(self, plan: ModulePlan) -> tuple[str, ...]:
+        """Return the extended-precision kind imports the completed plan actually spells.
+
+        ``c_long_double`` is imported only when the plan uses it, so an ordinary
+        module's generated bridge keeps the import list it already had.
+        """
+        names = _plan_semantic_type_names(plan)
+        symbols = []
+        if "Float128" in names:
+            symbols.append("c_long_double")
+        if "Complex256" in names:
+            symbols.append("c_long_double_complex")
+        return tuple(symbols)
 
     def _uses_c_function_pointer_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed module or field descriptor actions require C procedure-pointer support."""

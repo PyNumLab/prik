@@ -1,188 +1,210 @@
 ---
 title: CLI Commands Reference
-audience: users, developers
+audience: users
 prerequisites: installation
-related: python-api.md, configuration-files.md
+related: python-api.md, ../language-support/c-support.md, ../guide/building-shared-library.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # CLI Commands Reference
 
-This page documents the checked command surface exposed by:
-
-```bash
-prik --version
-python3 -m prik --help
-python3 -m prik --help-build
-```
-
-`prik --version` and `python3 -m prik --version` print the installed
-distribution version and exit successfully. The value comes from the same
-package metadata as `prik.__version__`.
-
-With no subcommand, prik builds a wrapper from Fortran source or a semantic
-`.pyi` contract. Four focused subcommands expose parsing, semantic inspection,
-artifact generation, and target probing. The default `--help` output is a
-concise overview of common inputs, build controls, and commands. Use
-`--help-build` for every default-build option.
-
-Every help page places a clear one-line purpose directly below its usage. Its
-examples are grouped by task rather than presented as an unlabeled command
-list, so users can scan directly to a basic invocation, a different frontend
-or output form, or a cross-target workflow. The examples remain illustrative;
-the option groups above them are the exhaustive command contract.
-
-<!-- PRIK_C_DOCS_START
-The command accepts source paths and then either builds a wrapper or runs an
-inspection stage. Fortran source files can usually be inferred from their
-suffix. C files, directories, and unknown suffixes require `&#45;&#45;language`.
-PRIK_C_DOCS_END -->
-
-## Command shapes
+With no subcommand, PRIK builds a wrapper. Four subcommands expose the earlier
+stages without building one.
 
 ```bash
 python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]
 python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 ```
 
-The default compiled build accepts one or more Fortran source `INPUT` values,
-or exactly one semantic `.pyi` entry contract. Do not mix those two input
-forms. When `--build-manifest PATH` is supplied, omit positional input
-entirely. In the second form, select one of the four command names shown in
-braces; `COMMAND` is not a literal command or input. Inspection and
-contract-generation commands advertise their own supported frontend languages
-in their focused help; compiled wrapper generation is currently Fortran-only.
-The concise top-level help lists `INPUT` under `positional arguments:` and the
-common flags under `build options:`. All help section headings use lowercase
-for the same presentation in plain and colored output. Full build help and
-every source-taking subcommand use the same concise section style. Positional
-`INPUT` values appear under `positional arguments:`. Full build help puts
-`--language` and manifest selection under `input selection:`, while
-source-taking subcommands use `input options:` for their corresponding
-controls. Output and diagnostic controls always have separate groups. Each
-subcommand describes shared compiler and include flags in terms of that
-subcommand's actual stage rather than copying the default-build wording.
-Accordingly, full default-build help advertises `--language {fortran}` only;
-`parse`, `semantics`, `generate --pyi`, and `probe` advertise
-`--language {fortran,c}` because those paths currently support both frontends.
-
-<!-- PRIK_C_DOCS_START
-```bash
-python3 -m prik [PATH ...] [&#45;&#45;language fortran|c] [stage-or-build] [options]
-```
-PRIK_C_DOCS_END -->
-
-The top-level help intentionally lists only common build options. Run
-`python3 -m prik --help-build` for the complete build surface. Each subcommand
-has its own options; use `parse --help`, `semantics --help`, `generate --help`,
-or `probe --help` after `python3 -m prik` to see only the options relevant to
-that command. The concise build list covers output naming and location, build
-compiler and include-directory selection, native compile flags such as `-O3`,
-native libraries, compiler job limits, and verbose build output.
-Command-specific help describes the stage-specific role of shared flags; for
-example, `parse --help` explains
-that `--compiler` and `-I` configure preprocessing. The concise build help does
-not mislabel them as preprocessing-only options. It also keeps short examples
-for a basic source build, an explicitly named extension, and semantic contract
-generation; `--help-build` labels its basic build, semantic-contract build,
-and manifest-replay examples separately. Both help levels reuse the canonical
-`points.f90` and `geometry` naming from the
-[derived-type guide](../guide/wrapping-derived-types.md#complete-example),
-which contains a complete source, build, import flow, and expected result.
-
-The full build help uses the following two forms:
-
-```text
-usage: python3 -m prik INPUT [INPUT ...]
-       [OUTPUT OPTIONS] [COMPILER OPTIONS] [WRAPPER OPTIONS]
-       [NATIVE OPTIONS] [DIAGNOSTIC OPTIONS]
-       python3 -m prik --build-manifest PATH [MANIFEST OVERRIDES]
-```
-
-Its groups are exhaustive rather than curated: `input selection` contains the
-frontend and manifest selectors; `output options` contains the module name,
-build directory, and structured-result selection; `compiler options` contains
-every compiler and preprocessing control; `wrapper options` contains generated
-wrapper naming and compiler behavior; `native options` contains native sources,
-flags, objects, libraries, directories, and ordered link items; and
-`diagnostic options` contains verbose, color, and traceback controls. The
-default output directory shown there is `./__prik__`.
-
-`--build-manifest PATH` reads an existing `prik-build.json` and replays the
-saved build; it does not generate a manifest. Manifest replay accepts only
-overrides that the replay implementation consumes:
-`--out`, `--compiler`, `-I`/`--include-dir`, `--jobs`, `--json`, `--verbose`,
-`--no-color`, and `--debug`. The manifest owns its output
-directory, input language, preprocessing recipe, wrapper behavior, native
-inputs, and link plan, so replay rejects flags from those areas instead of
-silently ignoring them.
-
 | Command | Purpose |
 | --- | --- |
-| no subcommand | Builds and imports one extension path from Fortran source or a semantic `.pyi` contract. |
+| no subcommand | Builds one importable extension from Fortran source, a supported direct C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
-| `semantics` | Prints language-neutral semantic IR. |
-| `generate` | Generates `.pyi` contracts, wrapper sources, or a Makefile build without compiling an extension. |
-| `probe` | Probes compiler-target datatype facts as JSON or a Markdown mapping table. |
+| `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
+| `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
+| `probe` | Prints compiler-target datatype and ABI facts. |
+
+## Getting help
+
+```bash
+prik --version          # installed distribution version
+python3 -m prik --help        # common inputs, build controls, and commands
+python3 -m prik --help-build  # every default-build option
+```
+
+`--help` is a curated overview; `--help-build` is the exhaustive build surface.
+Each subcommand has its own help — `parse --help`, `semantics --help`,
+`generate --help`, `probe --help` — describing that stage's role for shared
+flags such as `--compiler` and `-I`.
+
+`prik --version` and `python3 -m prik --version` print the same value as
+`prik.__version__`.
+
+When `rich-argparse` is installed, PRIK uses its colored help formatter
+automatically. Install it with `python3 -m pip install 'prik[pretty]'`, or from
+an editable checkout with `python3 -m pip install -e '.[pretty]'`. Plain
+`argparse` help is the deterministic fallback; `--no-color` or `NO_COLOR`
+selects it explicitly.
 
 ## Input selection
 
+The default build accepts either one or more Fortran or supported C source
+`INPUT` values, or exactly one semantic `.pyi` entry contract — never both. With
+`--build-manifest PATH`, omit positional input entirely.
+
 | Option | Purpose |
 | --- | --- |
-| `paths` | Source files, `.pyi` files, or directories. Omit only when using `--build-manifest`. |
+| `paths` | Source files, `.pyi` files, or directories. Omit only with `--build-manifest`. |
 | `--version` | Prints the installed PRIK version and exits. |
-| `--language fortran` | Selects the Fortran frontend explicitly when suffix inference is unavailable. |
-| `--jobs N` | Limits concurrent compiler processes to `N`; the default uses the CPUs available to prik. |
+| `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C source and C-native contracts require `c`. |
+| `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
+| `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;language {fortran,c}` | Selects the frontend. Required for C inputs, directories, and unknown suffixes. |
-PRIK_C_DOCS_END -->
+Compiled wrapper builds support Fortran and the documented direct-C subset —
+scalars, one-level primitive pointers, arrays, rank-zero strings, hidden
+outputs, and status projection. C paths require `--language c`; the parser
+accepts more C forms than that runtime subset, and those fail before wrapper
+planning. [C Support](../language-support/c-support.md#what-is-supported)
+records the exact boundary.
+
+Directories are expanded recursively in deterministic path order. Fortran
+source files can usually be inferred from their suffix;
+[Fortran Support](../language-support/fortran-support.md#source-forms) lists the
+accepted ones. C files, directories, and unknown suffixes require
+`--language c`.
+
+## Wrapper builds
+
+A positional Fortran or C source is both a semantic input and a native
+implementation source. A `.pyi` is only the semantic contract, so it needs at
+least one explicit native input: `--native-fortran-sources`, `--native-c-sources`, `--native-objects`,
+`--native-library`, or `--native-link-item`.
+
+| Option | Purpose |
+| --- | --- |
+| `--out NAME` | Python module name, `PyInit_<name>` symbol, and stable `NAME.so` alias. Accepts `NAME` or `NAME.so`, and requires a value. |
+| `--out-dir DIR` | Where generated artifacts and the ABI-suffixed extension are built. Default `./__prik__`. |
+| `--compiler COMPILER` | The input-language compiler used for preprocessing, datatype measurement, native compilation, and linking. Defaults to `gfortran` for Fortran and `cc` for C. |
+| `-I DIR`, `--include-dir DIR` | Build-wide include directory. Repeat to preserve search order. |
+| `--strict-wrapper-names` | Rejects Python names that would need escaping or a collision suffix. |
+| `--assume-intent-in-scalars` | Treats a primitive or non-descriptor character scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and descriptor character scalars are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
+| `--no-compile-input-sources` | Treats positional sources as semantic inputs only. Requires an explicit native input. |
+| `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
+| `--native-c-sources PATH ...` | Compiles extra C sources without exposing them as public API. |
+| `--native-compile-flags FLAG ...` | Flags for native implementation compilation. |
+| `--native-c-compile-flags FLAG ...` | C implementation compiler flags. |
+| `--native-objects PATH ...` | Links object files, static archives, or shared libraries. |
+| `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
+| `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
+| `--native-library-dir DIR ...` | Library search directories and runtime paths. |
+| `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
+| `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
+| `--collision-adapter-all` | Applies `--collision-adapter` to every direct C symbol in the build. |
+| `--positional-only` | For Fortran and C, exposes every wrapper whose arguments are all required as positional-only, renaming them `arg0`..`argN`. |
+| `--wrapper-compiler-debug` | Uses the compiler debug profile instead of release. |
+| `--wrapper-fortran-flags FLAG ...` | Flags for generated Fortran bridge compilation. |
+| `--wrapper-c-flags FLAG ...` | Flags for generated binding compilation and extension linking. |
+
+Build rules worth knowing:
+
+- PRIK selects the generated binding compiler from its own profile;
+  `--compiler` controls the input-language side.
+- `--native-compile-flags` also applies to internal datatype measurement for
+  source builds, so target-changing flags such as `-fdefault-integer-8` affect
+  both native compilation and the semantic wrapper types.
+- Native input options accept multiple values and may be repeated; supplied
+  source, artifact, and link-item order is preserved. For values starting with
+  `-`, use the equals form: `--native-compile-flags="-O3 -fopenmp"`.
+- Source-driven builds may add native sources, objects, and libraries to
+  complete the link. These augment the positional sources without becoming
+  semantic inputs.
+- Manifest replay accepts only `--out`, `--compiler`, `-I`/`--include-dir`,
+  `--jobs`, `--json`, `--verbose`, `--no-color`, and `--debug`. The manifest
+  owns output directory, input language, preprocessing recipe, wrapper
+  behavior, native inputs, and link plan, so other flags are rejected rather
+  than silently ignored. Replay validates the recorded semantic-contract graph
+  before it generates files or starts a compiler.
+
+- A source-free C `.pyi` contract is C-native only when `--language c` is
+  supplied. PRIK does not infer that identity from the contract filename,
+  compiler, native source list, or `@native_abi("c")`.
+
+- `--lto` is an optional build optimization for both Fortran and C. It applies
+  to native sources, generated bridge and binding compilation, and the final
+  extension link. Collision adapters remain correct without it.
+
+- `--positional-only` applies equally to Fortran and C. It removes argument
+  names from the Python API of any function whose arguments are all required,
+  so a native declaration's parameter names stop being part of the contract.
+  Use it when source parameter names should not become public keywords; a
+  system header may spell them `__x`, or omit them entirely. A function with an
+  optional argument keeps its keywords because skipping one still requires
+  naming the rest, and a module containing overload sets is rejected because
+  overload dispatch selects a candidate by keyword.
+
+- `--collision-adapter` is for a genuine identifier collision with a header
+  included by the generated binding. The adapter unit includes no Python
+  header and reconstructs the exact native declaration from completed
+  `@native_call` types. Width-normalized `long` and `long long` distinctions do
+  not by themselves require an adapter. Only a C-source function is eligible;
+  a Fortran `bind(C)` procedure and a generated bridge symbol are not.
+  The adapter isolates the binding's declaration; it does not disambiguate two
+  linked libraries that export the same symbol.
 
 ## Parse and semantics
-
-Inspection is selected by a subcommand rather than a stage flag. Compact usage
-lines leave the complete command-specific option inventory to the groups below
-them:
 
 ```bash
 python3 -m prik parse INPUT [INPUT ...] [OPTIONS]
 python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]
-
-python3 -m prik parse points.f90
-python3 -m prik semantics points.f90
 ```
 
-Parse-report controls such as `--show-vars` and `--print-limit` appear only in
-`prik parse --help`. Target datatype measurement is internal to semantic
-conversion and wrapping. Use the separate `prik probe` command only when you
-want to inspect or save the measured target facts yourself.
+| Option | Purpose |
+| --- | --- |
+| `--show-vars` | Includes module, submodule, program, and block-data variables in human-readable parse reports. |
+| `--print-limit N` | Shows at most `N` items per repeated section in human-readable reports. |
+| `--json` | Emits the complete JSON record instead of the human-readable report. |
 
-The parse examples distinguish basic inspection, a detailed report, and an
-alternate frontend. The semantics examples distinguish basic conversion, an
-alternate frontend, and writing the combined semantic IR to a named JSON file.
+Both commands follow the same rule: **`--json` selects the format and `--out`
+selects the destination, and neither changes the other.** With no `--json` the
+command prints a human-readable report; with `--json` it prints the complete
+record. With no `--out` that goes to standard output; `--out PATH` writes it to
+`PATH`, and bare `--out` writes one file beside each input source, using
+`.json` for the record and `.txt` for the report.
 
-`semantics` always writes its language-neutral report as JSON. With no `--out`,
-it prints the combined report to standard output. `--out PATH` writes that
-combined report to `PATH`; `--out` without a path writes one `.json` file beside
-each input source.
+`semantics` reports each module's functions with their semantic signatures, and
+every argument's semantic dtype, rank, ownership, and mutability — the policy
+decisions a parse report cannot show. It accepts source inputs only; use a
+source file rather than a generated `.pyi` contract.
+
+Target datatype measurement happens automatically inside semantic conversion.
+Use `probe` only when you want to inspect those facts yourself.
+
+For C input, select the language on each command:
+
+```bash
+python3 -m prik parse path/to/api.h --language c --json
+python3 -m prik semantics path/to/api.c --language c
+```
+
+Parsing reports source declarations and diagnostics; it does not promise that
+the declaration fits the direct C wrapper contract. Read [C
+Support](../language-support/c-support.md) before building a C API.
 
 ## Generate
 
 `generate` requires exactly one output mode:
 
 ```bash
-python3 -m prik generate (--pyi | --sources | --makefile)
-                                INPUT [INPUT ...] [OPTIONS]
-python3 -m prik generate (--sources | --makefile)
-                                --build-manifest PATH [OVERRIDES]
+python3 -m prik generate (--pyi | --sources | --makefile) INPUT [INPUT ...] [OPTIONS]
+python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRIDES]
 ```
 
 | Mode | Purpose |
 | --- | --- |
 | `--pyi` | Writes the editable semantic `.pyi` contract. |
-| `--sources` | Writes wrapper source files without compiling native objects or an extension. |
-| `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik` without compiling. |
+| `--sources` | Writes wrapper sources without compiling. |
+| `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik`. |
 
 ```bash
 python3 -m prik generate --pyi points.f90 --out contracts
@@ -190,243 +212,144 @@ python3 -m prik generate --sources points.f90 --out-dir build
 python3 -m prik generate --makefile points.f90 --out-dir build
 ```
 
-These examples reuse `points.f90` from the
-[derived-type guide](../guide/wrapping-derived-types.md#complete-example).
+For a C source contract, `--language c` is valid with `--pyi`:
 
-These modes are mutually exclusive. Source and Makefile generation still run
-the preprocessing and semantic-policy stages needed to produce a valid wrapper
-plan; they skip native object compilation and extension linking. Their
-generated commands use the build-wide `--compiler` and `-I` contract. In
-`--pyi` mode those same options apply only to source preprocessing and datatype
-measurement because no native build is generated.
+```bash
+python3 -m prik generate --pyi --language c path/to/api.c --out contracts
+```
 
-The help page presents `generation modes` immediately after the standard
-`options` group, then `positional arguments`, `input options`, compiler and
-frontend-specific include controls, wrapper and native controls, output,
-diagnostics, and examples. `native options` keeps native sources, compiler
-flags, objects, libraries, library directories, and ordered link items
-together, matching `--help-build`. `--build-manifest` reads an existing
-manifest and regenerates wrapper artifacts; it is not a contract-generation
-input.
+`--sources` and `--makefile` still run preprocessing and semantic policy to
+produce a valid wrapper plan; they skip object compilation and linking, and
+use `--out-dir`. With no `--out`, `generate --pyi` prints every generated
+contract. `--pyi` uses `--out` to write its contract package, and there
+`--compiler` and `-I` affect only preprocessing and datatype measurement.
+
+In `.pyi` Makefile mode, PRIK writes `<out-dir>/prik-build.json` first, then
+generates `<out-dir>/Makefile.prik` from that manifest.
 
 ## Probe
 
-`probe` uses `--language fortran` and compiler-oriented flags instead of nested
-language commands. JSON is the default; `--format markdown` prints the target
-datatype mapping table. Its help examples distinguish basic native probes, a
-human-readable mapping table, ABI-affecting compiler flags that change default
-kinds, and a cross-target probe run through a target runner. Pass each raw
-compiler flag separately, for example
-`--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8`.
+`probe` measures one of two reports. Without `--expr` it measures the standard
+datatype mapping table; with `--expr` it measures exactly the Fortran integer
+expressions you name. `--json` then selects how that measurement is
+rendered: the JSON record is complete and the default Markdown table is
+converted from it, so both formats always describe the same measurement.
 
 ```bash
 python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]
-```
 
-<!-- PRIK_C_DOCS_START
-The same command accepts `&#45;&#45;language c`; no language-specific nested command
-is needed.
-PRIK_C_DOCS_END -->
-
-```bash
 python3 -m prik probe --language fortran --compiler gfortran-13
+python3 -m prik probe --language c --compiler cc --json
+python3 -m prik probe --language fortran --compiler gfortran-13 \
+    --expr "selected_real_kind(15,307)"
 ```
-
-<!-- PRIK_C_DOCS_START
-```bash
-python3 -m prik probe &#45;&#45;language c &#45;&#45;compiler gcc-13 &#45;&#45;format markdown
-```
-PRIK_C_DOCS_END -->
 
 | Option | Purpose |
 | --- | --- |
-| `--language fortran` | Selects the Fortran target probe. |
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;language c` | Selects the C target probe. |
-PRIK_C_DOCS_END -->
-| `--compiler COMPILER` | Selects the exact native or cross compiler. |
-| `--format {json,markdown}` | Chooses the machine-readable report or mapping table. |
-| `--expr EXPR` | Adds a Fortran integer expression to the JSON probe; repeat for more expressions. |
-| `--runner ARG` | Adds one cross-target runner command item; repeat for multiple arguments. |
-| `--cache-dir PATH` | Selects reusable probe storage. |
-| `--refresh` | Ignores reusable results and probes the target again. |
-| `--out PATH` | Writes the probe report instead of printing it. |
+| `--language {fortran,c}` | Selects the target probe. |
+| `--compiler COMPILER` | The exact native or cross compiler. |
+| `--json` | Emits the complete JSON record instead of the Markdown table. |
+| `--expr EXPR` | Measures one Fortran integer expression instead of the mapping table. Repeat for more. |
+| `--runner ARG` | Adds one cross-target runner command item. Repeat for more. |
+| `--cache-dir PATH` | Reusable probe storage. |
+| `--refresh` | Ignores reusable results and probes again. |
+| `--out PATH` | Writes the selected format instead of printing it. |
 
-Compiler preprocessing flags are accepted for JSON probes. Markdown mappings
-accept compiler arguments, runner, cache, and refresh options because they
-measure the standard mapping table rather than an individual preprocessed
-source expression.
+Pass each raw compiler flag separately, for example
+`--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8`. The
+mapping report accepts compiler, compiler arguments, runner, cache, and refresh
+options only, because its inventory is fixed and preprocessing cannot change
+it; `-I`, `-D`, `-U`, and `--std` apply to `--expr` measurements, which are
+compiled from generated source.
 
 ## Compiler preprocessing
 
-These options control compiler preprocessing before Fortran parsing.
-
-<!-- PRIK_C_DOCS_START
-These options control preprocessing before parsing. They are most useful for C
-headers, C source files, and preprocessed Fortran sources.
-PRIK_C_DOCS_END -->
+These options control preprocessing before parsing.
 
 | Option | Purpose |
 | --- | --- |
-| `--preprocessor-adapter {auto,gnu-fortran,command-template}` | Selects the Fortran compiler adapter or a custom command template. |
-| `--compiler COMPILER` | Uses an exact compiler or preprocessor executable. Defaults to `gfortran` for Fortran. |
+| `--preprocessor-adapter {auto,gcc-compatible-c,gnu-fortran,command-template}` | Selects the compiler adapter or a custom command template. |
+| `--compiler COMPILER` | An exact compiler or preprocessor executable. Defaults to `gfortran` for Fortran and `cc` for C. |
 | `--preprocess-template TEMPLATE` | Runs a custom command-template preprocessor. |
-| `-I DIR`, `--include-dir DIR` | Adds an include directory during compiler preprocessing. |
+| `-I DIR`, `--include-dir DIR` | Adds an include directory. |
 | `-D NAME[=VALUE]`, `--define NAME[=VALUE]` | Defines a preprocessing macro. |
 | `-U NAME`, `--undef NAME` | Undefines a preprocessing macro. |
-| `--std STANDARD` | Passes a Fortran language standard such as `f2008` or `f2018`. |
-| `--compiler-arg ARG` | Passes one raw compiler preprocessing argument. Repeat for multiple arguments. |
+| `--std STANDARD` | Passes a language standard such as `c11`, `c23`, `f2008`, or `f2018`. |
+| `--compiler-arg ARG` | Passes one raw compiler argument. Repeat for more. |
 
-<!-- PRIK_C_DOCS_START
-The C frontend defaults to `cc` when `&#45;&#45;compiler` is omitted.
-PRIK_C_DOCS_END -->
+Use the equals form when a value starts with `-`, for example
+`--compiler-arg=-target`.
 
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;compile-commands PATH` | Reads project flags from a `compile_commands.json` database. |
-| `&#45;&#45;std STANDARD` | Passes a language standard such as `c11`, `c23`, `f2008`, or `f2018`. |
-PRIK_C_DOCS_END -->
+### Command templates
 
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;preprocessor-adapter {auto,gcc-compatible-c,gnu-fortran,command-template}` | Selects the compiler adapter family. |
-PRIK_C_DOCS_END -->
+`--preprocessor-adapter command-template` with `--preprocess-template` runs an
+arbitrary preprocessing command, for a compiler family PRIK has no adapter for.
+The template must expand to a command that writes preprocessed source to
+standard output. PRIK substitutes these placeholders:
 
-Use `--compiler-arg=-target` style spelling when the value itself starts with
-`-`.
+| Placeholder | Expands to |
+| --- | --- |
+| `{source}` | The source file being preprocessed. |
+| `{compiler}` | The `--compiler` value, or an empty string. |
+| `{language}` | `c` or `fortran`. |
+| `{include_dirs}` | Each `-I` directory, in order, as `-Idir`. |
+| `{defines}` | Each `-D` macro, in order, as `-Dname[=value]`. |
+| `{undefs}` | Each `-U` macro, in order, as `-Uname`. |
+| `{standard}` | `-std=<value>` when `--std` is given; nothing otherwise. |
+| `{compiler_args}` | Each `--compiler-arg` value, in order. |
 
-<!-- PRIK_C_DOCS_START
+```bash
+python3 -m prik parse include/api.h --language c \
+  --preprocessor-adapter command-template \
+  --preprocess-template \
+  'cc -E {include_dirs} {defines} {undefs} {standard} {compiler_args} {source}'
+```
+
+A collection placeholder must be its own template token; it expands to zero or
+more arguments. The scalar placeholders may also appear inside a larger token.
+This adapter reports no dependencies, macro dumps, or line markers, so source
+locations come from the template's own output.
+
+`--compile-commands PATH` reads per-file C preprocessing commands from a
+`compile_commands.json` database. It is available only for C input.
+
 ## C include exposure
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
-These options affect wrapper exposure for reachable included C files.
-PRIK_C_DOCS_END -->
-
-<!-- PRIK_C_DOCS_START
-| Option | Purpose |
-| &#45;&#45;- | &#45;&#45;- |
-| `&#45;&#45;include-exposure {reachable-project,roots-only}` | Selects whether reachable project includes are public by default or only root inputs are public. |
-| `&#45;&#45;public-include PATH_OR_PATTERN` | Forces matched included files to be public in wrapper output. |
-| `&#45;&#45;private-include PATH_OR_PATTERN` | Forces matched included files to be private in wrapper output. |
-PRIK_C_DOCS_END -->
-
-## Parse report controls
+These C-only options decide which reachable project headers become public
+wrapper declarations. They affect parsing, semantic inspection, and generated
+C contracts—not whether the native compiler can find an include file.
 
 | Option | Purpose |
 | --- | --- |
-| `--show-vars` | Includes module, submodule, program, and block-data variables in human-readable Fortran parse reports. |
-| `--print-limit N` | Shows at most `N` items per repeated section in human-readable parse reports. |
+| `--include-exposure {reachable-project,roots-only}` | Exposes reachable project headers by default, or only the root inputs. |
+| `--public-include PATH_OR_PATTERN` | Exposes declarations from matching included files. Repeat as needed. |
+| `--private-include PATH_OR_PATTERN` | Hides declarations from matching included files. Repeat as needed. |
+| `--export-symbols FILE` | Selects the exact reachable C functions named by FILE and makes those declarations public, including declarations from otherwise-private system headers. |
 
-## Wrapper builds
-
-With no subcommand, recognizable Fortran source, semantic `.pyi` input, or a
-saved manifest builds a wrapper. A positional Fortran source is both a semantic
-input and a native implementation source. A `.pyi` is only the semantic
-contract, so it requires at least one explicit native implementation input.
-Generation without compilation belongs to the `generate` subcommand.
-
-| Option | Purpose |
-| --- | --- |
-| `--compiler COMPILER` | Selects the input-language compiler used throughout a wrapper build: preprocessing, datatype measurement, native and generated-bridge compilation, and extension linking. The default is `gfortran`; the generated binding continues to use prik's binding-compiler profile. |
-| `-I DIR`, `--include-dir DIR` | Adds a build-wide compiler include directory. Source builds use it during preprocessing; source and `.pyi` builds use it for native and generated wrapper compilation. Repeat to preserve search order. |
-| `--strict-wrapper-names` | Rejects Python wrapper names that require escaping or collision suffixes. |
-| `--build-manifest PATH` | Reads an existing semantic `.pyi` wrapper build manifest and replays its saved build. It does not generate the manifest. |
-| `--no-compile-input-sources` | Treats positional Fortran sources as semantic inputs only. Requires an explicit native input; `--native-fortran-sources` remain compiled hidden implementation sources. |
-| `--native-fortran-sources PATH [PATH ...]` | Compiles additional native Fortran implementation sources without using them as semantic inputs. |
-| `--native-compile-flags FLAG [FLAG ...]` | Adds compiler flags to native implementation source compilation. Native source compilation is currently Fortran-only. |
-| `--native-objects PATH [PATH ...]` | Links one or more native object, static archive, or shared library paths into the extension. |
-| `--native-library NAME [NAME ...]` | Links system libraries by name. For example, `--native-library openblas` passes `-lopenblas` to the linker. |
-| `--native-link-item KIND:VALUE [KIND:VALUE ...]` | Adds ordered extension link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
-| `--native-library-dir DIR [DIR ...]` | Adds native library search directories and runtime paths for extension linking. |
-
-Important boundaries:
-
-- `parse`, `semantics`, `generate`, and `probe` are the only subcommands.
-- For compiled wrapper builds, `--out NAME` selects the Python module name,
-  `PyInit_<name>` symbol, JSON `module_name`, and stable `NAME.so` alias in the
-  current directory. Use `--out-dir DIR` to choose where generated artifacts
-  and the ABI-suffixed extension are built. Give `--out` an explicit path to
-  place the stable alias elsewhere.
-- Wrapper `--out` requires a value and accepts `NAME` or `NAME.so`.
-- `generate --sources` and `generate --makefile` use `--out-dir`; `generate
-  --pyi` uses `--out` for its contract package.
-- `.pyi` wrapper builds require at least one native implementation input such
-  as `--native-fortran-sources`, `--native-objects`, `--native-library`, or
-  `--native-link-item`.
-- Source-driven builds accept individual Fortran files or directories.
-  Directories are expanded recursively in deterministic path order.
-- `--no-compile-input-sources` keeps positional Fortran sources as semantic inputs
-  but removes them from native compilation. It requires an explicit native
-  implementation through `--native-fortran-sources`, `--native-objects`,
-  `--native-library`, or `--native-link-item`. Sources passed through
-  `--native-fortran-sources` are still compiled without becoming public API.
-- Source-driven builds may use the same native source, object, library,
-  include-directory, library-directory, and ordered-link options to complete
-  the extension build. These inputs augment the positional implementation
-  sources; they do not become semantic wrapper inputs.
-- In a wrapper build, `--compiler` is a build input rather than a
-  preprocessing-only setting. It selects the input-language compiler command
-  used for preprocessing and datatype measurement, then for native source and
-  generated bridge compilation, and finally for extension linking. prik still
-  selects the generated binding compiler from its compiler profile.
-- `-I DIR` is build-wide: prik preserves the supplied order in preprocessing
-  and in native, bridge, and binding compilation. Use it for source includes,
-  compiler-produced module files, and native interface directories.
-- `--native-compile-flags` compiles the native implementation. The public name
-  identifies the native compilation phase rather than the current source
-  language; native source compilation is currently Fortran-only.
-  `--wrapper-fortran-flags` compiles the generated Fortran bridge, and
-  `--wrapper-c-flags` compiles the generated binding and supplies additional
-  extension-link flags.
-- For source-driven builds, prik also applies `--native-compile-flags` to its
-  internal datatype measurement. Target-changing flags such as
-  `-fdefault-integer-8` or `-fdefault-real-8` therefore affect both native
-  compilation and the semantic wrapper types without separate probe options.
-- Native input options accept one or more values per occurrence and may also be
-  repeated. prik preserves the supplied source, artifact, and link-item order.
-  For compiler flags or prefixed library names that start with `-`, group them
-  with the equals form, for example `--native-compile-flags="-O3 -fopenmp"` or
-  `--native-library="-lblas -llapack"`.
-- In `.pyi` Makefile mode, prik writes `<out-dir>/prik-build.json` first and
-  generates `<out-dir>/Makefile.prik` from that manifest.
-- `--build-manifest PATH` reads a saved manifest and rebuilds from it; it does
-  not generate the manifest. `generate --makefile
-  --build-manifest PATH` regenerates `Makefile.prik` without positional
-  contracts or repeated native flags. Replay may override only `--out`,
-  `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`, `--no-color`, and
-  `--debug`; all other build settings come from the
-  manifest.
-
-<!-- PRIK_C_DOCS_START
-- C source inspection is supported; runtime wrapping of user-supplied C
-  libraries is not part of this CLI surface yet.
-PRIK_C_DOCS_END -->
+`--export-symbols` is a function-only allowlist for commands that produce
+semantic IR: source builds, `semantics`, and `generate --pyi`. The UTF-8 file
+contains one ASCII C identifier per line; blank lines and text after `#` are ignored.
+Every listed name must resolve to exactly one reachable function. Empty files,
+invalid or repeated names, unknown names, names of non-function declarations,
+and ambiguous declarations fail the command. All declarations not selected by
+the file are removed from that semantic surface. This makes the allowlist the
+explicit exception to `roots-only`, system-header privacy, and matching
+`--private-include` rules; it does not change native linking or make an
+unsupported selected signature buildable.
 
 ## Output and diagnostics
 
 | Option | Purpose |
 | --- | --- |
-| `--json` | Selects JSON instead of the default human-readable output for commands that support both formats. Semantic reports are always JSON and therefore do not expose this flag. |
-| `--out [PATH]` | Writes command output, selects a generated `.pyi` package directory, or names the wrapper Python module and final `.so`. |
-| `--out-dir DIR` | Selects the wrapper build output directory. The default is `./__prik__`. |
-| `--verbose` | Announces and completes binding, bridge, and header source-text generation in order, then each written artifact, source/object compilation pair, and final extension path before printing the exact compiler or linker command; it times each non-writing operation and reports total build time last. |
-| `--wrapper-compiler-debug` | Uses the compiler debug profile for direct wrapper builds instead of the default release profile. |
-| `--wrapper-fortran-flags FLAG...` | Appends flags to generated Fortran bridge compilation commands. |
-| `--wrapper-c-flags FLAG...` | Appends flags to generated binding compilation and extension-link commands. |
+| `--json` | Selects the complete JSON record instead of the human-readable report. Available on `parse`, `semantics`, `probe`, and wrapper builds. |
+| `--out [PATH]` | Destination for the selected format, generated `.pyi` package directory, or the wrapper module and final `.so`. It never changes which format is produced. |
+| `--out-dir DIR` | Wrapper build output directory. Default `./__prik__`. |
+| `--verbose` | Announces each generation, artifact, and compile step. It prints every compiler or linker command before starting it, times each operation, and reports total build time last. |
 | `--no-color` | Disables ANSI color in parse diagnostics. |
-| `--debug` | Re-raises command failures so Python prints a traceback. |
+| `--debug` | Re-raises failures so Python prints a traceback. |
 
-When `rich-argparse` is installed, prik uses its colored help formatter
-automatically. Install the optional UI dependencies for a published package
-with `python3 -m pip install 'prik[pretty]'`, or from an editable source
-checkout with `python3 -m pip install -e '.[pretty]'`. Plain `argparse` help
-remains the deterministic fallback, and `--no-color` or `NO_COLOR` selects it
-explicitly.
-
-Use `--out` for command output, generated `.pyi` contract packages, or
-the wrapper Python module and final `.so`. Use `--out-dir` for wrapper build artifacts.
-Wrapper build JSON includes generated artifact paths,
-`native_build_plan`, the structured native compile/link plan for the extension,
-and for semantic `.pyi` builds the normalized replay `manifest`.
+Wrapper build JSON includes generated artifact paths, `native_build_plan`, and
+for semantic `.pyi` builds the normalized replay `manifest`.
 
 ## Checked workflows
 
@@ -439,23 +362,25 @@ and for semantic `.pyi` builds the normalized replay `manifest`.
 | Print semantic IR | `python3 -m prik semantics path/to/file.f90` |
 | Emit a semantic `.pyi` contract directory | `python3 -m prik generate --pyi path/to/file.f90 --out contracts` |
 | Build a Fortran wrapper | `python3 -m prik path/to/file.f` |
-| Build a Fortran wrapper with native compiler and link flags | `python3 -m prik path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
+| Build a supported C wrapper | `python3 -m prik --language c path/to/file.c --compiler cc` |
+| Parse a C header as JSON | `python3 -m prik parse path/to/api.h --language c --json` |
+| Parse C with the native project's preprocessing flags | `python3 -m prik parse path/to/api.h --language c --compiler clang -I include -D API_EXPORT= --std c11` |
+| Build with native compiler and link flags | `python3 -m prik path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
 | Build from a semantic contract and native object | `python3 -m prik contracts/module.pyi --native-objects build/module.o -I build` |
-| Build a Fortran wrapper with an explicit module and `.so` name | `python3 -m prik path/to/file.f90 --out my_extension` |
+| Build a C-native semantic contract | `python3 -m prik --language c contracts/module.pyi --native-c-sources native/module.c --compiler cc` |
+| Build with an explicit module and `.so` name | `python3 -m prik path/to/file.f90 --out my_extension` |
 | Generate wrapper sources only | `python3 -m prik generate --sources dependency.f90 api.f90 --out-dir build` |
 | Generate an editable Makefile | `python3 -m prik generate --makefile dependency.f90 api.f90 --out-dir build` |
 | Generate a `.pyi` replay manifest and Makefile | `python3 -m prik generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build --json` |
 | Replay a `.pyi` manifest | `python3 -m prik --build-manifest build/prik-build.json` |
 
-<!-- PRIK_C_DOCS_START
-| Parse a C API | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json` |
-| Parse with compiler preprocessing | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;compiler clang-18 -I include -D API_EXPORT= &#45;&#45;std c11` |
-PRIK_C_DOCS_END -->
+The `points.f90` examples reuse the source from the
+[derived-type guide](../guide/wrapping-derived-types.md#complete-example),
+which has a complete source, build, import, and result flow.
 
 ## Related pages
 
-- Use [Python API Reference](python-api.md) when calling prik from Python.
-- Use [Fortran Wrapper Reference](fortran-wrapper.md) for wrapper
-  build workflows.
-- Use [Semantic .pyi Format](semantic-pyi-format.md) when editing wrapper
-  contracts.
+- [Python API Reference](python-api.md) — the same workflows from Python.
+- [C Support](../language-support/c-support.md) — the direct C lane's complete
+  source, contract, build, and Python workflows.
+- [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported contract edits.

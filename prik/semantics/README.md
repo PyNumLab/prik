@@ -4,9 +4,11 @@ This package owns the language-neutral contract between native parser facts
 and editable `.pyi` files. Post-IR decisions live in `../policy/`; typed wrapper
 implementation plans live in `../planning/`.
 
-The current supported wrapper route uses Fortran parser facts and semantic
-`.pyi` contracts. `c2ir.py` remains preparatory work for a future C frontend;
-its presence does not make C wrapping supported.
+The supported wrapper routes use Fortran parser facts, C parser facts, or an
+authoritative semantic `.pyi` contract. `c2ir.py` supplies the semantic handoff
+for the direct-C subset; parser and semantic acceptance remain broader than
+runtime support. The exact public boundary lives in
+`docs/user/language-support/c-support.md`.
 
 ## Entry Points
 
@@ -106,10 +108,10 @@ completion remains the next shared stage after those converters produce
 
 - Semantic reference: `docs/user/reference/semantic-ir.md`
 - `.pyi` reference: `docs/user/reference/semantic-pyi-format.md`
-- `.pyi` wrapper checklist: `docs/developer/roadmap/semantic-pyi-wrapper-checklist.md`
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Architecture: `docs/developer/architecture.md`
 - Semantics package guide: `docs/developer/packages/semantics.md`
-- Semantic tests: `tests/fortran/semantic_ir/semantics/`
-- `.pyi` tests: `tests/fortran/semantic_pyi_format/`
-- Wrapper behavior that reaches the typed plan: `tests/fortran/`
+- Semantic tests: `tests/fortran/infrastructure/semantic_ir/semantics/`
+- C semantic tests: `tests/c/infrastructure/semantic_ir/semantics/`
+- `.pyi` tests: `tests/fortran/infrastructure/semantic_pyi/`
+- Wrapper behavior that reaches the typed plan: `tests/fortran/` and `tests/c/`

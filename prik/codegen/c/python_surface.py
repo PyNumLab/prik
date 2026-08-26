@@ -277,18 +277,33 @@ class PythonSurfaceEmitter(ClassVisitor):
         return tuple(lines)
 
     def _overloaded_constructor_python_lines(self, surface: ClassSurfacePlan) -> tuple[str, ...]:
-        """Dispatch one completed constructor overload after owner allocation."""
+        """Dispatch one completed constructor overload.
+
+        A type-bound candidate initializes an instance the wrapper allocates
+        first. A candidate that returns the type -- the specifics of a Fortran
+        `interface <typename>` -- produces the instance itself, so the dispatch
+        happens in ``__new__`` and the returned object is the new value.
+        """
         overload = surface.constructor.overload
         if overload is None:
             raise ValueError(f"Overloaded constructor {surface.owner_path!r} has no overload plan")
+        if overload.candidate_passed_objects and overload.candidate_passed_objects[0]:
+            return (
+                "    def __new__(cls, *args, **kwargs):",
+                f"        return {CBindingNames.class_create_method(surface)}()",
+                *self._class_overload_python_lines(
+                    overload,
+                    constructor=True,
+                    docstring=surface.constructor.docstring,
+                ),
+            )
+        dispatch = CBindingNames.overload_dispatch_method(overload)
         return (
             "    def __new__(cls, *args, **kwargs):",
-            f"        return {CBindingNames.class_create_method(surface)}()",
-            *self._class_overload_python_lines(
-                overload,
-                constructor=True,
-                docstring=surface.constructor.docstring,
-            ),
+            f"        {surface.constructor.docstring!r}",
+            f"        return {dispatch}(*args, **kwargs)",
+            "    def __init__(self, *args, **kwargs):",
+            "        pass",
         )
 
     def _class_method_python_lines(self, method: ClassMethodPlan) -> tuple[str, ...]:
@@ -476,9 +491,14 @@ class PythonSurfaceEmitter(ClassVisitor):
         return tuple(lines)
 
     def _direct_type_ops_literal(self, derived: DerivedTypePlan) -> str:
-        """Return the operation dictionary for directly owned native storage."""
+        """Return the operation dictionary for directly owned native storage.
+
+        An abstract type publishes no accessor of its own, so its dictionary is
+        empty; each concrete extension supplies one for every component it
+        inherits.
+        """
         entries = []
-        for field in derived.fields:
+        for field in () if derived.abstract else derived.fields:
             entries.append(f"'{field.name}_get': {CBindingNames.derived_field_method(derived, field, 'get')}")
             if field.setter_action is SetterAction.WRITE_THROUGH:
                 entries.append(f"'{field.name}_set': {CBindingNames.derived_field_method(derived, field, 'set')}")
@@ -563,9 +583,7 @@ if __name__ == "__main__":
         native_scope="state",
         python_names=("State",),
         fields=(),
-        finalizers=(),
         bind_c=False,
-        sequence=False,
     )
     example_surface = ClassSurfacePlan(
         owner_path="state.State",

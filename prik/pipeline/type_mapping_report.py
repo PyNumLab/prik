@@ -1,17 +1,21 @@
 """Orchestrate target-specific native-to-semantic-to-NumPy reports.
 
 The public functions combine compiler probes, the normal semantic converters,
-and codegen's NumPy projection catalogue before rendering Markdown.  This is a
+and codegen's NumPy projection catalogue into one measured record.  This is a
 cross-stage inspection pipeline, not a probe implementation or an alternative
-datatype conversion path. ``c_type_mapping_markdown()`` and
-``fortran_type_mapping_markdown()`` are the report boundaries; ``main()`` is
-their standalone command-line adapter.
+datatype conversion path. ``c_type_mapping_report()`` and
+``fortran_type_mapping_report()`` are the report boundaries, and every text
+format converts one of their records: ``type_mapping_markdown()`` renders the
+mapping table and ``expression_probe_markdown()`` renders a measured ``--expr``
+probe. Both output formats therefore describe identical measurements.
+``main()`` is their standalone command-line adapter.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 import platform
 
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
@@ -42,7 +46,11 @@ from prik.semantics.fortran2ir import FortranToIRConverter, fortran_type_storage
 
 from prik.preprocessing import PreprocessingConfig
 from prik.preprocessing.probes.c_types import probe_c_standard_types_cached
-from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_facts, probe_fortran_type_expressions_cached
+from prik.preprocessing.probes.fortran_types import (
+    FortranTypeProbeReport,
+    evaluate_fortran_type_facts,
+    probe_fortran_type_expressions_cached,
+)
 
 
 # C report inventory.
@@ -180,22 +188,23 @@ def target_profile() -> str:
     return f"{platform.system().lower()}-{machine}"
 
 
-def c_type_mapping_markdown(
+def c_type_mapping_report(
     *,
     compiler: str = "cc",
     compiler_args: Sequence[str] = (),
     runner: Sequence[str] | None = None,
     cache_dir: str | None = None,
     refresh: bool = False,
-) -> str:
-    """Render the modeled C native-to-semantic-to-NumPy mapping for one target.
+) -> dict[str, object]:
+    """Measure the modeled C native-to-semantic-to-NumPy mapping for one target.
 
     Use this inspection report when documenting or checking how the selected
     compiler represents the supported C primitive and standard-library types.
     Compiler arguments and an optional runner select a native or cross target;
     cache options are forwarded to the existing C ABI probe. The returned
-    Markdown contains the target profile and one row per supported C spelling.
-    Probe and semantic-conversion failures propagate to the caller.
+    record contains the target profile and one entry per supported C spelling;
+    pass it to :func:`type_mapping_markdown` for the table. Probe and
+    semantic-conversion failures propagate to the caller.
     """
     # Measure target ABI facts once for every C spelling in this fixed report.
     report = probe_c_standard_types_cached(
@@ -207,32 +216,33 @@ def c_type_mapping_markdown(
 
     # Reuse the C semantic converter to project each measured native type.
     converter = CToIRConverter(standard_type_report=report)
-    rows = []
+    mapping_entries = []
     for spelling, ctype in _C_TYPES:
         semantic_type = converter.visit(ctype, as_type=True)
         fact = report.types[spelling]
-        rows.append((spelling, _c_fact_text(fact), _semantic_text(semantic_type), _numpy_dtype(semantic_type.dtype)))
+        mapping_entries.append(_mapping_entry(spelling, fact, _c_fact_text(fact), semantic_type))
 
-    # Render the stable documentation table after all target conversion is complete.
-    return _markdown_table("C type", rows)
+    # Return the measured record; text formats convert it afterwards.
+    return _mapping_report("c", mapping_entries, report)
 
 
-def fortran_type_mapping_markdown(
+def fortran_type_mapping_report(
     *,
     compiler: str = "gfortran",
     compiler_args: Sequence[str] = (),
     runner: Sequence[str] | None = None,
     cache_dir: str | None = None,
     refresh: bool = False,
-) -> str:
-    """Render the supported Fortran native-to-semantic-to-NumPy mapping for one target.
+) -> dict[str, object]:
+    """Measure the supported Fortran native-to-semantic-to-NumPy mapping for one target.
 
     Use this inspection report to show how the selected compiler and flags map
     the maintained modern and legacy intrinsic spellings. It probes only
     compiler-dependent storage expressions, models fixed legacy storage and
-    character code units directly, then returns a Markdown table. Compiler,
-    runner, and cache options use the existing Fortran probe path; its failures
-    and semantic-conversion failures propagate to the caller.
+    character code units directly, then returns a measured record for
+    :func:`type_mapping_markdown`. Compiler, runner, and cache options use the
+    existing Fortran probe path; its failures and semantic-conversion failures
+    propagate to the caller.
     """
     # Associate every maintained spelling with its converter key and probe expression.
     key_converter = FortranToIRConverter()
@@ -274,31 +284,29 @@ def fortran_type_mapping_markdown(
     ]
     converter = FortranToIRConverter(type_facts=evaluate_fortran_type_facts(config, requirements, report=report))
 
-    # Convert every displayed spelling with the shared target facts, then render it.
-    rows = []
+    # Convert every displayed spelling with the shared target facts, then record it.
+    mapping_entries = []
     for spelling, variable, key, _expression in entries:
         semantic_type = converter.visit(variable)
-        rows.append(
-            (
-                spelling,
-                _fortran_fact_text(semantic_type, key),
-                _semantic_text(semantic_type),
-                _numpy_dtype(semantic_type.dtype),
-            )
-        )
-    return _markdown_table("Fortran type", rows)
+        fact = _fortran_target_fact(semantic_type, key)
+        mapping_entries.append(_mapping_entry(spelling, fact, _fortran_fact_text(fact), semantic_type))
+    return _mapping_report("fortran", mapping_entries, report)
 
 
-def _fortran_fact_text(semantic_type, key: tuple[str, str | None]) -> str:
-    """Format one Fortran row's target-storage description.
+def _fortran_target_fact(semantic_type, key: tuple[str, str | None]) -> dict[str, object]:
+    """Return one Fortran spelling's measured target-storage record.
 
     Character entries intentionally bypass compiler metadata because the report
     models their eight-bit code unit directly. Every other entry consumes the
     converter metadata populated from the shared Fortran probe facts.
     """
     if key[0] == "character":
-        return "8-bit storage"
-    fact = semantic_type.metadata["fortran_type_fact"]
+        return {"bits": 8}
+    return dict(semantic_type.metadata["fortran_type_fact"])
+
+
+def _fortran_fact_text(fact: Mapping[str, object]) -> str:
+    """Format one measured Fortran storage record for a Markdown table cell."""
     return f"{fact['bits']}-bit storage"
 
 
@@ -350,20 +358,86 @@ def _numpy_dtype(semantic_dtype: str | None) -> str:
     return expression
 
 
-def _markdown_table(native_header: str, rows: list[tuple[str, str, str, str]]) -> str:
-    """Render ordered native, target, semantic, and NumPy rows as Markdown.
+def _mapping_entry(
+    native: str,
+    target_fact: Mapping[str, object],
+    native_fact_text: str,
+    semantic_type,
+) -> dict[str, object]:
+    """Build one serializable native-to-semantic-to-NumPy mapping entry.
 
-    Native rows must already be in their supported-display order. The helper
-    adds the local target-profile heading and does not escape or reorder row
-    content, preserving the generated documentation snapshot format.
+    ``target_fact`` keeps the structured measurement so JSON consumers read
+    numbers rather than parsing prose, while the display fields carry the exact
+    strings the Markdown table renders. Semantic identity and NumPy projection
+    are read from the converted type so both formats agree by construction.
     """
+    return {
+        "native": native,
+        "target_fact": dict(target_fact),
+        "native_fact": native_fact_text,
+        "semantic_dtype": _semantic_text(semantic_type),
+        "numpy_dtype": _numpy_dtype(semantic_type.dtype),
+    }
+
+
+def _mapping_report(language: str, entries: list[dict[str, object]], probe) -> dict[str, object]:
+    """Wrap ordered mapping entries in the serializable report envelope.
+
+    Entries stay in their supported-display order, and ``report`` names the
+    record shape so machine consumers can tell a mapping table from a measured
+    expression probe without inspecting the payload. The originating probe's
+    recipe and generated source travel with the report so a JSON reader can
+    reproduce the measurement.
+    """
+    return {
+        "report": "type_mapping",
+        "language": language,
+        "target_profile": target_profile(),
+        "types": entries,
+        "recipe": asdict(probe.recipe),
+        "source_text": probe.source_text,
+    }
+
+
+_NATIVE_HEADER = {"c": "C type", "fortran": "Fortran type"}
+
+
+def type_mapping_markdown(report: Mapping[str, object]) -> str:
+    """Render one measured type-mapping report as its Markdown table.
+
+    This is the only Markdown path for the mapping report: callers measure with
+    :func:`c_type_mapping_report` or :func:`fortran_type_mapping_report` and
+    convert the same record here, so the table can never drift from the JSON
+    form. Entries render in report order without escaping or reordering.
+    """
+    native_header = _NATIVE_HEADER[str(report["language"])]
     lines = [
-        f"Target profile: `{target_profile()}`",
+        f"Target profile: `{report['target_profile']}`",
         "",
         f"| {native_header} | Native target fact | Semantic dtype | NumPy dtype |",
         "| --- | --- | --- | --- |",
     ]
-    lines.extend(f"| `{native}` | {fact} | `{semantic}` | `{numpy}` |" for native, fact, semantic, numpy in rows)
+    lines.extend(
+        f"| `{entry['native']}` | {entry['native_fact']} | `{entry['semantic_dtype']}` | `{entry['numpy_dtype']}` |"
+        for entry in report["types"]
+    )
+    return "\n".join(lines)
+
+
+def expression_probe_markdown(report: FortranTypeProbeReport) -> str:
+    """Render one measured Fortran expression probe as a Markdown table.
+
+    Use this to read a ``--expr`` probe in the same shape as the mapping table.
+    Values render in measurement order; the compiler recipe and generated
+    program stay in the JSON form, which remains the complete record.
+    """
+    lines = [
+        f"Compiler: `{report.recipe.compiler}`",
+        "",
+        "| Fortran expression | Measured value |",
+        "| --- | --- |",
+    ]
+    lines.extend(f"| `{expression}` | {value} |" for expression, value in report.values.items())
     return "\n".join(lines)
 
 
@@ -392,16 +466,18 @@ def main(argv: list[str] | None = None) -> int:
         "refresh": args.refresh,
     }
     if args.language == "c":
-        print(c_type_mapping_markdown(compiler=args.compiler or "cc", **options))
+        print(type_mapping_markdown(c_type_mapping_report(compiler=args.compiler or "cc", **options)))
     else:
-        print(fortran_type_mapping_markdown(compiler=args.compiler or "gfortran", **options))
+        print(type_mapping_markdown(fortran_type_mapping_report(compiler=args.compiler or "gfortran", **options)))
     return 0
 
 
 __all__ = (
-    "c_type_mapping_markdown",
-    "fortran_type_mapping_markdown",
+    "c_type_mapping_report",
+    "expression_probe_markdown",
+    "fortran_type_mapping_report",
     "target_profile",
+    "type_mapping_markdown",
 )
 
 
@@ -415,7 +491,9 @@ if __name__ == "__main__":  # pragma: no cover - exercised through executable do
         if compiler is None:
             raise SystemExit("The direct type-mapping example requires cc on PATH.")
         with tempfile.TemporaryDirectory(prefix="prik-type-mapping-example-") as cache_dir:
-            markdown = c_type_mapping_markdown(compiler=compiler, cache_dir=cache_dir, refresh=True)
+            markdown = type_mapping_markdown(
+                c_type_mapping_report(compiler=compiler, cache_dir=cache_dir, refresh=True)
+            )
         print(next(line for line in markdown.splitlines() if line.startswith("| `int` |")))
     else:
         raise SystemExit(main())

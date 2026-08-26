@@ -1,11 +1,10 @@
 """Public native-binding support surface checks."""
 
-from pathlib import Path
+from tests.fortran._support.paths import REPO_ROOT
 
 
-ROOT = Path(__file__).resolve().parents[4]
-SUPPORT_HEADER = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
-SUPPORT_SOURCE = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
+SUPPORT_HEADER = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
+SUPPORT_SOURCE = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
 
 
 def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
@@ -29,6 +28,9 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert name in header
     assert "PRIK_NO_INLINE static int prik_array_actual_unpack(" in header
     assert "static inline int prik_array_validate(" in header
+    assert "static inline int prik_array_validate_ndarray(" in header
+    assert "PyArrayObject *array," in header
+    assert header.count("PyArray_Check(value)") == 1
     assert "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F" in header
     assert "prik_array_actual" in header
 

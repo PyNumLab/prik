@@ -1,6 +1,6 @@
 ---
 title: User Guide
-description: Detailed guides for wrapping Fortran code with prik
+description: Detailed guides for wrapping Fortran code with PRIK
 audience: users
 prerequisites: getting started
 related: data-types.md
@@ -61,6 +61,14 @@ lets you customize the wrapper without changing the native implementation.
 This guide introduces useful edits on the pages where they matter. The
 [editing reference](../reference/pyi-contracts/index.md) collects
 the complete rules in one place.
+
+---
+
+**Checking whether a feature is supported**
+
+Each page below documents its own limitations. For the complete picture in one
+table — including unsupported and partially supported forms — see the
+[language feature matrix](../language-support/feature-matrix.md).
 
 ---
 

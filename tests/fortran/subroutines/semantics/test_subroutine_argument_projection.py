@@ -89,3 +89,61 @@ end module outputs
             python_position=0,
         )
     ]
+
+
+ASSUMED_INTENT_SOURCE = """
+module legacy
+  type :: pt
+    real(8) :: x = 0.0d0
+  end type pt
+contains
+subroutine touch(count, item, values, label, declared)
+    integer(4) :: count
+    type(pt) :: item
+    real(8) :: values(:)
+    character(len=4) :: label
+    integer(4), intent(inout) :: declared
+    count = count + 1
+    item%x = item%x + 1.0d0
+    values = values * 2.0d0
+    label = "zzzz"
+    declared = declared + 1
+end subroutine touch
+end module legacy
+"""
+
+
+def _touch_result_names(*, assume_intent_in_scalars):
+    smod = fortran_module_to_semantic_module(
+        parse_fortran_source(ASSUMED_INTENT_SOURCE),
+        assume_intent_in_scalars=assume_intent_in_scalars,
+    )
+    touch = get_function(smod, "touch")
+    return [mapping.native_name for mapping in touch.projection if mapping.result_position is not None]
+
+
+def test_undeclared_intent_scalar_projects_a_replacement_result_by_default():
+    """Primitive and character scalars share one conservative default."""
+    assert _touch_result_names(assume_intent_in_scalars=False) == ["count", "label", "declared"]
+
+
+def test_assumed_scalar_intent_drops_only_the_undeclared_scalar_results():
+    """The assumption reaches undeclared scalars, primitive and character alike.
+
+    A declared ``intent(inout)`` scalar keeps its replacement result, and
+    arrays and derived-type objects were never projected as results, so their
+    in-place contract is unchanged either way.
+    """
+    assert _touch_result_names(assume_intent_in_scalars=True) == ["declared"]
+
+
+def test_assumed_scalar_intent_leaves_undeclared_non_scalars_writable():
+    smod = fortran_module_to_semantic_module(
+        parse_fortran_source(ASSUMED_INTENT_SOURCE),
+        assume_intent_in_scalars=True,
+    )
+    arguments = {argument.name: argument for argument in get_function(smod, "touch").arguments}
+
+    assert arguments["count"].semantic_type.ownership.mutable is False
+    assert arguments["item"].semantic_type.ownership.mutable is True
+    assert arguments["values"].semantic_type.ownership.mutable is True
