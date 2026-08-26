@@ -57,7 +57,9 @@ each scalar by address.
 
 This file is both the wrapper contract and an editable description of the
 Python interface. You can leave it unchanged for this example; later pages
-show useful edits in context.
+show useful edits in context. [`.pyi` Format](../reference/pyi-format.md)
+defines every part of the contract, while [Editing `.pyi`
+Contracts](../reference/pyi-contracts/index.md) shows how to change it safely.
 
 ---
 

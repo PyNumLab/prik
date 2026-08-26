@@ -155,6 +155,11 @@ print(item.norm_squared())  # 20.0
 The contract reorganizes native procedures into methods and renames them
 without changing the underlying Fortran implementation.
 
+The [`.pyi` Format](docs/user/reference/pyi-format.md) defines the contract
+language. [Editing `.pyi`
+Contracts](docs/user/reference/pyi-contracts/index.md) provides task-oriented
+recipes for reshaping the API.
+
 ## Proven on real libraries
 
 PRIK builds and numerically tests seven maintained libraries, not just generated
@@ -510,6 +515,8 @@ notice when redistributed.
 - **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
+- **[`.pyi` Format](https://pynumlab.github.io/prik/user/reference/pyi-format/)** — Contract projects, declarations, decorators, types, storage, metadata, and C and Fortran forms
+- **[Editing `.pyi` Contracts](https://pynumlab.github.io/prik/user/reference/pyi-contracts/)** — Supported recipes for reshaping the generated Python API
 - **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — C ABI scope, contracts, CLI, Python API, and executable examples
 - **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
 - **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — Supported, partially supported, and unsupported native-language features

@@ -111,6 +111,10 @@ For a richer API, PRIK lets you reshape the generated Python surface without
 changing the native implementation. Switch tabs to compare the default and
 edited versions.
 
+The [`.pyi` Format](user/reference/pyi-format.md) defines the contract language;
+[Editing `.pyi` Contracts](user/reference/pyi-contracts/index.md) shows the
+supported transformations.
+
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="Home example">
 <button class="prik-example-tab" id="home-source-tab" type="button" role="tab" aria-controls="home-source" aria-selected="true">Fortran source</button>

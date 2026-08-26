@@ -2,7 +2,7 @@
 title: Editing .pyi Contracts
 audience: users, advanced users
 prerequisites: generated .pyi contract, wrapper build workflow
-related: exports-and-modules.md, functions-and-classes.md, calls-and-results.md
+related: ../pyi-format.md, exports-and-modules.md, functions-and-classes.md, calls-and-results.md
 status: maintained
 publication: reviewed
 ---
@@ -13,8 +13,10 @@ PRIK's generated `.pyi` files are editable wrapper contracts. They look like
 Python stubs, but they also describe native calls, storage, and results. Edit
 them to change the Python API without changing the native implementation.
 
-This section explains the supported editing subset and its effect. Start from
-the generated contract and make only the documented edits below.
+The [`.pyi` Format](../pyi-format.md) defines the project structure and complete
+contract vocabulary. This section explains the supported edits and their
+effects. Start from the generated contract and make only the documented edits
+below.
 
 ## Workflow
 

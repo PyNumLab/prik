@@ -58,9 +58,10 @@ objects, storage, and advanced runtime behavior.
 The recommended workflow starts from Fortran source. The generated semantic
 `.pyi` file describes the Python interface and native call. Editing that file
 lets you customize the wrapper without changing the native implementation.
-This guide introduces useful edits on the pages where they matter. The
-[editing reference](../reference/pyi-contracts/index.md) collects
-the complete rules in one place.
+This guide introduces useful edits on the pages where they matter. The [`.pyi`
+Format](../reference/pyi-format.md) defines the contract language, and [Editing
+`.pyi` Contracts](../reference/pyi-contracts/index.md) collects the supported
+editing recipes.
 
 ---
 

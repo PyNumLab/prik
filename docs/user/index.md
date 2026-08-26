@@ -29,8 +29,10 @@ f2py comparison.
 
 - [Language Support](language-support/index.md) — C and Fortran feature
   coverage, including the evidence behind each claim.
-- [Reference](reference/index.md) — the exact CLI, Python API, generated-wrapper,
-  and `.pyi` contract surfaces.
+- [Reference](reference/index.md) — the exact CLI, Python API, and
+  generated-wrapper surfaces. Start with [`.pyi`
+  Format](reference/pyi-format.md) for the contract language and [Editing
+  `.pyi` Contracts](reference/pyi-contracts/index.md) for supported recipes.
 - [Examples](examples/index.md) — five complete Fortran projects (BLAS, LAPACK,
   FFTPACK, MINPACK, and BSPLINE-FORTRAN) plus the C
   [libm](examples/c/libm-wrapper.md) and
