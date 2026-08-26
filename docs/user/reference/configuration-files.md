@@ -4,7 +4,7 @@ audience: users, developers
 prerequisites: packaging, CLI commands
 related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/workflows/quality-assurance.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Configuration Files Reference

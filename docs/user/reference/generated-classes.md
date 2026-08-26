@@ -4,7 +4,7 @@ audience: users, advanced users
 prerequisites: wrapping derived types
 related: generated-functions.md, generated-modules.md, semantic-pyi-format.md, ../guide/wrapping-derived-types.md, ../guide/memory-management.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Generated Classes Reference
