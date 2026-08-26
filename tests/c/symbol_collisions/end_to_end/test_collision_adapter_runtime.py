@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 
 from prik import build_fortran_extension, build_pyi_extension, build_pyi_extension_from_manifest
-from tests.c._support.paths import REPO_ROOT
 from tests.c._support.runtime import sole_native_module
 
 # This user API deliberately reuses the `Py_Initialize` identifier with a
@@ -197,13 +196,14 @@ def test_cli_selected_collision_adapter_builds_an_importable_extension(tmp_path:
             str(output_dir),
             "--json",
         ],
-        cwd=REPO_ROOT,
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         check=True,
     )
     payload = json.loads(completed.stdout)
 
+    assert Path(payload["shared_library"]) == tmp_path / "collision_cli.so"
     assert any(path.endswith("collision_cli_adapters.c") for path in payload["generated_sources"])
     assert payload["manifest"]["compiler"]["c_flags"][-1] == "-flto"
     assert payload["manifest"]["compiler"]["wrapper_c_flags"][-1] == "-flto"

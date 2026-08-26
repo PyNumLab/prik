@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 
 from prik import build_c_extension, build_pyi_extension, build_pyi_extension_from_manifest
-from tests.c._support.paths import REPO_ROOT
 from tests.c._support.runtime import sole_native_module
 
 
@@ -32,13 +31,14 @@ def test_cli_builds_a_c_source_only_when_the_c_language_is_explicit(tmp_path: Pa
             str(tmp_path / "build"),
             "--json",
         ],
-        cwd=REPO_ROOT,
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         check=True,
     )
     payload = json.loads(completed.stdout)
 
+    assert Path(payload["shared_library"]) == tmp_path / "answer.so"
     assert Path(payload["shared_library"]).is_file()
     assert payload["native_build_plan"]["compilation_units"][0]["language"] == "c"
 
@@ -64,13 +64,14 @@ def test_cli_marks_a_source_free_pyi_contract_as_c_native_explicitly(tmp_path: P
             str(tmp_path / "build"),
             "--json",
         ],
-        cwd=REPO_ROOT,
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         check=True,
     )
     payload = json.loads(completed.stdout)
 
+    assert Path(payload["shared_library"]) == tmp_path / "api.so"
     assert payload["manifest"]["extension"]["native_language"] == "c"
     assert payload["native_build_plan"]["compilation_units"][0]["language"] == "c"
 
