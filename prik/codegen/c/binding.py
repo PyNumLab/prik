@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-import math
 import re
 
 from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
@@ -186,15 +185,13 @@ _BINDING_SETTER_SUMMARIES = {
 class CBindingGenerator(ClassVisitor):
     """Build the CPython C half of a wrapper from validated binding-plan views.
 
-    Use :meth:`require_supported` followed by :meth:`visit` for a single
-    C module/header pair, or :meth:`binding_modules` when a plan qualifies
-    for independent wrapper shards.  The returned nodes are normally consumed
+    Use :meth:`require_supported` followed by :meth:`visit` for the
+    C module/header pair.  The returned nodes are normally consumed
     by the C source printer.  Completed semantic policy remains outside this
     class; unsupported plan actions fail instead of being reinterpreted here.
     """
 
-    _SHARD_MIN_FUNCTIONS = 128
-    _SHARD_TARGET_FUNCTIONS = 32
+    _RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
     _SHARED_OUTPUT_CLEANUP_MIN_RESULTS = 4
 
     def require_supported(self, plan: ModulePlan) -> None:
@@ -396,17 +393,14 @@ class CBindingGenerator(ClassVisitor):
         return f"{prefix}{base}{' *' * value.pointer_depth}"
 
     def binding_modules(self, plan: ModulePlan) -> tuple[CModule, ...]:
-        """Build one implementation module or independently compilable wrapper shards.
+        """Build the binding translation units for one plan.
 
-        Use this public entrypoint when compilation can benefit from sharding.
-        Plans with coupled runtime support intentionally return one module so
-        helper state and declarations remain shared.
+        A binding is one implementation module; a plan that adapts colliding
+        native symbols adds the separate forwarder unit those adapters need.
         """
         module = self.binding_module(plan)
-        function_groups = self._binding_function_shards(plan)
-        modules = (module,) if not function_groups else self._sharded_binding_modules(plan, module, function_groups)
         adapters = self._collision_adapter_module(plan)
-        return (*modules, adapters) if adapters is not None else modules
+        return (module, adapters) if adapters is not None else (module,)
 
     def _collision_adapter_module(self, plan: ModulePlan) -> CModule | None:
         """Build the translation unit that forwards collision-adapted symbols.
@@ -463,108 +457,6 @@ class CBindingGenerator(ClassVisitor):
             # link-time optimization may inline it and drop the definition. An
             # exported one is interposable and must survive the link.
             storage=COLLISION_ADAPTER_STORAGE,
-        )
-
-    def _sharded_binding_modules(
-        self,
-        plan: ModulePlan,
-        module: CModule,
-        function_groups: tuple[tuple[FunctionPlan, ...], ...],
-    ) -> tuple[CModule, ...]:
-        """Move independently planned wrappers into balanced worker units."""
-        wrapper_names = {self._binding_function_name(function) for function in self._functions(plan)}
-        wrappers = self._external_binding_wrappers(module, wrapper_names)
-        main_module = replace(
-            module,
-            functions=tuple(function for function in module.functions if function.name not in wrapper_names),
-        )
-        worker_defines = tuple(
-            definition for definition in module.defines if definition.name != "PRIK_BINDING_IMPORT_ARRAY"
-        )
-        workers = self._binding_worker_modules(module, function_groups, wrappers, worker_defines)
-        return (main_module, *workers)
-
-    @staticmethod
-    def _external_binding_wrappers(module: CModule, wrapper_names: set[str]) -> dict[str, CFunction]:
-        """Return externally linked copies of the selected wrapper functions."""
-        return {
-            function.name: replace(function, storage=None)
-            for function in module.functions
-            if function.name in wrapper_names
-        }
-
-    def _binding_worker_modules(
-        self,
-        module: CModule,
-        function_groups: tuple[tuple[FunctionPlan, ...], ...],
-        wrappers: dict[str, CFunction],
-        worker_defines: tuple[CMacroDefinition, ...],
-    ) -> tuple[CModule, ...]:
-        """Assemble the independently compilable wrapper worker units."""
-        return tuple(
-            CModule(
-                name=f"{module.name}_{index:03d}",
-                defines=worker_defines,
-                includes=module.includes,
-                declarations=tuple(self._entrypoint_prototype(function) for function in group),
-                functions=tuple(wrappers[self._binding_function_name(function)] for function in group),
-            )
-            for index, group in enumerate(function_groups, start=1)
-        )
-
-    def _binding_function_shards(self, plan: ModulePlan) -> tuple[tuple[FunctionPlan, ...], ...]:
-        """Return balanced groups when wrappers are safe to compile independently."""
-        functions = self._functions(plan)
-        if not self._can_shard_binding_functions(plan, functions):
-            return ()
-        shard_count = max(2, math.ceil(len(functions) / self._SHARD_TARGET_FUNCTIONS))
-        base_size, larger_groups = divmod(len(functions), shard_count)
-        groups = []
-        offset = 0
-        for index in range(shard_count):
-            size = base_size + (index < larger_groups)
-            groups.append(functions[offset : offset + size])
-            offset += size
-        return tuple(groups)
-
-    def _can_shard_binding_functions(
-        self,
-        plan: ModulePlan,
-        functions: tuple[FunctionPlan, ...],
-    ) -> bool:
-        """Keep runtime-coupled surfaces in one binding translation unit."""
-        if len(functions) < self._SHARD_MIN_FUNCTIONS:
-            return False
-        if not self._has_shardable_namespace(plan):
-            return False
-        if self._module_has_shard_runtime_state(plan):
-            return False
-        return not self._functions_use_native_array_handles(functions)
-
-    @staticmethod
-    def _has_shardable_namespace(plan: ModulePlan) -> bool:
-        """Return whether one root procedure namespace owns the module."""
-        if len(plan.namespaces) != 1:
-            return False
-        namespace = plan.namespaces[0]
-        runtime_surfaces = (
-            namespace.python_path,
-            namespace.variables,
-            namespace.classes,
-            namespace.derived_types,
-            namespace.overloads,
-        )
-        return not any(runtime_surfaces)
-
-    def _module_has_shard_runtime_state(self, plan: ModulePlan) -> bool:
-        """Return whether wrappers call helpers that must share one unit."""
-        return any(
-            (
-                self._module_needs_allocator(plan),
-                self._module_uses_callbacks(plan),
-                self._module_uses_derived_calls(plan),
-                self._module_uses_extent_power(plan),
-            )
         )
 
     def _extent_expression_support_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
@@ -642,31 +534,16 @@ class CBindingGenerator(ClassVisitor):
         """Return whether one optional completed array shape contains power."""
         return bool(array) and any(declaration_extent_uses_power(expression) for expression in array.shape)
 
-    @staticmethod
-    def _functions_use_native_array_handles(functions: tuple[FunctionPlan, ...]) -> bool:
-        """Return whether persistent descriptor helpers couple the wrappers."""
-        arguments_use_handles = any(
-            argument.native_array_handle is not None for function in functions for argument in function.arguments
-        )
-        results_use_handles = any(
-            result.native_array_handle is not None for function in functions for result in function.results
-        )
-        return any((arguments_use_handles, results_use_handles))
-
     def binding_header(self, plan: ModulePlan) -> CHeader:
         """Build the C header that declares wrappers from the validated plan.
 
-        The header mirrors whether wrapper functions are externally linked for
-        sharding.  It is paired with :meth:`binding_module` or
-        :meth:`binding_modules` output.
+        It is paired with :meth:`binding_module` or :meth:`binding_modules`
+        output.
         """
-        external_wrappers = bool(self._binding_function_shards(plan))
         return CHeader(
             guard=f"{plan.binding.owner_path.upper()}_WRAPPER_H",
             includes=(CInclude("Python.h"),),
-            prototypes=tuple(
-                self._binding_prototype(function, external=external_wrappers) for function in self._functions(plan)
-            ),
+            prototypes=tuple(self._binding_prototype(function) for function in self._functions(plan)),
         )
 
     @staticmethod
@@ -6863,6 +6740,10 @@ class CBindingGenerator(ClassVisitor):
             *self._array_shape_checks(plan, context, array_object),
             *self._array_extraction_nodes(plan, names, array_object),
         )
+        # Both routes are shared, so neither is repeated at every call site.
+        outlined = self._outlined_array_bind_nodes(plan, context, names)
+        if outlined is not None:
+            return (*self._ordinary_array_argument_declarations(plan, names), *outlined)
         handle_nodes = (
             CDeclaration(f"{prefix}_shape", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_actual", "prik_array_actual"),
@@ -6877,6 +6758,164 @@ class CBindingGenerator(ClassVisitor):
                 else_body=handle_nodes,
             ),
         )
+
+    def _outlined_array_bind_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        context: _CFunctionContext,
+        names: _CArgumentNames,
+    ) -> tuple[CDeclaration | CExpressionStatement, ...] | None:
+        """Return the shared binder call when the plan needs no extra ABI roles.
+
+        A plan that also carries runtime rank, itemsize, stride, upper-bound, or
+        dense-actual roles still needs its own inline sequence; only the plain
+        pointer-and-extents shape is routed through prik_bind_array.
+        """
+        fixed = self._outlined_array_bind_fixed_extents(plan, context)
+        if fixed is None:
+            return None
+        array = plan.array
+        actual = plan.native_array_actual
+        rank = array.rank
+        prefix = names.value_name
+        numpy_type, python_type = self._array_dtype_selectors(plan, array)
+        minimum_rank, maximum_rank = self._array_rank_bounds(array)
+        selectors = ", ".join(
+            str(value)
+            for value in (
+                numpy_type,
+                rank,
+                minimum_rank,
+                maximum_rank,
+                self._array_layout_selector(array),
+                int(array.contiguous is True),
+                int(plan.binding.writable),
+                f'"{python_type}"',
+                f'"{actual.dtype}"',
+                f'"{plan.binding.python_name}"',
+                "NULL" if actual.order is None else f'"{actual.order}"',
+                array.flat_axis if array.flatten_python_storage else rank - 1,
+                int(actual.writable),
+                int(actual.require_native_byte_order),
+                int(actual.require_aligned),
+                0,
+                0,
+                0,
+                int(actual.require_contiguous),
+                int(actual.flatten_storage),
+                self._native_array_actual_flat_axis(actual),
+            )
+        )
+        # Declarations hoist above argument parsing, so a required extent that
+        # references another argument is assigned here, at the binding site.
+        return (
+            CDeclaration(f"{prefix}_bind_fixed[{rank}]", "long long"),
+            CDeclaration(f"{prefix}_bind_extents[{rank}]", "int64_t"),
+            *(
+                CExpressionStatement(CodeExpression(f"{prefix}_bind_fixed[{axis}] = {value}"))
+                for axis, value in enumerate(fixed)
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (prik_bind_array({names.object_name}, {selectors}, "
+                    f"{prefix}_bind_fixed, &{names.value_name}, {prefix}_bind_extents) < 0) return NULL"
+                )
+            ),
+            *(
+                CExpressionStatement(CodeExpression(f"{names.extent_names[axis]} = {prefix}_bind_extents[{axis}]"))
+                for axis in range(rank)
+            ),
+        )
+
+    def _outlined_array_bind_fixed_extents(
+        self,
+        plan: ArgumentTransferPlan,
+        context: _CFunctionContext,
+    ) -> tuple[str, ...] | None:
+        """Return one required-extent expression per axis, or None when unsupported."""
+        if not self._array_bind_is_outlinable(plan, context):
+            return None
+        fixed = []
+        for axis in range(plan.array.rank):
+            supported, extent = self._outlined_array_bind_axis_extent(plan, context, axis)
+            if not supported:
+                return None
+            fixed.append("-1" if extent is None else f"(long long)({extent})")
+        return tuple(fixed)
+
+    def _array_bind_is_outlinable(
+        self,
+        plan: ArgumentTransferPlan,
+        context: _CFunctionContext,
+    ) -> bool:
+        """Return whether one array argument needs no ABI role beyond pointer and extents."""
+        array = plan.array
+        actual = plan.native_array_actual
+        if array is None or actual is None or array.rank is None:
+            return False
+        rank = array.rank
+        return not any(
+            (
+                plan.datatype_family is DatatypeFamily.STRING,
+                array.contiguous is False,
+                array.runtime_rank_role is not None,
+                array.itemsize_role is not None,
+                array.dense_actual_role is not None,
+                bool(array.stride_roles),
+                bool(array.upper_bound_roles),
+                actual.rank != rank,
+                len(array.shape) != rank,
+                len(actual.shape) != rank,
+                len(context.arguments[plan.owner_path].extent_names) < rank,
+                array.flatten_python_storage and array.flat_axis != rank - 1,
+            )
+        )
+
+    def _outlined_array_bind_axis_extent(
+        self,
+        plan: ArgumentTransferPlan,
+        context: _CFunctionContext,
+        axis: int,
+    ) -> tuple[bool, str | None]:
+        """Return one axis as (supported, required extent) with None for a free axis.
+
+        The direct route checks a declared extent and the handoff route restates
+        it as the expected shape. Both are folded into one table, so an axis
+        whose two routes disagree keeps the whole argument on its inline
+        sequence rather than silently binding one of the two.
+        """
+        array = plan.array
+        actual = plan.native_array_actual
+        array_object = f"(PyArrayObject *){context.arguments[plan.owner_path].object_name}"
+        if self._array_actual_axis_expression(array, array_object, axis) != str(axis):
+            return False, None
+        direct = self._outlined_array_bind_axis_value(array, context, axis, array.shape[axis], flattened=False)
+        handoff = self._outlined_array_bind_axis_value(
+            array,
+            context,
+            axis,
+            actual.shape[axis],
+            flattened=bool(actual.flatten_storage and axis == actual.flat_axis),
+        )
+        if direct != handoff:
+            return False, None
+        return True, direct
+
+    def _outlined_array_bind_axis_value(
+        self,
+        array: ArrayHandoffPlan,
+        context: _CFunctionContext,
+        axis: int,
+        expression: str,
+        *,
+        flattened: bool,
+    ) -> str | None:
+        """Lower one axis extent, or None when the axis carries no declared extent."""
+        if flattened or expression in self._RUNTIME_EXTENT_MARKERS:
+            return None
+        if array.extent_evaluation[axis] == "bridge":
+            return None
+        return self._array_extent_expression(array, axis, expression, context)
 
     def _native_array_actual_call_nodes(
         self,
@@ -11347,13 +11386,13 @@ class CBindingGenerator(ClassVisitor):
             entries=entries,
         )
 
-    def _binding_prototype(self, plan: FunctionPlan, *, external: bool = False) -> CFunctionPrototype:
-        """Return the binding-local binding prototype derived from the supplied completed binding records; this helper preserves completed policy."""
+    def _binding_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
+        """Return the binding-local prototype for one completed function plan."""
         return CFunctionPrototype(
             self._binding_function_name(plan),
             "PyObject *",
             self._binding_parameters(plan),
-            None if external else "static",
+            "static",
         )
 
     @staticmethod

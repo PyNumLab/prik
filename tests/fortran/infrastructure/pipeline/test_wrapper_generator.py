@@ -133,37 +133,24 @@ def test_public_generator_reports_each_rendering_operation_in_execution_order():
     assert all(elapsed >= 0.0 for _, elapsed in progress if elapsed is not None)
 
 
-def test_large_procedure_only_binding_is_split_into_balanced_compile_units():
+def test_procedure_only_binding_stays_one_compile_unit_at_any_size():
     declarations = "\n".join(f"def value_{index:03d}(x: Float64) -> Float64: ..." for index in range(128))
+
     generated_wrapper = WrapperGenerator().generate(_plan(declarations, module_name="large_binding"))
-    binding_sources = [
-        source for source in generated_wrapper.sources if source.path.name.startswith("large_binding_wrapper")
-    ]
-    main_source, *worker_sources, header_source = binding_sources
-
-    assert generated_wrapper.binding_sources == (
-        Path("large_binding_wrapper.c"),
-        Path("large_binding_wrapper_001.c"),
-        Path("large_binding_wrapper_002.c"),
-        Path("large_binding_wrapper_003.c"),
-        Path("large_binding_wrapper_004.c"),
+    binding_source = next(
+        source for source in generated_wrapper.sources if source.path.name == "large_binding_wrapper.c"
     )
-    assert "#define PRIK_BINDING_IMPORT_ARRAY 1" in main_source.text
-    assert "PyMODINIT_FUNC PyInit_large_binding(void)" in main_source.text
-    assert "PyObject * wrap_value_000(" not in main_source.text
-    assert all("PRIK_BINDING_IMPORT_ARRAY" not in source.text for source in worker_sources)
-    assert all("PyInit_large_binding" not in source.text for source in worker_sources)
-    assert sum(source.text.count("PyObject * wrap_value_") for source in worker_sources) == 128
-    assert "static PyObject * wrap_value_000" not in header_source.text
-    assert "PyObject * wrap_value_000(PyObject * self, PyObject * args, PyObject * kwargs);" in header_source.text
+    header_source = next(
+        source for source in generated_wrapper.sources if source.path.name == "large_binding_wrapper.h"
+    )
 
-
-def test_procedure_only_binding_below_sharding_threshold_keeps_one_compile_unit():
-    declarations = "\n".join(f"def value_{index:03d}(x: Float64) -> Float64: ..." for index in range(127))
-
-    generated_wrapper = WrapperGenerator().generate(_plan(declarations, module_name="unsharded_binding"))
-
-    assert generated_wrapper.binding_sources == (Path("unsharded_binding_wrapper.c"),)
+    assert generated_wrapper.binding_sources == (Path("large_binding_wrapper.c"),)
+    assert "#define PRIK_BINDING_IMPORT_ARRAY 1" in binding_source.text
+    assert "PyMODINIT_FUNC PyInit_large_binding(void)" in binding_source.text
+    assert binding_source.text.count("static PyObject * wrap_value_") == 128
+    assert "static PyObject * wrap_value_000(PyObject * self, PyObject * args, PyObject * kwargs);" in (
+        header_source.text
+    )
 
 
 @pytest.mark.parametrize(

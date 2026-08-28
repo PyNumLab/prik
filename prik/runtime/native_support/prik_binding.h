@@ -523,6 +523,146 @@ static inline int prik_array_validate(
         argument_name);
 }
 
+/*
+ * Bind one ordinary array argument, replacing the sequence a generated wrapper
+ * used to emit inline at every array argument of every wrapper.
+ *
+ * A wrapper needs two things from an array argument: the raw pointer handed to
+ * the native entrypoint, and one extent per contract axis. Obtaining them takes
+ * two routes. A NumPy array is validated and read directly, which is the route
+ * every ordinary call takes. Anything else is a native array handle returned
+ * earlier by generated code, whose Fortran-owned descriptor is resolved through
+ * prik.runtime.handles; that route also produces the diagnostics for an
+ * argument that is neither.
+ *
+ * Both routes live here so the emitted wrapper carries one call instead of the
+ * whole sequence. Every parameter is a selector already decided by the
+ * completed wrapper plan; this helper makes no interoperability decision of
+ * its own, and each is passed directly rather than through a descriptor struct
+ * so the values arrive in registers instead of behind a pointer.
+ *
+ *   object              the Python argument to bind
+ *   numpy_type          NPY_* element selector the plan chose for this array
+ *   rank                number of contract axes, and the length of `fixed`
+ *                       and `extents`
+ *   minimum_rank        smallest accepted runtime rank; equals `rank` unless
+ *                       the plan flattens Python storage
+ *   maximum_rank        largest accepted runtime rank
+ *   layout              PRIK_ARRAY_LAYOUT_* ordering the plan requires
+ *   require_contiguous  non-zero when the plan requires contiguous storage
+ *   require_writeable   non-zero when the plan may write through this argument
+ *   python_type         public dtype name used in diagnostics, "numpy.float64"
+ *   dtype_name          handoff dtype name for the handle route, "float64"
+ *   argument_name       public argument name used in diagnostics
+ *   order               handoff ordering for the handle route, "F", "C", or NULL
+ *   flatten_axis        contract axis that absorbs every trailing runtime axis;
+ *                       `rank - 1` when the plan does not flatten
+ *   actual_*            the nine handle-route selectors passed straight through
+ *                       to prik_array_actual_unpack
+ *   fixed               one entry per contract axis: the required extent, or
+ *                       -1 when the axis is free. A required extent is checked
+ *                       on the direct route and becomes the expected-shape
+ *                       entry on the handle route; a free axis is neither
+ *                       checked nor constrained
+ *   data                receives the pointer passed to the native entrypoint
+ *   extents             receives one extent per contract axis
+ *
+ * Returns 0 on success, or -1 with a Python exception set.
+ */
+#ifdef PRIK_BINDING_NATIVE_ARRAY_ACTUAL
+PRIK_NO_INLINE static int prik_bind_array(
+    PyObject *object,
+    int numpy_type,
+    int rank,
+    int minimum_rank,
+    int maximum_rank,
+    int layout,
+    int require_contiguous,
+    int require_writeable,
+    const char *python_type,
+    const char *dtype_name,
+    const char *argument_name,
+    const char *order,
+    int flatten_axis,
+    int actual_writable,
+    int actual_native_byte_order,
+    int actual_aligned,
+    int actual_runtime_rank,
+    int actual_itemsize,
+    int actual_strides,
+    int actual_contiguous,
+    int actual_flatten,
+    int actual_flat_axis,
+    const long long *fixed,
+    void **data,
+    int64_t *extents)
+{
+    int axis;
+    if (PyArray_Check(object)) {
+        PyArrayObject *array = (PyArrayObject *)object;
+        if (prik_array_validate_ndarray(
+                array, numpy_type, minimum_rank, maximum_rank, layout,
+                require_contiguous, require_writeable, python_type, argument_name) < 0) {
+            return -1;
+        }
+        for (axis = 0; axis < rank; ++axis) {
+            if (fixed[axis] >= 0 && PyArray_DIM(array, axis) != (npy_intp)fixed[axis]) {
+                PyErr_Format(
+                    PyExc_TypeError,
+                    "Argument %s has incompatible shape at axis %d",
+                    argument_name,
+                    axis);
+                return -1;
+            }
+        }
+        *data = PyArray_DATA(array);
+        for (axis = 0; axis < flatten_axis; ++axis) {
+            extents[axis] = (int64_t)PyArray_DIM(array, axis);
+        }
+        extents[flatten_axis] = 1;
+        for (axis = flatten_axis; axis < PyArray_NDIM(array); ++axis) {
+            extents[flatten_axis] *= (int64_t)PyArray_DIM(array, axis);
+        }
+        return 0;
+    }
+    {
+        PyObject *shape = PyTuple_New(rank);
+        prik_array_actual actual;
+        if (shape == NULL) {
+            return -1;
+        }
+        for (axis = 0; axis < rank; ++axis) {
+            PyObject *item;
+            if (fixed[axis] >= 0) {
+                item = PyLong_FromLongLong(fixed[axis]);
+            } else {
+                Py_INCREF(Py_None);
+                item = Py_None;
+            }
+            if (item == NULL) {
+                Py_DECREF(shape);
+                return -1;
+            }
+            PyTuple_SET_ITEM(shape, axis, item);
+        }
+        if (prik_array_actual_unpack(
+                object, dtype_name, rank, shape, order,
+                actual_writable, actual_native_byte_order, actual_aligned,
+                actual_runtime_rank, actual_itemsize, actual_strides,
+                actual_contiguous, actual_flatten, actual_flat_axis, &actual) < 0) {
+            Py_DECREF(shape);
+            return -1;
+        }
+        Py_DECREF(shape);
+        *data = actual.data;
+        for (axis = 0; axis < rank; ++axis) {
+            extents[axis] = actual.extents[axis];
+        }
+        return 0;
+    }
+}
+#endif
+
 /* Exact typed scalar input conversion. A mismatch deliberately sets no error. */
 static inline int prik_bool_unpack_exact(PyObject *value, bool *destination)
 {
