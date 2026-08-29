@@ -11,7 +11,7 @@ publication: reviewed
 
 PRIK has two published documentation areas: `docs/user/` for product users and
 `docs/developer/` for contributors and maintainers. `mkdocs.yml` defines the
-page order, and `docs_theme/nav.html` makes each expandable section label open
+page order, and `.mkdocs/theme/nav.html` makes each expandable section label open
 its first page while its **+** control expands or collapses the section.
 
 ## Write The Right Contract

@@ -8,7 +8,7 @@ docs_dir: docs
 site_dir: .artifacts/site
 theme:
   name: readthedocs
-  custom_dir: docs_theme
+  custom_dir: .mkdocs/theme
   logo: user/assets/prik-mark.png
   collapse_navigation: false
   include_homepage_in_sidebar: true
