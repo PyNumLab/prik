@@ -157,3 +157,7 @@ jobs:
         run: |
           source examples/fortran/bspline/build_all.sh
           python -m pytest -q examples/fortran/bspline/tests
+      - name: Run Pythonic BLAS API example
+        run: |
+          source examples/fortran/pythonic_blas/build.sh
+          python -m pytest -q examples/fortran/pythonic_blas/test_pythonic_blas.py

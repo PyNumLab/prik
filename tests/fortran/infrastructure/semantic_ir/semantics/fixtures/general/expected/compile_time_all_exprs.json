@@ -1021,7 +1021,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x2",
@@ -1031,7 +1032,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x3",
@@ -1041,7 +1043,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x4",
@@ -1051,7 +1054,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x5",
@@ -1061,7 +1065,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x6",
@@ -1071,7 +1076,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x7",
@@ -1081,7 +1087,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x8",
@@ -1091,7 +1098,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x9",
@@ -1101,7 +1109,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             }
           ],
           "metadata": {},

@@ -437,7 +437,68 @@ def scale(x: Float64) -> Float64: ...
     ]
 
 
-def test_wrapper_policy_blocks_non_primitive_hidden_literals():
+def test_wrapper_policy_completes_a_computed_projection_with_its_stated_type():
+    module = parse_pyi_text(
+        """
+@native_call([Int32(Arg(0).shape[0]), Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="typed_extent",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is True
+    assert policy.native_call_slots[0].semantic_type_name == "Int32"
+
+
+def test_wrapper_policy_defaults_an_unstated_computed_projection_to_size_t():
+    module = parse_pyi_text(
+        """
+@native_call([Arg(0).shape[0], Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="default_extent",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is True
+    assert policy.native_call_slots[0].semantic_type_name == "SizeT"
+
+
+def test_wrapper_policy_blocks_a_non_integer_computed_projection_type():
+    module = parse_pyi_text(
+        """
+@native_call([Float64(Arg(0).shape[0]), Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="real_extent",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is False
+    assert "native-call shape slot 0 cannot be materialized as 'Float64'" in policy.blockers
+
+
+@pytest.mark.parametrize("cast_type", ["Int", "UInt"])
+def test_wrapper_policy_blocks_an_unresolved_integer_computed_projection_type(cast_type):
+    module = parse_pyi_text(
+        f"""
+@native_call([{cast_type}(Arg(0).shape[0]), Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="unresolved_integer_extent",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is False
+    assert f"native-call shape slot 0 cannot be materialized as '{cast_type}'" in policy.blockers
+
+
+def test_wrapper_policy_completes_a_one_character_hidden_literal():
     module = parse_pyi_text(
         """
 @native_call([Arg(0), String[1]("N")])
@@ -448,8 +509,50 @@ def tagged(x: Float64) -> Float64: ...
     complete_semantic_policies(module)
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
 
+    assert policy.supported is True
+    slot = policy.native_call_slots[1]
+    assert (slot.literal_type, slot.literal_value) == ("String[1]", "N")
+    assert (slot.semantic_type_name, slot.character_length) == ("String", 1)
+    assert slot.object_kind is None
+
+
+def test_wrapper_policy_blocks_a_multi_character_hidden_literal():
+    module = parse_pyi_text(
+        """
+@native_call([Arg(0), String[4]("NOPE")])
+def tagged(x: Float64) -> Float64: ...
+""",
+        module_name="long_string_literal",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
     assert policy.supported is False
-    assert "native-call literal slot 1 uses unsupported first-lane literal type 'String[1]'" in policy.blockers
+    assert "native-call literal slot 1 uses unsupported first-lane literal type 'String[4]'" in policy.blockers
+
+
+@pytest.mark.parametrize(
+    ("literal", "blocker"),
+    [
+        ('String[1]("")', "its value must contain exactly one character"),
+        ('String[1]("NO")', "its value must contain exactly one character"),
+        ("String[1](1)", "its value is not a string"),
+        ('String[1]("🎉")', "its value is not representable as one C char byte"),
+    ],
+)
+def test_wrapper_policy_blocks_an_invalid_one_character_literal_value(literal, blocker):
+    module = parse_pyi_text(
+        f"""
+@native_call([Arg(0), {literal}])
+def tagged(x: Float64) -> Float64: ...
+""",
+        module_name="invalid_character_literal",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is False
+    assert f"native-call literal slot 1 declares String[1] but {blocker}" in policy.blockers
 
 
 def test_wrapper_policy_completes_required_rank_one_array_buffer_handoff():

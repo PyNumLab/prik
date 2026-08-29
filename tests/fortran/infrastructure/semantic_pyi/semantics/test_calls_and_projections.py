@@ -313,9 +313,11 @@ def wrapper(
 
     projection = module.functions[0].projection
 
-    # Exact C scalar casts are orthogonal to these Fortran hidden-value facts.
+    # The stated materialization type and exact C scalar identity are orthogonal
+    # to these producer facts; they have their own focused evidence above.
+    orthogonal = {"native_c_identity", "value_cast"}
     assert [
-        {name: value for name, value in asdict(mapping).items() if name != "native_cast"} for mapping in projection
+        {name: value for name, value in asdict(mapping).items() if name not in orthogonal} for mapping in projection
     ] == [
         {
             "python_name": "x",
@@ -455,6 +457,81 @@ def test_emit_native_call_hidden_native_values():
     pyi = emit_module(module)
 
     assert "@native_call([Arg(0), Int32(1), Len(Arg(0)), Arg(0).shape[0], IsPresent(Arg(1)), Work('tmp')])" in pyi
+
+
+def test_typed_computed_projection_records_its_producer_and_requested_type():
+    module = parse_pyi_text(
+        """from prik.contracts import Arg, Float64, Int32, Int64, Len, String, native_call
+
+@native_call([Int32(Arg(0).shape[0]), Int64(Arg(0).strides[0]), Arg(0), Int32(Len(Arg(1))), Arg(1)])
+def scale(values: Float64[::], label: String[8]) -> None: ...
+""",
+        module_name="typed_projection",
+    )
+
+    projection = module.functions[0].projection
+
+    assert [(item.value_kind, item.value_cast) for item in projection] == [
+        ("shape", "Int32"),
+        ("stride", "Int64"),
+        ("", None),
+        ("len", "Int32"),
+        ("", None),
+    ]
+    assert "@native_call([Int32(Arg(0).shape[0]), Int64(Arg(0).strides[0]), Arg(0), Int32(Len(Arg(1))), Arg(1)])" in (
+        emit_module(module)
+    )
+
+
+def test_typed_literal_keeps_its_constant_form_beside_typed_projections():
+    module = parse_pyi_text(
+        """from prik.contracts import Arg, Float64, Int32, native_call
+
+@native_call([Int32(Arg(0).shape[0]), Arg(0), Int32(1)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="typed_literal_and_projection",
+    )
+
+    projection = module.functions[0].projection
+
+    assert [item.value_kind for item in projection] == ["shape", "", "literal"]
+    assert projection[2].value == {"type": "Int32", "value": 1}
+    assert projection[2].value_cast is None
+
+
+def test_typed_literal_uses_literal_evaluation_before_projection_parsing():
+    module = parse_pyi_text(
+        """
+@native_call([Int32(-1), Float64(-0.5), Complex64(1+2j), Arg(0)])
+def scale(value: Float64) -> None: ...
+""",
+        module_name="literal_expressions",
+    )
+
+    projection = module.functions[0].projection
+
+    assert [item.value for item in projection[:3]] == [
+        {"type": "Int32", "value": -1},
+        {"type": "Float64", "value": -0.5},
+        {"type": "Complex64", "value": 1 + 2j},
+    ]
+    assert parse_pyi_text(emit_module(module), module_name="literal_expressions") == module
+
+
+def test_typed_scalar_constructor_rejects_a_visible_argument_reference():
+    with pytest.raises(
+        ValueError,
+        match="Int32 accepts a literal value or a shape, stride, or length projection",
+    ):
+        parse_pyi_text(
+            """from prik.contracts import Arg, Int32, native_call
+
+@native_call([Int32(Arg(0))])
+def scale(count: Int32) -> None: ...
+""",
+            module_name="rejected_typed_projection",
+        )
 
 
 def test_plain_return_without_native_call_does_not_preserve_native_output_position():

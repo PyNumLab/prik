@@ -14,8 +14,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from prik.contracts import NATIVE_C_SCALAR_CASTS
-from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_CAST_METADATA
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
+from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_IDENTITY_METADATA
 from prik.semantics.scalar_types import BOOLEAN_STORAGE_BITS
 
 from prik.parsers.c.models import (
@@ -155,8 +155,8 @@ _PRIMITIVE_TYPE_FACT_NAMES: dict[type[CType], str] = {
     CLongDoubleComplex: "long double _Complex",
 }
 
-_PRIMITIVE_NATIVE_CAST_NAMES = {
-    primitive: next(name for name, spelling in NATIVE_C_SCALAR_CASTS.items() if spelling == c_spelling)
+_PRIMITIVE_NATIVE_C_IDENTITY_NAMES = {
+    primitive: next(name for name, spelling in NATIVE_C_SCALAR_IDENTITIES.items() if spelling == c_spelling)
     for primitive, c_spelling in _PRIMITIVE_TYPE_FACT_NAMES.items()
 }
 
@@ -423,7 +423,7 @@ class CToIRConverter(ClassVisitor):
                     native_name=parameter.name or argument.name,
                     native_position=index,
                     python_position=index,
-                    native_cast=argument.semantic_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA),
+                    native_c_identity=argument.semantic_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA),
                 )
                 for index, (parameter, argument) in enumerate(zip(function.parameters, arguments, strict=False))
             ],
@@ -819,9 +819,9 @@ class CToIRConverter(ClassVisitor):
             metadata["c_primitive"] = "int"
             metadata["c_type_fact"] = fact
             metadata["c_type_fact_source"] = fact_source
-        native_cast = self._required_native_scalar_cast(type_, dtype)
-        if native_cast is not None:
-            metadata[NATIVE_C_SCALAR_CAST_METADATA] = native_cast
+        native_c_identity = self._required_native_c_identity(type_, dtype)
+        if native_c_identity is not None:
+            metadata[NATIVE_C_SCALAR_IDENTITY_METADATA] = native_c_identity
         return SemanticType(
             name=semantic_name,
             dtype=dtype,
@@ -829,14 +829,14 @@ class CToIRConverter(ClassVisitor):
             origin=origin,
         )
 
-    def _required_native_scalar_cast(self, type_: CType, semantic_name: str) -> str | None:
+    def _required_native_c_identity(self, type_: CType, semantic_name: str) -> str | None:
         """Return the exact C primitive marker when canonical storage is a distinct C type."""
         if not self.standard_type_facts:
             return None
         primitive_name = _PRIMITIVE_TYPE_FACT_NAMES.get(type(type_))
-        native_cast = _PRIMITIVE_NATIVE_CAST_NAMES.get(type(type_))
+        native_c_identity = _PRIMITIVE_NATIVE_C_IDENTITY_NAMES.get(type(type_))
         canonical_name = _CANONICAL_C_TYPE_FACT_NAMES.get(semantic_name)
-        if primitive_name is None or native_cast is None or canonical_name is None:
+        if primitive_name is None or native_c_identity is None or canonical_name is None:
             return None
         source_fact = self.standard_type_facts.get(primitive_name)
         canonical_fact = self.standard_type_facts.get(canonical_name)
@@ -844,7 +844,7 @@ class CToIRConverter(ClassVisitor):
             return None
         source_spelling = self._underlying_c_type(primitive_name)
         canonical_spelling = self._underlying_c_type(canonical_name)
-        return None if self._compatible_c_scalar_spelling(source_spelling, canonical_spelling) else native_cast
+        return None if self._compatible_c_scalar_spelling(source_spelling, canonical_spelling) else native_c_identity
 
     def _underlying_c_type(self, name: str) -> str:
         fact = self.standard_type_facts.get(name)

@@ -588,10 +588,11 @@ Here Python receives `(a, b)` and returns `status`; the native procedure receive
 | `Allocatable(Return(...))`, `Pointer(Return(...))` | Nullable scalar descriptor output. |
 | `Pass()` | Passed object for a method or newly allocated constructor instance. |
 | `Int32(1)`, `Float64(0.5)`, `Bool(False)` | Typed hidden primitive literal. |
-| `String[1]("N")` | Typed hidden fixed-length string literal. |
+| `String[1]("N")` | Typed hidden one-character literal. |
 | `Len(Arg(i))`, `Len(Return(i))`, `Len(Work("name"))` | Hidden native character length. |
-| `Arg(i).shape[d]`, `Return(i).shape[d]`, `Work("name").shape[d]` | Hidden extent for axis `d`. |
-| `Arg(i).strides[d]`, `Return(i).strides[d]`, `Work("name").strides[d]` | Hidden stride for axis `d`. |
+| `Arg(i).shape[d]`, `Return(i).shape[d]`, `Work("name").shape[d]` | Hidden `SizeT` extent for axis `d`. |
+| `Arg(i).strides[d]`, `Return(i).strides[d]`, `Work("name").strides[d]` | Hidden `SizeT` stride for axis `d`. |
+| `Int32(Arg(i).shape[d])` | The same extent, materialized as the named integer type. |
 | `IsPresent(Arg(i))` | Hidden optional-presence flag. |
 | `Work("name")` | Named hidden workspace. |
 
@@ -604,11 +605,49 @@ strings, raw addresses, handles, and wrapped objects already have storage or
 handle representations and use `Arg(i)`. `Addr(Return(...))` and
 `Addr(Work(...))` are rejected.
 
+### Typed Computed Projections
+
+A computed projection has no Python-visible annotation, so its default native
+identity is `size_t` in C and `integer(c_size_t)` in Fortran. Wrap it in an
+integer contract type when the native parameter is a different integer:
+
+```python
+from prik.contracts import Arg, Float64, Int32, native_call
+
+@native_call([Int32(Arg(0).shape[0]), Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+```
+
+The binding materializes the extent as that type directly, and the generated
+Fortran dummy becomes `integer(c_int32_t)`, so a default Fortran `integer`
+parameter no longer has to stay visible in the Python signature.
+
+The same form applies to `strides[d]` and `Len(...)`. Fixed-width signed and
+unsigned integer contract types, plus `SizeT`, are accepted. The unresolved
+`Int` and `UInt` names and all real, Boolean, and character types are rejected
+during policy completion. The conversion is not range-checked, so an extent
+wider than the stated type wraps rather than raising. Use a type that matches
+the native parameter.
+
+A character length has a compiler-fixed ABI. Restate it only when the native
+declaration genuinely takes a different integer, not to change how PRIK passes
+a Fortran hidden length.
+
+A one-character literal such as `String[1]("N")` is a declaration, not a
+conversion: it states the value the native parameter receives. It crosses the boundary as
+an interoperable `char`, which a Fortran `character(len=1)` dummy accepts
+directly, so a mode or flag character does not have to stay visible in the
+Python signature. Its value must be a string containing exactly one character
+representable as a C byte. Invalid values and longer fixed-length literals are
+rejected during policy completion; the latter would need caller storage and a
+separate length.
+
 ### Exact C Scalar Identities
 
 C types can have the same NumPy dtype while remaining different native types.
-Exact C cast helpers are valid only inside `@native_call` around `Arg(...)` or
-`Return(...)`:
+Exact C scalar identities are valid only inside `@native_call` around `Arg(...)`
+or `Return(...)`. Unlike a typed computed projection, they state what the native
+parameter *is* rather than converting a produced value:
 
 ```python
 from prik.contracts import Arg, CLongLong, Int64, Return, native_call

@@ -13,3 +13,9 @@ bindings from their source declarations and interfaces.
 
 Each project README gives its build command, supported surface, numerical
 checks, and portability boundary. Run commands from the repository root.
+
+One further project reuses an existing native surface instead of adding one:
+
+| Project | Validated surface |
+| --- | --- |
+| [Pythonic BLAS API](pythonic_blas/README.md) | 4 Reference BLAS routines redesigned through an edited `.pyi` contract and thin public module |

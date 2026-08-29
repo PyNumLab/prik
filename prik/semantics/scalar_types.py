@@ -82,11 +82,21 @@ BOOLEAN_SEMANTIC_TYPE_NAMES: Final[frozenset[str]] = frozenset(
 BOOLEAN_STORAGE_BITS: Final[Mapping[str, int]] = MappingProxyType(
     {name: spec.storage_bits for name, spec in SEMANTIC_SCALAR_TYPES.items() if name in BOOLEAN_SEMANTIC_TYPE_NAMES}
 )
+INTEGER_SEMANTIC_TYPE_NAMES: Final[frozenset[str]] = frozenset(
+    name
+    for name, spec in SEMANTIC_SCALAR_TYPES.items()
+    if spec.family in {SemanticScalarFamily.SIGNED_INTEGER, SemanticScalarFamily.UNSIGNED_INTEGER}
+)
 
 
 def is_boolean_semantic_type_name(name: str | None) -> bool:
     """Return whether ``name`` identifies a supported Boolean storage contract."""
     return name in BOOLEAN_SEMANTIC_TYPE_NAMES
+
+
+def is_integer_semantic_type_name(name: str | None) -> bool:
+    """Return whether ``name`` identifies a signed or unsigned integer identity."""
+    return name in INTEGER_SEMANTIC_TYPE_NAMES
 
 
 def boolean_storage_bits(name: str) -> int:

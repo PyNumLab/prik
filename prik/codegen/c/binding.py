@@ -10769,8 +10769,9 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Projected slot {slot.owner_path!r} has no binding source")
         argument = next(item for item in plan.arguments if item.python_position == slot.python_position)
         names = context.arguments[argument.owner_path]
+        spelling = self._projected_slot_spelling(slot)
         if slot.projection_action is EntrypointProjectionAction.COMPUTED_LENGTH:
-            return (f"(size_t){names.length_name}",)
+            return (f"({spelling}){names.length_name}",)
         if slot.projection_action is EntrypointProjectionAction.COMPUTED_PRESENCE:
             return (f"({names.nullable_name} != NULL)",)
         if not isinstance(slot.literal_value, Mapping):
@@ -10779,10 +10780,23 @@ class CBindingGenerator(ClassVisitor):
         if not isinstance(axis, int):
             raise ValueError(f"Projected array fact {slot.owner_path!r} has no integer axis")
         if slot.projection_action is EntrypointProjectionAction.COMPUTED_SHAPE:
-            return (f"(size_t)PyArray_DIM((PyArrayObject *){names.object_name}, {axis})",)
+            return (f"({spelling})PyArray_DIM((PyArrayObject *){names.object_name}, {axis})",)
         if slot.projection_action is EntrypointProjectionAction.COMPUTED_STRIDE:
-            return (f"(size_t)PyArray_STRIDE((PyArrayObject *){names.object_name}, {axis})",)
+            return (f"({spelling})PyArray_STRIDE((PyArrayObject *){names.object_name}, {axis})",)
         raise ValueError(f"Unsupported projected C actual {slot.projection_action.value!r}")
+
+    @staticmethod
+    def _projected_slot_spelling(slot: NativeEntrypointProjectedSlotPlan) -> str:
+        """Return the C spelling one computed producer is materialized as.
+
+        The slot carries the completed identity chosen by policy, so the value
+        and the declared parameter always agree without recomputing the choice.
+        """
+        if slot.semantic_type_name is None:
+            raise ValueError(f"Projected slot {slot.owner_path!r} has no semantic type")
+        if slot.character_length is not None:
+            return "char"
+        return PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).c_spelling
 
     @staticmethod
     def _projected_slot_parameters(
@@ -10791,7 +10805,10 @@ class CBindingGenerator(ClassVisitor):
         """Declare one binding-materialized projected C ABI value."""
         if slot.semantic_type_name is None:
             raise ValueError(f"Projected slot {slot.owner_path!r} has no semantic type")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).c_spelling
+        if slot.character_length is not None:
+            scalar_type = "char"
+        else:
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).c_spelling
         if slot.passing in {
             EntrypointPassingConvention.POINTER_REFERENCE,
             EntrypointPassingConvention.NULLABLE_POINTER,
@@ -10807,11 +10824,24 @@ class CBindingGenerator(ClassVisitor):
         value = slot.literal_value
         if isinstance(value, bool):
             return "true" if value else "false"
+        if isinstance(value, str):
+            return CBindingGenerator._projected_character_literal(slot, value)
         if isinstance(value, complex):
             return f"({value.real!r} + {value.imag!r} * I)"
         if isinstance(value, (int, float)):
             return repr(value)
         raise ValueError(f"Unsupported projected C literal {value!r}")
+
+    @staticmethod
+    def _projected_character_literal(slot: NativeEntrypointProjectedSlotPlan, value: str) -> str:
+        """Render one declared character literal as an interoperable C ``char``.
+
+        The completed slot fixes the length, so the emitted constant is the
+        single character the contract declared rather than caller storage.
+        """
+        if slot.character_length != 1 or len(value) != 1 or ord(value) > 0xFF:
+            raise ValueError(f"Projected C character literal {value!r} is not a completed one-byte value")
+        return f"'\\{ord(value):03o}'"
 
     def _entrypoint_hidden_results(self, plan: FunctionPlan) -> tuple[NativeEntrypointResultPlan, ...]:
         """Return hidden results in planned C-ABI parameter-group order."""

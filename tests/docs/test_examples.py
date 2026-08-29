@@ -29,6 +29,7 @@ DOC_PATHS = [
     ROOT / "examples/c/README.md",
     ROOT / "examples/c/libm/README.md",
     ROOT / "examples/fortran/minpack/README.md",
+    ROOT / "examples/fortran/pythonic_blas/README.md",
     ROOT / "examples/c/ta_lib/README.md",
     *sorted((ROOT / "docs").rglob("*.md")),
 ]

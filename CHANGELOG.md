@@ -7,6 +7,41 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A one-character `@native_call` literal is now buildable: `String[1]("N")`
+  declares the character a native parameter receives instead of leaving it a
+  visible Python argument. It crosses the boundary as an interoperable `char`,
+  so the same completed decision reaches a bridged Fortran `character(len=1)`
+  dummy and a direct `bind(C)` entrypoint. Policy completion requires exactly
+  one byte-representable character; invalid values and longer fixed-length
+  literals are rejected before planning.
+
+- A `@native_call` computed projection can now state the integer type it is
+  materialized as: `Int32(Arg(0).shape[0])` beside the existing `Int32(1)`
+  literal form. Shape, stride and length producers previously always crossed
+  the boundary as `SizeT`, which is the right identity for a C `size_t`
+  parameter but not for a default Fortran `INTEGER`, so those parameters had to
+  stay visible in the Python signature. Fixed-width signed and unsigned integer
+  contract types and `SizeT` are accepted; unresolved `Int` and `UInt` are
+  rejected before planning. The explicit conversion is not range-checked.
+
+- Renamed the exact C scalar mechanism from "cast" to "identity" throughout the
+  semantic IR and policy, matching the documented `Exact C Scalar Identities`
+  vocabulary and freeing "cast" for the conversion above. The public contract
+  helpers (`CInt`, `CLongLong`, and the rest) are unchanged. The semantic-IR
+  JSON record emitted by `prik semantics --json` renames its `native_cast`
+  projection key to `native_c_identity` and gains a `value_cast` key.
+
+- Added a Pythonic BLAS tutorial and runnable example that reshape `DDOT`,
+  `DNRM2`, `DGEMV` and `DGEMM` into `dot`, `norm`, `matvec` and `matmul`, plus
+  `DenseMatrix`. An edited `.pyi` contract owns the exact native mapping,
+  extents, leading dimensions, transposition modes, array validation, fixed
+  numeric values and result allocation. Matrix operations consume
+  Fortran-contiguous storage directly, while `DenseMatrix` converts its matrix
+  once at construction. The example reuses the existing Reference BLAS sources
+  in a four-file contract, Python API, build and test workflow. The `.pyi`
+  reference now states the native identity of shape and stride projections and
+  the declared-character-literal form.
+
 - Reduced clean-build time for large projects under optimizing compiler flags.
   Generated bindings now bind each ordinary array argument through one shared
   `prik_bind_array` helper instead of emitting the whole validate, extract, and

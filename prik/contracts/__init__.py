@@ -236,7 +236,7 @@ Value = _expression
 Work = _expression
 
 
-NATIVE_C_SCALAR_CASTS: Final[dict[str, str]] = {
+NATIVE_C_SCALAR_IDENTITIES: Final[dict[str, str]] = {
     "CBool": "_Bool",
     "CChar": "char",
     "CSignedChar": "signed char",
@@ -333,7 +333,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Bool64",
         "Bounded",
         "Byte",
-        *NATIVE_C_SCALAR_CASTS,
+        *NATIVE_C_SCALAR_IDENTITIES,
         "CAnonymous",
         "CAnonymousMember",
         "CEnum",

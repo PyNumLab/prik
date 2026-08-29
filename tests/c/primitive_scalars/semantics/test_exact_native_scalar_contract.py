@@ -2,7 +2,7 @@
 
 import pytest
 
-from prik.contracts import NATIVE_C_SCALAR_CASTS
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.parsers.c import parse_c_file
 from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.printers.pyi import emit_module
@@ -65,8 +65,8 @@ def convert(value: Int64) -> Int64: ...
 
     module = pyi_text_to_semantic_module(text, module_name="exact", native_language="c")
 
-    assert module.functions[0].projection[0].native_cast == "CLongLong"
-    assert module.functions[0].return_type.metadata["native_c_scalar_cast"] == "CLongLong"
+    assert module.functions[0].projection[0].native_c_identity == "CLongLong"
+    assert module.functions[0].return_type.metadata["native_c_scalar_identity"] == "CLongLong"
     rendered = emit_module(module)
     assert "@native_call([CLongLong(Arg(0))], result=CLongLong(Return(0)))" in rendered
 
@@ -79,13 +79,13 @@ def update(values: Int64[:]) -> None: ...
 
     module = pyi_text_to_semantic_module(text, module_name="exact_array", native_language="c")
 
-    assert module.functions[0].projection[0].native_cast == "CLongLong"
+    assert module.functions[0].projection[0].native_c_identity == "CLongLong"
     rendered = emit_module(module)
     assert "@native_call([CLongLong(Arg(0))])" in rendered
     assert "values: Int64[:]" in rendered
 
 
-def test_native_scalar_cast_requires_exactly_one_positional_reference():
+def test_native_c_identity_requires_exactly_one_positional_reference():
     with pytest.raises(ValueError, match="CLongLong expects positional arguments only"):
         pyi_text_to_semantic_module(
             """from prik.contracts import Arg, CLongLong, Int64, native_call
@@ -97,7 +97,7 @@ def invalid(value: Int64) -> None: ...
         )
 
 
-@pytest.mark.parametrize("native_name", sorted(NATIVE_C_SCALAR_CASTS))
+@pytest.mark.parametrize("native_name", sorted(NATIVE_C_SCALAR_IDENTITIES))
 def test_native_scalar_names_are_not_public_signature_types(native_name):
     with pytest.raises(ValueError, match="valid only inside @native_call"):
         pyi_text_to_semantic_module(

@@ -112,7 +112,8 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
             "result_position": None,
             "value_kind": "",
             "value": None,
-            "native_cast": None,
+            "value_cast": None,
+            "native_c_identity": None,
         }
     ]
     assert semantic_module.origin.source_language == "fortran"

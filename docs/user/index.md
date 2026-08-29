@@ -2,7 +2,7 @@
 title: User Documentation
 audience: users
 prerequisites: none
-related: getting-started/index.md, guide/index.md, performance.md
+related: getting-started/index.md, tutorials/pythonic-blas.md, guide/index.md, performance.md
 status: maintained
 publication: reviewed
 ---
@@ -17,13 +17,15 @@ generated Python extensions. Current C coverage is documented in C Support.
 
 1. [Getting Started](getting-started/index.md)
 2. [User Guide](guide/index.md)
-3. [Performance](performance.md)
+3. [Design a Pythonic BLAS API](tutorials/pythonic-blas.md)
+4. [Performance](performance.md)
 
 Getting Started covers installation, environment verification, the first
 standalone wrapper, the first module wrapper, and the beginner edit-build-test
 loop. The User Guide covers supported Fortran wrapper features, runtime
-behavior, and extension builds. Performance presents the reproducible PRIK and
-f2py comparison.
+behavior, and extension builds. The tutorial then shows how to turn a low-level
+native interface into a small designed API. Performance presents the
+reproducible PRIK and f2py comparison.
 
 ## Then
 

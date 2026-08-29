@@ -665,7 +665,10 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare one binding-materialized projection at the shared C ABI."""
         if slot.semantic_type_name is None:
             raise ValueError(f"Projected slot {slot.owner_path!r} has no semantic type")
-        type_name = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).fortran_spelling
+        if slot.character_length is not None:
+            type_name = f"character(kind=c_char, len={slot.character_length})"
+        else:
+            type_name = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).fortran_spelling
         if slot.passing is EntrypointPassingConvention.C_VALUE:
             attributes = ("value",)
         elif slot.passing in {

@@ -16,7 +16,7 @@ from types import MappingProxyType
 from typing import ClassVar
 
 from prik.codegen.nodes import BackendScalarType
-from prik.contracts import NATIVE_C_SCALAR_CASTS
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 
 
@@ -57,7 +57,7 @@ class NativeCArrayStorageRegistry:
         }
     )
     TYPES: ClassVar[Mapping[str, NativeCArrayStorageType]] = MappingProxyType(
-        {NATIVE_C_SCALAR_CASTS[name]: storage for name, storage in _BY_CONTRACT_NAME.items()}
+        {NATIVE_C_SCALAR_IDENTITIES[name]: storage for name, storage in _BY_CONTRACT_NAME.items()}
     )
     _CHAR_TYPES: ClassVar[Mapping[str, NativeCArrayStorageType]] = MappingProxyType(
         {

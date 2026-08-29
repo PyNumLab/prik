@@ -13,19 +13,20 @@ from __future__ import annotations
 import ast
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+import re
 
 import numpy
 
 from immutabledict import immutabledict
 
-from prik.contracts import NATIVE_C_SCALAR_CASTS
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.naming import NamingPolicy
 from prik.semantics import models
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
-    NATIVE_C_SCALAR_CAST_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
     NULLABLE_ANNOTATION_METADATA,
     SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
@@ -170,7 +171,11 @@ from prik.utilities.declaration_expressions import (
     declaration_extent_references,
     resolve_declaration_extent,
 )
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES, is_boolean_semantic_type_name
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_boolean_semantic_type_name,
+    is_integer_semantic_type_name,
+)
 
 
 _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
@@ -2593,9 +2598,9 @@ def _direct_c_character_abi_type_policy(
 
 
 def _native_scalar_c_type(semantic_type: models.SemanticType | None) -> str | None:
-    """Resolve one semantic native-call cast marker to its exact C spelling."""
-    marker = semantic_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA) if semantic_type is not None else None
-    return NATIVE_C_SCALAR_CASTS.get(marker) if isinstance(marker, str) else None
+    """Resolve one semantic native-call identity marker to its exact C spelling."""
+    marker = semantic_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA) if semantic_type is not None else None
+    return NATIVE_C_SCALAR_IDENTITIES.get(marker) if isinstance(marker, str) else None
 
 
 def _c_typedef_resolved_spelling(
@@ -3700,8 +3705,8 @@ def _computed_native_call_slot_policy(
     """Complete one binding-owned length, presence, shape, stride, or work slot."""
     value_kind = mapping.value_kind
     source_position = _projection_value_argument_position(mapping.value)
-    semantic_type_name = "Bool" if value_kind == "is_present" else "SizeT"
-    blockers = []
+    semantic_type_name, cast_blockers = _computed_slot_cast_type(mapping, native_position)
+    blockers = list(cast_blockers)
     if value_kind != "work" and source_position is None:
         blockers.append(f"native-call {value_kind} slot {native_position} has no argument source")
     if value_kind == "work":
@@ -3727,6 +3732,33 @@ def _computed_native_call_slot_policy(
         ),
         tuple(blockers),
     )
+
+
+def _computed_slot_cast_type(
+    mapping: models.ProjectionMapping,
+    native_position: int,
+) -> tuple[str, tuple[str, ...]]:
+    """Return the type one computed producer is materialized as, and any blockers.
+
+    A computed producer has no Python-visible annotation, so its default native
+    identity is ``SizeT``.  A contract may state a different integer identity
+    when the native parameter is not a ``size_t``; the binding then materializes
+    that type directly instead of a ``size_t``.
+    """
+    if mapping.value_kind == "is_present":
+        return "Bool", ()
+    requested = mapping.value_cast
+    if requested is None:
+        return "SizeT", ()
+    if not _is_castable_projection_type(requested):
+        message = f"native-call {mapping.value_kind} slot {native_position} cannot be materialized as {requested!r}"
+        return "SizeT", (message,)
+    return requested, ()
+
+
+def _is_castable_projection_type(type_name: str) -> bool:
+    """Return whether a computed projection may be materialized as this type."""
+    return type_name in _PLAN_PRIMITIVE_SCALAR_TYPES and is_integer_semantic_type_name(type_name)
 
 
 def _projection_value_argument_position(value: object) -> int | None:
@@ -3812,7 +3844,7 @@ def _projected_argument_slot(
             python_name=mapping.python_name or argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=value_kind,
-            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
+            native_scalar_c_type=NATIVE_C_SCALAR_IDENTITIES.get(mapping.native_c_identity),
             native_barrier_action=native_barrier_action,
             codegen_action=codegen_action,
             bridge_data_action=bridge_data_action,
@@ -3900,7 +3932,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=mapping.python_name,
                 native_name=mapping.native_name or f"result_{native_position}",
                 value_kind=mapping.value_kind,
-                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
+                native_scalar_c_type=NATIVE_C_SCALAR_IDENTITIES.get(mapping.native_c_identity),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3921,7 +3953,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=argument.name,
                 native_name=mapping.native_name or argument.name,
                 value_kind=mapping.value_kind,
-                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
+                native_scalar_c_type=NATIVE_C_SCALAR_IDENTITIES.get(mapping.native_c_identity),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3968,7 +4000,7 @@ def _hidden_result_native_call_slot_policy(
             python_name=argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=mapping.value_kind,
-            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
+            native_scalar_c_type=NATIVE_C_SCALAR_IDENTITIES.get(mapping.native_c_identity),
             native_barrier_action=decision.native_barrier_action,
             codegen_action=decision.codegen_action,
             bridge_data_action=bridge_data_action,
@@ -4013,6 +4045,7 @@ def _literal_native_call_slot_policy(
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
     """Return a completed hidden literal slot and any first-lane blockers."""
     literal_type, literal_value, blockers = _literal_projection_value(mapping, native_position)
+    character_length = _character_literal_length(literal_type)
     return (
         NativeCallSlotPolicy(
             owner_path=f"{owner_path}.native_slot_{native_position}",
@@ -4029,10 +4062,19 @@ def _literal_native_call_slot_policy(
             object_kind=None,
             literal_type=literal_type,
             literal_value=literal_value,
-            semantic_type_name=literal_type,
+            semantic_type_name="String" if character_length is not None else literal_type,
+            character_length=character_length,
         ),
         tuple(blockers),
     )
+
+
+def _character_literal_length(literal_type: str | None) -> int | None:
+    """Return the declared length of one ``String[n]`` hidden literal type."""
+    if literal_type is None:
+        return None
+    match = re.fullmatch(r"String\[(\d+)\]", literal_type)
+    return int(match.group(1)) if match is not None else None
 
 
 def _literal_projection_value(
@@ -4052,7 +4094,21 @@ def _literal_projection_value(
         blockers.append(
             f"native-call literal slot {native_position} uses unsupported first-lane literal type {literal_type!r}"
         )
+    elif _character_literal_length(literal_type) == 1:
+        blockers.extend(_character_literal_value_blockers(literal_value, native_position))
     return literal_type if isinstance(literal_type, str) else None, literal_value, blockers
+
+
+def _character_literal_value_blockers(value: object, native_position: int) -> tuple[str, ...]:
+    """Validate the one-byte value carried by a ``String[1]`` literal."""
+    prefix = f"native-call literal slot {native_position} declares String[1]"
+    if not isinstance(value, str):
+        return (f"{prefix} but its value is not a string",)
+    if len(value) != 1:
+        return (f"{prefix} but its value must contain exactly one character",)
+    if ord(value) > 0xFF:
+        return (f"{prefix} but its value is not representable as one C char byte",)
+    return ()
 
 
 def _implicit_native_call_slot_policies(
@@ -5690,11 +5746,11 @@ def _function_shape_blockers(
         blockers.append("function locals are outside the first scalar lane")
     if function.contracts:
         blockers.append("function contracts are outside the first scalar lane")
-    has_native_c_scalar_cast = any(mapping.native_cast is not None for mapping in function.projection) or bool(
-        function.return_type is not None and function.return_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA)
-    )
-    if has_native_c_scalar_cast and function.origin.source_language != "c":
-        blockers.append("native C scalar casts require a C native contract")
+    has_native_c_scalar_identity = any(
+        mapping.native_c_identity is not None for mapping in function.projection
+    ) or bool(function.return_type is not None and function.return_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA))
+    if has_native_c_scalar_identity and function.origin.source_language != "c":
+        blockers.append("native C scalar identities require a C native contract")
     return tuple(blockers)
 
 
@@ -5979,7 +6035,14 @@ def _is_fixed_plan_string_result_type(semantic_type: models.SemanticType) -> boo
 
 
 def _is_first_lane_literal_type(literal_type: str) -> bool:
-    """Return whether a hidden literal type belongs to the scalar input lane."""
+    """Return whether a hidden literal type belongs to the scalar input lane.
+
+    A one-character literal joins the lane because it crosses the boundary as
+    an interoperable ``char`` value.  A longer fixed-length literal would need
+    caller-side storage and a separate length, which this lane does not carry.
+    """
+    if _character_literal_length(literal_type) == 1:
+        return True
     return is_boolean_semantic_type_name(literal_type) or literal_type in {
         "Int32",
         "Float32",

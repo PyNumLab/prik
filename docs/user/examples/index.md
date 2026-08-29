@@ -77,3 +77,6 @@ For smaller introductory workflows, start with [First Wrapped
 Function](../getting-started/first-wrapped-function.md), [First Wrapped
 Module](../getting-started/first-wrapped-module.md), or the [C support
 guide](../language-support/c-support.md).
+
+To learn how an edited `.pyi` contract can reshape a low-level library, follow
+the [Pythonic BLAS API tutorial](../tutorials/pythonic-blas.md).

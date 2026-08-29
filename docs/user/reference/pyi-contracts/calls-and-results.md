@@ -73,7 +73,7 @@ the same NumPy dtype. For example, both `long` and `long long` may use signed
 64-bit values, so both public signatures use `Int64`. C still treats the two
 native types as distinct.
 
-Use a C scalar cast only around the affected native-call expression:
+Use an exact C scalar identity only around the affected native-call expression:
 
 ```python
 from prik.contracts import Arg, CLongLong, Float64, Int64, native_call

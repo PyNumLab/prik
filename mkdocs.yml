@@ -64,6 +64,8 @@ nav:
           - Raw Addresses: user/guide/raw-addresses.md
           - Error Handling & Diagnostics: user/guide/error-handling.md
           - Building the Shared Library: user/guide/building-shared-library.md
+      - Tutorials:
+          - Design a Pythonic BLAS API: user/tutorials/pythonic-blas.md
       - Examples:
           - Overview: user/examples/index.md
           - Fortran:

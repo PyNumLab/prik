@@ -32,7 +32,7 @@ from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
     DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
-    NATIVE_C_SCALAR_CAST_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -2220,15 +2220,15 @@ class PyiPrinter(ClassVisitor):
 
     @staticmethod
     def _native_result_projection(func: SemanticFunction) -> ProjectionMapping | None:
-        """Return an exact scalar cast or descriptor function-result mapping."""
-        native_cast = (
-            func.return_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA) if func.return_type is not None else None
+        """Return an exact C scalar identity or descriptor function-result mapping."""
+        native_c_identity = (
+            func.return_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA) if func.return_type is not None else None
         )
-        if isinstance(native_cast, str):
+        if isinstance(native_c_identity, str):
             return ProjectionMapping(
                 result_position=0,
                 value={"kind": "return", "position": 0},
-                native_cast=native_cast,
+                native_c_identity=native_c_identity,
             )
         descriptor = PyiPrinter._scalar_descriptor_kind(func.return_type)
         if descriptor is None:
@@ -2332,8 +2332,8 @@ class PyiPrinter(ClassVisitor):
                 rendered = f"{context.contract('Return')}({mapping.result_position})"
         else:
             raise ValueError("native_call cannot represent a native-only projection entry")
-        if mapping.native_cast is not None:
-            return f"{context.contract(mapping.native_cast)}({rendered})"
+        if mapping.native_c_identity is not None:
+            return f"{context.contract(mapping.native_c_identity)}({rendered})"
         return rendered
 
     def _hidden_projection_entry(
@@ -2361,8 +2361,8 @@ class PyiPrinter(ClassVisitor):
         """Handle native projection value for the current generation context."""
         if mapping.value_kind == "addr":
             value = self._native_value_ref(mapping.value, context)
-            if mapping.native_cast is not None:
-                value = f"{context.contract(mapping.native_cast)}({value})"
+            if mapping.native_c_identity is not None:
+                value = f"{context.contract(mapping.native_c_identity)}({value})"
             return f"{context.contract('Addr')}({value})"
         if mapping.value_kind == "value":
             return f"{context.contract('Value')}({self._native_value_ref(mapping.value, context)})"
@@ -2372,11 +2372,17 @@ class PyiPrinter(ClassVisitor):
         if mapping.value_kind == "literal":
             return self._native_literal_value(mapping.value, context)
         if mapping.value_kind == "len":
-            return f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})"
+            return self._cast_projection(
+                mapping,
+                f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})",
+                context,
+            )
         if mapping.value_kind == "shape":
-            return f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
+            producer = f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
+            return self._cast_projection(mapping, producer, context)
         if mapping.value_kind == "stride":
-            return f"{self._native_value_ref(mapping.value['value'], context)}.strides[{mapping.value['dim']}]"
+            producer = f"{self._native_value_ref(mapping.value['value'], context)}.strides[{mapping.value['dim']}]"
+            return self._cast_projection(mapping, producer, context)
         if mapping.value_kind == "is_present":
             return f"{context.contract('IsPresent')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "work":
@@ -2384,6 +2390,17 @@ class PyiPrinter(ClassVisitor):
         if mapping.value_kind == "pass":
             return f"{context.contract('Pass')}()"
         raise ValueError(f"Unsupported native_call projection entry: {mapping.value_kind!r}")
+
+    @staticmethod
+    def _cast_projection(
+        mapping: ProjectionMapping,
+        producer: str,
+        context: _PyiEmissionContext,
+    ) -> str:
+        """Wrap one computed producer in the type its contract states, when present."""
+        if mapping.value_cast is None:
+            return producer
+        return f"{PyiPrinter._native_literal_type(mapping.value_cast, context)}({producer})"
 
     def _native_literal_value(
         self,
@@ -2430,7 +2447,7 @@ class PyiPrinter(ClassVisitor):
             return True
         if PyiPrinter._scalar_descriptor_kind(func.return_type) is not None:
             return True
-        if func.return_type is not None and func.return_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA):
+        if func.return_type is not None and func.return_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA):
             return True
         if any(PyiPrinter._scalar_descriptor_kind(argument.semantic_type) is not None for argument in func.arguments):
             return True
@@ -2463,7 +2480,7 @@ class PyiPrinter(ClassVisitor):
     @staticmethod
     def _requires_explicit_projection_mapping(mapping: ProjectionMapping) -> bool:
         """Return whether requires explicit projection mapping."""
-        if mapping.native_cast is not None:
+        if mapping.native_c_identity is not None:
             return True
         if mapping.value_kind:
             return True

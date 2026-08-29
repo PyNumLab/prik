@@ -736,7 +736,7 @@ rules.
 
 ## Symbols your binding's own headers declare
 
-Exact native scalar casts make compatible duplicate declarations harmless, but
+Exact native scalar identities make compatible duplicate declarations harmless, but
 they cannot resolve a genuine identifier collision: a header included by the
 binding may already declare the same name for a different API. Name that symbol
 to isolate it from `Python.h`:

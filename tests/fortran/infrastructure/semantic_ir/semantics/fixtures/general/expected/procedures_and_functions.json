@@ -165,7 +165,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             }
           ],
           "metadata": {},
@@ -383,7 +384,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             },
             {
               "python_name": "x",
@@ -393,7 +395,8 @@
               "result_position": null,
               "value_kind": "",
               "value": null,
-              "native_cast": null
+              "value_cast": null,
+              "native_c_identity": null
             }
           ],
           "metadata": {},

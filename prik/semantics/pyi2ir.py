@@ -20,7 +20,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES, NATIVE_C_SCALAR_CASTS
+from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES, NATIVE_C_SCALAR_IDENTITIES
 from prik.utilities.declaration_expressions import (
     declaration_expression_calls,
     is_declaration_expression_helper,
@@ -39,7 +39,7 @@ from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
     DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
-    NATIVE_C_SCALAR_CAST_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
     NATIVE_PROJECTION_METADATA,
     NULLABLE_ANNOTATION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
@@ -96,6 +96,8 @@ _PYI_OPTIONAL_RETURN_METADATA = "_pyi_optional_return"
 _CONTRACT_MODULE = "prik.contracts"
 _FLAT_DIMENSION_SENTINEL = "@prik.Flat"
 _STRIDED_DIMENSION_SENTINEL = "@prik.Strided"
+# Computed producers whose materialized type a contract may state explicitly.
+_CASTABLE_PROJECTION_KINDS = frozenset({"shape", "stride", "len"})
 
 
 # Contract-conversion state and public entrypoints
@@ -1062,9 +1064,9 @@ class _PyiAstParser:
         return projection, native_result
 
     def native_result_projection(self, node: ast.AST) -> ProjectionMapping:
-        """Parse an exact scalar cast or nullable descriptor native result."""
+        """Parse an exact C scalar identity or nullable descriptor native result."""
         mapping = self.native_projection_entry(node, native_position=-1)
-        if mapping.native_cast is not None:
+        if mapping.native_c_identity is not None:
             if mapping.result_position is None or mapping.python_position is not None or mapping.value_kind:
                 raise ValueError("native_call scalar result expects CScalar(Return(0))")
             mapping.native_position = None
@@ -1542,7 +1544,7 @@ class _PyiAstParser:
         if not isinstance(node, ast.Call):
             raise ValueError("native_call expects projection entry calls")
         if node.keywords:
-            if self._native_literal_type(node.func) is not None:
+            if self._native_typed_value_type(node.func) is not None:
                 raise ValueError("native_call typed literals accept one positional value")
             raise ValueError(f"{self.required_name(node.func)} expects positional arguments only")
 
@@ -1550,8 +1552,8 @@ class _PyiAstParser:
             return self.native_address_projection_entry(node, native_position)
 
         descriptor = self.contract_name(node.func)
-        if descriptor in NATIVE_C_SCALAR_CASTS:
-            return self.native_scalar_cast_projection_entry(node, native_position, descriptor)
+        if descriptor in NATIVE_C_SCALAR_IDENTITIES:
+            return self.native_c_identity_projection_entry(node, native_position, descriptor)
         if descriptor == "Value":
             return self.native_value_projection_entry(node, native_position)
         if descriptor in {"Allocatable", "Pointer"}:
@@ -1564,21 +1566,21 @@ class _PyiAstParser:
         helper = self.required_name(node.func)
         return self._native_helper_projection_entry(helper, node, native_position)
 
-    def native_scalar_cast_projection_entry(
+    def native_c_identity_projection_entry(
         self,
         node: ast.Call,
         native_position: int,
-        native_cast: str,
+        native_c_identity: str,
     ) -> ProjectionMapping:
         """Attach one exact C scalar identity to an argument or result reference."""
         if len(node.args) != 1 or node.keywords:
-            raise ValueError(f"{native_cast} expects one Arg(...) or Return(...) reference")
+            raise ValueError(f"{native_c_identity} expects one Arg(...) or Return(...) reference")
         mapping = self.native_projection_entry(node.args[0], native_position)
-        if mapping.native_cast is not None:
-            raise ValueError("native_call scalar casts cannot be nested")
+        if mapping.native_c_identity is not None:
+            raise ValueError("native_call scalar identities cannot be nested")
         if mapping.value_kind:
-            raise ValueError(f"{native_cast} expects Arg(...) or Return(...), not a projection wrapper")
-        mapping.native_cast = native_cast
+            raise ValueError(f"{native_c_identity} expects Arg(...) or Return(...), not a projection wrapper")
+        mapping.native_c_identity = native_c_identity
         return mapping
 
     def native_value_projection_entry(
@@ -1733,23 +1735,50 @@ class _PyiAstParser:
         node: ast.Call,
         native_position: int,
     ) -> ProjectionMapping | None:
-        """Parse a typed hidden native literal, or return ``None`` for other calls."""
-        native_type = self._native_literal_type(node.func)
+        """Parse a typed hidden native value, or return ``None`` for other calls.
+
+        A typed scalar constructor carries either a constant, which becomes a
+        hidden literal, or a computed projection, which keeps its producer and
+        records the requested materialization type.
+        """
+        native_type = self._native_typed_value_type(node.func)
         if native_type is None:
             return None
         if node.keywords or len(node.args) != 1:
-            raise ValueError("native_call typed literals accept one positional value")
+            raise ValueError("native_call typed values accept one positional value")
+        try:
+            literal_value = ast.literal_eval(node.args[0])
+        except (TypeError, ValueError):
+            return self.native_cast_projection_entry(node.args[0], native_position, native_type)
         return ProjectionMapping(
             native_position=native_position,
             value_kind="literal",
             value={
                 "type": native_type,
-                "value": ast.literal_eval(node.args[0]),
+                "value": literal_value,
             },
         )
 
-    def _native_literal_type(self, node: ast.AST) -> str | None:
-        """Return the imported scalar type name accepted for a typed hidden literal."""
+    def native_cast_projection_entry(
+        self,
+        node: ast.AST,
+        native_position: int,
+        value_cast: str,
+    ) -> ProjectionMapping:
+        """Parse ``Int32(Arg(i).shape[d])``: one computed projection cast to a named type.
+
+        The producer is unchanged; only the type the binding materializes is
+        stated here. Literal expressions have already been handled with
+        ``ast.literal_eval`` before this method is called.
+        """
+        mapping = self.native_projection_entry(node, native_position)
+        if mapping.value_kind not in _CASTABLE_PROJECTION_KINDS:
+            raise ValueError(f"{value_cast} accepts a literal value or a shape, stride, or length projection")
+        mapping.value_cast = value_cast
+        return mapping
+
+    def _native_typed_value_type(self, node: ast.AST) -> str | None:
+        """Return the imported scalar type name accepted for a typed hidden value."""
         if isinstance(node, ast.Subscript) and self.matches_name(node.value, "String"):
             length = self._native_literal_string_length(node)
             return f"String[{length}]"
@@ -1778,19 +1807,19 @@ class _PyiAstParser:
             raise ValueError("Addr projection expects one Arg(...), Return(...), or Work(...) reference")
         if self._addr_depth(node.func) != 1:
             raise ValueError("native_call address projection only supports Addr(...)")
-        native_cast = None
+        native_c_identity = None
         reference = node.args[0]
-        if isinstance(reference, ast.Call) and self.contract_name(reference.func) in NATIVE_C_SCALAR_CASTS:
-            native_cast = self.contract_name(reference.func)
+        if isinstance(reference, ast.Call) and self.contract_name(reference.func) in NATIVE_C_SCALAR_IDENTITIES:
+            native_c_identity = self.contract_name(reference.func)
             if len(reference.args) != 1 or reference.keywords:
-                raise ValueError(f"{native_cast} expects one Arg(...) or Return(...) reference")
+                raise ValueError(f"{native_c_identity} expects one Arg(...) or Return(...) reference")
             reference = reference.args[0]
         value = self.native_value_ref(reference)
         mapping = ProjectionMapping(
             native_position=native_position,
             value_kind="addr",
             value=value,
-            native_cast=native_cast,
+            native_c_identity=native_c_identity,
         )
         if value["kind"] == "arg":
             mapping.python_position = int(value["position"])
@@ -1920,7 +1949,7 @@ class _PyiAstParser:
         unimported contract spellings raise ``ValueError``.
         """
         self._reject_unimported_contract_type(node)
-        if self.contract_name(node) in NATIVE_C_SCALAR_CASTS:
+        if self.contract_name(node) in NATIVE_C_SCALAR_IDENTITIES:
             raise ValueError("Native C scalar names are valid only inside @native_call")
         optional_item = self._optional_union_item(node)
         if optional_item is not None:
@@ -3059,7 +3088,11 @@ class _PyiAstParser:
             for mapping in projection
             if mapping.result_position is not None and mapping.python_position is None
         }
-        if native_result is None or native_result.result_position is None or native_result.native_cast is not None:
+        if (
+            native_result is None
+            or native_result.result_position is None
+            or native_result.native_c_identity is not None
+        ):
             return positions
         if native_result.result_position in positions:
             raise ValueError(
@@ -3213,8 +3246,8 @@ class _PyiAstParser:
             return return_type
         if return_type is None:
             raise ValueError("native_call result requires a native function result in Python result slot 0")
-        if native_result.native_cast is not None:
-            return_type.metadata[NATIVE_C_SCALAR_CAST_METADATA] = native_result.native_cast
+        if native_result.native_c_identity is not None:
+            return_type.metadata[NATIVE_C_SCALAR_IDENTITY_METADATA] = native_result.native_c_identity
             return return_type
         if not return_type.metadata.pop(_PYI_OPTIONAL_RETURN_METADATA, False):
             raise ValueError("native scalar descriptor function result must use a nullable T | None annotation")

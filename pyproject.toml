@@ -123,6 +123,7 @@ target-version = "py310"
 line-length = 120
 force-exclude = true
 extend-exclude = [
+    "examples/fortran/pythonic_blas/_prik_linalg_native.pyi",
     "tests/c/fixtures/pyi",
     "tests/fortran/*/end_to_end/fixtures",
     "tests/fortran/*/pipeline/fixtures",
