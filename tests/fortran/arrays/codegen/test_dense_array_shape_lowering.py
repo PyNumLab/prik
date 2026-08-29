@@ -174,19 +174,20 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "PyTuple_SET_ITEM(bound_values_shape, 0, PyLong_FromLongLong((long long)(bound_rows)))" in c_source
-    assert "PyTuple_SET_ITEM(bound_values_shape, 1, PyLong_FromLongLong((long long)(bound_cols)))" in c_source
-    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
-    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "C"' in c_source
-    assert "bound_values_shape = PyTuple_New(1)" in c_source
-    assert "PyTuple_SET_ITEM(bound_values_shape, 0, Py_None)" in c_source
+    assert "bound_values_bind_fixed[0] = (long long)(bound_rows);" in c_source
+    assert "bound_values_bind_fixed[1] = (long long)(bound_cols);" in c_source
+    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 2, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
+    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 2, PRIK_ARRAY_LAYOUT_C_CONTIGUOUS" in c_source
+    assert "bound_values_bind_fixed[0] = -1;" in c_source
     assert (
-        'prik_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
-        "1, 1, 1, 0, 0, 0, 1, 1, 0, &bound_values_actual)"
+        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 1, 1, 15, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
+        '1, 1, "numpy.float64", "float64", "values", NULL, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, '
+        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
     ) in c_source
     assert (
-        'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F", '
-        "1, 1, 1, 0, 0, 0, 1, 1, 1, &bound_values_actual)"
+        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 15, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS, "
+        '1, 1, "numpy.float64", "float64", "values", "F", 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, '
+        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
     ) in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
     assert "call c_f_pointer(bound_values, values, [values_extent_1, values_extent_0])" in bridge_source
@@ -210,7 +211,7 @@ def test_external_interface_declares_late_extent_before_dependent_array():
         "late_extent_external.late_extent.values",
     )
     assert c_source.index("prik_int32_unpack_exact(bound_n_obj, &bound_n)") < c_source.index(
-        "Argument values has incompatible shape at axis 0"
+        "bound_values_bind_fixed[0] = (long long)(bound_n);"
     )
     signature = "subroutine late_extent(values, n)"
     interface = bridge_source.split(signature, maxsplit=1)[1].split("end subroutine late_extent", maxsplit=1)[0]

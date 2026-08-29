@@ -7,6 +7,25 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Reduced clean-build time for large projects under optimizing compiler flags.
+  Generated bindings now bind each ordinary array argument through one shared
+  `prik_bind_array` helper instead of emitting the whole validate, extract, and
+  native-handle sequence at every array argument of every wrapper. A wrapper
+  carries one call and a small table of required extents in place of the
+  sequence, so the compiler optimizes the binding logic once rather than once
+  per argument per wrapper. Building the 155-source reference BLAS with
+  `-O3 -march=native` emits about a third less binding code and compiles it
+  about 1.4x faster.
+
+- A binding is always one generated C file. Large procedure-only projects were
+  previously split across `<module>_wrapper_001.c` and siblings so those units
+  could compile concurrently; every project now generates only
+  `<module>_wrapper.c`. Splitting raised total compiler work — each unit
+  re-parsed `Python.h` and the NumPy headers — and paid off only where cores
+  were idle, which a project's own sources rarely leave. Removing it lowers
+  total build work and leaves one file to read when inspecting generated
+  output.
+
 ## 0.4.1 — 2026-08-27
 
 - Fixed README links and the logo for PyPI rendering. Documentation links now

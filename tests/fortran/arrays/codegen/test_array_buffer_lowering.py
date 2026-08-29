@@ -74,20 +74,17 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "double bind_c_sum_values(void * values, int64_t values_extent_0);" in c_source
-    assert "prik_array_actual bound_values_actual;" in c_source
+    # One shared binder call carries every completed selector: dtype, rank
+    # bounds, layout, contiguity, writeability, diagnostic names, and the nine
+    # selectors the native-handle route consumes.
     assert (
-        'prik_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
-        "1, 1, 1, 0, 0, 0, 1, 0, -1, &bound_values_actual)"
+        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 1, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
+        '1, 1, "numpy.float64", "float64", "values", NULL, 0, 1, 1, 1, 0, 0, 0, 1, 0, -1, '
+        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
     ) in c_source
-    assert "bound_values = bound_values_actual.data;" in c_source
-    assert "bound_values_extent_0 = bound_values_actual.extents[0];" in c_source
-    assert "if (PyArray_Check(bound_values_obj)) {" in c_source
-    assert c_source.count("PyArray_Check(bound_values_obj)") == 1
-    assert (
-        "prik_array_validate_ndarray((PyArrayObject *)bound_values_obj, NPY_FLOAT64, 1, 1, "
-        'PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values")'
-    ) in c_source
-    assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_obj);" in c_source
+    assert c_source.count("prik_bind_array(bound_values_obj") == 1
+    assert "bound_values_bind_fixed[0] = -1;" in c_source
+    assert "bound_values_extent_0 = bound_values_bind_extents[0];" in c_source
     assert "result = bind_c_sum_values(bound_values, bound_values_extent_0);" in c_source
 
     assert "type(c_ptr), value :: bound_values" in bridge_source

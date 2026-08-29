@@ -5665,10 +5665,10 @@ class WrapperGenerator:
         """Package rendered source text with the filenames owned by build integration.
 
         Each binding translation unit is named for the C module it renders, so
-        the primary file is followed by its zero-padded worker shards and then
-        any collision-adapter unit. The returned wrapper places bridge, C
-        sources, and header text in that stable order; this helper does not
-        write files or freeze the newly assembled source records.
+        the binding file is followed by any collision-adapter unit. The
+        returned wrapper places bridge, C sources, and header text in that
+        stable order; this helper does not write files or freeze the newly
+        assembled source records.
         """
         # Name bridge, binding, and header files before pairing each with rendered text.
         binding_sources = tuple(Path(f"{name}.c") for name in c_module_names)
