@@ -64,6 +64,7 @@ test.
 | [Semantics Stage](../../docs/developer/packages/semantics.md) | `infrastructure/semantic_ir/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_ir` |
 | [`.pyi` Format](../../docs/user/reference/pyi-format.md) and [contract guides](../../docs/user/reference/pyi-contracts/index.md) | `infrastructure/semantic_pyi/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_pyi` |
 | [Building the Shared Library](../../docs/user/guide/building-shared-library.md) | `infrastructure/building/` | `python3 -m pytest -q tests/fortran/infrastructure/building` |
+| [IPython and Jupyter Notebooks](../../docs/user/guide/notebooks.md) | `infrastructure/jupyter/` | `python3 -m pytest -q tests/fortran/infrastructure/jupyter` |
 | Completed ownership and wrapper-policy decisions | `infrastructure/policy/` | `python3 -m pytest -q tests/fortran/infrastructure/policy` |
 
 ## Infrastructure owners
@@ -82,6 +83,7 @@ representation is supporting evidence, not the ownership rule.
 | `infrastructure/cli/` | Shared command-line parsing and output behavior |
 | `infrastructure/semantic_ir/` | Source and parser-model conversion into semantic IR |
 | `infrastructure/semantic_pyi/` | Semantic `.pyi` parsing, conversion, contracts, and loading |
+| `infrastructure/jupyter/` | Optional cell-magic parsing, cache reuse, namespace publication, and compiled Fortran-cell integration |
 | `infrastructure/building/` | Shared native build modes, compiler integration, and runtime ABI behavior |
 | `infrastructure/policy/` | Internal ownership, policy completion, and completed wrapper-policy mechanics |
 | `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, docstring, advisory review, and visitor mechanics |

@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Added optional `%%fortran`, `%%c`, and `%%pyi` IPython/Jupyter cell magics.
+  Native-source cells compile directly or, with `--pyi`, persist their exact
+  source and insert editable per-module or direct-declaration contract cells.
+  Executing the generated `%%pyi` cell recovers the source language from its
+  digest, builds against that cached source, and publishes declared Fortran
+  modules or standalone declarations directly in the notebook namespace.
+  Exact cells reuse a persistent SHA-256 build cache unless `--force` is
+  selected, and PRIK does not expose an internal package entry.
+
 - A one-character `@native_call` literal is now buildable: `String[1]("N")`
   declares the character a native parameter receives instead of leaving it a
   visible Python argument. It crosses the boundary as an interoperable `char`,

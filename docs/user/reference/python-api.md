@@ -98,6 +98,7 @@ Reach past the root facade when you need a single stage rather than a build.
 | C semantic conversion | `prik.semantics.c2ir` | `CToIRConverter`, `c_file_to_semantic_module`, `c_file_to_semantic_modules` |
 | `.pyi` loading and stub emission | `prik.pipeline.pyi` | `pyi_*_to_semantic_module`, `emit_module_stubs` |
 | Build records and results | `prik.pipeline.build` | `WrapperBuildResult`, `NativeBuildPlan`, `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem` |
+| IPython/Jupyter integration | `prik.jupyter` | `%load_ext prik.jupyter`, then `%%fortran`, `%%c`, or `%%pyi` |
 | Target type probing | `prik.preprocessing.probes.fortran_types` | probe source, requirements, expressions, report and error types |
 | C target type probing | `prik.preprocessing.probes.c_types` | `probe_c_standard_types`, `probe_c_standard_types_cached`, and C probe records/error type |
 | Runtime descriptor handles | `prik.runtime.handles` | `NativeArrayHandleBase`, `AllocatableArray`, `PointerArray` |
@@ -119,6 +120,7 @@ Reach past the root facade when you need a single stage rather than a build.
 ## Related pages
 
 - [CLI Commands](cli-commands.md) — the same workflows from a shell.
+- [IPython and Jupyter Notebooks](../guide/notebooks.md) — compile source cells and publish their APIs in the session.
 - [C Support](../language-support/c-support.md) — C source, contract, CLI, and
   Python workflows.
 - [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported API-shaping

@@ -53,6 +53,7 @@ nav:
           - Wrapping Functions: user/guide/wrapping-functions.md
           - Wrapping Subroutines: user/guide/wrapping-subroutines.md
           - Wrapping Modules: user/guide/wrapping-modules.md
+          - IPython and Jupyter Notebooks: user/guide/notebooks.md
           - Optional Arguments: user/guide/optional-arguments.md
           - Generic Interfaces (Overloading): user/guide/generic-interfaces.md
           - Wrapping Derived Types: user/guide/wrapping-derived-types.md

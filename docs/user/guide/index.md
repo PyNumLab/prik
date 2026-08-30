@@ -50,6 +50,7 @@ objects, storage, and advanced runtime behavior.
 ## Building
 
 - [Building the Shared Library](building-shared-library.md)
+- [IPython and Jupyter Notebooks](notebooks.md) — compile a Fortran or C cell and publish its native namespaces directly in the session
 
 ---
 

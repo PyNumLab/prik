@@ -93,6 +93,13 @@ prik --help
 python3 -m prik --help
 ```
 
+IPython and Jupyter support is optional. Install it when you want to use the
+[`%%fortran`, `%%c`, and `%%pyi` cell magics](../guide/notebooks.md):
+
+```bash
+python3 -m pip install "prik[jupyter]"
+```
+
 ---
 
 ## Contributor Installation

@@ -29,6 +29,7 @@ The active owners are:
 | `enumerations/<stage>/` | C enum syntax and semantic projection |
 | `infrastructure/cli/` | C-input command dispatch and C-specific argument/output contracts |
 | `infrastructure/building/` | Direct-C build selection, artifacts, manifests, rejections, and CLI integration |
+| `infrastructure/jupyter/` | Optional cell-magic routing, root-name publication, cache reuse, and compiled C-cell integration |
 | `infrastructure/parsing/` | C lexer, parser, project, corpus, fixture, and public-entrypoint behavior |
 | `infrastructure/preprocessing/` | C recipes, dependencies, mappings, execution, and diagnostics |
 | `infrastructure/semantic_ir/` | C parser-model conversion to semantic IR |
