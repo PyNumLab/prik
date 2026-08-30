@@ -57,7 +57,7 @@ def test_generated_c_int_array_uses_its_probed_primitive_storage(tmp_path: Path)
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
-def test_c_pointer_supports_default_scalar_reference_and_edited_c_array_contracts(tmp_path: Path):
+def test_c_pointer_supports_explicit_scalar_reference_and_exact_array_contracts(tmp_path: Path):
     contract = tmp_path / "pointers.pyi"
     contract.write_text(
         """from prik.contracts import Addr, Arg, Float64, Int32, Returns, native_call
@@ -105,6 +105,110 @@ void scale_matrix(double *values) { for (int i = 0; i < 4; ++i) values[i] += 1.0
     np.testing.assert_allclose(matrix, np.array([[2.0, 3.0], [4.0, 5.0]]))
     with pytest.raises(TypeError, match=r"expected ordering \(C\)"):
         module.scale_matrix(np.asfortranarray(matrix))
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_runtime_rank_c_pointer_uses_total_size_for_rank_zero_and_ranked_storage(tmp_path: Path):
+    contract = tmp_path / "runtime_rank.pyi"
+    contract.write_text(
+        """from prik.contracts import Arg, Float64, native_call
+
+@native_call([Arg(0).size, Arg(0)])
+def scale(values: Float64[...]) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "runtime_rank.c"
+    source.write_text(
+        """#include <stddef.h>
+void scale(size_t count, double *values) {
+    for (size_t index = 0; index < count; ++index) values[index] *= 2.0;
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build_runtime_rank",
+        output_name="runtime_rank",
+    )
+    module = sole_native_module(result.import_module())
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+
+    assert "void scale(size_t size_0, double * values);" in binding
+    assert "(size_t)PyArray_SIZE((PyArrayObject *)bound_values_obj)" in binding
+
+    zero = np.array(3.0, dtype=np.float64)
+    vector = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    matrix = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64, order="C")
+    empty = np.empty((2, 0), dtype=np.float64)
+    for values in (zero, vector, matrix, empty):
+        expected = values.copy() * 2.0
+        assert module.scale(values) is None
+        np.testing.assert_allclose(values, expected)
+
+    # Runtime-rank storage constrains neither rank nor strides, so a
+    # Fortran-ordered actual reaches the same contiguous buffer.
+    fortran = np.asfortranarray(matrix)
+    expected = fortran.copy() * 2.0
+    assert module.scale(fortran) is None
+    np.testing.assert_allclose(fortran, expected)
+
+    with pytest.raises(TypeError, match=r"numpy\.ndarray"):
+        module.scale(np.float64(3.0))
+    with pytest.raises(TypeError, match=r"compatible numpy\.ndarray"):
+        module.scale(np.ones((1,) * 16, dtype=np.float64))
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_runtime_rank_c_pointer_passes_a_strided_view_with_its_projected_layout(tmp_path: Path):
+    """``T[...]`` states no layout, so projected extents and strides carry it."""
+    contract = tmp_path / "strided_rank.pyi"
+    contract.write_text(
+        """from prik.contracts import Arg, Float64, Int64, native_call
+
+@native_call([Arg(0).shape[0], Int64(Arg(0).strides[0]), Arg(0)])
+def scale(values: Float64[...]) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "strided_rank.c"
+    source.write_text(
+        """#include <stddef.h>
+void scale(size_t count, long long stride_bytes, double *values) {
+    char *base = (char *)values;
+    for (size_t index = 0; index < count; ++index) {
+        *(double *)(base + (ptrdiff_t)index * (ptrdiff_t)stride_bytes) *= 2.0;
+    }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build_strided_rank",
+        output_name="strided_rank",
+    )
+    module = sole_native_module(result.import_module())
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+
+    assert "PRIK_ARRAY_LAYOUT_ANY_STRIDED" in binding
+    assert "(int64_t)PyArray_STRIDE((PyArrayObject *)bound_values_obj, 0)" in binding
+
+    base = np.arange(6, dtype=np.float64)
+    assert module.scale(base[::2]) is None
+    np.testing.assert_allclose(base, np.array([0.0, 1.0, 4.0, 3.0, 8.0, 5.0]))
+
+    # A projected axis cannot exist on rank-zero storage, so the caller is told
+    # instead of the binding reading past the actual's shape.
+    with pytest.raises(TypeError, match="has no axis 0"):
+        module.scale(np.array(1.0, dtype=np.float64))
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")

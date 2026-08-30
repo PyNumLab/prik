@@ -80,6 +80,7 @@ from prik.policy.models import (
     ArrayWritebackABI,
     ScalarLogicalABI,
     ArrayLogicalABI,
+    ArrayPythonLayout,
     WritebackPhase,
     LifecycleOperation,
     TransformationLayer,
@@ -2104,6 +2105,7 @@ def _complete_entrypoint_slot_policies(
             EntrypointProjectionAction.TYPED_LITERAL,
             EntrypointProjectionAction.COMPUTED_LENGTH,
             EntrypointProjectionAction.COMPUTED_PRESENCE,
+            EntrypointProjectionAction.COMPUTED_SIZE,
             EntrypointProjectionAction.COMPUTED_SHAPE,
             EntrypointProjectionAction.COMPUTED_STRIDE,
         }:
@@ -2157,6 +2159,7 @@ def _entrypoint_projection_action(slot: NativeCallSlotPolicy) -> EntrypointProje
         "value": EntrypointProjectionAction.ARGUMENT_VALUE,
         "is_present": EntrypointProjectionAction.COMPUTED_PRESENCE,
         "len": EntrypointProjectionAction.COMPUTED_LENGTH,
+        "size": EntrypointProjectionAction.COMPUTED_SIZE,
         "shape": EntrypointProjectionAction.COMPUTED_SHAPE,
         "stride": EntrypointProjectionAction.COMPUTED_STRIDE,
         "work": EntrypointProjectionAction.WORK_STORAGE,
@@ -2200,9 +2203,10 @@ def _direct_c_abi_ineligibility(
 def _direct_c_array_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
     """Validate the selected one-level C-pointer NumPy-array mechanism."""
     reasons = []
-    if argument.rank < 1 or argument.rank > 15:
+    array = argument.array
+    if array is None or array.minimum_rank < 0 or array.maximum_rank > 15 or array.maximum_rank < array.minimum_rank:
         reasons.append(f"C_DIRECT_ARRAY_RANK:{argument.name}")
-    if argument.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or argument.array is None:
+    if argument.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or array is None:
         reasons.append(f"C_DIRECT_ARRAY_CONTRACT:{argument.name}")
     if argument.entrypoint_passing is not EntrypointPassingConvention.POINTER_REFERENCE:
         reasons.append(f"C_DIRECT_ARRAY_PASSING:{argument.name}")
@@ -2212,7 +2216,7 @@ def _direct_c_array_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
         reasons.append(f"C_DIRECT_ARRAY_TRANSFORMATION:{argument.name}")
     if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
         reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
-    if argument.rank > 1 and argument.array is not None and argument.array.order != "ORDER_C":
+    if array is not None and array.maximum_rank > 1 and array.order != "ORDER_C":
         reasons.append(f"C_DIRECT_ARRAY_ORDER:{argument.name}")
     return tuple(dict.fromkeys(reasons))
 
@@ -3674,8 +3678,13 @@ def _projected_native_call_slot_policy(
     if mapping.value_kind == "literal":
         slot, blockers = _literal_native_call_slot_policy(mapping, owner_path, native_position)
         return slot, None, blockers
-    if mapping.value_kind in {"len", "is_present", "shape", "stride", "work"}:
-        slot, blockers = _computed_native_call_slot_policy(mapping, owner_path, native_position)
+    if mapping.value_kind in {"len", "is_present", "size", "shape", "stride", "work"}:
+        slot, blockers = _computed_native_call_slot_policy(
+            mapping,
+            owner_path,
+            native_position,
+            visible_arguments,
+        )
         return slot, None, blockers
     python_position = mapping.python_position
     if mapping.result_position is not None and python_position is None:
@@ -3701,14 +3710,20 @@ def _computed_native_call_slot_policy(
     mapping: models.ProjectionMapping,
     owner_path: str,
     native_position: int,
+    visible_arguments: tuple[models.SemanticArgument, ...],
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
-    """Complete one binding-owned length, presence, shape, stride, or work slot."""
+    """Complete one binding-owned length, presence, size, shape, stride, or work slot."""
     value_kind = mapping.value_kind
     source_position = _projection_value_argument_position(mapping.value)
     semantic_type_name, cast_blockers = _computed_slot_cast_type(mapping, native_position)
     blockers = list(cast_blockers)
     if value_kind != "work" and source_position is None:
         blockers.append(f"native-call {value_kind} slot {native_position} has no argument source")
+    if value_kind == "size" and source_position is not None:
+        if not 0 <= source_position < len(visible_arguments):
+            blockers.append(f"native-call size slot {native_position} references argument position {source_position}")
+        elif _array_handoff_policy(visible_arguments[source_position].semantic_type) is None:
+            blockers.append(f"native-call size slot {native_position} requires an array argument")
     if value_kind == "work":
         blockers.append(f"native-call work slot {native_position} has no completed typed storage policy")
     return (
@@ -7323,20 +7338,27 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         return None
     if semantic_type.name == "String" and array.category == SCALAR_STORAGE_CATEGORY:
         return None
-    assumed_rank = array.category == "assumed_rank"
-    rank = _array_handoff_rank(semantic_type, array.rank, assumed_rank)
+    runtime_rank = array.category in {"assumed_rank", "runtime_rank"}
+    rank = _array_handoff_rank(semantic_type, array.rank, runtime_rank)
     if rank is not None and rank <= 0 and not (rank == 0 and array.category == SCALAR_STORAGE_CATEGORY):
         return None
     shape = tuple(str(item) for item in (array.shape or semantic_type.shape))
     axes = tuple(str(item) for item in array.axes)
+    flatten_python_storage = _array_handoff_flattens_python_storage(array)
+    minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
+    order = _array_handoff_order(array.order, array.category)
+    contiguous = _array_handoff_contiguous(array.contiguous, array.category)
     return ArrayHandoffPolicy(
         rank=rank,
         shape=shape,
         axes=axes,
-        order=_array_handoff_order(array.order, assumed_rank),
-        native_order=_array_handoff_native_order(array.order, array.copy_order, assumed_rank),
-        contiguous=_array_handoff_contiguous(array.contiguous, assumed_rank, array.category),
-        flatten_python_storage=_array_handoff_flattens_python_storage(array),
+        order=order,
+        native_order=_array_handoff_native_order(array.order, array.copy_order, array.category),
+        contiguous=contiguous,
+        python_layout=_array_handoff_python_layout(order, contiguous, rank),
+        minimum_rank=minimum_rank,
+        maximum_rank=maximum_rank,
+        flatten_python_storage=flatten_python_storage,
         flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
         character=semantic_type.name == "String",
@@ -7348,39 +7370,82 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
 def _array_handoff_rank(
     semantic_type: models.SemanticType,
     storage_rank: int | None,
-    assumed_rank: bool,
+    runtime_rank: bool,
 ) -> int | None:
-    """Return the concrete rank, leaving assumed-rank selection explicit."""
-    if assumed_rank:
+    """Return the concrete rank, leaving runtime-rank selection explicit."""
+    if runtime_rank:
         return None
     return int(storage_rank or semantic_type.rank or 0)
 
 
-def _array_handoff_order(order: str | None, assumed_rank: bool) -> str | None:
-    """Default assumed-rank buffers to native Fortran layout."""
-    if assumed_rank and order is None:
+def _array_handoff_order(order: str | None, category: str | None) -> str | None:
+    """Complete the Python layout for each runtime-rank contract."""
+    if category == "assumed_rank" and order is None:
         return "ORDER_F"
+    if category == "runtime_rank" and order is None:
+        return "ORDER_C"
     return order
 
 
 def _array_handoff_native_order(
     order: str | None,
     copy_order: str | None,
-    assumed_rank: bool,
+    category: str | None,
 ) -> str | None:
     """Return the completed native-copy layout independently of input layout."""
-    if assumed_rank and order is None:
+    if category == "assumed_rank" and order is None:
         return "ORDER_F"
+    if category == "runtime_rank" and order is None:
+        return "ORDER_C"
     return copy_order if copy_order is not None else order
 
 
-def _array_handoff_contiguous(contiguous: bool | None, assumed_rank: bool, category: str | None) -> bool | None:
-    """Default assumed-rank handoff to one contiguous native buffer."""
-    if category == SCALAR_STORAGE_CATEGORY and contiguous is None:
+def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> bool | None:
+    """Complete the contiguity a contract asserts, leaving C runtime rank open.
+
+    ``None`` states that the contract asserts nothing about layout: the caller's
+    own strides reach the native call. Fortran assumed rank keeps its contiguous
+    descriptor default, and every C ``T[...]`` that did not spell ``Contiguous``
+    stays stride-agnostic.
+    """
+    if contiguous is not None:
+        return contiguous
+    if category in {SCALAR_STORAGE_CATEGORY, "assumed_rank"}:
         return True
-    if assumed_rank and contiguous is None:
-        return True
-    return contiguous
+    return None
+
+
+def _array_handoff_python_layout(
+    order: str | None,
+    contiguous: bool | None,
+    rank: int | None,
+) -> ArrayPythonLayout:
+    """Select the layout every accepted Python array actual must already have."""
+    if contiguous is None:
+        return ArrayPythonLayout.ANY_STRIDED
+    if contiguous is False:
+        return ArrayPythonLayout.POSITIVE_STRIDED_F
+    if order == "ORDER_C":
+        return ArrayPythonLayout.C_CONTIGUOUS
+    if order == "ORDER_F" or (rank is not None and rank > 1):
+        return ArrayPythonLayout.F_CONTIGUOUS
+    return ArrayPythonLayout.ANY_CONTIGUOUS
+
+
+def _array_handoff_rank_bounds(
+    rank: int | None,
+    category: str | None,
+    flatten_python_storage: bool,
+) -> tuple[int, int]:
+    """Complete inclusive Python rank bounds before wrapper planning."""
+    if category == "runtime_rank":
+        return 0, 15
+    if category == "assumed_rank":
+        return 1, 15
+    concrete_rank = int(rank or 0)
+    if flatten_python_storage:
+        return concrete_rank, 15
+    return concrete_rank, concrete_rank
 
 
 def _array_handoff_flattens_python_storage(array: models.SemanticArrayContract) -> bool:
@@ -7479,6 +7544,9 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         order=order,
         native_order=order,
         contiguous=True,
+        python_layout=_array_handoff_python_layout(order, True, rank),
+        minimum_rank=rank,
+        maximum_rank=rank,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,
         character=semantic_type.name == "String",
         category="raw_address",

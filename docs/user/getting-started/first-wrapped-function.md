@@ -1,20 +1,22 @@
 ---
 title: First Wrapped Function
-description: Build and call your first Fortran function as a Python extension
+description: Build and call the same scalar function from Fortran or C
 audience: users
 prerequisites: installation, verification
-related: first-wrapped-module.md, ../guide/wrapping-functions.md
+related: beginner-workflow.md, ../guide/wrapping-functions.md, ../guide/c/functions-and-scalars.md
 status: maintained
 publication: reviewed
 ---
 
 # First Wrapped Function
 
-This example shows how to build a simple scalar Fortran function and call it from Python using the exact NumPy dtypes required by its contract.
+Choose the [Fortran](#fortran-path) or [C](#c-path) path below. Both define the
+same operation, build an extension named `scale`, and expose `scale.scale` to
+Python. After building, continue with [Call the Function](#call-the-function).
 
 ---
 
-## Source Code
+## Fortran Path
 
 Create `scale.f90`:
 
@@ -25,10 +27,6 @@ real(8) function scale(value, factor) result(output)
   output = value * factor
 end function scale
 ```
-
----
-
-## Inspect the Generated Contract
 
 Preview the Python interface before building:
 
@@ -49,70 +47,64 @@ def scale(
 ) -> Float64: ...
 ```
 
-`Float64` means the function requires `numpy.float64` scalar arguments and
-returns a `numpy.float64` result.
-`@standalone` identifies a procedure outside a Fortran module.
-`@native_call(...)` maps the two Python arguments to the native call and passes
-each scalar by address.
-
-This file is both the wrapper contract and an editable description of the
-Python interface. You can leave it unchanged for this example; later pages
-show useful edits in context. [`.pyi` Format](../reference/pyi-format.md)
-defines every part of the contract, while [Editing `.pyi`
-Contracts](../reference/pyi-contracts/index.md) shows how to change it safely.
-
----
-
-## Build the Extension
-
-From the directory containing `scale.f90`, run:
+Build the extension:
 
 ```bash
-python3 -m prik scale.f90 --out-dir build/first-function
+python3 -m prik scale.f90 \
+  --out scale \
+  --out-dir build/first-function
 ```
 
-This creates an importable `scale` extension module in the `build/first-function` directory.
+`@standalone` records that the procedure is outside a Fortran module, and
+`@native_call(...)` records Fortran's by-address scalar arguments.
 
----
+Continue with [Call the Function](#call-the-function), or read the C path to
+compare the native source and generated contract.
 
-## Inspect the Generated Docstring
+## C Path
 
-PRIK creates NumPy-style docstrings from the same contract. Import the built
-extension and inspect the function:
+Create `scale.c`:
+
+```c
+double scale(double value, double factor) {
+    return value * factor;
+}
+```
+
+Preview the Python interface:
+
+```bash
+python3 -m prik generate --pyi --language c scale.c
+```
+
+The generated semantic `.pyi` contains:
+
+```python
+from prik.contracts import Float64
+
+def scale(value: Float64, factor: Float64) -> Float64: ...
+```
+
+Build the extension:
+
+```bash
+python3 -m prik --language c scale.c \
+  --compiler cc \
+  --out scale \
+  --out-dir build/first-function
+```
+
+## Call the Function
+
+Whichever source path you chose, import and call the extension in the same way:
 
 ```python
 import sys
 
+import numpy as np
+
 sys.path.insert(0, "build/first-function")
 import scale
-
-print(scale.scale.__doc__)
-```
-
-```text
-scale(value, factor) -> float64
-
-Parameters
-----------
-value : float64
-factor : float64
-
-Returns
--------
-result : float64
-```
-
-`help(scale.scale)` shows the same signature, parameter types, result, and
-documented exceptions. Generated modules, classes, methods, and properties
-also provide docstrings. The displayed `float64` records the exact NumPy scalar
-type accepted and returned by this function.
-
----
-
-## Call the Function
-
-```python
-import numpy as np
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
 print(result)          # 7.5
@@ -123,7 +115,8 @@ assert result == 7.5
 
 ## Common Pitfall: Wrong Scalar Type
 
-You **must** pass the exact NumPy scalar types:
+`Float64` requires `numpy.float64` scalar arguments and returns a
+`numpy.float64` result. Pass the exact NumPy scalar types:
 
 ```python
 # This will raise TypeError
@@ -133,15 +126,19 @@ scale.scale(3.0, 2.5)
 scale.scale(np.float64(3.0), np.float64(2.5))
 ```
 
-Always convert at the call site for scalar arguments.
+Always convert at the call site for scalar arguments. If the build fails,
+rerun the command for your selected path with `--verbose`.
 
----
-
-If the build fails, rerun it with `--verbose`.
+The semantic `.pyi` is an editable description of the Python interface. The
+[Common Beginner Workflow](beginner-workflow.md) shows how to save and edit it.
 
 ---
 
 ## Next
 
-- Continue with [Your First Wrapped Module](first-wrapped-module.md).
-- For more function behavior, see [Wrapping Functions](../guide/wrapping-functions.md).
+- Continue with the [Common Beginner Workflow](beginner-workflow.md).
+- For Fortran procedures and modules, see [Wrapping
+  Functions](../guide/wrapping-functions.md) and [Wrapping
+  Modules](../guide/wrapping-modules.md).
+- For C functions and pointer contracts, see the [C User
+  Guide](../guide/c/index.md).

@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 import re
+from typing import ClassVar
 
 from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
 from prik.policy.ownership import (
@@ -22,6 +23,7 @@ from prik.policy.ownership import (
 )
 from prik.policy.models import (
     ArgumentHandoffMode,
+    ArrayPythonLayout,
     CallbackABIKind,
     CallbackResultAction,
     CallbackTransferAction,
@@ -5993,11 +5995,61 @@ class CBindingGenerator(ClassVisitor):
                 *self._native_output_declarations(plan, context),
                 self._parse_statement(plan, context),
                 *argument_body,
+                *self._projected_axis_guard_nodes(plan, context),
                 *alias_body,
                 *self._native_call_setup_nodes(plan, context),
                 *output_nodes,
             ),
         )
+
+    def _projected_axis_guard_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Require every projected axis to exist on a runtime-rank actual.
+
+        A runtime-rank contract states no rank, so the rank an axis projection
+        needs is only known once the caller's array arrives. The guard reads
+        that rank before the projection reads the axis.
+        """
+        guards = {}
+        for slot in sorted(plan.entrypoint.projected_slots, key=lambda item: item.native_position):
+            axis = self._projected_runtime_rank_axis(plan, slot)
+            if axis is None:
+                continue
+            argument = next(item for item in plan.arguments if item.python_position == slot.python_position)
+            names = context.arguments[argument.owner_path]
+            guards[(names.object_name, axis)] = CExpressionStatement(
+                CodeExpression(
+                    f"if (PyArray_NDIM((PyArrayObject *){names.object_name}) <= {axis}) {{ "
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {argument.binding.python_name} '
+                    f'has no axis {axis}"); return NULL; }}'
+                )
+            )
+        return tuple(guards.values())
+
+    @staticmethod
+    def _projected_runtime_rank_axis(
+        plan: FunctionPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> int | None:
+        """Return the projected axis when its source array carries a runtime rank."""
+        if slot.projection_action not in {
+            EntrypointProjectionAction.COMPUTED_SHAPE,
+            EntrypointProjectionAction.COMPUTED_STRIDE,
+        }:
+            return None
+        if slot.python_position is None or not isinstance(slot.literal_value, Mapping):
+            return None
+        argument = next(
+            (item for item in plan.arguments if item.python_position == slot.python_position),
+            None,
+        )
+        if argument is None or argument.array is None or argument.array.rank is not None:
+            return None
+        axis = slot.literal_value.get("dim")
+        return axis if isinstance(axis, int) else None
 
     def _function_argument_nodes(self, plan: FunctionPlan, context: _CFunctionContext) -> tuple:
         """Build function argument nodes from the supplied completed binding records; emitted nodes only project completed binding actions."""
@@ -7091,22 +7143,20 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _array_rank_bounds(handoff: ArrayHandoffPlan) -> tuple[int, int]:
         """Return inclusive runtime-rank bounds selected by array policy."""
-        if handoff.rank is None:
-            return 1, 15
-        if handoff.flatten_python_storage:
-            return handoff.rank, 15
-        return handoff.rank, handoff.rank
+        return handoff.minimum_rank, handoff.maximum_rank
 
-    @staticmethod
-    def _array_layout_selector(handoff: ArrayHandoffPlan) -> str:
-        """Return the compact helper layout selector chosen by the plan."""
-        if handoff.contiguous is False:
-            return "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F"
-        if handoff.order == "ORDER_C":
-            return "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS"
-        if handoff.order == "ORDER_F" or (handoff.rank is not None and handoff.rank > 1):
-            return "PRIK_ARRAY_LAYOUT_F_CONTIGUOUS"
-        return "PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS"
+    _ARRAY_LAYOUT_SELECTORS: ClassVar[dict[ArrayPythonLayout, str]] = {
+        ArrayPythonLayout.ANY_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS",
+        ArrayPythonLayout.C_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS",
+        ArrayPythonLayout.F_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_F_CONTIGUOUS",
+        ArrayPythonLayout.POSITIVE_STRIDED_F: "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F",
+        ArrayPythonLayout.ANY_STRIDED: "PRIK_ARRAY_LAYOUT_ANY_STRIDED",
+    }
+
+    @classmethod
+    def _array_layout_selector(cls, handoff: ArrayHandoffPlan) -> str:
+        """Return the compact helper selector for the layout policy completed."""
+        return cls._ARRAY_LAYOUT_SELECTORS[handoff.python_layout]
 
     def _array_shape_checks(
         self,
@@ -10774,6 +10824,8 @@ class CBindingGenerator(ClassVisitor):
             return (f"({spelling}){names.length_name}",)
         if slot.projection_action is EntrypointProjectionAction.COMPUTED_PRESENCE:
             return (f"({names.nullable_name} != NULL)",)
+        if slot.projection_action is EntrypointProjectionAction.COMPUTED_SIZE:
+            return (f"({spelling})PyArray_SIZE((PyArrayObject *){names.object_name})",)
         if not isinstance(slot.literal_value, Mapping):
             raise ValueError(f"Projected array fact {slot.owner_path!r} has no axis metadata")
         axis = slot.literal_value.get("dim")

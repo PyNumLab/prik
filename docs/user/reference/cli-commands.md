@@ -65,7 +65,7 @@ Compiled wrapper builds support Fortran and the documented C subset —
 scalars, one-level primitive pointers, arrays, rank-zero strings, hidden
 outputs, and status projection. C paths require `--language c`; the parser
 accepts more C forms than that runtime subset, and those fail before wrapper
-planning. [C Support](../language-support/c-support.md#what-is-supported)
+planning. [C Support](../language-support/c-support.md#supported-wrapper-areas)
 records the exact boundary.
 
 Directories are expanded recursively in deterministic path order. Fortran
@@ -384,6 +384,6 @@ which has a complete source, build, import, and result flow.
 ## Related pages
 
 - [Python API Reference](python-api.md) — the same workflows from Python.
-- [C Support](../language-support/c-support.md) — the complete C
-  source, contract, build, and Python workflows.
+- [C User Guide](../guide/c/index.md) — C source, contract, build, and Python
+  workflows.
 - [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported contract edits.

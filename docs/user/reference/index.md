@@ -44,8 +44,10 @@ the changed path once.
 
 - [Fortran Support](../language-support/fortran-support.md) — the complete map
   of supported Fortran wrapper areas, limits, and detailed guides.
-- [C Support](../language-support/c-support.md) — the complete C source,
-  contract, build, generated API, and support-boundary workflow.
+- [C User Guide](../guide/c/index.md) — C source, contract, build, and generated
+  API workflows.
+- [C Support](../language-support/c-support.md) — supported C features and
+  boundaries.
 - [Language feature matrix](../language-support/feature-matrix.md) — whether a
   feature is supported at all, with its evidence.
 - [Diagnostic codes](diagnostic-codes.md) — what a rejected wrapper is telling

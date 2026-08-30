@@ -81,8 +81,8 @@ print(native_math.add(np.float64(3.0), np.float64(2.5)))
 ```
 
 For an authored C semantic contract, use `build_pyi_extension` with
-`native_language="c"` and `native_c_sources=[...]`. The [C Support
-guide](../language-support/c-support.md#author-a-contract-for-pointers-and-arrays)
+`native_language="c"` and `native_c_sources=[...]`. [C Pointers, Arrays, and
+Strings](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays)
 shows the complete contract and build.
 
 ## Advanced package imports
@@ -113,7 +113,7 @@ Reach past the root facade when you need a single stage rather than a build.
   completion, planning, and generation are separate stages that can each
   reject input the parser accepted.
 - C source builds are limited to the documented supported subset recorded in
-  [C Support](../language-support/c-support.md#what-is-supported). Other
+  [C Support](../language-support/c-support.md#supported-wrapper-areas). Other
   parser-accepted C forms fail before wrapper planning rather than falling back
   to a generated ABI-conversion adapter.
 
@@ -121,8 +121,8 @@ Reach past the root facade when you need a single stage rather than a build.
 
 - [CLI Commands](cli-commands.md) — the same workflows from a shell.
 - [IPython and Jupyter Notebooks](../guide/notebooks.md) — compile source cells and publish their APIs in the session.
-- [C Support](../language-support/c-support.md) — C source, contract, CLI, and
-  Python workflows.
+- [C User Guide](../guide/c/index.md) — C source, contract, CLI, and Python
+  workflows.
 - [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported API-shaping
   edits.
 - [Package guides](../../developer/packages/index.md) — module responsibilities

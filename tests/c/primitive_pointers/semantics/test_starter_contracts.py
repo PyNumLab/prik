@@ -1,4 +1,4 @@
-"""Public C starter contracts preserve pointer ambiguity for author edits."""
+"""Public C starter contracts expose pointer ambiguity as editable runtime rank."""
 
 import subprocess
 import sys
@@ -32,9 +32,9 @@ def test_c_starter_contract_preserves_every_documented_pointer_row(tmp_path: Pat
 
     contract = output.read_text(encoding="utf-8")
     assert "def by_value(\n    value: Float64\n) -> Float64" in contract
-    assert contract.count("@native_call([Addr(Arg(0))])") == 2
-    assert "def scalar_reference(\n    value: Float64\n) -> None" in contract
-    assert "def const_scalar_reference(\n    value: Float64\n) -> None" in contract
+    assert "@native_call" not in contract
+    assert "def scalar_reference(\n    value: Float64[...]\n) -> None" in contract
+    assert "def const_scalar_reference(\n    value: Float64[...]\n) -> None" in contract
     assert "def unsupported_multiple_reference(\n    value: Addr[2](Float64)\n) -> None" in contract
     assert "def primitive_result() -> Float64" in contract
     assert "def unsupported_pointer_result() -> Addr(Float64)" in contract

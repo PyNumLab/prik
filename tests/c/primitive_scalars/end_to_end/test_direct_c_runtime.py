@@ -24,7 +24,7 @@ double native_scale(double *value) { *value *= 2.0; return *value; }
     module = sole_native_module(result.import_module())
 
     assert module.native_add(np.float64(1.5), np.float64(2.0)) == np.float64(3.5)
-    assert module.native_scale(np.float64(3.0)) == np.float64(6.0)
+    assert module.native_scale(np.array(3.0, dtype=np.float64)) == np.float64(6.0)
     assert all(path.suffix != ".f90" for path in result.generated_sources)
     binding = next(path for path in result.generated_sources if path.suffix == ".c")
     text = binding.read_text(encoding="utf-8")
@@ -199,19 +199,27 @@ size_t total(size_t value) { return value + 1; }
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
-def test_default_c_pointer_scalar_documents_that_native_mutation_is_discarded(tmp_path: Path):
-    """The conservative ``T *`` default passes a call-local scalar address."""
-    source = tmp_path / "discarded.c"
+def test_default_c_pointer_writes_back_into_caller_owned_runtime_rank_storage(tmp_path: Path):
+    """The ``T *`` default passes caller-owned storage of whatever rank arrived."""
+    source = tmp_path / "in_place.c"
     source.write_text("void twice(double *value) { *value *= 2.0; }\n", encoding="utf-8")
 
-    result = build_c_extension(source, output_dir=tmp_path / "build", output_name="c_discarded")
+    result = build_c_extension(source, output_dir=tmp_path / "build", output_name="c_in_place")
     module = sole_native_module(result.import_module())
 
-    value = np.float64(3.0)
+    value = np.array(3.0, dtype=np.float64)
     assert module.twice(value) is None
-    assert value == np.float64(3.0)
-    assert "The update is not visible in Python." in module.twice.__doc__
-    assert "update the supplied storage in place" not in module.twice.__doc__
+    assert value == np.float64(3.0) * 2
+
+    values = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    module.twice(values)
+    assert values[0, 0] == np.float64(2.0)
+
+    assert "Rank: 0..15" in module.twice.__doc__
+    assert "Layout: Any strides" in module.twice.__doc__
+    assert "update the supplied storage in place" in module.twice.__doc__
+    with pytest.raises(TypeError, match=r"numpy\.float64 for argument value"):
+        module.twice(np.float64(3.0))
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
@@ -235,7 +243,7 @@ ptrdiff_t alias_offset(const ptrdiff_t *value) { return *value + 1; }
     assert "long alias_offset(const long * value);" in binding
     assert "my_int" not in binding
     assert module.alias_step(np.int64(4)) == np.int64(5)
-    assert module.alias_offset(np.int64(4)) == np.int64(5)
+    assert module.alias_offset(np.array(4, dtype=np.int64)) == np.int64(5)
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")

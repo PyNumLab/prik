@@ -7,6 +7,28 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated contracts now represent a one-level primitive C pointer as
+  runtime-rank `T[...]` NumPy storage instead of choosing a scalar temporary.
+  It accepts ranks 0 through 15 with any strides, so a Fortran-ordered array
+  or a strided slice reaches the native call unchanged, and it can be narrowed
+  to contiguous, rank-zero, fixed-rank, or scalar-address storage in an edited
+  contract. `Arg(i).size` supplies the total element count to a native
+  parameter, alongside the existing `Arg(i).shape[d]` and `Arg(i).strides[d]`
+  layout projections; an axis projection against storage that has no such axis
+  now raises `TypeError` instead of reading past the actual's shape.
+
+- Getting Started now offers complete Fortran and C paths for toolchain
+  verification, building the same first function, and the edit-review-build-test
+  loop. Fortran modules now begin in their task-focused User Guide page instead
+  of a separate mandatory beginner step.
+
+- Added a dedicated C section to the User Guide for scalar functions, pointer
+  contracts, arrays and strings, outputs and errors, and native symbols and
+  dependencies. The C Support page now serves as a concise capability and
+  boundary map with the same wrapper-area, boundary, and source-entry structure
+  as Fortran Support. User Guide navigation presents separate Fortran and C
+  paths followed by their shared build workflows.
+
 - Added optional `%%fortran`, `%%c`, and `%%pyi` IPython/Jupyter cell magics.
   Native-source cells compile directly or, with `--pyi`, persist their exact
   source and insert editable per-module or direct-declaration contract cells.

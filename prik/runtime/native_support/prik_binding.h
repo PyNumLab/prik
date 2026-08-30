@@ -396,6 +396,7 @@ PRIK_NO_INLINE static int prik_array_actual_unpack(
 #define PRIK_ARRAY_LAYOUT_C_CONTIGUOUS 1
 #define PRIK_ARRAY_LAYOUT_F_CONTIGUOUS 2
 #define PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F 3
+#define PRIK_ARRAY_LAYOUT_ANY_STRIDED 4
 
 /*
  * Validate mechanics shared by every ordinary NumPy-array argument. The
@@ -420,7 +421,7 @@ static inline int prik_array_validate_ndarray(
 
     if (minimum_rank < 0 || maximum_rank < minimum_rank || maximum_rank > PRIK_MAX_ARRAY_RANK
         || layout < PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS
-        || layout > PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F
+        || layout > PRIK_ARRAY_LAYOUT_ANY_STRIDED
         || python_type == NULL || argument_name == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "prik generated invalid NumPy-array validation selectors");
         return -1;
@@ -435,7 +436,9 @@ static inline int prik_array_validate_ndarray(
             Py_TYPE((PyObject *)array)->tp_name);
         return -1;
     }
-    if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {
+    if (layout == PRIK_ARRAY_LAYOUT_ANY_STRIDED) {
+        /* The plan accepts whatever strides the caller's array already has. */
+    } else if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {
         for (axis = 0; axis < rank; axis++) {
             npy_intp stride = PyArray_STRIDE(array, axis);
             if ((stride % PyArray_ITEMSIZE(array)) != 0
@@ -548,7 +551,8 @@ static inline int prik_array_validate(
  *   minimum_rank        smallest accepted runtime rank; equals `rank` unless
  *                       the plan flattens Python storage
  *   maximum_rank        largest accepted runtime rank
- *   layout              PRIK_ARRAY_LAYOUT_* ordering the plan requires
+ *   layout              PRIK_ARRAY_LAYOUT_* ordering the plan requires;
+ *                       PRIK_ARRAY_LAYOUT_ANY_STRIDED requires none
  *   require_contiguous  non-zero when the plan requires contiguous storage
  *   require_writeable   non-zero when the plan may write through this argument
  *   python_type         public dtype name used in diagnostics, "numpy.float64"

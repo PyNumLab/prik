@@ -590,8 +590,9 @@ Here Python receives `(a, b)` and returns `status`; the native procedure receive
 | `Int32(1)`, `Float64(0.5)`, `Bool(False)` | Typed hidden primitive literal. |
 | `String[1]("N")` | Typed hidden one-character literal. |
 | `Len(Arg(i))`, `Len(Return(i))`, `Len(Work("name"))` | Hidden native character length. |
+| `Arg(i).size` | Hidden `SizeT` total element count for array argument `i`. |
 | `Arg(i).shape[d]`, `Return(i).shape[d]`, `Work("name").shape[d]` | Hidden `SizeT` extent for axis `d`. |
-| `Arg(i).strides[d]`, `Return(i).strides[d]`, `Work("name").strides[d]` | Hidden `SizeT` stride for axis `d`. |
+| `Arg(i).strides[d]`, `Return(i).strides[d]`, `Work("name").strides[d]` | Hidden `SizeT` stride for axis `d`, in bytes, as `ndarray.strides` reports it. |
 | `Int32(Arg(i).shape[d])` | The same extent, materialized as the named integer type. |
 | `IsPresent(Arg(i))` | Hidden optional-presence flag. |
 | `Work("name")` | Named hidden workspace. |
@@ -622,12 +623,12 @@ The binding materializes the extent as that type directly, and the generated
 Fortran dummy becomes `integer(c_int32_t)`, so a default Fortran `integer`
 parameter no longer has to stay visible in the Python signature.
 
-The same form applies to `strides[d]` and `Len(...)`. Fixed-width signed and
-unsigned integer contract types, plus `SizeT`, are accepted. The unresolved
-`Int` and `UInt` names and all real, Boolean, and character types are rejected
-during policy completion. The conversion is not range-checked, so an extent
-wider than the stated type wraps rather than raising. Use a type that matches
-the native parameter.
+The same form applies to `.size`, `strides[d]`, and `Len(...)`. Fixed-width
+signed and unsigned integer contract types, plus `SizeT`, are accepted. The
+unresolved `Int` and `UInt` names and all real, Boolean, and character types
+are rejected during policy completion. The conversion is not range-checked,
+so an extent wider than the stated type wraps rather than raising. Use a type
+that matches the native parameter.
 
 A character length has a compiler-fixed ABI. Restate it only when the native
 declaration genuinely takes a different integer, not to change how PRIK passes
@@ -717,7 +718,7 @@ stores or passes it:
 | `T[:]` | Rank-one array with runtime extent. | Shared. |
 | `T[:, :]` | Rank-two array with runtime extents. | Shared. |
 | `T[::]` | Rank-one stride-aware array. | Shared. |
-| `T[...]` | Assumed-rank storage. | Accepted; build support is feature-specific. |
+| `T[...]` | Runtime-rank NumPy storage. C accepts ranks 0–15 with any strides; Fortran assumed-rank support is feature-specific. | Shared. |
 | `T[Flat]`, `T[n, Flat]` | Contiguous assumed-size/flat-edge storage. | Primarily Fortran and flat-buffer APIs. |
 | `Addr(T)` | Python integer carrying a raw native address to `T`. | Shared low-level form. |
 | `Addr[n](T)` | Pointer depth greater than one. | Loaded for low-level declarations; callable support is limited. |
@@ -781,7 +782,8 @@ completed native handle.
 For C, a pointer annotation alone cannot determine whether Python should see a
 scalar address, rank-zero storage, an array, a result, or an opaque address.
 Express that choice with `Addr(T)`, `T[()]`, `T[...]`, `Returns[...]`, and
-`@native_call` as described in [C Support](../language-support/c-support.md).
+`@native_call` as described in [C Pointers, Arrays, and
+Strings](../guide/c/pointers-arrays-and-strings.md).
 
 ### Allocatable Array Handles
 
@@ -831,7 +833,7 @@ type. Metadata falls into four groups.
 | --- | --- | --- |
 | `ORDER_C`, `ORDER_F`, `ORDER_ANY` | Array orientation. | Author only when it differs from the language default, or when either order is intended. |
 | `COPY_F` | Accept C-order Python storage, use an F-order temporary, and copy back visible mutation. | Focused multidimensional array support. |
-| `Contiguous` | Native declaration promises contiguity. | Loaded source-provenance/compatibility fact. |
+| `Contiguous` | Storage is contiguous. | Loaded source-provenance/compatibility fact; on `T[...]` it narrows stride-agnostic runtime-rank storage to the language's contiguous order. |
 | `Aliased` | Native storage is addressable or may be exposed as an alias. | Fortran `target` and borrowed native objects. |
 | `Immutable` | Python-visible value is replace-only, not mutated in place. | Requires a compatible replacement/copy policy for writable native storage. |
 | `Polymorphic` | Fortran native declaration is `class(T)`. | Fortran. |
@@ -954,13 +956,13 @@ entry-contract imports and aliases shape the public Python namespace.
 | Native language selection | Inferred from normal Fortran `.pyi` generation/build context. | Pass `--language c` for a source-free contract. |
 | Native scope | Leaf filename is native module; `@standalone` marks external procedures. | Functions are external symbols; file/import structure organizes the contract and Python API. |
 | Default multidimensional order | `ORDER_F`. | `ORDER_C`. |
-| Scalar reference input | Generated visible `T` plus `Addr(Arg(i))`, or explicit `T[()]` storage. | Pointer meaning must be authored as scalar address, storage, array, output, or raw address. |
+| Scalar reference input | Generated visible `T` plus `Addr(Arg(i))`, or explicit `T[()]` storage. | A primitive `T *` starts as runtime-rank `T[...]` storage; edit it to a scalar address, exact rank, projected result, or raw address as needed. |
 | ABI marker | `@native_abi("c")` preserves Fortran `bind(C)`. | Invalid because C language identity already supplies the ABI. |
 | Exact native scalar identity | Usually carried by resolved Fortran type/kind. | C cast helpers inside `@native_call` preserve spelling such as `long long`. |
 | Classes | Wrapped derived types, fields, methods, inheritance, constructors, finalizers. | Struct/union/anonymous/opaque classes are currently inspection forms, not aggregate wrappers. |
 | Module variables | Supported Fortran module-state subset. | Native C globals are inspection-only. |
 | Callbacks/prototypes | Supported Fortran callback subset through `@prototype`. | C function pointers are not currently buildable callbacks. |
-| Arrays and strings | Full documented Fortran wrapper mechanisms. | Primitive C-contiguous arrays and rank-zero strings in the documented C subset. |
+| Arrays and strings | Full documented Fortran wrapper mechanisms. | Stride-agnostic runtime-rank storage, explicitly shaped C-contiguous arrays, and rank-zero strings in the documented C subset. |
 
 ### Fortran Wrapper Contracts
 
@@ -1010,12 +1012,13 @@ valid and whether it is buildable.
 | Project layout | Entry plus native-module leaves; compact standalone entry when applicable. | One contract file per selected source or declaration owner. |
 | Primitive types | Compiler-resolved kinds and storage names. | Compiler-probed types plus exact C identity helpers when needed. |
 | Functions | Module and standalone procedures, results, outputs, callbacks, overloads. | Functions, primitive pointers, projections, renames, and overload candidates. |
-| Arrays and strings | Shapes, order, striding, characters, allocatable and pointer descriptors. | C-order array facts and conservative pointer/string starter contracts. |
+| Arrays and strings | Shapes, order, striding, characters, allocatable and pointer descriptors. | Stride-agnostic runtime-rank primitive pointer storage, C-order array facts, and conservative string starter contracts. |
 | Classes | Derived types, fields, methods, constructors, inheritance, abstract/final roles. | Struct, union, anonymous, and opaque inspection classes. |
 | Variables/constants | Module variables, parameters, and enum constants. | Global and enum/macro constant inspection declarations. |
 
-Generated output is a conservative starting point. C pointer meaning and any
-ownership or Pythonic result projection that native syntax cannot prove must be
+Generated output is a conservative starting point. Runtime-rank `T[...]`
+avoids choosing a fixed C pointer rank, but native extents, ownership, or
+Pythonic result projection that source syntax cannot prove must still be
 authored explicitly.
 
 ## Rejected Or Not Yet Supported

@@ -12,6 +12,7 @@ from __future__ import annotations
 from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
 from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
+    ArrayPythonLayout,
     ClassConstructorKind,
     EntrypointOptionalityAction,
     ModuleGetterAction,
@@ -948,10 +949,19 @@ class WrapperDocstringBuilder:
         display_shape = array.display_shape or array.shape
         if display_shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in display_shape):
             lines.append(f"    Shape: ({', '.join(map(str, display_shape))})")
-        if (array.rank is None or array.rank > 1) and array.order in {"ORDER_C", "ORDER_F"}:
-            layout = "C-contiguous" if array.order == "ORDER_C" else "F-contiguous"
+        layout = WrapperDocstringBuilder._array_layout_label(array)
+        if layout is not None:
             lines.append(f"    Layout: {layout}")
         return tuple(lines)
+
+    @staticmethod
+    def _array_layout_label(array: ArrayHandoffPlan) -> str | None:
+        """Render the layout every accepted actual must already have, if any."""
+        if array.python_layout is ArrayPythonLayout.ANY_STRIDED:
+            return "Any strides"
+        if (array.rank is None or array.rank > 1) and array.order in {"ORDER_C", "ORDER_F"}:
+            return "C-contiguous" if array.order == "ORDER_C" else "F-contiguous"
+        return None
 
     @staticmethod
     def _array_rank_line(array: ArrayHandoffPlan) -> str:
@@ -967,8 +977,8 @@ class WrapperDocstringBuilder:
                 return "    Rank: 1..15, flattened to native rank 1"
             edge = "leading" if array.flat_axis == 0 else "final"
             return f"    Rank: {native_rank}..15, flattened at {edge} Flat axis to native rank {native_rank}"
-        if array.rank is None:
-            return "    Rank: 1..15"
+        if array.minimum_rank != array.maximum_rank:
+            return f"    Rank: {array.minimum_rank}..{array.maximum_rank}"
         return f"    Rank: {array.rank}"
 
     @staticmethod

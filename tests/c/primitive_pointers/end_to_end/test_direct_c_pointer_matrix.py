@@ -1,4 +1,4 @@
-"""Compiled all-primitive evidence for the conservative C pointer contracts."""
+"""Compiled all-primitive evidence for source-generated C pointer contracts."""
 
 import shutil
 from pathlib import Path
@@ -53,6 +53,25 @@ _VALUES = {
     "Complex128": np.complex128(1.25 + 2.5j),
     "Complex256": np.clongdouble(1.25 + 2.5j),
 }
+_NATIVE_POINTER_DTYPES = {
+    "signed_char": np.byte,
+    "unsigned_char": np.ubyte,
+    "short": np.short,
+    "unsigned_short": np.ushort,
+    "int": np.intc,
+    "unsigned_int": np.uintc,
+    "long": np.int_,
+    "unsigned_long": np.uint,
+    "long_long": np.longlong,
+    "unsigned_long_long": np.ulonglong,
+    "float": np.single,
+    "double": np.double,
+    "long_double": np.longdouble,
+    "float_complex": np.csingle,
+    "double_complex": np.cdouble,
+    "long_double_complex": np.clongdouble,
+    "size": np.uintp,
+}
 
 
 def _pointer_source() -> str:
@@ -68,13 +87,14 @@ def _pointer_source() -> str:
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
-def test_every_c_primitive_pointer_defaults_to_one_call_local_scalar(tmp_path: Path):
-    """Source C retains ``T *``/``const T *`` as scalar ``Addr(Arg(i))`` calls."""
+def test_non_boolean_c_primitive_pointers_default_to_runtime_rank_numpy_storage(tmp_path: Path):
+    """Source ``T *`` accepts rank-zero and ranked storage without selecting a fixed rank."""
     source = tmp_path / "pointer_defaults.c"
     source.write_text(_pointer_source(), encoding="utf-8")
     report = probe_c_standard_types(PreprocessingConfig(mode="compiler", compiler="cc"))
     semantic = c_file_to_semantic_module(parse_c_file(source), standard_type_report=report)
     result_types = {function.name: function.return_type.dtype for function in semantic.functions}
+    functions = {function.name: function for function in semantic.functions}
     # A typedef spelling such as ``size_t`` is declared through the builtin the
     # probe resolved it to, because the binding writes the prototype itself.
     declared_types = {
@@ -88,13 +108,26 @@ def test_every_c_primitive_pointer_defaults_to_one_call_local_scalar(tmp_path: P
     for name, c_type in _C_PRIMITIVES:
         value = _VALUES[result_types[f"pointer_read_{name}"]]
         for prefix in ("pointer_read", "const_pointer_read"):
-            output = getattr(module, f"{prefix}_{name}")(value)
-            if type(value) is bool:
-                assert type(output) is bool
-                assert output is value
+            function_name = f"{prefix}_{name}"
+            function = functions[function_name]
+            call = getattr(module, function_name)
+            if name == "bool":
+                assert function.arguments[0].semantic_type.storage.kind == "reference"
+                output = call(value)
+                assert type(output) is bool and output is value
             else:
-                assert output.dtype == np.asarray(value).dtype
-                assert output == value
+                array = function.arguments[0].semantic_type.storage.array
+                assert array.category == "runtime_rank"
+                assert array.shape == ["..."]
+                dtype = (
+                    (np.byte if report.types["char"]["signed"] else np.ubyte)
+                    if name == "char"
+                    else _NATIVE_POINTER_DTYPES[name]
+                )
+                for storage in (np.array(value, dtype=dtype), np.array([value], dtype=dtype)):
+                    output = call(storage)
+                    assert output.dtype == np.asarray(value).dtype
+                    assert output == value
         declared = declared_types[c_type]
         assert f"{declared} pointer_read_{name}({declared} * value);" in binding
         assert f"{declared} const_pointer_read_{name}(const {declared} * value);" in binding

@@ -2,7 +2,7 @@
 title: Wrapping Modules
 description: How PRIK exposes Fortran modules as Python namespaces with procedures, variables, and state
 audience: users
-prerequisites: data types, first wrapped module
+prerequisites: data types, first wrapped function
 related: wrapping-functions.md, memory-management.md, building-shared-library.md
 status: maintained
 publication: reviewed
@@ -14,9 +14,55 @@ A Fortran `module` becomes a **child Python module** (namespace) inside the gene
 
 ---
 
-## Basic Usage
+## Source and Build
 
-After building `module_state.f90`:
+Create `module_state.f90`:
+
+```fortran
+module module_state
+  implicit none
+  private
+
+  public :: nmax, counter, scale, saved_counter
+  public :: summarize, scaled_counter, next_local
+
+  integer(4), parameter :: nmax = 12
+  integer(4) :: counter = 3
+  real(8) :: scale = 1.5d0
+  integer(4), save :: saved_counter = 6
+  integer(4) :: hidden_counter = 17
+
+contains
+
+  integer(4) function summarize() result(value)
+    value = counter + nmax
+  end function summarize
+
+  real(8) function scaled_counter() result(value)
+    value = real(counter, 8) * scale
+  end function scaled_counter
+
+  integer(4) function next_local() result(value)
+    integer(4), save :: local_counter = 0
+    local_counter = local_counter + 1
+    value = local_counter
+  end function next_local
+
+end module module_state
+```
+
+Build it:
+
+```bash
+python3 -m prik module_state.f90 --out-dir build/first-module
+```
+
+The extension is named `module_state`. Its Fortran module is available as the
+child namespace `module_state.module_state`.
+
+---
+
+## Basic Usage
 
 ```python
 import sys
@@ -28,8 +74,6 @@ import module_state
 
 mod = module_state.module_state   # child namespace
 ```
-
-See [First Wrapped Module](../getting-started/first-wrapped-module.md) for the complete source, build command, and usage examples.
 
 ---
 

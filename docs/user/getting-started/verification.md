@@ -42,9 +42,15 @@ Both commands should print existing directories.
 
 ---
 
-## 3. Verify the Compiler Pair
+## 3. Verify Your Toolchain
 
-For the recommended GNU path:
+For a C-only build, check the C compiler you plan to use. The default is `cc`:
+
+```bash
+cc --version
+```
+
+For the recommended GNU Fortran path, check both compilers in the pair:
 
 ```bash
 gfortran --version
@@ -63,8 +69,9 @@ flang --version
 clang --version
 ```
 
-Both commands for your chosen compiler should report a version. If either is
-missing, install it or add its `bin` directory to `PATH`.
+Fortran builds need both commands in the selected pair. A C-only build needs
+only its C compiler. If a required command is missing, install it or add its
+`bin` directory to `PATH`.
 
 ---
 
@@ -74,7 +81,7 @@ missing, install it or add its `bin` directory to `PATH`.
 |--------------------------------|---------------------------------------------|
 | Cannot import PRIK / NumPy     | Check active virtual environment            |
 | A header directory is missing  | Reinstall Python development files or NumPy |
-| Compiler not found             | Fix `PATH` or install both executables from a supported pair |
+| Compiler not found             | Fix `PATH` or install the compiler required by your selected path |
 
 ---
 

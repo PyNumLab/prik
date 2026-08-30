@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install PRIK from PyPI and choose a Fortran compiler
+description: Install PRIK from PyPI and choose a C or Fortran toolchain
 audience: users, contributors
 prerequisites: Python 3.10 or newer
 related: verification.md
@@ -10,9 +10,9 @@ publication: reviewed
 
 # Installation
 
-Install PRIK from the Python Package Index with `pip`. Building Python
-extensions also requires a Fortran compiler, its matching C compiler, and
-standard build tools.
+Install PRIK from the Python Package Index with `pip`. A Fortran build requires
+a Fortran compiler and its matching C compiler. A C-only build requires a C
+compiler. Both paths need the standard Python extension build tools.
 
 ---
 
@@ -31,7 +31,11 @@ python3 --version
 
 ## Native Prerequisites
 
-The beginner path uses:
+Every build needs NumPy, Python development headers, a linker, and a C
+compiler. The Fortran path also needs a Fortran compiler from the same
+toolchain family.
+
+The recommended Fortran path uses:
 
 - `gfortran` (GNU Fortran compiler)
 - `gcc` (normally provided by `build-essential`)
@@ -39,14 +43,26 @@ The beginner path uses:
 - NumPy (includes required development files)
 - `build-essential` (linker and build tools)
 
-On **Ubuntu / Debian**:
+On **Ubuntu / Debian**, install the C-only prerequisites with:
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential gfortran python3-dev
+sudo apt-get install build-essential python3-dev
 ```
 
-On **macOS** with Homebrew:
+Add GNU Fortran when wrapping Fortran code:
+
+```bash
+sudo apt-get install gfortran
+```
+
+On **macOS**, the Xcode command-line tools provide Clang for C-only builds:
+
+```bash
+xcode-select --install
+```
+
+Install GNU Fortran with Homebrew when wrapping Fortran code:
 
 ```bash
 brew install gcc@13
@@ -56,8 +72,10 @@ Homebrew provides versioned commands such as `gfortran-13` and `gcc-13`.
 
 ## Compiler Toolchains
 
-`gfortran` is the default. Use `--compiler` to choose another option. Install
-the matching C compiler shown below as well.
+For C-only builds, `cc` is the default; pass `--compiler gcc`, `clang`, or
+another compatible executable when needed. Fortran builds use `gfortran` by
+default. Use `--compiler` to choose another Fortran option and install its
+matching C compiler from the table.
 
 | Fortran compiler | Required C compiler | Test status |
 | --- | --- | --- |
@@ -130,4 +148,5 @@ python3 -m pip install -e ".[qa]"
 
 ## Next
 
-- Go to [Verification](verification.md) to check the installation and compiler.
+- Go to [Verification](verification.md) to check the installation and your
+  selected toolchain.

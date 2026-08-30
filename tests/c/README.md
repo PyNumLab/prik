@@ -22,7 +22,7 @@ The active owners are:
 | `data_types/<stage>/` | C scalar type facts and compiler type probes |
 | `functions/<stage>/` | C function declarations and their semantic projection |
 | `primitive_scalars/<stage>/` | Direct-C primitive value policy, exact ABI identities, codegen, and compiled calls |
-| `primitive_pointers/<stage>/` | Authored one-level pointer, rank-zero storage, result, and C-contiguous array contracts |
+| `primitive_pointers/<stage>/` | One-level pointer, runtime-rank storage, rank-zero storage, result, and explicitly shaped array contracts |
 | `primitive_strings/<stage>/` | Rank-zero string storage, hidden outputs, status projection, and compiled calls |
 | `symbol_collisions/<stage>/` | Opt-in collision-forwarder planning, generated artifacts, and runtime behavior |
 | `records/<stage>/` | C structs, unions, and typedefs |

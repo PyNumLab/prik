@@ -61,11 +61,10 @@ for versions and other recognized options.
 
 ## Build a primitive C API directly
 
-PRIK supports C source as well. Start with [C
-Support](../language-support/c-support.md) for complete source and
-semantic-contract examples, Python API, supported C and NumPy types, pointer
-contracts, preprocessing, generated Makefiles, and current limits. C input
-always requires `--language c`.
+PRIK supports C source as well. Start with the [C User Guide](c/index.md) for
+source and semantic-contract examples, then use [C
+Support](../language-support/c-support.md) for the exact supported surface. C
+input always requires `--language c`.
 
 ## Import
 

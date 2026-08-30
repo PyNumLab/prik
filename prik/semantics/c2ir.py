@@ -16,7 +16,11 @@ from typing import Any
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_IDENTITY_METADATA
-from prik.semantics.scalar_types import BOOLEAN_STORAGE_BITS
+from prik.semantics.scalar_types import (
+    BOOLEAN_STORAGE_BITS,
+    SEMANTIC_SCALAR_TYPE_NAMES,
+    is_boolean_semantic_type_name,
+)
 
 from prik.parsers.c.models import (
     CArray,
@@ -454,6 +458,7 @@ class CToIRConverter(ClassVisitor):
         name = parameter.name or f"arg{position}"
         source_type = parameter.declared_type or parameter.type
         semantic_type = self.visit(source_type, owner=f"{owner or '<function>'}.{name}", as_type=True)
+        semantic_type = self._runtime_rank_pointer_parameter(semantic_type)
         metadata: dict[str, Any] = {"native_position": position}
         if parameter.callback_candidate:
             semantic_type = self._callback_placeholder(source_type)
@@ -1051,7 +1056,7 @@ class CToIRConverter(ClassVisitor):
         """Apply C pointer depth, qualifiers, and aliasing facts to a pointee type in place.
 
         The returned object is ``pointee`` with borrowed reference/pointer
-        storage.  Pointee ``const`` controls mutability and ``restrict`` controls
+        storage. Pointee ``const`` controls mutability and ``restrict`` controls
         aliasing; no ownership-transfer policy is inferred.
         """
         pointer_depth = len(pointer_components)
@@ -1074,6 +1079,41 @@ class CToIRConverter(ClassVisitor):
         )
         pointee.ownership.mutable = not read_only
         pointee.ownership.aliasing = not restrict
+        return pointee
+
+    @staticmethod
+    def _runtime_rank_pointer_parameter(pointee: SemanticType) -> SemanticType:
+        """Select the source-generated runtime-rank contract for primitive parameter ``T *``."""
+        storage = pointee.storage
+        scalar_name = pointee.dtype or pointee.name
+        if not (
+            storage is not None
+            and storage.kind == "reference"
+            and storage.pointer_depth == 1
+            and scalar_name in SEMANTIC_SCALAR_TYPE_NAMES
+            and pointee.name != "String"
+            and not is_boolean_semantic_type_name(pointee.name)
+            and not is_boolean_semantic_type_name(pointee.dtype)
+        ):
+            return pointee
+        pointee.rank = 1
+        pointee.shape = ["..."]
+        pointee.storage = SemanticStorageContract(
+            kind="array",
+            read_only=storage.read_only,
+            mutable=storage.mutable,
+            pointer_depth=storage.pointer_depth,
+            ownership=storage.ownership,
+            array=SemanticArrayContract(
+                rank=1,
+                shape=["..."],
+                source_shape=["..."],
+                category="runtime_rank",
+                order="ORDER_C",
+                axes=["dense"],
+            ),
+            metadata=dict(storage.metadata),
+        )
         return pointee
 
     def _array_type(

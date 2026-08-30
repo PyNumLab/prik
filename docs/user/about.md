@@ -16,7 +16,7 @@ native libraries through natural Python APIs.
 PRIK supports **Fortran-to-Python and C-to-Python interoperability**, with a
 focus on native behavior that traditional wrapper generators often cannot
 represent reliably. In both languages, editable `.pyi` contracts let you shape
-the Python API. The [C support guide](language-support/c-support.md) describes
+the Python API. The [C Support](language-support/c-support.md) page describes
 its current coverage. PRIK is for Python users who need native numerical,
 scientific, or systems code without having to design and maintain the entire
 language boundary themselves.

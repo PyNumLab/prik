@@ -2,7 +2,7 @@
 title: Examples Gallery
 audience: users
 prerequisites: getting started
-related: ../guide/building-shared-library.md, ../language-support/c-support.md, ../reference/cli-commands.md, ../reference/python-api.md
+related: ../guide/building-shared-library.md, ../guide/c/index.md, ../language-support/c-support.md, ../reference/cli-commands.md, ../reference/python-api.md
 status: maintained
 publication: reviewed
 ---
@@ -73,10 +73,10 @@ library's implementation sources as part of the wrapper build.
 | Wrap 60 target-generated ISO C99 math routines from a system library | [libm wrapper](c/libm-wrapper.md) |
 | Wrap and reference-check all 322 TA-Lib double and float-input indicators | [TA-Lib wrapper](c/ta-lib-wrapper.md) |
 
-For smaller introductory workflows, start with [First Wrapped
-Function](../getting-started/first-wrapped-function.md), [First Wrapped
-Module](../getting-started/first-wrapped-module.md), or the [C support
-guide](../language-support/c-support.md).
+For a smaller introductory workflow, start with the dual-language [First
+Wrapped Function](../getting-started/first-wrapped-function.md). Continue with
+[Wrapping Modules](../guide/wrapping-modules.md) for Fortran or the [C User
+Guide](../guide/c/index.md) for C.
 
 To learn how an edited `.pyi` contract can reshape a low-level library, follow
 the [Pythonic BLAS API tutorial](../tutorials/pythonic-blas.md).

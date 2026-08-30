@@ -97,7 +97,7 @@ _CONTRACT_MODULE = "prik.contracts"
 _FLAT_DIMENSION_SENTINEL = "@prik.Flat"
 _STRIDED_DIMENSION_SENTINEL = "@prik.Strided"
 # Computed producers whose materialized type a contract may state explicitly.
-_CASTABLE_PROJECTION_KINDS = frozenset({"shape", "stride", "len"})
+_CASTABLE_PROJECTION_KINDS = frozenset({"size", "shape", "stride", "len"})
 
 
 # Contract-conversion state and public entrypoints
@@ -1532,10 +1532,13 @@ class _PyiAstParser:
     def native_projection_entry(self, node: ast.AST, native_position: int) -> ProjectionMapping:
         """Convert one ``native_call`` list item into a positioned projection mapping.
 
-        Shape, address, descriptor, typed-literal, and named helper forms are
+        Array facts, address, descriptor, typed-literal, and named helper forms are
         dispatched here.  ``native_position`` is preserved in the returned
         mapping; unsupported or untyped expressions fail closed.
         """
+        size_mapping = self.native_size_projection_entry(node, native_position)
+        if size_mapping is not None:
+            return size_mapping
         shape_mapping = self.native_shape_projection_entry(node, native_position)
         if shape_mapping is not None:
             return shape_mapping
@@ -1765,7 +1768,7 @@ class _PyiAstParser:
         native_position: int,
         value_cast: str,
     ) -> ProjectionMapping:
-        """Parse ``Int32(Arg(i).shape[d])``: one computed projection cast to a named type.
+        """Parse one computed projection cast to a named integer type.
 
         The producer is unchanged; only the type the binding materializes is
         stated here. Literal expressions have already been handled with
@@ -1773,7 +1776,7 @@ class _PyiAstParser:
         """
         mapping = self.native_projection_entry(node, native_position)
         if mapping.value_kind not in _CASTABLE_PROJECTION_KINDS:
-            raise ValueError(f"{value_cast} accepts a literal value or a shape, stride, or length projection")
+            raise ValueError(f"{value_cast} accepts a literal value or a size, shape, stride, or length projection")
         mapping.value_cast = value_cast
         return mapping
 
@@ -1845,6 +1848,23 @@ class _PyiAstParser:
                 "value": self.native_value_ref(node.value.value),
                 "dim": int(ast.literal_eval(node.slice)),
             },
+        )
+
+    def native_size_projection_entry(
+        self,
+        node: ast.AST,
+        native_position: int,
+    ) -> ProjectionMapping | None:
+        """Parse ``Arg(i).size`` into a hidden total-element-count projection."""
+        if not isinstance(node, ast.Attribute) or node.attr != "size":
+            return None
+        value = self.native_value_ref(node.value)
+        if value["kind"] != "arg":
+            raise ValueError("size projection expects Arg(i)")
+        return ProjectionMapping(
+            native_position=native_position,
+            value_kind="size",
+            value=value,
         )
 
     def native_value_ref(
@@ -2170,19 +2190,22 @@ class _PyiAstParser:
         dims, category, source_shape, lower_bounds, upper_bounds = _PyiAstParser._flat_array_dimensions(dims)
         if not dims:
             category = SCALAR_STORAGE_CATEGORY
-        if dims == ["..."]:
-            category = "assumed_rank"
-            source_shape = [".."]
+        runtime_rank = dims == ["..."]
+        if runtime_rank:
+            category = "runtime_rank" if self.native_language == "c" else "assumed_rank"
+            source_shape = ["..."] if category == "runtime_rank" else [".."]
         if category is None and self.native_language == "fortran" and source_shape:
             category = "explicit_shape"
 
-        rank = 1 if category == "assumed_rank" else len(dims)
+        rank = 1 if category in {"assumed_rank", "runtime_rank"} else len(dims)
         array = SemanticArrayContract(
             rank=rank,
             shape=list(dims),
             order=self._array_order_for_dimensions(category, rank, source_shape),
             axes=["strided" if strided else "dense" for strided in strided_axes],
-            contiguous=not any(strided_axes),
+            # ``T[...]`` states no rank, so it also states no layout. Policy
+            # completes the language default; ``Contiguous`` still asserts one.
+            contiguous=None if runtime_rank else not any(strided_axes),
             category=category,
             source_shape=source_shape,
             lower_bounds=lower_bounds,
@@ -2475,7 +2498,7 @@ class _PyiAstParser:
             raise ValueError("COPY_F requires a concrete multidimensional array rank")
         if array.copy_order != "ORDER_F" or array.order != "ORDER_C":
             raise ValueError("COPY_F requires a C-order Python array and targets Fortran order")
-        if array.category in {"assumed_size", "assumed_rank"} or array.contiguous is not True:
+        if array.category in {"assumed_size", "assumed_rank", "runtime_rank"} or array.contiguous is not True:
             raise ValueError("COPY_F initially supports only dense concrete-shape arrays")
         if semantic_type.name == "String" or native_array_descriptor_kind(semantic_type) is not None:
             raise ValueError("COPY_F does not apply to character arrays or native descriptor handles")
