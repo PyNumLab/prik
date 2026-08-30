@@ -34,7 +34,7 @@ class GeneratedContracts:
 class EditableContract:
     """Notebook metadata plus the editable semantic contract text."""
 
-    source_digest: str
+    source_digest: str | None
     filename: str | None
     text: str
 
@@ -99,7 +99,10 @@ def write_generated_contracts(path: Path, contracts: GeneratedContracts) -> None
 
 def _invalid_cache_message(*, invalid: bool) -> str:
     state = "invalid" if invalid else "unavailable or incompatible"
-    return f"The generated contract cache is {state}; execute its %%fortran --pyi or %%c --pyi source cell again"
+    return (
+        f"The generated contract cache is {state} for these compiler and build options; "
+        "execute its %%fortran --pyi or %%c --pyi source cell again with the desired options"
+    )
 
 
 def read_generated_contracts(
@@ -176,17 +179,17 @@ def _metadata_values(marker: str) -> dict[str, str]:
     return values
 
 
-def _source_digest(values: Mapping[str, str]) -> str:
+def _source_digest(values: Mapping[str, str]) -> str | None:
     digest = values.get("source-sha256")
-    valid = digest is not None and len(digest) == 64
-    if not valid or any(char not in "0123456789abcdef" for char in digest or ""):
+    if digest is None:
+        return None
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
         raise UsageError("Editable .pyi metadata requires a full lowercase source-sha256 digest")
-    assert digest is not None
     return digest
 
 
 def parse_editable_contract(cell: str) -> EditableContract | None:
-    """Recognize a generated editable contract from its reserved metadata line."""
+    """Recognize an editable contract carrying reserved notebook metadata."""
     lines = cell.splitlines(keepends=True)
     marker_indices = [index for index, line in enumerate(lines) if line.strip().startswith(_EDITABLE_CONTRACT_PREFIX)]
     if not marker_indices:
@@ -317,24 +320,31 @@ def generated_editable_cells(
     return cells
 
 
-def insert_editable_cells(shell, cells: list[str]) -> None:
-    """Ask an IPython frontend to insert generated editable input cells."""
+def insert_editable_cells(shell, cells: list[str]) -> tuple[str, ...]:
+    """Present editable cells and return any awaiting a terminal prompt."""
     if not cells:
         raise UsageError("PRIK did not generate an editable .pyi cell")
+    set_next_input = getattr(shell, "set_next_input", None)
+    if not callable(set_next_input):
+        raise UsageError("This IPython frontend cannot insert an editable .pyi cell")
+
+    first, *remaining = cells
+    set_next_input(first, replace=False)
+    if getattr(shell, "rl_next_input", None) == first:
+        return tuple(remaining)
+
     payload_manager = getattr(shell, "payload_manager", None)
     write_payload = getattr(payload_manager, "write_payload", None)
-    if len(cells) > 1 and callable(write_payload):
-        for text in cells:
+    if callable(write_payload):
+        for text in remaining:
             write_payload(
                 {"source": "set_next_input", "text": text, "replace": False},
                 single=False,
             )
-        return
-    set_next_input = getattr(shell, "set_next_input", None)
-    if not callable(set_next_input):
-        raise UsageError("This IPython frontend cannot insert an editable .pyi cell")
-    for text in cells:
+        return ()
+    for text in remaining:
         set_next_input(text, replace=False)
+    return ()
 
 
 def _write_contract_file(root: Path, relative_name: str, text: str) -> Path:
@@ -374,6 +384,28 @@ def materialize_editable_contract(
         entry = _materialize_module_entry(package, editable, generated, support_contracts)
     for filename, text in support_contracts.items():
         _write_contract_file(package, filename, text)
+    return entry
+
+
+def materialize_handwritten_contract(
+    entry_dir: Path,
+    editable: EditableContract,
+    *,
+    native_language: str,
+) -> Path:
+    """Create one handwritten cell contract for the ordinary `.pyi` build path."""
+    if editable.source_digest is not None:
+        raise UsageError("A handwritten .pyi contract cannot carry generated source digest metadata")
+    package = entry_dir / "contract"
+    package.mkdir(parents=True, exist_ok=True)
+    if editable.filename is not None:
+        _write_contract_file(package, editable.filename, editable.text)
+        module_name = editable.filename.removesuffix(".pyi").replace("/", ".")
+        entry = package / "__init__.pyi"
+        entry.write_text(f"from . import {module_name}\n", encoding="utf-8")
+        return entry
+    entry = package / ("contract.pyi" if native_language == "c" else "__init__.pyi")
+    entry.write_text(f"{editable.text.rstrip()}\n", encoding="utf-8")
     return entry
 
 

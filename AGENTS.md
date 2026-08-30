@@ -9,6 +9,16 @@ examples, build or CI workflows, benchmark methodology, or documented
 limitations. Keep entries concise and outcome-focused; do not add release
 notes for internal cleanup that has no visible effect.
 
+Write user documentation as a concise guide to the current product. Lead with
+the task a user wants to complete, show the necessary command or example, and
+state only the behavior, choices, and limitations needed to use it correctly.
+Do not narrate implementation history, prior bugs, rejected designs, internal
+mechanics, defensive checks, or why a newly added behavior differs from an old
+one unless that context changes what the user must do. Integrate changes into
+the existing workflow instead of appending a change report, and remove any
+sentence whose only purpose is to justify the implementation or record the
+development process.
+
 Treat developer documentation as durable guides, not as per-change
 implementation logs. Do not update developer pages merely because code changed,
 and do not add incidental low-level details that are unnecessary for following

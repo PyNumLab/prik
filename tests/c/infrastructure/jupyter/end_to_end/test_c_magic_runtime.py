@@ -88,3 +88,39 @@ def test_generated_c_contract_can_be_edited_then_compiled_once(tmp_path: Path, m
     magic.pyi(line, contract)
     assert build_calls == 1
     assert shell.user_ns["squared"] is first_function
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_handwritten_c_contract_builds_existing_source_and_reuses_exact_cell(
+    tmp_path: Path,
+    monkeypatch,
+):
+    build_calls = 0
+    build_pyi_extension = magic_module.build_pyi_extension
+
+    def counting_build(*args, **kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        return build_pyi_extension(*args, **kwargs)
+
+    monkeypatch.setattr(magic_module, "build_pyi_extension", counting_build)
+    source = tmp_path / "square.c"
+    source.write_text("double square(double value) { return value * value; }\n", encoding="utf-8")
+    shell = _Shell()
+    magic = PrikMagics(shell, cache_dir=tmp_path / "cache")
+    contract = """from prik.contracts import Float64
+
+def square(value: Float64) -> Float64: ...
+"""
+    line = f"--native-c-sources {source}"
+
+    magic.pyi(line, contract)
+
+    first_function = shell.user_ns["square"]
+    assert first_function(np.float64(4.0)) == np.float64(16.0)
+    assert first_function.__module__ is None
+    assert pretty(first_function) == "<function square>"
+
+    magic.pyi(line, contract)
+    assert build_calls == 1
+    assert shell.user_ns["square"] is first_function

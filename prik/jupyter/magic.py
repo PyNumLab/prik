@@ -59,7 +59,28 @@ class _CellOptions:
     verbose: bool
 
 
-def _argument_parser(magic_name: str, *, supports_pyi_generation: bool) -> _MagicArgumentParser:
+@dataclass(frozen=True)
+class _PendingEditableCells:
+    """Generated contracts awaiting terminal IPython's next-input prompt."""
+
+    source_digest: str
+    cells: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _ManualNativeSources:
+    """Existing native source paths supplied by one handwritten contract cell."""
+
+    language: str
+    paths: tuple[Path, ...]
+
+
+def _argument_parser(
+    magic_name: str,
+    *,
+    supports_pyi_generation: bool,
+    supports_native_sources: bool = False,
+) -> _MagicArgumentParser:
     parser = _MagicArgumentParser(
         prog=f"%%{magic_name}",
         add_help=False,
@@ -71,6 +92,23 @@ def _argument_parser(magic_name: str, *, supports_pyi_generation: bool) -> _Magi
             "--pyi",
             action="store_true",
             help="Persist this source and insert editable semantic .pyi cells",
+        )
+    if supports_native_sources:
+        parser.add_argument(
+            "--native-fortran-sources",
+            action="extend",
+            nargs="+",
+            default=[],
+            metavar="PATH",
+            help="Existing Fortran implementation sources for a handwritten contract",
+        )
+        parser.add_argument(
+            "--native-c-sources",
+            action="extend",
+            nargs="+",
+            default=[],
+            metavar="PATH",
+            help="Existing C implementation sources for a handwritten contract",
         )
     parser.add_argument("--compiler", help="Exact Fortran or C compiler executable")
     parser.add_argument(
@@ -85,7 +123,7 @@ def _argument_parser(magic_name: str, *, supports_pyi_generation: bool) -> _Magi
         action="append",
         default=[],
         metavar="FLAGS",
-        help="Quoted compiler flags for the native cell source; repeat as needed",
+        help="Quoted compiler flags for the selected native sources; repeat as needed",
     )
     parser.add_argument(
         "--wrapper-fortran-flags",
@@ -168,6 +206,31 @@ def _parse_source_options(line: str, *, language: str) -> _CellOptions | None:
     return _options_from_namespace(parsed, language=language, generate_pyi=parsed.pyi)
 
 
+def _manual_native_sources(
+    parsed: argparse.Namespace,
+    parser: _MagicArgumentParser,
+) -> _ManualNativeSources | None:
+    """Resolve the one native language selected by handwritten-contract options."""
+    fortran_values = tuple(parsed.native_fortran_sources)
+    c_values = tuple(parsed.native_c_sources)
+    if fortran_values and c_values:
+        parser.error("%%pyi cannot mix --native-fortran-sources and --native-c-sources")
+    values = fortran_values or c_values
+    if not values:
+        return None
+    language = "fortran" if fortran_values else "c"
+    paths: list[Path] = []
+    for value in values:
+        try:
+            path = Path(value).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise UsageError(f"Native source path {value!r} is unavailable: {exc}") from exc
+        if not path.is_file():
+            raise UsageError(f"Native source path {value!r} is not a file")
+        paths.append(path)
+    return _ManualNativeSources(language=language, paths=tuple(paths))
+
+
 def _cell_digest(language: str, cell: str) -> str:
     """Return the documented digest of the language followed by exact cell text."""
     return hashlib.sha256(f"{language}{cell}".encode()).hexdigest()
@@ -222,8 +285,27 @@ def _build_configuration(options: _CellOptions) -> dict[str, object]:
     }
 
 
-def _build_fingerprint(options: _CellOptions) -> str:
-    payload = json.dumps(_build_configuration(options), sort_keys=True, separators=(",", ":"))
+def _file_sha256(path: Path) -> str:
+    """Hash one explicit native source without retaining its contents in memory."""
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError as exc:
+        raise UsageError(f"Cannot read native source {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def _build_fingerprint(
+    options: _CellOptions,
+    *,
+    native_sources: tuple[Path, ...] = (),
+) -> str:
+    configuration = _build_configuration(options)
+    if native_sources:
+        configuration["native_sources"] = [{"path": str(path), "sha256": _file_sha256(path)} for path in native_sources]
+    payload = json.dumps(configuration, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -301,7 +383,7 @@ def _cached_result(
     record: dict[str, object] | None,
     *,
     entry_dir: Path,
-    source: Path,
+    sources: tuple[Path, ...],
     digest: str,
     fingerprint: str,
     language: str,
@@ -316,7 +398,7 @@ def _cached_result(
     if shared_library is None:
         return None
     return WrapperBuildResult(
-        sources=(source,),
+        sources=sources,
         module_name=module_name,
         output_dir=entry_dir / "build",
         shared_library=shared_library,
@@ -385,13 +467,13 @@ def _build_cell(
 
 def _build_editable_contract(
     contract: Path,
-    source: Path,
+    native_sources: tuple[Path, ...],
     *,
     output_dir: Path,
     output_name: str,
     options: _CellOptions,
 ) -> WrapperBuildResult:
-    """Build one edited semantic contract against its exact cached source."""
+    """Build one semantic contract against its selected native sources."""
     common = {
         "output_dir": output_dir,
         "output_name": output_name,
@@ -405,16 +487,59 @@ def _build_editable_contract(
         return build_pyi_extension(
             contract,
             input_compiler=options.compiler,
-            native_fortran_sources=(source,),
+            native_fortran_sources=native_sources,
             native_fortran_flags=options.native_compile_flags,
             **common,
         )
     return build_pyi_extension(
         contract,
         input_c_compiler=options.compiler,
-        native_c_sources=(source,),
+        native_c_sources=native_sources,
         native_c_flags=options.native_compile_flags,
         **common,
+    )
+
+
+def _editable_pyi_contract(
+    cell: str,
+    manual_sources: _ManualNativeSources | None,
+) -> contract_cells.EditableContract:
+    """Resolve generated metadata or construct one handwritten cell contract."""
+    if not cell.strip():
+        raise UsageError("%%pyi requires a non-empty semantic .pyi cell")
+    editable = contract_cells.parse_editable_contract(cell)
+    if editable is None:
+        if manual_sources is None:
+            raise UsageError(
+                "%%pyi requires generated source metadata or explicit --native-fortran-sources/--native-c-sources"
+            )
+        return contract_cells.EditableContract(
+            source_digest=None,
+            filename=None,
+            text=cell,
+        )
+    if editable.source_digest is not None and manual_sources is not None:
+        raise UsageError("%%pyi cannot combine generated source-sha256 metadata with explicit native sources")
+    if editable.source_digest is None and manual_sources is None:
+        raise UsageError("A handwritten %%pyi cell requires --native-fortran-sources or --native-c-sources")
+    return editable
+
+
+def _pyi_native_language(
+    editable: contract_cells.EditableContract,
+    manual_sources: _ManualNativeSources | None,
+    *,
+    cache_root: Path,
+) -> str:
+    """Return the explicit manual language or recover one generated language."""
+    if manual_sources is not None:
+        return manual_sources.language
+    source_digest = editable.source_digest
+    assert source_digest is not None
+    source_entry_dir = cache_root / source_digest
+    return _source_language(
+        source_entry_dir / _SOURCE_RECORD_NAME,
+        digest=source_digest,
     )
 
 
@@ -433,6 +558,7 @@ class PrikMagics(Magics):
     def __init__(self, shell=None, *, cache_dir: str | Path | None = None) -> None:
         super().__init__(shell=shell)
         self.cache_root = Path(cache_dir) if cache_dir is not None else _default_cache_root()
+        self._pending_editable_cells: _PendingEditableCells | None = None
 
     @cell_magic
     def fortran(self, line: str, cell: str) -> None:
@@ -446,24 +572,31 @@ class PrikMagics(Magics):
 
     @cell_magic
     def pyi(self, line: str, cell: str) -> None:
-        """Compile one generated editable contract against its cached source."""
-        parser = _argument_parser("pyi", supports_pyi_generation=False)
+        """Compile one generated or handwritten semantic contract."""
+        parser = _argument_parser(
+            "pyi",
+            supports_pyi_generation=False,
+            supports_native_sources=True,
+        )
         parsed = _parse_arguments(line, parser)
         if parsed is None:
             return
-        if not cell.strip():
-            raise UsageError("%%pyi requires a non-empty generated editable .pyi cell")
-        editable = contract_cells.parse_editable_contract(cell)
-        if editable is None:
-            raise UsageError("%%pyi requires the PRIK metadata comment generated by a native source cell")
-        source_entry_dir = self.cache_root / editable.source_digest
-        language = _source_language(
-            source_entry_dir / _SOURCE_RECORD_NAME,
-            digest=editable.source_digest,
-        )
+        manual_sources = _manual_native_sources(parsed, parser)
+        editable = _editable_pyi_contract(cell, manual_sources)
+        language = _pyi_native_language(editable, manual_sources, cache_root=self.cache_root)
         options = _options_from_namespace(parsed, language=language, generate_pyi=False)
-        module, reused = self._load_or_build_editable(cell, editable, options)
+        if manual_sources is None:
+            module, reused = self._load_or_build_editable(cell, editable, options)
+        else:
+            module, reused = self._load_or_build_handwritten(
+                cell,
+                editable,
+                manual_sources,
+                options,
+            )
         self._publish(module, reused=reused, cell=cell, options=options)
+        if editable.source_digest is not None:
+            self._present_next_editable_cell(editable.source_digest)
 
     def _run_source_magic(self, line: str, cell: str, *, language: str) -> None:
         """Execute the shared native-source workflow selected by its magic name."""
@@ -512,7 +645,21 @@ class PrikMagics(Magics):
             contracts,
             magic_command=_editable_magic_command(options),
         )
-        contract_cells.insert_editable_cells(self.shell, cells)
+        remaining = contract_cells.insert_editable_cells(self.shell, cells)
+        self._pending_editable_cells = (
+            _PendingEditableCells(source_digest=source_digest, cells=remaining) if remaining else None
+        )
+
+    def _present_next_editable_cell(self, source_digest: str) -> None:
+        """Advance one matching terminal-IPython editable-contract queue."""
+        pending = self._pending_editable_cells
+        if pending is None or pending.source_digest != source_digest:
+            return
+        next_cell, *remaining = pending.cells
+        contract_cells.insert_editable_cells(self.shell, [next_cell])
+        self._pending_editable_cells = (
+            _PendingEditableCells(source_digest=source_digest, cells=tuple(remaining)) if remaining else None
+        )
 
     def _load_or_build_source(self, cell: str, options: _CellOptions) -> tuple[ModuleType, bool]:
         digest = _cell_digest(options.language, cell)
@@ -532,7 +679,7 @@ class PrikMagics(Magics):
         return self._load_or_build_cached(
             digest=digest,
             fingerprint=fingerprint,
-            source=source,
+            sources=(source,),
             options=options,
             build=build,
         )
@@ -545,12 +692,14 @@ class PrikMagics(Magics):
     ) -> tuple[ModuleType, bool]:
         digest = _cell_digest(options.language, cell)
         fingerprint = _build_fingerprint(options)
-        source_entry_dir = self.cache_root / editable.source_digest
+        source_digest = editable.source_digest
+        assert source_digest is not None
+        source_entry_dir = self.cache_root / source_digest
         source = _source_path(source_entry_dir, options.language)
         contracts_path = contract_cells.generated_contract_record_path(source_entry_dir, fingerprint)
 
         self.cache_root.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(self.cache_root / f"{editable.source_digest}.lock")):
+        with FileLock(str(self.cache_root / f"{source_digest}.lock")):
             try:
                 source_text = source.read_text(encoding="utf-8")
             except OSError as exc:
@@ -558,7 +707,7 @@ class PrikMagics(Magics):
                     "The native source for this editable .pyi is unavailable; "
                     "execute its %%fortran --pyi or %%c --pyi source cell again"
                 ) from exc
-            if _cell_digest(options.language, source_text) != editable.source_digest:
+            if _cell_digest(options.language, source_text) != source_digest:
                 raise UsageError(
                     "The cached native source does not match this editable .pyi; "
                     "execute its %%fortran --pyi or %%c --pyi source cell again"
@@ -566,7 +715,7 @@ class PrikMagics(Magics):
             generated = contract_cells.read_generated_contracts(
                 contracts_path,
                 language=options.language,
-                source_digest=editable.source_digest,
+                source_digest=source_digest,
             )
 
         def build(build_dir: Path, module_name: str) -> WrapperBuildResult:
@@ -574,7 +723,7 @@ class PrikMagics(Magics):
             contract = contract_cells.materialize_editable_contract(entry_dir, editable, generated)
             return _build_editable_contract(
                 contract,
-                source,
+                (source,),
                 output_dir=build_dir,
                 output_name=module_name,
                 options=options,
@@ -583,7 +732,40 @@ class PrikMagics(Magics):
         return self._load_or_build_cached(
             digest=digest,
             fingerprint=fingerprint,
-            source=source,
+            sources=(source,),
+            options=options,
+            build=build,
+        )
+
+    def _load_or_build_handwritten(
+        self,
+        cell: str,
+        editable: contract_cells.EditableContract,
+        native_sources: _ManualNativeSources,
+        options: _CellOptions,
+    ) -> tuple[ModuleType, bool]:
+        """Build one independent handwritten contract against existing files."""
+        digest = _cell_digest(options.language, cell)
+        fingerprint = _build_fingerprint(options, native_sources=native_sources.paths)
+
+        def build(build_dir: Path, module_name: str) -> WrapperBuildResult:
+            contract = contract_cells.materialize_handwritten_contract(
+                build_dir.parent,
+                editable,
+                native_language=options.language,
+            )
+            return _build_editable_contract(
+                contract,
+                native_sources.paths,
+                output_dir=build_dir,
+                output_name=module_name,
+                options=options,
+            )
+
+        return self._load_or_build_cached(
+            digest=digest,
+            fingerprint=fingerprint,
+            sources=native_sources.paths,
             options=options,
             build=build,
         )
@@ -593,7 +775,7 @@ class PrikMagics(Magics):
         *,
         digest: str,
         fingerprint: str,
-        source: Path,
+        sources: tuple[Path, ...],
         options: _CellOptions,
         build: Callable[[Path, str], WrapperBuildResult],
     ) -> tuple[ModuleType, bool]:
@@ -608,7 +790,7 @@ class PrikMagics(Magics):
                 cached = _cached_result(
                     record,
                     entry_dir=entry_dir,
-                    source=source,
+                    sources=sources,
                     digest=digest,
                     fingerprint=fingerprint,
                     language=options.language,

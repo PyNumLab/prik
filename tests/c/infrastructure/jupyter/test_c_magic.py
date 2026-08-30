@@ -138,3 +138,55 @@ def test_generated_c_contract_has_no_artificial_filename_and_builds_against_cach
     assert kwargs["_public_root"] == ""
     assert contract.name == "contract.pyi"
     assert shell.user_ns["square"](4.0) == 16.0
+
+
+def test_handwritten_c_contract_builds_an_existing_source_without_generated_metadata(
+    tmp_path: Path,
+    monkeypatch,
+):
+    modules: dict[str, ModuleType] = {}
+    calls: list[tuple[Path, dict[str, object]]] = []
+
+    def build(contract: Path, **kwargs) -> WrapperBuildResult:
+        calls.append((contract, kwargs))
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        module_name = str(kwargs["output_name"])
+        shared_library = output_dir / f"{module_name}.so"
+        shared_library.write_bytes(b"mock extension")
+        extension = ModuleType(module_name)
+        extension.square = lambda value: value * value
+        modules[module_name] = extension
+        return WrapperBuildResult(
+            sources=(contract,),
+            module_name=module_name,
+            output_dir=output_dir,
+            shared_library=shared_library,
+            build_makefile=None,
+            compiled=True,
+            generated_sources=(),
+            generated_files=(),
+        )
+
+    monkeypatch.setattr(magic_module, "build_pyi_extension", build)
+    monkeypatch.setattr(WrapperBuildResult, "import_module", lambda self: modules[self.module_name])
+    source = tmp_path / "square.c"
+    source.write_text("double square(double value) { return value * value; }\n", encoding="utf-8")
+    shell = _Shell()
+    magic = PrikMagics(shell, cache_dir=tmp_path / "cache")
+    cell = "from prik.contracts import Float64\n\ndef square(value: Float64) -> Float64: ...\n"
+
+    magic.pyi(
+        f'--native-c-sources {source} --compiler clang --native-compile-flags="-O3 -std=c11"',
+        cell,
+    )
+
+    contract, kwargs = calls[0]
+    assert contract.name == "contract.pyi"
+    assert contract.read_text(encoding="utf-8") == cell
+    assert kwargs["native_language"] == "c"
+    assert kwargs["input_c_compiler"] == "clang"
+    assert kwargs["native_c_sources"] == (source,)
+    assert kwargs["native_c_flags"] == ("-O3", "-std=c11")
+    assert kwargs["_public_root"] == ""
+    assert shell.user_ns["square"](4.0) == 16.0

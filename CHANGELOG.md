@@ -20,6 +20,16 @@ release tags add a leading `v` to the package version.
   file builds retain their user-selected package root, such as
   `geometry.maths.square`. Existing notebook build artifacts are rebuilt once
   so cached extensions cannot retain the old private function identity.
+  Multi-module `--pyi` cells are presented sequentially in terminal IPython,
+  whose next-input prompt can hold only one editable contract, while Jupyter
+  frontends continue to receive every generated module cell immediately. All
+  cells in one generated contract bundle retain the source cell's effective
+  compiler and build flags; changing that configuration requires regenerating
+  the bundle and is rejected before compiler execution. Independently authored
+  `%%pyi` cells can instead name one or more existing implementation files with
+  `--native-fortran-sources` or `--native-c-sources`; each cell builds and
+  publishes only its own contract module, and native file-content changes
+  invalidate its persistent cache.
 
 - A one-character `@native_call` literal is now buildable: `String[1]("N")`
   declares the character a native parameter receives instead of leaving it a
