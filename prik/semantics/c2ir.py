@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
-from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_IDENTITY_METADATA
+from prik.semantics.metadata import (
+    EXPLICIT_C_EXPORT_METADATA,
+    NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
+)
 from prik.semantics.scalar_types import (
     BOOLEAN_STORAGE_BITS,
     SEMANTIC_SCALAR_TYPE_NAMES,
@@ -162,6 +166,13 @@ _PRIMITIVE_TYPE_FACT_NAMES: dict[type[CType], str] = {
 _PRIMITIVE_NATIVE_C_IDENTITY_NAMES = {
     primitive: next(name for name, spelling in NATIVE_C_SCALAR_IDENTITIES.items() if spelling == c_spelling)
     for primitive, c_spelling in _PRIMITIVE_TYPE_FACT_NAMES.items()
+}
+
+# NumPy assigns NPY_INT<N>/NPY_UINT<N> to the first C type of that width in
+# these orders, mirroring the scan in its own npy_common.h.
+_NUMPY_CANONICAL_INTEGER_SCAN = {
+    False: ("signed char", "short", "int", "long", "long long"),
+    True: ("unsigned char", "unsigned short", "unsigned int", "unsigned long", "unsigned long long"),
 }
 
 _CANONICAL_C_TYPE_FACT_NAMES = {
@@ -827,6 +838,9 @@ class CToIRConverter(ClassVisitor):
         native_c_identity = self._required_native_c_identity(type_, dtype)
         if native_c_identity is not None:
             metadata[NATIVE_C_SCALAR_IDENTITY_METADATA] = native_c_identity
+        array_element = self._array_element_c_spelling(type_, dtype)
+        if array_element is not None:
+            metadata[NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA] = array_element
         return SemanticType(
             name=semantic_name,
             dtype=dtype,
@@ -850,6 +864,44 @@ class CToIRConverter(ClassVisitor):
         source_spelling = self._underlying_c_type(primitive_name)
         canonical_spelling = self._underlying_c_type(canonical_name)
         return None if self._compatible_c_scalar_spelling(source_spelling, canonical_spelling) else native_c_identity
+
+    def _array_element_c_spelling(self, type_: CType, semantic_name: str) -> str | None:
+        """Return the C element spelling an array of this type must hold.
+
+        An array buffer reaches C unchanged, so its elements must be the
+        declared C type. The canonical spelling of a fixed-width integer is a
+        ``<stdint.h>`` typedef, and the C type behind that typedef need not be
+        the one NumPy assigns to the same width: a target whose ``int64_t`` is
+        ``long long`` still gives ``NPY_INT64`` to ``long`` when ``long`` is 64
+        bits. Recording the declared spelling whenever it differs from NumPy's
+        choice keeps one accepted dtype per C spelling on every target.
+        """
+        declared = _PRIMITIVE_TYPE_FACT_NAMES.get(type(type_))
+        if declared is None:
+            return None
+        canonical = self._numpy_canonical_integer_primitive(semantic_name)
+        if canonical is None:
+            # Real and complex widths are already canonical C spellings, so the
+            # ordinary identity rule alone decides those.
+            return self._required_native_c_identity(type_, semantic_name) and declared
+        return None if declared == canonical else declared
+
+    def _numpy_canonical_integer_primitive(self, semantic_name: str) -> str | None:
+        """Return the C type NumPy assigns to one fixed-width integer here.
+
+        NumPy defines ``NPY_INT64`` and friends by scanning C integer types in
+        width order and taking the first match, so the answer is target data.
+        """
+        match = re.fullmatch(r"(U?)Int(8|16|32|64)", semantic_name)
+        if match is None:
+            return None
+        candidates = _NUMPY_CANONICAL_INTEGER_SCAN[bool(match.group(1))]
+        bits = int(match.group(2))
+        for candidate in candidates:
+            fact = self.standard_type_facts.get(candidate)
+            if isinstance(fact, dict) and fact.get("bits") == bits:
+                return candidate
+        return None
 
     def _underlying_c_type(self, name: str) -> str:
         fact = self.standard_type_facts.get(name)

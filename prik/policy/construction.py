@@ -26,6 +26,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA,
     NATIVE_C_SCALAR_IDENTITY_METADATA,
     NULLABLE_ANNOTATION_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -1840,6 +1841,33 @@ def _complete_function_entrypoint_route(
     return arguments, slots, entrypoint_action, entrypoint_symbol, entrypoint_diagnostics
 
 
+def _c_direct_array_element_c_type(
+    argument: ArgumentPolicy,
+    slot: NativeCallSlotPolicy | None,
+    semantic_argument: models.SemanticArgument | None,
+) -> str | None:
+    """Complete the exact C element type one array buffer must already hold.
+
+    A scalar crosses by value and is converted, so its canonical width is
+    enough. An array is handed to C as the buffer it already is, so its
+    elements must be the declared C type rather than another type of the same
+    width. Which of ``long`` and ``long long`` a target happens to call
+    ``int64_t`` therefore does not change what the buffer must contain, and one
+    C source keeps one accepted dtype on every target.
+
+    An authored contract entry such as ``CLongLong(Arg(0))`` still wins, since
+    it states the identity the native call itself requires.
+    """
+    if argument.ownership.kind is not ObjectKind.NUMPY_ARRAY:
+        return None
+    if slot is not None and slot.native_scalar_c_type is not None:
+        return slot.native_scalar_c_type
+    if semantic_argument is None:
+        return None
+    declared = semantic_argument.semantic_type.metadata.get(NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA)
+    return declared if isinstance(declared, str) else None
+
+
 def _normalize_c_direct_scalar_identities(
     function: models.SemanticFunction,
     arguments: list[ArgumentPolicy],
@@ -1875,10 +1903,10 @@ def _normalize_c_direct_scalar_identities(
                     else None
                 )
             ),
-            native_array_element_c_type=(
-                slots_by_name[argument.name].native_scalar_c_type
-                if argument.ownership.kind is ObjectKind.NUMPY_ARRAY and argument.name in slots_by_name
-                else None
+            native_array_element_c_type=_c_direct_array_element_c_type(
+                argument,
+                slots_by_name.get(argument.name),
+                semantic_by_name.get(argument.name),
             ),
             # A C payload is bytes plus whatever length the contract passes.
             # Refusing an embedded NUL would impose a terminator convention

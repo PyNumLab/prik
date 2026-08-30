@@ -709,20 +709,28 @@ static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
     return 0;
 }
 
+/*
+ * C long and long long are distinct NumPy scalar types even where both are
+ * 64 bits wide, and which one a target calls int64_t varies. A scalar crosses
+ * by value, so either spelling is accepted here and converted to the exact
+ * native storage. An array buffer cannot be converted element by element, so
+ * array validation stays exact.
+ */
 static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
 {
 #if NPY_SIZEOF_LONG == 8
-    if (!PyArray_IsScalar(value, Long)) {
-        return -1;
+    if (PyArray_IsScalar(value, Long)) {
+        *destination = (int64_t)PyArrayScalar_VAL(value, Long);
+        return 0;
     }
-    *destination = (int64_t)PyArrayScalar_VAL(value, Long);
-#else
-    if (!PyArray_IsScalar(value, Int64)) {
-        return -1;
-    }
-    *destination = (int64_t)PyArrayScalar_VAL(value, Int64);
 #endif
-    return 0;
+#if NPY_SIZEOF_LONGLONG == 8
+    if (PyArray_IsScalar(value, LongLong)) {
+        *destination = (int64_t)PyArrayScalar_VAL(value, LongLong);
+        return 0;
+    }
+#endif
+    return -1;
 }
 
 static inline int prik_float32_unpack_exact(PyObject *value, float *destination)
@@ -1146,20 +1154,22 @@ static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
     return result;
 }
 
+/* Accepts either 64-bit spelling; see prik_int64_unpack_exact. */
 static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destination)
 {
 #if NPY_SIZEOF_LONG == 8
-    if (!PyArray_IsScalar(value, ULong)) {
-        return -1;
+    if (PyArray_IsScalar(value, ULong)) {
+        *destination = (uint64_t)PyArrayScalar_VAL(value, ULong);
+        return 0;
     }
-    *destination = (uint64_t)PyArrayScalar_VAL(value, ULong);
-#else
-    if (!PyArray_IsScalar(value, ULongLong)) {
-        return -1;
-    }
-    *destination = (uint64_t)PyArrayScalar_VAL(value, ULongLong);
 #endif
-    return 0;
+#if NPY_SIZEOF_LONGLONG == 8
+    if (PyArray_IsScalar(value, ULongLong)) {
+        *destination = (uint64_t)PyArrayScalar_VAL(value, ULongLong);
+        return 0;
+    }
+#endif
+    return -1;
 }
 
 static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
@@ -1192,25 +1202,28 @@ static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
     return result;
 }
 
+/* Accepts every unsigned spelling of the target's pointer width. */
 static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
 {
 #if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
-    if (!PyArray_IsScalar(value, ULong)) {
-        return -1;
+    if (PyArray_IsScalar(value, ULong)) {
+        *destination = (size_t)PyArrayScalar_VAL(value, ULong);
+        return 0;
     }
-    *destination = (size_t)PyArrayScalar_VAL(value, ULong);
-#elif NPY_SIZEOF_INTP == 8
-    if (!PyArray_IsScalar(value, ULongLong)) {
-        return -1;
-    }
-    *destination = (size_t)PyArrayScalar_VAL(value, ULongLong);
-#else
-    if (!PyArray_IsScalar(value, UInt)) {
-        return -1;
-    }
-    *destination = (size_t)PyArrayScalar_VAL(value, UInt);
 #endif
-    return 0;
+#if NPY_SIZEOF_LONGLONG == NPY_SIZEOF_INTP
+    if (PyArray_IsScalar(value, ULongLong)) {
+        *destination = (size_t)PyArrayScalar_VAL(value, ULongLong);
+        return 0;
+    }
+#endif
+#if NPY_SIZEOF_INT == NPY_SIZEOF_INTP
+    if (PyArray_IsScalar(value, UInt)) {
+        *destination = (size_t)PyArrayScalar_VAL(value, UInt);
+        return 0;
+    }
+#endif
+    return -1;
 }
 
 static inline int prik_uintp_unpack(PyObject *value, size_t *destination)

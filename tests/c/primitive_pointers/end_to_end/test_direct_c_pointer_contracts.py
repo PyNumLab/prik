@@ -293,6 +293,11 @@ void increment_zero(long long *value) { *value += 1; }
     scalar = module.increment_scalar(np.int64(4))
     assert scalar == np.int64(5)
     assert scalar.dtype == np.dtype(np.int64)
+    # A scalar is converted rather than aliased, so either 64-bit spelling is
+    # accepted and cast to the exact native storage the call needs.
+    exact = module.increment_scalar(np.longlong(4))
+    assert exact == np.int64(5)
+    assert exact.dtype == np.dtype(np.int64)
 
     values = np.array([1, 2, 3], dtype=np.longlong)
     assert module.increment(values, np.int32(values.size)) is None

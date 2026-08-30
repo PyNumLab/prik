@@ -14,6 +14,9 @@ DEFERRED_BINDING_METADATA = "deferred_binding"
 CONSTRUCTOR_SPECIFIC_METADATA = "constructor_specific"
 NATIVE_PROJECTION_METADATA = "native_projection"
 NATIVE_C_SCALAR_IDENTITY_METADATA = "native_c_scalar_identity"
+# Exact C element spelling an array buffer must hold, recorded whenever it
+# differs from the C type NumPy assigns to that width on this target.
+NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA = "native_c_array_element_identity"
 EXPLICIT_C_EXPORT_METADATA = "explicit_c_export"
 NATIVE_ARRAY_DESCRIPTOR_METADATA = "native_array_descriptor"
 NATIVE_ARRAY_HANDLE_POLICY_METADATA = "native_array_handle_policy"

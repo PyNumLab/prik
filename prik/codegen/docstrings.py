@@ -906,8 +906,23 @@ class WrapperDocstringBuilder:
             return f"{prefix}[{scalar}]"
         if getattr(transfer, "array", None) is not None:
             element = "bytes" if transfer.semantic_type_name == "String" else scalar
-            return f"ndarray[{element}]"
+            return f"ndarray[{self._exact_array_element_label(transfer, element)}]"
         return scalar
+
+    @staticmethod
+    def _exact_array_element_label(transfer, element: str) -> str:
+        """Name the exact element dtype when policy requires that C identity.
+
+        An array buffer is handed to C as it stands, so an argument bound to an
+        exact native C element type accepts only that dtype. The header names
+        it rather than the canonical spelling the element would otherwise use.
+        """
+        binding = getattr(transfer, "binding", None)
+        c_type = getattr(binding, "native_array_element_c_type", None)
+        if c_type is None:
+            return element
+        storage = NativeCArrayStorageRegistry.type_for(c_type, transfer.semantic_type_name)
+        return storage.python_type_name.removeprefix("numpy.")
 
     def _callback_type(self, callback: CallbackHandoffPlan | None) -> str:
         """Return the named completed prototype for one callback transfer.

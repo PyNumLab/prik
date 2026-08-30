@@ -10,7 +10,13 @@ from prik import build_c_extension, build_pyi_extension
 from prik.parsers.c import parse_c_file
 from prik.preprocessing import PreprocessingConfig
 from prik.preprocessing.probes.c_types import probe_c_standard_types
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.semantics.c2ir import c_file_to_semantic_module
+from prik.semantics.metadata import (
+    NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
+)
 from tests.c._support.runtime import sole_native_module
 
 
@@ -53,25 +59,27 @@ _VALUES = {
     "Complex128": np.complex128(1.25 + 2.5j),
     "Complex256": np.clongdouble(1.25 + 2.5j),
 }
-_NATIVE_POINTER_DTYPES = {
-    "signed_char": np.byte,
-    "unsigned_char": np.ubyte,
-    "short": np.short,
-    "unsigned_short": np.ushort,
-    "int": np.intc,
-    "unsigned_int": np.uintc,
-    "long": np.int_,
-    "unsigned_long": np.uint,
-    "long_long": np.longlong,
-    "unsigned_long_long": np.ulonglong,
-    "float": np.single,
-    "double": np.double,
-    "long_double": np.longdouble,
-    "float_complex": np.csingle,
-    "double_complex": np.cdouble,
-    "long_double_complex": np.clongdouble,
-    "size": np.uintp,
-}
+
+
+def _accepted_pointer_dtype(semantic_type, value) -> np.dtype:
+    """Return the NumPy storage one generated pointer argument accepts.
+
+    An array buffer reaches C as it already is, so its elements are the
+    declared C type rather than another type of the same width. That keeps one
+    accepted dtype per C spelling on every target, however the target resolves
+    ``int64_t``. Only an element with no probed C primitive falls back to the
+    canonical storage of the semantic type PRIK resolved.
+    """
+    identity = semantic_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA)
+    declared = (
+        NATIVE_C_SCALAR_IDENTITIES[identity]
+        if identity is not None
+        else semantic_type.metadata.get(NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA)
+    )
+    if not isinstance(declared, str):
+        return np.asarray(value).dtype
+    exact = NativeCArrayStorageRegistry.type_for(declared, semantic_type.name)
+    return np.dtype(getattr(np, exact.python_type_name.removeprefix("numpy.")))
 
 
 def _pointer_source() -> str:
@@ -119,11 +127,7 @@ def test_non_boolean_c_primitive_pointers_default_to_runtime_rank_numpy_storage(
                 array = function.arguments[0].semantic_type.storage.array
                 assert array.category == "runtime_rank"
                 assert array.shape == ["..."]
-                dtype = (
-                    (np.byte if report.types["char"]["signed"] else np.ubyte)
-                    if name == "char"
-                    else _NATIVE_POINTER_DTYPES[name]
-                )
+                dtype = _accepted_pointer_dtype(function.arguments[0].semantic_type, value)
                 for storage in (np.array(value, dtype=dtype), np.array([value], dtype=dtype)):
                     output = call(storage)
                     assert output.dtype == np.asarray(value).dtype

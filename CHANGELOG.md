@@ -29,6 +29,20 @@ release tags add a leading `v` to the package version.
   as Fortran Support. User Guide navigation presents separate Fortran and C
   paths followed by their shared build workflows.
 
+- An array argument now requires the NumPy storage of the C element type its
+  source declares, rather than the canonical storage of the same width. A
+  target's `int64_t` may be `long` or `long long`, and NumPy independently
+  gives `NPY_INT64` to whichever of the two is 64 bits, so those two choices
+  could disagree: a `long long *` buffer asked for `numpy.longlong` on one
+  target and `numpy.int64` on another. One C source now keeps one accepted
+  dtype everywhere.
+
+- A scalar argument whose native parameter is a 64-bit C integer now accepts
+  either NumPy spelling of that width and converts it, so `np.int64` and
+  `np.longlong` are both valid for a `long long` or `long` parameter whichever
+  one the target calls `int64_t`. Array arguments are unchanged: an element
+  buffer cannot be converted, so it still requires the exact native dtype.
+
 - A cell magic that reads a dash-prefixed flag value as another option now
   names the equals form and, for the flag groups, the quoted-group form.
 
