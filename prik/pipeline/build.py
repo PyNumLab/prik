@@ -1227,11 +1227,13 @@ def _render_wrapper_plan(
     progress: Callable[[str, float | None], None] | None = None,
     collision_adapters: Iterable[str] = (),
     collision_adapter_all: bool = False,
+    public_root: str | None = None,
 ) -> GeneratedWrapper:
     """Render one policy-completed module through the canonical generator."""
     plan = WrapperPlanner(
         collision_adapters=collision_adapters,
         collision_adapter_all=collision_adapter_all,
+        public_root=public_root,
     ).build(module)
     return WrapperGenerator().generate(plan, progress=progress)
 
@@ -1244,6 +1246,7 @@ def _generate_wrapper(
     collision_adapters: Iterable[str] = (),
     collision_adapter_all: bool = False,
     positional_only: bool = False,
+    public_root: str | None = None,
 ) -> GeneratedWrapper:
     """Complete policy and generate the one production wrapper representation."""
     collision_adapter_names = tuple(collision_adapters)
@@ -1278,6 +1281,7 @@ def _generate_wrapper(
         progress=render_progress,
         collision_adapters=collision_adapter_names,
         collision_adapter_all=collision_adapter_all,
+        public_root=public_root,
     )
 
 
@@ -3285,6 +3289,7 @@ def build_fortran_extension(
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _public_root: str | None = None,
 ) -> WrapperBuildResult:
     """Build a Python extension from one or more Fortran source files.
 
@@ -3418,6 +3423,7 @@ def build_fortran_extension(
         collision_adapters=collision_adapter_names,
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
+        public_root=_public_root,
     )
     contract_files = _write_build_contract_package(source_modules, output_path, verbose=verbose)
 
@@ -3497,6 +3503,7 @@ def build_c_extension(
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _public_root: str | None = None,
 ) -> WrapperBuildResult:
     """Build a direct-only C extension from explicit C implementation sources.
 
@@ -3591,6 +3598,7 @@ def build_c_extension(
         collision_adapters=collision_adapters or (),
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
+        public_root=_public_root,
     )
     output_path.mkdir(parents=True, exist_ok=True)
     contract_files = _write_build_contract_package(
@@ -3663,6 +3671,7 @@ def build_pyi_extension(
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _public_root: str | None = None,
 ) -> WrapperBuildResult:
     """Build a Python extension from an editable semantic ``.pyi`` contract.
 
@@ -3789,6 +3798,7 @@ def build_pyi_extension(
         collision_adapters=collision_adapter_names,
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
+        public_root=_public_root,
     )
     output_path.mkdir(parents=True, exist_ok=True)
 

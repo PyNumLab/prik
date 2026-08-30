@@ -83,6 +83,12 @@ import scale_api
 The shared-library filename includes a platform- and Python-specific suffix,
 but the import uses only the module name.
 
+The imported module name is also part of each wrapped function's public
+identity. If `--out geometry` contains a child namespace `points`, its function
+is identified as `geometry.points.distance`. A standalone function is
+identified as `geometry.distance`. PRIK keeps this user-selected package path;
+only private build and cache names are excluded from public function metadata.
+
 ## Multiple Source Files
 
 Pass every wrapped source file in one command. Choosing the module name

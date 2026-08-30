@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 from IPython.core.interactiveshell import InteractiveShell
+from IPython.lib.pretty import pretty
 import numpy as np
 import pytest
 
@@ -43,6 +44,9 @@ end module
     shell.run_cell_magic("fortran", "", cell)
     first_namespace = shell.user_ns["maths"]
     assert first_namespace.square(np.float64(4.0)) == np.float64(16.0)
+    assert first_namespace.__name__ == "maths"
+    assert first_namespace.square.__module__ == "maths"
+    assert pretty(first_namespace.square) == "<function maths.square>"
 
     shell.run_cell_magic("fortran", "", cell)
     assert build_calls == 1
@@ -90,6 +94,8 @@ end module
     shell.run_cell_magic("pyi", line, contract)
     first_namespace = shell.user_ns["maths"]
     assert first_namespace.squared(np.float64(4.0)) == np.float64(16.0)
+    assert first_namespace.squared.__module__ == "maths"
+    assert pretty(first_namespace.squared) == "<function maths.squared>"
     assert not hasattr(first_namespace, "square")
 
     shell.run_cell_magic("pyi", line, contract)
@@ -119,4 +125,6 @@ end function
     shell.run_cell_magic("pyi", magic_line.removeprefix("%%pyi").strip(), contract)
 
     assert shell.user_ns["square"](np.float64(4.0)) == np.float64(16.0)
+    assert shell.user_ns["square"].__module__ is None
+    assert pretty(shell.user_ns["square"]) == "<function square>"
     assert "cell" not in shell.user_ns

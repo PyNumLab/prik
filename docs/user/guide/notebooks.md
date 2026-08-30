@@ -46,6 +46,11 @@ import numpy as np
 maths.square(np.float64(4.0))
 ```
 
+Notebook function identities use that same public path. Introspection displays
+`maths.square`; the private `_prik_...` extension name used for cache-safe
+loading is not part of the function's public name. A standalone function is
+identified simply as `square`.
+
 Multiple declared Fortran modules become separate notebook names. Public
 standalone procedures, which have no Fortran module namespace, are published
 directly in the notebook namespace.

@@ -304,6 +304,7 @@ class WrapperGenerator:
         # Validate module ownership and the complete namespace tree before member links.
         if plan.binding.owner_path != plan.owner_path:
             diagnostics.append(self._diagnostic(plan.owner_path, "binding-module-owner", plan.binding.owner_path))
+        diagnostics.extend(self._binding_public_root_diagnostics(plan))
         if plan.entrypoint.owner_path != plan.owner_path:
             diagnostics.append(self._diagnostic(plan.owner_path, "entrypoint-module-owner", plan.entrypoint.owner_path))
         if plan.bridge is not None and plan.bridge.owner_path != plan.owner_path:
@@ -338,6 +339,13 @@ class WrapperGenerator:
         diagnostics.extend(self._generated_symbol_diagnostics(plan))
         diagnostics.extend(self._required_header_diagnostics(plan))
         return tuple(diagnostics)
+
+    def _binding_public_root_diagnostics(self, plan: ModulePlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate the completed public presentation root before C lowering."""
+        root = plan.binding.public_root
+        if isinstance(root, str) and (not root or root.isidentifier()):
+            return ()
+        return (self._diagnostic(plan.owner_path, "binding-public-root", repr(root)),)
 
     def _native_generated_code_group_diagnostics(
         self,

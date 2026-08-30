@@ -11412,7 +11412,7 @@ class CBindingGenerator(ClassVisitor):
         namespace_symbol = self._namespace_symbol(namespace)
         return CModulePropertySupport(
             name=f"{module.binding.owner_path}_{namespace_symbol}_module_property_setup",
-            module_name=self._namespace_module_name(module, namespace),
+            module_name=self._namespace_display_module_name(module, namespace),
             entries=entries,
         )
 
@@ -11713,29 +11713,33 @@ class CBindingGenerator(ClassVisitor):
         """Build method table from the supplied completed binding records; emitted nodes only project completed binding actions."""
         return CMethodDefTable(
             f"{module.binding.owner_path}_{self._namespace_symbol(namespace)}_methods",
-            (
-                *(
-                    CMethodDefEntry(
-                        function.binding.python_name,
-                        self._binding_function_name(function),
-                        self._binding_method_flags(function),
-                        function.binding.docstring,
-                    )
-                    for function in namespace.functions
-                ),
-                *self._overload_method_entries(namespace),
-                *(
-                    CMethodDefEntry(
-                        CBindingNames.class_create_method(surface),
-                        CBindingNames.class_create_method(surface),
-                        "METH_VARARGS",
-                        "",
-                    )
-                    for surface in namespace.classes
-                    if surface.constructor.kind is not ClassConstructorKind.ABSENT
-                ),
-                *self._derived_private_method_entries(namespace),
+            self._method_entries(namespace),
+        )
+
+    def _method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+        """Return the exact callable definitions installed in one namespace."""
+        return (
+            *(
+                CMethodDefEntry(
+                    function.binding.python_name,
+                    self._binding_function_name(function),
+                    self._binding_method_flags(function),
+                    function.binding.docstring,
+                )
+                for function in namespace.functions
             ),
+            *self._overload_method_entries(namespace),
+            *(
+                CMethodDefEntry(
+                    CBindingNames.class_create_method(surface),
+                    CBindingNames.class_create_method(surface),
+                    "METH_VARARGS",
+                    "",
+                )
+                for surface in namespace.classes
+                if surface.constructor.kind is not ClassConstructorKind.ABSENT
+            ),
+            *self._derived_private_method_entries(namespace),
         )
 
     @staticmethod
@@ -12275,7 +12279,7 @@ class CBindingGenerator(ClassVisitor):
         """Return module def from the supplied completed binding records; this helper preserves the selected binding behavior."""
         owner = module.binding.owner_path
         symbol = self._namespace_symbol(namespace)
-        python_name = self._namespace_module_name(module, namespace)
+        python_name = self._namespace_display_module_name(module, namespace)
         return CModuleDef(
             f"{owner}_{symbol}_module",
             python_name,
@@ -12303,6 +12307,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(f"PyModule_Create(&{module_name}_{self._namespace_symbol(root_namespace)}_module)"),
                 ),
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
+                *self._root_callable_public_identity_nodes(plan, root_namespace, "mod"),
                 *self._namespace_configuration_nodes(
                     plan,
                     root_namespace,
@@ -12359,7 +12364,7 @@ class CBindingGenerator(ClassVisitor):
         namespace: NamespacePlan,
     ) -> tuple[CExpressionStatement, ...]:
         """Register one generated child module under its qualified import name."""
-        module_name = self._c_string_literal(self._namespace_module_name(module, namespace))
+        module_name = self._c_string_literal(self._namespace_runtime_module_name(module, namespace))
         object_name = self._namespace_object_name(namespace)
         return (
             CExpressionStatement(
@@ -12369,6 +12374,47 @@ class CBindingGenerator(ClassVisitor):
                 )
             ),
         )
+
+    def _root_callable_public_identity_nodes(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+        module_object: str,
+    ) -> tuple[CDeclaration | CIf | CExpressionStatement, ...]:
+        """Remove the private extension root from directly published callables."""
+        if module.binding.public_root:
+            return ()
+        nodes = []
+        for index, entry in enumerate(self._method_entries(namespace)):
+            object_name = f"prik_root_callable_{index}"
+            nodes.extend(
+                (
+                    CDeclaration(
+                        object_name,
+                        "PyObject *",
+                        CodeExpression(
+                            f"PyObject_GetAttrString({module_object}, {self._c_string_literal(entry.python_name)})"
+                        ),
+                    ),
+                    CIf(
+                        CodeExpression(f"{object_name} == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression(f"Py_DECREF({module_object})")),
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                    CIf(
+                        CodeExpression(f'PyObject_SetAttrString({object_name}, "__module__", Py_None) < 0'),
+                        body=(
+                            CExpressionStatement(CodeExpression(f"Py_DECREF({object_name})")),
+                            CExpressionStatement(CodeExpression(f"Py_DECREF({module_object})")),
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({object_name})")),
+                )
+            )
+        return tuple(nodes)
 
     def _namespace_configuration_nodes(
         self,
@@ -12744,9 +12790,20 @@ class CBindingGenerator(ClassVisitor):
         """Return the binding-local namespace object name derived from the supplied completed binding records; this helper preserves completed policy."""
         return f"namespace_{self._namespace_symbol(plan)}" if plan.python_path else "mod"
 
-    def _namespace_module_name(self, module: ModulePlan, namespace: NamespacePlan) -> str:
-        """Return the binding-local namespace module name derived from the supplied completed binding records; this helper preserves completed policy."""
+    def _namespace_runtime_module_name(self, module: ModulePlan, namespace: NamespacePlan) -> str:
+        """Return the private import-registration name for one generated namespace."""
         return ".".join((module.binding.owner_path, *namespace.python_path))
+
+    def _namespace_public_module_name(self, module: ModulePlan, namespace: NamespacePlan) -> str:
+        """Return the planned public Python owner path for one namespace."""
+        root = (module.binding.public_root,) if module.binding.public_root else ()
+        return ".".join((*root, *namespace.python_path))
+
+    def _namespace_display_module_name(self, module: ModulePlan, namespace: NamespacePlan) -> str:
+        """Return a valid module name while keeping a rootless build private."""
+        return self._namespace_public_module_name(module, namespace) or self._namespace_runtime_module_name(
+            module, namespace
+        )
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import shutil
 
 import numpy as np
 import pytest
+from IPython.lib.pretty import pretty
 
 import prik.jupyter.magic as magic_module
 from prik.jupyter.magic import PrikMagics
@@ -43,6 +44,8 @@ def test_c_cell_compiles_once_and_publishes_direct_function(tmp_path: Path, monk
     magic.c("", cell)
     first_function = shell.user_ns["square"]
     assert first_function(np.float64(4.0)) == np.float64(16.0)
+    assert first_function.__module__ is None
+    assert pretty(first_function) == "<function square>"
 
     magic.c("", cell)
     assert build_calls == 1
@@ -78,6 +81,8 @@ def test_generated_c_contract_can_be_edited_then_compiled_once(tmp_path: Path, m
     magic.pyi(line, contract)
     first_function = shell.user_ns["squared"]
     assert first_function(np.float64(4.0)) == np.float64(16.0)
+    assert first_function.__module__ is None
+    assert pretty(first_function) == "<function squared>"
     assert "square" not in shell.user_ns
 
     magic.pyi(line, contract)

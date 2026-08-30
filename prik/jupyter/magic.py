@@ -29,7 +29,9 @@ from prik.pipeline.build import (
 from prik.preprocessing import PreprocessingConfig
 
 
-_CACHE_SCHEMA_VERSION = 1
+_BUILD_CONFIGURATION_SCHEMA_VERSION = 1
+_BUILD_CACHE_RECORD_SCHEMA_VERSION = 2
+_SOURCE_RECORD_SCHEMA_VERSION = 1
 _CACHE_RECORD_NAME = "cell-build.json"
 _SOURCE_RECORD_NAME = "source.json"
 
@@ -207,7 +209,7 @@ def _editable_magic_command(options: _CellOptions) -> str:
 def _build_configuration(options: _CellOptions) -> dict[str, object]:
     """Return the compatibility facts validated inside one source digest entry."""
     return {
-        "schema_version": _CACHE_SCHEMA_VERSION,
+        "schema_version": _BUILD_CONFIGURATION_SCHEMA_VERSION,
         "prik_version": __version__,
         "python_cache_tag": sys.implementation.cache_tag,
         "python_soabi": sysconfig.get_config_var("SOABI"),
@@ -241,7 +243,7 @@ def _read_cache_record(path: Path) -> dict[str, object] | None:
 def _write_source_record(path: Path, *, digest: str, language: str) -> None:
     """Persist the language identity needed by a later `%%pyi` cell."""
     record = {
-        "schema_version": _CACHE_SCHEMA_VERSION,
+        "schema_version": _SOURCE_RECORD_SCHEMA_VERSION,
         "source_digest": digest,
         "language": language,
     }
@@ -253,7 +255,7 @@ def _write_source_record(path: Path, *, digest: str, language: str) -> None:
 def _source_language(path: Path, *, digest: str) -> str:
     """Load the native language owned by one generated source-cache entry."""
     record = _read_cache_record(path)
-    if record is None or record.get("schema_version") != _CACHE_SCHEMA_VERSION:
+    if record is None or record.get("schema_version") != _SOURCE_RECORD_SCHEMA_VERSION:
         raise UsageError(
             "The native source for this editable .pyi is unavailable; "
             "execute its %%fortran --pyi or %%c --pyi source cell again"
@@ -279,7 +281,7 @@ def _compatible_generation(
     digest: str,
     fingerprint: str,
 ) -> int | None:
-    if record is None or record.get("schema_version") != _CACHE_SCHEMA_VERSION:
+    if record is None or record.get("schema_version") != _BUILD_CACHE_RECORD_SCHEMA_VERSION:
         return None
     if record.get("digest") != digest or record.get("build_fingerprint") != fingerprint:
         return None
@@ -334,7 +336,7 @@ def _write_cache_record(
     result: WrapperBuildResult,
 ) -> None:
     record = {
-        "schema_version": _CACHE_SCHEMA_VERSION,
+        "schema_version": _BUILD_CACHE_RECORD_SCHEMA_VERSION,
         "digest": digest,
         "build_fingerprint": fingerprint,
         "generation": generation,
@@ -361,6 +363,7 @@ def _build_cell(
     common = {
         "output_dir": output_dir,
         "output_name": output_name,
+        "_public_root": "",
         "preprocessing": preprocessing,
         "verbose": options.verbose,
         "wrapper_fortran_flags": options.wrapper_fortran_flags,
@@ -392,6 +395,7 @@ def _build_editable_contract(
     common = {
         "output_dir": output_dir,
         "output_name": output_name,
+        "_public_root": "",
         "native_language": options.language,
         "verbose": options.verbose,
         "wrapper_fortran_flags": options.wrapper_fortran_flags,

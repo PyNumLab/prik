@@ -14,7 +14,12 @@ release tags add a leading `v` to the package version.
   digest, builds against that cached source, and publishes declared Fortran
   modules or standalone declarations directly in the notebook namespace.
   Exact cells reuse a persistent SHA-256 build cache unless `--force` is
-  selected, and PRIK does not expose an internal package entry.
+  selected, and PRIK does not expose an internal package entry. Wrapped
+  functions follow the published notebook path (`maths.square` or standalone
+  `square`) instead of exposing the private cache extension name; ordinary
+  file builds retain their user-selected package root, such as
+  `geometry.maths.square`. Existing notebook build artifacts are rebuilt once
+  so cached extensions cannot retain the old private function identity.
 
 - A one-character `@native_call` literal is now buildable: `String[1]("N")`
   declares the character a native parameter receives instead of leaving it a

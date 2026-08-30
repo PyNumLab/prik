@@ -92,6 +92,7 @@ def test_fortran_magic_routes_options_publishes_declared_namespace_and_reuses_ex
     assert kwargs["native_fortran_flags"] == ("-O3", "-xHost")
     assert kwargs["wrapper_fortran_flags"] == ("-O2",)
     assert kwargs["wrapper_c_flags"] == ("-O1",)
+    assert kwargs["_public_root"] == ""
     assert kwargs["verbose"] is False
     assert len(shell.user_ns) == 1
 
@@ -216,6 +217,7 @@ def test_generated_module_contract_builds_against_cached_source_and_reuses_exact
     assert kwargs["input_compiler"] == "ifx"
     assert kwargs["native_fortran_sources"] == (source_path,)
     assert kwargs["native_fortran_flags"] == ("-O3", "-xHost")
+    assert kwargs["_public_root"] == ""
 
     magic.pyi(line, editable_cell)
 

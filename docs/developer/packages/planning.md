@@ -93,10 +93,12 @@ whether the binding or bridge implements the callable; the opposite side uses
 the same record as its declaration/call contract. Static CPython helpers and
 bridge-internal procedures are deliberately absent.
 
-`BindingModulePlan` separately records which derived-type owners need
-binding-local capsule and holder surfaces. Those static CPython helpers are not
-entrypoints, but their membership is still planned rather than rediscovered by
-C lowering. `BridgeModulePlan` likewise records the broad typed-holder
+`BindingModulePlan` records the public Python package root separately from the
+internal module owner used for generated symbols and extension loading. It also
+records which derived-type owners need binding-local capsule and holder
+surfaces. Those static CPython helpers are not entrypoints, but their membership
+is still planned rather than rediscovered by C lowering. `BridgeModulePlan`
+likewise records the broad typed-holder
 definitions required by adapter calls and the narrower holder field-support
 inventories. Planning derives both backend-local inventories and the external
 support-procedure registry together. Validation requires every planned local

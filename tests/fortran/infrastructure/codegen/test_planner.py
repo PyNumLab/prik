@@ -94,6 +94,35 @@ def right_value(x: Int32) -> Int32: ...
     assert c_source.index(left_registration) > c_source.index("PyModule_Create(&namespaced_left_module)")
 
 
+def test_rootless_publication_keeps_private_import_registration_out_of_callable_identity():
+    module = parse_pyi_text(
+        "def value(x: Int32) -> Int32: ...",
+        module_name="private_extension",
+    )
+    module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("maths",), "name": "value"}]
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner(public_root="").build(module)
+    artifacts = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.name.endswith(".c"))
+
+    assert plan.binding.public_root == ""
+    assert '    "maths",' in c_source
+    assert 'PyDict_SetItemString(PyImport_GetModuleDict(), "private_extension.maths", namespace_maths)' in c_source
+    assert '    "private_extension.maths",' not in c_source
+
+
+def test_rootless_standalone_callable_drops_private_extension_module_metadata():
+    module = parse_pyi_text("def value(x: Int32) -> Int32: ...", module_name="private_extension")
+    complete_semantic_policies(module)
+    plan = WrapperPlanner(public_root="").build(module)
+
+    artifacts = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.name.endswith(".c"))
+
+    assert 'PyObject_SetAttrString(prik_root_callable_0, "__module__", Py_None)' in c_source
+
+
 def test_post_ir_export_policy_fixes_names_within_each_namespace():
     module = parse_pyi_text(
         """
