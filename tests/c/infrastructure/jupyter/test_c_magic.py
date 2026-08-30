@@ -68,7 +68,6 @@ def test_c_magic_routes_compiler_flags_and_publishes_direct_declarations(tmp_pat
     assert kwargs["input_c_compiler"] == "clang"
     assert kwargs["preprocessing"].compiler == "clang"
     assert kwargs["native_c_flags"] == ("-O3", "-std=c11")
-    assert kwargs["_public_root"] == ""
     assert shell.user_ns["square"](4.0) == 16.0
     assert "cell" not in shell.user_ns
     assert all(not name.startswith("_prik_") for name in shell.user_ns)
@@ -135,7 +134,6 @@ def test_generated_c_contract_has_no_artificial_filename_and_builds_against_cach
     assert kwargs["input_c_compiler"] == "clang"
     assert kwargs["native_c_sources"] == (tmp_path / "cache" / digest / "cell.c",)
     assert kwargs["native_c_flags"] == ("-O3", "-std=c11")
-    assert kwargs["_public_root"] == ""
     assert contract.name == "contract.pyi"
     assert shell.user_ns["square"](4.0) == 16.0
 
@@ -188,5 +186,4 @@ def test_handwritten_c_contract_builds_an_existing_source_without_generated_meta
     assert kwargs["input_c_compiler"] == "clang"
     assert kwargs["native_c_sources"] == (source,)
     assert kwargs["native_c_flags"] == ("-O3", "-std=c11")
-    assert kwargs["_public_root"] == ""
     assert shell.user_ns["square"](4.0) == 16.0

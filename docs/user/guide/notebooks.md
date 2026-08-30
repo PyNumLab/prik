@@ -2,7 +2,7 @@
 title: IPython and Jupyter Notebooks
 description: Compile Fortran and C cells with PRIK cell magics
 audience: users
-prerequisites: installation, first wrapped module, C support
+prerequisites: installation, first wrapped function
 related: wrapping-modules.md, ../reference/python-api.md, ../language-support/c-support.md
 status: maintained
 publication: reviewed
@@ -67,46 +67,93 @@ square(np.float64(4.0))
 
 ## Edit the generated `.pyi`
 
-Add `--pyi` when you want to edit the semantic contract before compilation:
+Add `--pyi` when the generated Python API is not the one you want. PRIK
+compiles nothing yet; it persists the source and hands back an editable
+contract cell.
 
 ```ipython
-%%fortran --pyi
-module maths
-contains
-    real(8) function square(x)
-        real(8), intent(in) :: x
-        square = x*x
-    end function
-end module
+%%c --pyi
+#include <stddef.h>
+
+void scale(size_t count, double *values) {
+    for (size_t i = 0; i < count; ++i) values[i] *= 2.0;
+}
 ```
 
-PRIK presents an editable `%%pyi` cell:
+PRIK inserts the contract it derived from that source:
+
+```ipython
+%%pyi
+
+# prik: source-sha256=<generated digest>
+
+from prik.contracts import Float64, UInt64
+
+def scale(
+    count: UInt64,
+    values: Float64[...]
+) -> None: ...
+```
+
+This is a faithful reading of the C, but it is not a good Python API: the
+caller has to pass a length that NumPy already knows, and `Float64[...]`
+accepts any rank because `double *` does not say which one it is. Edit the
+cell, keep the `# prik:` line, and run it:
+
+```ipython
+%%pyi
+
+# prik: source-sha256=<generated digest>
+
+from prik.contracts import Arg, Float64, native_call
+
+@native_call([Arg(0).size, Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+```
+
+`Float64[:]` requires a rank-one array, and `Arg(0).size` supplies `count`
+from it, so `count` disappears from the Python signature:
+
+```python
+values = np.array([1.0, 2.0, 3.0])
+scale(values)
+values                 # array([2., 4., 6.]) -- updated in place
+```
+
+The native code and the compiler options are unchanged; only the Python API
+you call is different.
+
+### Contract cells and their names
+
+Fortran source generates one editable cell per declared module, each carrying
+a `file=` field:
 
 ```ipython
 %%pyi
 
 # prik: file=maths.pyi source-sha256=<generated digest>
-
-# Generated maths.pyi contract appears here.
 ```
 
-Edit the declarations, keep the `# prik:` line, and run the cell. The
-`maths.pyi` filename publishes the contract as `maths`. Standalone Fortran and
-C contracts are published directly instead.
+**The `file=` leaf name is the Fortran module name**, not a name you choose —
+`maths.pyi` is the contract for `module maths`, and it publishes `maths` in
+the notebook. C source and standalone Fortran declarations have no module to
+name, so their cells carry no `file=` field and publish their functions
+directly.
 
-For source containing several modules, PRIK creates one editable cell per
-module. Jupyter inserts them together; terminal IPython presents them in
-sequence as you execute each contract. Compiler and build options are copied
-from the source cell. Rerun the source cell to change them.
+Jupyter inserts every generated cell at once; terminal IPython presents them
+in sequence as you execute each one. Compiler and build options are copied
+from the source cell, so rerun the source cell to change them.
 
-The same workflow works with `%%c --pyi`.
+The same workflow works with `%%fortran --pyi`.
 
 ## Wrap an existing source file
 
-Use `%%pyi` directly when the native source already exists as a file:
+Use `%%pyi` directly when the native source already exists as a file. There is
+no source cell to generate from, so you write the contract yourself and name
+the sources on the magic line:
 
 ```ipython
-%%pyi --native-fortran-sources geometry.f90
+%%pyi --native-fortran-sources maths.f90
 
 # prik: file=maths.pyi
 
@@ -116,9 +163,12 @@ from prik.contracts import Addr, Arg, Float64, native_call
 def square(x: Float64) -> Float64: ...
 ```
 
-This cell publishes `maths`. To expose another module from the same source,
-write another `%%pyi` cell with its module filename, such as
-`# prik: file=maths2.pyi`.
+Here `file=maths.pyi` is the contract for `module maths` inside `maths.f90`,
+and the cell publishes `maths`. The leaf name must match the Fortran module,
+whatever the file is called — a mismatch reaches the Fortran compiler as a
+missing `.mod`, not a PRIK diagnostic. To expose a second module from the same
+source, write another `%%pyi` cell naming that module, such as
+`# prik: file=helpers.pyi`.
 
 List multiple source files in compilation order when needed:
 
@@ -130,25 +180,39 @@ List multiple source files in compilation order when needed:
 %%pyi --native-c-sources square.c
 ```
 
-For C or standalone Fortran, omit the `file=` comment. Standalone Fortran
-declarations still use `@standalone`. Relative source paths start from the
-kernel's current working directory.
+For C or standalone Fortran, omit the `# prik:` line entirely. Standalone
+Fortran declarations still use `@standalone`. Relative source paths start from
+the kernel's current working directory.
 
 ## Compilers and flags
-
-The magics accept the same compiler and build options as the command line:
 
 ```ipython
 %%fortran --compiler ifx --native-compile-flags="-O3 -march=native"
 ```
 
-- `--native-compile-flags` applies to the cell's Fortran or C source.
+- `--native-compile-flags` applies to the cell's own Fortran or C source. A
+  cell has one native language, so there is a single option here; the command
+  line splits the same setting into `--native-compile-flags` for Fortran and
+  `--native-c-compile-flags` for C.
 - `--wrapper-fortran-flags` applies to generated Fortran bridge source.
 - `--wrapper-c-flags` applies to generated C binding source and extension
   linking.
-- `--compiler-arg` adds one preprocessing argument and may be repeated. Use
-  the equals form for a dash-prefixed value, such as
-  `--compiler-arg=-fdefault-real-8`.
+- `--compiler-arg` adds one preprocessing argument and may be repeated.
+
+**A value that starts with a dash needs the equals form.** `--native-compile-flags -O3`
+reads `-O3` as another option and fails; write `--native-compile-flags=-O3`.
+The three flag options also accept several flags as one quoted group:
+
+```ipython
+%%c --native-compile-flags="-O3 -march=native"
+```
+
+`--compiler-arg` is not split, so it carries exactly one argument. Repeat it
+for more:
+
+```ipython
+%%fortran --compiler-arg=-fdefault-real-8 --compiler-arg=-I/opt/include
+```
 
 ## Cell cache
 
@@ -162,6 +226,19 @@ are unchanged. Use `--force` to rebuild or `--verbose` to show build activity:
 ```ipython
 %%fortran --verbose
 ```
+
+The cache persists between sessions in `~/.cache/prik/jupyter`, or under
+`$XDG_CACHE_HOME/prik/jupyter` or `$PRIK_CACHE_DIR/jupyter` when either is
+set. Each distinct cell text gets its own entry holding that cell's source,
+generated wrapper, and compiled extension, so editing a cell repeatedly leaves
+one entry per version. Nothing is evicted automatically. Delete the directory
+to reclaim the space:
+
+```bash
+rm -rf ~/.cache/prik/jupyter
+```
+
+The next run of each cell rebuilds it.
 
 ## Limitations
 

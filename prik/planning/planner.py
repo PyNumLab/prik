@@ -297,24 +297,16 @@ class WrapperPlanner(ClassVisitor):
         *,
         collision_adapters: Iterable[str] = (),
         collision_adapter_all: bool = False,
-        public_root: str | None = None,
     ) -> None:
-        """Record build presentation and native collision-forwarder choices.
+        """Record which native symbols the binding reaches through a forwarder.
 
         ``collision_adapters`` names individual native symbols;
         ``collision_adapter_all`` selects every direct C entrypoint. Only a
         direct C symbol is eligible, because a generated bridge symbol is
         already PRIK-owned and cannot collide with a header declaration.
-        ``public_root`` defaults to the semantic module owner, while an empty
-        value selects direct interactive publication without a package root.
         """
-        if public_root is not None and (
-            not isinstance(public_root, str) or (public_root and not public_root.isidentifier())
-        ):
-            raise ValueError(f"Public wrapper root must be empty or a valid Python identifier: {public_root!r}")
         self._collision_adapters = frozenset(collision_adapters)
         self._collision_adapter_all = collision_adapter_all
-        self._public_root = public_root
 
     def visit(self, node, *args, **kwargs):
         """Project one completed policy record through its named handler."""
@@ -397,11 +389,10 @@ class WrapperPlanner(ClassVisitor):
         return ModulePlan(
             owner_path=module.name,
             binding=BindingModulePlan(
-                owner_path=module.name,
-                public_root=module.name if self._public_root is None else self._public_root,
-                owned_derived_type_owner_paths=support_projection.binding_owned_derived_type_owner_paths,
-                allocatable_holder_type_owner_paths=support_projection.binding_allocatable_holder_type_owner_paths,
-                pointer_holder_type_owner_paths=support_projection.binding_pointer_holder_type_owner_paths,
+                module.name,
+                support_projection.binding_owned_derived_type_owner_paths,
+                support_projection.binding_allocatable_holder_type_owner_paths,
+                support_projection.binding_pointer_holder_type_owner_paths,
             ),
             entrypoint=NativeEntrypointModulePlan(
                 module.name,

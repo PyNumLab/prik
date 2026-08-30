@@ -29,6 +29,14 @@ release tags add a leading `v` to the package version.
   as Fortran Support. User Guide navigation presents separate Fortran and C
   paths followed by their shared build workflows.
 
+- A cell magic that reads a dash-prefixed flag value as another option now
+  names the equals form and, for the flag groups, the quoted-group form.
+
+- Notebook publication no longer changes generated wrapper code. Keeping a
+  cell's private cache module name out of `repr()`, `help()`, and `__module__`
+  is now done where the names are published, so the build API, wrapper plan,
+  and emitted C are the same for a notebook cell as for any other build.
+
 - Added optional `%%fortran`, `%%c`, and `%%pyi` IPython/Jupyter cell magics.
   Native-source cells compile directly or, with `--pyi`, persist their exact
   source and insert editable per-module or direct-declaration contract cells.

@@ -669,11 +669,6 @@ class BindingStatusErrorPlan(StageRecord):
 class BindingModulePlan(StageRecord):
     """Store module-wide binding surfaces selected before C lowering.
 
-    ``public_root`` is the stable Python package root used for callable
-    metadata. It may be empty when an interactive publisher exposes namespace
-    members directly, while ``owner_path`` remains the internal extension and
-    generated-symbol identity.
-
     The three owner-path inventories select static CPython capsule and holder
     helpers.  They are distinct from externally linked generated support
     procedures, whose existence and complete ABI live in the entrypoint module
@@ -681,7 +676,6 @@ class BindingModulePlan(StageRecord):
     """
 
     owner_path: str
-    public_root: str
     owned_derived_type_owner_paths: tuple[str, ...] = ()
     allocatable_holder_type_owner_paths: tuple[str, ...] = ()
     pointer_holder_type_owner_paths: tuple[str, ...] = ()
@@ -1462,7 +1456,7 @@ if __name__ == "__main__":
     )
     plan = ModulePlan(
         owner_path="demo",
-        binding=BindingModulePlan(owner_path="demo", public_root="demo"),
+        binding=BindingModulePlan(owner_path="demo"),
         entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
         bridge=BridgeModulePlan(owner_path="demo"),
         namespaces=(NamespacePlan(owner_path="demo", python_path=(), functions=(function,)),),

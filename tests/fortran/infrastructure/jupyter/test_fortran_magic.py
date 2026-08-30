@@ -111,7 +111,6 @@ def test_fortran_magic_routes_options_publishes_declared_namespace_and_reuses_ex
     assert kwargs["native_fortran_flags"] == ("-O3", "-xHost")
     assert kwargs["wrapper_fortran_flags"] == ("-O2",)
     assert kwargs["wrapper_c_flags"] == ("-O1",)
-    assert kwargs["_public_root"] == ""
     assert kwargs["verbose"] is False
     assert len(shell.user_ns) == 1
 
@@ -283,7 +282,6 @@ def test_generated_module_contract_builds_against_cached_source_and_reuses_exact
     assert kwargs["input_compiler"] == "ifx"
     assert kwargs["native_fortran_sources"] == (source_path,)
     assert kwargs["native_fortran_flags"] == ("-O3", "-xHost")
-    assert kwargs["_public_root"] == ""
 
     magic.pyi(line, editable_cell)
 
@@ -367,7 +365,6 @@ def test_handwritten_module_contract_builds_existing_sources_and_tracks_their_co
     assert kwargs["input_compiler"] == "ifx"
     assert kwargs["native_fortran_sources"] == (source, helper)
     assert kwargs["native_fortran_flags"] == ("-O3", "-xHost")
-    assert kwargs["_public_root"] == ""
 
     magic.pyi(line, cell)
 
@@ -495,6 +492,28 @@ def test_magic_reports_usage_without_terminating_ipython(tmp_path: Path, capsys)
             "",
             "# prik: file=maths.pyi source-sha256=short\ndef square(): ...\n",
         )
+
+
+def test_dash_prefixed_flag_value_usage_names_the_equals_form(tmp_path: Path):
+    """A flag value argparse read as an option must say how to write it."""
+    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
+
+    with pytest.raises(UsageError, match=r'--native-compile-flags="-O3 -march=native"'):
+        magic.fortran("--native-compile-flags -O3", "source")
+    # ``--compiler-arg`` carries exactly one argument, so it must not be told
+    # to pass a quoted group of several flags.
+    with pytest.raises(UsageError, match=r"--compiler-arg=-fopenmp"):
+        magic.fortran("--compiler-arg -fopenmp", "source")
+    assert "quoted group" not in _compiler_arg_usage_message(magic)
+    # An option whose value is never dash-prefixed keeps the plain message.
+    with pytest.raises(UsageError, match=r"^argument --compiler: expected one argument$"):
+        magic.fortran("--compiler", "source")
+
+
+def _compiler_arg_usage_message(magic: PrikMagics) -> str:
+    with pytest.raises(UsageError) as raised:
+        magic.fortran("--compiler-arg -fopenmp", "source")
+    return str(raised.value)
 
 
 def test_ipython_extension_hook_registers_the_magic_class():

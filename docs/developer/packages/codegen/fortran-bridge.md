@@ -102,7 +102,7 @@ function = FunctionPlan(
 )
 namespace = NamespacePlan(..., functions=(function,))
 plan = ModulePlan(
-    binding=BindingModulePlan(..., public_root="demo"),
+    binding=BindingModulePlan(...),
     entrypoint=NativeEntrypointModulePlan(...),
     bridge=BridgeModulePlan(...),
     namespaces=(namespace,),
@@ -173,7 +173,7 @@ namespace = NamespacePlan(
 )
 plan = ModulePlan(
     owner_path="demo",
-    binding=BindingModulePlan(owner_path="demo", public_root="demo"),
+    binding=BindingModulePlan(owner_path="demo"),
     entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
     namespaces=(namespace,),

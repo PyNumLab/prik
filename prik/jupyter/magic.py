@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 import hashlib
 import json
@@ -36,11 +37,38 @@ _CACHE_RECORD_NAME = "cell-build.json"
 _SOURCE_RECORD_NAME = "source.json"
 
 
+# Options whose value normally starts with a dash, which argparse would
+# otherwise read as the next option rather than as this option's value. Only
+# the flag groups are split, so only they may carry several flags at once.
+_DASH_VALUE_OPTIONS = ("--compiler-arg",)
+_DASH_VALUE_FLAG_GROUPS = (
+    "--native-compile-flags",
+    "--wrapper-fortran-flags",
+    "--wrapper-c-flags",
+)
+
+
 class _MagicArgumentParser(argparse.ArgumentParser):
     """Raise an IPython usage error instead of terminating the kernel."""
 
     def error(self, message: str) -> None:
-        raise UsageError(message)
+        raise UsageError(self._with_dash_value_hint(message))
+
+    @staticmethod
+    def _with_dash_value_hint(message: str) -> str:
+        """Name the equals form when argparse read a flag value as an option."""
+        if "expected one argument" not in message:
+            return message
+        group = next((name for name in _DASH_VALUE_FLAG_GROUPS if name in message), None)
+        if group is not None:
+            return (
+                f"{message}; use the equals form for a dash-prefixed value ({group}=-O3) "
+                f'and one quoted group for several flags ({group}="-O3 -march=native")'
+            )
+        option = next((name for name in _DASH_VALUE_OPTIONS if name in message), None)
+        if option is None:
+            return message
+        return f"{message}; use the equals form for a dash-prefixed value ({option}=-fopenmp)"
 
 
 @dataclass(frozen=True)
@@ -445,7 +473,6 @@ def _build_cell(
     common = {
         "output_dir": output_dir,
         "output_name": output_name,
-        "_public_root": "",
         "preprocessing": preprocessing,
         "verbose": options.verbose,
         "wrapper_fortran_flags": options.wrapper_fortran_flags,
@@ -477,7 +504,6 @@ def _build_editable_contract(
     common = {
         "output_dir": output_dir,
         "output_name": output_name,
-        "_public_root": "",
         "native_language": options.language,
         "verbose": options.verbose,
         "wrapper_fortran_flags": options.wrapper_fortran_flags,
@@ -544,8 +570,42 @@ def _pyi_native_language(
 
 
 def _public_bindings(module: ModuleType) -> dict[str, object]:
-    """Return generated public root declarations and declared child namespaces."""
-    return {name: value for name, value in vars(module).items() if not name.startswith("_")}
+    """Return public root declarations and namespaces named as the notebook shows them.
+
+    A cell's extension is imported under a private cache module name, which
+    would otherwise surface in ``repr()``, ``help()``, and ``__module__``. The
+    published objects are restated under the names the user actually binds,
+    leaving the private name to ``sys.modules`` alone.
+    """
+    bindings = {name: value for name, value in vars(module).items() if not name.startswith("_")}
+    for name, value in bindings.items():
+        if isinstance(value, ModuleType):
+            _restate_namespace(value, name)
+        else:
+            # Published directly into the session, so it has no public owner.
+            _set_owner_module(value, None)
+    return bindings
+
+
+def _restate_namespace(namespace: ModuleType, public_name: str) -> None:
+    """Rename one published namespace and every member it owns."""
+    namespace.__name__ = public_name
+    # A namespace carrying module variables is an instance of a generated heap
+    # type whose name also embeds the private root.
+    _set_owner_module(type(namespace), public_name)
+    for member_name, member in vars(namespace).items():
+        if member_name.startswith("_"):
+            continue
+        if isinstance(member, ModuleType):
+            _restate_namespace(member, f"{public_name}.{member_name}")
+        else:
+            _set_owner_module(member, public_name)
+
+
+def _set_owner_module(value: object, owner: str | None) -> None:
+    """Set one object's owning-module name, ignoring an immutable target."""
+    with suppress(AttributeError, TypeError):
+        value.__module__ = owner
 
 
 @magics_class
