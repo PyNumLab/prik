@@ -25,6 +25,9 @@ Follow these pages in order:
 3. **[Your First Function](first-wrapped-function.md)** — Build the same scalar function from Fortran or C.
 4. **[Development Workflow](beginner-workflow.md)** — Repeat the edit → review → build → test loop.
 
+The [quickstart notebook](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb)
+runs this same loop in Colab, with nothing to install.
+
 ---
 
 ## What You Will Build

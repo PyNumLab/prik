@@ -272,6 +272,15 @@ print(item.norm_squared())  # 20.0
 
 Same Fortran source, but a more natural Python API: module procedures become methods.
 
+**Want to run that loop yourself?** The quickstart notebook does exactly this —
+compiles a Fortran cell and a C cell, then reshapes the generated API by editing
+its `.pyi` contract. It needs no installation.
+
+<p class="prik-notebook-actions">
+<a class="prik-primary-cta" href="https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb">▶&nbsp; Run it in Colab</a>
+<a class="prik-secondary-cta" href="examples/notebooks/quickstart.ipynb" download="quickstart.ipynb">⬇&nbsp; Download the notebook</a>
+</p>
+
 ## Why PRIK
 
 - **Natural Python APIs:** Fortran modules become namespaces and derived types

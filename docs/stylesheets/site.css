@@ -56,6 +56,49 @@
   display: none;
 }
 
+.wy-breadcrumbs-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.prik-notebook-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.15rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--prik-primary);
+  border-radius: 0.35rem;
+  background: #fff;
+  color: var(--prik-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.prik-notebook-link:visited {
+  color: var(--prik-primary);
+}
+
+.prik-notebook-link:hover,
+.prik-notebook-link:focus {
+  background: var(--prik-primary-bg);
+  border-color: var(--prik-primary-dark);
+  color: var(--prik-primary-dark);
+}
+
+.prik-notebook-link:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
 .prik-repository-link {
   display: inline-flex;
   align-items: center;
@@ -166,6 +209,49 @@
 }
 
 .prik-primary-cta:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
+.prik-notebook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.25rem 0 1.5rem;
+}
+
+.prik-secondary-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.6rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--prik-primary);
+  border-radius: 0.35rem;
+  background: #fff;
+  color: var(--prik-primary);
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.prik-secondary-cta:visited {
+  color: var(--prik-primary);
+}
+
+.prik-secondary-cta:hover,
+.prik-secondary-cta:focus {
+  background: var(--prik-primary-bg);
+  border-color: var(--prik-primary-dark);
+  box-shadow: 0 4px 9px rgb(0 0 0 / 12%);
+  color: var(--prik-primary-dark);
+  transform: translateY(-1px);
+}
+
+.prik-secondary-cta:focus-visible {
   outline: 2px solid #f5b041;
   outline-offset: 2px;
 }
@@ -442,7 +528,8 @@
 
 @media screen and (max-width: 768px) {
   .wy-breadcrumbs-aside {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
     float: none;
     margin-top: 0.75rem;
   }

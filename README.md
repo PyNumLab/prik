@@ -12,6 +12,13 @@ Fortran and C code.
 [![codecov](https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/prik)
 [![DOI](https://zenodo.org/badge/1241799694.svg)](https://doi.org/10.5281/zenodo.21881987)
 
+**Try it without installing anything.** The quickstart notebook compiles a
+Fortran cell and a C cell, then reshapes the generated API by editing its
+`.pyi` contract.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb)
+[Download the notebook](https://pynumlab.github.io/prik/examples/notebooks/quickstart.ipynb)
+
 It preserves modules, derived types, arrays, callbacks, and native behavior
 while letting you reshape the resulting Python API through editable `.pyi`
 contracts instead of writing low-level binding code.
@@ -455,7 +462,9 @@ python3 -m pip install "prik[jupyter]"
 
 Use `%%fortran` or `%%c` to compile native source in a cell. Add `--pyi` to
 review and edit the generated contract before compilation, or use `%%pyi` with
-existing native source files. See [IPython and Jupyter
+existing native source files. See [Run PRIK in a
+Notebook](https://pynumlab.github.io/prik/user/tutorials/notebook-quickstart/)
+for the guided version, or [IPython and Jupyter
 Notebooks](https://pynumlab.github.io/prik/user/guide/notebooks/) for the
 complete workflow.
 

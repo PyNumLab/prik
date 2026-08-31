@@ -73,6 +73,7 @@ nav:
               - Building the Shared Library: user/guide/building-shared-library.md
               - IPython and Jupyter Notebooks: user/guide/notebooks.md
       - Tutorials:
+          - Run PRIK in a Notebook: user/tutorials/notebook-quickstart.md
           - Design a Pythonic BLAS API: user/tutorials/pythonic-blas.md
       - Examples:
           - Overview: user/examples/index.md

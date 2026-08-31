@@ -7,6 +7,19 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The `jupyter` extra now accepts IPython 7.0 and newer instead of requiring
+  8.0. The cell magics use only long-stable IPython APIs, and the higher floor
+  made `pip install prik[jupyter]` upgrade the IPython that hosted notebook
+  environments ship, which forced a runtime restart for no benefit. The `qa`
+  extra installs `prik[jupyter]` rather than repeating that requirement, so
+  the supported IPython range is stated once.
+
+- Added a runnable `examples/notebooks/quickstart.ipynb` and its guided
+  tutorial, covering a Fortran cell, a C cell, and reshaping the generated API
+  by editing its semantic contract in the same session. The home page, Getting
+  Started, the tutorial, and the README offer it as a Colab run or a direct
+  download, so the documented workflow can be tried before installing anything.
+
 - Generated contracts now represent a one-level primitive C pointer as
   runtime-rank `T[...]` NumPy storage instead of choosing a scalar temporary.
   It accepts ranks 0 through 15 with any strides, so a Fortran-ordered array
