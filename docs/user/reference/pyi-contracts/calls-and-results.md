@@ -82,13 +82,41 @@ from prik.contracts import Arg, CLongLong, Float64, Int64, native_call
 def accumulate(count: Int64, scale: Float64) -> None: ...
 ```
 
-The public annotation is authoritative: the user passes a NumPy `int64`, not a
-`numpy.longlong` merely because `CLongLong` appears in `@native_call`. The
-binding extracts the public value into `int64_t`, then emits the native call as:
+The public annotation is authoritative: the user passes a NumPy `int64` and
+never has to spell `numpy.longlong` merely because `CLongLong` appears in
+`@native_call`. The binding extracts the public value into `int64_t`, then
+emits the native call as:
 
 ```c
 accumulate((long long)contract_count, contract_scale);
 ```
+
+A scalar crosses by value, so the binding converts it: either NumPy spelling
+of that width is accepted. `np.int64` and `np.longlong` both satisfy a `long
+long` parameter, and both satisfy a `long` parameter, whichever one the target
+calls `int64_t`.
+
+An array is different. Its elements are handed to C as the buffer they already
+are, and a buffer cannot be converted element by element, so an array argument
+whose `@native_call` entry names an exact C identity accepts **only** that
+element dtype:
+
+```python
+@native_call([CLongLong(Arg(0)), Arg(1)])
+def increment(values: Int64[:], count: Int32) -> None: ...
+```
+
+```python
+increment(np.array([1, 2, 3], dtype=np.longlong), np.int32(3))   # accepted
+increment(np.array([1, 2, 3], dtype=np.int64), np.int32(3))      # TypeError
+```
+
+A generated array contract follows the same rule from the C source alone: the
+accepted dtype is that of the declared C element type, so a `long long *`
+buffer wants `numpy.longlong` and a `long *` buffer wants `numpy.int64` on
+every target, whichever one that target calls `int64_t`. The generated
+docstring names the exact dtype, so check it when a `long`/`long long`
+distinction is in play.
 
 The same sparse form records a native function result whose C identity was
 lost by width-based normalization:

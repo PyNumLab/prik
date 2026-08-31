@@ -483,6 +483,26 @@ def scale(values: Float64[::], label: String[8]) -> None: ...
     )
 
 
+def test_total_size_projection_round_trips_with_default_and_typed_integer_storage():
+    module = parse_pyi_text(
+        """from prik.contracts import Arg, Float64, Int32, native_call
+
+@native_call([Arg(0).size, Int32(Arg(0).size), Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        module_name="total_size_projection",
+    )
+
+    projection = module.functions[0].projection
+
+    assert [(item.value_kind, item.value, item.value_cast) for item in projection] == [
+        ("size", {"kind": "arg", "position": 0}, None),
+        ("size", {"kind": "arg", "position": 0}, "Int32"),
+        ("", None, None),
+    ]
+    assert "@native_call([Arg(0).size, Int32(Arg(0).size), Arg(0)])" in emit_module(module)
+
+
 def test_typed_literal_keeps_its_constant_form_beside_typed_projections():
     module = parse_pyi_text(
         """from prik.contracts import Arg, Float64, Int32, native_call
@@ -522,7 +542,7 @@ def scale(value: Float64) -> None: ...
 def test_typed_scalar_constructor_rejects_a_visible_argument_reference():
     with pytest.raises(
         ValueError,
-        match="Int32 accepts a literal value or a shape, stride, or length projection",
+        match="Int32 accepts a literal value or a size, shape, stride, or length projection",
     ):
         parse_pyi_text(
             """from prik.contracts import Arg, Int32, native_call

@@ -23,9 +23,10 @@ public APIs may still change before `1.0`.
 PRIK supports both languages. Fortran currently has the broader, more mature
 wrapper surface. C currently supports a focused wrapper subset: primitive
 values, one-level pointers, NumPy arrays, and strings. In both languages, editable
-`.pyi` contracts let you shape the Python API. See [C
+`.pyi` contracts let you shape the Python API. See the [C User
+Guide](https://pynumlab.github.io/prik/user/guide/c/) for C workflows and [C
 Support](https://pynumlab.github.io/prik/user/language-support/c-support/) for
-C examples and current limits.
+current coverage.
 
 [Read the documentation](https://pynumlab.github.io/prik/) for installation,
 the user guide, examples, and reference material.
@@ -40,6 +41,7 @@ the user guide, examples, and reference material.
 - [C support](#c-support)
 - [Current C limitations](#current-c-limitations)
 - [Installation & Quick Start](#installation--quick-start)
+- [IPython and Jupyter](#ipython-and-jupyter)
 - [How it works](#how-it-works)
 - [Python API](#python-api)
 - [Development](#development)
@@ -183,7 +185,8 @@ compiler matrix; each project guide also records its own tested platforms.
 ## Key Features
 
 - **Native APIs that feel like Python.** Fortran modules become Python
-  namespaces, while derived types become classes with fields and methods.
+  namespaces, derived types become classes, and C functions expose designed
+  scalar, array, string, and output interfaces.
 - **First-class NumPy array interop.** Pass ordinary NumPy arrays to native
   procedures, including multidimensional and in-place data, with generated
   dtype, shape, layout, and mutability handling at the language boundary.
@@ -194,6 +197,9 @@ compiler matrix; each project guide also records its own tested platforms.
 - **Editable contracts for reshaping APIs.** Edit the generated `.pyi` contract to
   rename, hide, reorganize, or overload the public interface, backed by readable
   generated docstrings.
+- **Interactive notebook builds.** Compile Fortran and C cells with
+  `%%fortran` and `%%c`, or edit a generated semantic contract in a `%%pyi`
+  cell.
 - **Unsupported contracts fail before the build.** PRIK identifies the exact
   boundary and reason before attempting code generation or compilation.
 
@@ -241,7 +247,7 @@ code generation with a diagnostic naming the boundary and the reason.
 
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
 records the full support status of every feature with its evidence. The
-[C support guide](https://pynumlab.github.io/prik/user/language-support/c-support/)
+[C Support page](https://pynumlab.github.io/prik/user/language-support/c-support/)
 states the current C wrapper boundary.
 
 ## C support
@@ -334,8 +340,8 @@ structs, unions, function pointers, or callbacks. Unsupported declarations
 stop before wrapper generation or compilation; parsing a declaration alone does
 not promise that it can be built.
 
-[Read the C support guide for executable source, `.pyi`, CLI, and Python API
-examples.](https://pynumlab.github.io/prik/user/language-support/c-support/)
+[Continue with the C User Guide for source, `.pyi`, CLI, and Python API
+workflows.](https://pynumlab.github.io/prik/user/guide/c/)
 
 ## Installation & Quick Start
 
@@ -435,6 +441,24 @@ The custom wrapper flags appear in the relevant command lines:
 <fortran compiler> -shared ... -O2 ... geometry_debug ...
 ```
 
+## IPython and Jupyter
+
+Install the optional notebook integration and load it once per session:
+
+```bash
+python3 -m pip install "prik[jupyter]"
+```
+
+```ipython
+%load_ext prik.jupyter
+```
+
+Use `%%fortran` or `%%c` to compile native source in a cell. Add `--pyi` to
+review and edit the generated contract before compilation, or use `%%pyi` with
+existing native source files. See [IPython and Jupyter
+Notebooks](https://pynumlab.github.io/prik/user/guide/notebooks/) for the
+complete workflow.
+
 ## How it works
 
 ```text
@@ -470,7 +494,8 @@ print(result.shared_library)
 
 Use `build_c_extension("api.c", output_dir="build")` for a C source build, or
 `build_pyi_extension(..., native_language="c", native_c_sources=[...])`
-for an authored C contract. The C support guide shows complete examples.
+for an authored C contract. The [C User
+Guide](https://pynumlab.github.io/prik/user/guide/c/) shows complete examples.
 
 ## Development
 
@@ -513,11 +538,13 @@ notice when redistributed.
 
 - **[Documentation](https://pynumlab.github.io/prik/)** — Learn how to install and use PRIK
 - **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
-- **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
-- **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
+- **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, matched Fortran and C first functions, and rebuild workflow
+- **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Separate Fortran and C paths followed by shared build workflows
+- **[C User Guide](https://pynumlab.github.io/prik/user/guide/c/)** — C functions, pointer contracts, arrays, strings, outputs, errors, symbols, headers, and dependencies
+- **[IPython and Jupyter](https://pynumlab.github.io/prik/user/guide/notebooks/)** — Compile native cells and edit semantic contracts interactively
 - **[`.pyi` Format](https://pynumlab.github.io/prik/user/reference/pyi-format/)** — Contract projects, declarations, decorators, types, storage, metadata, and C and Fortran forms
 - **[Editing `.pyi` Contracts](https://pynumlab.github.io/prik/user/reference/pyi-contracts/)** — Supported recipes for reshaping the generated Python API
-- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — C ABI scope, contracts, CLI, Python API, and executable examples
+- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Supported C wrapper areas, boundaries, source inputs, and public entry points
 - **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
 - **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — Supported, partially supported, and unsupported native-language features
 - **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions

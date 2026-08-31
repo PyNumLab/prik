@@ -11,7 +11,7 @@ publication: reviewed
 
 PRIK is the Python Runtime Interop Kit. Use these pages to install PRIK, verify
 your environment, build Fortran and C wrappers, and understand the behavior of
-generated Python extensions. Current C coverage is documented in C Support.
+generated Python extensions.
 
 ## Start Here
 
@@ -20,12 +20,11 @@ generated Python extensions. Current C coverage is documented in C Support.
 3. [Design a Pythonic BLAS API](tutorials/pythonic-blas.md)
 4. [Performance](performance.md)
 
-Getting Started covers installation, environment verification, the first
-standalone wrapper, the first module wrapper, and the beginner edit-build-test
-loop. The User Guide covers supported Fortran wrapper features, runtime
-behavior, and extension builds. The tutorial then shows how to turn a low-level
-native interface into a small designed API. Performance presents the
-reproducible PRIK and f2py comparison.
+Getting Started covers installation, environment verification, matched
+Fortran and C first-function paths, and the beginner edit-build-test loop. The
+User Guide provides continuous Fortran and C paths plus shared build workflows.
+The tutorial then shows how to turn a low-level native interface into a small
+designed API. Performance presents the reproducible PRIK and f2py comparison.
 
 ## Then
 

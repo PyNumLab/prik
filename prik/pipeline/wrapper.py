@@ -37,6 +37,7 @@ from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
+    ArrayPythonLayout,
     ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
@@ -3597,7 +3598,7 @@ class WrapperGenerator:
             return self._raw_array_shape_diagnostics(plan)
         diagnostics = []
         if array.rank is None:
-            diagnostics.extend(self._assumed_rank_array_diagnostics(plan))
+            diagnostics.extend(self._runtime_rank_array_diagnostics(plan))
         else:
             diagnostics.extend(self._concrete_rank_array_diagnostics(plan))
         diagnostics.extend(self._array_layout_role_diagnostics(plan))
@@ -3811,21 +3812,42 @@ class WrapperGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-array-rank", array.rank))
         if len(array.extent_roles) != array.rank or array.runtime_rank_role is not None:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-rank-roles", array.extent_roles))
+        expected_maximum = 15 if array.flatten_python_storage else array.rank
+        if array.minimum_rank != array.rank or array.maximum_rank != expected_maximum:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "invalid-array-rank-bounds",
+                    (array.minimum_rank, array.maximum_rank),
+                )
+            )
         return tuple(diagnostics)
 
-    def _assumed_rank_array_diagnostics(
+    def _runtime_rank_array_diagnostics(
         self,
         plan: ArgumentTransferPlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate the one-through-fifteen runtime-rank ABI."""
+        """Validate a completed language-specific runtime-rank ABI."""
         array = plan.array
         if array is None or array.rank is not None:
             return ()
         diagnostics = []
-        if array.category != "assumed_rank" or array.shape != ("...",):
-            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-assumed-rank-array", array.shape))
+        bounds = {
+            "assumed_rank": (1, 15),
+            "runtime_rank": (0, 15),
+        }
+        if array.category not in bounds or array.shape != ("...",):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-runtime-rank-array", array.shape))
+        elif (array.minimum_rank, array.maximum_rank) != bounds[array.category]:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "invalid-runtime-rank-bounds",
+                    (array.minimum_rank, array.maximum_rank),
+                )
+            )
         if len(array.extent_roles) != 15 or array.runtime_rank_role is None:
-            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-assumed-rank-roles", array.extent_roles))
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-runtime-rank-roles", array.extent_roles))
         return tuple(diagnostics)
 
     def _array_layout_role_diagnostics(
@@ -3869,14 +3891,17 @@ class WrapperGenerator:
         return tuple(diagnostics)
 
     def _array_axis_mode_diagnostics(self, plan: ArgumentTransferPlan) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate dense versus stride-aware axis markers."""
+        """Validate dense, stride-aware, and stride-agnostic axis markers."""
         array = plan.array
         if array is None:
             return ()
         if array.order not in {None, "ORDER_F", "ORDER_C"}:
             return ()
-        if array.contiguous not in {True, False}:
+        stride_agnostic = array.python_layout is ArrayPythonLayout.ANY_STRIDED
+        if (array.contiguous is None) is not stride_agnostic:
             return (self._diagnostic(plan.owner_path, "invalid-array-contiguity", array.contiguous),)
+        if stride_agnostic:
+            return ()
         if array.contiguous is True and any(axis != "dense" for axis in array.axes):
             return (self._diagnostic(plan.owner_path, "invalid-array-axis-modes", array.axes),)
         if array.contiguous is False and "strided" not in array.axes:

@@ -25,7 +25,8 @@ PRIK supports both languages. Fortran currently has the broader, more mature
 wrapper surface. C currently supports a focused wrapper subset: primitive
 values, one-level pointers, NumPy arrays, and strings. In both languages,
 editable `.pyi` contracts let you shape the Python API. See [C
-Support](user/language-support/c-support.md) for C examples and current limits.
+User Guide](user/guide/c/index.md) for C workflows and [C
+Support](user/language-support/c-support.md) for current coverage.
 
 ---
 
@@ -103,7 +104,7 @@ print(native_math.add(np.float64(3.0), np.float64(2.5)))  # 5.5
 ```
 
 This source build also writes an editable contract. For C pointers, arrays,
-and authored contracts, see [C Support](user/language-support/c-support.md).
+and authored contracts, see the [C User Guide](user/guide/c/index.md).
 
 ## Shape the Python API
 
@@ -324,7 +325,7 @@ values below `1.0×` favor f2py.
 
 **Wrapping a supported C API?**
 
-[Read C Support →](user/language-support/c-support.md){ .prik-primary-cta }
+[Read the C User Guide →](user/guide/c/index.md){ .prik-primary-cta }
 
 **Working on PRIK itself?**
 

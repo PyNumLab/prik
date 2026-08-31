@@ -2377,6 +2377,9 @@ class PyiPrinter(ClassVisitor):
                 f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})",
                 context,
             )
+        if mapping.value_kind == "size":
+            producer = f"{self._native_value_ref(mapping.value, context)}.size"
+            return self._cast_projection(mapping, producer, context)
         if mapping.value_kind == "shape":
             producer = f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
             return self._cast_projection(mapping, producer, context)

@@ -43,27 +43,35 @@ nav:
           - Installation: user/getting-started/installation.md
           - Verification: user/getting-started/verification.md
           - First Wrapped Function: user/getting-started/first-wrapped-function.md
-          - First Wrapped Module: user/getting-started/first-wrapped-module.md
           - Common Beginner Workflow: user/getting-started/beginner-workflow.md
       - User Guide:
           - Overview: user/guide/index.md
-          - Data Types: user/guide/data-types.md
-          - Arrays: user/guide/arrays.md
-          - Strings: user/guide/strings.md
-          - Wrapping Functions: user/guide/wrapping-functions.md
-          - Wrapping Subroutines: user/guide/wrapping-subroutines.md
-          - Wrapping Modules: user/guide/wrapping-modules.md
-          - Optional Arguments: user/guide/optional-arguments.md
-          - Generic Interfaces (Overloading): user/guide/generic-interfaces.md
-          - Wrapping Derived Types: user/guide/wrapping-derived-types.md
-          - Allocatables: user/guide/allocatables.md
-          - Pointers: user/guide/pointers.md
-          - Memory Management: user/guide/memory-management.md
-          - Callbacks: user/guide/callbacks.md
-          - Enumerations: user/guide/enumerations.md
-          - Raw Addresses: user/guide/raw-addresses.md
-          - Error Handling & Diagnostics: user/guide/error-handling.md
-          - Building the Shared Library: user/guide/building-shared-library.md
+          - Fortran:
+              - Data Types: user/guide/data-types.md
+              - Arrays: user/guide/arrays.md
+              - Strings: user/guide/strings.md
+              - Wrapping Functions: user/guide/wrapping-functions.md
+              - Wrapping Subroutines: user/guide/wrapping-subroutines.md
+              - Wrapping Modules: user/guide/wrapping-modules.md
+              - Optional Arguments: user/guide/optional-arguments.md
+              - Generic Interfaces (Overloading): user/guide/generic-interfaces.md
+              - Wrapping Derived Types: user/guide/wrapping-derived-types.md
+              - Allocatables: user/guide/allocatables.md
+              - Pointers: user/guide/pointers.md
+              - Memory Management: user/guide/memory-management.md
+              - Callbacks: user/guide/callbacks.md
+              - Enumerations: user/guide/enumerations.md
+              - Raw Addresses: user/guide/raw-addresses.md
+              - Error Handling & Diagnostics: user/guide/error-handling.md
+          - C:
+              - Overview: user/guide/c/index.md
+              - Functions and Scalars: user/guide/c/functions-and-scalars.md
+              - Pointers, Arrays, and Strings: user/guide/c/pointers-arrays-and-strings.md
+              - Outputs and Errors: user/guide/c/outputs-and-errors.md
+              - Symbols, Headers, and Dependencies: user/guide/c/symbols-headers-and-dependencies.md
+          - Build Workflows:
+              - Building the Shared Library: user/guide/building-shared-library.md
+              - IPython and Jupyter Notebooks: user/guide/notebooks.md
       - Tutorials:
           - Design a Pythonic BLAS API: user/tutorials/pythonic-blas.md
       - Examples:

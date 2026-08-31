@@ -22,6 +22,7 @@ to its documentation and evidence.
 | --- | --- |
 | `prik/__init__.py` | Public build entry points and version. |
 | `prik/cli.py` | CLI argument validation, stage selection, and output routing. |
+| `prik/jupyter/` | Optional IPython cell-magic parsing, editable-contract cell insertion, persistent source/build caching, extension loading, and notebook namespace publication. |
 | `prik/pipeline/build.py` | Source-first and contract-first extension-build orchestration. |
 | `prik/pipeline/pyi.py` | Semantic `.pyi` loading and external-type reconciliation. |
 | `prik/pipeline/wrapper.py` | Completed plan to rendered-wrapper orchestration and artifact records. |

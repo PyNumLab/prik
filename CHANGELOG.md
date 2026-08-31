@@ -7,6 +7,69 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated contracts now represent a one-level primitive C pointer as
+  runtime-rank `T[...]` NumPy storage instead of choosing a scalar temporary.
+  It accepts ranks 0 through 15 with any strides, so a Fortran-ordered array
+  or a strided slice reaches the native call unchanged, and it can be narrowed
+  to contiguous, rank-zero, fixed-rank, or scalar-address storage in an edited
+  contract. `Arg(i).size` supplies the total element count to a native
+  parameter, alongside the existing `Arg(i).shape[d]` and `Arg(i).strides[d]`
+  layout projections; an axis projection against storage that has no such axis
+  now raises `TypeError` instead of reading past the actual's shape.
+
+- Getting Started now offers complete Fortran and C paths for toolchain
+  verification, building the same first function, and the edit-review-build-test
+  loop. Fortran modules now begin in their task-focused User Guide page instead
+  of a separate mandatory beginner step.
+
+- Added a dedicated C section to the User Guide for scalar functions, pointer
+  contracts, arrays and strings, outputs and errors, and native symbols and
+  dependencies. The C Support page now serves as a concise capability and
+  boundary map with the same wrapper-area, boundary, and source-entry structure
+  as Fortran Support. User Guide navigation presents separate Fortran and C
+  paths followed by their shared build workflows.
+
+- An array argument now requires the NumPy storage of the C element type its
+  source declares, rather than the canonical storage of the same width. A
+  target's `int64_t` may be `long` or `long long`, and NumPy independently
+  gives `NPY_INT64` to whichever of the two is 64 bits, so those two choices
+  could disagree: a `long long *` buffer asked for `numpy.longlong` on one
+  target and `numpy.int64` on another. One C source now keeps one accepted
+  dtype everywhere.
+
+- A scalar argument whose native parameter is a 64-bit C integer now accepts
+  either NumPy spelling of that width and converts it, so `np.int64` and
+  `np.longlong` are both valid for a `long long` or `long` parameter whichever
+  one the target calls `int64_t`. Array arguments are unchanged: an element
+  buffer cannot be converted, so it still requires the exact native dtype.
+
+- A cell magic that reads a dash-prefixed flag value as another option now
+  names the equals form and, for the flag groups, the quoted-group form.
+
+- Added optional `%%fortran`, `%%c`, and `%%pyi` IPython/Jupyter cell magics.
+  Native-source cells compile directly or, with `--pyi`, persist their exact
+  source and insert editable per-module or direct-declaration contract cells.
+  Executing the generated `%%pyi` cell recovers the source language from its
+  digest, builds against that cached source, and publishes declared Fortran
+  modules or standalone declarations directly in the notebook namespace.
+  Exact cells reuse a persistent SHA-256 build cache unless `--force` is
+  selected, and PRIK does not expose an internal package entry. Wrapped
+  functions follow the published notebook path (`maths.square` or standalone
+  `square`) instead of exposing the private cache extension name; ordinary
+  file builds retain their user-selected package root, such as
+  `geometry.maths.square`. Existing notebook build artifacts are rebuilt once
+  so cached extensions cannot retain the old private function identity.
+  Multi-module `--pyi` cells are presented sequentially in terminal IPython,
+  whose next-input prompt can hold only one editable contract, while Jupyter
+  frontends continue to receive every generated module cell immediately. All
+  cells in one generated contract bundle retain the source cell's effective
+  compiler and build flags; changing that configuration requires regenerating
+  the bundle and is rejected before compiler execution. Independently authored
+  `%%pyi` cells can instead name one or more existing implementation files with
+  `--native-fortran-sources` or `--native-c-sources`; each cell builds and
+  publishes only its own contract module, and native file-content changes
+  invalidate its persistent cache.
+
 - A one-character `@native_call` literal is now buildable: `String[1]("N")`
   declares the character a native parameter receives instead of leaving it a
   visible Python argument. It crosses the boundary as an interoperable `char`,

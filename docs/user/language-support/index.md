@@ -14,8 +14,9 @@ publication: reviewed
 - [Fortran Support](fortran-support.md) maps supported wrapper areas to their
   detailed guides and records the source files and program units that become
   Python APIs.
-- [C Support](c-support.md) is the complete workflow for C projects. Current
-  C wrapper coverage is the supported subset documented on that page.
+- [C Support](c-support.md) records the supported C wrapper surface and its
+  boundaries. The [C User Guide](../guide/c/index.md) teaches the build and
+  contract workflow.
 - The [language feature matrix](feature-matrix.md) is the authoritative
   Fortran-and-C index for supported, partially supported, and unsupported
   features.

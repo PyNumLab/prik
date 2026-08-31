@@ -31,9 +31,9 @@ coverage audits, numerical tests, documentation, and CI execution.
   ordinary NumPy types in the public Python signature.
 - Test every exported function and audit the inventory against the built module.
 
-Read [C support](../../language-support/c-support.md) and the
-[CLI reference](../../reference/cli-commands.md) first if the C workflow is
-new to you. For a maintained C example built around NumPy arrays and an edited
+Read the [C User Guide](../../guide/c/index.md) and [CLI
+reference](../../reference/cli-commands.md) first if the C workflow is new to
+you. For a maintained C example built around NumPy arrays and an edited
 semantic contract, see [TA-Lib](ta-lib-wrapper.md).
 
 ---

@@ -126,7 +126,7 @@ def test_c_source_printer_renders_function_local_cleanup_jumps():
 def test_source_printers_reject_wrapper_plan_models():
     plan = ModulePlan(
         owner_path="demo",
-        binding=BindingModulePlan("demo"),
+        binding=BindingModulePlan("demo", "demo"),
         entrypoint=NativeEntrypointModulePlan("demo"),
         bridge=BridgeModulePlan("demo"),
         namespaces=(NamespacePlan(owner_path="demo", python_path=()),),

@@ -15,8 +15,16 @@ from pathlib import Path
 from typing import Any
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
-from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA, NATIVE_C_SCALAR_IDENTITY_METADATA
-from prik.semantics.scalar_types import BOOLEAN_STORAGE_BITS
+from prik.semantics.metadata import (
+    EXPLICIT_C_EXPORT_METADATA,
+    NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
+)
+from prik.semantics.scalar_types import (
+    BOOLEAN_STORAGE_BITS,
+    SEMANTIC_SCALAR_TYPE_NAMES,
+    is_boolean_semantic_type_name,
+)
 
 from prik.parsers.c.models import (
     CArray,
@@ -158,6 +166,13 @@ _PRIMITIVE_TYPE_FACT_NAMES: dict[type[CType], str] = {
 _PRIMITIVE_NATIVE_C_IDENTITY_NAMES = {
     primitive: next(name for name, spelling in NATIVE_C_SCALAR_IDENTITIES.items() if spelling == c_spelling)
     for primitive, c_spelling in _PRIMITIVE_TYPE_FACT_NAMES.items()
+}
+
+# NumPy assigns NPY_INT<N>/NPY_UINT<N> to the first C type of that width in
+# these orders, mirroring the scan in its own npy_common.h.
+_NUMPY_CANONICAL_INTEGER_SCAN = {
+    False: ("signed char", "short", "int", "long", "long long"),
+    True: ("unsigned char", "unsigned short", "unsigned int", "unsigned long", "unsigned long long"),
 }
 
 _CANONICAL_C_TYPE_FACT_NAMES = {
@@ -454,6 +469,7 @@ class CToIRConverter(ClassVisitor):
         name = parameter.name or f"arg{position}"
         source_type = parameter.declared_type or parameter.type
         semantic_type = self.visit(source_type, owner=f"{owner or '<function>'}.{name}", as_type=True)
+        semantic_type = self._runtime_rank_pointer_parameter(semantic_type)
         metadata: dict[str, Any] = {"native_position": position}
         if parameter.callback_candidate:
             semantic_type = self._callback_placeholder(source_type)
@@ -822,6 +838,9 @@ class CToIRConverter(ClassVisitor):
         native_c_identity = self._required_native_c_identity(type_, dtype)
         if native_c_identity is not None:
             metadata[NATIVE_C_SCALAR_IDENTITY_METADATA] = native_c_identity
+        array_element = self._array_element_c_spelling(type_, dtype)
+        if array_element is not None:
+            metadata[NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA] = array_element
         return SemanticType(
             name=semantic_name,
             dtype=dtype,
@@ -845,6 +864,45 @@ class CToIRConverter(ClassVisitor):
         source_spelling = self._underlying_c_type(primitive_name)
         canonical_spelling = self._underlying_c_type(canonical_name)
         return None if self._compatible_c_scalar_spelling(source_spelling, canonical_spelling) else native_c_identity
+
+    def _array_element_c_spelling(self, type_: CType, semantic_name: str) -> str | None:
+        """Return the C element spelling an array of this type must hold.
+
+        An array buffer reaches C unchanged, so its elements must be the
+        declared C type. The canonical spelling of a fixed-width integer is a
+        ``<stdint.h>`` typedef, and the C type behind that typedef need not be
+        the one NumPy assigns to the same width: a target whose ``int64_t`` is
+        ``long long`` still gives ``NPY_INT64`` to ``long`` when ``long`` is 64
+        bits. Recording the declared spelling whenever it differs from NumPy's
+        choice keeps one accepted dtype per C spelling on every target.
+        """
+        declared = _PRIMITIVE_TYPE_FACT_NAMES.get(type(type_))
+        if declared is None:
+            return None
+        canonical = self._numpy_canonical_integer_primitive(semantic_name)
+        if canonical is None:
+            # Real and complex widths are already canonical C spellings, so the
+            # ordinary identity rule alone decides those.
+            required = self._required_native_c_identity(type_, semantic_name)
+            return declared if required is not None else None
+        return None if declared == canonical else declared
+
+    def _numpy_canonical_integer_primitive(self, semantic_name: str) -> str | None:
+        """Return the C type NumPy assigns to one fixed-width integer here.
+
+        NumPy defines ``NPY_INT64`` and friends by scanning C integer types in
+        width order and taking the first match, so the answer is target data.
+        """
+        match = re.fullmatch(r"(U?)Int(8|16|32|64)", semantic_name)
+        if match is None:
+            return None
+        candidates = _NUMPY_CANONICAL_INTEGER_SCAN[bool(match.group(1))]
+        bits = int(match.group(2))
+        for candidate in candidates:
+            fact = self.standard_type_facts.get(candidate)
+            if isinstance(fact, dict) and fact.get("bits") == bits:
+                return candidate
+        return None
 
     def _underlying_c_type(self, name: str) -> str:
         fact = self.standard_type_facts.get(name)
@@ -1051,7 +1109,7 @@ class CToIRConverter(ClassVisitor):
         """Apply C pointer depth, qualifiers, and aliasing facts to a pointee type in place.
 
         The returned object is ``pointee`` with borrowed reference/pointer
-        storage.  Pointee ``const`` controls mutability and ``restrict`` controls
+        storage. Pointee ``const`` controls mutability and ``restrict`` controls
         aliasing; no ownership-transfer policy is inferred.
         """
         pointer_depth = len(pointer_components)
@@ -1074,6 +1132,41 @@ class CToIRConverter(ClassVisitor):
         )
         pointee.ownership.mutable = not read_only
         pointee.ownership.aliasing = not restrict
+        return pointee
+
+    @staticmethod
+    def _runtime_rank_pointer_parameter(pointee: SemanticType) -> SemanticType:
+        """Select the source-generated runtime-rank contract for primitive parameter ``T *``."""
+        storage = pointee.storage
+        scalar_name = pointee.dtype or pointee.name
+        if not (
+            storage is not None
+            and storage.kind == "reference"
+            and storage.pointer_depth == 1
+            and scalar_name in SEMANTIC_SCALAR_TYPE_NAMES
+            and pointee.name != "String"
+            and not is_boolean_semantic_type_name(pointee.name)
+            and not is_boolean_semantic_type_name(pointee.dtype)
+        ):
+            return pointee
+        pointee.rank = 1
+        pointee.shape = ["..."]
+        pointee.storage = SemanticStorageContract(
+            kind="array",
+            read_only=storage.read_only,
+            mutable=storage.mutable,
+            pointer_depth=storage.pointer_depth,
+            ownership=storage.ownership,
+            array=SemanticArrayContract(
+                rank=1,
+                shape=["..."],
+                source_shape=["..."],
+                category="runtime_rank",
+                order="ORDER_C",
+                axes=["dense"],
+            ),
+            metadata=dict(storage.metadata),
+        )
         return pointee
 
     def _array_type(

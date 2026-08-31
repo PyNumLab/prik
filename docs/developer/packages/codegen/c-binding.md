@@ -60,6 +60,14 @@ ModulePlan.binding + ModulePlan.entrypoint
 `require_supported()` checks that the already selected primitive spellings are
 available. It is capability preflight, not a second policy pass.
 
+`BindingModulePlan` also supplies the public package root used for Python
+function metadata. The binding combines that completed root with each planned
+namespace path; it does not infer notebook execution or reuse the private
+extension-loading name as presentation. An empty public root means the caller
+is publishing directly into an interactive namespace. Generated filenames,
+the `PyInit_*` symbol, and native helper symbols continue to use the plan's
+internal owner path.
+
 Numeric scalar boundaries retain their exact NumPy contract without using the
 generic dtype-conversion path on a successful call. The native support helper
 checks the planned NumPy scalar class, reads its typed payload directly, and

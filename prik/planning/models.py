@@ -34,6 +34,7 @@ from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayLogicalABI,
+    ArrayPythonLayout,
     ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
@@ -476,6 +477,9 @@ class ArrayHandoffPlan(StageRecord):
     order: str | None
     native_order: str | None
     contiguous: bool | None
+    python_layout: ArrayPythonLayout
+    minimum_rank: int
+    maximum_rank: int
     flatten_python_storage: bool
     flat_axis: int | None
     itemsize: int | None

@@ -3891,6 +3891,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 EntrypointProjectionAction.TYPED_LITERAL,
                 EntrypointProjectionAction.COMPUTED_LENGTH,
                 EntrypointProjectionAction.COMPUTED_PRESENCE,
+                EntrypointProjectionAction.COMPUTED_SIZE,
                 EntrypointProjectionAction.COMPUTED_SHAPE,
                 EntrypointProjectionAction.COMPUTED_STRIDE,
                 EntrypointProjectionAction.WORK_STORAGE,

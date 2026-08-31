@@ -81,8 +81,8 @@ print(native_math.add(np.float64(3.0), np.float64(2.5)))
 ```
 
 For an authored C semantic contract, use `build_pyi_extension` with
-`native_language="c"` and `native_c_sources=[...]`. The [C Support
-guide](../language-support/c-support.md#author-a-contract-for-pointers-and-arrays)
+`native_language="c"` and `native_c_sources=[...]`. [C Pointers, Arrays, and
+Strings](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays)
 shows the complete contract and build.
 
 ## Advanced package imports
@@ -98,6 +98,7 @@ Reach past the root facade when you need a single stage rather than a build.
 | C semantic conversion | `prik.semantics.c2ir` | `CToIRConverter`, `c_file_to_semantic_module`, `c_file_to_semantic_modules` |
 | `.pyi` loading and stub emission | `prik.pipeline.pyi` | `pyi_*_to_semantic_module`, `emit_module_stubs` |
 | Build records and results | `prik.pipeline.build` | `WrapperBuildResult`, `NativeBuildPlan`, `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem` |
+| IPython/Jupyter integration | `prik.jupyter` | `%load_ext prik.jupyter`, then `%%fortran`, `%%c`, or `%%pyi` |
 | Target type probing | `prik.preprocessing.probes.fortran_types` | probe source, requirements, expressions, report and error types |
 | C target type probing | `prik.preprocessing.probes.c_types` | `probe_c_standard_types`, `probe_c_standard_types_cached`, and C probe records/error type |
 | Runtime descriptor handles | `prik.runtime.handles` | `NativeArrayHandleBase`, `AllocatableArray`, `PointerArray` |
@@ -112,15 +113,16 @@ Reach past the root facade when you need a single stage rather than a build.
   completion, planning, and generation are separate stages that can each
   reject input the parser accepted.
 - C source builds are limited to the documented supported subset recorded in
-  [C Support](../language-support/c-support.md#what-is-supported). Other
+  [C Support](../language-support/c-support.md#supported-wrapper-areas). Other
   parser-accepted C forms fail before wrapper planning rather than falling back
   to a generated ABI-conversion adapter.
 
 ## Related pages
 
 - [CLI Commands](cli-commands.md) — the same workflows from a shell.
-- [C Support](../language-support/c-support.md) — C source, contract, CLI, and
-  Python workflows.
+- [IPython and Jupyter Notebooks](../guide/notebooks.md) — compile source cells and publish their APIs in the session.
+- [C User Guide](../guide/c/index.md) — C source, contract, CLI, and Python
+  workflows.
 - [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported API-shaping
   edits.
 - [Package guides](../../developer/packages/index.md) — module responsibilities

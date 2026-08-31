@@ -199,5 +199,5 @@ argument, or declaration.
 | `C_DIRECT_NATIVE_GLOBAL_STATE`, `C_DIRECT_ENUM_CONSTANT`, `C_DIRECT_MACRO_CONSTANT` | Native global state and constants are not exposed by C wrappers. |
 | `C_DIRECT_UNMODELED_DECLARATION` | A declaration would otherwise be omitted from a C wrapper build. |
 
-See [C Support](../language-support/c-support.md#current-limits) for the
+See [C Support](../language-support/c-support.md#important-boundaries) for the
 supported boundary and the repair choices.

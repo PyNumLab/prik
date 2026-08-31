@@ -1,76 +1,55 @@
 ---
 title: User Guide
-description: Detailed guides for wrapping Fortran code with PRIK
+description: Guides for binding Fortran and C code with PRIK
 audience: users
 prerequisites: getting started
-related: data-types.md
+related: data-types.md, c/index.md, building-shared-library.md, ../language-support/feature-matrix.md
 status: maintained
 publication: reviewed
 ---
 
 # User Guide
 
-This section continues the [Getting Started](../getting-started/index.md)
-workflow. Read it in sidebar order to move from basic values and procedures to
-objects, storage, and advanced runtime behavior.
+Use the section for your native language, then continue with the shared build
+workflow that matches how you run PRIK.
 
----
+## Fortran
 
-## Start Here
+- [Data Types](data-types.md) — Fortran types and exact NumPy dtypes
+- [Arrays](arrays.md) — rank, shape, layout, strides, and mutation
+- [Strings](strings.md) — scalar text, mutable storage, and string arrays
+- [Functions](wrapping-functions.md) and
+  [Subroutines](wrapping-subroutines.md)
+- [Modules](wrapping-modules.md), [Optional
+  Arguments](optional-arguments.md), and [Generic
+  Interfaces](generic-interfaces.md)
+- [Derived Types](wrapping-derived-types.md)
+- [Allocatables](allocatables.md), [Pointers](pointers.md), and [Memory
+  Management](memory-management.md)
+- [Callbacks](callbacks.md), [Enumerations](enumerations.md), [Raw
+  Addresses](raw-addresses.md), and [Error Handling](error-handling.md)
 
-- [Data Types](data-types.md) — Fortran types, semantic `.pyi` names, exact NumPy dtypes, strings, and arrays
-- [Arrays](arrays.md) — Rank, shape, strides, contiguity, and layout rules
-- [Strings](strings.md) — Immutable text, mutable byte storage, and string arrays
-- [Wrapping Functions](wrapping-functions.md)
-- [Wrapping Subroutines](wrapping-subroutines.md)
-- [Wrapping Modules](wrapping-modules.md)
-- [Optional Arguments](optional-arguments.md)
-- [Generic Interfaces](generic-interfaces.md)
-- [Wrapping Derived Types](wrapping-derived-types.md)
+## C
 
----
+- [Overview](c/index.md) — choose the source-driven or authored-contract path
+- [Functions and Scalars](c/functions-and-scalars.md) — build a function and
+  shape its Python call surface
+- [Pointers, Arrays, and Strings](c/pointers-arrays-and-strings.md) — assign
+  precise Python meanings to pointer parameters
+- [Outputs and Errors](c/outputs-and-errors.md) — return output storage and
+  project native failures
+- [Symbols, Headers, and
+  Dependencies](c/symbols-headers-and-dependencies.md) — overloads, headers,
+  libraries, and API inspection
 
-## Storage and Objects
+## Build Workflows
 
-- [Allocatables](allocatables.md)
-- [Pointers](pointers.md)
-- [Memory Management](memory-management.md)
+- [Building the Shared Library](building-shared-library.md) — compilers,
+  source sets, output placement, and Makefiles
+- [IPython and Jupyter Notebooks](notebooks.md) — compile Fortran and C cells
+  and edit semantic contracts interactively
 
----
-
-## Runtime Behavior
-
-- [Callbacks](callbacks.md)
-- [Enumerations](enumerations.md)
-- [Raw Addresses](raw-addresses.md) — Advanced primitive, array, and fixed-string address boundaries
-- [Error Handling](error-handling.md)
-
----
-
-## Building
-
-- [Building the Shared Library](building-shared-library.md)
-
----
-
-**Important Note**
-
-The recommended workflow starts from Fortran source. The generated semantic
-`.pyi` file describes the Python interface and native call. Editing that file
-lets you customize the wrapper without changing the native implementation.
-This guide introduces useful edits on the pages where they matter. The [`.pyi`
-Format](../reference/pyi-format.md) defines the contract language, and [Editing
-`.pyi` Contracts](../reference/pyi-contracts/index.md) collects the supported
-editing recipes.
-
----
-
-**Checking whether a feature is supported**
-
-Each page below documents its own limitations. For the complete picture in one
-table — including unsupported and partially supported forms — see the
-[language feature matrix](../language-support/feature-matrix.md).
-
----
-
-Start with **[Data Types](data-types.md)**.
+The [`.pyi` Format](../reference/pyi-format.md) defines the shared semantic
+contract language. Use the [language feature
+matrix](../language-support/feature-matrix.md#at-a-glance) to check current
+Fortran and C coverage.

@@ -30,7 +30,7 @@ for a complete source-to-result example.
 
 Pass the module source to PRIK. It generates the extension and exposes supported
 public procedures and module state through Python. Start with
-[Generate Python Bindings for a Fortran Module](../getting-started/first-wrapped-module.md).
+[Generate Python Bindings for a Fortran Module](../guide/wrapping-modules.md).
 
 </details>
 
@@ -77,7 +77,7 @@ silently copied. See [Pass NumPy Arrays to Fortran](../guide/arrays.md).
 Build a supported C source with PRIK and import the generated extension. A
 primitive function can be wrapped directly from source; pointers, arrays,
 strings, hidden outputs, and status handling use an editable semantic `.pyi`
-contract. Follow [Build a Scalar C Function](../language-support/c-support.md#build-a-scalar-c-function)
+contract. Follow [Build a Scalar C Function](../guide/c/functions-and-scalars.md#build-a-scalar-c-function)
 for the complete first example.
 
 </details>
@@ -89,18 +89,19 @@ C pointer syntax does not say whether a pointer represents one value, an
 output, an array, or caller-owned storage. PRIK generates a conservative
 starter contract instead of guessing. Edit it to state the intended storage,
 shape, and result projection, then build it against the C implementation. See
-[Author a Contract for Pointers and Arrays](../language-support/c-support.md#author-a-contract-for-pointers-and-arrays).
+[Author a Contract for Pointers and Arrays](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays).
 
 </details>
 
 <details class="prik-faq-item" id="which-c-arrays-and-strings-are-supported" markdown="1">
 <summary>Which C arrays and strings are supported?</summary>
 
-C wrappers support primitive non-Boolean NumPy arrays of ranks 1–15 with
-C-contiguous storage. Strings are supported as rank-zero inputs and
-caller-owned storage. Arrays of strings, Boolean arrays, native C array
-declarators, ranks outside 1–15, and non-C-contiguous arrays are unsupported.
-See [C Support: What Is Supported](../language-support/c-support.md#what-is-supported)
+C pointer contracts support primitive non-Boolean NumPy storage of ranks 0–15.
+Runtime-rank `T[...]` storage accepts any strides; an explicit shape such as
+`T[:]` requires C-contiguous storage. Strings are supported as rank-zero
+inputs and caller-owned storage. Arrays of strings, Boolean arrays, native C
+array declarators, and ranks above 15 are unsupported.
+See [C Support: Supported Wrapper Areas](../language-support/c-support.md#supported-wrapper-areas)
 for the complete boundary.
 
 </details>
@@ -148,11 +149,11 @@ Continue with the page that matches the part you need:
   header](../reference/cli-commands.md#c-include-exposure) explains the
   `symbols.txt` format, included-header visibility, and selection failures.
 - [Choose the pointer
-  contract](../language-support/c-support.md#choose-the-pointer-contract)
+  contract](../guide/c/pointers-arrays-and-strings.md#choose-the-pointer-contract)
   explains how to describe one value, an output, an array, or caller-owned
   storage in `vendor.pyi`.
 - [Supply native
-  dependencies](../language-support/c-support.md#native-dependencies) explains
+  dependencies](../guide/c/symbols-headers-and-dependencies.md#native-dependencies) explains
   when to use implementation sources, objects, library names, library
   directories, include paths, and compiler definitions.
 - [Wrap the system math library](../examples/c/libm-wrapper.md) is the complete
@@ -169,8 +170,8 @@ Continue with the page that matches the part you need:
 
 PRIK rejects unsupported C forms before wrapper planning or native
 compilation; parser acceptance alone is not a build promise. The diagnostic
-identifies the blocked declaration or contract. Check [Current C
-Limits](../language-support/c-support.md#current-limits), the [feature
+identifies the blocked declaration or contract. Check [Important C
+Boundaries](../language-support/c-support.md#important-boundaries), the [feature
 matrix](../language-support/feature-matrix.md#unsupported-or-blocked-forms),
 and [diagnostic codes](../reference/diagnostic-codes.md#c-wrapper-diagnostics).
 

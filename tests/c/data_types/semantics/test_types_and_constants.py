@@ -58,7 +58,7 @@ from tests.c._support.semantic_conversion import (
 )
 
 
-def test_c2ir_maps_const_and_mutable_pointers_to_storage_contracts():
+def test_c2ir_maps_primitive_pointer_parameters_to_runtime_rank_storage_contracts():
     parsed = parse_c_file(
         "void copy(const double *src, double *dst);\n",
         filename="copy.h",
@@ -68,21 +68,35 @@ def test_c2ir_maps_const_and_mutable_pointers_to_storage_contracts():
     src, dst = copy.arguments
 
     assert src.semantic_type.name == "Float64"
-    assert src.semantic_type.storage.kind == "reference"
+    assert src.semantic_type.storage.kind == "array"
     assert src.semantic_type.storage.read_only is True
 
     assert dst.semantic_type.name == "Float64"
-    assert dst.semantic_type.storage.kind == "reference"
+    assert dst.semantic_type.storage.kind == "array"
     assert dst.semantic_type.storage.read_only is False
     assert asdict(src.semantic_type.ownership) == {"ownership": "borrowed", "mutable": False, "aliasing": True}
     assert asdict(dst.semantic_type.ownership) == {"ownership": "borrowed", "mutable": True, "aliasing": True}
     assert asdict(src.semantic_type.storage) == {
-        "kind": "reference",
+        "kind": "array",
         "read_only": True,
         "mutable": False,
         "pointer_depth": 1,
         "ownership": "borrowed",
-        "array": None,
+        "array": {
+            "rank": 1,
+            "shape": ["..."],
+            "lower_bounds": [],
+            "upper_bounds": [],
+            "source_shape": ["..."],
+            "category": "runtime_rank",
+            "order": "ORDER_C",
+            "copy_order": None,
+            "axes": ["dense"],
+            "contiguous": None,
+            "allocatable": False,
+            "pointer": False,
+            "metadata": {},
+        },
         "calling_convention": None,
         "metadata": {
             "c_pointer_qualifiers": [[]],
@@ -91,12 +105,26 @@ def test_c2ir_maps_const_and_mutable_pointers_to_storage_contracts():
         },
     }
     assert asdict(dst.semantic_type.storage) == {
-        "kind": "reference",
+        "kind": "array",
         "read_only": False,
         "mutable": True,
         "pointer_depth": 1,
         "ownership": "borrowed",
-        "array": None,
+        "array": {
+            "rank": 1,
+            "shape": ["..."],
+            "lower_bounds": [],
+            "upper_bounds": [],
+            "source_shape": ["..."],
+            "category": "runtime_rank",
+            "order": "ORDER_C",
+            "copy_order": None,
+            "axes": ["dense"],
+            "contiguous": None,
+            "allocatable": False,
+            "pointer": False,
+            "metadata": {},
+        },
         "calling_convention": None,
         "metadata": {
             "c_pointer_qualifiers": [[]],

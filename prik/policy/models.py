@@ -122,12 +122,28 @@ class EntrypointProjectionAction(str, Enum):
     TYPED_LITERAL = "typed_literal"
     COMPUTED_LENGTH = "computed_length"
     COMPUTED_PRESENCE = "computed_presence"
+    COMPUTED_SIZE = "computed_size"
     COMPUTED_SHAPE = "computed_shape"
     COMPUTED_STRIDE = "computed_stride"
     WORK_STORAGE = "work_storage"
     DESCRIPTOR = "descriptor"
     RUNTIME_HANDLE = "runtime_handle"
     BLOCKED = "blocked"
+
+
+class ArrayPythonLayout(str, Enum):
+    """Completed memory layout one Python array actual must already have.
+
+    Policy selects the constraint; a backend only enforces it. ``ANY_STRIDED``
+    states that the contract constrains neither ordering nor contiguity, so the
+    caller's own strides reach the native call unchanged.
+    """
+
+    ANY_CONTIGUOUS = "any_contiguous"
+    C_CONTIGUOUS = "c_contiguous"
+    F_CONTIGUOUS = "f_contiguous"
+    POSITIVE_STRIDED_F = "positive_strided_f"
+    ANY_STRIDED = "any_strided"
 
 
 class ArgumentHandoffMode(str, Enum):
@@ -948,6 +964,9 @@ class ArrayHandoffPolicy:
     order: str | None
     native_order: str | None
     contiguous: bool | None
+    python_layout: ArrayPythonLayout
+    minimum_rank: int
+    maximum_rank: int
     flatten_python_storage: bool = False
     flat_axis: int | None = None
     itemsize: int | None = None
@@ -1391,6 +1410,9 @@ if __name__ == "__main__":
         order="F",
         native_order="F",
         contiguous=True,
+        python_layout=ArrayPythonLayout.F_CONTIGUOUS,
+        minimum_rank=2,
+        maximum_rank=2,
     )
     example_lifecycle = LifecyclePolicy(
         owner_path="math.scale.values",

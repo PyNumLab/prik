@@ -1,4 +1,4 @@
-"""Compiled all-primitive evidence for the conservative C pointer contracts."""
+"""Compiled all-primitive evidence for source-generated C pointer contracts."""
 
 import shutil
 from pathlib import Path
@@ -10,7 +10,13 @@ from prik import build_c_extension, build_pyi_extension
 from prik.parsers.c import parse_c_file
 from prik.preprocessing import PreprocessingConfig
 from prik.preprocessing.probes.c_types import probe_c_standard_types
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
+from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.semantics.c2ir import c_file_to_semantic_module
+from prik.semantics.metadata import (
+    NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA,
+    NATIVE_C_SCALAR_IDENTITY_METADATA,
+)
 from tests.c._support.runtime import sole_native_module
 
 
@@ -55,6 +61,27 @@ _VALUES = {
 }
 
 
+def _accepted_pointer_dtype(semantic_type, value) -> np.dtype:
+    """Return the NumPy storage one generated pointer argument accepts.
+
+    An array buffer reaches C as it already is, so its elements are the
+    declared C type rather than another type of the same width. That keeps one
+    accepted dtype per C spelling on every target, however the target resolves
+    ``int64_t``. Only an element with no probed C primitive falls back to the
+    canonical storage of the semantic type PRIK resolved.
+    """
+    identity = semantic_type.metadata.get(NATIVE_C_SCALAR_IDENTITY_METADATA)
+    declared = (
+        NATIVE_C_SCALAR_IDENTITIES[identity]
+        if identity is not None
+        else semantic_type.metadata.get(NATIVE_C_ARRAY_ELEMENT_IDENTITY_METADATA)
+    )
+    if not isinstance(declared, str):
+        return np.asarray(value).dtype
+    exact = NativeCArrayStorageRegistry.type_for(declared, semantic_type.name)
+    return np.dtype(getattr(np, exact.python_type_name.removeprefix("numpy.")))
+
+
 def _pointer_source() -> str:
     declarations = ["#include <stddef.h>", "#include <complex.h>"]
     for name, c_type in _C_PRIMITIVES:
@@ -68,13 +95,14 @@ def _pointer_source() -> str:
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
-def test_every_c_primitive_pointer_defaults_to_one_call_local_scalar(tmp_path: Path):
-    """Source C retains ``T *``/``const T *`` as scalar ``Addr(Arg(i))`` calls."""
+def test_non_boolean_c_primitive_pointers_default_to_runtime_rank_numpy_storage(tmp_path: Path):
+    """Source ``T *`` accepts rank-zero and ranked storage without selecting a fixed rank."""
     source = tmp_path / "pointer_defaults.c"
     source.write_text(_pointer_source(), encoding="utf-8")
     report = probe_c_standard_types(PreprocessingConfig(mode="compiler", compiler="cc"))
     semantic = c_file_to_semantic_module(parse_c_file(source), standard_type_report=report)
     result_types = {function.name: function.return_type.dtype for function in semantic.functions}
+    functions = {function.name: function for function in semantic.functions}
     # A typedef spelling such as ``size_t`` is declared through the builtin the
     # probe resolved it to, because the binding writes the prototype itself.
     declared_types = {
@@ -88,13 +116,22 @@ def test_every_c_primitive_pointer_defaults_to_one_call_local_scalar(tmp_path: P
     for name, c_type in _C_PRIMITIVES:
         value = _VALUES[result_types[f"pointer_read_{name}"]]
         for prefix in ("pointer_read", "const_pointer_read"):
-            output = getattr(module, f"{prefix}_{name}")(value)
-            if type(value) is bool:
-                assert type(output) is bool
-                assert output is value
+            function_name = f"{prefix}_{name}"
+            function = functions[function_name]
+            call = getattr(module, function_name)
+            if name == "bool":
+                assert function.arguments[0].semantic_type.storage.kind == "reference"
+                output = call(value)
+                assert type(output) is bool and output is value
             else:
-                assert output.dtype == np.asarray(value).dtype
-                assert output == value
+                array = function.arguments[0].semantic_type.storage.array
+                assert array.category == "runtime_rank"
+                assert array.shape == ["..."]
+                dtype = _accepted_pointer_dtype(function.arguments[0].semantic_type, value)
+                for storage in (np.array(value, dtype=dtype), np.array([value], dtype=dtype)):
+                    output = call(storage)
+                    assert output.dtype == np.asarray(value).dtype
+                    assert output == value
         declared = declared_types[c_type]
         assert f"{declared} pointer_read_{name}({declared} * value);" in binding
         assert f"{declared} const_pointer_read_{name}(const {declared} * value);" in binding

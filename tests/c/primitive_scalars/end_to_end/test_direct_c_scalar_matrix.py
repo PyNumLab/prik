@@ -83,6 +83,7 @@ void no_result(void) {}
     assert module.no_result() is None
     with pytest.raises(TypeError, match=r"numpy\.uint8"):
         module.unsigned_char_identity(np.uint16(256))
-    if np.dtype(np.int64).num != np.dtype(np.longlong).num:
-        with pytest.raises(TypeError, match=r"numpy\.int64"):
-            module.long_long_identity(np.longlong(1))
+    # A scalar crosses by value, so either 64-bit spelling is accepted and cast
+    # to the exact native storage. Only an array buffer stays exact.
+    assert module.long_long_identity(np.longlong(1)) == np.int64(1)
+    assert module.long_long_identity(np.int64(1)) == np.int64(1)

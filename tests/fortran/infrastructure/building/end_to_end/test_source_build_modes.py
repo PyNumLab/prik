@@ -287,6 +287,7 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
     finally:
         sys.path.remove(str(tmp_path))
     assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+    assert module.scale.__module__ == "SCALE"
 
 
 def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
@@ -320,6 +321,8 @@ def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
     try:
         geometry = importlib.import_module("geometry")
         points = geometry.points
+        assert points.__name__ == "geometry.points"
+        assert points.norm_squared.__module__ == "geometry.points"
         item = points.point(x=np.float64(3.0), y=np.float64(4.0))
         points.move(item, np.float64(1.0), np.float64(-2.0))
         assert item.x == np.float64(4.0)

@@ -19,7 +19,7 @@ only when their contract marks them as Python results.
 
 ## Basic Scalar Function
 
-The `scale` function built in
+The Fortran `scale` function built in
 [First Wrapped Function](../getting-started/first-wrapped-function.md) returns
 its direct `Float64` result as a NumPy `float64` scalar:
 
