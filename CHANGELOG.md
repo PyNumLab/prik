@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.4.3 — 2026-08-31
+
+- Republishes 0.4.2. That tag carried the previous package version, so the
+  built distribution was rejected as an existing release and never reached
+  PyPI. The contents are unchanged.
+
 ## 0.4.2 — 2026-08-31
 
 - The `jupyter` extra now accepts IPython 7.0 and newer instead of requiring
