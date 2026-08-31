@@ -20,7 +20,11 @@ one session.
 </p>
 
 The notebook runs top to bottom and builds real extension modules, so it needs a
-compiler. In Colab the first cell installs one.
+compiler. In Colab the first cell installs one, along with PRIK:
+
+```bash
+pip install "prik[jupyter]"
+```
 
 ## 1. Load the extension
 
