@@ -260,6 +260,14 @@ def on_config(config, **_kwargs):
     return config
 
 
+def _example_notebook_paths(config) -> list[Path]:
+    """Return the runnable notebooks the site should serve alongside the pages."""
+    source_dir = Path(config["docs_dir"]).parent / _EXAMPLE_NOTEBOOK_DIR
+    if not source_dir.is_dir():
+        return []
+    return sorted(source_dir.glob("*.ipynb"))
+
+
 def _publish_example_notebooks(files, config) -> None:
     """Serve the runnable example notebooks from the site itself.
 
@@ -269,14 +277,11 @@ def _publish_example_notebooks(files, config) -> None:
     """
     from mkdocs.structure.files import File
 
-    source_dir = Path(config["docs_dir"]).parent / _EXAMPLE_NOTEBOOK_DIR
-    if not source_dir.is_dir():
-        return
-    for notebook in sorted(source_dir.glob("*.ipynb")):
+    for notebook in _example_notebook_paths(config):
         files.append(
             File(
                 notebook.name,
-                str(source_dir),
+                str(notebook.parent),
                 str(Path(config["site_dir"]) / _EXAMPLE_NOTEBOOK_DIR),
                 use_directory_urls=False,
             )

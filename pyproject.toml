@@ -52,7 +52,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jupyter = [
-    "ipython>=8.0",
+    "ipython>=7.0",
 ]
 pretty = [
     "rich>=13.7",
@@ -64,11 +64,13 @@ docs = [
     "pyperf==2.10.0",
 ]
 qa = [
+    # The suite exercises the notebook magics, so it needs whatever the
+    # published extra installs. Naming it here keeps one IPython floor.
+    "prik[jupyter]",
     "bandit[toml]==1.9.4",
     "coverage[toml]>=7.10",
     "hypothesis>=6.100",
     "ipykernel>=6.29",
-    "ipython>=8.0",
     "nbclient>=0.10",
     "nbformat>=5.10",
     "pytest>=8.0",

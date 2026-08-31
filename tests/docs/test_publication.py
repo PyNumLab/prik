@@ -125,25 +125,14 @@ def test_example_notebooks_are_served_from_the_site(tmp_path: Path) -> None:
     notebook_dir.mkdir(parents=True)
     (notebook_dir / "quickstart.ipynb").write_text("{}", encoding="utf-8")
     (notebook_dir / "notes.txt").write_text("not a notebook", encoding="utf-8")
-    files: list[object] = []
 
-    mkdocs_publication._publish_example_notebooks(
-        files,
-        {"docs_dir": str(docs_dir), "site_dir": str(tmp_path / "site")},
-    )
+    published = mkdocs_publication._example_notebook_paths({"docs_dir": str(docs_dir)})
 
-    assert [file.src_uri for file in files] == ["quickstart.ipynb"]
-    assert Path(files[0].abs_dest_path).name == "quickstart.ipynb"
+    assert [path.name for path in published] == ["quickstart.ipynb"]
 
 
 def test_publishing_example_notebooks_tolerates_a_missing_directory(tmp_path: Path) -> None:
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    files: list[object] = []
 
-    mkdocs_publication._publish_example_notebooks(
-        files,
-        {"docs_dir": str(docs_dir), "site_dir": str(tmp_path / "site")},
-    )
-
-    assert files == []
+    assert mkdocs_publication._example_notebook_paths({"docs_dir": str(docs_dir)}) == []
