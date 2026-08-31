@@ -883,7 +883,8 @@ class CToIRConverter(ClassVisitor):
         if canonical is None:
             # Real and complex widths are already canonical C spellings, so the
             # ordinary identity rule alone decides those.
-            return self._required_native_c_identity(type_, semantic_name) and declared
+            required = self._required_native_c_identity(type_, semantic_name)
+            return declared if required is not None else None
         return None if declared == canonical else declared
 
     def _numpy_canonical_integer_primitive(self, semantic_name: str) -> str | None:

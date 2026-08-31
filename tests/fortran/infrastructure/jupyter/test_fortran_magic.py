@@ -494,6 +494,22 @@ def test_magic_reports_usage_without_terminating_ipython(tmp_path: Path, capsys)
         )
 
 
+def test_editable_contract_metadata_errors_name_what_the_cell_got_wrong(tmp_path: Path):
+    """An edited contract cell must say which metadata a user broke.
+
+    These are the guards an ordinary edit reaches: duplicating the reserved
+    line, or renaming the contract to something that is not a module path.
+    """
+    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
+    digest = "a" * 64
+
+    with pytest.raises(UsageError, match="exactly one PRIK metadata line"):
+        magic.pyi("", f"# prik: source-sha256={digest}\n# prik: file=maths.pyi\n\ndef square(): ...\n")
+    for filename in ("../escape.pyi", "maths.txt", "not-an-identifier.pyi", "__init__.pyi"):
+        with pytest.raises(UsageError, match=r"Invalid editable \.pyi filename"):
+            magic.pyi("", f"# prik: file={filename} source-sha256={digest}\n\ndef square(): ...\n")
+
+
 def test_dash_prefixed_flag_value_usage_names_the_equals_form(tmp_path: Path):
     """A flag value argparse read as an option must say how to write it."""
     magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
