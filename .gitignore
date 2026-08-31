@@ -27,3 +27,4 @@ build/
 *.lock
 # Added by code-review-graph
 .code-review-graph/
+.ipynb_checkpoints/

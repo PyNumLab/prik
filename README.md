@@ -17,7 +17,6 @@ Fortran cell and a C cell, then reshapes the generated API by editing its
 `.pyi` contract.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb)
-[Download the notebook](https://pynumlab.github.io/prik/examples/notebooks/quickstart.ipynb)
 
 It preserves modules, derived types, arrays, callbacks, and native behavior
 while letting you reshape the resulting Python API through editable `.pyi`
@@ -549,12 +548,9 @@ notice when redistributed.
 - **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, matched Fortran and C first functions, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Separate Fortran and C paths followed by shared build workflows
-- **[C User Guide](https://pynumlab.github.io/prik/user/guide/c/)** — C functions, pointer contracts, arrays, strings, outputs, errors, symbols, headers, and dependencies
 - **[IPython and Jupyter](https://pynumlab.github.io/prik/user/guide/notebooks/)** — Compile native cells and edit semantic contracts interactively
 - **[`.pyi` Format](https://pynumlab.github.io/prik/user/reference/pyi-format/)** — Contract projects, declarations, decorators, types, storage, metadata, and C and Fortran forms
 - **[Editing `.pyi` Contracts](https://pynumlab.github.io/prik/user/reference/pyi-contracts/)** — Supported recipes for reshaping the generated Python API
-- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Supported C wrapper areas, boundaries, source inputs, and public entry points
 - **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
 - **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — Supported, partially supported, and unsupported native-language features
 - **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions
-- **[Changelog](https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md)** — User-visible changes by release

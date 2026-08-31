@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.4.2 — 2026-08-31
+
 - The `jupyter` extra now accepts IPython 7.0 and newer instead of requiring
   8.0. The cell magics use only long-stable IPython APIs, and the higher floor
   made `pip install prik[jupyter]` upgrade the IPython that hosted notebook
