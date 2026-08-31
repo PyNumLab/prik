@@ -111,3 +111,39 @@ def test_package_command_rejects_a_module_without_one_main_example(tmp_path: Pat
             "```bash\npython3 prik/component.py\n```",
             "developer/packages/component.md",
         )
+
+
+def test_example_notebooks_are_served_from_the_site(tmp_path: Path) -> None:
+    """A download button needs the notebook same-origin, not on GitHub.
+
+    The browser honours ``download`` only for a same-origin file, so the site
+    serves a copy while the repository keeps the single source of truth.
+    """
+    docs_dir = tmp_path / "docs"
+    notebook_dir = tmp_path / mkdocs_publication._EXAMPLE_NOTEBOOK_DIR
+    docs_dir.mkdir()
+    notebook_dir.mkdir(parents=True)
+    (notebook_dir / "quickstart.ipynb").write_text("{}", encoding="utf-8")
+    (notebook_dir / "notes.txt").write_text("not a notebook", encoding="utf-8")
+    files: list[object] = []
+
+    mkdocs_publication._publish_example_notebooks(
+        files,
+        {"docs_dir": str(docs_dir), "site_dir": str(tmp_path / "site")},
+    )
+
+    assert [file.src_uri for file in files] == ["quickstart.ipynb"]
+    assert Path(files[0].abs_dest_path).name == "quickstart.ipynb"
+
+
+def test_publishing_example_notebooks_tolerates_a_missing_directory(tmp_path: Path) -> None:
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    files: list[object] = []
+
+    mkdocs_publication._publish_example_notebooks(
+        files,
+        {"docs_dir": str(docs_dir), "site_dir": str(tmp_path / "site")},
+    )
+
+    assert files == []

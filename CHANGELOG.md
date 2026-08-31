@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Added a runnable `examples/notebooks/quickstart.ipynb` and its guided
+  tutorial, covering a Fortran cell, a C cell, and reshaping the generated API
+  by editing its semantic contract in the same session. The home page, Getting
+  Started, the tutorial, and the README offer it as a Colab run or a direct
+  download, so the documented workflow can be tried before installing anything.
+
 - Generated contracts now represent a one-level primitive C pointer as
   runtime-rank `T[...]` NumPy storage instead of choosing a scalar temporary.
   It accepts ranks 0 through 15 with any strides, so a Fortran-ordered array

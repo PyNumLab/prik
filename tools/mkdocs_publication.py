@@ -22,6 +22,10 @@ _MARKDOWN_LINK = re.compile(r"(?<!!)\[([^]]+)]\(([^)]+)\)")
 _PACKAGE_MAIN_COMMAND = re.compile(r"(?m)^```bash\npython3 (?P<path>prik/(?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+\.py)\n```$")
 
 _include_drafts = False
+_config = None
+# Runnable notebooks live with the other examples; the site serves a copy so a
+# documentation page can hand the reader the file itself.
+_EXAMPLE_NOTEBOOK_DIR = "examples/notebooks"
 _known_document_paths: set[str] = set()
 _published_paths: set[str] = set()
 _docs_dir = Path()
@@ -241,7 +245,9 @@ def _expand_package_main_examples(markdown: str, source_uri: str) -> str:
 
 def on_config(config, **_kwargs):
     """Load publication state and filter production navigation."""
-    global _docs_dir, _include_drafts, _known_document_paths, _published_paths, _repository_url
+    global _config, _docs_dir, _include_drafts, _known_document_paths, _published_paths, _repository_url
+
+    _config = config
 
     _include_drafts = os.getenv("PRIK_DOCS_INCLUDE_DRAFTS", "").strip().lower() in _TRUE_VALUES
     _docs_dir = Path(config["docs_dir"])
@@ -254,8 +260,32 @@ def on_config(config, **_kwargs):
     return config
 
 
+def _publish_example_notebooks(files, config) -> None:
+    """Serve the runnable example notebooks from the site itself.
+
+    A documentation page can then offer the notebook as a download rather than
+    a view of its JSON: the browser honours ``download`` only for a same-origin
+    file, and the repository copy stays the single source of truth.
+    """
+    from mkdocs.structure.files import File
+
+    source_dir = Path(config["docs_dir"]).parent / _EXAMPLE_NOTEBOOK_DIR
+    if not source_dir.is_dir():
+        return
+    for notebook in sorted(source_dir.glob("*.ipynb")):
+        files.append(
+            File(
+                notebook.name,
+                str(source_dir),
+                str(Path(config["site_dir"]) / _EXAMPLE_NOTEBOOK_DIR),
+                use_directory_urls=False,
+            )
+        )
+
+
 def on_files(files, **_kwargs):
     """Remove unpublished Markdown files from production output and search."""
+    _publish_example_notebooks(files, _config)
     if _include_drafts:
         return files
 
