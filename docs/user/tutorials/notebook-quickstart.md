@@ -45,14 +45,17 @@ end module
 ```
 
 ```python
-import numpy as np
-
-geometry.circle_area(np.float64(2.0))
+area = geometry.circle_area(np.float64(2.0))
+assert np.isclose(area, np.pi * 4)
+print(f"✅ circle_area(2.0) = {area}  (expected {np.pi * 4})")
 ```
 
 ```text
-np.float64(12.566370614359172)
+✅ circle_area(2.0) = 12.566370614359172  (expected 12.566370614359172)
 ```
+
+Every result the notebook claims is asserted, so a ✅ means the cell really did
+that rather than the page saying so.
 
 ## 3. Compile a C cell
 
@@ -77,11 +80,12 @@ though NumPy already knows it:
 ```python
 values = np.array([1.0, 2.0, 3.0])
 scale(np.uintp(values.size), values)
-values
+assert np.allclose(values, [2.0, 4.0, 6.0])
+print(f"✅ scale(count, values) doubled in place: {values}  (expected [2. 4. 6.])")
 ```
 
 ```text
-array([2., 4., 6.])
+✅ scale(count, values) doubled in place: [2. 4. 6.]  (expected [2. 4. 6.])
 ```
 
 ## 4. Reshape the API with a contract
@@ -129,16 +133,17 @@ from prik.contracts import Arg, Float64, native_call
 def scale(values: Float64[:]) -> None: ...
 ```
 
-Same C code, same compiler; only the Python API changed:
+Same C code, same compiler; only the Python API changed — `count` is gone:
 
 ```python
 values = np.array([1.0, 2.0, 3.0])
 scale(values)
-values
+assert np.allclose(values, [2.0, 4.0, 6.0])
+print(f"✅ scale(values) doubled in place: {values}  (expected [2. 4. 6.])")
 ```
 
 ```text
-array([2., 4., 6.])
+✅ scale(values) doubled in place: [2. 4. 6.]  (expected [2. 4. 6.])
 ```
 
 ## Where to go next

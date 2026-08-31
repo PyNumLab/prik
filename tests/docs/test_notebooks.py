@@ -91,11 +91,15 @@ def test_notebook_executes_and_publishes_its_documented_results(notebook_path: P
         resources={"metadata": {"path": str(tmp_path)}},
     ).execute(env=environment)
 
-    results = [text for cell in notebook.cells for text in _cell_text(cell)]
-    # The notebook's whole point: the same C routine, reached through a
-    # hand-written count and then through a contract that derives it.
-    assert results.count("array([2., 4., 6.])") == 2
-    assert any("12.56637" in text for text in results)
+    printed = "\n".join(text for cell in notebook.cells for text in _cell_text(cell))
+
+    # Every documented result is asserted inside the notebook, so a passing run
+    # shows one tick per claim.
+    assert printed.count("\u2705") == 3, printed
+    assert "\U0001f389 All checks passed." in printed
+    # The same C routine, reached through a hand-written count and then through
+    # a contract that derives it.
+    assert printed.count("(expected [2. 4. 6.])") == 2, printed
 
 
 def _cell_text(cell) -> list[str]:
