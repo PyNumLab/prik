@@ -126,6 +126,92 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert second_module.black.r == np.int32(0)
 
 
+PLAIN_MODULE_ARRAY_SOURCE = """
+module fplain_module_arrays_f90
+  use iso_fortran_env, only: int32, real64
+  implicit none
+  real(real64) :: grid(2, 3)
+  integer(int32) :: counts(3) = [7, 8, 9]
+  character(len=5) :: labels(2) = ['alpha', 'bravo']
+  real(real64), target :: addressable(2) = [1.0d0, 2.0d0]
+contains
+  subroutine bump()
+    grid(1, 1) = grid(1, 1) + 1.0d0
+  end subroutine bump
+
+  function read_grid(row, column) result(value)
+    integer(int32), intent(in) :: row, column
+    real(real64) :: value
+    value = grid(row, column)
+  end function read_grid
+
+  function read_count(index) result(value)
+    integer(int32), intent(in) :: index
+    integer(int32) :: value
+    value = counts(index)
+  end function read_count
+
+  function read_label(index) result(value)
+    integer(int32), intent(in) :: index
+    character(len=5) :: value
+    value = labels(index)
+  end function read_label
+end module fplain_module_arrays_f90
+"""
+
+
+def test_fixed_module_arrays_without_target_expose_the_same_live_view(tmp_path: Path):
+    """A fixed module array is borrowed live whether or not it declares `target`.
+
+    `target` is what lets `c_loc` name the array, not what gives the array a
+    stable address, so withholding it changes the route to the base address and
+    nothing the caller can observe. The claim here is that both declarations
+    produce one live view over the real module storage: Fortran writes appear
+    without re-reading the attribute, Python writes are visible to Fortran, and
+    neither form accepts whole-array replacement.
+    """
+    module = _build_text_and_import(
+        PLAIN_MODULE_ARRAY_SOURCE,
+        "fplain_module_arrays_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fplain_module_arrays_f90_wrapper.f90",
+            "fplain_module_arrays_f90_wrapper.c",
+            "fplain_module_arrays_f90_wrapper.h",
+        },
+    )
+
+    assert module.grid.shape == (2, 3)
+    assert module.grid.dtype == np.dtype(np.float64)
+    assert module.grid.flags["F_CONTIGUOUS"] is True
+    np.testing.assert_array_equal(module.counts, np.array([7, 8, 9], dtype=np.int32))
+    np.testing.assert_array_equal(module.labels, np.array([b"alpha", b"bravo"], dtype="S5"))
+
+    # A view handed out earlier still names the storage Fortran writes.
+    view = module.grid
+    view[0, 0] = np.float64(10.0)
+    module.bump()
+    assert view[0, 0] == np.float64(11.0)
+    assert module.grid[0, 0] == np.float64(11.0)
+
+    # A Python write reaches the storage Fortran reads, for every element type.
+    module.grid[1, 2] = np.float64(4.5)
+    assert module.read_grid(np.int32(2), np.int32(3)) == np.float64(4.5)
+    module.counts[1] = np.int32(99)
+    assert module.read_count(np.int32(2)) == np.int32(99)
+    module.labels[0] = b"omega"
+    assert module.read_label(np.int32(1)) == "omega"
+
+    # The addressable declaration borrows identically.
+    module.addressable[0] = np.float64(6.0)
+    assert module.addressable[0] == np.float64(6.0)
+
+    # Neither form hands the whole variable back to be reassigned.
+    for name in ("grid", "counts", "addressable"):
+        with pytest.raises(AttributeError, match="read-only"):
+            setattr(module, name, np.zeros(2))
+
+
 CHARACTER_MODULE_ARRAY_SOURCE = """
 module fchar_module_arrays_f90
   implicit none

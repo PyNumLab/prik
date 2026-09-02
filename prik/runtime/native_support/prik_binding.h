@@ -37,6 +37,28 @@
 #define PRIK_NO_INLINE
 #endif
 
+#ifdef PRIK_BINDING_CAPTURE_ADDRESS
+/*
+ * Report the address a caller already passed by reference.
+ *
+ * Fortran's `c_loc` can only name a variable that is a target or a pointer, so
+ * an ordinary declaration -- a module array without `target`, say -- has no way
+ * to state its own address. Handing the whole object to a `bind(C)` procedure
+ * does: an assumed-type assumed-size dummy is passed as the bare base address,
+ * so the parameter below already is where that object lives and only has to be
+ * handed back. It does the job of `c_loc` exactly where `c_loc` is not
+ * available, for any type and any rank, because it never inspects what it is
+ * given. Nothing on the Fortran side forms a pointer or claims a target.
+ *
+ * This needs external linkage for the generated bridge to call it, so it is
+ * defined only in the translation unit that opts in with this macro.
+ */
+void *prik_capture_address(void *base)
+{
+    return base;
+}
+#endif
+
 typedef void (*prik_native_array_release_fn)(void *descriptor);
 
 /*

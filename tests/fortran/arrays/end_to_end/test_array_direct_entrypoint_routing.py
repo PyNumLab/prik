@@ -37,7 +37,7 @@ def test_arrays_all_direct_route_preserves_dtype_values_and_mutation(
     flags = np.array([True, True, False], dtype=np.bool_, order="F")
     assert bool(module.all_flags(np.int32(flags.size), flags)) is False
     inverted = module.invert_flags(np.int32(flags.size), flags)
-    np.testing.assert_array_equal(flags, np.array([False, False, True], dtype=np.bool_))
+    np.testing.assert_array_equal(flags, np.array([False, False, True]))
     if inverted is not None:
         np.testing.assert_array_equal(inverted, flags)
 

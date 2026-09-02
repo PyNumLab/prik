@@ -700,17 +700,19 @@ class _GeneratedSupportProcedureEntrypointBuilder:
 
     def _ordinary_array_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        callback = self._descriptor_callback_parameter(
-            semantic_type_name=field.semantic_type_name,
-            rank=field.array.rank,
-            descriptor_kind=None,
+        # A fixed field reports its base address and extents, the same shape a
+        # fixed module array uses. Its rank is fixed and its storage contiguous,
+        # so a descriptor would carry nothing the extents do not already give.
+        extents = tuple(
+            self._int64_parameter(f"extent_{axis}", reference=True, intent="out") for axis in range(field.array.rank)
         )
         operations = [
             self._operation(
                 owner_path,
                 f"field:{route}:get",
                 self._field_symbol(owner, field, route, "get"),
-                (*owner_values, callback, self._opaque_parameter("context")),
+                (*owner_values, *extents),
+                self._opaque_result(),
             )
         ]
         if field.setter_action is SetterAction.WRITE_THROUGH:
@@ -1019,8 +1021,12 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         if operation is NativeArrayOperation.ELEMENT_LENGTH:
             return NativeEntrypointSignaturePlan((), self._int64_result())
         if operation is NativeArrayOperation.ARRAY_ACTUAL:
+            # Reading the descriptor already hands the consumer everything an
+            # actual needs, so this operation would repeat that procedure
+            # exactly. It is left unplanned and the binding calls the
+            # descriptor symbol with a callback that keeps only the address.
             if self._uses_module_allocatable_descriptor(variable):
-                return self._module_descriptor_callback_signature(variable, handle)
+                return None
             return NativeEntrypointSignaturePlan((), self._opaque_result())
         if operation is NativeArrayOperation.SHAPE:
             extents = tuple(

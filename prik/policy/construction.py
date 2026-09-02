@@ -93,6 +93,7 @@ from prik.policy.models import (
     CallbackThreadAction,
     CallbackGILAction,
     CallbackFatalAction,
+    ModuleArrayAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     DerivedFieldAccessMechanism,
@@ -1134,6 +1135,7 @@ def _ordinary_array_module_variable_policy(
     array: ArrayHandoffPolicy,
 ) -> ModuleVariablePolicy:
     """Build one borrowed ordinary module-array view policy."""
+    address = _ordinary_array_module_address_mechanism(variable)
     blockers = _ordinary_array_module_variable_blockers(variable, getter, setter, array)
     return ModuleVariablePolicy(
         **_module_variable_policy_base(variable, module_name, owner_path),
@@ -1148,7 +1150,23 @@ def _ordinary_array_module_variable_policy(
         supported=not blockers,
         blockers=tuple(blockers),
         array=array,
+        array_address=address,
     )
+
+
+def _ordinary_array_module_address_mechanism(
+    variable: models.SemanticVariable,
+) -> ModuleArrayAddressMechanism:
+    """Select how the bridge obtains one fixed module array's base address.
+
+    Addressable storage names itself directly.  An ordinary declaration cannot,
+    so its whole array is handed to C through an assumed-size dummy, which
+    receives the bare base address.  Both mechanisms borrow the same live
+    storage; only the route to its address differs.
+    """
+    if variable.semantic_type.metadata.get("aliased"):
+        return ModuleArrayAddressMechanism.TARGET_ADDRESS
+    return ModuleArrayAddressMechanism.CAPTURED_ADDRESS
 
 
 def _constant_array_module_variable_policy(
@@ -1265,8 +1283,6 @@ def _ordinary_array_module_variable_blockers(
         blockers.append("ordinary module array requires one concrete fixed rank")
     if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("ordinary module array requires a primitive numeric element type")
-    if not variable.semantic_type.metadata.get("aliased"):
-        blockers.append("ordinary module array requires addressable Aliased target storage")
     expected_getter = (
         ("owner", getter.owner, OwnershipOwner.NATIVE),
         ("transfer", getter.transfer, TransferMode.BORROWED_VIEW),
@@ -6495,6 +6511,19 @@ def _native_array_assignment(value: str, owner_path: str) -> AssignmentMode:
     return _native_array_enum(AssignmentMode, value, owner_path, "native setter")
 
 
+def _native_array_actual_dtype(argument: models.SemanticArgument) -> str | None:
+    """Return the NumPy dtype a handle must carry to stand in for this actual.
+
+    A character actual is matched on its declared width as well as its kind,
+    because a handle whose elements are a different length describes different
+    storage.  A width the declaration does not fix cannot be matched at all.
+    """
+    if argument.semantic_type.name == "String":
+        length = _character_length(argument.semantic_type)
+        return None if length is None else f"S{length}"
+    return _NUMPY_DTYPE_NAMES.get(argument.semantic_type.name)
+
+
 def _native_array_actual_policy(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
@@ -6508,15 +6537,13 @@ def _native_array_actual_policy(
         or array.native_order != array.order
         or array.rank is None
         or argument.optional
-        or argument.semantic_type.name == "String"
         or decision.transfer is TransferMode.COPY_RETURN
         or decision.python_barrier_action is not PythonBarrierAction.ARRAY_STORAGE
         or decision.native_barrier_action is not NativeBarrierAction.PASS_ARRAY_BUFFER
     ):
         return None
-    try:
-        dtype = _NUMPY_DTYPE_NAMES[argument.semantic_type.name]
-    except KeyError:
+    dtype = _native_array_actual_dtype(argument)
+    if dtype is None:
         return None
     return NativeArrayActualPolicy(
         accepted_sources=(
@@ -6547,6 +6574,8 @@ def _native_array_module_variable_blockers(
     blockers = []
     if variable.visibility != "public":
         blockers.append("native array module variable is not public")
+    # A descriptor handle hands out the same element-for-element view a fixed
+    # array does, so it carries the same width requirement.
     if handle.handle_kind is not NativeArrayHandleKind.BORROWED_MODULE_DESCRIPTOR:
         blockers.append(f"native array module handle kind {handle.handle_kind.value!r} is unsupported")
     if getter is None or getter.is_blocked or getter.kind is not ObjectKind.NUMPY_ARRAY:
@@ -7162,17 +7191,12 @@ def _array_logical_argument_abi(
     semantic_type = argument.semantic_type
     if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) <= 0:
         return ArrayLogicalABI.NOT_APPLICABLE, None, False, False
-    source_type = _fortran_logical_native_type(argument)
-    if source_type is None:
-        if semantic_type.name in {"Bool", "Bool8"}:
-            return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
-        copy_in = bool(getattr(argument, "_source_reads_argument", True))
-        return ArrayLogicalABI.NATIVE_KIND_COPY, None, copy_in, decision.mutates_native
-    if "".join(source_type.casefold().split()) == "logical(kind=c_bool)":
-        return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
-    copy_in = bool(getattr(argument, "_source_reads_argument", True))
-    copy_out = decision.mutates_native
-    return ArrayLogicalABI.NATIVE_KIND_COPY, source_type, copy_in, copy_out
+    # The buffer is a NumPy integer of the element's own width, so the native
+    # pointer describes the caller's storage exactly and no directional copy is
+    # required for any logical kind.
+    # A spelling the source did not record is left unset; backend lowering then
+    # resolves the width from the semantic type itself.
+    return ArrayLogicalABI.C_BOOL_VIEW, _fortran_logical_native_type(argument), False, False
 
 
 def _logical_argument_bridge_action(
@@ -7342,17 +7366,16 @@ def _array_writeback_abi(
 ) -> ArrayWritebackABI:
     """Complete mutable ordinary-array byte normalization before planning.
 
-    Exact-kind logical copies canonicalize bytes while copying out, so only a
-    direct ``c_bool`` view needs the separate low-bit normalization pass.
+    A Boolean array needs no more than any other kind.  Its elements already
+    hold the zero or one a C ``_Bool`` is defined to hold, because the compiler
+    profiles request the option that guarantees it, so there is nothing left to
+    reduce.  Reducing anyway could not help a translation unit built without
+    that option either: such a compiler represents false as the complement of
+    true, which no test applied here could tell from a true value.
     """
+    del logical_abi
     if array is None or handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or not decision.mutates_native:
         return ArrayWritebackABI.NOT_APPLICABLE
-    if is_boolean_semantic_type_name(semantic_type.name):
-        return (
-            ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-            if logical_abi is ArrayLogicalABI.C_BOOL_VIEW
-            else ArrayWritebackABI.NOT_APPLICABLE
-        )
     return ArrayWritebackABI.NATIVE_ARRAY
 
 

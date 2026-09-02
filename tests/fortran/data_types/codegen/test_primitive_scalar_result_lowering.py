@@ -60,7 +60,8 @@ def test_direct_bool_result_normalizes_the_fortran_truth_bit_before_c_conversion
     assert "integer(c_int8_t) :: result" in fortran_source
     assert "logical(c_bool) :: c_result" in fortran_source
     assert "c_result = native_not_flag(value)" in fortran_source
-    assert "result = iand(transfer(c_result, 0_c_int8_t), 1_c_int8_t)" in fortran_source
+    # Reduced the way C converts to `_Bool`: any non-zero value is true.
+    assert "result = merge(1_c_int8_t, 0_c_int8_t, transfer(c_result, 0_c_int8_t) /= 0_c_int8_t)" in fortran_source
 
 
 def test_generator_rejects_a_non_normalized_direct_bool_result_abi():

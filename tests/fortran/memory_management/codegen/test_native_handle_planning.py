@@ -320,7 +320,11 @@ def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
     assert NativeArrayOperation.ELEMENT_LENGTH in names.operations
     assert NativeArrayOperation.RESIZE not in names.operations
     assert NativeArrayOperation.DESTROY not in pointer.operations
-    assert allocatable.required_headers == ()
+    # A module allocatable reads its own descriptor whether or not it is a
+    # target, so `Aliased` selects the same interop and headers as a plain one.
+    assert allocatable.extraction_action.value == "descriptor_view"
+    assert allocatable.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
+    assert allocatable.required_headers == ("ISO_Fortran_binding.h",)
     assert plain.extraction_action.value == "descriptor_view"
     assert plain.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
     assert plain.required_headers == ("ISO_Fortran_binding.h",)
@@ -329,12 +333,19 @@ def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
 
 
 def test_deferred_character_module_handles_use_runtime_element_length():
+    """A deferred length is reported at runtime, and the descriptor supplies it.
+
+    The width is not in the declaration, so it can only come from the array
+    itself. It reaches the descriptor record from the descriptor now rather than
+    through a second call, while the standalone query remains for the callers
+    that ask for the length on its own.
+    """
     artifacts = WrapperGenerator().generate(_module_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
+    assert '"elem_len", (unsigned long long)descriptor->elem_len' in c_source
     assert "bind_c_module_names_element_length()" in c_source
-    assert '"elem_len", (unsigned long long)(bind_c_module_names_element_length())' in c_source
     assert "function bind_c_module_names_element_length() result(result)" in bridge_source
     assert "result = len(native_module_names, kind=c_int64_t)" in bridge_source
 

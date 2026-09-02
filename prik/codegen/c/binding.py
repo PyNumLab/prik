@@ -35,6 +35,7 @@ from prik.policy.models import (
     DerivedWriteback,
     DirectResultABI,
     ModuleObjectAccessMechanism,
+    ModuleArrayAddressMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
@@ -640,7 +641,29 @@ class CBindingGenerator(ClassVisitor):
             for argument in function.arguments
         ):
             definitions.append(CMacroDefinition("PRIK_BINDING_NATIVE_ARRAY_ACTUAL", "1"))
+        # The bundled address-capture primitive needs external linkage for the
+        # Fortran bridge to call it, so the header defines it only where this
+        # macro opts in. Selecting it here keeps it in one translation unit.
+        if self._requires_address_capture(plan):
+            definitions.append(CMacroDefinition("PRIK_BINDING_CAPTURE_ADDRESS", "1"))
         return tuple(definitions)
+
+    def _requires_address_capture(self, plan: ModulePlan) -> bool:
+        """Report whether any borrowed view in this module takes its address in C.
+
+        Both cases name their storage directly rather than reaching it through a
+        pointer, so neither has a Fortran route to its own address: a module
+        array whose declaration withheld ``target``, and an array member of a
+        plain module object, which is likewise not a target.
+        """
+        return any(
+            variable.array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS for variable in self._variables(plan)
+        ) or any(
+            member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
+            for variable in self._variables(plan)
+            if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
+            for member in variable.derived.member_paths
+        )
 
     def _module_includes(
         self,
@@ -2701,12 +2724,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _direct_array_field_functions(self, derived, field) -> tuple[CFunction, ...]:
         """Build direct array field functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        callback = self._ordinary_array_field_descriptor_callback(
-            field,
-            self._derived_field_descriptor_callback_name(derived, field),
-        )
         return (
-            callback,
             self._direct_ordinary_array_field_getter(derived, field),
             *self._present_field_function(self._direct_ordinary_array_field_setter(derived, field)),
         )
@@ -2738,12 +2756,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _module_array_member_functions(self, variable, member) -> tuple[CFunction, ...]:
         """Build module array member functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        callback = self._ordinary_array_field_descriptor_callback(
-            member.field,
-            self._module_member_descriptor_callback_name(variable, member),
-        )
         return (
-            callback,
             self._module_ordinary_array_member_getter(variable, member),
             *self._present_field_function(self._module_ordinary_array_member_setter(variable, member)),
         )
@@ -2780,16 +2793,69 @@ class CBindingGenerator(ClassVisitor):
         """Create a live NumPy view over one fixed address-backed field."""
         body = (
             *self._derived_owner_address_nodes(derived),
-            CDeclaration("field_view", "PyObject *", CodeExpression("NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{self._derived_field_bridge_name(derived, field, 'get')}(owner_address, "
-                    f"{self._derived_field_descriptor_callback_name(derived, field)}, &field_view)"
-                )
+            *self._borrowed_array_view_nodes(
+                field,
+                self._derived_field_bridge_name(derived, field, "get"),
+                owner="owner_obj",
+                leading_arguments=("owner_address",),
             ),
-            *self._ordinary_array_field_owner_nodes("field_view", "owner_obj"),
         )
         return self._derived_private_method(self._derived_field_method_name(derived, field, "get"), body)
+
+    def _borrowed_array_view_nodes(
+        self,
+        field: DerivedFieldPlan,
+        bridge_name: str,
+        *,
+        owner: str,
+        leading_arguments: tuple[str, ...] = (),
+    ) -> tuple:
+        """Build one live Fortran-ordered NumPy alias from a base pointer and extents.
+
+        Both field families share this construction: the bridge reports where
+        the member lives plus one extent per axis, and the view is formed here.
+        ``leading_arguments`` carries the owner address where one is passed.
+        """
+        array = field.array
+        if array is None or array.rank is None:
+            raise ValueError(f"Ordinary array field {field.owner_path!r} has no fixed rank")
+        scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
+        extents = tuple(f"extent_{axis}" for axis in range(array.rank))
+        arguments = ", ".join((*leading_arguments, *(f"&{name}" for name in extents)))
+        return (
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in extents),
+            CDeclaration("field_data", "void *", CodeExpression(f"{bridge_name}({arguments})")),
+            CIf(
+                CodeExpression("field_data == NULL"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression('PyErr_SetString(PyExc_ReferenceError, "array field storage is unavailable")')
+                    ),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CDeclaration(
+                f"dimensions[{array.rank}]",
+                "npy_intp",
+                CodeExpression("{" + ", ".join(extents) + "}"),
+            ),
+            CDeclaration(f"strides[{array.rank}]", "npy_intp"),
+            CExpressionStatement(CodeExpression(f"strides[0] = (npy_intp)sizeof({scalar.array_c_spelling})")),
+            *(
+                CExpressionStatement(CodeExpression(f"strides[{axis}] = strides[{axis - 1}] * dimensions[{axis - 1}]"))
+                for axis in range(1, array.rank)
+            ),
+            CDeclaration(
+                "field_view",
+                "PyObject *",
+                CodeExpression(
+                    f"PyArray_New(&PyArray_Type, {array.rank}, dimensions, {scalar.array_numpy_type}, "
+                    "strides, field_data, 0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | "
+                    "NPY_ARRAY_WRITEABLE, NULL)"
+                ),
+            ),
+            *self._ordinary_array_field_owner_nodes("field_view", owner),
+        )
 
     def _direct_native_handle_field_getter(
         self,
@@ -2870,14 +2936,11 @@ class CBindingGenerator(ClassVisitor):
         body = (
             CDeclaration("owner_obj", "PyObject *"),
             CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
-            CDeclaration("field_view", "PyObject *", CodeExpression("NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{self._module_member_bridge_name(variable, member, 'get')}("
-                    f"{self._module_member_descriptor_callback_name(variable, member)}, &field_view)"
-                )
+            *self._borrowed_array_view_nodes(
+                member.field,
+                self._module_member_bridge_name(variable, member, "get"),
+                owner="owner_obj",
             ),
-            *self._ordinary_array_field_owner_nodes("field_view", "owner_obj"),
         )
         return self._derived_private_method(self._module_member_method_name(variable, member, "get"), body)
 
@@ -3099,56 +3162,6 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
         return self._derived_private_method(self._module_member_method_name(variable, member, "set"), body)
-
-    def _ordinary_array_field_descriptor_callback(
-        self,
-        field: DerivedFieldPlan,
-        callback_name: str,
-    ) -> CFunction:
-        """Construct a NumPy view from one standard field descriptor."""
-        array = field.array
-        if array is None or array.rank is None or not array.shape:
-            raise ValueError(f"Ordinary array field {field.owner_path!r} has no fixed shape")
-        scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        dims = ", ".join(f"(npy_intp)descriptor->dim[{axis}].extent" for axis in range(array.rank))
-        strides = ", ".join(f"(npy_intp)descriptor->dim[{axis}].sm" for axis in range(array.rank))
-        return CFunction(
-            callback_name,
-            "void",
-            parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
-            storage="static",
-            body=(
-                CExpressionStatement(CodeExpression("*(PyObject **)context = NULL")),
-                CIf(
-                    CodeExpression("descriptor == NULL || descriptor->base_addr == NULL"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                'PyErr_SetString(PyExc_ReferenceError, "array field descriptor is unavailable")'
-                            )
-                        ),
-                        CReturn(),
-                    ),
-                ),
-                CDeclaration(
-                    f"field_dims[{array.rank}]",
-                    "npy_intp",
-                    CodeExpression("{" + dims + "}"),
-                ),
-                CDeclaration(
-                    f"field_strides[{array.rank}]",
-                    "npy_intp",
-                    CodeExpression("{" + strides + "}"),
-                ),
-                CExpressionStatement(
-                    CodeExpression(
-                        f"*(PyObject **)context = PyArray_New(&PyArray_Type, {array.rank}, field_dims, "
-                        f"{scalar.numpy_type_macro}, field_strides, descriptor->base_addr, 0, "
-                        "NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
-                    )
-                ),
-            ),
-        )
 
     @staticmethod
     def _ordinary_array_field_owner_nodes(field_view: str, owner_name: str) -> tuple:
@@ -4276,12 +4289,16 @@ class CBindingGenerator(ClassVisitor):
         self,
         variable: ModuleVariablePlan,
     ) -> tuple[CDeclaration | CExpressionStatement | CReturn, ...]:
-        """Request the current standard descriptor and expose only its data address."""
+        """Request the current standard descriptor and expose only its data address.
+
+        This shares the descriptor operation rather than declaring one of its
+        own: the two would be the same procedure, and only the callback differs.
+        """
         return (
             CDeclaration("base_addr", "void *", CodeExpression("NULL")),
             CExpressionStatement(
                 CodeExpression(
-                    f"{self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.ARRAY_ACTUAL)}("
+                    f"{self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.DESCRIPTOR)}("
                     f"{self._module_array_actual_callback_name(variable)}, &base_addr)"
                 )
             ),
@@ -5584,8 +5601,8 @@ class CBindingGenerator(ClassVisitor):
             numpy_itemsize = "(int)itemsize"
         else:
             scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-            element_size = f"sizeof({scalar.c_spelling})"
-            numpy_type = str(scalar.numpy_type_macro)
+            element_size = f"sizeof({scalar.array_c_spelling})"
+            numpy_type = str(scalar.array_numpy_type)
             numpy_itemsize = "0"
         owner = self._module_native_array_owner_name(plan)
         width = ("itemsize",) if character else ()
@@ -7136,9 +7153,9 @@ class CBindingGenerator(ClassVisitor):
             )
             return native.numpy_type_macro, native.python_type_name
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-        if scalar_type.numpy_type_macro is None or scalar_type.python_type_name is None:
+        if scalar_type.array_numpy_type is None or scalar_type.array_dtype_name is None:
             raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
-        return scalar_type.numpy_type_macro, scalar_type.python_type_name
+        return scalar_type.array_numpy_type, scalar_type.array_dtype_name
 
     @staticmethod
     def _array_rank_bounds(handoff: ArrayHandoffPlan) -> tuple[int, int]:
@@ -8050,6 +8067,7 @@ class CBindingGenerator(ClassVisitor):
         scalar_type = PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
         return {
             "NPY_BOOL": "bool",
+            "NPY_UINT8": "uint8",
             "NPY_INT8": "int8",
             "NPY_INT16": "int16",
             "NPY_INT32": "int32",
@@ -8058,7 +8076,7 @@ class CBindingGenerator(ClassVisitor):
             "NPY_FLOAT64": "float64",
             "NPY_COMPLEX64": "complex64",
             "NPY_COMPLEX128": "complex128",
-        }[scalar_type.numpy_type_macro]
+        }[scalar_type.array_numpy_type]
 
     def _native_array_cfi_type(self, plan: ArgumentTransferPlan | ResultPlan) -> str | None:
         """Return the standard-descriptor element type after array-family dispatch."""
@@ -11612,14 +11630,6 @@ class CBindingGenerator(ClassVisitor):
         """Return the binding-local pointer holder ops name derived from the supplied local lowering values; this helper preserves completed policy."""
         return CBindingNames.pointer_holder_ops(type_name)
 
-    def _derived_field_descriptor_callback_name(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> str:
-        """Return the binding-local derived field descriptor callback name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"prik_field_{self._derived_field_symbol(derived, field)}_descriptor"
-
     def _derived_handle_operation_name(
         self,
         derived: DerivedTypePlan,
@@ -11681,14 +11691,6 @@ class CBindingGenerator(ClassVisitor):
         return self._generated_support_procedure_entrypoint(
             ".".join((variable.owner_path, *member.path)), f"field:module:{action}"
         ).symbol_name
-
-    def _module_member_descriptor_callback_name(
-        self,
-        variable: ModuleVariablePlan,
-        member: DerivedMemberPathPlan,
-    ) -> str:
-        """Return the binding-local module member descriptor callback name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"prik_module_field_{self._module_member_symbol(variable, member)}_descriptor"
 
     def _module_member_handle_operation_name(
         self,

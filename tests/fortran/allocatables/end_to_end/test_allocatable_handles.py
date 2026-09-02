@@ -1,6 +1,7 @@
 """Allocatable result, module-array, and component-view ownership tests."""
 
 import gc
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,18 @@ FIXTURES = Path(__file__).parent / "fixtures"
 ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
+
+
+def _allocatable_dummy_handoff_supported() -> bool:
+    """Report whether this compiler accepts a handle at an allocatable dummy.
+
+    ifx rejects the established descriptor for that argument form regardless of
+    the bounds it carries, so the round-trip below is checked where it works.
+    The descriptor facts themselves are asserted on every compiler.
+    """
+    return "ifx" not in os.environ.get("PRIK_TEST_FORTRAN_COMPILER", "gfortran")
+
+
 PLAIN_ALLOCATABLE_MODULE_SOURCE = """\
 module fallocatable_plain_f90
   implicit none
@@ -359,3 +372,92 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
     assert handle.allocated is False
     assert handle.shape is None
     assert handle.to_numpy() is None
+
+
+LOWER_BOUND_SOURCE = """
+module falloc_lower_bounds_f90
+  use iso_fortran_env, only: int32, real64
+  implicit none
+  real(real64), allocatable :: plain_a(:)
+  real(real64), allocatable, target :: tgt_a(:)
+  real(real64), allocatable, target :: defaulted(:)
+  character(len=5), allocatable, target :: fixed_words(:)
+  character(len=:), allocatable, target :: deferred_words(:)
+contains
+  function lower_bound_of(x) result(bound)
+    real(real64), allocatable, intent(in) :: x(:)
+    integer(int32) :: bound
+    bound = lbound(x, 1)
+  end function lower_bound_of
+
+  function element_at(x, index) result(value)
+    real(real64), allocatable, intent(in) :: x(:)
+    integer(int32), intent(in) :: index
+    real(real64) :: value
+    value = x(index)
+  end function element_at
+
+  subroutine setup()
+    allocate(plain_a(5:8))
+    plain_a = 1.0d0
+    allocate(tgt_a(5:8))
+    tgt_a = 2.0d0
+    allocate(defaulted(4))
+    defaulted = 3.0d0
+    allocate(character(len=5) :: fixed_words(5:8))
+    fixed_words = 'aaaaa'
+    allocate(character(len=6) :: deferred_words(5:8))
+    deferred_words = 'bbbbbb'
+  end subroutine setup
+end module falloc_lower_bounds_f90
+"""
+
+
+def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(tmp_path: Path):
+    """A module allocatable reports the bounds it actually has, either way.
+
+    `target` allows `c_loc` on the variable, but that yields only a base address:
+    the bounds, strides and element length then have to come from somewhere else.
+    Reconstructing them hardcoded a lower bound of zero, which is wrong for every
+    Fortran array — the default is one — and further wrong for a declared `(5:8)`.
+    Both declarations read the descriptor, so both report 5.
+    """
+    module = _build_text_and_import(
+        LOWER_BOUND_SOURCE,
+        "falloc_lower_bounds_f90.f90",
+        tmp_path,
+        {
+            "bind_c_falloc_lower_bounds_f90_wrapper.f90",
+            "falloc_lower_bounds_f90_wrapper.c",
+            "falloc_lower_bounds_f90_wrapper.h",
+        },
+    )
+    module.setup()
+
+    for name in ("plain_a", "tgt_a", "defaulted"):
+        handle = getattr(module, name)
+        record = handle._descriptor_record_for_binding()
+        # A defaulted allocation still starts at one, which the reconstruction
+        # also got wrong by reporting zero.
+        assert record["dim"][0]["lower_bound"] == (1 if name == "defaulted" else 5), name
+        assert record["dim"][0]["extent"] == 4, name
+        assert record["elem_len"] == 8, name
+        # The Python view is unaffected: NumPy indexing stays zero-based.
+        assert handle.to_numpy().shape == (4,)
+
+    # A character allocatable reads the same descriptor, and its element length
+    # comes from the array rather than from a width the binding assumed.
+    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
+        record = getattr(module, name)._descriptor_record_for_binding()
+        assert record["dim"][0]["lower_bound"] == 5, name
+        assert record["elem_len"] == width, name
+
+    # The bound is not a reported fact but part of the value: an allocatable
+    # dummy adopts the bounds of the descriptor it is given, so a wrong one
+    # makes the callee index the wrong elements.
+    if not _allocatable_dummy_handoff_supported():
+        return
+    for name in ("plain_a", "tgt_a"):
+        handle = getattr(module, name)
+        assert module.lower_bound_of(handle) == np.int32(5), name
+        assert module.element_at(handle, np.int32(5)) == handle.to_numpy()[0], name

@@ -16,6 +16,11 @@ HandleOperation = Callable[..., Any]
 _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT = ctypes.c_int(1)
 _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS = ctypes.addressof(_PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT)
 
+# The base a C-built descriptor starts from when no Fortran bound is available.
+# Only a handle that reports its own descriptor can carry a declared lower
+# bound; one reduced to a bare address has none to report.
+_UNKNOWN_DESCRIPTOR_LOWER_BOUND = 0
+
 
 class _OwnerRetainedNDArray(np.ndarray):
     """Internal ndarray view carrying a strong reference to native owner state."""
@@ -736,7 +741,7 @@ class NativeArrayHandleBase:
             return descriptor
         if _is_pointer_descriptor_record(descriptor):
             if _pointer_descriptor_base_addr(descriptor) == 0:
-                return self._contiguous_descriptor_record(0, None)
+                return self._absent_descriptor_record()
             _validate_pointer_descriptor_itemsize(descriptor, np.dtype(self.dtype))
             descriptor_shape, _ = _pointer_descriptor_shape_and_strides(descriptor)
             if len(descriptor_shape) != self.rank:
@@ -764,8 +769,31 @@ class NativeArrayHandleBase:
             )
         return descriptor
 
+    def _absent_descriptor_record(self) -> dict[str, Any]:
+        """Return descriptor fields for storage that is not there.
+
+        Every axis is empty, so the bounds describe nothing and no value is
+        being asserted about an array that does not exist.
+        """
+        dtype = np.dtype(self.dtype)
+        return {
+            "base_addr": 0,
+            "elem_len": dtype.itemsize,
+            "rank": self.rank,
+            "dim": [{"lower_bound": 0, "extent": 0, "sm": dtype.itemsize} for _axis in range(self.rank)],
+        }
+
     def _contiguous_descriptor_record(self, address: int, shape: tuple[int, ...] | None) -> dict[str, Any]:
-        """Build standard descriptor fields for a contiguous native array actual."""
+        """Build standard descriptor fields for a contiguous native array actual.
+
+        A bare address carries no bounds, so every axis is described from the
+        zero base a C-built descriptor starts at rather than from a Fortran
+        bound this cannot know.  A handle that can name its bounds -- any that
+        reports its own descriptor -- must do so through its descriptor
+        operation, which is where a declared lower bound survives; generated
+        module handles all take that route, so nothing prik emits relies on the
+        base chosen here.
+        """
         dtype = np.dtype(self.dtype)
         extents = (0,) * self.rank if shape is None else shape
         strides = []
@@ -778,7 +806,7 @@ class NativeArrayHandleBase:
             "elem_len": dtype.itemsize,
             "rank": self.rank,
             "dim": [
-                {"lower_bound": 0, "extent": int(extent), "sm": int(axis_stride)}
+                {"lower_bound": _UNKNOWN_DESCRIPTOR_LOWER_BOUND, "extent": int(extent), "sm": int(axis_stride)}
                 for extent, axis_stride in zip(extents, strides, strict=True)
             ],
         }

@@ -600,8 +600,11 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert target_values.handle_kind == "borrowed_module_descriptor"
     assert target_values.owner_retention == "native_module"
     assert target_values.target_lifetime == "module"
-    assert target_values.to_numpy == "borrowed_view"
-    assert target_values.descriptor_interop == "none"
+    # A module allocatable reports its own descriptor whether or not it is a
+    # target, so `Aliased` selects neither a different NumPy exposure nor a
+    # different interop mechanism.
+    assert target_values.to_numpy == "descriptor_view"
+    assert target_values.descriptor_interop == "module_allocatable_c_descriptor"
     assert target_values.requires_pointer_c_descriptor_interop is False
 
     assert field_values.handle_kind == "borrowed_field_descriptor"

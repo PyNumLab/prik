@@ -40,6 +40,7 @@ from prik.policy.models import (
     DeclarationCallableAction,
     DirectResultABI,
     ExternalDeclarationMode,
+    ModuleArrayAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     CharacterLocalRelease,
@@ -108,6 +109,10 @@ from prik.planning.models import (
 from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
 
+
+# The C identity function that reports a non-target module array's base
+# address. The binding defines it; the bridge declares and calls it.
+_MODULE_ARRAY_CAPTURE_NAME = "prik_capture_address"
 
 _MODULE_GETTER_SUMMARIES = {
     ModuleGetterAction.CONSTANT_VALUE: "The value is a compile-time constant materialized by the binding.",
@@ -324,6 +329,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._external_interfaces(plan),
                 *self._module_descriptor_callback_interfaces(plan),
                 *self._derived_array_callback_interfaces(plan),
+                *self._module_array_capture_interfaces(plan),
                 *self._allocator_interfaces(plan),
             ),
             declarations=self._prototype_entity_declarations(plan),
@@ -2572,12 +2578,11 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     def _module_native_array_actual_operation(self, plan: ModuleVariablePlan) -> FortranFunction:
-        """Return current module-array data storage without changing ownership."""
-        if self._uses_module_allocatable_descriptor(plan):
-            return self._module_allocatable_descriptor_callback_operation(
-                plan,
-                NativeArrayOperation.ARRAY_ACTUAL,
-            )
+        """Return current module-array data storage without changing ownership.
+
+        A descriptor-reading module allocatable plans no such operation, so only
+        the address route reaches this.
+        """
         name = self._module_native_array_operation_name(plan, NativeArrayOperation.ARRAY_ACTUAL)
         native = self._native_variable_name(plan)
         return FortranFunction(
@@ -2810,7 +2815,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if plan.datatype_family is DatatypeFamily.STRING:
             length = ":" if plan.character_length is None else str(plan.character_length)
             return f"character(kind=c_char, len={length})"
-        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_fortran_type
 
     def _module_pointer_dummy_element_type(self, plan: ModuleVariablePlan) -> str:
         """Return the element type of one module pointer dummy.
@@ -2821,7 +2826,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """
         if plan.datatype_family is DatatypeFamily.STRING:
             return "character(kind=c_char, len=:)"
-        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_fortran_type
 
     def _module_descriptor_consumer_value_declaration(
         self,
@@ -2830,18 +2835,21 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[str, tuple[str, ...]]:
         """Return the type and attributes of one descriptor-consumer value dummy.
 
-        A ``bind(C)`` allocatable character dummy has to declare deferred
-        length, while argument association requires the actual to be deferred
-        exactly when the dummy is. A module array that declares its own width
-        satisfies neither together, so it travels as an assumed-length
-        assumed-shape dummy whose descriptor still carries the element length.
-        The runtime never reaches this operation while the array is
-        unallocated: ``AllocatableArray.to_numpy`` and ``shape`` both return
-        early on ``allocated``.
+        The dummy is always ``allocatable`` so that the descriptor it receives
+        describes the module variable itself. An assumed-shape dummy would
+        renumber the bounds from zero, losing a declared lower bound, and GCC
+        rejects an assumed-shape character one outright.
+
+        Argument association requires the actual to declare deferred length
+        exactly when the dummy does, so a character array that declares its own
+        width takes assumed length rather than deferred. The runtime never
+        reaches this operation while the array is unallocated:
+        ``AllocatableArray.to_numpy`` and ``shape`` both return early on
+        ``allocated``.
         """
         dimension = self._array_dimension_attribute(rank)
         if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
-            return "character(kind=c_char, len=*)", (dimension, "intent(in)")
+            return "character(kind=c_char, len=*)", ("allocatable", dimension, "intent(in)")
         return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(in)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
@@ -2996,7 +3004,7 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         plan: ModuleVariablePlan,
     ) -> tuple[FortranFunction, ...]:
-        """Expose one addressable fixed module array through pointer and extents."""
+        """Expose one fixed module array through its base pointer and extents."""
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
@@ -3007,6 +3015,7 @@ class FortranBridgeGenerator(ClassVisitor):
         # the Fortran variable, not to anything the binding can restate.
         width = ("itemsize",) if plan.datatype_family is DatatypeFamily.STRING else ()
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
+        address = self._module_array_address(plan, native)
         return (
             FortranFunction(
                 name=name,
@@ -3026,8 +3035,62 @@ class FortranBridgeGenerator(ClassVisitor):
                         )
                         for axis, extent in enumerate(extents)
                     ),
-                    FortranAssignment("result", CodeExpression(f"c_loc({native})")),
+                    FortranAssignment("result", CodeExpression(address)),
                 ),
+            ),
+        )
+
+    @staticmethod
+    def _module_array_address(plan: ModuleVariablePlan, native: str) -> str:
+        """Return the address expression selected by the completed mechanism."""
+        mechanism = plan.array_address
+        if mechanism is ModuleArrayAddressMechanism.TARGET_ADDRESS:
+            return f"c_loc({native})"
+        if mechanism is ModuleArrayAddressMechanism.CAPTURED_ADDRESS:
+            return f"{_MODULE_ARRAY_CAPTURE_NAME}({native})"
+        raise ValueError(f"Module array view {plan.owner_path!r} has no completed address mechanism: {mechanism!r}")
+
+    def _requires_address_capture(self, plan: ModulePlan) -> bool:
+        """Report whether any borrowed view must take its address on the C side.
+
+        Both cases name their storage directly rather than reaching it through a
+        pointer, so neither has a Fortran route to its own address: a module
+        array whose declaration withheld ``target``, and an array member of a
+        plain module object, which is likewise not a target.
+        """
+        return any(
+            variable.array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS for variable in self._variables(plan)
+        ) or any(
+            member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
+            for variable in self._derived_member_proxy_variables(plan)
+            for member in variable.derived.member_paths
+        )
+
+    def _module_array_capture_interfaces(self, plan: ModulePlan) -> tuple[FortranInterface, ...]:
+        """Declare the C capture helper wherever a borrowed view needs it.
+
+        ``c_loc`` requires the variable it names to be a target, so a module
+        array whose declaration withheld the attribute has no Fortran route to
+        its own address.  Handing the whole array to a `bind(C)` procedure does
+        have one: an assumed-type assumed-size dummy is passed as the bare base
+        address, so C receives where the module variable lives and hands it
+        straight back.  Nothing here claims a target or forms a Fortran pointer.
+        """
+        if not self._requires_address_capture(plan):
+            return ()
+        return (
+            FortranInterface(
+                (
+                    FortranInterfaceProcedure(
+                        name=_MODULE_ARRAY_CAPTURE_NAME,
+                        imports=("c_ptr",),
+                        parameters=(FortranParameter("base", "type(*)", ("dimension(*)",)),),
+                        result_name="address",
+                        result_type="type(c_ptr)",
+                        bind_name=_MODULE_ARRAY_CAPTURE_NAME,
+                        bind_c=True,
+                    ),
+                )
             ),
         )
 
@@ -4373,7 +4436,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 declarations.append(
                     FortranDeclaration(
                         self._logical_array_byte_pointer_name(argument),
-                        "integer(c_int8_t)",
+                        self._logical_array_integer_type(argument.semantic_type_name),
                         ("pointer", "dimension(:)"),
                     )
                 )
@@ -4499,9 +4562,48 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
             FortranAssignment(
                 byte_pointer,
-                CodeExpression(f"iand({byte_pointer}, 1_c_int8_t)"),
+                CodeExpression(self._logical_array_canonical_expression(argument.semantic_type_name, byte_pointer)),
             ),
         )
+
+    @staticmethod
+    def _logical_array_integer_type(semantic_type_name: str) -> str:
+        """Return the integer type covering one Boolean element's own width.
+
+        The mask reinterprets the caller's buffer, so it has to step by the
+        element width rather than by bytes: a `logical(4)` array is four-byte
+        integers, not four times as many one-byte ones.
+        """
+        return {
+            "Bool": "integer(c_int8_t)",
+            "Bool8": "integer(c_int8_t)",
+            "Bool16": "integer(c_int16_t)",
+            "Bool32": "integer(c_int32_t)",
+            "Bool64": "integer(c_int64_t)",
+        }[semantic_type_name]
+
+    @staticmethod
+    def _logical_array_kind_suffix(semantic_type_name: str) -> str:
+        """Return the integer kind suffix matching one Boolean element's width."""
+        return {
+            "Bool": "c_int8_t",
+            "Bool8": "c_int8_t",
+            "Bool16": "c_int16_t",
+            "Bool32": "c_int32_t",
+            "Bool64": "c_int64_t",
+        }[semantic_type_name]
+
+    def _logical_array_canonical_expression(self, semantic_type_name: str, target: str) -> str:
+        """Return the expression reducing Boolean storage to zero and one.
+
+        The rule is C's: any non-zero value is true, which is what converting to
+        ``_Bool`` produces and what NumPy, Python and C all read back. It is not
+        a low-bit test -- that would call ``2`` false, disagreeing with every one
+        of them -- and it maps both representations compilers emit, ``1`` and
+        ``-1``, onto the single value the interoperable type is defined to hold.
+        """
+        kind = self._logical_array_kind_suffix(semantic_type_name)
+        return f"merge(1_{kind}, 0_{kind}, {target} /= 0_{kind})"
 
     @staticmethod
     def _logical_array_byte_pointer_name(argument: ArgumentTransferPlan) -> str:
@@ -4698,7 +4800,7 @@ class FortranBridgeGenerator(ClassVisitor):
             if array.itemsize <= 0:
                 raise ValueError(f"Character array {argument.owner_path!r} has a non-positive itemsize")
             return f"character(kind=c_char, len={array.itemsize})"
-        return PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).fortran_spelling
+        return PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).array_fortran_type
 
     def _array_dimension_attribute(self, rank: int) -> str:
         """Spell one explicit-rank deferred-shape pointer attribute."""
@@ -5563,7 +5665,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 return (
                     FortranAssignment(
                         "result",
-                        CodeExpression("iand(transfer(c_result, 0_c_int8_t), 1_c_int8_t)"),
+                        CodeExpression("merge(1_c_int8_t, 0_c_int8_t, transfer(c_result, 0_c_int8_t) /= 0_c_int8_t)"),
                     ),
                 )
             case DirectResultABI.NATIVE_SCALAR:
@@ -6179,7 +6281,7 @@ class FortranBridgeGenerator(ClassVisitor):
             return f"character(kind=c_char, len={itemsize})"
         if plan.semantic_type_name is None:
             raise ValueError(f"Array result {plan.owner_path!r} has no element type")
-        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_fortran_type
 
     def _array_result_itemsize(
         self,
@@ -7122,33 +7224,53 @@ class FortranBridgeGenerator(ClassVisitor):
         derived: DerivedTypePlan,
         field: DerivedFieldPlan,
     ) -> FortranFunction:
-        """Pass one fixed field through a standard descriptor callback."""
+        """Expose one fixed field through its base pointer and extents.
+
+        The owner arrives as an address and is reached through a Fortran
+        pointer, so its components are subobjects of a pointer target and
+        ``c_loc`` can name them directly however the field itself was declared.
+        """
         name = self._derived_field_bridge_name(derived, field, "get")
-        interface = self._derived_field_callback_interface_name(derived, field)
+        member = f"owner%{field.native_name}"
         return FortranFunction(
             name=name,
             parameters=(
                 FortranParameter("owner_address", "type(c_ptr)", ("value",)),
-                FortranParameter("callback_address", "type(c_funptr)", ("value",)),
-                FortranParameter("context", "type(c_ptr)", ("value",)),
+                *self._ordinary_array_field_extent_parameters(field),
             ),
+            result_name="result",
+            result_type="type(c_ptr)",
             bind_name=name,
-            declarations=(
-                self._derived_owner_declaration(derived),
-                FortranDeclaration("callback", f"procedure({interface})", ("pointer",)),
-            ),
+            declarations=(self._derived_owner_declaration(derived),),
             body=(
                 self._derived_owner_association(),
-                FortranCall(
-                    "c_f_procpointer",
-                    (CodeExpression("callback_address"), CodeExpression("callback")),
-                ),
-                FortranCall(
-                    "callback",
-                    (CodeExpression(f"owner%{field.native_name}"), CodeExpression("context")),
-                ),
+                *self._ordinary_array_field_extent_assignments(field, member),
+                FortranAssignment("result", CodeExpression(f"c_loc({member})")),
             ),
-            is_subroutine=True,
+        )
+
+    @staticmethod
+    def _ordinary_array_field_extent_parameters(field: DerivedFieldPlan) -> tuple[FortranParameter, ...]:
+        """Return the reported extent outputs for one fixed array field."""
+        array = field.array
+        if array is None or array.rank is None:
+            raise ValueError(f"Ordinary array field {field.owner_path!r} has no fixed rank")
+        return tuple(
+            FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("intent(out)",)) for axis in range(array.rank)
+        )
+
+    @staticmethod
+    def _ordinary_array_field_extent_assignments(field: DerivedFieldPlan, member: str) -> tuple[FortranAssignment, ...]:
+        """Report each axis from the native field rather than restating its declaration."""
+        array = field.array
+        if array is None or array.rank is None:
+            raise ValueError(f"Ordinary array field {field.owner_path!r} has no fixed rank")
+        return tuple(
+            FortranAssignment(
+                f"extent_{axis}",
+                CodeExpression(f"int(size({member}, {axis + 1}), c_int64_t)"),
+            )
+            for axis in range(array.rank)
         )
 
     def _direct_ordinary_array_field_setter(
@@ -7184,31 +7306,25 @@ class FortranBridgeGenerator(ClassVisitor):
         variable: ModuleVariablePlan,
         member: DerivedMemberPathPlan,
     ) -> FortranFunction:
-        """Pass a fixed module member through a standard descriptor callback."""
+        """Expose one fixed module member through its base pointer and extents.
+
+        A plain module object is named directly rather than reached through a
+        pointer, so nothing here is a target and ``c_loc`` cannot name the
+        member. The address is taken on the C side instead, exactly as a
+        non-addressable module array's is.
+        """
         name = self._module_member_bridge_name(variable, member, "get")
-        interface = self._module_member_callback_interface_name(variable, member)
+        expression = self._module_member_expression(variable, member)
         return FortranFunction(
             name=name,
-            parameters=(
-                FortranParameter("callback_address", "type(c_funptr)", ("value",)),
-                FortranParameter("context", "type(c_ptr)", ("value",)),
-            ),
+            parameters=self._ordinary_array_field_extent_parameters(member.field),
+            result_name="result",
+            result_type="type(c_ptr)",
             bind_name=name,
-            declarations=(FortranDeclaration("callback", f"procedure({interface})", ("pointer",)),),
             body=(
-                FortranCall(
-                    "c_f_procpointer",
-                    (CodeExpression("callback_address"), CodeExpression("callback")),
-                ),
-                FortranCall(
-                    "callback",
-                    (
-                        CodeExpression(self._module_member_expression(variable, member)),
-                        CodeExpression("context"),
-                    ),
-                ),
+                *self._ordinary_array_field_extent_assignments(member.field, expression),
+                FortranAssignment("result", CodeExpression(f"{_MODULE_ARRAY_CAPTURE_NAME}({expression})")),
             ),
-            is_subroutine=True,
         )
 
     def _module_ordinary_array_member_setter(
@@ -7465,14 +7581,6 @@ class FortranBridgeGenerator(ClassVisitor):
             f"{derived.owner_path}.{field.name}", f"field:pointer:{action}"
         ).symbol_name
 
-    def _derived_field_callback_interface_name(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> str:
-        """Return the consumer-interface name associated with one direct derived field."""
-        return f"prik_field_{self._derived_field_symbol(derived, field)}_consumer"
-
     def _derived_handle_bridge_name(
         self,
         derived: DerivedTypePlan,
@@ -7508,14 +7616,6 @@ class FortranBridgeGenerator(ClassVisitor):
         return self._generated_support_procedure_entrypoint(
             ".".join((variable.owner_path, *member.path)), f"field:module:{action}"
         ).symbol_name
-
-    def _module_member_callback_interface_name(
-        self,
-        variable: ModuleVariablePlan,
-        member: DerivedMemberPathPlan,
-    ) -> str:
-        """Return the consumer-interface name associated with one module member."""
-        return f"prik_module_field_{self._module_member_symbol(variable, member)}_consumer"
 
     def _module_member_handle_bridge_name(
         self,
@@ -8047,36 +8147,10 @@ class FortranBridgeGenerator(ClassVisitor):
     def _derived_array_callback_interfaces(self, plan: ModulePlan) -> tuple[FortranInterface, ...]:
         """Declare standard-descriptor callbacks for live ordinary array fields."""
         procedures = (
-            *self._direct_ordinary_array_callback_interfaces(plan),
-            *self._module_ordinary_array_callback_interfaces(plan),
             *self._direct_handle_callback_interfaces(plan),
             *self._module_handle_callback_interfaces(plan),
         )
         return (FortranInterface(procedures),) if procedures else ()
-
-    def _direct_ordinary_array_callback_interfaces(self, plan: ModulePlan) -> tuple:
-        """Return callback interfaces required by direct ordinary-array field procedures."""
-        return tuple(
-            self._ordinary_array_callback_interface(
-                field,
-                self._derived_field_callback_interface_name(derived, field),
-            )
-            for derived in self._derived_types(plan)
-            for field in derived.fields
-            if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
-        )
-
-    def _module_ordinary_array_callback_interfaces(self, plan: ModulePlan) -> tuple:
-        """Return callback interfaces required by module ordinary-array member procedures."""
-        return tuple(
-            self._ordinary_array_callback_interface(
-                member.field,
-                self._module_member_callback_interface_name(variable, member),
-            )
-            for variable in self._derived_member_proxy_variables(plan)
-            for member in variable.derived.member_paths
-            if member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
-        )
 
     def _direct_handle_callback_interfaces(self, plan: ModulePlan) -> tuple:
         """Return callback interfaces required by direct native-array-handle field procedures."""
@@ -8100,31 +8174,6 @@ class FortranBridgeGenerator(ClassVisitor):
             for variable in self._derived_member_proxy_variables(plan)
             for member in variable.derived.member_paths
             if member.field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
-        )
-
-    def _ordinary_array_callback_interface(
-        self,
-        field: DerivedFieldPlan,
-        name: str,
-    ) -> FortranInterfaceProcedure:
-        """Return one element- and rank-typed descriptor consumer interface."""
-        array = field.array
-        if array is None or array.rank is None:
-            raise ValueError(f"Ordinary array field {field.owner_path!r} has no callback rank")
-        scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        return FortranInterfaceProcedure(
-            name=name,
-            imports=(self._iso_symbol(field.semantic_type_name), "c_ptr"),
-            parameters=(
-                FortranParameter(
-                    "value",
-                    scalar.fortran_spelling,
-                    (self._array_dimension_attribute(array.rank), "intent(in)"),
-                ),
-                FortranParameter("context", "type(c_ptr)", ("value",)),
-            ),
-            is_subroutine=True,
-            bind_name=name,
         )
 
     def _native_handle_callback_interface(

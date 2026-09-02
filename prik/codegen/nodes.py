@@ -31,6 +31,35 @@ class BackendScalarType(StageRecord):
     python_type_name: str | None = None
     python_module_result_kind: str | None = None
     cfi_type_spelling: str | None = None
+    # Array facts, where an element aliased in a NumPy buffer is described
+    # differently from the same type crossing as a scalar value. A Fortran
+    # logical is the only such type: a scalar converts to a Python bool, while
+    # an array is aliased and must report the width its elements really have.
+    # Every other type leaves these unset and reuses its scalar spellings.
+    array_numpy_type_macro: str | None = None
+    array_element_c_spelling: str | None = None
+    array_python_type_name: str | None = None
+    array_fortran_spelling: str | None = None
+
+    @property
+    def array_numpy_type(self) -> str | None:
+        """Return the NumPy type macro describing one aliased array element."""
+        return self.array_numpy_type_macro or self.numpy_type_macro
+
+    @property
+    def array_c_spelling(self) -> str:
+        """Return the C type whose width one aliased array element occupies."""
+        return self.array_element_c_spelling or self.c_spelling
+
+    @property
+    def array_dtype_name(self) -> str | None:
+        """Return the NumPy dtype expression one aliased array reports."""
+        return self.array_python_type_name or self.python_type_name
+
+    @property
+    def array_fortran_type(self) -> str:
+        """Return the Fortran type declaring one aliased array's elements."""
+        return self.array_fortran_spelling or self.fortran_spelling
 
 
 @dataclass

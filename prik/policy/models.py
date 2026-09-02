@@ -311,6 +311,24 @@ class ModuleGetterAction(str, Enum):
     DERIVED_OBJECT = "derived_object"
 
 
+class ModuleArrayAddressMechanism(str, Enum):
+    """Completed native mechanism that yields a fixed module array's base address.
+
+    ``TARGET_ADDRESS`` applies to storage the declaration made addressable, where
+    ``c_loc`` names the array directly.  ``CAPTURED_ADDRESS`` applies to an
+    ordinary array without that attribute: ``c_loc`` cannot name it, so the whole
+    array is handed to ``prik_capture_address``, a ``bind(C)`` primitive whose
+    assumed-type assumed-size dummy receives the bare base address.  The
+    Fortran side forms no pointer and claims no target.  The captured address is
+    valid for as long as the module variable keeps its storage, which the Fortran
+    standard does not guarantee across the program's lifetime; see the module
+    variable guide for the responsibility that carries.
+    """
+
+    TARGET_ADDRESS = "target_address"
+    CAPTURED_ADDRESS = "captured_address"
+
+
 class ModuleObjectAccessMechanism(str, Enum):
     """Completed native access path for one derived module value."""
 
@@ -936,6 +954,7 @@ class ModuleVariablePolicy:
     blockers: tuple[str, ...] = ()
     character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
+    array_address: ModuleArrayAddressMechanism | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None
 

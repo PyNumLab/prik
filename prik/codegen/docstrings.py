@@ -53,6 +53,20 @@ _SCALAR_TYPES = {
     "String": "str",
 }
 
+# An aliased array reports the width its Fortran elements really occupy. NumPy
+# has no Boolean wider than one byte, and no Fortran kind promises the byte
+# values zero and one that its `bool_` requires, so a logical array is described
+# by the integer of matching width and read back with `.astype(bool)`.
+_ARRAY_ELEMENT_TYPES = {
+    "Bool": "uint8",
+    "Bool8": "uint8",
+    "Bool16": "int16",
+    "Bool32": "int32",
+    "Bool64": "int64",
+}
+
+_LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
+
 _UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
 
 
@@ -457,6 +471,7 @@ class WrapperDocstringBuilder:
         nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
+        lines.extend(self._logical_array_lines(variable))
         if variable.binding.getter_action in {
             ModuleGetterAction.CONSTANT_VALUE,
             ModuleGetterAction.NATIVE_CONSTANT_VALUE,
@@ -472,6 +487,20 @@ class WrapperDocstringBuilder:
         if variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT:
             lines.append("    Replacement assignment is not supported.")
         return "\n".join(lines)
+
+    @staticmethod
+    def _logical_array_lines(transfer) -> tuple[str, ...]:
+        """Explain the dtype a Fortran logical array reports, where it has one.
+
+        The integer width is the storage the elements actually occupy, so the
+        note says how to read it rather than leaving the caller to guess that
+        the values are Booleans.
+        """
+        if getattr(transfer, "semantic_type_name", None) not in _ARRAY_ELEMENT_TYPES:
+            return ()
+        if getattr(transfer, "array", None) is None and getattr(transfer, "native_array_handle", None) is None:
+            return ()
+        return (f"    {_LOGICAL_ARRAY_NOTE}",)
 
     def field(self, field: DerivedFieldPlan) -> str:
         """Render one generated class-property docstring from its field plan.
@@ -896,6 +925,7 @@ class WrapperDocstringBuilder:
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.DERIVED:
             return transfer.semantic_type_name
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
+        array_element = _ARRAY_ELEMENT_TYPES.get(transfer.semantic_type_name, scalar)
         handle = getattr(transfer, "native_array_handle", None)
         if handle is not None:
             prefix = (
@@ -903,9 +933,9 @@ class WrapperDocstringBuilder:
                 if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
                 else "PointerArray"
             )
-            return f"{prefix}[{scalar}]"
+            return f"{prefix}[{array_element}]"
         if getattr(transfer, "array", None) is not None:
-            element = "bytes" if transfer.semantic_type_name == "String" else scalar
+            element = "bytes" if transfer.semantic_type_name == "String" else array_element
             return f"ndarray[{self._exact_array_element_label(transfer, element)}]"
         return scalar
 

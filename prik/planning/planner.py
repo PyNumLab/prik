@@ -1153,6 +1153,7 @@ class WrapperPlanner(ClassVisitor):
                 native_assignment=policy.native_assignment,
             ),
             character_length=policy.character_length,
+            array_address=policy.array_address,
             array=self._array_plan(policy.array, policy.owner_path),
             native_array_handle=self._native_array_handle_plan(policy.native_array_handle, policy.owner_path),
             derived=(

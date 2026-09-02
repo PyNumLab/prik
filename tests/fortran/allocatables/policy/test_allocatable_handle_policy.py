@@ -87,6 +87,13 @@ def replace_values(
 
 
 def test_aliased_does_not_change_allocatable_live_view_semantics():
+    """A module allocatable is reached through its descriptor either way.
+
+    `Aliased` would allow `c_loc` on the variable, but that yields only a base
+    address: lower bounds, strides and element length would then have to be
+    assumed rather than read, and a non-default lower bound makes the assumption
+    wrong. Both declarations therefore complete to the same descriptor policy.
+    """
     module = parse_pyi_text(
         """
 values: Allocatable[Float64[:]]
@@ -100,12 +107,10 @@ shared_values: Annotated[Allocatable[Float64[:]], Aliased]
     values = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
     shared_values = module.variables[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
 
-    assert values.to_numpy == "descriptor_view"
-    assert shared_values.to_numpy == "borrowed_view"
+    assert values.to_numpy == shared_values.to_numpy == "descriptor_view"
+    assert values.descriptor_interop == shared_values.descriptor_interop == "module_allocatable_c_descriptor"
     assert values.owner == shared_values.owner == "native"
     assert values.borrowed is shared_values.borrowed is True
-    assert values.descriptor_interop == "module_allocatable_c_descriptor"
-    assert shared_values.descriptor_interop == "none"
 
 
 def test_owned_allocatable_result_records_local_standard_c_descriptor_build_requirement():

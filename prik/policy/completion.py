@@ -1622,7 +1622,7 @@ def _native_array_to_numpy_policy(
         return _native_array_pointer_to_numpy_policy(semantic_type)
     if decision.is_blocked:
         return "unsupported"
-    if handle_kind == "borrowed_module_descriptor" and not semantic_type.metadata.get("aliased"):
+    if handle_kind == "borrowed_module_descriptor":
         return "descriptor_view"
     return "borrowed_view"
 
@@ -1697,11 +1697,7 @@ def _native_array_descriptor_interop_requirement(
     """Return the C-descriptor interop mechanism required by a supported handle."""
     if descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
         return "owned_allocatable_c_descriptor"
-    if (
-        descriptor_kind == "allocatable"
-        and handle_kind == "borrowed_module_descriptor"
-        and not semantic_type.metadata.get("aliased")
-    ):
+    if descriptor_kind == "allocatable" and handle_kind == "borrowed_module_descriptor":
         return "module_allocatable_c_descriptor"
     if descriptor_kind == "pointer" and handle_kind != "unsupported":
         return "pointer_c_descriptor"

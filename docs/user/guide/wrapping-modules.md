@@ -114,11 +114,60 @@ print(mod.nmax)         # 12 (read-only parameter)
 
 ## Module Arrays & Saved State
 
+A fixed-shape module array is exposed as a live NumPy view over the real
+Fortran storage. Reads see whatever the native code last wrote, and writes
+through the view are visible to Fortran:
+
+```fortran
+module state
+  use iso_fortran_env, only: real64
+  implicit none
+  real(real64) :: grid(2, 3)
+end module state
+```
+
+```python
+grid = mod.grid          # a view, not a copy
+grid[0, 0] = 10.0        # Fortran sees this
+mod.bump()               # and this is visible through `grid`
+```
+
+The whole variable cannot be reassigned (`mod.grid = ...` raises
+`AttributeError`); its shape belongs to the Fortran declaration. Write into the
+view instead, with `mod.grid[:] = ...`.
+
+- The `target` attribute is not required. It is what lets `c_loc` name a
+  variable in Fortran, not what gives a module array its address, so for an
+  ordinary declaration PRIK takes the address on the C side instead: the whole
+  array is passed to `prik_capture_address`, a `bind(C)` primitive in PRIK's
+  bundled support header whose assumed-size dummy receives the bare base
+  address. Both forms produce the same live view.
+- Derived-type array fields never needed `target` either, and are borrowed the
+  same way. An object reached through its address makes its components
+  addressable, so `c_loc` names them directly; a member of a module object
+  declared without `target` takes the same C-side route as a module array. A
+  plain `real(real64) :: grid(2, 3)` component is a live view whether the type,
+  the field, or the containing module variable declares the attribute.
+- A Fortran `logical` array is borrowed only when its kind is one byte wide
+  (`logical(c_bool)`). A wider kind — including the default `logical` on common
+  compilers — cannot be aliased by NumPy's one-byte bool, so it is reported
+  unsupported rather than exposed as a view that would read the wrong elements.
+  Return it from a procedure instead, which converts each element.
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.
 - `save` attributes (including procedure-local `save` variables) persist across calls.
 - Multiple Python imports of the same extension share the same native module state.
+
+!!! warning "A borrowed view assumes module storage stays put"
+
+    The Fortran standard does not require a module variable to occupy one
+    address for the life of the program, so a view held across native code that
+    could relocate module storage — device offload, for instance — is your
+    responsibility rather than something the language guarantees. This holds on
+    the toolchains PRIK tests, and declaring `target` puts the language behind
+    it. If you would rather not hold a view at all, copy what you need:
+    `np.array(mod.grid)`.
 
 ---
 

@@ -86,35 +86,45 @@ def test_projected_array_lowering_increfs_original_objects_and_reuses_tuple_aggr
     assert "PyTuple_SET_ITEM(result_obj, 1, result_1_obj)" in c_source
 
 
-def test_mutable_bool_array_writeback_normalizes_the_aliased_numpy_buffer_in_place():
-    plan = _logical_output_plan()
-    arguments = plan.namespaces[0].functions[0].arguments
-    values, out = arguments[1:]
+def test_mutable_bool_array_writeback_needs_no_normalization():
+    """A Boolean array is written back like any other element type.
 
-    assert values.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-    assert out.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+    Its elements already hold the zero or one a C `_Bool` is defined to hold,
+    because the compiler profiles request the option that guarantees it, so the
+    callee leaves nothing behind that has to be reduced afterwards.
+    """
+    plan = _logical_output_plan()
+    values, out = plan.namespaces[0].functions[0].arguments[1:]
+
+    assert values.array_writeback_abi is ArrayWritebackABI.NATIVE_ARRAY
+    assert out.array_writeback_abi is ArrayWritebackABI.NATIVE_ARRAY
 
     artifacts = WrapperGenerator().generate(plan)
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "integer(c_int8_t), pointer, dimension(:) :: out_logical_bytes" in bridge_source
     assert "call native_invert_flags(n, values, out)" in bridge_source
-    assert "call c_f_pointer(bound_out, out_logical_bytes, [out_extent_0])" in bridge_source
-    assert "out_logical_bytes = iand(out_logical_bytes, 1_c_int8_t)" in bridge_source
+    assert "_logical_bytes" not in bridge_source
+    assert "iand(" not in bridge_source
 
 
-def test_high_rank_bool_array_writeback_wraps_the_flattened_shape_product():
+def test_high_rank_bool_array_bridge_stays_inside_the_fortran_line_limit():
+    """Free-form Fortran caps a line at 132 columns, whatever the rank.
+
+    A rank-15 array names one extent per axis, so its generated declarations and
+    calls are the longest prik emits and are where continuation would first be
+    missed.
+    """
     artifacts = WrapperGenerator().generate(_high_rank_logical_output_plan())
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "values_extent_0 * &" in bridge_source
-    assert "& values_extent_14])" in bridge_source
+    assert "values_extent_14" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
-def test_generator_rejects_a_non_normalized_mutable_bool_array_writeback_abi():
+def test_generator_rejects_a_normalized_mutable_bool_array_writeback_abi():
+    """An edited plan cannot reintroduce a normalization pass that is not needed."""
     plan = _logical_output_plan()
-    plan.namespaces[0].functions[0].arguments[-1].array_writeback_abi = ArrayWritebackABI.NATIVE_ARRAY
+    plan.namespaces[0].functions[0].arguments[-1].array_writeback_abi = ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
 
     with pytest.raises(ValueError, match="invalid-array-writeback-abi"):
         WrapperGenerator().generate(plan)

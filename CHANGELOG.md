@@ -7,6 +7,124 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A `character` array handle is now accepted wherever a numeric one is. An
+  `AllocatableArray` of characters was refused at an ordinary character dummy
+  and had to be passed as `handle.to_numpy()`, while every other element type
+  converted directly. The handle machinery already supported it; the completed
+  policy simply excluded `String` from handle-as-actual acceptance. A character
+  actual is matched on its declared width as well as its kind, so a handle whose
+  elements are a different length is still refused.
+
+- PRIK now requests the compiler option that makes a Fortran `logical`
+  interoperable with C: `-standard-semantics` for Intel `ifx`/`ifort` and
+  `-Munixlogical` for PGI/NVIDIA. gfortran, Cray and IBM XL already use the
+  interoperable form. Without it those compilers store all bits set for
+  `.true.`, so a `logical(c_bool)` reaching C holds `255` where `_Bool` is
+  defined to hold `1`; C then miscounts it, and a four-element array of `.true.`
+  counted as `765` through Intel's own C compiler. If you override PRIK's
+  compiler flags, keep this one.
+
+  The option is on by default and can be turned off with the new
+  `--no-standard-logicals` flag, or `standard_logicals=False` on
+  `build_fortran_extension`, `build_pyi_extension` and `build_c_extension`.
+  Turning it off is needed only when linking prebuilt Intel objects that were
+  themselves compiled without `-standard-semantics`: that option also changes
+  Intel module symbol mangling (`lib_MP_name_` rather than `lib_mp_name_`), so
+  objects built with and without it cannot be linked together, and mixing them
+  fails with an undefined reference rather than with anything about logicals.
+  Rebuilding the dependency with the option is the better fix.
+
+- **Breaking:** a Fortran `logical` array wider than one byte now reports the
+  integer dtype matching its element width — `int16`, `int32` or `int64` —
+  instead of being rejected. NumPy has no Boolean larger than a byte, so those
+  kinds could not be described at all before: `logical :: flags(3)` and every
+  allocatable, pointer and derived-field form of it were unsupported. They are
+  now live, writable views, read back with `.astype(bool)`.
+
+  `logical(c_bool)` is unchanged and stays `numpy.bool_`: one byte holding zero
+  or one is exactly what that dtype describes. Logical scalars are unchanged
+  too, in every kind — they cross by value and remain Python `bool`.
+
+  With the widths agreeing, no conversion remains on any path. A logical array
+  argument is passed as the caller's own buffer rather than widened into a
+  native-kind temporary and narrowed back, and the post-call byte normalization
+  is gone: the representation is now correct at the source rather than repaired
+  at each boundary.
+
+- Fixed a module allocatable array with `target` reporting the wrong descriptor
+  facts. `target` let the bridge take the variable's address with `c_loc`, after
+  which the binding had to reconstruct the rest of the descriptor from
+  assumptions — a hardcoded lower bound of zero, unit stride, `sizeof` element
+  length. Fortran's default lower bound is one, so the reported bound was wrong
+  for every such array, not only for a declared bound: `allocate(a(4))` reported
+  zero instead of one, and `allocate(a(5:8))` reported zero instead of five.
+
+  An allocatable or pointer dummy adopts the bounds of the descriptor it is
+  given, so this reached native code rather than staying a reported fact. A
+  procedure taking `real(real64), allocatable, intent(in) :: x(:)` saw
+  `lbound(x, 1) == 0` for an array allocated `(5:8)`, and `x(5)` read past the
+  end of four elements and returned whatever was there. Both declarations now
+  read the real descriptor, so the callee sees the bounds the array actually has
+  and indexes it correctly, and the element length of a `character` allocatable
+  is measured rather than assumed. The two paths are now one, which also removed the
+  hand-written descriptor reconstruction from generated C and made `Aliased` stop
+  selecting a different NumPy exposure for module allocatables. Python-visible
+  views are unchanged: NumPy indexing stays zero-based either way.
+
+  `character` module allocatables are included. Their descriptor dummy is now
+  declared `allocatable` rather than assumed-shape, which is what carries the
+  declared bounds across — an assumed-shape dummy renumbers them from zero — and
+  their element length is read from the array instead of assumed from the
+  declaration.
+
+  Deferred-length `character` previously failed to build at all: GCC 11 raised
+  an internal compiler error on the generated descriptor call. The cause was
+  that a module allocatable planned two byte-identical bridge procedures, one
+  for its descriptor and one for its data address, and GCC could not compile
+  both. The address operation now shares the descriptor procedure and passes a
+  callback that keeps only the address, so the duplicate is gone and the form
+  builds and reports its real bounds and element length.
+
+- Fixed a silent correctness bug in live views over Fortran `logical` arrays. A
+  borrowed view aliases native storage element for element, but every `logical`
+  kind was represented as NumPy's one-byte bool, so a view over a wider kind —
+  including the default `logical` on every toolchain PRIK tests — read the wrong
+  elements and reported wrong values with no error anywhere. Such a module array
+  or derived-type field is now refused with a diagnostic naming the width;
+  `logical(c_bool)` is unaffected and is still borrowed as a live view. This was
+  present for `target` arrays too, so it predates the borrowing change below.
+
+- Fixed derived-type array fields are now exposed through their base address and
+  extents rather than a C consumer callback receiving a Fortran descriptor. A
+  fixed component has a fixed rank and contiguous storage, so the descriptor
+  carried nothing the extents did not already give, and the callback round-trip
+  per attribute access is gone. Where the owner is reached as a pointer its
+  components are already addressable and `c_loc` names them directly; a member of
+  a module object declared without `target` uses `prik_capture_address`, the same
+  route a non-addressable module array takes. Python-visible behavior is
+  unchanged.
+
+- Fixed-shape module arrays are now exposed as live NumPy views whether or not
+  the Fortran declaration carries `target`. `target` is what lets `c_loc` name
+  a variable; it is not what gives a module array its address. For an ordinary
+  declaration the generated bridge now captures the base address on the C side,
+  the way f2py does: the whole array is handed to `prik_capture_address`, a
+  `bind(C)` primitive in the bundled support header whose assumed-type
+  assumed-size dummy receives the bare base address and hands it back. The
+  Fortran side forms no pointer and claims no target, and one interface covers
+  every element type and rank. The Python-facing
+  behavior is identical to the `target` form: one borrowed view over the real
+  module storage, writable in both directions, with whole-array replacement
+  still rejected. Previously such a variable was reported unsupported with
+  "ordinary module array requires addressable Aliased target storage".
+
+  The Fortran standard does not require a module variable to keep one address
+  for the life of the program, so this borrow rests on how compilers lay out
+  module storage in practice rather than on a guarantee. It holds on the
+  toolchains PRIK tests; a future implementation that relocates module storage
+  (device offload, for example) could invalidate a view held across the move.
+  Declare `target` where you want the language to carry that weight.
+
 ## 0.4.3 — 2026-08-31
 
 - Republishes 0.4.2. That tag carried the previous package version, so the

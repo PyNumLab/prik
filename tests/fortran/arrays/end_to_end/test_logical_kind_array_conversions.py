@@ -68,7 +68,23 @@ end module logical_kind_arrays
 """
 
 
-def test_boolean_arrays_copy_only_in_required_directions_for_every_supported_width(tmp_path: Path):
+_LOGICAL_KIND_DTYPES = {
+    "c_bool": np.bool_,
+    "8": np.bool_,
+    "16": np.int16,
+    "32": np.int32,
+    "64": np.int64,
+}
+
+
+def test_boolean_arrays_are_aliased_at_their_own_width_without_any_copy(tmp_path: Path):
+    """Every logical kind is passed as the caller's own buffer, whatever its width.
+
+    NumPy has no Boolean wider than one byte, so a logical array is described by
+    the integer of matching width. The widths then agree by construction and the
+    buffer is aliased directly: no native-kind temporary is declared, nothing is
+    widened on the way in, and nothing is narrowed on the way out.
+    """
     module = _build_text_and_import(
         _LOGICAL_KIND_ARRAY_SOURCE,
         "logical_kind_arrays.f90",
@@ -80,19 +96,17 @@ def test_boolean_arrays_copy_only_in_required_directions_for_every_supported_wid
         },
     )
     bridge_source = (tmp_path / "bind_c_logical_kind_arrays_wrapper.f90").read_text(encoding="utf-8")
-    assert bridge_source.count("input_values_native = input_values") == 4
-    assert bridge_source.count("inout_values_native = inout_values") == 4
-    assert "output_values_native = output_values" not in bridge_source
-    assert bridge_source.count("output_values = merge(.true._c_bool, .false._c_bool, output_values_native)") == 4
-    assert bridge_source.count("inout_values = merge(.true._c_bool, .false._c_bool, inout_values_native)") == 4
+    assert "_native = " not in bridge_source
+    assert "merge(.true._c_bool, .false._c_bool," not in bridge_source
     assert "call native_exercise_c_bool(n, input_values, output_values, inout_values)" in bridge_source
-    input_values = np.array([True, False, True, False], dtype=np.bool_)
-    initial_inout = np.array([False, False, True, True], dtype=np.bool_)
-    expected_output = np.logical_not(input_values)
-    expected_inout = np.logical_xor(input_values, initial_inout)
+    # Written arrays are normalized at the element's own width, not copied.
+    assert "_logical_bytes" not in bridge_source
+    assert "iand(" not in bridge_source
 
-    for suffix in ("c_bool", "8", "16", "32", "64"):
-        output_values = np.empty(input_values.shape, dtype=np.bool_)
+    for suffix, dtype in _LOGICAL_KIND_DTYPES.items():
+        input_values = np.array([1, 0, 1, 0], dtype=dtype)
+        initial_inout = np.array([0, 0, 1, 1], dtype=dtype)
+        output_values = np.empty(input_values.shape, dtype=dtype)
         inout_values = initial_inout.copy()
 
         result = getattr(module, f"exercise_{suffix}")(
@@ -103,9 +117,17 @@ def test_boolean_arrays_copy_only_in_required_directions_for_every_supported_wid
         )
 
         assert result is None
-        assert input_values.dtype == output_values.dtype == inout_values.dtype == np.dtype(np.bool_)
-        np.testing.assert_array_equal(output_values, expected_output)
-        np.testing.assert_array_equal(inout_values, expected_inout)
+        assert output_values.dtype == inout_values.dtype == np.dtype(dtype), suffix
+        # The values are Fortran logicals, so they are read back as truth
+        # rather than compared against any one integer the compiler chose.
+        np.testing.assert_array_equal(
+            output_values.astype(bool), np.logical_not(input_values.astype(bool)), err_msg=suffix
+        )
+        np.testing.assert_array_equal(
+            inout_values.astype(bool),
+            np.logical_xor(input_values.astype(bool), initial_inout.astype(bool)),
+            err_msg=suffix,
+        )
 
 
 def test_numbered_boolean_pyi_contracts_probe_and_call_every_supported_width(tmp_path: Path):
@@ -155,14 +177,15 @@ def exercise_64(
     )
     bridge_source = next(path for path in result.generated_sources if path.suffix == ".f90").read_text(encoding="utf-8")
     assert "call native_exercise_8(n, input_values, output_values, inout_values)" in bridge_source
-    assert "logical(kind=2), dimension(input_values_extent_0) :: input_values_native" in bridge_source
-    assert "logical(kind=4), dimension(input_values_extent_0) :: input_values_native" in bridge_source
-    assert "logical(kind=8), dimension(input_values_extent_0) :: input_values_native" in bridge_source
+    # Each numbered contract width aliases a buffer of its own size.
+    for kind in ("logical(c_bool)", "logical(2)", "logical(4)", "logical(8)"):
+        assert f"{kind}, pointer, contiguous, dimension(:) :: input_values" in bridge_source, kind
+    assert "_native = " not in bridge_source
 
-    input_values = np.array([True, False, True, False], dtype=np.bool_)
-    initial_inout = np.array([False, False, True, True], dtype=np.bool_)
-    for suffix in ("c_bool", "8", "16", "32", "64"):
-        output_values = np.empty(input_values.shape, dtype=np.bool_)
+    for suffix, dtype in _LOGICAL_KIND_DTYPES.items():
+        input_values = np.array([1, 0, 1, 0], dtype=dtype)
+        initial_inout = np.array([0, 0, 1, 1], dtype=dtype)
+        output_values = np.empty(input_values.shape, dtype=dtype)
         inout_values = initial_inout.copy()
 
         getattr(module, f"exercise_{suffix}")(
@@ -172,5 +195,11 @@ def exercise_64(
             inout_values,
         )
 
-        np.testing.assert_array_equal(output_values, np.logical_not(input_values))
-        np.testing.assert_array_equal(inout_values, np.logical_xor(input_values, initial_inout))
+        np.testing.assert_array_equal(
+            output_values.astype(bool), np.logical_not(input_values.astype(bool)), err_msg=suffix
+        )
+        np.testing.assert_array_equal(
+            inout_values.astype(bool),
+            np.logical_xor(input_values.astype(bool), initial_inout.astype(bool)),
+            err_msg=suffix,
+        )

@@ -9,7 +9,7 @@ from prik.printers.pyi import PyiPrinter
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.policy.ownership import AssignmentMode
-from prik.policy.models import ModuleGetterAction, ModuleVariablePolicy
+from prik.policy.models import ModuleArrayAddressMechanism, ModuleGetterAction, ModuleVariablePolicy
 
 
 def test_scalar_module_variable_policy_completes_access_and_storage_before_planning():
@@ -120,17 +120,53 @@ end module parameter_array
     assert "dpmpar: Final[Float64[3]]" in PyiPrinter().emit(module)
 
 
-def test_fixed_module_array_requires_explicit_addressable_alias_storage():
+def test_fixed_module_array_address_mechanism_follows_declared_addressability():
+    """A fixed module array is borrowed either way; only its address route differs."""
     module = parse_pyi_text(
         """
-from prik.contracts import Float64
+from prik.contracts import Aliased, Annotated, Float64
 
 values: Float64[4]
+addressable: Annotated[Float64[4], Aliased]
 """,
         module_name="plain_array_state",
     )
     complete_semantic_policies(module)
 
-    policy = module.variables[0].metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA]
-    assert policy.supported is False
-    assert "ordinary module array requires addressable Aliased target storage" in policy.blockers
+    policies = {
+        variable.name: variable.metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA] for variable in module.variables
+    }
+    assert [policy.supported for policy in policies.values()] == [True, True]
+    assert policies["values"].getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
+    assert policies["values"].array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS
+    assert policies["addressable"].array_address is ModuleArrayAddressMechanism.TARGET_ADDRESS
+    # Neither route hands Python the whole variable back to reassign.
+    assert policies["values"].setter_action is SetterAction.REJECT_REPLACEMENT
+    assert policies["addressable"].setter_action is SetterAction.REJECT_REPLACEMENT
+
+
+def test_logical_module_arrays_are_borrowed_at_every_width():
+    """A live view aliases element for element, so the dtype reports the width.
+
+    NumPy has no Boolean wider than one byte, so a logical array is described by
+    the integer of matching width rather than narrowed to `bool`. The widths
+    then agree for every Fortran kind and each is borrowed as a live view.
+    """
+    module = parse_pyi_text(
+        """
+from prik.contracts import Bool, Bool32
+
+narrow: Bool[3]
+wide: Bool32[3]
+""",
+        module_name="logical_state",
+    )
+    complete_semantic_policies(module)
+
+    policies = {
+        variable.name: variable.metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA] for variable in module.variables
+    }
+    for name in ("narrow", "wide"):
+        assert policies[name].supported is True, name
+        assert policies[name].getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW, name
+        assert policies[name].blockers == (), name

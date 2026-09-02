@@ -1257,6 +1257,10 @@ class WrapperGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "module-array-view-has-unrelated-facet", None))
         if plan.entrypoint.getter_role is None:
             diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-getter-role", None))
+        # The route to the array's base address is a policy decision. Bridge
+        # lowering reads it; it must never fall back to one when it is absent.
+        if plan.array_address is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-address-mechanism", None))
         if plan.bridge.native_assignment is not AssignmentMode.NONE:
             diagnostics.append(
                 self._diagnostic(
@@ -1948,12 +1952,9 @@ class WrapperGenerator:
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER and (
             plan.mutates_native or self._publishes_array_replacement(plan)
         ):
-            if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-                expected = ArrayWritebackABI.NOT_APPLICABLE
-            elif plan.datatype_family is DatatypeFamily.BOOL:
-                expected = ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-            else:
-                expected = ArrayWritebackABI.NATIVE_ARRAY
+            # Every element type is written back the same way: a Boolean one
+            # already holds the zero or one its interoperable form requires.
+            expected = ArrayWritebackABI.NATIVE_ARRAY
         if plan.array_writeback_abi is expected:
             return ()
         return (

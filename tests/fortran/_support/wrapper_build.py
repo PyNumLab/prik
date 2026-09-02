@@ -452,8 +452,18 @@ def _result_dtype(expected):
     return np.asarray(expected).dtype
 
 
+def _array_element_dtype(expected):
+    """Return the dtype one Fortran array element reports to Python.
+
+    A `logical(c_bool)` element is one byte holding zero or one, which is what
+    `numpy.bool_` describes, so it needs no adjustment. Only kinds wider than a
+    byte report an integer instead, and no fixture here exercises one.
+    """
+    return _result_dtype(expected)
+
+
 def _array_argument(value, size: int, *, strided: bool):
-    dtype = np.asarray(value).dtype
+    dtype = _array_element_dtype(value)
     if strided:
         storage = np.zeros(2 * size, dtype=dtype)
         array = storage[::2]
@@ -464,7 +474,7 @@ def _array_argument(value, size: int, *, strided: bool):
 
 
 def _array_result(expected, size: int, *, strided: bool):
-    dtype = _result_dtype(expected)
+    dtype = _array_element_dtype(expected)
     if strided:
         storage = np.zeros(2 * size, dtype=dtype)
         return storage[1::2]

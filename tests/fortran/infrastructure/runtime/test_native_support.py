@@ -23,6 +23,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         "prik_array_actual_unpack",
         "prik_array_validate",
         "prik_release_owned_memory",
+        "prik_capture_address",
     )
     for name in expected_api:
         assert name in header
@@ -50,3 +51,18 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert f"prik_{suffix}_unpack" in header
         assert f"prik_{suffix}_to_python" in header
         assert f"prik_{suffix}_to_numpy" in header
+
+
+def test_address_capture_primitive_has_external_linkage_behind_one_opt_in():
+    """The one support symbol the generated Fortran bridge links against.
+
+    Every other helper here is `static`, which the bridge could not call. This
+    one stands in for `c_loc` where Fortran cannot form it, so it must be
+    externally visible -- and therefore defined in exactly one translation unit,
+    which the opt-in macro is what enforces.
+    """
+    header = SUPPORT_HEADER.read_text(encoding="utf-8")
+
+    assert "#ifdef PRIK_BINDING_CAPTURE_ADDRESS" in header
+    assert "void *prik_capture_address(void *base)" in header
+    assert "static inline void *prik_capture_address" not in header
