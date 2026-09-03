@@ -292,6 +292,7 @@ _DECLARATION_FLAG_FIELDS = MappingProxyType(
         "contiguous": "contiguous",
         "external": "external",
         "parameter": "parameter",
+        "protected": "protected",
     }
 )
 _EMPTY_COMPILE_TIME_SYMBOLS: Mapping[str, str] = MappingProxyType({})
@@ -356,6 +357,7 @@ class _Declaration:
     allocatable: bool = False
     pointer: bool = False
     target: bool = False
+    protected: bool = False
     contiguous: bool = False
     external: bool = False
     parameter: bool = False
@@ -4324,6 +4326,8 @@ class FortranParser(ClassVisitor):
             arg._declared_storage_bits = declaration.declared_storage_bits
         if declaration.polymorphic:
             arg._fortran_polymorphic = True
+        if declaration.protected:
+            arg._fortran_protected = True
 
     @staticmethod
     def _split_dim_bounds(dim: str) -> tuple[str | None, str | None]:

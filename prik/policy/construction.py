@@ -5380,6 +5380,13 @@ def _runtime_semantic_validation_blockers(
         blockers.append(f"{label} has no runtime validators for semantic constraints {constraints}")
     if coercions:
         blockers.append(f"{label} has no wrapper conversion actions for semantic coercions {coercions}")
+    if semantic_type.metadata.get("fortran_protected"):
+        # Every generated accessor for a module array either allocates,
+        # deallocates or passes the variable to a dummy the callee may define.
+        # PROTECTED forbids all three outside the declaring module, so the
+        # bridge is refused here rather than emitted and left to fail in the
+        # Fortran compiler.
+        blockers.append(f"{label} is PROTECTED, so a generated accessor cannot define it outside its module")
     return tuple(blockers)
 
 
