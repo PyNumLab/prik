@@ -2849,8 +2849,8 @@ class FortranBridgeGenerator(ClassVisitor):
         """
         dimension = self._array_dimension_attribute(rank)
         if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
-            return "character(kind=c_char, len=*)", ("allocatable", dimension, "intent(in)")
-        return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(in)")
+            return "character(kind=c_char, len=*)", ("allocatable", dimension, "intent(inout)")
+        return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(inout)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
         """Return one planner-owned module native-array operation symbol."""
