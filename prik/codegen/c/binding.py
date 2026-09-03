@@ -7889,6 +7889,90 @@ class CBindingGenerator(ClassVisitor):
         nodes.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
         return tuple(nodes)
 
+    _UNCONSTRAINED_ARRAY_EXTENTS = frozenset({":", "::Strided", "Flat"})
+
+    def _uses_native_array_ops_fast_path(
+        self,
+        plan: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+    ) -> bool:
+        """Report whether this argument may take a handle's published entry-point table.
+
+        The table hands back a copy of the descriptor the Fortran runtime
+        built, which stands in only where the callee cannot change the
+        allocation -- the same rule the borrowed handoff follows.  It carries
+        no presence flag and no declared extents either, so an optional or
+        shape-constrained argument keeps the general path.
+        """
+        return (
+            handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            and handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE
+            and plan.binding.optional_mode is OptionalMode.REQUIRED
+            and handle.array.rank is not None
+            and all(extent in self._UNCONSTRAINED_ARRAY_EXTENTS for extent in handle.array.shape)
+        )
+
+    def _native_array_ops_fast_path_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        handle: NativeArrayHandlePlan,
+        fallback: tuple[CDeclaration | CExpressionStatement | CIf, ...],
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
+        """Take the handle's entry-point table when it publishes one, else fall back."""
+        prefix = names.value_name
+        rank = handle.array.rank
+        cfi_type = self._native_array_cfi_type(plan)
+        capsule = f"{prefix}_ops_capsule"
+        table = f"{prefix}_native_ops"
+        storage = f"{prefix}_ops_storage"
+        target = f"{prefix}_ops_copy"
+        gate = " || ".join(f"{prefix}->dim[{axis}].extent < 0" for axis in range(rank))
+        return (
+            CDeclaration(storage, f"CFI_CDESC_T({rank})"),
+            CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
+            CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
+            CDeclaration(
+                target,
+                "prik_native_array_descriptor_copy",
+                CodeExpression(f"{{&{storage}, sizeof({storage})}}"),
+            ),
+            CExpressionStatement(
+                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")')
+            ),
+            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
+            CIf(
+                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{table} = prik_native_array_ops_from_capsule({capsule}, "
+                            f"{self._native_array_handle_kind_constant(handle)}, {rank}, {cfi_type}, "
+                            f"{self._native_array_expected_element_size(plan)})"
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
+                    CIf(CodeExpression(f"{table} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{table}->scoped_descriptor({table}->owner, prik_native_array_copy_descriptor, &{target})"
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{storage}")),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"if ({gate}) {{ PyErr_SetString(PyExc_ValueError, "
+                            f'"{plan.binding.python_name} reports a negative extent"); return NULL; }}'
+                        )
+                    ),
+                ),
+                else_body=(
+                    CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
+                    *fallback,
+                ),
+            ),
+        )
+
     def _lower_argument_native_array_direct(
         self,
         plan: ArgumentTransferPlan,
@@ -7919,7 +8003,8 @@ class CBindingGenerator(ClassVisitor):
             ),
             *(self._native_descriptor_presence_declarations(plan, names)),
         ]
-        nodes.extend(
+        general: list[CDeclaration | CExpressionStatement | CIf] = []
+        general.extend(
             self._native_descriptor_helper_call_nodes(
                 plan,
                 context,
@@ -7932,9 +8017,13 @@ class CBindingGenerator(ClassVisitor):
                 default_binder_definition=binder_definition,
             )
         )
-        nodes.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
-        nodes.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
-        nodes.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
+        general.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
+        general.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
+        general.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
+        if self._uses_native_array_ops_fast_path(plan, handle):
+            nodes.extend(self._native_array_ops_fast_path_nodes(plan, names, handle, tuple(general)))
+        else:
+            nodes.extend(general)
         return tuple(nodes)
 
     def _native_descriptor_object_declaration(
