@@ -119,6 +119,60 @@ static inline void prik_native_array_copy_descriptor(void *descriptor, void *con
     memcpy(target->destination, descriptor, target->size);
 }
 
+/* Free the per-handle entry-point table a capsule owns. */
+static inline void prik_native_array_ops_capsule_destructor(PyObject *capsule)
+{
+    void *ops;
+
+    ops = PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
+    if (ops == NULL) {
+        PyErr_Clear();
+        return;
+    }
+    free(ops);
+}
+
+/*
+ * Publish a per-handle entry-point table. A handle whose entity needs an
+ * owner address cannot share one file-scope record, so its table is built
+ * when the handle is and released with the capsule that carries it.
+ */
+static inline PyObject *prik_native_array_ops_capsule_new(
+    uint32_t descriptor_kind,
+    uint32_t rank,
+    int cfi_type,
+    size_t element_size,
+    void *owner,
+    void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context))
+{
+    prik_native_array_ops *ops;
+    PyObject *capsule;
+
+    if (scoped_descriptor == NULL) {
+        PyErr_SetString(PyExc_ValueError, "prik native array ops needs a descriptor entry point");
+        return NULL;
+    }
+    ops = (prik_native_array_ops *)calloc(1, sizeof(*ops));
+    if (ops == NULL) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+    ops->magic = PRIK_NATIVE_ARRAY_OPS_MAGIC;
+    ops->abi_version = PRIK_NATIVE_ARRAY_OPS_ABI_VERSION;
+    ops->struct_size = (uint32_t)sizeof(*ops);
+    ops->descriptor_kind = descriptor_kind;
+    ops->rank = rank;
+    ops->cfi_type = (int32_t)cfi_type;
+    ops->element_size = element_size;
+    ops->owner = owner;
+    ops->scoped_descriptor = scoped_descriptor;
+    capsule = PyCapsule_New(ops, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME, prik_native_array_ops_capsule_destructor);
+    if (capsule == NULL) {
+        free(ops);
+    }
+    return capsule;
+}
+
 /* Decode one ops capsule, rejecting a record this extension cannot read. */
 static inline prik_native_array_ops *prik_native_array_ops_from_capsule(
     PyObject *capsule,

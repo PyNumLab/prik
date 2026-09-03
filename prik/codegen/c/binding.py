@@ -3038,6 +3038,56 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def _field_handle_ops_release_nodes(self, field: DerivedFieldPlan, prefix: str) -> tuple:
+        """Release the reference the published table capsule was created with."""
+        if self._field_handle_ops_capsule_name(field, prefix) == "Py_None":
+            return ()
+        return (CExpressionStatement(CodeExpression(f"Py_XDECREF({prefix}_native_ops)")),)
+
+    def _field_handle_ops_capsule_name(self, field: DerivedFieldPlan, prefix: str) -> str:
+        """Return the local holding this field handle's published entry-point table."""
+        handle = field.native_array_handle
+        if handle is None or handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+            return "Py_None"
+        return f"{prefix}_native_ops"
+
+    def _field_handle_ops_capsule_nodes(self, owner, field: DerivedFieldPlan, prefix: str, owner_name: str) -> tuple:
+        """Build the entry-point table this field handle publishes.
+
+        A derived-type field reaches its entity through the parent's address,
+        so that address is resolved once here rather than on every operation.
+        A module member needs none.
+        """
+        handle = field.native_array_handle
+        if handle is None or handle.array.rank is None:
+            return ()
+        if handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+            return ()
+        cfi_type = self._field_native_array_cfi_type(field)
+        if cfi_type is None:
+            return ()
+        parent = f"{prefix}_parent"
+        address = f"{parent}_address" if isinstance(owner, DerivedTypePlan) else "NULL"
+        forward = self._field_handle_scoped_descriptor_name(self._field_handle_descriptor_callback(owner, field))
+        capsule = f"{prefix}_native_ops"
+        return (
+            *(
+                self._derived_address_from_object_nodes(owner.backend_symbol, owner_name, parent)
+                if isinstance(owner, DerivedTypePlan)
+                else ()
+            ),
+            CDeclaration(
+                capsule,
+                "PyObject *",
+                CodeExpression(
+                    "prik_native_array_ops_capsule_new("
+                    f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, {cfi_type}, "
+                    f"{self._field_native_array_element_size(field)}, {address}, {forward})"
+                ),
+            ),
+            CIf(CodeExpression(f"{capsule} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+        )
+
     def _field_handle_factory_nodes(self, owner, field: DerivedFieldPlan, owner_name: str) -> tuple:
         """Build a fresh borrowed handle whose operations are bound to its parent."""
         handle = field.native_array_handle
@@ -3049,7 +3099,10 @@ class CBindingGenerator(ClassVisitor):
         runtime = f"{prefix}_runtime"
         helper = f"{prefix}_helper"
         result = f"{prefix}_handle"
+        # The entry-point table is built before anything that would need
+        # releasing, so its failure paths can return without cleanup.
         nodes = [
+            *self._field_handle_ops_capsule_nodes(owner, field, prefix, owner_name),
             CDeclaration(ops, "PyObject *", CodeExpression("PyDict_New()")),
             CDeclaration(operation_object, "PyObject *", CodeExpression("NULL")),
             CDeclaration(runtime, "PyObject *", CodeExpression("NULL")),
@@ -3119,13 +3172,14 @@ class CBindingGenerator(ClassVisitor):
                             owner=owner_name,
                             descriptor_ownership="borrowed",
                             descriptor_handoff=self._borrowed_descriptor_handoff(handle),
-                            native_ops="Py_None",
+                            native_ops=self._field_handle_ops_capsule_name(field, prefix),
                             extraction_action=handle.extraction_action.value,
                         )
                     )
                 ),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({helper})")),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({ops})")),
+                *self._field_handle_ops_release_nodes(field, prefix),
                 CReturn(CodeExpression(result)),
             )
         )
@@ -3566,6 +3620,28 @@ class CBindingGenerator(ClassVisitor):
         return PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).c_spelling
 
     # Derived native-array-handle fields reuse the Phase 7 runtime protocol.
+    def _field_handle_scoped_descriptor_prototypes(
+        self,
+        field: DerivedFieldPlan,
+        descriptor_callback: str,
+    ) -> tuple[CFunctionPrototype, ...]:
+        """Declare the forwarder driving one field's descriptor bridge."""
+        handle = field.native_array_handle
+        if handle is None or handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+            return ()
+        return (
+            CFunctionPrototype(
+                self._field_handle_scoped_descriptor_name(descriptor_callback),
+                "void",
+                (
+                    CParameter("owner", "void *"),
+                    CParameter("consumer", "prik_native_array_descriptor_fn"),
+                    CParameter("context", "void *"),
+                ),
+                storage="static",
+            ),
+        )
+
     def _derived_handle_operation_declarations(
         self,
         plan: ModulePlan,
@@ -3574,6 +3650,9 @@ class CBindingGenerator(ClassVisitor):
         declarations = []
         for _owner, field, operation_name, callback_names in self._derived_handle_targets(plan):
             descriptor_callback, actual_callback = callback_names
+            # The getter that publishes this field's table is emitted before the
+            # forwarder it names, so the forwarder is declared here.
+            declarations.extend(self._field_handle_scoped_descriptor_prototypes(field, descriptor_callback))
             declarations.extend(
                 (
                     CFunctionPrototype(
@@ -3615,9 +3694,28 @@ class CBindingGenerator(ClassVisitor):
     def _derived_handle_operation_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Lower descriptor callbacks and parent-bound runtime operations."""
         functions = []
+        if self._emits_native_array_ops(plan):
+            # The shared consumer is defined once with the module-array
+            # section, which follows these forwarders in the emitted file.
+            functions.append(
+                CFunctionPrototype(
+                    "prik_native_array_forward_descriptor",
+                    "void",
+                    (CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
+                    storage="static",
+                )
+            )
         for owner, field, operation_name, callback_names in self._derived_handle_targets(plan):
             descriptor_callback, actual_callback = callback_names
             functions.extend(self._field_handle_descriptor_callbacks(field, descriptor_callback, actual_callback))
+            functions.extend(
+                self._field_handle_ops_nodes(
+                    field,
+                    self._field_handle_bridge_name(owner, field, NativeArrayOperation.DESCRIPTOR),
+                    self._field_handle_scoped_descriptor_name(descriptor_callback),
+                    takes_owner=isinstance(owner, DerivedTypePlan),
+                )
+            )
             handle = field.native_array_handle
             if handle is None:
                 continue
@@ -3662,6 +3760,59 @@ class CBindingGenerator(ClassVisitor):
             if member.field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
         )
         return tuple(targets)
+
+    @staticmethod
+    def _field_handle_scoped_descriptor_name(descriptor_callback: str) -> str:
+        """Return the forwarder name that drives one field's descriptor bridge."""
+        return f"{descriptor_callback}_scoped"
+
+    def _field_handle_ops_nodes(
+        self,
+        field: DerivedFieldPlan,
+        descriptor_bridge: str,
+        forward_name: str,
+        *,
+        takes_owner: bool,
+    ) -> tuple[CFunction, ...]:
+        """Emit the forwarder driving one field's descriptor bridge.
+
+        A field reaches its entity through its parent's address, so unlike a
+        module variable the table cannot be a file-scope constant: the owner
+        differs per handle and is filled in when the handle is built.
+        """
+        handle = field.native_array_handle
+        if handle is None or handle.array.rank is None:
+            return ()
+        if handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+            return ()
+        return (
+            CFunction(
+                forward_name,
+                "void",
+                parameters=(
+                    CParameter("owner", "void *"),
+                    CParameter("consumer", "prik_native_array_descriptor_fn"),
+                    CParameter("context", "void *"),
+                ),
+                storage="static",
+                body=(
+                    CDeclaration(
+                        "forwarded",
+                        "prik_native_array_descriptor_forward",
+                        CodeExpression("{consumer, context}"),
+                    ),
+                    # A module member reaches its field without a parent address.
+                    *(() if takes_owner else (CExpressionStatement(CodeExpression("(void)owner")),)),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{descriptor_bridge}({'owner, ' if takes_owner else ''}"
+                            "prik_native_array_forward_descriptor, &forwarded)"
+                        )
+                    ),
+                    CReturn(),
+                ),
+            ),
+        )
 
     def _field_handle_descriptor_callbacks(
         self,
@@ -4055,17 +4206,15 @@ class CBindingGenerator(ClassVisitor):
                 for _function, result in self._owned_native_array_results(plan)
             ),
             *(
+                node
+                for _function, result in self._owned_native_array_results(plan)
+                for node in self._owned_result_ops_nodes(result)
+            ),
+            *(
                 self._native_array_capsule_release_function(argument)
                 for _function, argument in self._default_native_array_arguments(plan)
             ),
-            *(
-                (self._native_array_forward_descriptor_function(),)
-                if any(
-                    self._uses_module_allocatable_descriptor(variable)
-                    for variable in self._module_native_array_variables(plan)
-                )
-                else ()
-            ),
+            *((self._native_array_forward_descriptor_function(),) if self._emits_native_array_ops(plan) else ()),
             *(
                 callback
                 for variable in self._module_native_array_variables(plan)
@@ -4485,6 +4634,18 @@ class CBindingGenerator(ClassVisitor):
                     f"{handle.array.rank}, {cfi_type}, {element_size}, NULL, {forward}}}"
                 ),
             ),
+        )
+
+    def _emits_native_array_ops(self, plan: ModulePlan) -> bool:
+        """Report whether any handle in this module publishes an entry-point table."""
+        if any(
+            self._uses_module_allocatable_descriptor(variable) for variable in self._module_native_array_variables(plan)
+        ):
+            return True
+        return any(
+            field.native_array_handle is not None
+            and field.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            for _owner, field, _operation_name, _callbacks in self._derived_handle_targets(plan)
         )
 
     @staticmethod
@@ -8438,6 +8599,18 @@ class CBindingGenerator(ClassVisitor):
             return "CFI_type_char"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).cfi_type_spelling
 
+    def _field_native_array_cfi_type(self, field: DerivedFieldPlan) -> str | None:
+        """Return one field handle's standard-descriptor element type."""
+        if field.string_element:
+            return "CFI_type_char"
+        return PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).cfi_type_spelling
+
+    def _field_native_array_element_size(self, field: DerivedFieldPlan) -> str:
+        """Return one field handle's fixed element size, or zero for a runtime width."""
+        if field.string_element:
+            return "0"
+        return f"sizeof({PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).c_spelling})"
+
     def _module_native_array_cfi_type(self, plan: ModuleVariablePlan) -> str | None:
         """Return one module handle's standard-descriptor element type."""
         if plan.datatype_family is DatatypeFamily.STRING:
@@ -8765,6 +8938,54 @@ class CBindingGenerator(ClassVisitor):
         )
 
     # Owned native-array-handle result lowering.
+    def _owned_result_ops_capsule_nodes(self, plan: ResultPlan, prefix: str, descriptor_name: str) -> tuple:
+        """Build the entry-point table an owned result handle publishes."""
+        handle = plan.native_array_handle
+        cfi_type = self._native_array_cfi_type(plan)
+        if handle is None or handle.array.rank is None or cfi_type is None:
+            return ()
+        capsule = f"{prefix}_native_ops"
+        return (
+            CExpressionStatement(
+                CodeExpression(
+                    f"{capsule} = prik_native_array_ops_capsule_new("
+                    f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, {cfi_type}, "
+                    f"{self._native_array_expected_element_size(plan)}, {descriptor_name}, "
+                    f"{self._owned_result_scoped_descriptor_name(plan)})"
+                )
+            ),
+            CIf(CodeExpression(f"{capsule} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+        )
+
+    def _owned_result_ops_nodes(self, plan: ResultPlan) -> tuple[CFunction, ...]:
+        """Emit the forwarder handing over an owned result's descriptor.
+
+        Unlike a module variable or a field, this handle allocated the
+        descriptor itself and the callee filled it in place, so the current
+        state is already here: the forwarder passes it straight to the consumer
+        without asking Fortran for it.
+        """
+        handle = plan.native_array_handle
+        if handle is None or handle.array.rank is None:
+            return ()
+        return (
+            CFunction(
+                self._owned_result_scoped_descriptor_name(plan),
+                "void",
+                parameters=(
+                    CParameter("owner", "void *"),
+                    CParameter("consumer", "prik_native_array_descriptor_fn"),
+                    CParameter("context", "void *"),
+                ),
+                storage="static",
+                body=(CExpressionStatement(CodeExpression("consumer(owner, context)")), CReturn()),
+            ),
+        )
+
+    def _owned_result_scoped_descriptor_name(self, plan: ResultPlan) -> str:
+        """Return the forwarder name handing over one owned result descriptor."""
+        return f"{self._native_array_capsule_release_name(plan)}_scoped"
+
     def _lower_result_owned_native_array_handle(
         self,
         plan: ResultPlan,
@@ -8785,6 +9006,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{prefix}_helper", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_ops", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_owner", "PyObject *", CodeExpression("NULL")),
+            CDeclaration(f"{prefix}_native_ops", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_operation", "PyObject *", CodeExpression("NULL")),
             CDeclaration(python_name, "PyObject *", CodeExpression("NULL")),
             *self._owned_pointer_result_normalization_nodes(
@@ -8831,6 +9053,9 @@ class CBindingGenerator(ClassVisitor):
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
+                # Published before ownership of the descriptor moves into the
+                # handle capsule, while the pointer is still named here.
+                *self._owned_result_ops_capsule_nodes(plan, prefix, descriptor_name),
                 CExpressionStatement(CodeExpression(f"{descriptor_name} = NULL")),
                 CExpressionStatement(
                     CodeExpression(f'{prefix}_runtime = PyImport_ImportModule("prik.runtime.handles")')
@@ -8877,7 +9102,7 @@ class CBindingGenerator(ClassVisitor):
                             owner=f"{prefix}_owner",
                             descriptor_ownership="owned",
                             descriptor_handoff="facts",
-                            native_ops="Py_None",
+                            native_ops=f"{prefix}_native_ops",
                             extraction_action=handle.extraction_action.value,
                         )
                     )
