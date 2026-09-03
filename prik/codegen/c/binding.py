@@ -3119,6 +3119,7 @@ class CBindingGenerator(ClassVisitor):
                             owner=owner_name,
                             descriptor_ownership="borrowed",
                             descriptor_handoff=self._borrowed_descriptor_handoff(handle),
+                            native_ops="Py_None",
                             extraction_action=handle.extraction_action.value,
                         )
                     )
@@ -4058,6 +4059,14 @@ class CBindingGenerator(ClassVisitor):
                 for _function, argument in self._default_native_array_arguments(plan)
             ),
             *(
+                (self._native_array_forward_descriptor_function(),)
+                if any(
+                    self._uses_module_allocatable_descriptor(variable)
+                    for variable in self._module_native_array_variables(plan)
+                )
+                else ()
+            ),
+            *(
                 callback
                 for variable in self._module_native_array_variables(plan)
                 for callback in self._module_allocatable_descriptor_callbacks(variable)
@@ -4416,7 +4425,134 @@ class CBindingGenerator(ClassVisitor):
                 CReturn(),
             ),
         )
-        return (descriptor_callback, *capsule_callbacks, array_actual_callback)
+        return (
+            descriptor_callback,
+            *capsule_callbacks,
+            array_actual_callback,
+            *self._module_native_array_ops_nodes(variable, handle),
+        )
+
+    def _module_native_array_ops_nodes(
+        self,
+        variable: ModuleVariablePlan,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[CFunction | CDeclaration, ...]:
+        """Emit the native entry-point table one module array handle publishes.
+
+        The table names the bridge symbols for this variable so a consumer can
+        reach it with one indirect call instead of a Python operation lookup.
+        A module variable needs no owner, so the record is a file-scope
+        constant rather than per-handle storage.
+        """
+        cfi_type = self._module_native_array_cfi_type(variable)
+        if cfi_type is None:
+            return ()
+        bridge = self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.DESCRIPTOR)
+        forward = self._module_scoped_descriptor_name(variable)
+        element_size = (
+            "0"
+            if variable.datatype_family is DatatypeFamily.STRING
+            else f"sizeof({PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name).c_spelling})"
+        )
+        return (
+            CFunction(
+                forward,
+                "void",
+                parameters=(
+                    CParameter("owner", "void *"),
+                    CParameter("consumer", "prik_native_array_descriptor_fn"),
+                    CParameter("context", "void *"),
+                ),
+                storage="static",
+                body=(
+                    CDeclaration(
+                        "forwarded",
+                        "prik_native_array_descriptor_forward",
+                        CodeExpression("{consumer, context}"),
+                    ),
+                    CExpressionStatement(CodeExpression("(void)owner")),
+                    CExpressionStatement(CodeExpression(f"{bridge}(prik_native_array_forward_descriptor, &forwarded)")),
+                    CReturn(),
+                ),
+            ),
+            CDeclaration(
+                self._module_native_array_ops_name(variable),
+                "static prik_native_array_ops",
+                CodeExpression(
+                    "{PRIK_NATIVE_ARRAY_OPS_MAGIC, PRIK_NATIVE_ARRAY_OPS_ABI_VERSION, "
+                    "(uint32_t)sizeof(prik_native_array_ops), "
+                    f"{self._native_array_handle_kind_constant(handle)}, "
+                    f"{handle.array.rank}, {cfi_type}, {element_size}, NULL, {forward}}}"
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _native_array_forward_descriptor_function() -> CFunction:
+        """Emit the consumer that hands a runtime descriptor to a table consumer."""
+        return CFunction(
+            "prik_native_array_forward_descriptor",
+            "void",
+            parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
+            storage="static",
+            body=(
+                CDeclaration(
+                    "forwarded",
+                    "prik_native_array_descriptor_forward *",
+                    CodeExpression("(prik_native_array_descriptor_forward *)context"),
+                ),
+                CExpressionStatement(CodeExpression("forwarded->consumer(descriptor, forwarded->context)")),
+                CReturn(),
+            ),
+        )
+
+    def _module_native_array_ops_capsule_name(self, variable: ModuleVariablePlan, prefix: str) -> str:
+        """Return the local holding this variable's published entry-point table."""
+        if not self._uses_module_allocatable_descriptor(variable):
+            return "Py_None"
+        return f"{prefix}_native_ops"
+
+    def _module_native_array_ops_declaration_nodes(
+        self,
+        variable: ModuleVariablePlan,
+        prefix: str,
+    ) -> tuple[CDeclaration, ...]:
+        """Declare and build the capsule publishing one variable's entry-point table."""
+        if not self._uses_module_allocatable_descriptor(variable):
+            return ()
+        return (
+            CDeclaration(
+                f"{prefix}_native_ops",
+                "PyObject *",
+                CodeExpression(self._module_native_array_ops_capsule(variable)),
+            ),
+        )
+
+    def _module_native_array_ops_release_nodes(
+        self,
+        variable: ModuleVariablePlan,
+        prefix: str,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Release the reference the published table capsule was created with."""
+        if not self._uses_module_allocatable_descriptor(variable):
+            return ()
+        return (CExpressionStatement(CodeExpression(f"Py_XDECREF({prefix}_native_ops)")),)
+
+    def _module_native_array_ops_capsule(self, variable: ModuleVariablePlan) -> str:
+        """Return the expression publishing this variable's native entry-point table."""
+        if not self._uses_module_allocatable_descriptor(variable):
+            return "Py_None"
+        return (
+            f"PyCapsule_New(&{self._module_native_array_ops_name(variable)}, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME, NULL)"
+        )
+
+    def _module_scoped_descriptor_name(self, variable: ModuleVariablePlan) -> str:
+        """Return the forwarder name that drives this variable's descriptor bridge."""
+        return f"{self._module_descriptor_callback_name(variable)}_scoped"
+
+    def _module_native_array_ops_name(self, variable: ModuleVariablePlan) -> str:
+        """Return the file-scope native entry-point table name for one module array."""
+        return f"{self._module_descriptor_callback_name(variable)}_ops"
 
     def _module_descriptor_capsule_callback_name(self, variable: ModuleVariablePlan) -> str:
         """Return the callback name that copies a borrowed module descriptor."""
@@ -5791,6 +5927,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{prefix}_operation", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_runtime", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_helper", "PyObject *", CodeExpression("NULL")),
+            *self._module_native_array_ops_declaration_nodes(plan, prefix),
             CIf(CodeExpression(f"{prefix}_ops == NULL"), body=(CReturn(CodeExpression("NULL")),)),
         ]
         for operation in handle.operations:
@@ -5859,12 +5996,14 @@ class CBindingGenerator(ClassVisitor):
                             owner=f"{owner} != NULL ? {owner} : Py_None",
                             descriptor_ownership="borrowed",
                             descriptor_handoff=self._borrowed_descriptor_handoff(handle),
+                            native_ops=self._module_native_array_ops_capsule_name(plan, prefix),
                             extraction_action=handle.extraction_action.value,
                         )
                     )
                 ),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_helper)")),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_ops)")),
+                *self._module_native_array_ops_release_nodes(plan, prefix),
                 CIf(CodeExpression(f"{cache} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
                 CExpressionStatement(CodeExpression(f"Py_INCREF({cache})")),
                 CReturn(CodeExpression(cache)),
@@ -8246,20 +8385,21 @@ class CBindingGenerator(ClassVisitor):
         owner: str,
         descriptor_ownership: str,
         descriptor_handoff: str,
+        native_ops: str,
         extraction_action: str,
     ) -> str:
         """Call the runtime factory with a fixed dtype or deferred character dtype."""
         dtype = self._native_array_dtype_for_semantic_type(semantic_type_name, datatype_family)
         if dtype is None:
             return (
-                f'{target} = PyObject_CallFunction({helper}, "sOiOOsssO", "{descriptor_kind}", Py_None, '
+                f'{target} = PyObject_CallFunction({helper}, "sOiOOsssOO", "{descriptor_kind}", Py_None, '
                 f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", '
-                f'"{descriptor_handoff}", Py_None)'
+                f'"{descriptor_handoff}", {native_ops}, Py_None)'
             )
         return (
-            f'{target} = PyObject_CallFunction({helper}, "ssiOOsssO", "{descriptor_kind}", "{dtype}", '
+            f'{target} = PyObject_CallFunction({helper}, "ssiOOsssOO", "{descriptor_kind}", "{dtype}", '
             f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", '
-            f'"{descriptor_handoff}", Py_None)'
+            f'"{descriptor_handoff}", {native_ops}, Py_None)'
         )
 
     def _lower_argument_nullable_value(
@@ -8648,6 +8788,7 @@ class CBindingGenerator(ClassVisitor):
                             owner=f"{prefix}_owner",
                             descriptor_ownership="owned",
                             descriptor_handoff="facts",
+                            native_ops="Py_None",
                             extraction_action=handle.extraction_action.value,
                         )
                     )

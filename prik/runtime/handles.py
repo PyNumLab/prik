@@ -104,9 +104,16 @@ def _native_array_handle_from_generated_ops(
     descriptor_ownership: str = "borrowed",
     to_numpy_policy: str = "borrowed_view",
     descriptor_handoff: str = "facts",
+    native_ops: Any = None,
     generation: int | None = None,
 ) -> NativeArrayHandleBase:
-    """Build a runtime handle from generated operation callables."""
+    """Build a runtime handle from generated operation callables.
+
+    ``native_ops`` is an optional capsule publishing the entity's native entry
+    points, so a consumer can reach it with one indirect call rather than a
+    Python operation lookup.  It is carried, not required: a handle without one
+    keeps working through its operation mapping.
+    """
     owned = descriptor_ownership == "owned"
     borrows_descriptor = descriptor_handoff == "borrowed_descriptor"
     normalized_ops = {}
@@ -139,7 +146,7 @@ def _native_array_handle_from_generated_ops(
     except KeyError:
         raise ValueError("generated native array handle kind must be 'allocatable' or 'pointer'") from None
     try:
-        return handle_cls(
+        handle = handle_cls(
             dtype=dtype,
             rank=rank,
             ops=normalized_ops,
@@ -148,6 +155,8 @@ def _native_array_handle_from_generated_ops(
             to_numpy_policy=to_numpy_policy,
             generation=generation,
         )
+        handle._native_ops = native_ops
+        return handle
     except BaseException:
         if owned and "destroy" in normalized_ops:
             with suppress(Exception):
@@ -630,6 +639,8 @@ class NativeArrayHandleBase:
         # Holds the most recent borrowed descriptor copy so it outlives the call
         # that reads it; see _generated_borrowed_descriptor_operation.
         self._borrowed_descriptor: Any = None
+        # Optional capsule publishing this entity's native entry points.
+        self._native_ops: Any = None
         self._contract_default = False
         self._validate_required_ops()
         self._closed = False

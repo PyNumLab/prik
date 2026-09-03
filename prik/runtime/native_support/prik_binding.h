@@ -59,6 +59,98 @@ void *prik_capture_address(void *base)
 }
 #endif
 
+#define PRIK_NATIVE_ARRAY_OPS_ABI_VERSION 1u
+#define PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME "prik.native_array_ops.v1"
+#define PRIK_NATIVE_ARRAY_OPS_MAGIC UINT64_C(0x583250594e414f50)
+
+/*
+ * Consumer for one descriptor the Fortran runtime builds for a single call.
+ * The descriptor stays a compiler-owned representation here, as everywhere
+ * else in this header, so this record does not depend on the Fortran interop
+ * header and stays usable from a C-only extension.
+ */
+typedef void (*prik_native_array_descriptor_fn)(void *descriptor, void *context);
+
+/*
+ * Bridges a generated descriptor bridge, whose consumer takes the compiler's
+ * descriptor type, to a table consumer that takes it as void *. Forwarding
+ * through this record avoids casting between function pointer types.
+ */
+typedef struct {
+    prik_native_array_descriptor_fn consumer;
+    void *context;
+} prik_native_array_descriptor_forward;
+
+/* Destination for prik_native_array_copy_descriptor. */
+typedef struct {
+    void *destination;
+    size_t size;
+} prik_native_array_descriptor_copy;
+
+/*
+ * Versioned cross-extension table of native entry points for one array
+ * handle. The pointers are the generated bridge symbols for the entity the
+ * handle stands for, and `owner` is the address that entity needs -- the
+ * parent object for a derived-type field, NULL for a module variable. It is
+ * resolved once when the handle is built, so reaching the entity costs one
+ * indirect call instead of a Python attribute lookup per operation.
+ *
+ * `scoped_descriptor` invokes a consumer while the runtime's descriptor is
+ * valid. The consumer decides what to do with it: copy the record out, or
+ * make the native call in place while it is still live.
+ */
+typedef struct {
+    uint64_t magic;
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint32_t descriptor_kind;
+    uint32_t rank;
+    int32_t cfi_type;
+    size_t element_size;
+    void *owner;
+    void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context);
+} prik_native_array_ops;
+
+/* Copy one runtime descriptor record into the caller's buffer. */
+static inline void prik_native_array_copy_descriptor(void *descriptor, void *context)
+{
+    prik_native_array_descriptor_copy *target = (prik_native_array_descriptor_copy *)context;
+
+    memcpy(target->destination, descriptor, target->size);
+}
+
+/* Decode one ops capsule, rejecting a record this extension cannot read. */
+static inline prik_native_array_ops *prik_native_array_ops_from_capsule(
+    PyObject *capsule,
+    uint32_t expected_descriptor_kind,
+    uint32_t expected_rank,
+    int expected_cfi_type,
+    size_t expected_element_size)
+{
+    prik_native_array_ops *ops;
+
+    ops = (prik_native_array_ops *)PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
+    if (ops == NULL) {
+        return NULL;
+    }
+    if (ops->magic != PRIK_NATIVE_ARRAY_OPS_MAGIC
+        || ops->abi_version != PRIK_NATIVE_ARRAY_OPS_ABI_VERSION
+        || ops->struct_size != (uint32_t)sizeof(*ops)) {
+        PyErr_SetString(PyExc_TypeError, "incompatible prik native array ops record");
+        return NULL;
+    }
+    if (ops->scoped_descriptor == NULL) {
+        PyErr_SetString(PyExc_TypeError, "prik native array ops record has no descriptor entry point");
+        return NULL;
+    }
+    if (ops->descriptor_kind != expected_descriptor_kind || ops->rank != expected_rank
+        || ops->cfi_type != expected_cfi_type || ops->element_size != expected_element_size) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
+        return NULL;
+    }
+    return ops;
+}
+
 typedef void (*prik_native_array_release_fn)(void *descriptor);
 
 /*
