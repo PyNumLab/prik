@@ -38,6 +38,7 @@ from prik.policy.models import (
     ModuleArrayAddressMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
+    NativeArrayOutputProjection,
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
     NativeArrayOperation,
@@ -3117,6 +3118,7 @@ class CBindingGenerator(ClassVisitor):
                             ops=ops,
                             owner=owner_name,
                             descriptor_ownership="borrowed",
+                            descriptor_handoff=self._borrowed_descriptor_handoff(handle),
                             extraction_action=handle.extraction_action.value,
                         )
                     )
@@ -3665,7 +3667,7 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
         descriptor_name: str,
         actual_name: str,
-    ) -> tuple[CFunction, CFunction]:
+    ) -> tuple[CFunction, ...]:
         """Decode one current field descriptor without copying its payload."""
         handle = field.native_array_handle
         if handle is None or handle.array.rank is None:
@@ -3684,6 +3686,27 @@ class CBindingGenerator(ClassVisitor):
                 ),
             ),
         )
+        borrowed = (
+            (
+                CFunction(
+                    f"{descriptor_name}_capsule",
+                    "void",
+                    parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
+                    storage="static",
+                    body=(
+                        CExpressionStatement(CodeExpression("*(PyObject **)context = NULL")),
+                        *self._borrowed_descriptor_capsule_nodes(
+                            handle.array.rank,
+                            "descriptor",
+                            self._native_array_handle_kind_constant(handle),
+                            return_target="*(PyObject **)context",
+                        ),
+                    ),
+                ),
+            )
+            if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            else ()
+        )
         actual = CFunction(
             actual_name,
             "void",
@@ -3694,7 +3717,7 @@ class CBindingGenerator(ClassVisitor):
                 CReturn(),
             ),
         )
-        return descriptor, actual
+        return (descriptor, *borrowed, actual)
 
     def _field_handle_operation_function(
         self,
@@ -3724,7 +3747,11 @@ class CBindingGenerator(ClassVisitor):
         prefix = self._field_handle_owner_nodes(owner)
         owner_args = self._field_handle_owner_arguments(owner)
         if operation in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}:
-            callback = self._field_handle_descriptor_callback(owner, field)
+            callback = self._field_handle_descriptor_callback(
+                owner,
+                field,
+                borrows=operation is NativeArrayOperation.DESCRIPTOR,
+            )
             descriptor_bridge = self._field_handle_bridge_name(
                 owner,
                 field,
@@ -3804,12 +3831,21 @@ class CBindingGenerator(ClassVisitor):
         variable, member = owner
         return self._module_member_handle_bridge_name(variable, member, operation)
 
-    def _field_handle_descriptor_callback(self, owner, field: DerivedFieldPlan) -> str:
+    def _field_handle_descriptor_callback(self, owner, field: DerivedFieldPlan, *, borrows: bool = False) -> str:
         """Build field handle descriptor callback from the supplied completed binding records; emitted nodes only project completed binding actions."""
         if isinstance(owner, DerivedTypePlan):
-            return self._derived_handle_descriptor_callback_name(owner, field)
-        variable, member = owner
-        return self._module_member_handle_descriptor_callback_name(variable, member)
+            name = self._derived_handle_descriptor_callback_name(owner, field)
+        else:
+            variable, member = owner
+            name = self._module_member_handle_descriptor_callback_name(variable, member)
+        handle = field.native_array_handle
+        if (
+            borrows
+            and handle is not None
+            and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        ):
+            return f"{name}_capsule"
+        return name
 
     def _field_handle_actual_callback(self, owner, field: DerivedFieldPlan) -> str:
         """Build field handle actual callback from the supplied completed binding records; emitted nodes only project completed binding actions."""
@@ -4187,9 +4223,9 @@ class CBindingGenerator(ClassVisitor):
         if operation is NativeArrayOperation.SHAPE:
             return self._module_native_array_shape_body(variable)
         if operation is NativeArrayOperation.TO_NUMPY:
-            return self._module_native_array_descriptor_body(variable)
+            return self._module_native_array_descriptor_body(variable, borrows_descriptor=False)
         if operation is NativeArrayOperation.DESCRIPTOR:
-            return self._module_native_array_descriptor_body(variable)
+            return self._module_native_array_descriptor_body(variable, borrows_descriptor=True)
         if operation is NativeArrayOperation.ASSOCIATE:
             return (
                 CDeclaration("source_packed", "PyObject *"),
@@ -4249,13 +4285,20 @@ class CBindingGenerator(ClassVisitor):
     def _module_native_array_descriptor_body(
         self,
         variable: ModuleVariablePlan,
+        *,
+        borrows_descriptor: bool,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Return standard descriptor facts for module extraction and handoff."""
+        """Return standard descriptor facts for module extraction and handoff.
+
+        ``borrows_descriptor`` selects the handoff form: the descriptor
+        operation may hand back a borrowed copy of the runtime's descriptor,
+        while extraction always reads decoded facts.
+        """
         handle = variable.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {variable.owner_path!r} has no descriptor rank")
         if self._uses_module_allocatable_descriptor(variable):
-            return self._module_allocatable_descriptor_body(variable)
+            return self._module_allocatable_descriptor_body(variable, borrows_descriptor=borrows_descriptor)
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
             return self._module_pointer_descriptor_body(variable)
         return self._module_contiguous_descriptor_body(variable)
@@ -4272,14 +4315,27 @@ class CBindingGenerator(ClassVisitor):
     def _module_allocatable_descriptor_body(
         self,
         variable: ModuleVariablePlan,
+        *,
+        borrows_descriptor: bool,
     ) -> tuple[CDeclaration | CExpressionStatement | CReturn, ...]:
-        """Request the current standard descriptor and return its decoded facts."""
+        """Request the current standard descriptor as a borrowed copy or decoded facts."""
+        handle = variable.native_array_handle
+        borrows = (
+            borrows_descriptor
+            and handle is not None
+            and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        )
+        callback = (
+            self._module_descriptor_capsule_callback_name(variable)
+            if borrows
+            else self._module_descriptor_callback_name(variable)
+        )
         return (
             CDeclaration("descriptor_record", "PyObject *", CodeExpression("NULL")),
             CExpressionStatement(
                 CodeExpression(
                     f"{self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.DESCRIPTOR)}("
-                    f"{self._module_descriptor_callback_name(variable)}, &descriptor_record)"
+                    f"{callback}, &descriptor_record)"
                 )
             ),
             CReturn(CodeExpression("descriptor_record")),
@@ -4329,6 +4385,27 @@ class CBindingGenerator(ClassVisitor):
                 ),
             ),
         )
+        capsule_callbacks = (
+            (
+                CFunction(
+                    self._module_descriptor_capsule_callback_name(variable),
+                    "void",
+                    parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
+                    storage="static",
+                    body=(
+                        CExpressionStatement(CodeExpression("*(PyObject **)context = NULL")),
+                        *self._borrowed_descriptor_capsule_nodes(
+                            handle.array.rank,
+                            "descriptor",
+                            self._native_array_handle_kind_constant(handle),
+                            return_target="*(PyObject **)context",
+                        ),
+                    ),
+                ),
+            )
+            if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            else ()
+        )
         array_actual_callback = CFunction(
             self._module_array_actual_callback_name(variable),
             "void",
@@ -4339,7 +4416,11 @@ class CBindingGenerator(ClassVisitor):
                 CReturn(),
             ),
         )
-        return descriptor_callback, array_actual_callback
+        return (descriptor_callback, *capsule_callbacks, array_actual_callback)
+
+    def _module_descriptor_capsule_callback_name(self, variable: ModuleVariablePlan) -> str:
+        """Return the callback name that copies a borrowed module descriptor."""
+        return f"{self._module_descriptor_callback_name(variable)}_capsule"
 
     def _module_descriptor_callback_name(self, variable: ModuleVariablePlan) -> str:
         """Return the binding-local module descriptor callback name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -5104,6 +5185,46 @@ class CBindingGenerator(ClassVisitor):
             return "CFI_type_char"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).cfi_type_spelling
 
+    def _borrowed_descriptor_capsule_nodes(
+        self,
+        rank: int,
+        descriptor_name: str,
+        kind_constant: str,
+        *,
+        return_target: str,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Copy one runtime-made descriptor into a capsule for a borrowed handle.
+
+        An allocatable actual cannot be established from C, so the binding
+        keeps the descriptor the Fortran runtime built for this call instead of
+        rebuilding one from facts.  Only the descriptor record is copied; its
+        ``base_addr`` still refers to the module or parent storage, which this
+        extension never allocates or releases.  The copy is made fresh on every
+        call because reallocating the native entity invalidates the previous one.
+        """
+        storage = f"{descriptor_name}_copy"
+        size = f"sizeof(CFI_CDESC_T({rank}))"
+        return (
+            CDeclaration(storage, "CFI_cdesc_t *", CodeExpression(f"(CFI_cdesc_t *)calloc(1, {size})")),
+            CIf(
+                CodeExpression(f"{storage} == NULL"),
+                body=(CExpressionStatement(CodeExpression("PyErr_NoMemory()")), CReturn()),
+            ),
+            CExpressionStatement(CodeExpression(f"memcpy({storage}, {descriptor_name}, {size})")),
+            CExpressionStatement(
+                CodeExpression(
+                    f"{return_target} = prik_native_array_handle_capsule_new("
+                    f"{kind_constant}, {rank}, {storage}->type, {storage}->elem_len, {size}, "
+                    f"{storage}, prik_release_borrowed_native_descriptor)"
+                )
+            ),
+            CIf(
+                CodeExpression(f"{return_target} == NULL"),
+                body=(CExpressionStatement(CodeExpression(f"free({storage})")),),
+            ),
+            CReturn(),
+        )
+
     def _native_array_descriptor_record_nodes(
         self,
         rank: int,
@@ -5737,6 +5858,7 @@ class CBindingGenerator(ClassVisitor):
                             ops=f"{prefix}_ops",
                             owner=f"{owner} != NULL ? {owner} : Py_None",
                             descriptor_ownership="borrowed",
+                            descriptor_handoff=self._borrowed_descriptor_handoff(handle),
                             extraction_action=handle.extraction_action.value,
                         )
                     )
@@ -7663,7 +7785,11 @@ class CBindingGenerator(ClassVisitor):
                 plan,
                 context,
                 names,
-                "_native_array_descriptor_handoff_for_binding_positional",
+                (
+                    "_native_array_descriptor_handoff_for_binding_positional"
+                    if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
+                    else "_native_array_borrowed_descriptor_for_binding_positional"
+                ),
                 default_binder_definition=binder_definition,
             )
         )
@@ -8096,6 +8222,17 @@ class CBindingGenerator(ClassVisitor):
             return f"{self._module_native_array_bridge_operation_name(plan, NativeArrayOperation.ELEMENT_LENGTH)}()"
         return f"sizeof({PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).c_spelling})"
 
+    @staticmethod
+    def _borrowed_descriptor_handoff(handle: NativeArrayHandlePlan) -> str:
+        """Name the descriptor form this handle's operation hands back.
+
+        A handle whose completed plan borrows the native descriptor returns one
+        copied capsule per call; every other handle returns decoded facts.
+        """
+        if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+            return "borrowed_descriptor"
+        return "facts"
+
     def _native_array_handle_factory_call(
         self,
         *,
@@ -8108,18 +8245,21 @@ class CBindingGenerator(ClassVisitor):
         ops: str,
         owner: str,
         descriptor_ownership: str,
+        descriptor_handoff: str,
         extraction_action: str,
     ) -> str:
         """Call the runtime factory with a fixed dtype or deferred character dtype."""
         dtype = self._native_array_dtype_for_semantic_type(semantic_type_name, datatype_family)
         if dtype is None:
             return (
-                f'{target} = PyObject_CallFunction({helper}, "sOiOOssO", "{descriptor_kind}", Py_None, '
-                f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", Py_None)'
+                f'{target} = PyObject_CallFunction({helper}, "sOiOOsssO", "{descriptor_kind}", Py_None, '
+                f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", '
+                f'"{descriptor_handoff}", Py_None)'
             )
         return (
-            f'{target} = PyObject_CallFunction({helper}, "ssiOOssO", "{descriptor_kind}", "{dtype}", '
-            f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", Py_None)'
+            f'{target} = PyObject_CallFunction({helper}, "ssiOOsssO", "{descriptor_kind}", "{dtype}", '
+            f'{rank}, {ops}, {owner}, "{descriptor_ownership}", "{extraction_action}", '
+            f'"{descriptor_handoff}", Py_None)'
         )
 
     def _lower_argument_nullable_value(
@@ -8507,6 +8647,7 @@ class CBindingGenerator(ClassVisitor):
                             ops=f"{prefix}_ops",
                             owner=f"{prefix}_owner",
                             descriptor_ownership="owned",
+                            descriptor_handoff="facts",
                             extraction_action=handle.extraction_action.value,
                         )
                     )

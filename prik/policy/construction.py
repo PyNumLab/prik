@@ -6185,7 +6185,7 @@ def _native_array_handle_wrapper_policy(
     )
     handle_kind = _native_array_enum(NativeArrayHandleKind, completed.handle_kind, owner_path, "handle kind")
     handoff = NativeDescriptorHandoffPolicy(
-        abi=_native_descriptor_handoff_abi(handle_kind, output_projection),
+        abi=_native_descriptor_handoff_abi(handle_kind, output_projection, descriptor, completed.optional_absent),
         rank=int(semantic_type.rank or 0),
         optional_presence=completed.optional_absent,
     )
@@ -6359,11 +6359,22 @@ def _native_array_default_handle_policy(
 def _native_descriptor_handoff_abi(
     handle_kind: NativeArrayHandleKind,
     output_projection: NativeArrayOutputProjection,
+    descriptor_kind: str,
+    optional_absent: bool,
 ) -> NativeDescriptorHandoffABI:
-    """Select one descriptor ABI from completed handle/result policy."""
+    """Select one descriptor ABI from completed handle/result policy.
+
+    An allocatable actual cannot be established from C: the standard reserves
+    that descriptor for the Fortran runtime, so the binding must borrow the
+    descriptor the handle already owns rather than build one.  An optional
+    allocatable keeps the fact-packed form, whose absent branch establishes the
+    unallocated placeholder the present flag pairs with.
+    """
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     if output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
+        return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+    if descriptor_kind == NativeArrayDescriptorKind.ALLOCATABLE.value and not optional_absent:
         return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
     return NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
 

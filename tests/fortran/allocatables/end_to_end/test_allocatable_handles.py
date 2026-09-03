@@ -461,3 +461,119 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
         handle = getattr(module, name)
         assert module.lower_bound_of(handle) == np.int32(5), name
         assert module.element_at(handle, np.int32(5)) == handle.to_numpy()[0], name
+
+
+BORROWED_DESCRIPTOR_SOURCE = """\
+module fallocatable_borrowed_f90
+  implicit none
+  type :: box
+    real(8), allocatable :: field(:)
+  end type box
+  real(8), allocatable :: modvar(:)
+  type(box) :: thebox
+contains
+  subroutine grow(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(6))
+    values = 9.0_8
+  end subroutine grow
+
+  function total(values) result(sum_out)
+    real(8), allocatable, intent(in) :: values(:)
+    real(8) :: sum_out
+
+    sum_out = sum(values)
+  end function total
+
+  function make(n) result(values)
+    integer(4), intent(in) :: n
+    real(8), allocatable :: values(:)
+    integer(4) :: i
+
+    allocate(values(n))
+    values = [(1.0_8 * i, i = 1, n)]
+  end function make
+end module fallocatable_borrowed_f90
+"""
+
+
+def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp_path: Path):
+    """An allocatable actual borrows the descriptor the Fortran runtime built.
+
+    A read-only allocatable dummy requires an allocatable actual, and C may not
+    establish one: F2018 18.5.5.6 reserves that descriptor for the runtime.  The
+    binding therefore copies the descriptor handed to its callback rather than
+    rebuilding one from facts, so module, derived-field and result handles all
+    reach the dummy on every compiler instead of only where an invalid
+    descriptor happens to be tolerated.
+    """
+    workdir = tmp_path / "borrowed"
+    workdir.mkdir(parents=True)
+    module = _build_text_and_import(
+        BORROWED_DESCRIPTOR_SOURCE,
+        "fallocatable_borrowed_f90.f90",
+        workdir,
+        {
+            "bind_c_fallocatable_borrowed_f90_wrapper.f90",
+            "fallocatable_borrowed_f90_wrapper.c",
+            "fallocatable_borrowed_f90_wrapper.h",
+        },
+    )
+    namespace = _sole_native_module(module)
+
+    namespace.modvar.resize(4)
+    namespace.modvar.to_numpy()[:] = [1.0, 2.0, 3.0, 4.0]
+    namespace.thebox.field.resize(4)
+    namespace.thebox.field.to_numpy()[:] = [1.0, 2.0, 3.0, 4.0]
+
+    assert namespace.total(namespace.modvar) == np.float64(10.0)
+    assert namespace.total(namespace.thebox.field) == np.float64(10.0)
+    assert namespace.total(namespace.make(np.int32(4))) == np.float64(10.0)
+
+    # The copy is remade per call, so reallocating the native entity between
+    # calls cannot leave the previous descriptor behind.
+    namespace.modvar.resize(3)
+    namespace.modvar.to_numpy()[:] = [100.0, 200.0, 300.0]
+    assert namespace.total(namespace.modvar) == np.float64(600.0)
+
+
+def test_a_writable_allocatable_dummy_refuses_a_borrowed_descriptor(tmp_path: Path):
+    """A borrowed descriptor copy may not stand in where the callee reallocates.
+
+    A read-only allocatable actual can be a per-call copy of the runtime's
+    descriptor, because the callee cannot change its allocation.  An
+    ``intent(inout)`` allocatable can: the callee may deallocate and reallocate
+    it, and through a copy that would land in the copy and leave the caller's
+    entity pointing at released storage.  Such an argument is refused instead.
+    """
+    workdir = tmp_path / "writable"
+    workdir.mkdir(parents=True)
+    module = _build_text_and_import(
+        BORROWED_DESCRIPTOR_SOURCE,
+        "fallocatable_borrowed_f90.f90",
+        workdir,
+        {
+            "bind_c_fallocatable_borrowed_f90_wrapper.f90",
+            "fallocatable_borrowed_f90_wrapper.c",
+            "fallocatable_borrowed_f90_wrapper.h",
+        },
+    )
+    namespace = _sole_native_module(module)
+
+    namespace.modvar.resize(2)
+    namespace.modvar.to_numpy()[:] = [1.0, 2.0]
+    with pytest.raises(TypeError, match="requires a generated direct descriptor handoff"):
+        namespace.grow(namespace.modvar)
+
+    # The module variable is untouched by the refusal.
+    assert namespace.modvar.shape == (2,)
+    assert namespace.modvar.to_numpy().tolist() == [1.0, 2.0]
+
+    # A handle that owns its descriptor still works, and the callee's
+    # reallocation reaches it.
+    owned = namespace.make(np.int32(2))
+    namespace.grow(owned)
+    assert owned.shape == (6,)
+    assert owned.to_numpy().tolist() == [9.0] * 6

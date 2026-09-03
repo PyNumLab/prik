@@ -117,6 +117,17 @@ static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t c
 }
 
 
+/*
+ * Release for a descriptor this extension copied but does not own. The copy
+ * itself is freed by prik_native_array_handle_release; the Fortran allocation
+ * it describes belongs to the module or parent object that declared it and
+ * must never be deallocated here.
+ */
+static inline void prik_release_borrowed_native_descriptor(void *descriptor)
+{
+    (void)descriptor;
+}
+
 static inline void prik_native_array_handle_release(prik_native_array_handle *handle)
 {
     void *descriptor;

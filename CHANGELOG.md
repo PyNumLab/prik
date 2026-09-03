@@ -7,6 +7,23 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- **Fixed:** passing an allocatable handle to a read-only `allocatable` dummy no
+  longer builds the descriptor in C. F2018 18.5.5.6 requires a null `base_addr`
+  when the attribute is `CFI_attribute_allocatable`, because an allocatable
+  established from C must start unallocated; PRIK paired that attribute with a
+  real address, which describes an already-allocated allocatable. Intel rejected
+  it with `CFI_ERROR_BASE_ADDR_NOT_NULL`, so the same wrapper worked on gfortran
+  and raised `Unable to establish native descriptor for argument ...: 2` on ifx.
+
+  The binding now borrows the descriptor the Fortran runtime already hands to
+  its callback, copying the descriptor record — not the array data, so cost does
+  not grow with array size — for the duration of the call. The copy is remade on
+  every call, because reallocating the native entity invalidates the previous
+  one. Module variables, derived-type fields and returned results all reach such
+  a dummy on every compiler now, including the bounds a shifted allocatable
+  carries. Optional allocatable dummies are unchanged: their absent branch still
+  establishes the unallocated placeholder that pairs with the present flag.
+
 - A `character` array handle is now accepted wherever a numeric one is. An
   `AllocatableArray` of characters was refused at an ordinary character dummy
   and had to be passed as `handle.to_numpy()`, while every other element type

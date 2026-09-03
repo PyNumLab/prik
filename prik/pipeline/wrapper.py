@@ -2822,7 +2822,11 @@ class WrapperGenerator:
     def _expected_native_descriptor_data_action(self, plan: ArgumentTransferPlan) -> BridgeDataAction:
         """Distinguish call-local facts from persistent projected descriptors."""
         handle = plan.native_array_handle
-        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+        if (
+            handle is not None
+            and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
+        ):
             return BridgeDataAction.DIRECT_TRANSFER
         return BridgeDataAction.ASSOCIATE_VIEW
 
@@ -2930,7 +2934,10 @@ class WrapperGenerator:
             for name, actual, required in expected
             if actual is not required
         )
-        projected = handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        projected = (
+            handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
+        )
         expected_codegen = CodegenAction.IN_PLACE_ARGUMENT if projected else CodegenAction.CALL_LOCAL_INPUT
         if plan.binding.codegen_action is not expected_codegen:
             diagnostics.append(
@@ -2953,7 +2960,10 @@ class WrapperGenerator:
             )
         expected_destruction = (
             DestructionPolicy.CALLER
-            if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            if (
+                handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+                and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
+            )
             else DestructionPolicy.NONE
         )
         if plan.destruction_policy is not expected_destruction:
@@ -3076,11 +3086,15 @@ class WrapperGenerator:
                     owner_path, "inconsistent-default-handle-owner-storage-role", default.owner_storage_role
                 )
             )
-        expected_abi = {
-            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL,
-            NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR,
-        }[default.construction]
-        if handle.handoff.abi is not expected_abi:
+        # A default handle that owns a lazily created descriptor requires the
+        # direct handoff.  The converse does not hold: a borrowed allocatable
+        # descriptor crosses directly while its default handle is still built
+        # from facts, because the borrowed descriptor never comes from the
+        # default handle.
+        if (
+            default.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            and handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        ):
             diagnostics.append(
                 self._diagnostic(owner_path, "inconsistent-default-handle-descriptor-abi", handle.handoff.abi)
             )
@@ -3371,7 +3385,10 @@ class WrapperGenerator:
         diagnostics = []
         if handle.handoff.descriptor_pointer_role is None or any(expected_counts):
             diagnostics.append(self._diagnostic(owner_path, "invalid-direct-native-descriptor-roles", None))
-        if handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE:
+        if (
+            handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE
+            and handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE
+        ):
             diagnostics.append(self._diagnostic(owner_path, "direct-descriptor-without-projection", None))
         return tuple(diagnostics)
 

@@ -6,6 +6,7 @@ from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
+from prik.policy.models import NativeArrayDescriptorKind, NativeDescriptorHandoffABI
 
 
 def _allocatable_plan():
@@ -117,3 +118,56 @@ def invalid_argument(values: Annotated[Allocatable[Float64[:]], MaybeUnallocated
 
     with pytest.raises(ValueError, match="MaybeUnallocated metadata"):
         complete_semantic_policies(module)
+
+
+def _allocatable_argument_plan():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Allocatable, Float64, native_call
+
+@native_call([])
+def total(values: Allocatable[Float64[:]]) -> Float64: ...
+
+plain_allocatable: Allocatable[Float64[:]]
+""",
+        module_name="allocatable_actuals",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def test_no_generated_binding_establishes_an_allocated_allocatable_descriptor():
+    """CFI_establish reserves the allocatable descriptor for the Fortran runtime.
+
+    F2018 18.5.5.6 requires a null ``base_addr`` when the attribute is
+    ``CFI_attribute_allocatable``: an allocatable established from C must start
+    unallocated.  Pairing that attribute with a real address describes an
+    already-allocated allocatable, which ifx rejects with
+    ``CFI_ERROR_BASE_ADDR_NOT_NULL`` while gfortran silently accepts it.
+    """
+    artifacts = WrapperGenerator().generate(_allocatable_argument_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+
+    forged = [
+        line.strip()
+        for line in c_source.splitlines()
+        if "CFI_establish(" in line and "CFI_attribute_allocatable" in line and ", NULL," not in line
+    ]
+    assert forged == []
+
+
+def test_allocatable_argument_borrows_the_runtime_descriptor():
+    """The binding copies the descriptor Fortran built instead of rebuilding one."""
+    plan = _allocatable_argument_plan()
+    functions = {function.binding.python_name: function for function in plan.namespaces[0].functions}
+    argument = functions["total"].arguments[0]
+    handle = argument.native_array_handle
+
+    assert handle is not None
+    assert handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+    assert handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+
+    artifacts = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    assert "prik_release_borrowed_native_descriptor" in c_source
+    assert "memcpy(" in c_source
