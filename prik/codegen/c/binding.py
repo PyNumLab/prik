@@ -8098,38 +8098,98 @@ class CBindingGenerator(ClassVisitor):
                 "prik_native_array_descriptor_copy",
                 CodeExpression(f"{{&{storage}, sizeof({storage})}}"),
             ),
+            CComment("A handle publishes a table of native entry points when its entity can be"),
+            CComment("reached directly; one that does not takes the general path below."),
             CExpressionStatement(
-                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")')
+                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")'),
             ),
             CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
             CIf(
                 CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
                 body=(
+                    CComment("The table names the entity it stands for: refuse a handle whose kind,"),
+                    CComment("rank, element type or element size disagrees with this dummy."),
                     CExpressionStatement(
                         CodeExpression(
                             f"{table} = prik_native_array_ops_from_capsule({capsule}, "
                             f"{self._native_array_handle_kind_constant(handle)}, {rank}, {cfi_type}, "
-                            f"{self._native_array_expected_element_size(plan)})"
+                            f"{self._native_array_expected_element_size(plan)})",
                         )
                     ),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
                     CIf(CodeExpression(f"{table} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CComment("Fortran builds the descriptor for this call and hands it to the consumer,"),
+                    CComment("which copies the record into our storage. Only the record is copied;"),
+                    CComment("base_addr still refers to the entity's own data. It is rebuilt every call"),
+                    CComment("because reallocating the entity leaves an earlier descriptor describing"),
+                    CComment("storage that has been released."),
                     CExpressionStatement(
                         CodeExpression(
-                            f"{table}->scoped_descriptor({table}->owner, prik_native_array_copy_descriptor, &{target})"
+                            f"{table}->scoped_descriptor({table}->owner, prik_native_array_copy_descriptor, &{target})",
                         )
                     ),
                     CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{storage}")),
+                    CComment("A negative extent would index outside the array, so it is refused here"),
+                    CComment("rather than reaching the native call."),
                     CExpressionStatement(
                         CodeExpression(
                             f"if ({gate}) {{ PyErr_SetString(PyExc_ValueError, "
-                            f'"{plan.binding.python_name} reports a negative extent"); return NULL; }}'
+                            f'"{plan.binding.python_name} reports a negative extent"); return NULL; }}',
                         )
                     ),
                 ),
                 else_body=(
+                    CComment("No table: fetch this handle's descriptor through the Python runtime."),
                     CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
                     *fallback,
+                ),
+            ),
+        )
+
+    def _borrowed_descriptor_detach_declarations(
+        self,
+        names: _CArgumentNames,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[CDeclaration, ...]:
+        """Declare this call's own storage for a detached borrowed descriptor."""
+        if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
+            return ()
+        if handle.array.rank is None:
+            return ()
+        return (CDeclaration(f"{names.value_name}_detached", f"CFI_CDESC_T({handle.array.rank})"),)
+
+    def _borrowed_descriptor_detach_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[CComment | CDeclaration | CExpressionStatement, ...]:
+        """Detach a borrowed descriptor from the capsule that carried it.
+
+        A read-only argument receives a per-call copy owned by a capsule the
+        handle keeps alive, and that capsule is replaced on the handle's next
+        descriptor request.  Releasing the GIL around the native call lets
+        another thread make that request while this one is still using the
+        descriptor, so the record is copied into this call's own storage and
+        the capsule stops mattering.  A projected argument needs no copy: its
+        descriptor is the persistent one its handle owns.
+        """
+        if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
+            return ()
+        if handle.array.rank is None:
+            return ()
+        prefix = names.value_name
+        storage = f"{prefix}_detached"
+        size = f"sizeof(CFI_CDESC_T({handle.array.rank}))"
+        return (
+            CComment("The descriptor above belongs to a capsule the handle replaces on its"),
+            CComment("next request, which another thread may make while the GIL is released"),
+            CComment("for the native call. Copy the record so this call owns what it uses."),
+            CIf(
+                CodeExpression(f"{prefix} != NULL"),
+                body=(
+                    CExpressionStatement(CodeExpression(f"memcpy(&{storage}, {prefix}, {size})")),
+                    CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{storage}")),
                 ),
             ),
         )
@@ -8158,6 +8218,7 @@ class CBindingGenerator(ClassVisitor):
                 "prik_native_array_handle *",
                 CodeExpression("NULL"),
             ),
+            *self._borrowed_descriptor_detach_declarations(names, handle),
             *self._native_descriptor_helper_declarations(
                 prefix,
                 include_default_binder=binder_definition is not None,
@@ -8180,6 +8241,7 @@ class CBindingGenerator(ClassVisitor):
         )
         general.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
         general.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
+        general.extend(self._borrowed_descriptor_detach_nodes(plan, names, handle))
         general.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
         if self._uses_native_array_ops_fast_path(plan, handle):
             nodes.extend(self._native_array_ops_fast_path_nodes(plan, names, handle, tuple(general)))

@@ -382,10 +382,10 @@ def _generated_borrowed_descriptor_operation(operation: HandleOperation) -> Hand
         # own reference before calling the native entrypoint, exactly as it does
         # for an owned handle.  An owned handle survives that because it holds
         # the capsule itself, so a borrowed copy is held here for the same
-        # reason: the descriptor must outlive the call that uses it.  The next
-        # descriptor request replaces it, which is safe because a generated
-        # binding runs no Python between reading this capsule and returning
-        # from the native call, so no other thread can replace it in between.
+        # reason: the descriptor must outlive the call that reads it.  A binding
+        # copies the record into its own storage before releasing its reference,
+        # so replacing this one on the next request cannot disturb a call that
+        # is already under way, including one that has released the GIL.
         handle._borrowed_descriptor = handoff
         return handoff
 
