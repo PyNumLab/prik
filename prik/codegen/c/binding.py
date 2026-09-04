@@ -5130,7 +5130,7 @@ class CBindingGenerator(ClassVisitor):
         """Return one directly named operation lowerer."""
         handlers = {
             NativeArrayOperation.SHAPE: self._owned_native_array_shape_body,
-            NativeArrayOperation.TO_NUMPY: self._owned_native_array_descriptor_record_body,
+            NativeArrayOperation.TO_NUMPY: self._owned_native_array_to_numpy_body,
             NativeArrayOperation.ELEMENT_LENGTH: self._owned_native_array_element_length_body,
             NativeArrayOperation.ARRAY_ACTUAL: self._owned_native_array_actual_body,
             NativeArrayOperation.DESCRIPTOR: self._owned_native_array_descriptor_body,
@@ -5166,6 +5166,83 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression(f"{bridge}(owner_descriptor, source_descriptor)")),
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
+
+    def _owned_native_array_to_numpy_body(
+        self,
+        result: ResultPlan,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Build the NumPy view over one owned descriptor's storage.
+
+        The descriptor is already here, so the view is built from it directly
+        rather than reported as fields for the runtime to decode back.  The
+        capsule owning the descriptor becomes the array's base, so the storage
+        outlives any view taken of it.
+        """
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
+        # A pointer describes its target to another pointer through these
+        # fields, and a view cannot carry the Fortran lower bounds an
+        # association preserves.  A character element width is only known at
+        # runtime.  Both keep reporting fields; an allocatable never associates,
+        # so its extraction hands back the view itself.
+        if (
+            result.datatype_family is DatatypeFamily.STRING
+            or handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE
+        ):
+            return self._native_array_descriptor_record_nodes(handle.array.rank, "owner_descriptor")
+        rank = handle.array.rank
+        scalar = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
+        nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
+            CDeclaration(f"view_dimensions[{rank}]", "npy_intp"),
+            CDeclaration(f"view_strides[{rank}]", "npy_intp"),
+            CDeclaration("view", "PyObject *", CodeExpression("NULL")),
+            CComment("An unallocated or disassociated descriptor exposes no storage."),
+            CIf(
+                CodeExpression("owner_descriptor->base_addr == NULL"),
+                body=(CReturn(CodeExpression("Py_NewRef(Py_None)")),),
+            ),
+        ]
+        for axis in range(rank):
+            nodes.extend(
+                (
+                    # A compiler may report an empty dimension as extent -1.
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"view_dimensions[{axis}] = (npy_intp)(owner_descriptor->dim[{axis}].extent == -1 "
+                            f"? 0 : owner_descriptor->dim[{axis}].extent)"
+                        )
+                    ),
+                    CExpressionStatement(
+                        CodeExpression(f"view_strides[{axis}] = (npy_intp)owner_descriptor->dim[{axis}].sm")
+                    ),
+                )
+            )
+        nodes.extend(
+            (
+                CExpressionStatement(
+                    CodeExpression(
+                        f"view = PyArray_New(&PyArray_Type, {rank}, view_dimensions, "
+                        f"{scalar.numpy_type_macro}, view_strides, owner_descriptor->base_addr, 0, "
+                        f"NPY_ARRAY_WRITEABLE, NULL)"
+                    )
+                ),
+                CIf(CodeExpression("view == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                CComment("The view borrows the descriptor's storage, so it keeps the capsule"),
+                CComment("that owns the descriptor alive for as long as the view exists."),
+                CExpressionStatement(CodeExpression("Py_INCREF(owner_obj)")),
+                CIf(
+                    CodeExpression("PyArray_SetBaseObject((PyArrayObject *)view, owner_obj) < 0"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_DECREF(owner_obj)")),
+                        CExpressionStatement(CodeExpression("Py_DECREF(view)")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CReturn(CodeExpression("view")),
+            )
+        )
+        return tuple(nodes)
 
     def _owned_native_array_descriptor_record_body(
         self,

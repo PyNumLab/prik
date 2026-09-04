@@ -845,30 +845,36 @@ class NativeArrayHandleBase:
         """Return a live view of current native storage, or ``None``."""
         if self._to_numpy_absent_state():
             return None
-        if self.to_numpy_policy == "unsupported":
+        policy = self._to_numpy_policy
+        if policy == "unsupported":
             raise NotImplementedError(
                 f"{self.descriptor_kind} handle to_numpy extraction is unsupported by completed policy"
             )
-        if (
-            self.to_numpy_policy == "contiguous_view"
-            and "contiguous" in self._ops
-            and not bool(self._call_op("contiguous"))
-        ):
+        if policy == "contiguous_view" and "contiguous" in self._ops and not bool(self._call_op("contiguous")):
             raise ValueError(f"{self.descriptor_kind} handle to_numpy target must be contiguous")
         value = self._call_op("to_numpy")
         if value is None:
             raise TypeError(
                 f"{self.descriptor_kind} handle to_numpy operation returned None for present descriptor state"
             )
-        if _is_pointer_descriptor_record(value):
+        # A generated operation builds the view itself; only an operation that
+        # reports descriptor fields needs decoding here.
+        if not isinstance(value, np.ndarray) and _is_pointer_descriptor_record(value):
             value = _numpy_view_from_pointer_c_descriptor(value, dtype=self.dtype, expected_rank=self.rank)
             if value is None:
                 raise TypeError(
                     f"{self.descriptor_kind} handle extraction returned a null descriptor for present descriptor state"
                 )
             value = _retain_numpy_owner(value, self)
+        elif isinstance(value, np.ndarray) and value.base is not None and value.base is self._owner:
+            # A generated operation builds its view over the storage the owner
+            # record holds, and this handle releases that storage when it is
+            # finalized, so the view has to keep the handle alive too.  An
+            # operation returning an array of its own owns its memory already
+            # and is handed back untouched.
+            value = _retain_numpy_owner(value, self)
         self._validate_numpy_result(value)
-        if self.to_numpy_policy == "contiguous_view":
+        if policy == "contiguous_view":
             self._validate_contiguous_numpy_result(value)
         return value
 

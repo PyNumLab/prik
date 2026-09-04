@@ -25,6 +25,16 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- Reading an allocatable handle with `to_numpy()` no longer round-trips its
+  descriptor through Python. The generated extraction reported the descriptor
+  as base address, element length and per-axis bounds, and the runtime decoded
+  those fields back into a NumPy view on every call; it now builds the view
+  where the descriptor already is. Reading a handle cost about 12.9us per call
+  and now costs about 2.7us. The view still keeps its handle alive, so it stays
+  valid after the handle is dropped. A `pointer` handle is unchanged: it
+  describes its target to another pointer through those same fields, and a view
+  cannot carry the Fortran lower bounds an association preserves.
+
 - A handle you create yourself now reaches a native call as fast as one that
   came from a module variable. Such a handle is given wrapper-owned descriptor
   storage the first time it is passed, and it now publishes that storage as an
