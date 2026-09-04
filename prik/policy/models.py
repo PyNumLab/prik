@@ -769,7 +769,6 @@ class NativeArrayHandleKind(str, Enum):
 class NativeDescriptorHandoffABI(str, Enum):
     """Binding-to-bridge descriptor representation."""
 
-    FACT_PACKED_CALL_LOCAL = "fact_packed_call_local"
     DIRECT_STANDARD_DESCRIPTOR = "direct_standard_descriptor"
     OWNED_RESULT_STORAGE = "owned_result_storage"
 
@@ -778,7 +777,6 @@ class NativeArrayDefaultConstruction(str, Enum):
     """Completed storage path for a runtime-constructed empty descriptor."""
 
     NONE = "none"
-    FACT_PACKED_EMPTY = "fact_packed_empty"
     LAZY_OWNED_DESCRIPTOR = "lazy_owned_descriptor"
 
 

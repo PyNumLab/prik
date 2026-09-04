@@ -6,8 +6,6 @@ from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _NativeArrayDescriptorHandoff,
-    _native_array_descriptor_argument_for_binding,
-    _native_array_descriptor_argument_for_binding_positional,
     _native_array_descriptor_for_binding,
     _native_array_descriptor_handoff_for_binding,
     _native_array_descriptor_handoff_for_binding_positional,
@@ -155,115 +153,6 @@ def test_descriptor_binding_helper_rejects_plain_arrays_none_and_wrong_kind():
         _native_array_descriptor_for_binding(None, descriptor_kind="coarray", optional=True)
 
 
-def test_descriptor_argument_abi_packer_returns_required_descriptor_fields():
-    descriptor = _handoff(239)
-    handle = AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
-            "shape": lambda _handle: (2,),
-            "allocated": lambda _handle: True,
-            "descriptor": lambda _handle: descriptor,
-        },
-        to_numpy_policy="unsupported",
-    )
-
-    assert _native_array_descriptor_argument_for_binding(
-        handle,
-        descriptor_kind="allocatable",
-        expected_dtype=np.float64,
-        expected_rank=1,
-        expected_shape=(2,),
-    ) == (descriptor.address, 8, 1, 0, 2, 8)
-
-
-def test_descriptor_argument_abi_packer_positional_helper_matches_generated_call_shape():
-    descriptor = _handoff(242)
-    handle = AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
-            "shape": lambda _handle: (2,),
-            "allocated": lambda _handle: True,
-            "descriptor": lambda _handle: descriptor,
-        },
-        to_numpy_policy="unsupported",
-    )
-
-    assert _native_array_descriptor_argument_for_binding_positional(
-        handle,
-        "allocatable",
-        "float64",
-        1,
-        None,
-        False,
-    ) == (descriptor.address, 8, 1, 0, 2, 8)
-    assert _native_array_descriptor_argument_for_binding_positional(
-        None,
-        "allocatable",
-        "float64",
-        1,
-        None,
-        True,
-    ) == (None, None, None, None, None, None, None)
-
-
-def test_descriptor_argument_abi_packer_maps_optional_presence_and_absence():
-    descriptor = _handoff(240)
-    handle = PointerArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
-            "shape": lambda _handle: None,
-            "associated": lambda _handle: False,
-            "nullify": lambda _handle: None,
-            "descriptor": lambda _handle: descriptor,
-        },
-        to_numpy_policy="unsupported",
-    )
-
-    *descriptor_fields, presence_token = _native_array_descriptor_argument_for_binding(
-        handle,
-        descriptor_kind="pointer",
-        expected_dtype=np.float64,
-        expected_rank=1,
-        optional_absent=True,
-    )
-    assert descriptor_fields == [descriptor.address, 8, 1, 0, 0, 8]
-    assert presence_token is not None
-    assert presence_token != descriptor.address
-    assert _native_array_descriptor_argument_for_binding(
-        None,
-        descriptor_kind="pointer",
-        expected_rank=1,
-        optional_absent=True,
-    ) == (None, None, None, None, None, None, None)
-
-
-def test_descriptor_argument_abi_packer_rejects_wrong_kind_and_unsupported_descriptor_kind():
-    alloc_handle = AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
-            "shape": lambda _handle: (1,),
-            "allocated": lambda _handle: True,
-            "descriptor": lambda _handle: _handoff(241),
-        },
-        to_numpy_policy="unsupported",
-    )
-
-    with pytest.raises(TypeError, match="expected pointer native array handle"):
-        _native_array_descriptor_argument_for_binding(alloc_handle, descriptor_kind="pointer")
-    with pytest.raises(ValueError, match="unsupported native array descriptor kind"):
-        _native_array_descriptor_argument_for_binding(None, descriptor_kind="coarray", optional_absent=True)
-    with pytest.raises(TypeError, match="received ndarray"):
-        _native_array_descriptor_argument_for_binding(np.ones(1), descriptor_kind="allocatable")
-
-
 def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_storage():
     owner = object()
     direct = _NativeArrayDescriptorHandoff(owner)
@@ -296,7 +185,8 @@ def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_st
     ) == (owner,)
 
 
-def test_owned_standard_descriptor_can_supply_fact_packed_read_only_handoff():
+def test_owned_standard_descriptor_supplies_the_only_read_only_handoff():
+    """A handle hands over the descriptor it owns, and nothing else will do."""
     owner = object()
     direct = _NativeArrayDescriptorHandoff(owner)
     record = {
@@ -321,13 +211,6 @@ def test_owned_standard_descriptor_can_supply_fact_packed_read_only_handoff():
         to_numpy_policy="unsupported",
     )
 
-    assert _native_array_descriptor_argument_for_binding(
-        handle,
-        descriptor_kind="pointer",
-        expected_dtype=np.float64,
-        expected_rank=1,
-        expected_shape=(2,),
-    ) == (0x5678, 8, 1, 0, 2, 8)
     assert _native_array_descriptor_handoff_for_binding(
         handle,
         descriptor_kind="pointer",
@@ -344,7 +227,9 @@ def test_owned_standard_descriptor_can_supply_fact_packed_read_only_handoff():
         True,
     ) == (None, None)
 
-    fact_packed = AllocatableArray(
+    # A handle that only reports descriptor fields is refused: rebuilding a
+    # descriptor from them is what C is not allowed to do for an allocatable.
+    reports_facts_only = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
@@ -356,7 +241,7 @@ def test_owned_standard_descriptor_can_supply_fact_packed_read_only_handoff():
         to_numpy_policy="unsupported",
     )
     with pytest.raises(TypeError, match="requires a generated direct descriptor handoff"):
-        _native_array_descriptor_handoff_for_binding(fact_packed, descriptor_kind="allocatable")
+        _native_array_descriptor_handoff_for_binding(reports_facts_only, descriptor_kind="allocatable")
 
 
 def test_pointer_c_descriptor_helper_builds_strided_numpy_view_from_decoded_fields():

@@ -44,9 +44,11 @@ release tags add a leading `v` to the package version.
   A caller-supplied handle must now be backed by a real descriptor. A handle
   whose `descriptor` operation only reported base address, element length and
   bounds is no longer accepted for these arguments: rebuilding a descriptor from
-  those fields is the unsound step this release removes. Handles obtained from a
-  module variable, a field, a result, or created from a contract type and filled
-  by a native call are unaffected.
+  those fields is the unsound step this release removes, and with every
+  descriptor argument now placed the same way, the machinery that did it is
+  gone rather than merely unused. Handles obtained from a module variable, a
+  field, a result, or created from a contract type and filled by a native call
+  are unaffected.
 
 - **Fixed:** a `pointer` dummy now takes the same route, and a callee that
   re-associates one is no longer silently ignored. PRIK packed the descriptor's

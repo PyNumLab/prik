@@ -7910,53 +7910,9 @@ class CBindingGenerator(ClassVisitor):
         handle = plan.native_array_handle
         if handle is None:
             return ()
-        if handle.handoff.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL:
-            return self._lower_argument_native_array_facts(plan, context)
         if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
             return self._lower_argument_native_array_direct(plan, context)
         raise ValueError(f"Unsupported C native descriptor ABI for {plan.owner_path!r}: {handle.handoff.abi!r}")
-
-    def _lower_argument_native_array_facts(
-        self,
-        plan: ArgumentTransferPlan,
-        context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
-        """Establish call-local CFI storage from validated descriptor facts."""
-        handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native descriptor {plan.owner_path!r} has no concrete rank")
-        names = context.arguments[plan.owner_path]
-        rank = handle.array.rank
-        prefix = names.value_name
-        nodes: list[CDeclaration | CExpressionStatement | CIf] = [
-            self._native_descriptor_object_declaration(plan, names),
-            CDeclaration(f"{prefix}_storage", f"CFI_CDESC_T({rank})"),
-            CDeclaration(names.value_name, "CFI_cdesc_t *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_base_addr", "void *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_elem_len", "size_t", CodeExpression("0")),
-            CDeclaration(f"{prefix}_descriptor_rank", "CFI_rank_t", CodeExpression("0")),
-            CDeclaration(f"{prefix}_cfi_extents[{rank}]", "CFI_index_t"),
-            *(
-                CDeclaration(f"{prefix}_{label}_{axis}", "CFI_index_t", CodeExpression("0"))
-                for axis in range(rank)
-                for label in ("lower_bound", "descriptor_extent", "stride_multiplier")
-            ),
-            CDeclaration(f"{prefix}_establish_status", "int", CodeExpression("CFI_SUCCESS")),
-            *self._native_descriptor_helper_declarations(prefix),
-            *(self._native_descriptor_presence_declarations(plan, names)),
-        ]
-        nodes.extend(
-            self._native_descriptor_helper_call_nodes(
-                plan,
-                context,
-                names,
-                "_native_array_descriptor_argument_for_binding_positional",
-            )
-        )
-        nodes.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 3 + 3 * rank))
-        nodes.extend(self._native_descriptor_fact_unpack_nodes(plan, names))
-        nodes.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
-        return tuple(nodes)
 
     def _inverted_descriptor_table_nodes(
         self,
@@ -8338,25 +8294,6 @@ class CBindingGenerator(ClassVisitor):
                 ),
             ),
             CExpressionStatement(CodeExpression(f"{names.value_name} = (CFI_cdesc_t *)&{prefix}_storage")),
-        )
-
-    def _native_descriptor_fact_unpack_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        names: _CArgumentNames,
-    ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Decode facts and establish a call-local standard descriptor."""
-        handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            return ()
-        if plan.binding.optional_mode is OptionalMode.REQUIRED:
-            return self._native_descriptor_fact_present_nodes(plan, names)
-        return (
-            CIf(
-                CodeExpression(f"{names.present_name} != NULL"),
-                body=self._native_descriptor_fact_present_nodes(plan, names),
-                else_body=self._native_descriptor_fact_absent_nodes(plan, names),
-            ),
         )
 
     def _native_descriptor_fact_present_nodes(

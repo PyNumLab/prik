@@ -209,9 +209,6 @@ def test_native_handle_plans_keep_datatype_specific_state():
         # the generated binder allocates and the handle's finalizer releases.
         assert handle.default_handle.owner_storage_role == f"{argument.owner_path}:default-owner-storage"
         assert NativeArrayOperation.DESTROY in handle.default_handle.operations
-        # Fact roles exist only for the fact-packed form; a descriptor the
-        # runtime built carries its own extents, so none are named.
-        assert handle.handoff.extent_roles == ()
         assert argument.binding.python_action is PythonBarrierAction.WRAPPER_INSTANCE
         assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
 
@@ -226,7 +223,6 @@ def test_native_handle_plans_keep_datatype_specific_state():
     assert replacement.native_array_handle is not None
     assert replacement.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
     assert replacement.native_array_handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-    assert replacement.native_array_handle.handoff.extent_roles == ()
     assert (
         replacement.native_array_handle.default_handle.construction
         is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
@@ -445,7 +441,6 @@ def test_constant_owned_handle_operations_do_not_emit_unused_descriptor_locals()
     ("edit", "diagnostic"),
     [
         ("required_presence", "inconsistent-native-descriptor-presence"),
-        ("projected_facts", "invalid-direct-native-descriptor-roles"),
         ("owned_storage", "invalid-owned-native-descriptor-roles"),
         ("default_storage", "inconsistent-default-handle-owner-storage-role"),
         ("disabled_default", "invalid-disabled-default-handle-policy"),
@@ -463,8 +458,6 @@ def test_native_handle_plan_edits_fail_central_validation(edit: str, diagnostic:
     functions = _functions(plan)
     if edit == "required_presence":
         functions["alloc"].arguments[0].native_array_handle.handoff.presence_role = "edited:present"
-    elif edit == "projected_facts":
-        functions["replace"].arguments[0].native_array_handle.handoff.extent_roles = ("edited:extent",)
     elif edit == "owned_storage":
         functions["make"].results[0].native_array_handle.handoff.owner_storage_role = None
     elif edit == "default_storage":
@@ -488,7 +481,7 @@ def test_native_handle_plan_edits_fail_central_validation(edit: str, diagnostic:
     elif edit == "default_abi":
         functions["replace"].arguments[
             0
-        ].native_array_handle.handoff.abi = NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
+        ].native_array_handle.handoff.abi = NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     elif edit == "operation":
         functions["pointer"].arguments[0].native_array_handle.operations = ()
     else:

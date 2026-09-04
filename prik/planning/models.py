@@ -531,12 +531,6 @@ class NativeDescriptorHandoffPlan(StageRecord):
 
     abi: NativeDescriptorHandoffABI
     descriptor_pointer_role: str | None
-    base_addr_role: str | None
-    elem_len_role: str | None
-    rank_role: str | None
-    lower_bound_roles: tuple[str, ...]
-    extent_roles: tuple[str, ...]
-    stride_multiplier_roles: tuple[str, ...]
     presence_role: str | None
     owner_storage_role: str | None
     operation_roles: tuple[tuple[NativeArrayOperation, str], ...]

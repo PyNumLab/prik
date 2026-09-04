@@ -7,20 +7,27 @@ import prik.contracts as contracts
 from prik.runtime.handles import (
     AllocatableArray,
     _bind_contract_native_array_handle,
-    _native_array_descriptor_argument_for_binding,
     _native_array_descriptor_handoff_for_binding,
 )
 
 
-def test_fresh_contract_handle_supplies_present_empty_read_only_descriptor_facts():
+def test_fresh_contract_handle_has_no_descriptor_to_hand_over_on_its_own():
+    """A handle the caller made owns no descriptor until the wrapper gives it one.
+
+    Nothing rebuilds a descriptor from reported fields any more, so the only
+    thing such a handle can supply is storage a generated binder attached to
+    it.  Reaching the call without that is a wrapper bug, not a caller error,
+    so it is refused rather than papered over with an empty descriptor.
+    """
     handle = contracts.Allocatable[contracts.Float64[:]]()
 
-    assert _native_array_descriptor_argument_for_binding(
-        handle,
-        descriptor_kind="allocatable",
-        expected_dtype=np.float64,
-        expected_rank=1,
-    ) == (0, 8, 1, 0, 0, 8)
+    with pytest.raises(TypeError, match="requires generated persistent descriptor storage"):
+        _native_array_descriptor_handoff_for_binding(
+            handle,
+            descriptor_kind="allocatable",
+            expected_dtype=np.float64,
+            expected_rank=1,
+        )
 
 
 def test_contract_default_allocatable_constructor_preserves_dtype_rank_and_empty_state():

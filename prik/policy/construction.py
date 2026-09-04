@@ -6192,7 +6192,7 @@ def _native_array_handle_wrapper_policy(
     )
     handle_kind = _native_array_enum(NativeArrayHandleKind, completed.handle_kind, owner_path, "handle kind")
     handoff = NativeDescriptorHandoffPolicy(
-        abi=_native_descriptor_handoff_abi(handle_kind, output_projection, descriptor, completed.optional_absent),
+        abi=_native_descriptor_handoff_abi(handle_kind),
         rank=int(semantic_type.rank or 0),
         optional_presence=completed.optional_absent,
     )
@@ -6363,33 +6363,20 @@ def _native_array_default_handle_policy(
     )
 
 
-def _native_descriptor_handoff_abi(
-    handle_kind: NativeArrayHandleKind,
-    output_projection: NativeArrayOutputProjection,
-    descriptor_kind: str,
-    optional_absent: bool,
-) -> NativeDescriptorHandoffABI:
+def _native_descriptor_handoff_abi(handle_kind: NativeArrayHandleKind) -> NativeDescriptorHandoffABI:
     """Select one descriptor ABI from completed handle/result policy.
 
-    A descriptor actual is the Fortran runtime's to build: the binding is
-    handed one for the call rather than establishing or filling a record of its
-    own.  That holds for a pointer as much as an allocatable, and it is what
-    lets a callee change an allocation or an association and have the caller's
-    entity see it.  An optional argument is no different when it is present;
-    its absent branch establishes the placeholder the present flag pairs with,
-    which is the one descriptor C may legally establish for this attribute
-    because it has a null base address.
+    Every descriptor a call receives is the Fortran runtime's to build: the
+    binding is handed one rather than establishing or filling a record of its
+    own.  That holds for a pointer as much as an allocatable, and for an
+    optional argument as much as a required one, and it is what lets a callee
+    change an allocation or an association and have the caller's entity see it.
+    A result is the one exception, because there is no caller entity yet: the
+    wrapper owns storage the callee allocates into.
     """
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    if output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
-        return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    if descriptor_kind in {
-        NativeArrayDescriptorKind.ALLOCATABLE.value,
-        NativeArrayDescriptorKind.POINTER.value,
-    }:
-        return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    return NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
+    return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
 
 
 def _native_array_enum(enum_type, value: object, owner_path: str, label: str):

@@ -1426,69 +1426,6 @@ def _native_array_descriptor_for_binding(
     )
 
 
-def _native_array_descriptor_argument_for_binding(
-    value: Any,
-    *,
-    descriptor_kind: str,
-    expected_dtype: Any = None,
-    expected_rank: int | None = None,
-    expected_shape: Sequence[int | None] | int | None = None,
-    optional_absent: bool = False,
-) -> tuple[Any, ...]:
-    """Pack standard descriptor fields for generated CPython binding code."""
-    descriptor = _native_array_descriptor_for_binding(
-        value,
-        descriptor_kind=descriptor_kind,
-        expected_dtype=expected_dtype,
-        expected_rank=expected_rank,
-        expected_shape=expected_shape,
-        optional=optional_absent,
-    )
-    if descriptor is None:
-        if expected_rank is None:
-            raise ValueError("optional absent native array descriptor arguments require an expected rank")
-        fields = (None,) * (3 + 3 * int(expected_rank))
-        return (*fields, None)
-    if isinstance(descriptor, _NativeArrayDescriptorHandoff):
-        descriptor = value._descriptor_record_for_binding()
-    dimensions = _pointer_descriptor_dimensions(descriptor)
-    fields = [
-        _required_descriptor_int(descriptor, "base_addr"),
-        _required_descriptor_int(descriptor, "elem_len"),
-        _required_descriptor_int(descriptor, "rank"),
-    ]
-    for index, dimension in enumerate(dimensions):
-        fields.extend(
-            [
-                _required_descriptor_int(dimension, "lower_bound", field_owner=f"dim[{index}]"),
-                _required_descriptor_int(dimension, "extent", field_owner=f"dim[{index}]"),
-                _required_descriptor_int(dimension, "sm", field_owner=f"dim[{index}]"),
-            ]
-        )
-    if optional_absent:
-        fields.append(_PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS)
-    return tuple(fields)
-
-
-def _native_array_descriptor_argument_for_binding_positional(
-    value: Any,
-    descriptor_kind: str,
-    expected_dtype: Any = None,
-    expected_rank: int | None = None,
-    expected_shape: Sequence[int | None] | int | None = None,
-    optional_absent: bool = False,
-) -> tuple[Any, ...]:
-    """Positional wrapper used by generated CPython binding code."""
-    return _native_array_descriptor_argument_for_binding(
-        value,
-        descriptor_kind=str(descriptor_kind),
-        expected_dtype=None if expected_dtype is None else np.dtype(expected_dtype),
-        expected_rank=None if expected_rank is None else int(expected_rank),
-        expected_shape=expected_shape,
-        optional_absent=bool(optional_absent),
-    )
-
-
 def _native_array_descriptor_handoff_for_binding(
     value: Any,
     *,

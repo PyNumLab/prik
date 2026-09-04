@@ -2292,18 +2292,9 @@ class WrapperPlanner(ClassVisitor):
         operations,
     ) -> NativeDescriptorHandoffPlan:
         """Name descriptor facts once for binding, bridge, and lifecycle consumers."""
-        fact_packed = policy.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
         return NativeDescriptorHandoffPlan(
             abi=policy.abi,
             descriptor_pointer_role=self._native_descriptor_pointer_role(policy, owner_path),
-            base_addr_role=self._native_descriptor_fact_role(owner_path, "base-addr", fact_packed),
-            elem_len_role=self._native_descriptor_fact_role(owner_path, "elem-len", fact_packed),
-            rank_role=self._native_descriptor_fact_role(owner_path, "descriptor-rank", fact_packed),
-            lower_bound_roles=self._native_descriptor_axis_roles(owner_path, policy.rank, "lower-bound", fact_packed),
-            extent_roles=self._native_descriptor_axis_roles(owner_path, policy.rank, "descriptor-extent", fact_packed),
-            stride_multiplier_roles=self._native_descriptor_axis_roles(
-                owner_path, policy.rank, "stride-multiplier", fact_packed
-            ),
             presence_role=self._native_descriptor_presence_role(policy, owner_path),
             owner_storage_role=self._native_descriptor_owner_role(policy, owner_path),
             operation_roles=tuple((operation, f"{owner_path}:operation:{operation.value}") for operation in operations),
@@ -2318,10 +2309,6 @@ class WrapperPlanner(ClassVisitor):
         if policy.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE:
             return None
         return f"{owner_path}:descriptor"
-
-    def _native_descriptor_fact_role(self, owner_path: str, label: str, enabled: bool) -> str | None:
-        """Name one fact-packed scalar descriptor field."""
-        return f"{owner_path}:{label}" if enabled else None
 
     def _native_descriptor_presence_role(
         self,
@@ -2341,19 +2328,6 @@ class WrapperPlanner(ClassVisitor):
             return f"{owner_path}:owner-storage"
         return None
 
-    def _native_descriptor_axis_roles(
-        self,
-        owner_path: str,
-        rank: int,
-        label: str,
-        enabled: bool,
-    ) -> tuple[str, ...]:
-        """Name one standard-descriptor field role per declared axis."""
-        if not enabled:
-            return ()
-        return tuple(f"{owner_path}:{label}:{axis}" for axis in range(rank))
-
-    # Ordinary-array buffer and raw-address planning.
     def _array_plan(
         self,
         policy: ArrayHandoffPolicy | None,

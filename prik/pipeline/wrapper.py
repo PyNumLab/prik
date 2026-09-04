@@ -3075,7 +3075,6 @@ class WrapperGenerator:
         """Match persistent owner storage and descriptor ABI to construction."""
         default = handle.default_handle
         expected_owner_role = {
-            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: None,
             NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: True,
         }[default.construction]
         owner_role = True if default.owner_storage_role is not None else None
@@ -3087,10 +3086,8 @@ class WrapperGenerator:
                 )
             )
         # A default handle that owns a lazily created descriptor requires the
-        # direct handoff.  The converse does not hold: a borrowed allocatable
-        # descriptor crosses directly while its default handle is still built
-        # from facts, because the borrowed descriptor never comes from the
-        # default handle.
+        # direct handoff: the storage it attaches is what crosses.  A result
+        # keeps its own owned storage instead and never attaches one.
         if (
             default.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
             and handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
@@ -3317,17 +3314,11 @@ class WrapperGenerator:
         argument: ArgumentTransferPlan | None,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate descriptor ABI roles without reconstructing its policy."""
-        handoff = handle.handoff
         rank = handle.array.rank
         diagnostics = []
         if rank is None:
             return (self._diagnostic(owner_path, "missing-native-descriptor-rank", None),)
-        expected_counts = (
-            len(handoff.lower_bound_roles),
-            len(handoff.extent_roles),
-            len(handoff.stride_multiplier_roles),
-        )
-        diagnostics.extend(self._native_descriptor_abi_diagnostics(owner_path, handle, expected_counts))
+        diagnostics.extend(self._native_descriptor_abi_diagnostics(owner_path, handle))
         diagnostics.extend(self._native_descriptor_presence_diagnostics(owner_path, handle, argument))
         diagnostics.extend(self._native_array_operation_diagnostics(owner_path, handle))
         return tuple(diagnostics)
@@ -3336,11 +3327,9 @@ class WrapperGenerator:
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch exact role validation by typed descriptor ABI."""
         handlers = {
-            NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL: self._fact_packed_descriptor_diagnostics,
             NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR: self._direct_descriptor_diagnostics,
             NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE: self._owned_descriptor_diagnostics,
         }
@@ -3348,42 +3337,16 @@ class WrapperGenerator:
             handler = handlers[handle.handoff.abi]
         except KeyError:
             return (self._diagnostic(owner_path, "unknown-native-descriptor-handoff", handle.handoff.abi),)
-        return handler(owner_path, handle, expected_counts)
-
-    def _fact_packed_descriptor_diagnostics(
-        self,
-        owner_path: str,
-        handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
-    ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate every call-local descriptor fact role."""
-        handoff = handle.handoff
-        diagnostics = []
-        expected_rank = handle.array.rank
-        if expected_counts != (expected_rank, expected_rank, expected_rank):
-            diagnostics.append(
-                self._diagnostic(owner_path, "inconsistent-native-descriptor-axis-roles", expected_counts)
-            )
-        if None in {
-            handoff.descriptor_pointer_role,
-            handoff.base_addr_role,
-            handoff.elem_len_role,
-            handoff.rank_role,
-        }:
-            diagnostics.append(self._diagnostic(owner_path, "missing-native-descriptor-fact-role", None))
-        if handoff.owner_storage_role is not None:
-            diagnostics.append(self._diagnostic(owner_path, "fact-packed-has-owner-storage", None))
-        return tuple(diagnostics)
+        return handler(owner_path, handle)
 
     def _direct_descriptor_diagnostics(
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one persistent projected standard-descriptor pointer."""
         diagnostics = []
-        if handle.handoff.descriptor_pointer_role is None or any(expected_counts):
+        if handle.handoff.descriptor_pointer_role is None:
             diagnostics.append(self._diagnostic(owner_path, "invalid-direct-native-descriptor-roles", None))
         if handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE and (
             handle.descriptor_kind not in {NativeArrayDescriptorKind.ALLOCATABLE, NativeArrayDescriptorKind.POINTER}
@@ -3395,12 +3358,10 @@ class WrapperGenerator:
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate persistent wrapper-owned result descriptor storage roles."""
         handoff = handle.handoff
-        invalid = handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None
-        if invalid or any(expected_counts):
+        if handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None:
             return (self._diagnostic(owner_path, "invalid-owned-native-descriptor-roles", None),)
         return ()
 
