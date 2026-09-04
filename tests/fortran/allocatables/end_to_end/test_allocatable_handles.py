@@ -539,14 +539,15 @@ def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp
     assert namespace.total(namespace.modvar) == np.float64(600.0)
 
 
-def test_a_writable_allocatable_dummy_refuses_a_borrowed_descriptor(tmp_path: Path):
-    """A borrowed descriptor copy may not stand in where the callee reallocates.
+def test_a_writable_allocatable_dummy_reaches_the_callers_entity(tmp_path: Path):
+    """A callee that reallocates an ``intent(inout)`` dummy updates the caller.
 
-    A read-only allocatable actual can be a per-call copy of the runtime's
-    descriptor, because the callee cannot change its allocation.  An
-    ``intent(inout)`` allocatable can: the callee may deallocate and reallocate
-    it, and through a copy that would land in the copy and leave the caller's
-    entity pointing at released storage.  Such an argument is refused instead.
+    The descriptor a module array or field hands out exists only while the
+    consumer holding it runs, so a callee handed a copy would reallocate the
+    copy and leave the caller's entity naming released storage.  The call is
+    made inside that consumer instead, which is what lets the new allocation
+    reach the entity.  A handle owning its descriptor hands that over directly
+    and needs no such arrangement.
     """
     workdir = tmp_path / "writable"
     workdir.mkdir(parents=True)
@@ -562,17 +563,22 @@ def test_a_writable_allocatable_dummy_refuses_a_borrowed_descriptor(tmp_path: Pa
     )
     namespace = _sole_native_module(module)
 
+    # A module array: the callee replaces the allocation, and the module
+    # variable names the new one afterwards.
     namespace.modvar.resize(2)
     namespace.modvar.to_numpy()[:] = [1.0, 2.0]
-    with pytest.raises(TypeError, match="requires a generated direct descriptor handoff"):
-        namespace.grow(namespace.modvar)
+    namespace.grow(namespace.modvar)
+    assert namespace.modvar.shape == (6,)
+    assert namespace.modvar.to_numpy().tolist() == [9.0] * 6
 
-    # The module variable is untouched by the refusal.
-    assert namespace.modvar.shape == (2,)
-    assert namespace.modvar.to_numpy().tolist() == [1.0, 2.0]
+    # A derived-type field reaches its entity the same way, through its parent.
+    namespace.thebox.field.resize(2)
+    namespace.thebox.field.to_numpy()[:] = [1.0, 2.0]
+    namespace.grow(namespace.thebox.field)
+    assert namespace.thebox.field.shape == (6,)
+    assert namespace.thebox.field.to_numpy().tolist() == [9.0] * 6
 
-    # A handle that owns its descriptor still works, and the callee's
-    # reallocation reaches it.
+    # A handle owning its descriptor hands that over directly.
     owned = namespace.make(np.int32(2))
     namespace.grow(owned)
     assert owned.shape == (6,)

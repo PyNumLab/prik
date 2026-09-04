@@ -8199,7 +8199,12 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranParameter(
                     "value",
                     element_type,
-                    (attribute, self._array_dimension_attribute(handle.array.rank), "intent(in)"),
+                    # intent(inout), so a callee reached through this descriptor
+                    # can change the field's allocation and have the compiler
+                    # copy that back. intent(in) leaves the copy-back
+                    # unspecified, which happens to work on the compilers tested
+                    # but is not something the standard obliges them to do.
+                    (attribute, self._array_dimension_attribute(handle.array.rank), "intent(inout)"),
                 ),
                 FortranParameter("context", "type(c_ptr)", ("value",)),
             ),
