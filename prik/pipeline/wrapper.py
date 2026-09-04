@@ -543,11 +543,9 @@ class WrapperGenerator:
 
         The storage such a handle names is reached through its descriptor, so
         the module needs the interop header even when nothing else in it does.
-        A module with no Fortran behind it has no descriptors to read and keeps
-        the runtime route instead.
+        Only a Fortran argument accepts a handle, so the accepted sources are
+        the whole test.
         """
-        if "fortran" not in plan.entrypoint.native_languages:
-            return False
         accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
         return any(
             argument.native_array_actual is not None

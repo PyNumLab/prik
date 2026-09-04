@@ -413,7 +413,7 @@ class WrapperPlanner(ClassVisitor):
             ),
             namespaces=namespaces,
             native_generated_code_groups=generated_code_groups,
-            required_headers=self._required_headers(namespaces, module.origin.source_language),
+            required_headers=self._required_headers(namespaces),
         )
 
     @staticmethod
@@ -2553,11 +2553,7 @@ class WrapperPlanner(ClassVisitor):
         """Return bridge-resolved declaration-callable symbol roles."""
         return tuple(item.symbolic_role for item in declaration_callables)
 
-    def _required_headers(
-        self,
-        namespaces: tuple[NamespacePlan, ...],
-        source_language: str | None = None,
-    ) -> tuple[str, ...]:
+    def _required_headers(self, namespaces: tuple[NamespacePlan, ...]) -> tuple[str, ...]:
         """Return the union of headers selected by completed handle plans."""
         handles = tuple(
             handle
@@ -2566,9 +2562,7 @@ class WrapperPlanner(ClassVisitor):
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
-        if self._requires_derived_descriptor_header(namespaces) or (
-            source_language == "fortran" and self._accepts_array_handle_actual(namespaces)
-        ):
+        if self._requires_derived_descriptor_header(namespaces) or self._accepts_array_handle_actual(namespaces):
             headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         return tuple(dict.fromkeys(headers))
 
@@ -2578,7 +2572,8 @@ class WrapperPlanner(ClassVisitor):
 
         The storage such a handle names is reached through its descriptor, so a
         module whose ordinary array dummies accept one needs the interop header
-        even when nothing else about the module does.
+        even when nothing else about the module does.  Only a Fortran argument
+        accepts one, so no separate language test is needed here.
         """
         accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
         return any(

@@ -25,6 +25,20 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- A `character` array handle now reaches an ordinary character dummy without
+  going through Python, and a handle that does not fit an ordinary array dummy
+  is reported from the binding rather than by the runtime. The dummy's declared
+  width is compared against the width the descriptor states, so a handle whose
+  elements are a different length is still refused, and refusals name what the
+  handle carries and what the dummy expects. The wording differs from the
+  runtime's in places; the conditions reported are the same.
+
+- A C module's array parameter no longer accepts a Fortran array handle. It
+  never did in practice -- the generated binding takes an ndarray -- but
+  completed policy said otherwise, which made the plan disagree with the code
+  it produced. A handle passed there is now an object of the wrong type, like
+  any other value that is not an array.
+
 - More array dummies take an array handle without going through Python. The
   storage a handle names is reached through its descriptor, so the binding only
   read it directly when the module happened to use descriptors elsewhere --

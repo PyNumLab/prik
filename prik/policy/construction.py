@@ -3098,7 +3098,12 @@ def _argument_policy(
             character_length=_character_length(argument.semantic_type),
             character_local=_character_local_policy(argument.semantic_type, decision),
             array=array_policy,
-            native_array_actual=_native_array_actual_policy(argument, decision, array_policy),
+            native_array_actual=_native_array_actual_policy(
+                argument,
+                decision,
+                array_policy,
+                function.origin.source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -6539,8 +6544,14 @@ def _native_array_actual_policy(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
     array: ArrayHandoffPolicy | None,
+    source_language: str | None = None,
 ) -> NativeArrayActualPolicy | None:
-    """Complete handle-as-array-actual acceptance for the Phase 6 buffer ABI."""
+    """Complete handle-as-array-actual acceptance for the Phase 6 buffer ABI.
+
+    A handle stands for storage a Fortran runtime owns, so a C dummy does not
+    accept one: there it is an object of the wrong type, like any other value
+    that is not an array.
+    """
     if native_array_descriptor_kind(argument.semantic_type) is not None:
         return None
     if (
@@ -6556,12 +6567,13 @@ def _native_array_actual_policy(
     dtype = _native_array_actual_dtype(argument)
     if dtype is None:
         return None
+    handle_sources = (
+        ()
+        if source_language == "c"
+        else (NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE)
+    )
     return NativeArrayActualPolicy(
-        accepted_sources=(
-            NativeArraySourceKind.NDARRAY,
-            NativeArraySourceKind.ALLOCATABLE_HANDLE,
-            NativeArraySourceKind.POINTER_HANDLE,
-        ),
+        accepted_sources=(NativeArraySourceKind.NDARRAY, *handle_sources),
         dtype=dtype,
         rank=array.rank,
         shape=array.shape,

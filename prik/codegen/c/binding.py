@@ -7403,8 +7403,23 @@ class CBindingGenerator(ClassVisitor):
                 ),
             )
         checks: list = [
-            CComment("The same condition the runtime reports, worded the same way,"),
+            CComment("Each condition is reported the way the runtime reports it,"),
             CComment("so a handle reads alike whether or not it publishes a table."),
+            CIf(
+                CodeExpression(f"{found}.refused == 2"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f'PyErr_Format(PyExc_TypeError, "%s handle dtype dtype(\'S%zu\') does not '
+                            f'match expected dtype dtype(\'S%d\')", '
+                            f"{table}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
+                            f'? "pointer" : "allocatable", {found}.width, '
+                            f"{self._declared_character_width(plan)})"
+                        )
+                    ),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
             CIf(
                 CodeExpression(f"!{found}.present"),
                 body=(
@@ -7465,7 +7480,8 @@ class CBindingGenerator(ClassVisitor):
                             # A flattened dummy takes an actual of any rank.
                             f"{0 if self._flattened_reader_axis(plan) is not None else rank}, "
                             f"{self._native_array_cfi_type(plan)}, "
-                            f"{self._native_array_expected_element_size(plan)})"
+                            f"{self._native_array_expected_element_size(plan)}, "
+                            f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
                         )
                     ),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
@@ -7515,13 +7531,7 @@ class CBindingGenerator(ClassVisitor):
         if not self._reads_native_descriptors or not self._takes_array_handle(plan):
             return False
         actual = plan.native_array_actual
-        # A character dummy is matched on its declared width, which the table
-        # does not carry, so it keeps the runtime route.
-        return not (
-            actual.flatten_storage
-            or plan.array.flatten_python_storage
-            or plan.datatype_family is DatatypeFamily.STRING
-        )
+        return not (actual.flatten_storage or plan.array.flatten_python_storage)
 
     def _array_actual_handle_arguments_for(self, function: FunctionPlan, context: _CFunctionContext):
         """Return this function's array arguments an array handle may be passed to."""
@@ -7535,8 +7545,6 @@ class CBindingGenerator(ClassVisitor):
             }.intersection(actual.accepted_sources):
                 continue
             if self._outlined_array_bind_fixed_extents(argument, context) is None:
-                continue
-            if argument.datatype_family is DatatypeFamily.STRING:
                 continue
             flattens = actual.flatten_storage or argument.array.flatten_python_storage
             if flattens and self._flattened_reader_axis(argument) is None:
@@ -7689,9 +7697,58 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         capsule = f"{prefix}_table_capsule"
         table = f"{prefix}_table"
+        record = self._array_actual_struct_reader_record_name(plan)
+        found = f"{prefix}_table_result"
+        width = self._declared_character_width(plan)
+        refusals = (
+            CIf(
+                CodeExpression(f"{found}.refused == 1"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"PyErr_SetString(PyExc_ValueError, "
+                            f"{table}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
+                            f'? "pointer handle is unassociated and cannot be passed as an array actual" '
+                            f': "allocatable handle is unallocated and cannot be passed as an array actual")'
+                        )
+                    ),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CIf(
+                CodeExpression(f"{found}.refused == 2"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f'PyErr_Format(PyExc_TypeError, "handle with %zu-byte elements does not match '
+                            f'expected dtype {plan.native_array_actual.dtype} for argument '
+                            f'{plan.binding.python_name}", {found}.width)'
+                        )
+                    ),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CIf(
+                CodeExpression(f"{found}.refused == 3"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            'PyErr_SetString(PyExc_ValueError, "pointer handle target is noncontiguous '
+                            'and cannot use the pointer/shape array-actual handoff")'
+                        )
+                    ),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+        )
         return (
             CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
             CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
+            CDeclaration(found, record),
+            CExpressionStatement(CodeExpression(f"{found}.actual = &{prefix}_actual")),
+            CExpressionStatement(CodeExpression(f"{found}.refused = 0")),
+            CExpressionStatement(CodeExpression(f"{found}.width = 0")),
+            CExpressionStatement(CodeExpression(f"(void){width}")),
             CExpressionStatement(CodeExpression(f"{prefix}_actual.data = NULL")),
             CExpressionStatement(
                 CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")')
@@ -7704,7 +7761,8 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(
                             f"{table} = prik_native_array_ops_actual_from_capsule({capsule}, "
                             f"{plan.array.rank}, {self._native_array_cfi_type(plan)}, "
-                            f"{self._native_array_expected_element_size(plan)})"
+                            f"{self._native_array_expected_element_size(plan)}, "
+                            f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
                         )
                     ),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
@@ -7712,9 +7770,10 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(
                         CodeExpression(
                             f"{table}->scoped_descriptor({table}->owner, "
-                            f"{self._array_actual_struct_reader_name(plan)}, &{prefix}_actual)"
+                            f"{self._array_actual_struct_reader_name(plan)}, &{found})"
                         )
                     ),
+                    *refusals,
                 ),
                 else_body=(CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),),
             ),
@@ -10064,6 +10123,35 @@ class CBindingGenerator(ClassVisitor):
             yield from self._array_actual_handle_arguments_for(function, self._function_context(function))
 
     @staticmethod
+    def _declared_character_width(argument: ArgumentTransferPlan) -> int:
+        """Return the element width a character dummy declares, or zero."""
+        actual = argument.native_array_actual
+        declared = re.search(r"S(\d+)$", "" if actual is None else str(actual.dtype))
+        return int(declared.group(1)) if declared else 0
+
+    @staticmethod
+    def _declared_character_width_guard(argument: ArgumentTransferPlan) -> tuple:
+        """Decline storage whose element width is not the one the dummy declares.
+
+        A character dummy is matched on its width as well as its kind, and the
+        descriptor states the width the storage actually has.  Declining leaves
+        the record empty, so the runtime reports the dtype it expected.
+        """
+        if argument.datatype_family is not DatatypeFamily.STRING:
+            return ()
+        actual = argument.native_array_actual
+        declared = re.search(r"S(\d+)$", "" if actual is None else str(actual.dtype))
+        if declared is None:
+            return ()
+        return (
+            CComment("A character dummy is matched on its declared width."),
+            CIf(
+                CodeExpression(f"source->elem_len != (size_t){declared.group(1)}"),
+                body=(CReturn(),),
+            ),
+        )
+
+    @staticmethod
     def _flattened_reader_axis(argument: ArgumentTransferPlan) -> int | None:
         """Return the contract axis a flattened dummy collapses into, if any."""
         actual = argument.native_array_actual
@@ -10101,6 +10189,7 @@ class CBindingGenerator(ClassVisitor):
             CComment("Unallocated or disassociated storage has no address to pass."),
             CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
             CExpressionStatement(CodeExpression("expected = (CFI_index_t)source->elem_len")),
+            *self._declared_character_width_guard(argument),
             CComment("Every axis is walked once: contiguity is a property of them all,"),
             CComment("and the collapsed extent is the product of the ones not kept."),
             CFor(
@@ -10153,6 +10242,22 @@ class CBindingGenerator(ClassVisitor):
         owner = re.sub(r"\W", "_", argument.owner_path).casefold()
         return f"prik_fill_array_actual_{owner}"
 
+    def _array_actual_struct_reader_record_name(self, argument: ArgumentTransferPlan) -> str:
+        """Return the record one array-actual reader fills alongside its reason."""
+        return f"{self._array_actual_struct_reader_name(argument)}_result"
+
+    def _array_actual_struct_reader_record(self, argument: ArgumentTransferPlan) -> CStructDefinition:
+        """Define the record carrying one filled array actual and why it was refused."""
+        return CStructDefinition(
+            self._array_actual_struct_reader_record_name(argument),
+            (
+                CParameter("actual", "prik_array_actual *"),
+                # 0 accepted, 1 no storage, 2 element width, 3 noncontiguous
+                CParameter("refused", "int"),
+                CParameter("width", "size_t"),
+            ),
+        )
+
     def _array_actual_struct_reader_function(self, argument: ArgumentTransferPlan) -> CFunction:
         """Fill the shared array-actual record from a handle's descriptor.
 
@@ -10164,17 +10269,23 @@ class CBindingGenerator(ClassVisitor):
         empty, and the shared path reports it.
         """
         rank = argument.array.rank
+        record = self._array_actual_struct_reader_record_name(argument)
         body: list = [
             CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
-            CDeclaration("out", "prik_array_actual *", CodeExpression("(prik_array_actual *)context")),
+            CDeclaration("wrap", f"{record} *", CodeExpression(f"({record} *)context")),
+            CDeclaration("out", "prik_array_actual *", CodeExpression("wrap->actual")),
             CDeclaration("extent", "int64_t", CodeExpression("0")),
             CDeclaration("packed", "CFI_index_t", CodeExpression("0")),
             CExpressionStatement(CodeExpression("out->data = NULL")),
             CExpressionStatement(CodeExpression(f"out->rank = {rank}")),
+            CExpressionStatement(CodeExpression("wrap->refused = 1")),
             CComment("Storage that is not there leaves the record empty."),
             CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
+            CExpressionStatement(CodeExpression("wrap->refused = 2")),
+            CExpressionStatement(CodeExpression("wrap->width = source->elem_len")),
             CExpressionStatement(CodeExpression("out->itemsize = (int64_t)source->elem_len")),
             CExpressionStatement(CodeExpression("packed = (CFI_index_t)source->elem_len")),
+            *self._declared_character_width_guard(argument),
         ]
         for axis in range(rank):
             body.extend(
@@ -10187,6 +10298,7 @@ class CBindingGenerator(ClassVisitor):
                         )
                     ),
                     CComment("Extents alone cannot describe noncontiguous storage."),
+                    CExpressionStatement(CodeExpression("wrap->refused = 3")),
                     CIf(CodeExpression(f"source->dim[{axis}].sm != packed"), body=(CReturn(),)),
                     CExpressionStatement(CodeExpression(f"out->extents[{axis}] = extent")),
                     CExpressionStatement(
@@ -10196,6 +10308,7 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression("packed *= (CFI_index_t)extent")),
                 )
             )
+        body.append(CExpressionStatement(CodeExpression("wrap->refused = 0")))
         body.append(CExpressionStatement(CodeExpression("out->data = source->base_addr")))
         return CFunction(
             self._array_actual_struct_reader_name(argument),
@@ -10223,6 +10336,7 @@ class CBindingGenerator(ClassVisitor):
             if name in seen:
                 continue
             seen.add(name)
+            nodes.append(self._array_actual_struct_reader_record(argument))
             nodes.append(self._array_actual_struct_reader_function(argument))
         for function, argument in self._array_actual_handle_arguments(plan):
             record = self._array_actual_reader_record_name(function, argument)
@@ -10239,6 +10353,9 @@ class CBindingGenerator(ClassVisitor):
                         CParameter(f"extents[{rank}]", "int64_t"),
                         CParameter("contiguous", "int"),
                         CParameter("present", "int"),
+                        # 0 accepted, 1 no storage, 2 element width
+                        CParameter("refused", "int"),
+                        CParameter("width", "size_t"),
                     ),
                 )
             )
@@ -10251,9 +10368,14 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration("expected", "CFI_index_t", CodeExpression("0")),
                 CExpressionStatement(CodeExpression("out->present = 0")),
                 CExpressionStatement(CodeExpression("out->contiguous = 1")),
+                CExpressionStatement(CodeExpression("out->refused = 1")),
                 CComment("Unallocated or disassociated storage has no address to pass."),
                 CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
+                CExpressionStatement(CodeExpression("out->refused = 2")),
+                CExpressionStatement(CodeExpression("out->width = source->elem_len")),
                 CExpressionStatement(CodeExpression("expected = (CFI_index_t)source->elem_len")),
+                *self._declared_character_width_guard(argument),
+                CExpressionStatement(CodeExpression("out->refused = 0")),
             ]
             for axis in range(rank):
                 body.extend(

@@ -190,7 +190,9 @@ static inline prik_native_array_ops *prik_native_array_ops_actual_from_capsule(
     PyObject *capsule,
     uint32_t expected_rank,
     int expected_cfi_type,
-    size_t expected_element_size)
+    size_t expected_element_size,
+    const char *dtype_name,
+    const char *argument_name)
 {
     prik_native_array_ops *ops;
 
@@ -207,10 +209,20 @@ static inline prik_native_array_ops *prik_native_array_ops_actual_from_capsule(
     }
     /* Zero means the handle states the fact rather than matching one: a
        character dummy takes its width from the actual, and a dummy whose
-       storage is flattened takes an actual of any rank. */
+       storage is flattened takes an actual of any rank.
+
+       A handle describing different storage is reported here, naming what the
+       dummy expects and what the handle carries. */
     if ((expected_rank != 0 && ops->rank != expected_rank) || ops->cfi_type != expected_cfi_type
         || (expected_element_size != 0 && ops->element_size != expected_element_size)) {
-        PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
+        PyErr_Format(
+            PyExc_TypeError,
+            "%s handle of rank %u with %zu-byte elements does not match expected dtype %s for argument %s",
+            ops->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER ? "pointer" : "allocatable",
+            (unsigned)ops->rank,
+            ops->element_size,
+            dtype_name,
+            argument_name);
         return NULL;
     }
     return ops;
