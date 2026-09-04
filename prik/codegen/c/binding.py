@@ -7978,6 +7978,17 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         capsule = f"{prefix}_ops_capsule"
         table = f"{prefix}_native_ops"
+        # Presence is otherwise decided by the packing helper, which only the
+        # other branch calls.  A handle that published a table was supplied, so
+        # an optional argument reaching this branch is present.
+        present = (
+            (
+                CComment("This handle was supplied, so an optional argument is present."),
+                CExpressionStatement(CodeExpression(f"{names.present_name} = {table}")),
+            )
+            if plan.entrypoint.pass_descriptor_presence
+            else ()
+        )
         return (
             CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
             CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
@@ -8003,6 +8014,7 @@ class CBindingGenerator(ClassVisitor):
                     ),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
                     CIf(CodeExpression(f"{table} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    *present,
                 ),
                 else_body=(
                     CComment("No table: this handle owns the descriptor it will hand over."),
@@ -8041,6 +8053,14 @@ class CBindingGenerator(ClassVisitor):
                 include_default_binder=binder_definition is not None,
             ),
             *(self._native_descriptor_presence_declarations(plan, names)),
+            *(
+                (
+                    CDeclaration(f"{prefix}_storage", f"CFI_CDESC_T({handle.array.rank})"),
+                    CDeclaration(f"{prefix}_establish_status", "int", CodeExpression("CFI_SUCCESS")),
+                )
+                if plan.entrypoint.pass_descriptor_presence
+                else ()
+            ),
         ]
         inverted = context.inverted_descriptor == plan.owner_path
         general: list[CDeclaration | CExpressionStatement | CIf] = []
@@ -8235,6 +8255,11 @@ class CBindingGenerator(ClassVisitor):
         cfi_type = self._native_array_cfi_type(plan)
         prefix = names.value_name
         condition = "1" if plan.binding.optional_mode is OptionalMode.REQUIRED else f"{names.present_name} != NULL"
+        absent = (
+            self._absent_descriptor_placeholder_nodes(plan, names, handle)
+            if plan.entrypoint.pass_descriptor_presence
+            else ()
+        )
         return (
             CExpressionStatement(CodeExpression(f"{prefix}_item = PyTuple_GetItem({prefix}_packed, 0)")),
             CExpressionStatement(
@@ -8262,7 +8287,57 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"{names.value_name} = (CFI_cdesc_t *){prefix}_native_handle->descriptor")
                     ),
                 ),
+                else_body=absent,
             ),
+        )
+
+    def _absent_descriptor_placeholder_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[CComment | CExpressionStatement | CIf, ...]:
+        """Establish the unallocated descriptor an absent optional hands over.
+
+        A generated bridge takes its descriptor dummy unconditionally and reads
+        the separate present flag, so something valid has to cross even when the
+        argument is absent.  A null base address is the one form the standard
+        allows C to establish for this attribute, and absence is exactly when
+        there is nothing to point at.
+
+        A direct ``bind(c)`` entrypoint has no such flag -- PRIK cannot add a
+        parameter to a signature the user wrote -- so there absence is a null
+        descriptor pointer and no placeholder is built.  That is also what keeps
+        an absent argument distinct from a present but unallocated one.
+        """
+        prefix = names.value_name
+        rank = handle.array.rank
+        cfi_type = self._native_array_cfi_type(plan)
+        elem_len = self._native_array_expected_element_size(plan)
+        status = f"{prefix}_establish_status"
+        return (
+            CComment("Absent: hand over an unallocated placeholder, not a descriptor of"),
+            CComment("someone else's storage. The present flag tells the bridge to ignore it."),
+            CExpressionStatement(
+                CodeExpression(
+                    f"{status} = CFI_establish((CFI_cdesc_t *)&{prefix}_storage, NULL, "
+                    f"{self._owned_native_array_cfi_attribute(handle)}, {cfi_type}, {elem_len}, {rank}, NULL)"
+                )
+            ),
+            CIf(
+                CodeExpression(f"{status} != CFI_SUCCESS"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f'PyErr_Format(PyExc_RuntimeError, "Unable to establish absent native descriptor '
+                            f'for argument {plan.binding.python_name}: %d", {status})'
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CExpressionStatement(CodeExpression(f"{names.value_name} = (CFI_cdesc_t *)&{prefix}_storage")),
         )
 
     def _native_descriptor_fact_unpack_nodes(
@@ -9605,13 +9680,16 @@ class CBindingGenerator(ClassVisitor):
         writable dummy and have it reach the caller's entity, and it means no
         descriptor is ever copied: a read-only argument is placed the same way,
         so C only ever passes on a descriptor Fortran made.
+
+        An optional argument is placed the same way when it is present.  When
+        it is absent there is no handle and so no consumer to enter, and the
+        unallocated placeholder is handed to the same call site directly.
         """
         candidates = [
             argument
             for argument in plan.arguments
             if argument.native_array_handle is not None
             and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-            and argument.binding.optional_mode is OptionalMode.REQUIRED
             and argument.native_array_handle.array.rank is not None
         ]
         if len(candidates) != 1:
@@ -9727,11 +9805,17 @@ class CBindingGenerator(ClassVisitor):
     ) -> str:
         """Assemble the entrypoint call as the consumer makes it."""
         carried = {value: f"call->{declaration.name}" for declaration, value in fields}
+        descriptor_value = context.arguments[context.inverted_descriptor].value_name
         arguments = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
             values = self._entrypoint_parameter_values(plan, group, context)
             if group.owner_path == context.inverted_descriptor:
-                arguments.extend("(CFI_cdesc_t *)descriptor" for _value in values)
+                # Only the descriptor itself is the consumer's argument.  An
+                # optional one is planned alongside its present flag, and that
+                # flag is an ordinary carried value like any other.
+                arguments.extend(
+                    "(CFI_cdesc_t *)descriptor" if value == descriptor_value else carried[value] for value in values
+                )
                 continue
             arguments.extend(carried[value] for value in values)
         call = f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
@@ -9748,20 +9832,26 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[tuple[CParameter, str], ...]:
         """Pair every entrypoint value the consumer needs with its declaration.
 
-        The inverted argument is excluded: the consumer receives that
-        descriptor directly.  Everything else the call needs is carried into
-        the consumer through the context record, because the consumer runs
-        outside the frame that computed it.
+        The inverted descriptor is excluded: the consumer receives that
+        directly.  Everything else the call needs is carried into the consumer
+        through the context record, because the consumer runs outside the frame
+        that computed it -- including the present flag planned beside an
+        optional descriptor, which is a value like any other.
         """
+        descriptor_value = (
+            None if context.inverted_descriptor is None else context.arguments[context.inverted_descriptor].value_name
+        )
         pairs: list[tuple[CParameter, str]] = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
-            if group.owner_path == context.inverted_descriptor:
-                continue
             declarations = self._entrypoint_parameter_declarations(plan, group)
             values = self._entrypoint_parameter_values(plan, group, context)
             if len(declarations) != len(values):
                 raise ValueError(f"Entrypoint parameter {group.owner_path!r} has mismatched declarations and values")
-            pairs.extend(zip(declarations, values, strict=True))
+            pairs.extend(
+                (declaration, value)
+                for declaration, value in zip(declarations, values, strict=True)
+                if not (group.owner_path == context.inverted_descriptor and value == descriptor_value)
+            )
         return tuple(pairs)
 
     def _inverted_consumer_name(self, plan: FunctionPlan) -> str:

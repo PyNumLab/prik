@@ -1445,8 +1445,6 @@ def _native_array_default_construction(
     This pairs with the handoff ABI: an argument whose descriptor crosses
     directly is handed a descriptor the Fortran runtime built, so a caller who
     supplies a contract-default handle needs storage of its own to hand over.
-    An optional argument keeps the fact-packed form, whose absent branch has an
-    empty descriptor to establish instead.
     """
     if (
         semantic_type.name == "String"
@@ -1454,8 +1452,6 @@ def _native_array_default_construction(
         or not context.is_argument
     ):
         return "none"
-    if handle_kind == "optional_absent_handle" and not context.projects_result:
-        return "fact_packed_empty"
     return "lazy_owned_descriptor"
 
 

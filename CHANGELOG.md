@@ -23,8 +23,30 @@ release tags add a leading `v` to the package version.
   association — is therefore what the caller's entity sees when the callback
   returns. Module variables, derived-type fields and returned results all reach
   such a dummy on every compiler now, including the bounds a shifted allocatable
-  carries. Optional dummies are unchanged: their absent branch still establishes
-  the unallocated placeholder that pairs with the present flag.
+  carries.
+
+- **Fixed:** an `optional` `allocatable` or `pointer` dummy no longer fails on
+  Intel `ifx`. Passing a handle to one raised `Unable to establish native
+  descriptor for argument ...: 2` there while working on gfortran: a present
+  optional argument still rebuilt its descriptor in C, so it made exactly the
+  `CFI_establish` call F2018 18.5.5.6 forbids. A present optional argument is an
+  ordinary descriptor argument and now takes the same route as any other, which
+  also means a callee that reallocates or re-associates one reaches the caller's
+  entity instead of a copy.
+
+  An absent argument is unchanged where a generated bridge is involved: it still
+  hands over the unallocated placeholder that pairs with the bridge's present
+  flag, which is legal precisely because absence is when there is nothing to
+  point at. A direct `bind(c)` entrypoint has no such flag — PRIK cannot add a
+  parameter to a signature you wrote — so there an absent argument stays a null
+  descriptor pointer, keeping it distinct from a present but unallocated one.
+
+  A caller-supplied handle must now be backed by a real descriptor. A handle
+  whose `descriptor` operation only reported base address, element length and
+  bounds is no longer accepted for these arguments: rebuilding a descriptor from
+  those fields is the unsound step this release removes. Handles obtained from a
+  module variable, a field, a result, or created from a contract type and filled
+  by a native call are unaffected.
 
 - **Fixed:** a `pointer` dummy now takes the same route, and a callee that
   re-associates one is no longer silently ignored. PRIK packed the descriptor's

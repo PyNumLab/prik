@@ -654,7 +654,9 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert optional_target.descriptor_interop == "pointer_c_descriptor"
     assert optional_target.requires_pointer_c_descriptor_interop is True
     assert set(optional_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
-    assert optional_target.default_construction == "fact_packed_empty"
+    # An optional argument is a descriptor argument like any other when it is
+    # present, so a caller-created handle needs storage of its own to hand over.
+    assert optional_target.default_construction == "lazy_owned_descriptor"
     assert "destroy" in optional_target.default_operations
     assert "allocate" not in optional_target.operations
     assert "deallocate" not in optional_target.operations

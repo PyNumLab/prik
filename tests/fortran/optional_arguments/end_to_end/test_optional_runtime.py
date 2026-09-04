@@ -12,6 +12,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
+from prik.contracts import Allocatable, Float64, Pointer
 from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -49,31 +50,6 @@ def _unassociated_handle_for_rejected_optional_array():
             "nullify": lambda _handle: None,
         },
     )
-
-
-def _optional_descriptor_handle(value: np.ndarray | None, *, pointer: bool):
-    descriptor = {
-        "base_addr": 0 if value is None else value.ctypes.data,
-        "elem_len": np.dtype(np.float64).itemsize,
-        "rank": 1,
-        "dim": [
-            {
-                "lower_bound": 0,
-                "extent": 0 if value is None else value.size,
-                "sm": np.dtype(np.float64).itemsize,
-            }
-        ],
-    }
-    operations = {
-        "array_actual": lambda _handle: _NativeArrayHandoff(value.ctypes.data),
-        "descriptor": lambda _handle: descriptor,
-        "shape": lambda _handle: None if value is None else value.shape,
-        "to_numpy": lambda _handle: value,
-        "associated" if pointer else "allocated": lambda _handle: value is not None,
-        "nullify" if pointer else "deallocate": lambda _handle: None,
-    }
-    handle_type = PointerArray if pointer else AllocatableArray
-    return handle_type(dtype=np.dtype(np.float64), rank=1, ops=operations)
 
 
 def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path: Path):
@@ -122,16 +98,23 @@ def test_optional_array_descriptors_preserve_presence_and_storage_state(tmp_path
     )
     module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
 
-    values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     for function_name in ("alloc_state", "pointer_state"):
         function = getattr(module, function_name)
         assert function() == np.int32(0)
         assert function(None) == np.int32(0)
 
-    for function_name, pointer in (("alloc_state", False), ("pointer_state", True)):
+    # A handle that is present but empty must stay distinguishable from an
+    # absent argument, and the descriptor the callee fills has to be the
+    # handle's own for the third state to be reachable at all.
+    for function_name, contract, fill_name in (
+        ("alloc_state", Allocatable[Float64[:]], "alloc_fill"),
+        ("pointer_state", Pointer[Float64[:]], "pointer_bind"),
+    ):
         function = getattr(module, function_name)
-        assert function(_optional_descriptor_handle(None, pointer=pointer)) == np.int32(1)
-        assert function(_optional_descriptor_handle(values, pointer=pointer)) == np.int32(6)
+        handle = contract()
+        assert function(handle) == np.int32(1)
+        getattr(module, fill_name)(handle)
+        assert function(handle) == np.int32(6)
 
 
 def test_optional_arguments_drive_fortran_present_behavior(

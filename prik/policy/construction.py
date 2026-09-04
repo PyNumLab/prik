@@ -6375,14 +6375,16 @@ def _native_descriptor_handoff_abi(
     handed one for the call rather than establishing or filling a record of its
     own.  That holds for a pointer as much as an allocatable, and it is what
     lets a callee change an allocation or an association and have the caller's
-    entity see it.  An optional argument keeps the fact-packed form, whose
-    absent branch establishes the placeholder the present flag pairs with.
+    entity see it.  An optional argument is no different when it is present;
+    its absent branch establishes the placeholder the present flag pairs with,
+    which is the one descriptor C may legally establish for this attribute
+    because it has a null base address.
     """
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     if output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
         return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    if not optional_absent and descriptor_kind in {
+    if descriptor_kind in {
         NativeArrayDescriptorKind.ALLOCATABLE.value,
         NativeArrayDescriptorKind.POINTER.value,
     }:

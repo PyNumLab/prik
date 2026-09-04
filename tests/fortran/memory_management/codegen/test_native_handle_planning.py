@@ -366,7 +366,9 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
 
     assert artifacts.required_headers == ("ISO_Fortran_binding.h",)
     assert "prik_bind_array(" in c_source
-    assert '"_native_array_descriptor_argument_for_binding_positional"' in c_source
+    # Descriptor arguments reach the runtime through one packer.  The
+    # fact-reporting one is gone: nothing rebuilds a descriptor in C.
+    assert '"_native_array_descriptor_argument_for_binding_positional"' not in c_source
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
@@ -394,8 +396,11 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     optional_c_end = c_source.index("static PyObject * wrap_replace(", optional_c_start)
     optional_binding = c_source[optional_c_start:optional_c_end]
     assert "} else {" in optional_binding
-    assert "bound_values_elem_len = sizeof(double);" in optional_binding
-    assert "bound_values_descriptor_rank = 1;" in optional_binding
+    # The absent branch hands the bridge an unallocated placeholder to pair
+    # with its present flag.  A null base address is the only form the standard
+    # lets C establish for this attribute, and absence is when there is nothing
+    # to point at.
+    assert "CFI_establish((CFI_cdesc_t *)&bound_values_storage, NULL, CFI_attribute_allocatable" in optional_binding
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
     assert "result_value = native_make(n)" in bridge_source
     assert "result_value = native_make_matrix(n, m)" in bridge_source
