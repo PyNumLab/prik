@@ -205,8 +205,11 @@ static inline prik_native_array_ops *prik_native_array_ops_actual_from_capsule(
         PyErr_SetString(PyExc_TypeError, "incompatible prik native array ops record");
         return NULL;
     }
-    if (ops->rank != expected_rank || ops->cfi_type != expected_cfi_type
-        || ops->element_size != expected_element_size) {
+    /* Zero means the handle states the fact rather than matching one: a
+       character dummy takes its width from the actual, and a dummy whose
+       storage is flattened takes an actual of any rank. */
+    if ((expected_rank != 0 && ops->rank != expected_rank) || ops->cfi_type != expected_cfi_type
+        || (expected_element_size != 0 && ops->element_size != expected_element_size)) {
         PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
         return NULL;
     }

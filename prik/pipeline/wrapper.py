@@ -530,12 +530,32 @@ class WrapperGenerator:
             for namespace in plan.namespaces
             for derived in namespace.derived_types
             for field in derived.fields
-        ):
+        ) or self._accepts_array_handle_actual(plan):
             expected_headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         expected = tuple(dict.fromkeys(expected_headers))
         if plan.required_headers == expected:
             return ()
         return (self._diagnostic(plan.owner_path, "inconsistent-required-headers", plan.required_headers),)
+
+    @staticmethod
+    def _accepts_array_handle_actual(plan: ModulePlan) -> bool:
+        """Return whether an ordinary array argument accepts an array handle.
+
+        The storage such a handle names is reached through its descriptor, so
+        the module needs the interop header even when nothing else in it does.
+        A module with no Fortran behind it has no descriptors to read and keeps
+        the runtime route instead.
+        """
+        if "fortran" not in plan.entrypoint.native_languages:
+            return False
+        accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
+        return any(
+            argument.native_array_actual is not None
+            and accepts.intersection(argument.native_array_actual.accepted_sources)
+            for namespace in plan.namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
 
     def _namespace_native_array_handles(
         self,

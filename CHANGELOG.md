@@ -25,6 +25,18 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- More array dummies take an array handle without going through Python. The
+  storage a handle names is reached through its descriptor, so the binding only
+  read it directly when the module happened to use descriptors elsewhere --
+  whether an argument was fast depended on an unrelated variable in the same
+  module. The interop header now follows the argument instead. Two more dummy
+  forms are covered as well: an assumed-shape `values(:)`, whose bridge carries
+  strides and bounds beyond an address and extents, and an assumed-size
+  `values(*)`, which collapses an actual of any rank into one axis. A
+  `character` dummy is matched on its declared width, which the entry-point
+  table does not carry, so it still takes the runtime route, as do modules with
+  no Fortran behind them.
+
 - Reading a handle you created is faster again. Its generated inquiries read
   the descriptor they are given, so they now report absent storage themselves
   instead of the runtime asking a separate question first, and a result the

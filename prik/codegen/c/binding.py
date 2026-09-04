@@ -7461,7 +7461,9 @@ class CBindingGenerator(ClassVisitor):
                 body=(
                     CExpressionStatement(
                         CodeExpression(
-                            f"{table} = prik_native_array_ops_actual_from_capsule({capsule}, {rank}, "
+                            f"{table} = prik_native_array_ops_actual_from_capsule({capsule}, "
+                            # A flattened dummy takes an actual of any rank.
+                            f"{0 if self._flattened_reader_axis(plan) is not None else rank}, "
                             f"{self._native_array_cfi_type(plan)}, "
                             f"{self._native_array_expected_element_size(plan)})"
                         )
@@ -7480,6 +7482,47 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def _inline_array_actual_handle_arguments(self, plan: ModulePlan):
+        """Return array arguments that take a handle through the shared record.
+
+        These are the ones the outlined binder cannot serve -- an assumed-shape
+        dummy carries strides and bounds beyond a pointer and extents -- so
+        they fill the record instead.
+        """
+        for function in self._functions(plan):
+            context = self._function_context(function)
+            for argument in function.arguments:
+                if self._inline_array_actual_fast_path(argument) and (
+                    self._outlined_array_bind_fixed_extents(argument, context) is None
+                ):
+                    yield argument
+
+    @staticmethod
+    def _takes_array_handle(argument: ArgumentTransferPlan) -> bool:
+        """Return whether an ordinary array argument accepts an array handle."""
+        actual = argument.native_array_actual
+        if actual is None or argument.array is None or argument.array.rank is None:
+            return False
+        return bool(
+            {
+                NativeArraySourceKind.ALLOCATABLE_HANDLE,
+                NativeArraySourceKind.POINTER_HANDLE,
+            }.intersection(actual.accepted_sources)
+        )
+
+    def _inline_array_actual_fast_path(self, plan: ArgumentTransferPlan) -> bool:
+        """Report whether this argument can fill its record from a descriptor."""
+        if not self._reads_native_descriptors or not self._takes_array_handle(plan):
+            return False
+        actual = plan.native_array_actual
+        # A character dummy is matched on its declared width, which the table
+        # does not carry, so it keeps the runtime route.
+        return not (
+            actual.flatten_storage
+            or plan.array.flatten_python_storage
+            or plan.datatype_family is DatatypeFamily.STRING
+        )
+
     def _array_actual_handle_arguments_for(self, function: FunctionPlan, context: _CFunctionContext):
         """Return this function's array arguments an array handle may be passed to."""
         for argument in function.arguments:
@@ -7493,7 +7536,10 @@ class CBindingGenerator(ClassVisitor):
                 continue
             if self._outlined_array_bind_fixed_extents(argument, context) is None:
                 continue
-            if actual.flatten_storage or argument.array.flatten_python_storage:
+            if argument.datatype_family is DatatypeFamily.STRING:
+                continue
+            flattens = actual.flatten_storage or argument.array.flatten_python_storage
+            if flattens and self._flattened_reader_axis(argument) is None:
                 continue
             yield function, argument
 
@@ -7599,6 +7645,7 @@ class CBindingGenerator(ClassVisitor):
             return ()
         prefix = names.value_name
         layout = "NULL" if actual.order is None else f'"{actual.order}"'
+        table_nodes = self._native_array_actual_table_nodes(plan, names)
         nodes = [
             *self._native_array_actual_shape_object_nodes(plan, names),
             *self._native_array_actual_shape_nodes(plan, context, names),
@@ -7616,7 +7663,62 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_shape)")),
         ]
-        return tuple(nodes)
+        if not table_nodes:
+            return tuple(nodes)
+        # The handle already named its storage, so the shared path runs only
+        # when nothing filled the record.
+        return (
+            *table_nodes,
+            CIf(CodeExpression(f"{prefix}_actual.data == NULL"), body=tuple(nodes)),
+        )
+
+    def _native_array_actual_table_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+    ) -> tuple:
+        """Fill the array-actual record from a handle's table when it has one.
+
+        A handle standing for native storage names it through its table, so the
+        record is filled here rather than assembled by asking the runtime one
+        operation at a time.  Anything else leaves it empty and takes the
+        shared path.
+        """
+        if not self._inline_array_actual_fast_path(plan):
+            return ()
+        prefix = names.value_name
+        capsule = f"{prefix}_table_capsule"
+        table = f"{prefix}_table"
+        return (
+            CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
+            CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
+            CExpressionStatement(CodeExpression(f"{prefix}_actual.data = NULL")),
+            CExpressionStatement(
+                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")')
+            ),
+            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
+            CIf(
+                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{table} = prik_native_array_ops_actual_from_capsule({capsule}, "
+                            f"{plan.array.rank}, {self._native_array_cfi_type(plan)}, "
+                            f"{self._native_array_expected_element_size(plan)})"
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
+                    CIf(CodeExpression(f"{table} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{table}->scoped_descriptor({table}->owner, "
+                            f"{self._array_actual_struct_reader_name(plan)}, &{prefix}_actual)"
+                        )
+                    ),
+                ),
+                else_body=(CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),),
+            ),
+        )
 
     def _native_array_actual_shape_object_nodes(
         self,
@@ -9961,6 +10063,149 @@ class CBindingGenerator(ClassVisitor):
         for function in self._functions(plan):
             yield from self._array_actual_handle_arguments_for(function, self._function_context(function))
 
+    @staticmethod
+    def _flattened_reader_axis(argument: ArgumentTransferPlan) -> int | None:
+        """Return the contract axis a flattened dummy collapses into, if any."""
+        actual = argument.native_array_actual
+        if actual is None or not actual.flatten_storage:
+            return None
+        rank = argument.array.rank
+        axis = 0 if actual.flat_axis is None or int(actual.flat_axis) < 0 else int(actual.flat_axis)
+        return axis if axis in {0, rank - 1} else None
+
+    def _flattened_array_actual_reader(
+        self,
+        function: FunctionPlan,
+        argument: ArgumentTransferPlan,
+        record: str,
+        rank: int,
+        flat_axis: int,
+    ) -> CFunction:
+        """Read a handle's storage for a dummy that flattens it.
+
+        Such a dummy takes an actual of any rank and collapses it into one
+        contract axis, so this walks the rank the descriptor reports rather
+        than the dummy's own, and folds every collapsed axis into a product.
+        Kept extents come from the axes the contract still names.
+        """
+        body: list = [
+            CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
+            CDeclaration("out", f"{record} *", CodeExpression(f"({record} *)context")),
+            CDeclaration("expected", "CFI_index_t", CodeExpression("0")),
+            CDeclaration("collapsed", "int64_t", CodeExpression("1")),
+            CDeclaration("extent", "int64_t", CodeExpression("0")),
+            CDeclaration("axis", "int", CodeExpression("0")),
+            CDeclaration("kept", "int", CodeExpression(str(rank - 1))),
+            CExpressionStatement(CodeExpression("out->present = 0")),
+            CExpressionStatement(CodeExpression("out->contiguous = 1")),
+            CComment("Unallocated or disassociated storage has no address to pass."),
+            CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
+            CExpressionStatement(CodeExpression("expected = (CFI_index_t)source->elem_len")),
+            CComment("Every axis is walked once: contiguity is a property of them all,"),
+            CComment("and the collapsed extent is the product of the ones not kept."),
+            CFor(
+                "axis = 0",
+                CodeExpression("axis < (int)source->rank"),
+                CodeExpression("axis += 1"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            "extent = (int64_t)(source->dim[axis].extent == -1 ? 0 : source->dim[axis].extent)"
+                        )
+                    ),
+                    CIf(
+                        CodeExpression("source->dim[axis].sm != expected"),
+                        body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
+                    ),
+                    CExpressionStatement(CodeExpression("expected *= (CFI_index_t)extent")),
+                    CIf(
+                        CodeExpression(
+                            "axis < kept" if flat_axis == rank - 1 else "axis >= (int)source->rank - kept"
+                        ),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f"out->extents[{'axis' if flat_axis == rank - 1 else 'axis - ((int)source->rank - kept) + 1'}] = extent"
+                                )
+                            ),
+                        ),
+                        else_body=(CExpressionStatement(CodeExpression("collapsed *= extent")),),
+                    ),
+                ),
+            ),
+            CExpressionStatement(
+                CodeExpression(f"out->extents[{rank - 1 if flat_axis == rank - 1 else 0}] = collapsed")
+            ),
+            CExpressionStatement(CodeExpression("out->data = source->base_addr")),
+            CExpressionStatement(CodeExpression("out->present = 1")),
+        ]
+        return CFunction(
+            self._array_actual_reader_name(function, argument),
+            "void",
+            parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+            storage="static",
+            body=tuple(body),
+            doc=("Read one handle's storage for a dummy that flattens it into one axis.",),
+        )
+
+    def _array_actual_struct_reader_name(self, argument: ArgumentTransferPlan) -> str:
+        """Return the reader that fills one array actual from its descriptor."""
+        owner = re.sub(r"\W", "_", argument.owner_path).casefold()
+        return f"prik_fill_array_actual_{owner}"
+
+    def _array_actual_struct_reader_function(self, argument: ArgumentTransferPlan) -> CFunction:
+        """Fill the shared array-actual record from a handle's descriptor.
+
+        The record is the same one the runtime fills, so what reads it is
+        unchanged.  A handle's storage reaches an ordinary dummy contiguously
+        -- a noncontiguous one is refused -- so the strides are unit and each
+        upper bound is its extent's last index, exactly as the runtime reports
+        them for a handle.  Storage that is not contiguous leaves the record
+        empty, and the shared path reports it.
+        """
+        rank = argument.array.rank
+        body: list = [
+            CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
+            CDeclaration("out", "prik_array_actual *", CodeExpression("(prik_array_actual *)context")),
+            CDeclaration("extent", "int64_t", CodeExpression("0")),
+            CDeclaration("packed", "CFI_index_t", CodeExpression("0")),
+            CExpressionStatement(CodeExpression("out->data = NULL")),
+            CExpressionStatement(CodeExpression(f"out->rank = {rank}")),
+            CComment("Storage that is not there leaves the record empty."),
+            CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
+            CExpressionStatement(CodeExpression("out->itemsize = (int64_t)source->elem_len")),
+            CExpressionStatement(CodeExpression("packed = (CFI_index_t)source->elem_len")),
+        ]
+        for axis in range(rank):
+            body.extend(
+                (
+                    # A compiler may report an empty dimension as extent -1.
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"extent = (int64_t)(source->dim[{axis}].extent == -1 "
+                            f"? 0 : source->dim[{axis}].extent)"
+                        )
+                    ),
+                    CComment("Extents alone cannot describe noncontiguous storage."),
+                    CIf(CodeExpression(f"source->dim[{axis}].sm != packed"), body=(CReturn(),)),
+                    CExpressionStatement(CodeExpression(f"out->extents[{axis}] = extent")),
+                    CExpressionStatement(
+                        CodeExpression(f"out->upper_bounds[{axis}] = extent == 0 ? -1 : extent - 1")
+                    ),
+                    CExpressionStatement(CodeExpression(f"out->strides[{axis}] = 1")),
+                    CExpressionStatement(CodeExpression("packed *= (CFI_index_t)extent")),
+                )
+            )
+        body.append(CExpressionStatement(CodeExpression("out->data = source->base_addr")))
+        return CFunction(
+            self._array_actual_struct_reader_name(argument),
+            "void",
+            parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+            storage="static",
+            body=tuple(body),
+            doc=("Fill one array actual record from the descriptor the runtime opened.",),
+        )
+
     def _array_actual_reader_functions(self, plan: ModulePlan) -> tuple:
         """Emit the record and reader for each array dummy a handle may reach.
 
@@ -9973,12 +10218,19 @@ class CBindingGenerator(ClassVisitor):
         seen: set[str] = set()
         if not self._reads_native_descriptors:
             return ()
+        for argument in self._inline_array_actual_handle_arguments(plan):
+            name = self._array_actual_struct_reader_name(argument)
+            if name in seen:
+                continue
+            seen.add(name)
+            nodes.append(self._array_actual_struct_reader_function(argument))
         for function, argument in self._array_actual_handle_arguments(plan):
             record = self._array_actual_reader_record_name(function, argument)
             if record in seen:
                 continue
             seen.add(record)
             rank = argument.array.rank
+            flat_axis = self._flattened_reader_axis(argument)
             nodes.append(
                 CStructDefinition(
                     record,
@@ -9990,6 +10242,9 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 )
             )
+            if flat_axis is not None:
+                nodes.append(self._flattened_array_actual_reader(function, argument, record, rank, flat_axis))
+                continue
             body: list = [
                 CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
                 CDeclaration("out", f"{record} *", CodeExpression(f"({record} *)context")),
