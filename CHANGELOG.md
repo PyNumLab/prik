@@ -25,6 +25,15 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- A handle you create yourself now reaches a native call as fast as one that
+  came from a module variable. Such a handle is given wrapper-owned descriptor
+  storage the first time it is passed, and it now publishes that storage as an
+  entry-point table, so every later call reads it from C instead of packing the
+  argument through Python. Passing one to a `real(8), allocatable` dummy cost
+  about 8.8us per call and now costs about 0.26us -- faster than passing a
+  plain NumPy array, which still has a buffer to check. The first call is
+  unchanged: it still binds the storage through Python, once per handle.
+
 - **Fixed:** an `optional` `allocatable` or `pointer` dummy no longer fails on
   Intel `ifx`. Passing a handle to one raised `Unable to establish native
   descriptor for argument ...: 2` there while working on gfortran: a present

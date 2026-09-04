@@ -105,6 +105,24 @@ typedef struct {
     void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context);
 } prik_native_array_ops;
 
+/*
+ * Hand over a descriptor the wrapper itself owns.
+ *
+ * A handle the caller created has no native entity behind it: the binding
+ * allocated its descriptor when the handle was first bound and keeps it for
+ * the handle's lifetime. There is no call-scoped window to stay inside, so
+ * the consumer runs on that storage directly. Publishing it through the same
+ * table lets such a handle reach a call the way a module array does, without
+ * a Python round trip per call.
+ */
+static inline void prik_native_array_owned_scoped_descriptor(
+    void *owner,
+    prik_native_array_descriptor_fn consumer,
+    void *context)
+{
+    consumer(owner, context);
+}
+
 /* Free the per-handle entry-point table a capsule owns. */
 static inline void prik_native_array_ops_capsule_destructor(PyObject *capsule)
 {

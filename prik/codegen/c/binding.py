@@ -4936,12 +4936,17 @@ class CBindingGenerator(ClassVisitor):
         nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
             CDeclaration("handle_obj", "PyObject *"),
             CDeclaration("owner_descriptor", "CFI_cdesc_t *", CodeExpression("NULL")),
+            # `owner_descriptor` is cleared once its ownership moves to the
+            # handle capsule, so the table's non-owning reference to the same
+            # storage is kept separately.
+            CDeclaration("owner_storage", "void *", CodeExpression("NULL")),
             CDeclaration("owner_status", "int", CodeExpression("CFI_SUCCESS")),
             CDeclaration("ops", "PyObject *", CodeExpression("NULL")),
             CDeclaration("operation", "PyObject *", CodeExpression("NULL")),
             CDeclaration("owner_obj", "PyObject *", CodeExpression("NULL")),
             CDeclaration("runtime", "PyObject *", CodeExpression("NULL")),
             CDeclaration("helper", "PyObject *", CodeExpression("NULL")),
+            CDeclaration("native_ops", "PyObject *", CodeExpression("NULL")),
             CDeclaration("result", "PyObject *", CodeExpression("NULL")),
             CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &handle_obj)) return NULL')),
             CExpressionStatement(
@@ -4974,6 +4979,7 @@ class CBindingGenerator(ClassVisitor):
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
+            CExpressionStatement(CodeExpression("owner_storage = (void *)owner_descriptor")),
             CExpressionStatement(CodeExpression("ops = PyDict_New()")),
             CIf(
                 CodeExpression("ops == NULL"),
@@ -5047,13 +5053,34 @@ class CBindingGenerator(ClassVisitor):
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
+                # The attached storage is the wrapper's own, so it can be
+                # published as an entry-point table.  Every later call then
+                # reaches the descriptor from C instead of coming back here.
                 CExpressionStatement(
                     CodeExpression(
-                        f'result = PyObject_CallFunction(helper, "OssiOOszO", handle_obj, '
-                        f'"{handle.descriptor_kind.value}", "{dtype}", {handle.array.rank}, ops, owner_obj, '
-                        f'"{default.descriptor_ownership.value}", {exposure}, Py_None)'
+                        f"native_ops = prik_native_array_ops_capsule_new("
+                        f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, "
+                        f"{cfi_type}, {elem_len}, owner_storage, "
+                        f"prik_native_array_owned_scoped_descriptor)"
                     )
                 ),
+                CIf(
+                    CodeExpression("native_ops == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_DECREF(helper)")),
+                        CExpressionStatement(CodeExpression("Py_DECREF(owner_obj)")),
+                        CExpressionStatement(CodeExpression("Py_DECREF(ops)")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CExpressionStatement(
+                    CodeExpression(
+                        f'result = PyObject_CallFunction(helper, "OssiOOszOO", handle_obj, '
+                        f'"{handle.descriptor_kind.value}", "{dtype}", {handle.array.rank}, ops, owner_obj, '
+                        f'"{default.descriptor_ownership.value}", {exposure}, Py_None, native_ops)'
+                    )
+                ),
+                CExpressionStatement(CodeExpression("Py_DECREF(native_ops)")),
                 CExpressionStatement(CodeExpression("Py_DECREF(helper)")),
                 CExpressionStatement(CodeExpression("Py_DECREF(owner_obj)")),
                 CExpressionStatement(CodeExpression("Py_DECREF(ops)")),

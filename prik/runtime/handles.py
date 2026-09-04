@@ -289,6 +289,7 @@ def _bind_contract_native_array_handle(
     descriptor_ownership: str,
     to_numpy_policy: str | None,
     generation: int | None = None,
+    native_ops: Any = None,
 ) -> None:
     """Attach generated persistent descriptor storage to a contract handle.
 
@@ -296,6 +297,9 @@ def _bind_contract_native_array_handle(
     does not project a result.  Such an argument gives the handle a descriptor
     to hand over, but it does not define what the handle exposes, so the
     handle keeps the exposure it was created with.
+
+    ``native_ops`` is the entry-point table for the attached storage, which
+    subsequent calls read directly from C.
     """
     if not isinstance(handle, NativeArrayHandleBase) or not handle._contract_default:
         raise TypeError("generated descriptor storage can attach only to a fresh contract handle")
@@ -325,6 +329,10 @@ def _bind_contract_native_array_handle(
     handle._descriptor_ownership = generated._descriptor_ownership
     handle._to_numpy_policy = generated._to_numpy_policy
     handle._generation = generated._generation
+    # The storage just attached is the wrapper's own and lives as long as the
+    # handle, so the handle can publish it the way a module array publishes
+    # its entity.  Later calls then reach it from C without coming back here.
+    handle._native_ops = native_ops
     handle._contract_default = False
     generated._closed = True
     if pending_pointer_descriptor is not None:
