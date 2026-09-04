@@ -178,6 +178,41 @@ static inline PyObject *prik_native_array_ops_capsule_new(
 }
 
 /* Decode one ops capsule, rejecting a record this extension cannot read. */
+/*
+ * Read a table for an ordinary array actual.
+ *
+ * An ordinary array dummy takes the storage behind a handle, not the handle's
+ * descriptor kind: an allocatable and a pointer are equally acceptable there,
+ * so the kind is not compared. Everything that decides whether the storage
+ * matches the dummy -- rank, element type and element size -- still is.
+ */
+static inline prik_native_array_ops *prik_native_array_ops_actual_from_capsule(
+    PyObject *capsule,
+    uint32_t expected_rank,
+    int expected_cfi_type,
+    size_t expected_element_size)
+{
+    prik_native_array_ops *ops;
+
+    ops = (prik_native_array_ops *)PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
+    if (ops == NULL) {
+        return NULL;
+    }
+    if (ops->magic != PRIK_NATIVE_ARRAY_OPS_MAGIC
+        || ops->abi_version != PRIK_NATIVE_ARRAY_OPS_ABI_VERSION
+        || ops->struct_size != (uint32_t)sizeof(*ops)
+        || ops->scoped_descriptor == NULL) {
+        PyErr_SetString(PyExc_TypeError, "incompatible prik native array ops record");
+        return NULL;
+    }
+    if (ops->rank != expected_rank || ops->cfi_type != expected_cfi_type
+        || ops->element_size != expected_element_size) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
+        return NULL;
+    }
+    return ops;
+}
+
 static inline prik_native_array_ops *prik_native_array_ops_from_capsule(
     PyObject *capsule,
     uint32_t expected_descriptor_kind,

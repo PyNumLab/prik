@@ -25,6 +25,18 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- Passing an array handle to an ordinary array dummy no longer goes through
+  Python on every call. Such a dummy takes an address and extents, and the
+  runtime was asked for them one operation at a time -- nine round trips per
+  call, with the shape computed twice. When the handle publishes native entry
+  points, the address and extents are now read from its descriptor in the
+  binding. Passing a module array to a `real(8) :: v(n)` dummy cost about
+  17.5us per call and now costs about 0.27us. Handles that report state
+  through supplied operations, flattened storage, and runtime rank, stride or
+  itemsize shapes keep the previous route, and every diagnostic is unchanged:
+  an unallocated handle, an unassociated pointer, a noncontiguous pointer
+  target and a shape mismatch report exactly as before.
+
 - Reading an allocatable handle with `to_numpy()` no longer round-trips its
   descriptor through Python. The generated extraction reported the descriptor
   as base address, element length and per-axis bounds, and the runtime decoded
