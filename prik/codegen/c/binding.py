@@ -8052,102 +8052,6 @@ class CBindingGenerator(ClassVisitor):
         nodes.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
         return tuple(nodes)
 
-    _UNCONSTRAINED_ARRAY_EXTENTS = frozenset({":", "::Strided", "Flat"})
-
-    def _uses_native_array_ops_fast_path(
-        self,
-        plan: ArgumentTransferPlan,
-        handle: NativeArrayHandlePlan,
-    ) -> bool:
-        """Report whether this argument may take a handle's published entry-point table.
-
-        The table hands back a copy of the descriptor the Fortran runtime
-        built, which stands in only where the callee cannot change the
-        allocation -- the same rule the borrowed handoff follows.  It carries
-        no presence flag and no declared extents either, so an optional or
-        shape-constrained argument keeps the general path.
-        """
-        return (
-            handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-            and handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE
-            and plan.binding.optional_mode is OptionalMode.REQUIRED
-            and handle.array.rank is not None
-            and all(extent in self._UNCONSTRAINED_ARRAY_EXTENTS for extent in handle.array.shape)
-        )
-
-    def _native_array_ops_fast_path_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        names: _CArgumentNames,
-        handle: NativeArrayHandlePlan,
-        fallback: tuple[CDeclaration | CExpressionStatement | CIf, ...],
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
-        """Take the handle's entry-point table when it publishes one, else fall back."""
-        prefix = names.value_name
-        rank = handle.array.rank
-        cfi_type = self._native_array_cfi_type(plan)
-        capsule = f"{prefix}_ops_capsule"
-        table = f"{prefix}_native_ops"
-        storage = f"{prefix}_ops_storage"
-        target = f"{prefix}_ops_copy"
-        gate = " || ".join(f"{prefix}->dim[{axis}].extent < 0" for axis in range(rank))
-        return (
-            CDeclaration(storage, f"CFI_CDESC_T({rank})"),
-            CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
-            CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
-            CDeclaration(
-                target,
-                "prik_native_array_descriptor_copy",
-                CodeExpression(f"{{&{storage}, sizeof({storage})}}"),
-            ),
-            CComment("A handle publishes a table of native entry points when its entity can be"),
-            CComment("reached directly; one that does not takes the general path below."),
-            CExpressionStatement(
-                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_ops")'),
-            ),
-            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
-            CIf(
-                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
-                body=(
-                    CComment("The table names the entity it stands for: refuse a handle whose kind,"),
-                    CComment("rank, element type or element size disagrees with this dummy."),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{table} = prik_native_array_ops_from_capsule({capsule}, "
-                            f"{self._native_array_handle_kind_constant(handle)}, {rank}, {cfi_type}, "
-                            f"{self._native_array_expected_element_size(plan)})",
-                        )
-                    ),
-                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
-                    CIf(CodeExpression(f"{table} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                    CComment("Fortran builds the descriptor for this call and hands it to the consumer,"),
-                    CComment("which copies the record into our storage. Only the record is copied;"),
-                    CComment("base_addr still refers to the entity's own data. It is rebuilt every call"),
-                    CComment("because reallocating the entity leaves an earlier descriptor describing"),
-                    CComment("storage that has been released."),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{table}->scoped_descriptor({table}->owner, prik_native_array_copy_descriptor, &{target})",
-                        )
-                    ),
-                    CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{storage}")),
-                    CComment("A negative extent would index outside the array, so it is refused here"),
-                    CComment("rather than reaching the native call."),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"if ({gate}) {{ PyErr_SetString(PyExc_ValueError, "
-                            f'"{plan.binding.python_name} reports a negative extent"); return NULL; }}',
-                        )
-                    ),
-                ),
-                else_body=(
-                    CComment("No table: fetch this handle's descriptor through the Python runtime."),
-                    CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
-                    *fallback,
-                ),
-            ),
-        )
-
     def _inverted_descriptor_table_nodes(
         self,
         plan: ArgumentTransferPlan,
@@ -8199,54 +8103,6 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _borrowed_descriptor_detach_declarations(
-        self,
-        names: _CArgumentNames,
-        handle: NativeArrayHandlePlan,
-    ) -> tuple[CDeclaration, ...]:
-        """Declare this call's own storage for a detached borrowed descriptor."""
-        if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
-            return ()
-        if handle.array.rank is None:
-            return ()
-        return (CDeclaration(f"{names.value_name}_detached", f"CFI_CDESC_T({handle.array.rank})"),)
-
-    def _borrowed_descriptor_detach_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        names: _CArgumentNames,
-        handle: NativeArrayHandlePlan,
-    ) -> tuple[CComment | CDeclaration | CExpressionStatement, ...]:
-        """Detach a borrowed descriptor from the capsule that carried it.
-
-        A read-only argument receives a per-call copy owned by a capsule the
-        handle keeps alive, and that capsule is replaced on the handle's next
-        descriptor request.  Releasing the GIL around the native call lets
-        another thread make that request while this one is still using the
-        descriptor, so the record is copied into this call's own storage and
-        the capsule stops mattering.  A projected argument needs no copy: its
-        descriptor is the persistent one its handle owns.
-        """
-        if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
-            return ()
-        if handle.array.rank is None:
-            return ()
-        prefix = names.value_name
-        storage = f"{prefix}_detached"
-        size = f"sizeof(CFI_CDESC_T({handle.array.rank}))"
-        return (
-            CComment("The descriptor above belongs to a capsule the handle replaces on its"),
-            CComment("next request, which another thread may make while the GIL is released"),
-            CComment("for the native call. Copy the record so this call owns what it uses."),
-            CIf(
-                CodeExpression(f"{prefix} != NULL"),
-                body=(
-                    CExpressionStatement(CodeExpression(f"memcpy(&{storage}, {prefix}, {size})")),
-                    CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{storage}")),
-                ),
-            ),
-        )
-
     def _lower_argument_native_array_direct(
         self,
         plan: ArgumentTransferPlan,
@@ -8271,7 +8127,6 @@ class CBindingGenerator(ClassVisitor):
                 "prik_native_array_handle *",
                 CodeExpression("NULL"),
             ),
-            *self._borrowed_descriptor_detach_declarations(names, handle),
             *self._native_descriptor_helper_declarations(
                 prefix,
                 include_default_binder=binder_definition is not None,
@@ -8295,12 +8150,9 @@ class CBindingGenerator(ClassVisitor):
         )
         general.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
         general.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
-        general.extend(self._borrowed_descriptor_detach_nodes(plan, names, handle))
         general.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
         if inverted:
             nodes.extend(self._inverted_descriptor_table_nodes(plan, names, handle, tuple(general)))
-        elif self._uses_native_array_ops_fast_path(plan, handle):
-            nodes.extend(self._native_array_ops_fast_path_nodes(plan, names, handle, tuple(general)))
         else:
             nodes.extend(general)
         return tuple(nodes)
@@ -9853,29 +9705,26 @@ class CBindingGenerator(ClassVisitor):
     def _inverted_descriptor_argument(self, plan: FunctionPlan) -> ArgumentTransferPlan | None:
         """Return the argument whose descriptor must stay live across the call.
 
-        A callee may change the allocation of a writable allocatable dummy. The
-        descriptor the runtime builds for a module array or field exists only
-        while the consumer it was handed to is running, so handing the callee a
-        copy would lose that change. The call is made inside the consumer
-        instead. Only the case where that descriptor is the entrypoint's sole
-        parameter is inverted today; every other shape keeps the general path.
+        The descriptor the runtime builds for a module array or a field exists
+        only while the consumer it was handed to is running.  Making the call
+        inside that consumer is what lets a callee change the allocation of a
+        writable dummy and have it reach the caller's entity, and it means no
+        descriptor is ever copied: a read-only argument is placed the same way,
+        so C only ever passes on a descriptor Fortran made.
         """
         candidates = [
             argument
             for argument in plan.arguments
             if argument.native_array_handle is not None
-            and argument.native_array_handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
             and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
             and argument.binding.optional_mode is OptionalMode.REQUIRED
             and argument.native_array_handle.array.rank is not None
         ]
-        if len(candidates) != 1 or len(plan.entrypoint.parameters) != 1:
+        if len(candidates) != 1:
             return None
-        # A projected handle is written back to Python after the call, which
-        # needs nothing from the descriptor, so that action is compatible. A
-        # value result or any other output is not yet, because reading it would
-        # have to travel out of the consumer.
-        if self._direct_result(plan) is not None or plan.results:
+        # Hidden outputs and status projections read native storage the consumer
+        # does not carry, so those keep the general path.
+        if plan.results and any(result.source_kind != "direct_return" for result in plan.results):
             return None
         return candidates[0]
 
@@ -9886,7 +9735,16 @@ class CBindingGenerator(ClassVisitor):
         names = context.arguments[context.inverted_descriptor]
         table = f"{names.value_name}_native_ops"
         consumer = self._inverted_consumer_name(plan)
+        record = self._inverted_context_name(plan)
+        fields = self._inverted_context_fields(plan, context)
+        result = self._direct_result(plan)
+        initializer = ", ".join(value for _declaration, value in fields)
+        if result is not None:
+            initializer = f"{initializer}, 0" if initializer else "0"
         return (
+            CComment("Everything the call needs apart from the descriptor is gathered here,"),
+            CComment("because the consumer runs outside this frame."),
+            CDeclaration("call_context", record, CodeExpression(f"{{{initializer}}}")),
             CComment("The call is made inside the consumer, where the descriptor is live, so"),
             CComment("what the callee writes into it is what Fortran copies back to the"),
             CComment("caller's entity when the bridge returns."),
@@ -9894,42 +9752,123 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f"{table} != NULL"),
                 body=(
                     CExpressionStatement(
-                        CodeExpression(f"{table}->scoped_descriptor({table}->owner, {consumer}, NULL)")
+                        CodeExpression(f"{table}->scoped_descriptor({table}->owner, {consumer}, &call_context)")
                     ),
                 ),
                 else_body=(
                     CComment("This handle owns its descriptor, so hand it to the same consumer."),
-                    CExpressionStatement(CodeExpression(f"{consumer}({names.value_name}, NULL)")),
+                    CExpressionStatement(CodeExpression(f"{consumer}({names.value_name}, &call_context)")),
                 ),
+            ),
+            *(
+                (CExpressionStatement(CodeExpression(f"{context.result_name} = call_context.result")),)
+                if result is not None and context.result_name is not None
+                else ()
             ),
         )
 
-    def _inverted_descriptor_consumer_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
-        """Emit one consumer per entrypoint whose call must run inside it."""
-        return tuple(
-            CFunction(
-                self._inverted_consumer_name(function),
-                "void",
-                parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
-                storage="static",
-                doc=(
-                    f"Call {self._entrypoint_function_name(function)} on a live descriptor.",
-                    "The callee may reallocate the array it receives. Making the call here,"
-                    " while the descriptor the Fortran runtime built for it is still valid,"
-                    " means the callee writes into the descriptor Fortran copies back to the"
-                    " caller's entity, so a new allocation reaches it.",
-                ),
-                body=(
-                    CExpressionStatement(CodeExpression("(void)context")),
-                    CExpressionStatement(
-                        CodeExpression(f"{self._entrypoint_function_name(function)}((CFI_cdesc_t *)descriptor)")
-                    ),
-                    CReturn(),
-                ),
+    def _inverted_descriptor_consumer_functions(self, plan: ModulePlan) -> tuple:
+        """Emit the record and consumer for each entrypoint called inside one."""
+        nodes: list = []
+        for function in self._functions(plan):
+            if self._inverted_descriptor_argument(function) is None:
+                continue
+            context = self._function_context(function)
+            fields = self._inverted_context_fields(function, context)
+            record = self._inverted_context_name(function)
+            result = self._direct_result(function)
+            result_field = (
+                (CParameter("result", self._inverted_result_type(function, result)),) if result is not None else ()
             )
-            for function in self._functions(plan)
-            if self._inverted_descriptor_argument(function) is not None
-        )
+            nodes.append(
+                CStructDefinition(
+                    record,
+                    tuple(declaration for declaration, _value in fields) + result_field,
+                )
+            )
+            call = self._inverted_consumer_call(function, context, fields)
+            nodes.append(
+                CFunction(
+                    self._inverted_consumer_name(function),
+                    "void",
+                    parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+                    storage="static",
+                    doc=(
+                        f"Call {self._entrypoint_function_name(function)} on a live descriptor.",
+                        "The callee may change the allocation of the array it receives. Making"
+                        " the call here, while the descriptor the Fortran runtime built for it"
+                        " is still valid, means the callee writes into the descriptor Fortran"
+                        " copies back to the caller's entity, so a new allocation reaches it.",
+                        "Every other value the call needs arrives through the context record,"
+                        " because this runs outside the frame that computed them.",
+                    ),
+                    body=(
+                        CDeclaration("call", f"{record} *", CodeExpression(f"({record} *)context")),
+                        # The record is empty when the descriptor is the only value the
+                        # call needs, and an unused local would warn.
+                        *(
+                            ()
+                            if fields or result is not None
+                            else (CExpressionStatement(CodeExpression("(void)call")),)
+                        ),
+                        CExpressionStatement(CodeExpression(call)),
+                        CReturn(),
+                    ),
+                )
+            )
+        return tuple(nodes)
+
+    def _inverted_result_type(self, plan: FunctionPlan, result) -> str:
+        """Return the C storage a carried direct result is written into."""
+        direct_c_abi = plan.entrypoint.direct_c_abi
+        if direct_c_abi is not None and direct_c_abi.result is not None:
+            return direct_c_abi.result.c_spelling
+        return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
+
+    def _inverted_consumer_call(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+        fields: tuple[tuple[CParameter, str], ...],
+    ) -> str:
+        """Assemble the entrypoint call as the consumer makes it."""
+        carried = {value: f"call->{declaration.name}" for declaration, value in fields}
+        arguments = []
+        for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
+            values = self._entrypoint_parameter_values(plan, group, context)
+            if group.owner_path == context.inverted_descriptor:
+                arguments.extend("(CFI_cdesc_t *)descriptor" for _value in values)
+                continue
+            arguments.extend(carried[value] for value in values)
+        call = f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
+        return f"call->result = {call}" if self._direct_result(plan) is not None else call
+
+    def _inverted_context_name(self, plan: FunctionPlan) -> str:
+        """Return the record carrying one inverted call's other values."""
+        return f"{self._binding_function_name(plan)}_call_context"
+
+    def _inverted_context_fields(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[tuple[CParameter, str], ...]:
+        """Pair every entrypoint value the consumer needs with its declaration.
+
+        The inverted argument is excluded: the consumer receives that
+        descriptor directly.  Everything else the call needs is carried into
+        the consumer through the context record, because the consumer runs
+        outside the frame that computed it.
+        """
+        pairs: list[tuple[CParameter, str]] = []
+        for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
+            if group.owner_path == context.inverted_descriptor:
+                continue
+            declarations = self._entrypoint_parameter_declarations(plan, group)
+            values = self._entrypoint_parameter_values(plan, group, context)
+            if len(declarations) != len(values):
+                raise ValueError(f"Entrypoint parameter {group.owner_path!r} has mismatched declarations and values")
+            pairs.extend(zip(declarations, values, strict=True))
+        return tuple(pairs)
 
     def _inverted_consumer_name(self, plan: FunctionPlan) -> str:
         """Return the consumer that performs one inverted entrypoint call."""
