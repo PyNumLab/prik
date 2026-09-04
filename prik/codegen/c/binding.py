@@ -5280,6 +5280,12 @@ class CBindingGenerator(ClassVisitor):
         dimensions = tuple(f"extent_{axis}" for axis in range(handle.array.rank))
         return (
             *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in dimensions),
+            CComment("Storage that is not there has no shape, and the compiler's"),
+            CComment("inquiry has nothing to answer about, so report it here."),
+            CIf(
+                CodeExpression("owner_descriptor->base_addr == NULL"),
+                body=(CReturn(CodeExpression("Py_NewRef(Py_None)")),),
+            ),
             CExpressionStatement(
                 CodeExpression(
                     f"{self._owned_native_array_bridge_operation_name(result, NativeArrayOperation.SHAPE)}"
@@ -7363,9 +7369,13 @@ class CBindingGenerator(ClassVisitor):
         an ndarray, or a handle with no table -- takes the shared binder.
         """
         function = context.function
-        if not self._reads_native_descriptors or function is None or not any(
-            argument.owner_path == plan.owner_path
-            for _function, argument in self._array_actual_handle_arguments_for(function, context)
+        if (
+            not self._reads_native_descriptors
+            or function is None
+            or not any(
+                argument.owner_path == plan.owner_path
+                for _function, argument in self._array_actual_handle_arguments_for(function, context)
+            )
         ):
             return (fallback,)
         prefix = names.value_name
@@ -10004,9 +10014,7 @@ class CBindingGenerator(ClassVisitor):
                             CodeExpression(f"source->dim[{axis}].sm != expected"),
                             body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
                         ),
-                        CExpressionStatement(
-                            CodeExpression(f"expected *= (CFI_index_t)out->extents[{axis}]")
-                        ),
+                        CExpressionStatement(CodeExpression(f"expected *= (CFI_index_t)out->extents[{axis}]")),
                     )
                 )
             body.extend(

@@ -25,6 +25,16 @@ release tags add a leading `v` to the package version.
   such a dummy on every compiler now, including the bounds a shifted allocatable
   carries.
 
+- Reading a handle you created is faster again. Its generated inquiries read
+  the descriptor they are given, so they now report absent storage themselves
+  instead of the runtime asking a separate question first, and a result the
+  generated code built from the declared type is no longer re-checked. On such
+  a handle `to_numpy()` went from about 2.7us to about 1.3us and `shape` from
+  about 2.9us to about 1.3us. A handle standing for a module variable or a
+  derived-type field reaches its entity through the compiler's own inquiries,
+  which say nothing about whether the entity is there, so it keeps asking and
+  is unchanged.
+
 - Passing an array handle to an ordinary array dummy no longer goes through
   Python on every call. Such a dummy takes an address and extents, and the
   runtime was asked for them one operation at a time -- nine round trips per

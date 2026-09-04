@@ -20,6 +20,9 @@ _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS = ctypes.addressof(_PRESENT_NA
 # Only a handle that reports its own descriptor can carry a declared lower
 # bound; one reduced to a bare address has none to report.
 _UNKNOWN_DESCRIPTOR_LOWER_BOUND = 0
+# Returned when an extraction reports descriptor fields rather than a view, so
+# the caller falls back to decoding them.
+_EXTRACTION_UNAVAILABLE = object()
 
 
 class _OwnerRetainedNDArray(np.ndarray):
@@ -644,11 +647,37 @@ class NativeArrayHandleBase:
         raise TypeError("deferred character handle cannot resolve its runtime element length")
 
     @property
+    def _reads_its_own_descriptor(self) -> bool:
+        """Report whether this handle's inquiries read a descriptor it owns.
+
+        A generated handle over wrapper-owned storage answers from the
+        descriptor in front of it, absence included.  A borrowed one reaches
+        its entity through the compiler's own inquiries, which say nothing
+        about whether the entity is there, and a handle built from supplied
+        operations makes no promise at all.
+        """
+        return self._native_ops is not None and self._descriptor_ownership == "owned"
+
+    @property
     def rank(self) -> int:
         return self._rank
 
     @property
     def shape(self) -> tuple[int, ...] | None:
+        if self._reads_its_own_descriptor:
+            # The generated inquiry reads the descriptor, so it reports absent
+            # storage as None instead of being asked about it first, and the
+            # extents it returns are the compiler's own.
+            if self.closed:
+                raise ReferenceError(f"{self.descriptor_kind} handle is closed")
+            extents = self._ops["shape"](self)
+            if extents is None:
+                return None
+            if _is_pointer_descriptor_record(extents):
+                # A deferred character inquiry reports fields, not extents.
+                shape, _strides = _pointer_descriptor_shape_and_strides(extents)
+                return self._normalize_shape(shape)
+            return extents
         if self._to_numpy_absent_state():
             return None
         shape = self._call_op("shape")
@@ -843,9 +872,13 @@ class NativeArrayHandleBase:
 
     def to_numpy(self) -> Any:
         """Return a live view of current native storage, or ``None``."""
+        policy = self._to_numpy_policy
+        if self._reads_its_own_descriptor and policy != "unsupported":
+            extracted = self._own_descriptor_view(policy)
+            if extracted is not _EXTRACTION_UNAVAILABLE:
+                return extracted
         if self._to_numpy_absent_state():
             return None
-        policy = self._to_numpy_policy
         if policy == "unsupported":
             raise NotImplementedError(
                 f"{self.descriptor_kind} handle to_numpy extraction is unsupported by completed policy"
@@ -874,6 +907,28 @@ class NativeArrayHandleBase:
             # and is handed back untouched.
             value = _retain_numpy_owner(value, self)
         self._validate_numpy_result(value)
+        if policy == "contiguous_view":
+            self._validate_contiguous_numpy_result(value)
+        return value
+
+    def _own_descriptor_view(self, policy: str) -> Any:
+        """Return the view a generated extraction builds over owned storage.
+
+        The extraction reads the descriptor itself, so it reports an absent
+        state as None rather than needing to be asked first, and what it
+        returns was built from the declared type, so a second check of the
+        result adds nothing.  An extraction that reports fields instead is not
+        one of these, and says so by returning the unavailable sentinel.
+        """
+        if self.closed:
+            raise ReferenceError(f"{self.descriptor_kind} handle is closed")
+        value = self._ops["to_numpy"](self)
+        if value is None:
+            return None
+        if not isinstance(value, np.ndarray):
+            return _EXTRACTION_UNAVAILABLE
+        if value.base is not None and value.base is self._owner:
+            value = _retain_numpy_owner(value, self)
         if policy == "contiguous_view":
             self._validate_contiguous_numpy_result(value)
         return value
