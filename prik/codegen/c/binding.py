@@ -9993,15 +9993,19 @@ class CBindingGenerator(ClassVisitor):
             for axis in range(rank):
                 body.extend(
                     (
+                        # A compiler may report an empty dimension as extent -1.
                         CExpressionStatement(
-                            CodeExpression(f"out->extents[{axis}] = (int64_t)source->dim[{axis}].extent")
+                            CodeExpression(
+                                f"out->extents[{axis}] = (int64_t)(source->dim[{axis}].extent == -1 "
+                                f"? 0 : source->dim[{axis}].extent)"
+                            )
                         ),
                         CIf(
                             CodeExpression(f"source->dim[{axis}].sm != expected"),
                             body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
                         ),
                         CExpressionStatement(
-                            CodeExpression(f"expected *= (CFI_index_t)source->dim[{axis}].extent")
+                            CodeExpression(f"expected *= (CFI_index_t)out->extents[{axis}]")
                         ),
                     )
                 )

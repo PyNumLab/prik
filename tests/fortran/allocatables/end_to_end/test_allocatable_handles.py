@@ -583,3 +583,68 @@ def test_a_writable_allocatable_dummy_reaches_the_callers_entity(tmp_path: Path)
     namespace.grow(owned)
     assert owned.shape == (6,)
     assert owned.to_numpy().tolist() == [9.0] * 6
+
+
+EMPTY_ACTUAL_SOURCE = """\
+module fallocatable_empty_actual_f90
+  implicit none
+
+contains
+
+  subroutine fill_empty(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(0))
+  end subroutine fill_empty
+
+  subroutine fill_three(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = [1.0_8, 2.0_8, 3.0_8]
+  end subroutine fill_three
+
+  ! An ordinary explicit-shape dummy: it receives an address and an extent.
+  function total(values, n) result(sum_values)
+    integer, intent(in) :: n
+    real(8), intent(in) :: values(n)
+    real(8) :: sum_values
+
+    sum_values = sum(values)
+  end function total
+
+end module fallocatable_empty_actual_f90
+"""
+
+
+def test_zero_sized_allocatable_handle_reaches_an_ordinary_array_dummy(tmp_path: Path):
+    """An allocated but empty array is present, and its extent is zero.
+
+    A compiler may describe an empty dimension with an extent of -1, so the
+    extent an ordinary dummy receives has to be normalised.  Passing the raw
+    value makes a zero-sized actual look like a shape mismatch.
+    """
+    build_dir = tmp_path / "build"
+    build_dir.mkdir(parents=True)
+    module = _build_text_and_import(
+        EMPTY_ACTUAL_SOURCE,
+        "fallocatable_empty_actual_f90.f90",
+        build_dir,
+        {
+            "bind_c_fallocatable_empty_actual_f90_wrapper.f90",
+            "fallocatable_empty_actual_f90_wrapper.c",
+            "fallocatable_empty_actual_f90_wrapper.h",
+        },
+    )
+
+    handle = Allocatable[Float64[:]]()
+    module.fill_empty(handle)
+    assert handle.allocated is True
+    assert handle.shape == (0,)
+    assert module.total(handle, np.int32(0)) == np.float64(0.0)
+
+    module.fill_three(handle)
+    assert handle.shape == (3,)
+    assert module.total(handle, np.int32(3)) == np.float64(6.0)
