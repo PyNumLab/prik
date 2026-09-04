@@ -49,16 +49,9 @@ class _NativeArrayHandoff:
 
 @dataclass(frozen=True)
 class _NativeArrayDescriptorHandoff:
-    """Internal opaque handoff for one versioned native-handle capsule.
-
-    ``borrowed`` marks a per-call copy of a descriptor the Fortran runtime
-    owns.  Such a copy describes live storage and is correct to read, but a
-    callee that reallocates through it changes only the copy, so it may not
-    stand in for an argument whose allocation changes must reach the caller.
-    """
+    """Internal opaque handoff for one versioned native-handle capsule."""
 
     capsule: Any
-    borrowed: bool = False
 
     def __post_init__(self) -> None:
         if self.capsule is None:
@@ -103,27 +96,22 @@ def _native_array_handle_from_generated_ops(
     owner: Any = None,
     descriptor_ownership: str = "borrowed",
     to_numpy_policy: str = "borrowed_view",
-    descriptor_handoff: str = "facts",
     native_ops: Any = None,
     generation: int | None = None,
 ) -> NativeArrayHandleBase:
     """Build a runtime handle from generated operation callables.
 
     ``native_ops`` is an optional capsule publishing the entity's native entry
-    points, so a consumer can reach it with one indirect call rather than a
-    Python operation lookup.  It is carried, not required: a handle without one
-    keeps working through its operation mapping.
+    points, so a binding can reach it with one indirect call.  It is carried,
+    not required: a handle without one is placed through its operations.
     """
     owned = descriptor_ownership == "owned"
-    borrows_descriptor = descriptor_handoff == "borrowed_descriptor"
     normalized_ops = {}
     for name, operation in ops.items():
         if name == "array_actual":
             normalized = _generated_handoff_operation(operation, owner=owner, pass_owner=owned)
         elif name == "descriptor" and owned:
             normalized = _generated_owned_descriptor_operation(operation, owner)
-        elif name == "descriptor" and borrows_descriptor:
-            normalized = _generated_borrowed_descriptor_operation(operation)
         elif name in {"shape", "to_numpy"} and owned:
             normalized = _generated_owned_descriptor_record_operation(operation, owner)
         elif name == "associate":
@@ -361,33 +349,6 @@ def _generated_owned_descriptor_operation(operation: HandleOperation, owner: Any
     def call(_handle: NativeArrayHandleBase, *args: Any) -> _NativeArrayDescriptorHandoff:
         value = operation(owner, *args)
         return _native_array_descriptor_handoff_from_generated_result(value, owner=owner)
-
-    return call
-
-
-def _generated_borrowed_descriptor_operation(operation: HandleOperation) -> HandleOperation:
-    """Adapt a borrowed descriptor copy into a typed handoff.
-
-    Selected only for a handle whose completed plan borrows the native
-    descriptor.  Its generated operation returns one capsule per call, copied
-    from the descriptor the Fortran runtime built for that call.
-    """
-
-    def call(handle: NativeArrayHandleBase, *args: Any) -> Any:
-        value = operation(*args)
-        if value is None or isinstance(value, _NativeArrayDescriptorHandoff):
-            return value
-        handoff = _NativeArrayDescriptorHandoff(value, borrowed=True)
-        # The binding reads the descriptor out of this capsule and releases its
-        # own reference before calling the native entrypoint, exactly as it does
-        # for an owned handle.  An owned handle survives that because it holds
-        # the capsule itself, so a borrowed copy is held here for the same
-        # reason: the descriptor must outlive the call that reads it.  A binding
-        # copies the record into its own storage before releasing its reference,
-        # so replacing this one on the next request cannot disturb a call that
-        # is already under way, including one that has released the GIL.
-        handle._borrowed_descriptor = handoff
-        return handoff
 
     return call
 
@@ -1531,15 +1492,8 @@ def _native_array_descriptor_handoff_for_binding(
     expected_shape: Sequence[int | None] | int | None = None,
     optional_absent: bool = False,
     bind_default: HandleOperation | None = None,
-    allow_borrowed: bool = False,
 ) -> tuple[Any | None, ...]:
-    """Pack a versioned native-handle capsule for a descriptor argument.
-
-    ``allow_borrowed`` admits a per-call copy of a descriptor the Fortran
-    runtime owns.  It is set only for read-only arguments: a callee that
-    reallocates through a copy would change the copy alone, leaving the
-    caller's entity pointing at released storage.
-    """
+    """Pack a versioned native-handle capsule for a descriptor argument."""
     if isinstance(value, NativeArrayHandleBase) and value._contract_default:
         if bind_default is None:
             raise TypeError(
@@ -1564,40 +1518,13 @@ def _native_array_descriptor_handoff_for_binding(
     )
     if descriptor is None:
         return (None, None) if optional_absent else (None,)
-    if not isinstance(descriptor, _NativeArrayDescriptorHandoff) or (descriptor.borrowed and not allow_borrowed):
+    if not isinstance(descriptor, _NativeArrayDescriptorHandoff):
         raise TypeError(
             f"writable {descriptor_kind} descriptor argument requires a generated direct descriptor handoff"
         )
     if optional_absent:
         return descriptor.capsule, _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS
     return (descriptor.capsule,)
-
-
-def _native_array_borrowed_descriptor_for_binding_positional(
-    value: Any,
-    descriptor_kind: str,
-    expected_dtype: Any = None,
-    expected_rank: int | None = None,
-    expected_shape: Sequence[int | None] | int | None = None,
-    optional_absent: bool = False,
-    bind_default: HandleOperation | None = None,
-) -> tuple[Any | None, ...]:
-    """Positional wrapper used by read-only descriptor CPython binding code.
-
-    Unlike the projected form, this accepts a borrowed per-call copy: the callee
-    cannot change the allocation of a read-only descriptor argument, so nothing
-    has to travel back to the caller's entity.
-    """
-    return _native_array_descriptor_handoff_for_binding(
-        value,
-        descriptor_kind=str(descriptor_kind),
-        expected_dtype=None if expected_dtype is None else np.dtype(expected_dtype),
-        expected_rank=None if expected_rank is None else int(expected_rank),
-        expected_shape=expected_shape,
-        optional_absent=bool(optional_absent),
-        bind_default=bind_default,
-        allow_borrowed=True,
-    )
 
 
 def _native_array_descriptor_handoff_for_binding_positional(

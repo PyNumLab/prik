@@ -81,12 +81,6 @@ typedef struct {
     void *context;
 } prik_native_array_descriptor_forward;
 
-/* Destination for prik_native_array_copy_descriptor. */
-typedef struct {
-    void *destination;
-    size_t size;
-} prik_native_array_descriptor_copy;
-
 /*
  * Versioned cross-extension table of native entry points for one array
  * handle. The pointers are the generated bridge symbols for the entity the
@@ -110,14 +104,6 @@ typedef struct {
     void *owner;
     void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context);
 } prik_native_array_ops;
-
-/* Copy one runtime descriptor record into the caller's buffer. */
-static inline void prik_native_array_copy_descriptor(void *descriptor, void *context)
-{
-    prik_native_array_descriptor_copy *target = (prik_native_array_descriptor_copy *)context;
-
-    memcpy(target->destination, descriptor, target->size);
-}
 
 /* Free the per-handle entry-point table a capsule owns. */
 static inline void prik_native_array_ops_capsule_destructor(PyObject *capsule)

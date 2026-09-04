@@ -156,8 +156,14 @@ def test_no_generated_binding_establishes_an_allocated_allocatable_descriptor():
     assert forged == []
 
 
-def test_allocatable_argument_borrows_the_runtime_descriptor():
-    """The binding copies the descriptor Fortran built instead of rebuilding one."""
+def test_allocatable_argument_uses_the_descriptor_the_runtime_built():
+    """The binding passes on the runtime's descriptor rather than a record of its own.
+
+    A C descriptor is the Fortran runtime's to build, so the binding neither
+    establishes one for an allocatable actual nor copies the one it is handed:
+    the call is made inside the consumer holding it, and only that pointer
+    crosses.
+    """
     plan = _allocatable_argument_plan()
     functions = {function.binding.python_name: function for function in plan.namespaces[0].functions}
     argument = functions["total"].arguments[0]
@@ -169,5 +175,10 @@ def test_allocatable_argument_borrows_the_runtime_descriptor():
 
     artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    assert "prik_release_borrowed_native_descriptor" in c_source
-    assert "memcpy(" in c_source
+    assert "scoped_descriptor(" in c_source
+    copied = [
+        line.strip()
+        for line in c_source.splitlines()
+        if "memcpy(" in line and "CFI_CDESC_T" in line
+    ]
+    assert copied == []
