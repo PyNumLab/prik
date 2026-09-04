@@ -287,10 +287,16 @@ def _bind_contract_native_array_handle(
     ops: Mapping[str, HandleOperation],
     owner: Any,
     descriptor_ownership: str,
-    to_numpy_policy: str,
+    to_numpy_policy: str | None,
     generation: int | None = None,
 ) -> None:
-    """Attach generated persistent descriptor storage to a contract handle."""
+    """Attach generated persistent descriptor storage to a contract handle.
+
+    ``to_numpy_policy`` is ``None`` when the argument that supplied the storage
+    does not project a result.  Such an argument gives the handle a descriptor
+    to hand over, but it does not define what the handle exposes, so the
+    handle keeps the exposure it was created with.
+    """
     if not isinstance(handle, NativeArrayHandleBase) or not handle._contract_default:
         raise TypeError("generated descriptor storage can attach only to a fresh contract handle")
     if handle.closed:
@@ -311,7 +317,7 @@ def _bind_contract_native_array_handle(
         ops,
         owner=owner,
         descriptor_ownership=descriptor_ownership,
-        to_numpy_policy=to_numpy_policy,
+        to_numpy_policy=handle._to_numpy_policy if to_numpy_policy is None else to_numpy_policy,
         generation=generation,
     )
     handle._ops = generated._ops

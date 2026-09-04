@@ -680,3 +680,86 @@ def test_pointer_handle_releases_native_storage_when_the_caller_asks(tmp_path: P
     # A borrowed target is module storage the library keeps; releasing is the
     # caller's decision there too, so only the untouched path is asserted.
     assert module.borrow(np.int32(4)).associated is True
+
+
+POINTER_REASSOCIATION_SOURCE = """\
+module fpointer_reassociate_f90
+  implicit none
+
+  real(8), target :: small_target(3) = [1.0_8, 2.0_8, 3.0_8]
+  real(8), target :: large_target(5) = [10.0_8, 20.0_8, 30.0_8, 40.0_8, 50.0_8]
+
+contains
+
+  subroutine repoint(values)
+    real(8), pointer, intent(inout) :: values(:)
+    values => large_target
+  end subroutine repoint
+
+  function total(values) result(sum_values)
+    real(8), pointer, intent(in) :: values(:)
+    real(8) :: sum_values
+    sum_values = 0.0_8
+    if (associated(values)) sum_values = sum(values)
+  end function total
+
+end module fpointer_reassociate_f90
+"""
+
+
+def test_callee_reassociation_of_an_inout_pointer_dummy_reaches_the_caller_handle(tmp_path: Path):
+    """A callee's ``values => target`` must reach the handle that was passed in.
+
+    ``intent(inout)`` carries no output projection, so nothing re-reads the
+    descriptor after the call.  The descriptor the callee re-points therefore
+    has to be the caller's own, not one the wrapper rebuilt for the call.
+    """
+    source = tmp_path / "native" / "fpointer_reassociate_f90.f90"
+    source.parent.mkdir()
+    source.write_text(POINTER_REASSOCIATION_SOURCE, encoding="utf-8")
+    native_object = _compile_native_object(source, tmp_path / "native_build")
+    contract = tmp_path / "contracts" / "fpointer_reassociate_f90.pyi"
+    contract.parent.mkdir()
+    contract.write_text(
+        """from prik.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
+
+def repoint(
+    values: Annotated[
+        Pointer[Float64[:]],
+        PointerAssociation("runtime"),
+        PointerPolicy(
+            nullable=True,
+            transfer="call_local",
+            target_owner="module",
+            lifetime="module",
+            deallocation="never",
+            shape_source="pointer_bounds",
+            contiguity="contiguous",
+            reassociation="native",
+            aliasing="borrowed",
+            mutability="view",
+        ),
+    ],
+) -> None: ...
+
+def total(values: Pointer[Float64[:]]) -> Float64: ...
+""",
+        encoding="utf-8",
+    )
+    result = build_pyi_extension(
+        contract,
+        native_objects=[native_object],
+        native_include_dirs=[native_object.parent],
+        output_dir=tmp_path / "build",
+    )
+    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
+
+    handle = Pointer[Float64[:]]()
+    assert handle.associated is False
+    assert module.total(handle) == np.float64(0.0)
+
+    module.repoint(handle)
+
+    assert handle.associated is True
+    assert handle.shape == (5,)
+    assert module.total(handle) == np.float64(150.0)

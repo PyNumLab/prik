@@ -41,6 +41,7 @@ from prik.policy.models import (
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
     NativeArrayOperation,
+    NativeArrayOutputProjection,
     NativeDescriptorHandoffABI,
     EntrypointProjectionAction,
     EntrypointPassingConvention,
@@ -117,6 +118,13 @@ from prik.planning.models import (
 )
 from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry, PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
+
+
+def _descriptor_binding_noun(handle: NativeArrayHandlePlan) -> str:
+    """Name what a callee can change about this descriptor's entity."""
+    if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+        return "association"
+    return "allocation"
 
 
 @dataclass
@@ -4422,11 +4430,20 @@ class CBindingGenerator(ClassVisitor):
 
     @staticmethod
     def _uses_module_allocatable_descriptor(variable: ModuleVariablePlan) -> bool:
-        """Return whether completed policy selected callback-based descriptor access."""
+        """Return whether a handle reaches its descriptor through a consumer.
+
+        A module array hands its variable to a consumer rather than filling a
+        record supplied from C, so the descriptor that crosses is always one
+        this compiler built. Both allocatable and pointer variables do this.
+        """
         handle = variable.native_array_handle
         return bool(
             handle is not None
-            and handle.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
+            and handle.descriptor_interop
+            in {
+                NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR,
+                NativeArrayDescriptorInterop.POINTER_C_DESCRIPTOR,
+            }
         )
 
     def _module_allocatable_descriptor_body(
@@ -4896,9 +4913,20 @@ class CBindingGenerator(ClassVisitor):
         function: FunctionPlan,
         argument: ArgumentTransferPlan,
     ) -> CFunction:
-        """Attach one compiler-compatible owned descriptor to a fresh handle."""
+        """Attach one compiler-compatible owned descriptor to a fresh handle.
+
+        An argument that projects a result decides what the handle exposes
+        afterwards, because the handle stands for what the call produced.  One
+        that does not is only borrowing the handle for a descriptor, so it
+        passes NULL and leaves the handle's own exposure alone.
+        """
         handle = argument.native_array_handle
         default = handle.default_handle
+        exposure = (
+            f'"{handle.extraction_action.value}"'
+            if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
+            else "NULL"
+        )
         dtype = self._native_array_dtype_for_semantic_type(
             argument.semantic_type_name,
             argument.datatype_family,
@@ -5021,9 +5049,9 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 CExpressionStatement(
                     CodeExpression(
-                        f'result = PyObject_CallFunction(helper, "OssiOOssO", handle_obj, '
+                        f'result = PyObject_CallFunction(helper, "OssiOOszO", handle_obj, '
                         f'"{handle.descriptor_kind.value}", "{dtype}", {handle.array.rank}, ops, owner_obj, '
-                        f'"{default.descriptor_ownership.value}", "{handle.extraction_action.value}", Py_None)'
+                        f'"{default.descriptor_ownership.value}", {exposure}, Py_None)'
                     )
                 ),
                 CExpressionStatement(CodeExpression("Py_DECREF(helper)")),
@@ -7941,7 +7969,8 @@ class CBindingGenerator(ClassVisitor):
 
         A handle standing for a module array or a field publishes a table, and
         the descriptor it names is built inside the consumer that makes the
-        call -- the only place a callee can change the allocation and have that
+        call -- the only place a callee can change what the dummy stands for
+        (an allocatable's allocation, a pointer's association) and have that
         reach the caller's entity. A handle that owns its descriptor publishes
         no table and needs none: the descriptor it already holds is handed to
         the same consumer directly.
@@ -7952,7 +7981,9 @@ class CBindingGenerator(ClassVisitor):
         return (
             CDeclaration(capsule, "PyObject *", CodeExpression("NULL")),
             CDeclaration(table, "prik_native_array_ops *", CodeExpression("NULL")),
-            CComment(f"'{plan.binding.python_name}' may have its allocation changed by the callee."),
+            CComment(
+                f"'{plan.binding.python_name}' may have its {_descriptor_binding_noun(handle)} changed by the callee."
+            ),
             CComment("A handle that publishes native entry points builds its descriptor inside"),
             CComment("the consumer; one that owns a descriptor already hands that over instead."),
             CExpressionStatement(

@@ -15,14 +15,25 @@ release tags add a leading `v` to the package version.
   it with `CFI_ERROR_BASE_ADDR_NOT_NULL`, so the same wrapper worked on gfortran
   and raised `Unable to establish native descriptor for argument ...: 2` on ifx.
 
-  The binding now borrows the descriptor the Fortran runtime already hands to
-  its callback, copying the descriptor record — not the array data, so cost does
-  not grow with array size — for the duration of the call. The copy is remade on
-  every call, because reallocating the native entity invalidates the previous
-  one. Module variables, derived-type fields and returned results all reach such
-  a dummy on every compiler now, including the bounds a shifted allocatable
-  carries. Optional allocatable dummies are unchanged: their absent branch still
-  establishes the unallocated placeholder that pairs with the present flag.
+  The binding no longer builds or copies a descriptor for these arguments at
+  all. It hands the call itself to Fortran instead: generated bridge code passes
+  the native entity to a C callback, and the call is made inside that callback,
+  where the descriptor the compiler built is live. Whatever the callee does to
+  the entity — including changing its allocation or, for a pointer, its
+  association — is therefore what the caller's entity sees when the callback
+  returns. Module variables, derived-type fields and returned results all reach
+  such a dummy on every compiler now, including the bounds a shifted allocatable
+  carries. Optional dummies are unchanged: their absent branch still establishes
+  the unallocated placeholder that pairs with the present flag.
+
+- **Fixed:** a `pointer` dummy now takes the same route, and a callee that
+  re-associates one is no longer silently ignored. PRIK packed the descriptor's
+  fields in Python and rebuilt a descriptor in C for the call, so `v => big` in
+  the callee re-pointed that rebuilt copy and nothing else: the handle passed in
+  came back still unassociated, with `associated` `False` and no shape, and no
+  error was reported. The handle now follows the callee's association — the
+  bounds and target it ends up with are the ones the call produced. Pointer and
+  allocatable dummies are one mechanism rather than two.
 
 - A `character` array handle is now accepted wherever a numeric one is. An
   `AllocatableArray` of characters was refused at an ordinary character dummy

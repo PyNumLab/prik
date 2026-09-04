@@ -2660,35 +2660,27 @@ class FortranBridgeGenerator(ClassVisitor):
             return None
         if handle.array.rank is None:
             raise ValueError(f"Pointer module handle {plan.owner_path!r} has no descriptor rank")
-        name = self._module_native_array_operation_name(plan, NativeArrayOperation.DESCRIPTOR)
-        native = self._native_variable_name(plan)
-        return FortranFunction(
-            name=name,
-            parameters=(
-                FortranParameter(
-                    "descriptor",
-                    self._module_pointer_dummy_element_type(plan),
-                    ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(out)"),
-                ),
-            ),
-            bind_name=name,
-            body=(
-                FortranIf(
-                    CodeExpression(f"associated({native})"),
-                    body=(FortranPointerAssignment("descriptor", CodeExpression(native)),),
-                    else_body=(FortranPointerAssignment("descriptor", CodeExpression("null()")),),
-                ),
-            ),
-            is_subroutine=True,
-        )
+        # The variable is handed to a consumer, as an allocatable one is, so the
+        # descriptor that crosses is the one this compiler builds for the call
+        # rather than a record C established and this filled in.
+        return self._module_allocatable_descriptor_callback_operation(plan, NativeArrayOperation.DESCRIPTOR)
 
     @staticmethod
     def _uses_module_allocatable_descriptor(plan: ModuleVariablePlan) -> bool:
-        """Return whether completed policy selected callback-based descriptor access."""
+        """Return whether a handle reaches its descriptor through a consumer.
+
+        A module array hands its variable to a consumer rather than filling a
+        record supplied from C, so the descriptor that crosses is always one
+        this compiler built. Both allocatable and pointer variables do this.
+        """
         handle = plan.native_array_handle
         return bool(
             handle is not None
-            and handle.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
+            and handle.descriptor_interop
+            in {
+                NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR,
+                NativeArrayDescriptorInterop.POINTER_C_DESCRIPTOR,
+            }
         )
 
     def _module_allocatable_descriptor_callback_operation(
@@ -2848,9 +2840,15 @@ class FortranBridgeGenerator(ClassVisitor):
         ``allocated``.
         """
         dimension = self._array_dimension_attribute(rank)
+        handle = plan.native_array_handle
+        attribute = (
+            "pointer"
+            if handle is not None and handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+            else "allocatable"
+        )
         if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
-            return "character(kind=c_char, len=*)", ("allocatable", dimension, "intent(inout)")
-        return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(inout)")
+            return "character(kind=c_char, len=*)", (attribute, dimension, "intent(inout)")
+        return self._module_native_array_element_type(plan), (attribute, dimension, "intent(inout)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
         """Return one planner-owned module native-array operation symbol."""

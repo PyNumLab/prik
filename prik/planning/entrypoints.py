@@ -1061,10 +1061,20 @@ class _GeneratedSupportProcedureEntrypointBuilder:
 
     @staticmethod
     def _uses_module_allocatable_descriptor(variable: ModuleVariablePlan) -> bool:
+        """Report whether a module array reaches its descriptor through a consumer.
+
+        The variable is handed to a consumer rather than filling a record
+        supplied from C, so the descriptor that crosses is one the compiler
+        built. Allocatable and pointer variables both do this.
+        """
         handle = variable.native_array_handle
         return bool(
             handle is not None
-            and handle.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
+            and handle.descriptor_interop
+            in {
+                NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR,
+                NativeArrayDescriptorInterop.POINTER_C_DESCRIPTOR,
+            }
         )
 
     @staticmethod

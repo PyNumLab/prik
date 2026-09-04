@@ -6371,17 +6371,21 @@ def _native_descriptor_handoff_abi(
 ) -> NativeDescriptorHandoffABI:
     """Select one descriptor ABI from completed handle/result policy.
 
-    An allocatable actual cannot be established from C: the standard reserves
-    that descriptor for the Fortran runtime, so the binding must borrow the
-    descriptor the handle already owns rather than build one.  An optional
-    allocatable keeps the fact-packed form, whose absent branch establishes the
-    unallocated placeholder the present flag pairs with.
+    A descriptor actual is the Fortran runtime's to build: the binding is
+    handed one for the call rather than establishing or filling a record of its
+    own.  That holds for a pointer as much as an allocatable, and it is what
+    lets a callee change an allocation or an association and have the caller's
+    entity see it.  An optional argument keeps the fact-packed form, whose
+    absent branch establishes the placeholder the present flag pairs with.
     """
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     if output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
         return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    if descriptor_kind == NativeArrayDescriptorKind.ALLOCATABLE.value and not optional_absent:
+    if not optional_absent and descriptor_kind in {
+        NativeArrayDescriptorKind.ALLOCATABLE.value,
+        NativeArrayDescriptorKind.POINTER.value,
+    }:
         return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
     return NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
 

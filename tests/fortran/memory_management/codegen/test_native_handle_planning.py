@@ -189,28 +189,29 @@ def test_native_handle_plans_keep_datatype_specific_state():
 
     alloc = functions["alloc"].arguments[0]
     pointer = functions["pointer"].arguments[0]
-    # An allocatable actual cannot be established from C, so it borrows the
-    # descriptor the Fortran runtime made.  A pointer actual can be established
-    # with a real base address, so it keeps the fact-packed call-local form.
-    for argument, descriptor_kind, abi in (
-        (alloc, NativeArrayDescriptorKind.ALLOCATABLE, NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR),
-        (pointer, NativeArrayDescriptorKind.POINTER, NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL),
+    # Neither kind is established from C.  An allocatable cannot be: the
+    # standard requires a null base address for that attribute.  A pointer
+    # could be, but a descriptor C built is not the caller's entity, so a
+    # callee that re-associates the dummy would change only that copy.  Both
+    # therefore take the descriptor the Fortran runtime made.
+    for argument, descriptor_kind in (
+        (alloc, NativeArrayDescriptorKind.ALLOCATABLE),
+        (pointer, NativeArrayDescriptorKind.POINTER),
     ):
         handle = argument.native_array_handle
         assert handle is not None
         assert handle is argument.projected_call_slot.native_array_handle
         assert handle.descriptor_kind is descriptor_kind
-        assert handle.handoff.abi is abi
-        assert handle.default_handle.construction is NativeArrayDefaultConstruction.FACT_PACKED_EMPTY
+        assert handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        assert handle.default_handle.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
         assert handle.default_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
-        assert handle.default_handle.owner_storage_role is None
+        # Lazily attached storage is the wrapper's, so the plan names the slot
+        # the generated binder allocates and the handle's finalizer releases.
+        assert handle.default_handle.owner_storage_role == f"{argument.owner_path}:default-owner-storage"
         assert NativeArrayOperation.DESTROY in handle.default_handle.operations
-        # Fact roles exist only for the fact-packed form; a borrowed descriptor
-        # carries its own extents, so none are named.
-        if abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL:
-            assert len(handle.handoff.extent_roles) == handle.array.rank == 1
-        else:
-            assert handle.handoff.extent_roles == ()
+        # Fact roles exist only for the fact-packed form; a descriptor the
+        # runtime built carries its own extents, so none are named.
+        assert handle.handoff.extent_roles == ()
         assert argument.binding.python_action is PythonBarrierAction.WRAPPER_INSTANCE
         assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
 

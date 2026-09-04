@@ -176,9 +176,5 @@ def test_allocatable_argument_uses_the_descriptor_the_runtime_built():
     artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     assert "scoped_descriptor(" in c_source
-    copied = [
-        line.strip()
-        for line in c_source.splitlines()
-        if "memcpy(" in line and "CFI_CDESC_T" in line
-    ]
+    copied = [line.strip() for line in c_source.splitlines() if "memcpy(" in line and "CFI_CDESC_T" in line]
     assert copied == []

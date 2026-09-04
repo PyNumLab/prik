@@ -635,7 +635,9 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert argument_values.descriptor_interop == "none"
     assert argument_values.requires_pointer_c_descriptor_interop is False
     assert set(argument_values.operations) == {"allocated", "to_numpy"}
-    assert argument_values.default_construction == "fact_packed_empty"
+    # A non-optional descriptor argument is handed a descriptor the Fortran
+    # runtime built, so a caller-created handle needs storage of its own.
+    assert argument_values.default_construction == "lazy_owned_descriptor"
     assert argument_values.default_descriptor_ownership == "owned"
     assert argument_values.default_release == "wrapper_dealloc"
     assert argument_values.default_destroy_behavior == "handle_finalizer"

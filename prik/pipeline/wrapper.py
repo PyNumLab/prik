@@ -3385,9 +3385,8 @@ class WrapperGenerator:
         diagnostics = []
         if handle.handoff.descriptor_pointer_role is None or any(expected_counts):
             diagnostics.append(self._diagnostic(owner_path, "invalid-direct-native-descriptor-roles", None))
-        if (
-            handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE
-            and handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE
+        if handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE and (
+            handle.descriptor_kind not in {NativeArrayDescriptorKind.ALLOCATABLE, NativeArrayDescriptorKind.POINTER}
         ):
             diagnostics.append(self._diagnostic(owner_path, "direct-descriptor-without-projection", None))
         return tuple(diagnostics)
