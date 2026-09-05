@@ -26,10 +26,6 @@ release tags add a leading `v` to the package version.
   one Fortran builds for the call or persistent storage the wrapper owns.
   Extensions built against the earlier branch-only table must be regenerated.
 
-- Generated array handles now route operations through one native dispatcher
-  and an immutable capability set instead of constructing and storing one
-  Python callable per operation.
-
 - Argument handoff, shape, allocation and association state, element width,
   contiguity and NumPy views are now all read from that live descriptor in C.
   No descriptor is serialized into Python fields and decoded back, and the
@@ -38,11 +34,10 @@ release tags add a leading `v` to the package version.
   strides directly, so negative strides and non-contiguous pointer targets are
   exposed without an intermediate buffer.
 
-- A borrowed module or derived-field array handle passed to an entrypoint with
-  more than one allocatable or pointer dummy is now refused, naming the
-  argument. Such a descriptor is only valid inside the call that borrows it,
-  and only one dummy per call can be reached that way; caller-created handles,
-  which own persistent descriptor storage, are unaffected.
+- Fortran entrypoints can now accept generated array handles for several
+  allocatable or pointer dummies in one call, including calls with `intent(out)`
+  arguments or status outputs. Allocation and association changes reach each
+  supplied module, field, result, or caller-created handle.
 
 - Fixed writable module and derived-field allocatable arrays, and reject
   PROTECTED module arrays during policy completion when writable access would be

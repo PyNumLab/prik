@@ -32,9 +32,9 @@ generated dispatcher + completed capability set + native backend capsule
 
 The dispatcher is the single Python call boundary between generated extension
 code and the stable handle API. Its immutable capability set comes from the
-completed plan and states which operation names the dispatcher accepts.
-Missing capabilities fail explicitly rather than being inferred from
-`allocatable` or `pointer` alone.
+completed plan and states which operation names the dispatcher accepts. The
+runtime validates that set when it creates the handle and before dispatching an
+operation.
 
 ### The Backend Capsule
 
@@ -102,13 +102,13 @@ associated with, which matters because a handle created from a `.pyi` contract
 has no native storage until a call gives it some and so has nowhere else to
 record it.
 
-A call is made inside the consumer holding its argument's descriptor, and
-only one call can be inside one consumer. An entrypoint that takes a second
-descriptor dummy therefore needs descriptors that outlive a consumer, which
-only an owned backend has -- its `context` *is* persistent descriptor storage.
-A caller-created handle is placed there; a borrowed module array or field is
-refused by the binding, naming the argument, rather than handed a descriptor
-that would dangle.
+A call with more than one allocatable or pointer dummy enters each argument's
+backend in turn. Each consumer records its descriptor and enters the next, and
+the call runs inside the last consumer while every descriptor is live. Borrowed
+and owned handles use the same placement; an owned backend hands the consumer
+its persistent storage. An absent optional argument contributes an unallocated
+placeholder to the chain. Each descriptor remains scoped to the consumer that
+supplied it.
 
 ### Views And Ownership
 

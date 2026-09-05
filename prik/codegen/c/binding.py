@@ -165,7 +165,10 @@ class _CFunctionContext:
     python_result_name: str | None
     python_results: dict[str, str]
     role_values: dict[str, str]
-    inverted_descriptor: str | None = None
+    # Every argument reached through its descriptor entry point, in call order.
+    # The call is made inside the innermost consumer, so each one is entered in
+    # turn and they are all live together by the time it happens.
+    inverted_descriptors: tuple[str, ...] = ()
     # The function whose lowering this context serves, so an argument's nodes
     # can name helpers emitted once per function at module scope.
     function: FunctionPlan | None = None
@@ -7947,26 +7950,22 @@ class CBindingGenerator(ClassVisitor):
                 else ()
             ),
         ]
-        inverted = context.inverted_descriptor == plan.owner_path
-        general: list[CDeclaration | CExpressionStatement | CIf] = []
-        general.extend(
+        # A handle with no storage yet has no backend to enter, so storage is
+        # attached first and the backend that gives is what the chain enters.
+        attach: list[CDeclaration | CExpressionStatement | CIf] = []
+        attach.extend(
             self._native_descriptor_helper_call_nodes(
                 plan,
                 context,
                 names,
-                # Only a handle owning its descriptor reaches this path now: one
-                # that publishes native entry points is placed through them.
                 "_native_array_backend_for_binding_positional",
                 default_binder_definition=binder_definition,
             )
         )
-        general.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
-        general.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
-        general.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
-        if inverted:
-            nodes.extend(self._inverted_descriptor_backend_nodes(plan, names, handle, tuple(general)))
-        else:
-            nodes.extend(general)
+        attach.extend(self._native_descriptor_presence_unpack_nodes(plan, names, 1))
+        attach.extend(self._native_descriptor_pointer_unpack_nodes(plan, names))
+        attach.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
+        nodes.extend(self._inverted_descriptor_backend_nodes(plan, names, handle, tuple(attach)))
         return tuple(nodes)
 
     def _native_descriptor_object_declaration(
@@ -8127,19 +8126,9 @@ class CBindingGenerator(ClassVisitor):
                             CReturn(CodeExpression("NULL")),
                         ),
                     ),
-                    CComment("This call is made outside any consumer, so the descriptor must outlive one."),
+                    CComment("Attaching storage published a backend; the chain enters that."),
                     CExpressionStatement(
-                        CodeExpression(
-                            f"{names.value_name} = (CFI_cdesc_t *)prik_native_array_backend_persistent_descriptor("
-                            f'{prefix}_native_backend, "{plan.binding.python_name}")'
-                        )
-                    ),
-                    CIf(
-                        CodeExpression(f"{names.value_name} == NULL"),
-                        body=(
-                            CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")),
-                            CReturn(CodeExpression("NULL")),
-                        ),
+                        CodeExpression(f"{self._inverted_backend_local(names)} = {prefix}_native_backend")
                     ),
                 ),
                 else_body=absent,
@@ -9422,66 +9411,63 @@ class CBindingGenerator(ClassVisitor):
         except KeyError:
             raise ValueError(f"Hidden result {plan.owner_path!r} has no C output storage") from None
 
-    def _inverted_descriptor_argument(self, plan: FunctionPlan) -> ArgumentTransferPlan | None:
-        """Return the argument whose descriptor must stay live across the call.
+    def _inverted_descriptor_arguments(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
+        """Return every argument whose descriptor must be live across the call.
 
         The descriptor the runtime builds for a module array or a field exists
         only while the consumer it was handed to is running.  Making the call
         inside that consumer is what lets a callee change the allocation of a
         writable dummy and have it reach the caller's entity, and it means no
         descriptor is ever copied: a read-only argument is placed the same way,
-        so C only ever passes on a descriptor Fortran made.
+        so C only ever passes on a descriptor Fortran made.  A handle that owns
+        its descriptor enters the same way, because its entry point hands the
+        consumer the storage directly.
 
-        An optional argument is placed the same way when it is present.  When
-        it is absent there is no handle and so no consumer to enter, and the
-        unallocated placeholder is handed to the same call site directly.
+        Each one is entered in turn, so several descriptors are live together by
+        the time the innermost consumer makes the call.  An optional argument
+        that is absent has no entity to enter and contributes its unallocated
+        placeholder to the same chain instead.
         """
-        candidates = [
+        return tuple(
             argument
             for argument in plan.arguments
             if argument.native_array_handle is not None
             and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
             and argument.native_array_handle.array.rank is not None
-        ]
-        if len(candidates) != 1:
-            return None
-        # Hidden outputs and status projections read native storage the consumer
-        # does not carry, so those keep the general path.
-        if plan.results and any(result.source_kind != "direct_return" for result in plan.results):
-            return None
-        return candidates[0]
+        )
+
+    def _inverted_descriptor_slot(self, plan: FunctionPlan, owner_path: str) -> int:
+        """Return the position one descriptor argument holds in the chain."""
+        for slot, argument in enumerate(self._inverted_descriptor_arguments(plan)):
+            if argument.owner_path == owner_path:
+                return slot
+        raise ValueError(f"{owner_path!r} is not reached through a descriptor entry point")
 
     def _lower_entrypoint_call(self, plan: FunctionPlan, context: _CFunctionContext) -> tuple:
-        """Emit the native call, inside a descriptor consumer where one is required."""
-        if context.inverted_descriptor is None:
+        """Emit the native call, inside the consumers holding its descriptors."""
+        if not context.inverted_descriptors:
             return self._lower_native_call(plan, self._entrypoint_call_statement(plan, context))
-        names = context.arguments[context.inverted_descriptor]
-        backend = f"{names.value_name}_borrowed_backend"
-        consumer = self._inverted_consumer_name(plan)
+        names = context.arguments[context.inverted_descriptors[0]]
         record = self._inverted_context_name(plan)
+        chain = self._inverted_chain_fields(plan, context)
         fields = self._inverted_context_fields(plan, context)
         result = self._direct_result(plan)
-        initializer = ", ".join(value for _declaration, value in fields)
+        values = [value for _declaration, value in chain + fields]
         if result is not None:
-            initializer = f"{initializer}, 0" if initializer else "0"
+            values.append("0")
         return (
-            CComment("Everything the call needs apart from the descriptor is gathered here,"),
-            CComment("because the consumer runs outside this frame."),
-            CDeclaration("call_context", record, CodeExpression(f"{{{initializer}}}")),
-            CComment("The call is made inside the consumer, where the descriptor is live, so"),
-            CComment("what the callee writes into it is what Fortran copies back to the"),
-            CComment("caller's entity when the bridge returns."),
-            CIf(
-                CodeExpression(f"{backend} != NULL"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(f"{backend}->with_descriptor({backend}->context, {consumer}, &call_context)")
-                    ),
-                ),
-                else_body=(
-                    CComment("This handle owns its descriptor, so hand it to the same consumer."),
-                    CExpressionStatement(CodeExpression(f"{consumer}({names.value_name}, &call_context)")),
-                ),
+            CComment("Everything the call needs apart from the descriptors themselves is"),
+            CComment("gathered here, because the consumers run outside this frame."),
+            CDeclaration("call_context", record, CodeExpression(f"{{{', '.join(values)}}}")),
+            CComment("Each descriptor is entered in turn and the call is made inside the last"),
+            CComment("consumer, where they are all live, so what the callee writes into any of"),
+            CComment("them is what Fortran copies back to that caller's entity."),
+            *self._inverted_enter_nodes(
+                plan,
+                0,
+                backend=self._inverted_backend_local(names),
+                call_context="&call_context",
+                placeholder=f"call_context.{self._inverted_descriptor_field(0)}",
             ),
             *(
                 (CExpressionStatement(CodeExpression(f"{context.result_name} = call_context.result")),)
@@ -10267,55 +10253,88 @@ class CBindingGenerator(ClassVisitor):
         return tuple(nodes)
 
     def _inverted_descriptor_consumer_functions(self, plan: ModulePlan) -> tuple:
-        """Emit the record and consumer for each entrypoint called inside one."""
+        """Emit the record and consumer chain for each entrypoint called inside one."""
         nodes: list = []
         for function in self._functions(plan):
-            if self._inverted_descriptor_argument(function) is None:
-                continue
             context = self._function_context(function)
-            fields = self._inverted_context_fields(function, context)
-            record = self._inverted_context_name(function)
-            result = self._direct_result(function)
-            result_field = (
-                (CParameter("result", self._inverted_result_type(function, result)),) if result is not None else ()
+            if not context.inverted_descriptors:
+                continue
+            nodes.append(self._inverted_context_record(function, context))
+            nodes.extend(self._inverted_consumer_chain(function, context))
+        return tuple(nodes)
+
+    def _inverted_context_record(self, plan: FunctionPlan, context: _CFunctionContext) -> CStructDefinition:
+        """Declare everything the consumer chain carries between its links."""
+        chain = self._inverted_chain_fields(plan, context)
+        fields = self._inverted_context_fields(plan, context)
+        result = self._direct_result(plan)
+        result_field = (CParameter("result", self._inverted_result_type(plan, result)),) if result is not None else ()
+        return CStructDefinition(
+            self._inverted_context_name(plan),
+            tuple(declaration for declaration, _value in chain + fields) + result_field,
+        )
+
+    def _inverted_consumer_chain(self, plan: FunctionPlan, context: _CFunctionContext) -> tuple[CFunction, ...]:
+        """Emit one consumer per descriptor, each entering the next.
+
+        Every link records the descriptor it was handed and then enters the one
+        after it, so by the time the last link runs, every descriptor the call
+        needs is live at once and none of them has been copied or outlived the
+        entity it describes.  The call is made there, where a callee that
+        reallocates or reassociates any of its arguments writes into the
+        descriptor the Fortran runtime copies back to that caller's entity.
+        """
+        record = self._inverted_context_name(plan)
+        slots = len(context.inverted_descriptors)
+        fields = self._inverted_context_fields(plan, context)
+        functions: list[CFunction] = []
+        for slot in range(slots):
+            last = slot == slots - 1
+            body: tuple = (
+                CExpressionStatement(
+                    CodeExpression(f"call->{self._inverted_descriptor_field(slot)} = (CFI_cdesc_t *)descriptor")
+                ),
             )
-            nodes.append(
-                CStructDefinition(
-                    record,
-                    tuple(declaration for declaration, _value in fields) + result_field,
+            if last:
+                body += (CExpressionStatement(CodeExpression(self._inverted_consumer_call(plan, context, fields))),)
+                doc = (
+                    f"Call {self._entrypoint_function_name(plan)} with every descriptor live.",
+                    "Each argument's descriptor was recorded by the consumer that was handed"
+                    " it, and every one of those is still running, so what the callee writes"
+                    " into any of them is what Fortran copies back to that caller's entity.",
+                    "Every other value the call needs arrives through the context record,"
+                    " because this runs outside the frame that computed them.",
                 )
-            )
-            call = self._inverted_consumer_call(function, context, fields)
-            nodes.append(
+            else:
+                body += self._inverted_enter_nodes(
+                    plan,
+                    slot + 1,
+                    backend=f"call->{self._inverted_backend_field(slot + 1)}",
+                    call_context="call",
+                    placeholder=f"call->{self._inverted_descriptor_field(slot + 1)}",
+                )
+                doc = (
+                    f"Record descriptor {slot} of {self._entrypoint_function_name(plan)} and enter the next.",
+                    "This descriptor is valid only while this function runs, so the call is"
+                    " not made until every argument's descriptor has been entered and they"
+                    " are all live together.",
+                )
+            functions.append(
                 CFunction(
-                    self._inverted_consumer_name(function),
+                    self._inverted_consumer_name(plan, slot),
                     "void",
                     parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
                     storage="static",
-                    doc=(
-                        f"Call {self._entrypoint_function_name(function)} on a live descriptor.",
-                        "The callee may change the allocation of the array it receives. Making"
-                        " the call here, while the descriptor the Fortran runtime built for it"
-                        " is still valid, means the callee writes into the descriptor Fortran"
-                        " copies back to the caller's entity, so a new allocation reaches it.",
-                        "Every other value the call needs arrives through the context record,"
-                        " because this runs outside the frame that computed them.",
-                    ),
+                    doc=doc,
                     body=(
                         CDeclaration("call", f"{record} *", CodeExpression(f"({record} *)context")),
-                        # The record is empty when the descriptor is the only value the
-                        # call needs, and an unused local would warn.
-                        *(
-                            ()
-                            if fields or result is not None
-                            else (CExpressionStatement(CodeExpression("(void)call")),)
-                        ),
-                        CExpressionStatement(CodeExpression(call)),
+                        *body,
                         CReturn(),
                     ),
                 )
             )
-        return tuple(nodes)
+        # A link may only be named once the one it enters has been defined.
+        return tuple(reversed(functions))
 
     def _inverted_result_type(self, plan: FunctionPlan, result) -> str:
         """Return the C storage a carried direct result is written into."""
@@ -10332,17 +10351,19 @@ class CBindingGenerator(ClassVisitor):
     ) -> str:
         """Assemble the entrypoint call as the consumer makes it."""
         carried = {value: f"call->{declaration.name}" for declaration, value in fields}
-        descriptor_value = context.arguments[context.inverted_descriptor].value_name
+        recorded = {
+            context.arguments[owner_path].value_name: f"call->{self._inverted_descriptor_field(slot)}"
+            for slot, owner_path in enumerate(context.inverted_descriptors)
+        }
+        owners = set(context.inverted_descriptors)
         arguments = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
             values = self._entrypoint_parameter_values(plan, group, context)
-            if group.owner_path == context.inverted_descriptor:
-                # Only the descriptor itself is the consumer's argument.  An
-                # optional one is planned alongside its present flag, and that
-                # flag is an ordinary carried value like any other.
-                arguments.extend(
-                    "(CFI_cdesc_t *)descriptor" if value == descriptor_value else carried[value] for value in values
-                )
+            if group.owner_path in owners:
+                # Only the descriptor itself comes from its slot.  An optional
+                # one is planned alongside its present flag, and that flag is an
+                # ordinary carried value like any other.
+                arguments.extend(recorded.get(value) or carried[value] for value in values)
                 continue
             arguments.extend(carried[value] for value in values)
         call = f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
@@ -10357,17 +10378,19 @@ class CBindingGenerator(ClassVisitor):
         plan: FunctionPlan,
         context: _CFunctionContext,
     ) -> tuple[tuple[CParameter, str], ...]:
-        """Pair every entrypoint value the consumer needs with its declaration.
+        """Pair every entrypoint value the consumers need with its declaration.
 
-        The inverted descriptor is excluded: the consumer receives that
-        directly.  Everything else the call needs is carried into the consumer
-        through the context record, because the consumer runs outside the frame
-        that computed it -- including the present flag planned beside an
-        optional descriptor, which is a value like any other.
+        The descriptors themselves are excluded: each arrives as its own
+        consumer's argument and is recorded in the slot named for it.
+        Everything else the call needs is carried through the context record,
+        because the consumers run outside the frame that computed it --
+        including the present flag planned beside an optional descriptor, which
+        is a value like any other, and the address of a hidden output, which
+        stays valid because this frame outlives every consumer it enters.
         """
-        descriptor_value = (
-            None if context.inverted_descriptor is None else context.arguments[context.inverted_descriptor].value_name
-        )
+        descriptor_values = {
+            context.arguments[owner_path].value_name: owner_path for owner_path in context.inverted_descriptors
+        }
         pairs: list[tuple[CParameter, str]] = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
             declarations = self._entrypoint_parameter_declarations(plan, group)
@@ -10377,13 +10400,92 @@ class CBindingGenerator(ClassVisitor):
             pairs.extend(
                 (declaration, value)
                 for declaration, value in zip(declarations, values, strict=True)
-                if not (group.owner_path == context.inverted_descriptor and value == descriptor_value)
+                if descriptor_values.get(value) != group.owner_path
             )
         return tuple(pairs)
 
-    def _inverted_consumer_name(self, plan: FunctionPlan) -> str:
-        """Return the consumer that performs one inverted entrypoint call."""
-        return f"{self._binding_function_name(plan)}_call_with_descriptor"
+    def _inverted_chain_fields(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[tuple[CParameter, str], ...]:
+        """Pair the slot each descriptor is recorded in with what starts it.
+
+        A slot begins as whatever this frame already has for it: nothing for a
+        handle that will be entered, and the unallocated placeholder for an
+        absent optional, which is never entered and so is passed on as it
+        stands.  Every backend after the first is carried too, because the
+        consumer that enters it runs outside this frame.
+        """
+        pairs: list[tuple[CParameter, str]] = []
+        for slot, owner_path in enumerate(context.inverted_descriptors):
+            if slot > 0:
+                pairs.append(
+                    (
+                        CParameter(self._inverted_backend_field(slot), "prik_native_array_backend *"),
+                        self._inverted_backend_local(context.arguments[owner_path]),
+                    )
+                )
+        for slot, owner_path in enumerate(context.inverted_descriptors):
+            pairs.append(
+                (
+                    CParameter(self._inverted_descriptor_field(slot), "CFI_cdesc_t *"),
+                    context.arguments[owner_path].value_name,
+                )
+            )
+        return tuple(pairs)
+
+    @staticmethod
+    def _inverted_backend_local(names: _CArgumentNames) -> str:
+        """Return the local holding one descriptor argument's backend."""
+        return f"{names.value_name}_borrowed_backend"
+
+    @staticmethod
+    def _inverted_descriptor_field(slot: int) -> str:
+        """Return the record slot one entered descriptor is recorded in."""
+        return f"descriptor_{slot}"
+
+    @staticmethod
+    def _inverted_backend_field(slot: int) -> str:
+        """Return the record slot one not-yet-entered backend is carried in."""
+        return f"backend_{slot}"
+
+    def _inverted_consumer_name(self, plan: FunctionPlan, slot: int) -> str:
+        """Return the consumer that enters one descriptor of an inverted call."""
+        return f"{self._binding_function_name(plan)}_call_with_descriptor_{slot}"
+
+    def _inverted_enter_nodes(
+        self,
+        plan: FunctionPlan,
+        slot: int,
+        *,
+        backend: str,
+        call_context: str,
+        placeholder: str,
+    ) -> tuple[CIf, ...]:
+        """Enter one descriptor's backend, or pass on what stands for it.
+
+        A backend is absent only for an optional argument that was not
+        supplied: everything else publishes one, whether it borrows its
+        descriptor or owns it.  There is no entity to enter for an absent one,
+        so the placeholder already recorded in its slot goes straight to the
+        same consumer and the chain continues from there.
+        """
+        consumer = self._inverted_consumer_name(plan, slot)
+        return (
+            CIf(
+                CodeExpression(f"{backend} != NULL"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(f"{backend}->with_descriptor({backend}->context, {consumer}, {call_context})")
+                    ),
+                ),
+                else_body=(
+                    CComment("This optional argument is absent, so there is nothing to enter for it."),
+                    CExpressionStatement(CodeExpression(f"{consumer}({placeholder}, {call_context})")),
+                ),
+            ),
+        )
 
     def _output_nodes(
         self,
@@ -11368,7 +11470,6 @@ class CBindingGenerator(ClassVisitor):
         python_result = self._python_result_name(plan)
         native_result = self._native_result_name(plan)
         role_values = self._argument_role_values(plan, arguments)
-        inverted = self._inverted_descriptor_argument(plan)
         return _CFunctionContext(
             arguments,
             native_outputs,
@@ -11376,7 +11477,7 @@ class CBindingGenerator(ClassVisitor):
             python_result,
             python_results,
             role_values,
-            inverted.owner_path if inverted is not None else None,
+            tuple(argument.owner_path for argument in self._inverted_descriptor_arguments(plan)),
             plan,
         )
 

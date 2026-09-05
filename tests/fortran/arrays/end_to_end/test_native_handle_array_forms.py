@@ -214,6 +214,16 @@ contains
     allocate(second(n)); second = 9.0_8
   end subroutine grow_pair
 
+  subroutine grow_and_count(values, n, produced)
+    real(8), allocatable, intent(inout) :: values(:)
+    integer(4), intent(in) :: n
+    integer(4), intent(out) :: produced
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(n)); values = 11.0_8
+    produced = n
+  end subroutine grow_and_count
+
   function assumed_total(actual) result(total)
     real(8), intent(in) :: actual(:)
     real(8) :: total
@@ -442,31 +452,57 @@ def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_
     assert descriptor.shape == (2,)
 
 
-def test_two_descriptor_dummies_take_owned_storage_and_refuse_a_borrowed_handle(descriptor_matrix):
-    """A descriptor only one call can hold is refused, not handed over to be dangled.
+def test_two_descriptor_dummies_reach_borrowed_and_owned_storage_alike(descriptor_matrix):
+    """Two descriptors are live at once, so both callees' writes reach their entities.
 
-    Reaching a borrowed entity means making the call inside the consumer that
-    holds its descriptor, and only one call can be inside one consumer. An
-    entrypoint with a second descriptor dummy therefore needs descriptors that
-    outlive a consumer, which only an owned handle has: a caller-created one is
-    placed, and a module array is refused while both handles stay usable.
+    Each argument is entered in turn and the call is made inside the last
+    consumer, where every descriptor the Fortran runtime built is still valid.
+    A module array and a caller-created handle are placed the same way, and
+    both see the reallocation the callee performed.
     """
     left = descriptor_matrix.pair_left
     right = descriptor_matrix.pair_right
 
-    with pytest.raises(TypeError, match="borrowed native array handle"):
-        descriptor_matrix.grow_pair(left, right, np.int32(2))
-    assert left.shape == (3,)
-    assert right.shape == (3,)
+    descriptor_matrix.grow_pair(left, right, np.int32(2))
+    assert left.shape == (2,)
+    assert right.shape == (2,)
+    np.testing.assert_allclose(left.to_numpy(), np.array([8.0, 8.0]))
+    np.testing.assert_allclose(right.to_numpy(), np.array([9.0, 9.0]))
 
     owned_first = contracts.Allocatable[contracts.Float64[:]]()
-    owned_second = contracts.Allocatable[contracts.Float64[:]]()
     try:
-        descriptor_matrix.grow_pair(owned_first, owned_second, np.int32(2))
-        assert owned_first.shape == (2,)
-        assert owned_second.shape == (2,)
-        np.testing.assert_allclose(owned_first.to_numpy(), np.array([8.0, 8.0]))
-        np.testing.assert_allclose(owned_second.to_numpy(), np.array([9.0, 9.0]))
+        # One borrowed and one owned handle in the same call: the chain enters
+        # whatever each publishes without distinguishing them.
+        descriptor_matrix.grow_pair(left, owned_first, np.int32(3))
+        assert left.shape == (3,)
+        assert owned_first.shape == (3,)
+        np.testing.assert_allclose(owned_first.to_numpy(), np.array([9.0, 9.0, 9.0]))
     finally:
         owned_first.close()
-        owned_second.close()
+
+
+def test_a_handle_reaches_a_call_with_a_hidden_output_without_running_python(descriptor_matrix):
+    """An intent(out) argument is carried, not read after the consumer returns.
+
+    The call runs inside the consumer holding the descriptor, so the hidden
+    output is written through the address this frame carried in; the frame
+    outlives every consumer it enters, so reading it afterwards is sound and
+    no Python runs on the way.
+    """
+    spare = descriptor_matrix.pair_left
+    called: list[str] = []
+
+    def record(frame, event, _arg):
+        if event == "call":
+            called.append(frame.f_code.co_name)
+
+    descriptor_matrix.grow_and_count(spare, np.int32(2))
+    sys.setprofile(record)
+    try:
+        produced = descriptor_matrix.grow_and_count(spare, np.int32(4))
+    finally:
+        sys.setprofile(None)
+
+    assert called == []
+    assert int(produced[1]) == 4
+    assert spare.shape == (4,)
