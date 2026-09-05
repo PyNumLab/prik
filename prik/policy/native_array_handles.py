@@ -53,6 +53,7 @@ class NativeArrayHandlePolicy:
     destroy_behavior: str
     to_numpy: str
     descriptor_interop: str
+    descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: str
@@ -403,6 +404,7 @@ if __name__ == "__main__":
         destroy_behavior="nullify",
         to_numpy="borrowed_view",
         descriptor_interop="pointer_c_descriptor",
+        descriptor_inquiries=True,
         nullable=True,
         optional_absent=False,
         storage_mode="alias",

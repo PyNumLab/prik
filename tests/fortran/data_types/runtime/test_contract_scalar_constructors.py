@@ -44,3 +44,20 @@ def test_primitive_contract_constructors_reject_values_and_array_annotations():
         contracts.Float64[:]()
     with pytest.raises(TypeError, match="default constructor takes no arguments"):
         contracts.Int32(3)
+
+
+def test_logical_descriptor_handles_report_their_native_array_width():
+    cases = (
+        (contracts.Bool, np.bool_),
+        (contracts.Bool8, np.bool_),
+        (contracts.Bool16, np.int16),
+        (contracts.Bool32, np.int32),
+        (contracts.Bool64, np.int64),
+    )
+
+    for element_type, dtype in cases:
+        handle = contracts.Allocatable[element_type[:]]()
+        try:
+            assert handle.dtype == np.dtype(dtype)
+        finally:
+            handle.close()

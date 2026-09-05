@@ -75,7 +75,7 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
 
     assert "double bind_c_sum_values(void * values, int64_t values_extent_0);" in c_source
     # One shared binder call carries the completed NumPy selectors; a generated
-    # native handle is resolved separately through its descriptor table.
+    # native handle is resolved separately through its descriptor backend.
     assert (
         "prik_bind_array(bound_values_obj, NPY_FLOAT64, 1, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
         '1, 1, "numpy.float64", "values", 0, '

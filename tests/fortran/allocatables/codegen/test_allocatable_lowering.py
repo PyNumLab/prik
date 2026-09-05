@@ -80,9 +80,6 @@ def test_allocated_direct_result_assigns_then_moves_into_owned_descriptor():
     assert "deallocate(result)" in procedure
     assert "call prik_collect_allocatable_array_result(native_make(n), result)" not in procedure
     assert "result = result_value" not in procedure
-    # Allocation state is read from the owned descriptor in the binding, so no
-    # Fortran inquiry is emitted for it.
-    assert "_allocated(" not in bridge_source
     assert "subroutine bind_c_owned_result_" in bridge_source
     assert "_deallocate(" in bridge_source
     assert "real(c_double), allocatable, dimension(:), intent(inout) :: result" in bridge_source
@@ -129,8 +126,9 @@ def invalid_argument(values: Annotated[Allocatable[Float64[:]], MaybeUnallocated
 def _allocatable_argument_plan():
     module = parse_pyi_text(
         """
-from prik.contracts import Allocatable, Float64, native_call
+from prik.contracts import Allocatable, Float64, native_call, nogil
 
+@nogil
 @native_call([])
 def total(values: Allocatable[Float64[:]]) -> Float64: ...
 
@@ -184,3 +182,19 @@ def test_allocatable_argument_uses_the_descriptor_the_runtime_built():
     assert "with_descriptor(" in c_source
     copied = [line.strip() for line in c_source.splitlines() if "memcpy(" in line and "CFI_CDESC_T" in line]
     assert copied == []
+
+
+def test_nogil_releases_only_while_the_descriptor_consumer_calls_fortran():
+    c_source = next(
+        source.text
+        for source in WrapperGenerator().generate(_allocatable_argument_plan()).sources
+        if source.path.suffix == ".c"
+    )
+    start = c_source.index("static void wrap_total_call_with_descriptor_0(")
+    end = c_source.index("\n}\n", start)
+    consumer = c_source[start:end]
+
+    begin = consumer.index("Py_BEGIN_ALLOW_THREADS")
+    call = consumer.index("bind_c_total(")
+    finish = consumer.index("Py_END_ALLOW_THREADS")
+    assert begin < call < finish

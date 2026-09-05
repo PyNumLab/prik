@@ -26,14 +26,18 @@ end module field_state
 """
 
 
-def _bridge_source():
-    parsed = parse_fortran_project({"field_state.f90": ARRAY_FIELD_SOURCE})
+def _bridge_source_for(source: str, module_name: str) -> str:
+    parsed = parse_fortran_project({f"{module_name}.f90": source})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)
-    module = _merge_wrapper_modules(modules, name="field_state")
+    module = _merge_wrapper_modules(modules, name=module_name)
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
     return FortranSourcePrinter().visit(FortranBridgeGenerator().visit(plan))
+
+
+def _bridge_source():
+    return _bridge_source_for(ARRAY_FIELD_SOURCE, "field_state")
 
 
 def test_owned_array_field_takes_its_address_through_the_owner_pointer():
@@ -87,3 +91,24 @@ def test_array_field_getters_report_extents_instead_of_passing_a_descriptor():
 
     # No descriptor-consumer interface is declared for an ordinary array field.
     assert "_grid_consumer" not in source
+
+
+def test_deferred_character_pointer_field_uses_only_legal_inquiry_entrypoints():
+    source = _bridge_source_for(
+        """
+module deferred_field_state
+  implicit none
+  type :: box
+    character(len=:), pointer :: words(:) => null()
+  end type box
+  type(box) :: plain_box
+end module deferred_field_state
+""",
+        "deferred_field_state",
+    )
+
+    shape = _procedure(source, "bind_c_prik_field_handle_box_words_shape")
+    assert "logical(c_bool) :: result" in shape
+    assert "result = associated(owner%words)" in shape
+    assert "_words_consumer" not in source
+    assert "character(kind=c_char, len=:), pointer, dimension(:), intent(inout)" not in source

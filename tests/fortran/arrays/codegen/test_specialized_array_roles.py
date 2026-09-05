@@ -90,7 +90,7 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
         "PRIK_ARRAY_LAYOUT_F_CONTIGUOUS"
     ) in c_source
     assert (
-        "prik_native_array_backend_for_actual(bound_values_table_capsule, 1, 15, "
+        "prik_native_array_backend_for_actual(bound_values_backend_capsule, 1, 15, "
         'CFI_type_double, sizeof(double), "float64", "values")'
     ) in c_source
     assert "NPY_FLOAT64, 1, 15, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source

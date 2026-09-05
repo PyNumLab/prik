@@ -149,8 +149,10 @@ module fhandle_descriptor_matrix_f90
   implicit none
 
   type :: holder
-    real(8), allocatable :: field_alloc(:)
+    real(8), allocatable :: field_allocatable_values_with_long_name(:)
+    logical(4), allocatable :: field_flags(:)
     real(8), pointer :: field_ptr(:) => null()
+    character(len=:), pointer :: field_words(:) => null()
   end type holder
 
   integer(4), allocatable :: ints(:)
@@ -164,6 +166,7 @@ module fhandle_descriptor_matrix_f90
   real(8), allocatable :: probe(:)
   real(8), allocatable :: pair_left(:)
   real(8), allocatable :: pair_right(:)
+  real(8), allocatable :: pair_third(:)
   real(8), allocatable :: cube(:, :, :)
   real(8), target :: store(8)
   real(8), pointer :: reversed(:) => null()
@@ -187,12 +190,17 @@ contains
     allocate(probe(3)); probe = 2.0_8
     allocate(pair_left(3));  pair_left = 6.0_8
     allocate(pair_right(3)); pair_right = 7.0_8
+    allocate(pair_third(3)); pair_third = 8.0_8
     allocate(cube(2, 3, 4)); cube = 1.0_8
     store = [(1.0_8 * i, i = 1, 8)]
     reversed => store(8:1:-1)
     strided => store(1:8:2)
-    allocate(parent%field_alloc(3)); parent%field_alloc = 5.0_8
+    allocate(parent%field_allocatable_values_with_long_name(3))
+    parent%field_allocatable_values_with_long_name = 5.0_8
+    allocate(parent%field_flags(3)); parent%field_flags = [.true., .false., .true.]
     parent%field_ptr => store(2:6:2)
+    allocate(character(len=5) :: parent%field_words(2))
+    parent%field_words = ['alpha', 'beta ']
   end subroutine setup
 
   subroutine reshape_alloc(values, n)
@@ -214,6 +222,18 @@ contains
     allocate(second(n)); second = 9.0_8
   end subroutine grow_pair
 
+  subroutine grow_three(first, second, third, n)
+    real(8), allocatable, intent(inout) :: first(:), second(:), third(:)
+    integer(4), intent(in) :: n
+
+    if (allocated(first)) deallocate(first)
+    if (allocated(second)) deallocate(second)
+    if (allocated(third)) deallocate(third)
+    allocate(first(n));  first = 8.0_8
+    allocate(second(n)); second = 9.0_8
+    allocate(third(n));  third = 10.0_8
+  end subroutine grow_three
+
   subroutine grow_and_count(values, n, produced)
     real(8), allocatable, intent(inout) :: values(:)
     integer(4), intent(in) :: n
@@ -223,6 +243,19 @@ contains
     allocate(values(n)); values = 11.0_8
     produced = n
   end subroutine grow_and_count
+
+  function optional_alloc_state(values) result(state)
+    real(8), allocatable, intent(in), optional :: values(:)
+    integer(4) :: state
+
+    if (.not. present(values)) then
+      state = 0
+    else if (allocated(values)) then
+      state = 2
+    else
+      state = 1
+    end if
+  end function optional_alloc_state
 
   function assumed_total(actual) result(total)
     real(8), intent(in) :: actual(:)
@@ -377,13 +410,23 @@ def test_an_unassociated_pointer_reports_absence_through_every_inquiry(descripto
 def test_a_derived_type_field_view_retains_its_parent(descriptor_matrix):
     """A field's storage belongs to its parent, so a view has to keep it alive."""
     parent = descriptor_matrix.parent
-    field = parent.field_alloc
+    field = parent.field_allocatable_values_with_long_name
     pointer_field = parent.field_ptr
+    logical_field = parent.field_flags
+    words_field = parent.field_words
 
     assert field.shape == (3,)
     np.testing.assert_allclose(field.to_numpy(), np.array([5.0, 5.0, 5.0]))
     assert pointer_field.associated is True
     assert pointer_field.shape == (3,)
+    assert logical_field.dtype == np.dtype(np.int32)
+    np.testing.assert_array_equal(logical_field.to_numpy().astype(bool), [True, False, True])
+    assert words_field.associated is True
+    assert words_field.shape == (2,)
+    assert words_field.dtype == np.dtype("S5")
+    words_field.deallocate()
+    assert words_field.associated is False
+    assert words_field.shape is None
 
     view = field.to_numpy()
     assert view.base is not None
@@ -434,6 +477,7 @@ def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_
     int_total = descriptor_matrix.int_total
     reshape_alloc = descriptor_matrix.reshape_alloc
     assumed_total = descriptor_matrix.assumed_total
+    optional_alloc_state = descriptor_matrix.optional_alloc_state
     called: list[str] = []
 
     def record(frame, event, _arg):
@@ -445,6 +489,9 @@ def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_
         int_total(ordinary)
         assumed_total(descriptor)
         reshape_alloc(descriptor, np.int32(2))
+        assert optional_alloc_state() == np.int32(0)
+        assert optional_alloc_state(None) == np.int32(0)
+        assert optional_alloc_state(descriptor) == np.int32(2)
     finally:
         sys.setprofile(None)
 
@@ -479,6 +526,19 @@ def test_two_descriptor_dummies_reach_borrowed_and_owned_storage_alike(descripto
         np.testing.assert_allclose(owned_first.to_numpy(), np.array([9.0, 9.0, 9.0]))
     finally:
         owned_first.close()
+
+
+def test_three_descriptor_dummies_keep_every_borrowed_descriptor_live(descriptor_matrix):
+    first = descriptor_matrix.pair_left
+    second = descriptor_matrix.pair_right
+    third = descriptor_matrix.pair_third
+
+    descriptor_matrix.grow_three(first, second, third, np.int32(4))
+
+    assert first.shape == second.shape == third.shape == (4,)
+    np.testing.assert_allclose(first.to_numpy(), np.full(4, 8.0))
+    np.testing.assert_allclose(second.to_numpy(), np.full(4, 9.0))
+    np.testing.assert_allclose(third.to_numpy(), np.full(4, 10.0))
 
 
 def test_a_handle_reaches_a_call_with_a_hidden_output_without_running_python(descriptor_matrix):

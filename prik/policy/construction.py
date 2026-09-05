@@ -6207,6 +6207,7 @@ def _native_array_handle_wrapper_policy(
         owner_path,
         "descriptor interop",
     )
+    descriptor_inquiries = completed.descriptor_inquiries
     operations = {
         _native_array_enum(NativeArrayOperation, item, owner_path, "operation") for item in completed.operations
     }
@@ -6215,30 +6216,10 @@ def _native_array_handle_wrapper_policy(
     # reports it; only a pointer still reports one, because a pointer that has
     # no storage of its own has nowhere else to record what it was pointed at.
     operations.add(NativeArrayOperation.SHAPE)
-    if descriptor == "pointer":
-        operations.add(NativeArrayOperation.DESCRIPTOR)
+    if descriptor == "pointer" and descriptor_inquiries:
+        operations.update({NativeArrayOperation.CONTIGUOUS, NativeArrayOperation.DESCRIPTOR})
     if semantic_type.name == "String":
         operations.add(NativeArrayOperation.ELEMENT_LENGTH)
-    # A bind(C) character dummy must have an assumed or constant length, so a
-    # deferred-length pointer array has no legal descriptor interface at all.
-    # Its state, shape and width still come from the compiler's own inquiries;
-    # anything that has to reach the descriptor itself does not exist for it.
-    descriptor_inquiries = not (
-        descriptor == "pointer" and semantic_type.metadata.get("fortran_character_length") == ":"
-    )
-    if not descriptor_inquiries:
-        operations.difference_update(
-            {
-                NativeArrayOperation.DESCRIPTOR,
-                NativeArrayOperation.ASSOCIATE,
-                NativeArrayOperation.TO_NUMPY,
-            }
-        )
-        output_projection = NativeArrayOutputProjection.NONE
-        if semantic_type.metadata.get("fortran_character_length") == ":":
-            operations.difference_update({NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE})
-    if descriptor == "pointer":
-        operations.add(NativeArrayOperation.CONTIGUOUS)
     if completed.destroy_behavior == NativeArrayDestroyBehavior.HANDLE_FINALIZER.value:
         operations.add(NativeArrayOperation.DESTROY)
     array = _array_handoff_policy(semantic_type)
@@ -6290,10 +6271,11 @@ def _native_array_handle_wrapper_policy(
             owner_path,
             "destroy behavior",
         ),
-        extraction_action=(
-            _native_array_enum(NativeArrayExtractionAction, completed.to_numpy, owner_path, "extraction action")
-            if descriptor_inquiries
-            else NativeArrayExtractionAction.UNSUPPORTED
+        extraction_action=_native_array_enum(
+            NativeArrayExtractionAction,
+            completed.to_numpy,
+            owner_path,
+            "extraction action",
         ),
         descriptor_interop=interop,
         descriptor_inquiries=descriptor_inquiries,

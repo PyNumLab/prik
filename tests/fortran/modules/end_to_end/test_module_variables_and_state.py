@@ -474,6 +474,12 @@ contains
     fixed_ptr => store
     deferred_ptr => store
   end subroutine setup
+
+  subroutine allocate_deferred()
+    if (associated(deferred_ptr)) nullify(deferred_ptr)
+    allocate(character(len=6) :: deferred_ptr(3))
+    deferred_ptr = ['a     ', 'bb    ', 'ccc   ']
+  end subroutine allocate_deferred
 end module fchar_declared_arrays_f90
 """
 
@@ -515,3 +521,16 @@ def test_declared_length_character_module_arrays_compile_and_expose_their_width(
     assert module.fixed_ptr.shape == (2,)
     assert module.deferred_ptr.associated is True
     assert module.deferred_ptr.shape == (2,)
+    assert module.deferred_ptr.dtype == np.dtype("S4")
+
+    module.deferred_ptr.nullify()
+    assert module.deferred_ptr.associated is False
+    assert module.deferred_ptr.shape is None
+
+    module.allocate_deferred()
+    assert module.deferred_ptr.associated is True
+    assert module.deferred_ptr.shape == (3,)
+    assert module.deferred_ptr.dtype == np.dtype("S6")
+    module.deferred_ptr.deallocate()
+    assert module.deferred_ptr.associated is False
+    assert module.deferred_ptr.shape is None

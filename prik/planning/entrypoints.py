@@ -225,6 +225,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             GeneratedSupportProcedureImplementationOwner.FORTRAN
         ),
     ) -> GeneratedSupportProcedureEntrypointPlan:
+        symbol_name = NativeSymbolNames.bounded(f"{owner_path}::{role}", symbol_name)
         return GeneratedSupportProcedureEntrypointPlan(
             key=f"{owner_path}::{role}",
             owner_path=owner_path,
@@ -723,7 +724,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         operations = []
         # The descriptor entry point is what every inquiry runs through, so it
         # is planned for the handle rather than for one of its capabilities.
-        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned = [NativeArrayOperation.DESCRIPTOR] if handle.descriptor_inquiries else []
         planned.extend(
             operation
             for operation in handle.operations
@@ -758,7 +759,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             extents = tuple(
                 self._int64_parameter(f"extent_{axis}", reference=True) for axis in range(handle.array.rank)
             )
-            return NativeEntrypointSignaturePlan((*owner_values, *extents), self._void_result())
+            result = self._bool_result() if not handle.descriptor_inquiries else self._void_result()
+            return NativeEntrypointSignaturePlan((*owner_values, *extents), result)
         if operation is NativeArrayOperation.DESCRIPTOR:
             callback = self._descriptor_callback_parameter(
                 semantic_type_name=field.semantic_type_name,
@@ -994,7 +996,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         operations = []
         # The descriptor entry point is what every inquiry runs through, so it
         # is planned for the handle rather than for one of its capabilities.
-        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned = [NativeArrayOperation.DESCRIPTOR] if handle.descriptor_inquiries else []
         planned.extend(
             operation
             for operation in handle.operations
@@ -1032,7 +1034,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
                 for axis in range(handle.array.rank)
             )
-            return NativeEntrypointSignaturePlan(extents, self._void_result())
+            result = self._bool_result() if not handle.descriptor_inquiries else self._void_result()
+            return NativeEntrypointSignaturePlan(extents, result)
         if operation is NativeArrayOperation.DESCRIPTOR:
             return self._module_descriptor_callback_signature(variable, handle)
         if operation is NativeArrayOperation.ASSOCIATE:

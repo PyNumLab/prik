@@ -389,6 +389,31 @@ class box:
     assert set(field_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
+def test_deferred_character_pointer_arrays_require_a_legal_descriptor_interface():
+    module = parse_pyi_text(
+        """
+deferred_ptr: Pointer[String[:][:]]
+
+def inspect(values: Pointer[String[:][:]]) -> None: ...
+""",
+        module_name="deferred_character_pointer_arrays",
+    )
+
+    complete_semantic_policies(module)
+
+    module_policy = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+    argument_policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert module_policy.is_blocked is False
+    assert module_policy.descriptor_inquiries is False
+    assert module_policy.descriptor_interop == "none"
+    assert set(module_policy.operations) == {"associated", "deallocate", "nullify"}
+    assert argument_policy.is_blocked is True
+    assert argument_policy.descriptor_inquiries is False
+    assert argument_policy.descriptor_interop == "none"
+    assert "cannot cross a bind(C) descriptor interface" in argument_policy.blocker
+
+
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
     module = parse_pyi_text(
         """

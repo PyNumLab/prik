@@ -1374,9 +1374,21 @@ def _native_array_handle_policy(
     )
     handle_kind = _native_array_handle_kind(descriptor_kind, context, optional_absent=optional_absent)
     blocker = _native_array_handle_blocker(descriptor_kind, handle_kind, decision)
+    descriptor_inquiries = _native_array_descriptor_inquiries(descriptor_kind, semantic_type)
+    if not descriptor_inquiries and handle_kind not in {
+        "borrowed_module_descriptor",
+        "borrowed_field_descriptor",
+    }:
+        blocker = "deferred-length character pointer arrays cannot cross a bind(C) descriptor interface"
     descriptor_ownership = _native_array_descriptor_ownership(handle_kind)
-    to_numpy = _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
-    operations = _native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type)
+    to_numpy = (
+        _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
+        if descriptor_inquiries
+        else "unsupported"
+    )
+    operations = set(_native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type))
+    if not descriptor_inquiries:
+        operations.difference_update({"allocate", "associate", "resize", "to_numpy"})
     default_construction = _native_array_default_construction(handle_kind, context, semantic_type)
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
@@ -1389,7 +1401,9 @@ def _native_array_handle_policy(
         getter_behavior=_native_array_getter_behavior(handle_kind, context, blocker),
         python_setter=_native_array_python_setter(variable),
         native_setter=_native_array_native_setter(variable),
-        output_projection=_native_array_output_projection(descriptor_kind, handle_kind, context),
+        output_projection=(
+            _native_array_output_projection(descriptor_kind, handle_kind, context) if descriptor_inquiries else "none"
+        ),
         result_allocation=_native_array_result_allocation(descriptor_kind, handle_kind, context, semantic_type),
         release=_native_array_release_responsibility(handle_kind),
         target_lifetime=_native_array_target_lifetime(descriptor_kind, handle_kind, semantic_type, blocker),
@@ -1399,17 +1413,19 @@ def _native_array_handle_policy(
             descriptor_kind,
             handle_kind,
             semantic_type,
+            descriptor_inquiries=descriptor_inquiries,
         ),
         nullable=bool(decision.nullable or optional_absent),
         optional_absent=optional_absent,
         storage_mode=decision.storage_mode.value,
-        operations=operations,
+        operations=tuple(sorted(operations)),
         blocker=blocker,
         default_construction=default_construction,
         default_descriptor_ownership="owned" if default_construction != "none" else "unknown",
         default_release="wrapper_dealloc" if default_construction != "none" else "none",
         default_destroy_behavior="handle_finalizer" if default_construction != "none" else "none",
         default_operations=(tuple(sorted({*operations, "destroy"})) if default_construction != "none" else ()),
+        descriptor_inquiries=descriptor_inquiries,
     )
 
 
@@ -1696,8 +1712,12 @@ def _native_array_descriptor_interop_requirement(
     descriptor_kind: str,
     handle_kind: str,
     semantic_type: models.SemanticType,
+    *,
+    descriptor_inquiries: bool,
 ) -> str:
     """Return the C-descriptor interop mechanism required by a supported handle."""
+    if not descriptor_inquiries:
+        return "none"
     if descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
         return "owned_allocatable_c_descriptor"
     if descriptor_kind == "allocatable" and handle_kind == "borrowed_module_descriptor":
@@ -1705,6 +1725,14 @@ def _native_array_descriptor_interop_requirement(
     if descriptor_kind == "pointer" and handle_kind != "unsupported":
         return "pointer_c_descriptor"
     return "none"
+
+
+def _native_array_descriptor_inquiries(
+    descriptor_kind: str,
+    semantic_type: models.SemanticType,
+) -> bool:
+    """Return whether the declaration has a legal bind(C) descriptor interface."""
+    return not (descriptor_kind == "pointer" and semantic_type.metadata.get("fortran_character_length") == ":")
 
 
 def _pointer_policy_metadata(semantic_type: models.SemanticType) -> dict[str, object]:

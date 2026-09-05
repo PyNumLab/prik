@@ -99,6 +99,11 @@ boundary as values rather than array handles.
 support allocation, target deallocation, resizing, and NumPy extraction.
 An unavailable operation raises `NotImplementedError`.
 
+A deferred-length character pointer array can report `associated`, `shape`,
+and its current element width, and can be nullified or deallocated. It cannot
+be passed as a pointer-descriptor argument or exposed with `to_numpy()`, because
+Fortran does not permit its descriptor form in a `bind(C)` interface.
+
 ---
 
 ## Associate Two Pointers

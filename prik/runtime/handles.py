@@ -464,7 +464,7 @@ class NativeArrayHandleBase:
         if value is None:
             return None
         self._validate_numpy_result(value)
-        if value.base is not None and value.base is self._owner:
+        if self.owned and value.base is not None and value.base is self._owner:
             # The view was built over storage this handle releases when it is
             # finalized, so the view has to keep the handle alive too, not just
             # the record that holds the storage.

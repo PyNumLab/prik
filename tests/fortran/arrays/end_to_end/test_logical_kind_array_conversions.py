@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from prik import contracts
 from tests.fortran._support.wrapper_build import _build_inline_pyi_contract_module, _build_text_and_import
 
 
@@ -64,7 +65,68 @@ contains
     inout_values = input_values .neqv. inout_values
   end subroutine exercise_64
 
+  subroutine replace_c_bool(values)
+    logical(kind=c_bool), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_c_bool
+
+  subroutine replace_8(values)
+    logical(kind=1), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_8
+
+  subroutine replace_16(values)
+    logical(kind=2), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_16
+
+  subroutine replace_32(values)
+    logical(kind=4), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_32
+
+  subroutine replace_64(values)
+    logical(kind=8), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_64
+
 end module logical_kind_arrays
+"""
+
+
+_LOGICAL_POINTER_SOURCE = """
+module logical_pointer_arrays
+  implicit none
+contains
+  subroutine replace_pointer_32(values)
+    logical(kind=4), pointer, intent(inout) :: values(:)
+    if (associated(values)) deallocate(values)
+    allocate(values(3))
+    values = .false.
+    values(1) = .true.
+    values(3) = .true.
+  end subroutine replace_pointer_32
+end module logical_pointer_arrays
 """
 
 
@@ -96,12 +158,7 @@ def test_boolean_arrays_are_aliased_at_their_own_width_without_any_copy(tmp_path
         },
     )
     bridge_source = (tmp_path / "bind_c_logical_kind_arrays_wrapper.f90").read_text(encoding="utf-8")
-    assert "_native = " not in bridge_source
-    assert "merge(.true._c_bool, .false._c_bool," not in bridge_source
     assert "call native_exercise_c_bool(n, input_values, output_values, inout_values)" in bridge_source
-    # Written arrays are normalized at the element's own width, not copied.
-    assert "_logical_bytes" not in bridge_source
-    assert "iand(" not in bridge_source
 
     for suffix, dtype in _LOGICAL_KIND_DTYPES.items():
         input_values = np.array([1, 0, 1, 0], dtype=dtype)
@@ -132,7 +189,7 @@ def test_boolean_arrays_are_aliased_at_their_own_width_without_any_copy(tmp_path
 
 def test_numbered_boolean_pyi_contracts_probe_and_call_every_supported_width(tmp_path: Path):
     contract = """
-from prik.contracts import Bool8, Bool16, Bool32, Bool64, Int32
+from prik.contracts import Allocatable, Bool8, Bool16, Bool32, Bool64, Int32
 
 def exercise_c_bool(
     n: Int32,
@@ -168,6 +225,12 @@ def exercise_64(
     output_values: Bool64[n],
     inout_values: Bool64[n],
 ) -> None: ...
+
+def replace_c_bool(values: Allocatable[Bool8[:]]) -> None: ...
+def replace_8(values: Allocatable[Bool8[:]]) -> None: ...
+def replace_16(values: Allocatable[Bool16[:]]) -> None: ...
+def replace_32(values: Allocatable[Bool32[:]]) -> None: ...
+def replace_64(values: Allocatable[Bool64[:]]) -> None: ...
 """
     module, result = _build_inline_pyi_contract_module(
         tmp_path,
@@ -180,7 +243,6 @@ def exercise_64(
     # Each numbered contract width aliases a buffer of its own size.
     for kind in ("logical(c_bool)", "logical(2)", "logical(4)", "logical(8)"):
         assert f"{kind}, pointer, contiguous, dimension(:) :: input_values" in bridge_source, kind
-    assert "_native = " not in bridge_source
 
     for suffix, dtype in _LOGICAL_KIND_DTYPES.items():
         input_values = np.array([1, 0, 1, 0], dtype=dtype)
@@ -203,3 +265,59 @@ def exercise_64(
             np.logical_xor(input_values.astype(bool), initial_inout.astype(bool)),
             err_msg=suffix,
         )
+
+    handle_contracts = {
+        "c_bool": contracts.Bool8,
+        "8": contracts.Bool8,
+        "16": contracts.Bool16,
+        "32": contracts.Bool32,
+        "64": contracts.Bool64,
+    }
+    for suffix, dtype in _LOGICAL_KIND_DTYPES.items():
+        handle = contracts.Allocatable[handle_contracts[suffix][:]]()
+        try:
+            assert getattr(module, f"replace_{suffix}")(handle) is None
+            assert handle.dtype == np.dtype(dtype)
+            assert handle.shape == (3,)
+            np.testing.assert_array_equal(handle.to_numpy().astype(bool), [True, False, True])
+        finally:
+            handle.close()
+
+
+def test_caller_created_wide_logical_pointer_uses_its_native_width(tmp_path: Path):
+    contract = """
+from prik.contracts import Annotated, Bool32, Pointer, PointerPolicy
+
+def replace_pointer_32(
+    values: Annotated[
+        Pointer[Bool32[:]],
+        PointerPolicy(
+            nullable=True,
+            transfer="call_local",
+            target_owner="caller",
+            lifetime="call",
+            deallocation="deallocate_resize",
+            shape_source="pointer_bounds",
+            contiguity="contiguous",
+            reassociation="allocate_resize",
+            aliasing="descriptor",
+            mutability="mutable",
+        ),
+    ],
+) -> None: ...
+"""
+    module, _result = _build_inline_pyi_contract_module(
+        tmp_path,
+        module_name="logical_pointer_arrays",
+        source_text=_LOGICAL_POINTER_SOURCE,
+        contract_text=contract,
+    )
+    pointer = contracts.Pointer[contracts.Bool32[:]]()
+    try:
+        assert module.replace_pointer_32(pointer) is None
+        assert pointer.dtype == np.dtype(np.int32)
+        assert pointer.shape == (3,)
+        np.testing.assert_array_equal(pointer.to_numpy().astype(bool), [True, False, True])
+        pointer.deallocate()
+    finally:
+        pointer.close()

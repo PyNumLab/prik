@@ -14,6 +14,13 @@ release tags add a leading `v` to the package version.
   `intent(out)` and status-bearing calls, and handles from module variables,
   fields, results, and caller-created storage.
 
+- Descriptor-backed native calls honor `@nogil` while the native procedure is
+  running, including calls with multiple allocatable or pointer arguments.
+
+- Deferred-length character pointer-array arguments are rejected before code
+  generation; module and field handles expose only operations that do not
+  require an unsupported `bind(C)` descriptor interface.
+
 - Generated array handles publish one versioned native capsule,
   `prik.native_array_backend.v1`, replacing the separate descriptor-operation
   table and owned-descriptor record. It carries a single entry point that runs
@@ -41,7 +48,8 @@ release tags add a leading `v` to the package version.
   PGI/NVIDIA compilers. Use `--no-standard-logicals` or
   `standard_logicals=False` only when linking Intel objects compiled without
   that option. Wider logical arrays are exposed with their matching integer
-  dtype; `logical(c_bool)` remains `numpy.bool_`.
+  dtype, including caller-created allocatable and pointer handles;
+  `logical(c_bool)` remains `numpy.bool_`.
 
 ## 0.4.3 — 2026-08-31
 

@@ -180,6 +180,16 @@ _BOOLEAN_ARRAY_DTYPE_NAMES = {
     "Bool32": "numpy.int32",
     "Bool64": "numpy.int64",
 }
+_BOOLEAN_ARRAY_CFI_TYPES = {
+    "Bool": "CFI_type_Bool",
+    "Bool8": "CFI_type_Bool",
+    # No C-interoperable Boolean type is wider than C_BOOL. The portable
+    # descriptor spelling for the wider Fortran logical kinds is therefore
+    # CFI_type_other, with elem_len carrying their exact storage width.
+    "Bool16": "CFI_type_other",
+    "Bool32": "CFI_type_other",
+    "Bool64": "CFI_type_other",
+}
 
 
 class PrimitiveScalarTypeRegistry:
@@ -194,6 +204,7 @@ class PrimitiveScalarTypeRegistry:
                 array_numpy_type_macro=_BOOLEAN_ARRAY_NUMPY_MACROS[name],
                 array_element_c_spelling=_BOOLEAN_ARRAY_C_SPELLINGS[name],
                 array_python_type_name=_BOOLEAN_ARRAY_DTYPE_NAMES[name],
+                array_cfi_type_spelling=_BOOLEAN_ARRAY_CFI_TYPES[name],
             )
             for name in BOOLEAN_SEMANTIC_TYPE_NAMES
         },

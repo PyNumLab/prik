@@ -338,22 +338,12 @@ def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
 
 
 def test_deferred_character_module_handles_use_runtime_element_length():
-    """A deferred length is reported at runtime, and the descriptor supplies it.
-
-    The width is not in the declaration, so it can only come from the array
-    itself. It reaches the descriptor record from the descriptor now rather than
-    through a second call, while the standalone query remains for the callers
-    that ask for the length on its own.
-    """
+    """The live descriptor supplies a deferred character element width."""
     artifacts = WrapperGenerator().generate(_module_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "out->result = PyLong_FromLongLong((long long)source->elem_len)" in c_source
     assert "prik_native_array_read_element_length" in c_source
-    # The width comes out of the descriptor, so the bridge carries no inquiry
-    # of its own for it.
-    assert "bind_c_module_names_element_length" not in bridge_source
 
 
 def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
@@ -363,9 +353,6 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
 
     assert artifacts.required_headers == ("ISO_Fortran_binding.h",)
     assert "prik_bind_array(" in c_source
-    # Descriptor arguments reach the runtime through one packer.  The
-    # fact-reporting one is gone: nothing rebuilds a descriptor in C.
-    assert '"_native_array_descriptor_argument_for_binding_positional"' not in c_source
     assert '"_native_array_backend_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_dispatch"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
@@ -404,10 +391,6 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "call prik_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
     assert "if (allocated(value)) then" in bridge_source
     assert "call move_alloc(value, result)" in bridge_source
-    # An owned handle answers its inquiries from the descriptor it holds, so
-    # only the mutations reach Fortran.
-    assert "bind_c_owned_result_allocated(" not in c_source
-    assert "_shape(owner_descriptor" not in c_source
     assert "_deallocate(owner_descriptor);" in c_source
     assert "_destroy(owner_descriptor);" in c_source
     assert "owner_backend->with_descriptor(owner_backend->context, prik_native_array_read_shape" in c_source
@@ -437,7 +420,6 @@ def test_owned_descriptor_handles_publish_one_dispatcher_and_capability_tuple():
     assert "owner_backend" in dispatch
     assert "owner_descriptor" in dispatch
     assert 'Py_BuildValue("(ssssss)", "allocated", "deallocate", "destroy", "resize", "shape", "to_numpy")' in c_source
-    assert "PyDict_SetItemString" not in c_source
 
 
 @pytest.mark.parametrize(

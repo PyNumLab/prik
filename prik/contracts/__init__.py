@@ -96,15 +96,15 @@ class _DescriptorHandleContract:
         shape_items = self.array.shape if isinstance(self.array.shape, tuple) else (self.array.shape,)
         if self.array.rank <= 0 or Ellipsis in shape_items:
             raise TypeError(f"{self.descriptor_kind} handle constructor requires one concrete positive array rank")
-        scalar_dtype = getattr(self.array.element_type, "_scalar_dtype", None)
-        if scalar_dtype is None:
+        array_dtype = getattr(self.array.element_type, "_array_dtype", None)
+        if array_dtype is None:
             name = getattr(self.array.element_type, "__name__", type(self.array.element_type).__name__)
             raise TypeError(f"{self.descriptor_kind} handle element contract {name!r} has no concrete NumPy dtype")
         from prik.runtime.handles import _native_array_handle_from_contract
 
         return _native_array_handle_from_contract(
             self.descriptor_kind,
-            scalar_dtype,
+            array_dtype,
             self.array.rank,
         )
 
@@ -113,6 +113,7 @@ def _contract_type(
     name: str,
     scalar_factory: object | None = None,
     *,
+    array_factory: object | None = None,
     constructor_error: str | None = None,
 ) -> type[_ContractType]:
     namespace = {
@@ -121,6 +122,7 @@ def _contract_type(
     }
     if scalar_factory is not None:
         namespace["_scalar_dtype"] = np.dtype(scalar_factory)
+        namespace["_array_dtype"] = np.dtype(scalar_factory if array_factory is None else array_factory)
     return _ContractTypeMeta(name, (_ContractType,), namespace)
 
 
@@ -164,9 +166,9 @@ _CONTRACT_NUMPY_FACTORIES: Final[dict[str, object]] = {
 
 Bool = _contract_type("Bool", _CONTRACT_NUMPY_FACTORIES["Bool"])
 Bool8 = _contract_type("Bool8", _CONTRACT_NUMPY_FACTORIES["Bool8"])
-Bool16 = _contract_type("Bool16", _CONTRACT_NUMPY_FACTORIES["Bool16"])
-Bool32 = _contract_type("Bool32", _CONTRACT_NUMPY_FACTORIES["Bool32"])
-Bool64 = _contract_type("Bool64", _CONTRACT_NUMPY_FACTORIES["Bool64"])
+Bool16 = _contract_type("Bool16", _CONTRACT_NUMPY_FACTORIES["Bool16"], array_factory=np.int16)
+Bool32 = _contract_type("Bool32", _CONTRACT_NUMPY_FACTORIES["Bool32"], array_factory=np.int32)
+Bool64 = _contract_type("Bool64", _CONTRACT_NUMPY_FACTORIES["Bool64"], array_factory=np.int64)
 Byte = _contract_type("Byte", constructor_error="Byte has no portable NumPy scalar default")
 CEnum = _contract_type("CEnum", constructor_error="CEnum requires a resolved native underlying type")
 Char = _contract_type("Char", constructor_error="Char has no portable NumPy scalar default")

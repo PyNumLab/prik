@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 import re
 
+from prik.naming.native_symbols import NativeSymbolNames
 from prik.utilities.declaration_expressions import render_declaration_extent
 from prik.policy.ownership import (
     AssignmentMode,
@@ -482,7 +483,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 # declares is spelled.
                 length = ":" if value.character_length is None else str(value.character_length)
                 return f"character(kind=c_char, len={length})"
-            return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
+            return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).array_fortran_type
         try:
             return types[value.kind]
         except KeyError:
@@ -2533,7 +2534,7 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     def _module_native_array_shape_operation(self, plan: ModuleVariablePlan) -> FortranFunction:
-        """Return current extents, preserving absent descriptor state as zeroes."""
+        """Return whether storage is present and write its current extents."""
         handle = plan.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {plan.owner_path!r} has no shape rank")
@@ -2552,36 +2553,30 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranFunction(
             name=name,
             parameters=parameters,
+            result_name="result",
+            result_type="logical(c_bool)",
             bind_name=name,
             body=(
+                FortranAssignment("result", CodeExpression(self._module_native_array_presence_expression(plan))),
                 FortranIf(
                     CodeExpression(self._module_native_array_presence_expression(plan)),
                     body=present,
                     else_body=absent,
                 ),
             ),
-            is_subroutine=True,
         )
 
     def _module_native_array_descriptor_operation(self, plan: ModuleVariablePlan) -> FortranFunction | None:
         """Expose current module descriptor state through the selected mechanism."""
-        handle = plan.native_array_handle
-        if self._uses_module_allocatable_descriptor(plan):
+        if self._uses_module_descriptor_backend(plan):
             return self._module_allocatable_descriptor_callback_operation(
                 plan,
                 NativeArrayOperation.DESCRIPTOR,
             )
-        if handle is None or handle.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
-            return None
-        if handle.array.rank is None:
-            raise ValueError(f"Pointer module handle {plan.owner_path!r} has no descriptor rank")
-        # The variable is handed to a consumer, as an allocatable one is, so the
-        # descriptor that crosses is the one this compiler builds for the call
-        # rather than a record C established and this filled in.
-        return self._module_allocatable_descriptor_callback_operation(plan, NativeArrayOperation.DESCRIPTOR)
+        return None
 
     @staticmethod
-    def _uses_module_allocatable_descriptor(plan: ModuleVariablePlan) -> bool:
+    def _uses_module_descriptor_backend(plan: ModuleVariablePlan) -> bool:
         """Return whether a handle reaches its descriptor through a consumer.
 
         A module array hands its variable to a consumer rather than filling a
@@ -3351,7 +3346,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return one numeric or deferred-character descriptor dummy type."""
         if plan.datatype_family is DatatypeFamily.STRING:
             return "character(kind=c_char, len=:)"
-        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_fortran_type
 
     def _lower_argument_required(self, plan: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Dispatch one required entrypoint parameter from its completed ABI shape."""
@@ -6840,7 +6835,7 @@ class FortranBridgeGenerator(ClassVisitor):
         # The descriptor entry point is what the binding runs every inquiry
         # through, so it is emitted for the handle itself; the rest are the
         # mutations that must reach the field.
-        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned = [NativeArrayOperation.DESCRIPTOR] if handle.descriptor_inquiries else []
         planned.extend(
             operation
             for operation in handle.operations
@@ -6927,7 +6922,7 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     def _native_handle_field_shape_procedure(self, owner, field) -> FortranFunction:
-        """Build the per-axis shape inquiry for one native-array-handle field."""
+        """Report field presence and write its current per-axis extents."""
         handle = field.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Native handle field {field.owner_path!r} has no shape rank")
@@ -6948,13 +6943,15 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranFunction(
             name=name,
             parameters=(*self._native_handle_field_owner_parameters(owner), *extents),
+            result_name="result",
+            result_type="logical(c_bool)",
             bind_name=name,
             declarations=self._native_handle_field_owner_declarations(owner),
             body=(
                 *self._native_handle_field_owner_body(owner),
+                FortranAssignment("result", CodeExpression(presence)),
                 FortranIf(CodeExpression(presence), body=present, else_body=absent),
             ),
-            is_subroutine=True,
         )
 
     def _native_handle_field_descriptor_procedure(self, owner, field) -> FortranFunction:
@@ -7027,7 +7024,7 @@ class FortranBridgeGenerator(ClassVisitor):
         element_type = (
             "character(kind=c_char, len=:)"
             if field.string_element
-            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).fortran_spelling
+            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_fortran_type
         )
         expression = self._native_handle_field_expression(owner, field)
         name = self._native_handle_field_bridge_name(owner, field, NativeArrayOperation.ASSOCIATE)
@@ -7514,7 +7511,9 @@ class FortranBridgeGenerator(ClassVisitor):
         field: DerivedFieldPlan,
     ) -> str:
         """Return the consumer-interface name associated with one direct native-array-handle field."""
-        return f"prik_field_handle_{self._derived_field_symbol(derived, field)}_consumer"
+        owner_path = f"{derived.owner_path}.{field.name}"
+        preferred = f"prik_field_handle_{self._derived_field_symbol(derived, field)}_consumer"
+        return NativeSymbolNames.bounded(f"{owner_path}::field:direct:consumer", preferred)
 
     @staticmethod
     def _module_member_symbol(variable: ModuleVariablePlan, member: DerivedMemberPathPlan) -> str:
@@ -7550,7 +7549,9 @@ class FortranBridgeGenerator(ClassVisitor):
         member: DerivedMemberPathPlan,
     ) -> str:
         """Return the consumer-interface name for one module native-array-handle member."""
-        return f"prik_module_field_handle_{self._module_member_symbol(variable, member)}_consumer"
+        owner_path = ".".join((variable.owner_path, *member.path))
+        preferred = f"prik_module_field_handle_{self._module_member_symbol(variable, member)}_consumer"
+        return NativeSymbolNames.bounded(f"{owner_path}::field:module:consumer", preferred)
 
     def _derived_member_proxy_variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
         """Return derived module variables whose completed access mechanism is member proxying."""
@@ -8055,7 +8056,7 @@ class FortranBridgeGenerator(ClassVisitor):
         procedures = tuple(
             self._module_descriptor_callback_interface(variable)
             for variable in self._variables(plan)
-            if self._uses_module_allocatable_descriptor(variable)
+            if self._uses_module_descriptor_backend(variable)
         )
         return (FortranInterface(procedures),) if procedures else ()
 
@@ -8077,6 +8078,8 @@ class FortranBridgeGenerator(ClassVisitor):
             for derived in self._derived_types(plan)
             for field in derived.fields
             if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
+            and field.native_array_handle is not None
+            and field.native_array_handle.descriptor_inquiries
         )
 
     def _module_handle_callback_interfaces(self, plan: ModulePlan) -> tuple:
@@ -8089,6 +8092,8 @@ class FortranBridgeGenerator(ClassVisitor):
             for variable in self._derived_member_proxy_variables(plan)
             for member in variable.derived.member_paths
             if member.field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
+            and member.field.native_array_handle is not None
+            and member.field.native_array_handle.descriptor_inquiries
         )
 
     def _native_handle_callback_interface(
@@ -8104,7 +8109,7 @@ class FortranBridgeGenerator(ClassVisitor):
         element_type = (
             "character(kind=c_char, len=:)"
             if field.string_element
-            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).fortran_spelling
+            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_fortran_type
         )
         imports = (self._iso_symbol(field.semantic_type_name), "c_ptr")
         return FortranInterfaceProcedure(
@@ -8148,7 +8153,8 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _module_descriptor_callback_interface_name(self, plan: ModuleVariablePlan) -> str:
         """Return one unique typed callback interface name."""
-        return f"prik_{plan.symbol_name}_descriptor_consumer"
+        preferred = f"prik_{plan.symbol_name}_descriptor_consumer"
+        return NativeSymbolNames.bounded(f"{plan.owner_path}::module:descriptor:consumer", preferred)
 
     def _allocator_interfaces(self, plan: ModulePlan) -> tuple[FortranInterface, ...]:
         """Return the allocator interface required by detached bridge copies."""
@@ -8739,9 +8745,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _uses_c_function_pointer_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed module or field descriptor actions require C procedure-pointer support."""
-        module_descriptors = any(
-            self._uses_module_allocatable_descriptor(variable) for variable in self._variables(plan)
-        )
+        module_descriptors = any(self._uses_module_descriptor_backend(variable) for variable in self._variables(plan))
         field_descriptors = any(
             field.access
             in {

@@ -14,6 +14,13 @@ COLLISION_ADAPTER_STORAGE = '__attribute__((visibility("hidden")))'
 class NativeSymbolNames:
     """Create stable backend symbols within native compiler limits."""
 
+    @classmethod
+    def bounded(cls, owner_path: str, preferred: str, *, limit: int = 63) -> str:
+        """Keep a valid readable symbol, compacting it only when it is too long."""
+        if len(preferred) <= limit:
+            return preferred
+        return cls.compact(owner_path, preferred, limit=limit)
+
     @staticmethod
     def compact(owner_path: str, preferred: str, *, limit: int = 27) -> str:
         """Return a readable, collision-resistant symbol fragment."""

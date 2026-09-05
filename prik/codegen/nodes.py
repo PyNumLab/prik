@@ -40,6 +40,7 @@ class BackendScalarType(StageRecord):
     array_element_c_spelling: str | None = None
     array_python_type_name: str | None = None
     array_fortran_spelling: str | None = None
+    array_cfi_type_spelling: str | None = None
 
     @property
     def array_numpy_type(self) -> str | None:
@@ -60,6 +61,11 @@ class BackendScalarType(StageRecord):
     def array_fortran_type(self) -> str:
         """Return the Fortran type declaring one aliased array's elements."""
         return self.array_fortran_spelling or self.fortran_spelling
+
+    @property
+    def array_cfi_type(self) -> str | None:
+        """Return the C descriptor type code for one array element."""
+        return self.array_cfi_type_spelling or self.cfi_type_spelling
 
 
 @dataclass

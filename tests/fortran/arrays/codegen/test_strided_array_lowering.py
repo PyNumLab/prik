@@ -49,12 +49,12 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert (
-        "prik_native_array_backend_for_actual(bound_values_table_capsule, 2, 2, "
+        "prik_native_array_backend_for_actual(bound_values_backend_capsule, 2, 2, "
         'CFI_type_double, sizeof(double), "float64", "values")'
     ) in c_source
     assert (
-        "bound_values_table->with_descriptor(bound_values_table->context, "
-        "prik_fill_array_actual_strided_arrays_strided_values, &bound_values_table_result)"
+        "bound_values_native_backend->with_descriptor(bound_values_native_backend->context, "
+        "prik_fill_array_actual_strided_arrays_strided_values, &bound_values_backend_result)"
     ) in c_source
     assert "relative_stride = (int64_t)(source->dim[0].sm / base_bytes)" in c_source
     assert "out->upper_bounds[1] = upper_bound" in c_source

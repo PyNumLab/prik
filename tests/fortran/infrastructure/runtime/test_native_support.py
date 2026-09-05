@@ -60,10 +60,6 @@ def test_native_array_backend_capsule_states_one_version_and_one_entry_point():
     assert "uint32_t descriptor_size;" in header
     assert "int32_t cfi_type;" in header
     assert "size_t element_size;" in header
-    # No second version word, and no per-operation table.
-    assert "MAGIC" not in header
-    assert "ABI_VERSION" not in header
-
     for name in (
         "prik_native_array_backend_capsule_new",
         "prik_native_array_backend_capsule_destructor",

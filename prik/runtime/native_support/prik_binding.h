@@ -559,7 +559,7 @@ static inline int prik_array_validate(
  * A wrapper needs two things from an array argument: the raw pointer handed to
  * the native entrypoint, and one extent per contract axis. Obtaining them takes
  * two routes. This helper validates and reads NumPy arrays. Generated wrappers
- * read native handles through their versioned descriptor table before falling
+ * read native handles through their versioned backend capsule before falling
  * back here for the NumPy route and the common wrong-type diagnostic.
  *
  *   object              the Python argument to bind
