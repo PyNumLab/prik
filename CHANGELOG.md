@@ -26,6 +26,10 @@ release tags add a leading `v` to the package version.
   one Fortran builds for the call or persistent storage the wrapper owns.
   Extensions built against the earlier branch-only table must be regenerated.
 
+- Generated array handles now route operations through one native dispatcher
+  and an immutable capability set instead of constructing and storing one
+  Python callable per operation.
+
 - Argument handoff, shape, allocation and association state, element width,
   contiguity and NumPy views are now all read from that live descriptor in C.
   No descriptor is serialized into Python fields and decoded back, and the
@@ -48,6 +52,7 @@ release tags add a leading `v` to the package version.
   `standard_logicals=False` only when linking Intel objects compiled without
   that option. Wider logical arrays are exposed with their matching integer
   dtype; `logical(c_bool)` remains `numpy.bool_`.
+
 ## 0.4.3 — 2026-08-31
 
 - Republishes 0.4.2. That tag carried the previous package version, so the

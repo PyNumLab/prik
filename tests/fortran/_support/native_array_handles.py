@@ -21,6 +21,26 @@ def _common_ops(state: _ArrayState):
     }
 
 
+def _handle_dispatch(operations):
+    """Adapt concise operation test doubles to the runtime dispatcher contract."""
+
+    def invoke(operation, args):
+        if operation in {"allocate", "resize"}:
+            args = (args,)
+        return operations[operation](None, *args)
+
+    return {"invoke": invoke, "capabilities": operations}
+
+
+def _generated_handle_dispatch(operations):
+    """Adapt generated-call-shaped test doubles to one dispatcher callable."""
+
+    def invoke(operation, args):
+        return operations[operation](*args)
+
+    return invoke
+
+
 def _descriptor_facts_for_array(value: np.ndarray, *, lower_bound: int = 1):
     """Return the flat facts a generated pointer reports for one array.
 

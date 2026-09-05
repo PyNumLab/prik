@@ -5945,7 +5945,9 @@ class FortranBridgeGenerator(ClassVisitor):
             copy_body = (
                 FortranAssignment(
                     name,
-                    CodeExpression(f"c_malloc(max(1_c_size_t, c_sizeof({value_name})))"),
+                    CodeExpression(
+                        f"c_malloc(max(1_c_size_t, storage_size({value_name}, kind=c_size_t) / 8_c_size_t))"
+                    ),
                 ),
                 FortranIf(
                     CodeExpression(f"c_associated({name})"),

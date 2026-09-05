@@ -9,6 +9,7 @@ from prik.runtime.handles import (
 from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _common_ops,
+    _handle_dispatch,
 )
 
 
@@ -25,7 +26,7 @@ def test_allocatable_handle_uses_common_metadata_shape_owner_and_numpy_dispatch(
     handle = AllocatableArray(
         dtype="float64",
         rank=2,
-        ops=ops,
+        **_handle_dispatch(ops),
         owner=owner,
         descriptor_ownership="borrowed",
         generation=7,
@@ -55,11 +56,13 @@ def test_allocatable_extraction_reports_unallocated_state_as_no_view():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: None,
-            "to_numpy": lambda _handle: None,
-            "allocated": lambda _handle: pytest.fail("extraction must not need the allocation state"),
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: None,
+                "to_numpy": lambda _handle: None,
+                "allocated": lambda _handle: pytest.fail("extraction must not need the allocation state"),
+            }
+        ),
     )
 
     assert handle.to_numpy() is None
@@ -73,7 +76,7 @@ def test_allocatable_handle_reports_absent_state_and_routes_resize_deallocate():
         "deallocate": lambda _handle: setattr(state, "shape", None),
         "resize": lambda _handle, shape: setattr(state, "shape", shape),
     }
-    handle = AllocatableArray(dtype="float64", rank=1, ops=ops)
+    handle = AllocatableArray(dtype="float64", rank=1, **_handle_dispatch(ops))
 
     assert handle.allocated is False
     assert handle.shape is None
@@ -94,12 +97,14 @@ def test_allocatable_to_numpy_policy_returns_mutable_borrowed_view():
     handle = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
-        ops={
-            **_common_ops(state),
-            "allocated": lambda _handle: True,
-            "deallocate": lambda _handle: None,
-            "resize": lambda _handle, _shape: None,
-        },
+        **_handle_dispatch(
+            {
+                **_common_ops(state),
+                "allocated": lambda _handle: True,
+                "deallocate": lambda _handle: None,
+                "resize": lambda _handle, _shape: None,
+            }
+        ),
         to_numpy_policy="borrowed_view",
     )
 
@@ -117,12 +122,14 @@ def test_allocatable_to_numpy_explicit_copy_is_independent():
     handle = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
-        ops={
-            **_common_ops(state),
-            "allocated": lambda _handle: True,
-            "deallocate": lambda _handle: None,
-            "resize": lambda _handle, _shape: None,
-        },
+        **_handle_dispatch(
+            {
+                **_common_ops(state),
+                "allocated": lambda _handle: True,
+                "deallocate": lambda _handle: None,
+                "resize": lambda _handle, _shape: None,
+            }
+        ),
         to_numpy_policy="descriptor_view",
     )
 
@@ -141,21 +148,25 @@ def test_allocatable_handle_requires_generated_allocated_operation():
         AllocatableArray(
             dtype="float64",
             rank=1,
-            ops={
-                "shape": lambda _handle: (1,),
-                "to_numpy": lambda _handle: None,
-            },
+            **_handle_dispatch(
+                {
+                    "shape": lambda _handle: (1,),
+                    "to_numpy": lambda _handle: None,
+                }
+            ),
         )
 
 
-def test_allocatable_operations_are_gated_by_the_completed_ops_table():
+def test_allocatable_operations_are_gated_by_completed_capabilities():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: None,
-            "allocated": lambda _handle: False,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: None,
+                "allocated": lambda _handle: False,
+            }
+        ),
         to_numpy_policy="unsupported",
     )
 
@@ -170,10 +181,12 @@ def test_close_is_a_noop_for_a_borrowed_allocatable_handle():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: None,
-            "allocated": lambda _handle: False,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: None,
+                "allocated": lambda _handle: False,
+            }
+        ),
         owner=owner,
         descriptor_ownership="borrowed",
         to_numpy_policy="unsupported",

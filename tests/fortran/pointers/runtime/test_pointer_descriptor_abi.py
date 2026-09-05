@@ -12,7 +12,11 @@ from prik.runtime.handles import (
     _native_array_backend_for_binding_positional,
     _numpy_view_from_descriptor_facts,
 )
-from tests.fortran._support.native_array_handles import _descriptor_facts_for_array
+from tests.fortran._support.native_array_handles import (
+    _descriptor_facts_for_array,
+    _generated_handle_dispatch,
+    _handle_dispatch,
+)
 
 
 def _bound_pointer(backend, *, dtype=np.float64, rank=1):
@@ -20,15 +24,17 @@ def _bound_pointer(backend, *, dtype=np.float64, rank=1):
     handle = PointerArray(
         dtype=np.dtype(dtype),
         rank=rank,
-        ops={
-            "shape": lambda _handle: None,
-            "associated": lambda _handle: False,
-            "nullify": lambda _handle: None,
-            "descriptor": lambda _handle: None,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: None,
+                "associated": lambda _handle: False,
+                "nullify": lambda _handle: None,
+                "descriptor": lambda _handle: None,
+            }
+        ),
         to_numpy_policy="unsupported",
     )
-    handle._native_ops = backend
+    handle._native_backend = backend
     return handle
 
 
@@ -74,7 +80,7 @@ def test_an_optional_descriptor_argument_reports_presence_alongside_its_backend(
             AllocatableArray(
                 dtype=np.dtype(np.float64),
                 rank=1,
-                ops={"shape": lambda _handle: None, "allocated": lambda _handle: False},
+                **_handle_dispatch({"shape": lambda _handle: None, "allocated": lambda _handle: False}),
                 to_numpy_policy="unsupported",
             ),
             TypeError,
@@ -109,23 +115,25 @@ def test_descriptor_argument_binds_a_fresh_contract_handle_then_reads_its_backen
     backend = object()
 
     def bind_default(value):
+        operations = {
+            "shape": lambda _owner: None,
+            "associated": lambda _owner: False,
+            "nullify": lambda _owner: None,
+            "descriptor": lambda _owner: None,
+            "associate": lambda _owner, _facts: None,
+            "destroy": lambda _owner: None,
+        }
         _bind_contract_native_array_handle(
             value,
             "pointer",
             "float64",
             1,
-            {
-                "shape": lambda _owner: None,
-                "associated": lambda _owner: False,
-                "nullify": lambda _owner: None,
-                "descriptor": lambda _owner: None,
-                "associate": lambda _owner, _facts: None,
-                "destroy": lambda _owner: None,
-            },
+            _generated_handle_dispatch(operations),
+            operations,
             backend,
             "owned",
             "unsupported",
-            native_ops=backend,
+            native_backend=backend,
         )
 
     assert _native_array_backend_for_binding_positional(

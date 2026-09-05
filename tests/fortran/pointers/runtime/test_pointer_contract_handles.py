@@ -13,6 +13,8 @@ from prik.runtime.handles import (
 from tests.fortran._support.native_array_handles import (
     _absent_descriptor_facts,
     _descriptor_facts_for_array,
+    _generated_handle_dispatch,
+    _handle_dispatch,
 )
 
 
@@ -47,14 +49,16 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
     source = PointerArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: value.shape if source_state["facts"][0] else None,
-            "descriptor": lambda _handle: source_state["facts"],
-            "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(source_state["facts"], "float64"),
-            "associated": lambda _handle: source_state["facts"][0] != 0,
-            "associate": lambda _handle, facts: source_state.update(facts=facts),
-            "nullify": source_nullify,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: value.shape if source_state["facts"][0] else None,
+                "descriptor": lambda _handle: source_state["facts"],
+                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(source_state["facts"], "float64"),
+                "associated": lambda _handle: source_state["facts"][0] != 0,
+                "associate": lambda _handle, facts: source_state.update(facts=facts),
+                "nullify": source_nullify,
+            }
+        ),
         to_numpy_policy="descriptor_view",
     )
     target = contracts.Pointer[contracts.Float64[:]]()
@@ -80,14 +84,16 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
     source = PointerArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: value.shape,
-            "descriptor": lambda _handle: facts,
-            "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(facts, "float64"),
-            "associated": lambda _handle: True,
-            "associate": lambda _handle, _facts: None,
-            "nullify": lambda _handle: None,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: value.shape,
+                "descriptor": lambda _handle: facts,
+                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(facts, "float64"),
+                "associated": lambda _handle: True,
+                "associate": lambda _handle, _facts: None,
+                "nullify": lambda _handle: None,
+            }
+        ),
         to_numpy_policy="descriptor_view",
     )
     target = contracts.Pointer[contracts.Float64[:]]()
@@ -100,19 +106,21 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
         received.append((received_owner, facts))
         state["associated"] = True
 
+    operations = {
+        "shape": lambda _owner: value.shape if state["associated"] else None,
+        "descriptor": lambda _owner: facts,
+        "associated": lambda _owner: state["associated"],
+        "associate": associate,
+        "nullify": lambda _owner: state.update(associated=False),
+        "destroy": lambda _owner: None,
+    }
     _bind_contract_native_array_handle(
         target,
         "pointer",
         "float64",
         1,
-        {
-            "shape": lambda _owner: value.shape if state["associated"] else None,
-            "descriptor": lambda _owner: facts,
-            "associated": lambda _owner: state["associated"],
-            "associate": associate,
-            "nullify": lambda _owner: state.update(associated=False),
-            "destroy": lambda _owner: None,
-        },
+        _generated_handle_dispatch(operations),
+        operations,
         owner,
         "owned",
         "unsupported",
@@ -158,12 +166,14 @@ def test_generated_storage_rejects_incompatible_contract_handles(
     handle = prepare()
 
     with pytest.raises(error, match=message):
+        operations = {}
         _bind_contract_native_array_handle(
             handle,
             descriptor_kind,
             dtype,
             rank,
-            {},
+            _generated_handle_dispatch(operations),
+            operations,
             object(),
             "owned",
             "unsupported",

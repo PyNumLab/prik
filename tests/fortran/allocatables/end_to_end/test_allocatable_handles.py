@@ -11,6 +11,7 @@ import pytest
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
+    _compiler,
     _compile_native_object,
     _import_from_build_dir,
     _require_maybe_unallocated_function_result_support,
@@ -93,6 +94,7 @@ def _plain_allocatable_module(build_mode: str, tmp_path: Path):
     native_object = _compile_native_object(source, tmp_path / "native")
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",

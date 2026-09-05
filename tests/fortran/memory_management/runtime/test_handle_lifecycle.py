@@ -7,15 +7,17 @@ from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _native_array_backend_for_binding,
-    _native_array_handle_from_generated_ops,
+    _native_array_handle_from_generated_dispatch,
 )
 from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _common_ops,
+    _generated_handle_dispatch,
+    _handle_dispatch,
 )
 
 
-def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol():
+def test_generated_handle_factory_adapts_one_dispatcher_to_runtime_protocol():
     owner = object()
     value = np.arange(3, dtype=np.float64)
     calls = []
@@ -32,15 +34,17 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
         calls.append(("to_numpy", ()))
         return value
 
-    handle = _native_array_handle_from_generated_ops(
+    operations = {
+        "shape": shape,
+        "allocated": allocated,
+        "to_numpy": to_numpy,
+    }
+    handle = _native_array_handle_from_generated_dispatch(
         "allocatable",
         "float64",
         1,
-        {
-            "shape": shape,
-            "allocated": allocated,
-            "to_numpy": to_numpy,
-        },
+        _generated_handle_dispatch(operations),
+        operations,
         owner=owner,
         descriptor_ownership="borrowed",
         to_numpy_policy="borrowed_view",
@@ -61,15 +65,17 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
 
 def test_generated_handle_factory_splats_shape_operations_to_scalar_extents():
     calls = []
-    handle = _native_array_handle_from_generated_ops(
+    operations = {
+        "shape": lambda: (2, 3),
+        "allocated": lambda: True,
+        "resize": lambda *extents: calls.append(("resize", extents)),
+    }
+    handle = _native_array_handle_from_generated_dispatch(
         "allocatable",
         "float64",
         2,
-        {
-            "shape": lambda: (2, 3),
-            "allocated": lambda: True,
-            "resize": lambda *extents: calls.append(("resize", extents)),
-        },
+        _generated_handle_dispatch(operations),
+        operations,
         to_numpy_policy="unsupported",
     )
 
@@ -90,20 +96,22 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
 
         return call
 
-    handle = _native_array_handle_from_generated_ops(
+    operations = {
+        "shape": operation("shape", (3,)),
+        "allocated": operation("allocated", True),
+        "to_numpy": operation("to_numpy", value),
+        "resize": operation("resize"),
+        "destroy": operation("destroy"),
+    }
+    handle = _native_array_handle_from_generated_dispatch(
         "allocatable",
         "float64",
         1,
-        {
-            "shape": operation("shape", (3,)),
-            "allocated": operation("allocated", True),
-            "to_numpy": operation("to_numpy", value),
-            "resize": operation("resize"),
-            "destroy": operation("destroy"),
-        },
+        _generated_handle_dispatch(operations),
+        operations,
         owner=owner,
         descriptor_ownership="owned",
-        native_ops=owner,
+        native_backend=owner,
     )
 
     assert handle.shape == (3,)
@@ -132,16 +140,18 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
 
 def test_generated_handle_resolves_deferred_character_dtype_from_runtime_element_length():
     state = {"itemsize": 3}
-    handle = _native_array_handle_from_generated_ops(
+    operations = {
+        "shape": lambda: (2,),
+        "element_length": lambda: state["itemsize"],
+        "allocated": lambda: True,
+        "to_numpy": lambda: np.array([b"red", b"sky"], dtype=f"S{state['itemsize']}"),
+    }
+    handle = _native_array_handle_from_generated_dispatch(
         "allocatable",
         None,
         1,
-        {
-            "shape": lambda: (2,),
-            "element_length": lambda: state["itemsize"],
-            "allocated": lambda: True,
-            "to_numpy": lambda: np.array([b"red", b"sky"], dtype=f"S{state['itemsize']}"),
-        },
+        _generated_handle_dispatch(operations),
+        operations,
     )
 
     assert handle.dtype == np.dtype("S3")
@@ -157,14 +167,16 @@ def test_generated_owned_handle_factory_releases_owner_once_when_construction_fa
         calls.append(("destroy", received_owner))
 
     with pytest.raises(ValueError, match="requires generated operation 'allocated'"):
-        _native_array_handle_from_generated_ops(
+        operations = {
+            "shape": lambda _owner: (1,),
+            "destroy": destroy,
+        }
+        _native_array_handle_from_generated_dispatch(
             "allocatable",
             "float64",
             1,
-            {
-                "shape": lambda _owner: (1,),
-                "destroy": destroy,
-            },
+            _generated_handle_dispatch(operations),
+            operations,
             owner=owner,
             descriptor_ownership="owned",
             to_numpy_policy="unsupported",
@@ -182,7 +194,13 @@ def test_generated_handle_factory_rejects_an_invalid_descriptor_kind():
     }
 
     with pytest.raises(ValueError, match="generated native array handle kind"):
-        _native_array_handle_from_generated_ops("target", "float64", 1, ops)
+        _native_array_handle_from_generated_dispatch(
+            "target",
+            "float64",
+            1,
+            _generated_handle_dispatch(ops),
+            ops,
+        )
 
 
 def test_owned_handle_close_calls_destroy_once_and_blocks_later_use():
@@ -191,11 +209,13 @@ def test_owned_handle_close_calls_destroy_once_and_blocks_later_use():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            **_common_ops(state),
-            "allocated": lambda _handle: True,
-            "destroy": lambda _handle: calls.append(("destroy", _handle.shape, _handle.to_numpy())),
-        },
+        **_handle_dispatch(
+            {
+                **_common_ops(state),
+                "allocated": lambda _handle: True,
+                "destroy": lambda _handle: calls.append(("destroy", state.shape, state.value)),
+            }
+        ),
         descriptor_ownership="owned",
     )
 
@@ -220,11 +240,13 @@ def test_owned_handle_close_marks_closed_when_destroy_raises():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: (1,),
-            "allocated": lambda _handle: True,
-            "destroy": destroy,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: (1,),
+                "allocated": lambda _handle: True,
+                "destroy": destroy,
+            }
+        ),
         descriptor_ownership="owned",
         to_numpy_policy="unsupported",
     )
@@ -246,11 +268,13 @@ def test_owned_handle_finalizer_calls_destroy_once():
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: (1,),
-            "allocated": lambda _handle: True,
-            "destroy": lambda _handle: calls.append("destroy"),
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: (1,),
+                "allocated": lambda _handle: True,
+                "destroy": lambda _handle: calls.append("destroy"),
+            }
+        ),
         descriptor_ownership="owned",
         to_numpy_policy="unsupported",
     )
@@ -266,10 +290,12 @@ def test_owned_handle_construction_requires_generated_destroy_operation():
         AllocatableArray(
             dtype="float64",
             rank=1,
-            ops={
-                "shape": lambda _handle: (1,),
-                "allocated": lambda _handle: True,
-            },
+            **_handle_dispatch(
+                {
+                    "shape": lambda _handle: (1,),
+                    "allocated": lambda _handle: True,
+                }
+            ),
             descriptor_ownership="owned",
             to_numpy_policy="unsupported",
         )
@@ -281,12 +307,14 @@ def test_borrowed_handle_close_and_finalizer_do_not_destroy_native_storage():
     handle = PointerArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: (1,),
-            "associated": lambda _handle: True,
-            "nullify": lambda _handle: None,
-            "destroy": lambda _handle: calls.append("destroy"),
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: (1,),
+                "associated": lambda _handle: True,
+                "nullify": lambda _handle: None,
+                "destroy": lambda _handle: calls.append("destroy"),
+            }
+        ),
         to_numpy_policy="unsupported",
     )
 

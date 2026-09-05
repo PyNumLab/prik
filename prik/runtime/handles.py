@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import ctypes
 import operator
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from typing import Any
 
 import numpy as np
 
 
-HandleOperation = Callable[..., Any]
+HandleDispatcher = Callable[[str, tuple[Any, ...]], Any]
 _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT = ctypes.c_int(1)
 _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS = ctypes.addressof(_PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT)
 
@@ -99,34 +99,26 @@ def _numpy_view_from_descriptor_facts(facts: tuple[int, ...], dtype: Any) -> np.
     return np.ndarray(shape, dtype=array_dtype, buffer=buffer, strides=strides, offset=view_offset)
 
 
-def _native_array_handle_from_generated_ops(
+def _native_array_handle_from_generated_dispatch(
     descriptor_kind: str,
     dtype: Any,
     rank: int,
-    ops: Mapping[str, HandleOperation],
+    invoke: HandleDispatcher,
+    capabilities: Iterable[str],
     owner: Any = None,
     descriptor_ownership: str = "borrowed",
     to_numpy_policy: str = "borrowed_view",
-    native_ops: Any = None,
+    native_backend: Any = None,
     generation: int | None = None,
 ) -> NativeArrayHandleBase:
-    """Build a runtime handle from generated operation callables.
+    """Build a runtime handle from one generated operation dispatcher.
 
-    ``native_ops`` is the capsule publishing the entity's native backend, which
-    a binding reads directly to reach the descriptor. It is carried, not
-    required: a handle created from a contract has none until it is given
-    storage.
+    ``native_backend`` is the capsule publishing the entity's native backend,
+    which a binding reads directly to reach the descriptor. It is carried, not
+    required: a handle created from a contract has none until it is given storage.
     """
     owned = descriptor_ownership == "owned"
-    normalized_ops = {}
-    for name, operation in ops.items():
-        if name in {"allocate", "resize"}:
-            normalized = _generated_shape_operation(operation, owner=owner if owned else None)
-        elif owned:
-            normalized = _generated_owned_handle_operation(operation, owner)
-        else:
-            normalized = _generated_handle_operation(operation)
-        normalized_ops[name] = normalized
+    normalized_capabilities = frozenset(capabilities)
     try:
         handle_cls = {
             "allocatable": AllocatableArray,
@@ -138,18 +130,19 @@ def _native_array_handle_from_generated_ops(
         handle = handle_cls(
             dtype=dtype,
             rank=rank,
-            ops=normalized_ops,
+            invoke=invoke,
+            capabilities=normalized_capabilities,
             owner=owner,
             descriptor_ownership=descriptor_ownership,
             to_numpy_policy=to_numpy_policy,
             generation=generation,
         )
-        handle._native_ops = native_ops
+        handle._native_backend = native_backend
         return handle
     except BaseException:
-        if owned and "destroy" in normalized_ops:
+        if owned and "destroy" in normalized_capabilities:
             with suppress(Exception):
-                normalized_ops["destroy"](None)
+                invoke("destroy", (owner,) if owner is not None else ())
         raise
 
 
@@ -167,49 +160,52 @@ def _native_array_handle_from_contract(
     """
     state: dict[str, Any] = {"facts": _empty_descriptor_facts(dtype, rank), "source": None}
 
-    def current_shape(_handle: NativeArrayHandleBase) -> tuple[int, ...] | None:
+    def current_shape() -> tuple[int, ...] | None:
         if state["facts"][0] == 0:
             return None
         shape, _strides = _descriptor_facts_shape_and_strides(state["facts"])
         return shape
 
-    def descriptor(_handle: NativeArrayHandleBase) -> tuple[int, ...]:
+    def descriptor() -> tuple[int, ...]:
         return state["facts"]
 
-    def present(_handle: NativeArrayHandleBase) -> bool:
+    def present() -> bool:
         return state["facts"][0] != 0
 
-    def current_view(_handle: NativeArrayHandleBase) -> np.ndarray | None:
+    def current_view() -> np.ndarray | None:
         return _numpy_view_from_descriptor_facts(state["facts"], dtype)
 
-    def clear(_handle: NativeArrayHandleBase) -> None:
+    def clear() -> None:
         state["facts"] = _empty_descriptor_facts(dtype, rank)
         state["source"] = None
 
     def associate_facts(
-        _handle: NativeArrayHandleBase,
         facts: tuple[int, ...],
         source: NativeArrayHandleBase,
     ) -> None:
         state["facts"] = facts
         state["source"] = source
 
-    common_ops = {
+    operations = {
         "shape": current_shape,
         "descriptor": descriptor,
         "to_numpy": current_view,
         "destroy": clear,
+        "allocated": present,
+        "associated": present,
+        "nullify": clear,
+        "_associate_facts": associate_facts,
     }
+
+    def dispatch(operation: str, args: tuple[Any, ...]) -> Any:
+        return operations[operation](*args)
+
     try:
-        handle_cls, descriptor_ops = {
-            "allocatable": (AllocatableArray, {"allocated": present}),
+        handle_cls, capabilities = {
+            "allocatable": (AllocatableArray, {"allocated", "shape", "descriptor", "to_numpy", "destroy"}),
             "pointer": (
                 PointerArray,
-                {
-                    "associated": present,
-                    "nullify": clear,
-                    "_associate_facts": associate_facts,
-                },
+                {"associated", "shape", "descriptor", "to_numpy", "destroy", "nullify", "_associate_facts"},
             ),
         }[descriptor_kind]
     except KeyError:
@@ -217,7 +213,8 @@ def _native_array_handle_from_contract(
     handle = handle_cls(
         dtype=dtype,
         rank=rank,
-        ops={**common_ops, **descriptor_ops},
+        invoke=dispatch,
+        capabilities=capabilities,
         descriptor_ownership="owned",
         to_numpy_policy="borrowed_view",
     )
@@ -230,12 +227,13 @@ def _bind_contract_native_array_handle(
     descriptor_kind: str,
     dtype: Any,
     rank: int,
-    ops: Mapping[str, HandleOperation],
+    invoke: HandleDispatcher,
+    capabilities: Iterable[str],
     owner: Any,
     descriptor_ownership: str,
     to_numpy_policy: str | None,
     generation: int | None = None,
-    native_ops: Any = None,
+    native_backend: Any = None,
 ) -> None:
     """Attach generated persistent descriptor storage to a contract handle.
 
@@ -244,8 +242,8 @@ def _bind_contract_native_array_handle(
     to hand over, but it does not define what the handle exposes, so the
     handle keeps the exposure it was created with.
 
-    ``native_ops`` is the backend over the attached storage, which every later
-    call reads directly from C.
+    ``native_backend`` is the backend over the attached storage, which every
+    later call reads directly from C.
     """
     if not isinstance(handle, NativeArrayHandleBase) or not handle._contract_default:
         raise TypeError("generated descriptor storage can attach only to a fresh contract handle")
@@ -259,18 +257,21 @@ def _bind_contract_native_array_handle(
         raise TypeError(f"{descriptor_kind} handle dtype {handle.dtype!r} does not match generated dtype {dtype!r}")
     # An association taken before there was anywhere native to record it is
     # replayed onto the storage that just arrived.
-    pending = handle._call_op("descriptor") if isinstance(handle, PointerArray) and handle.associated else None
-    generated = _native_array_handle_from_generated_ops(
+    pending = handle._call_operation("descriptor") if isinstance(handle, PointerArray) and handle.associated else None
+    generated = _native_array_handle_from_generated_dispatch(
         descriptor_kind,
         dtype,
         rank,
-        ops,
+        invoke,
+        capabilities,
         owner=owner,
         descriptor_ownership=descriptor_ownership,
         to_numpy_policy=handle._to_numpy_policy if to_numpy_policy is None else to_numpy_policy,
+        native_backend=native_backend,
         generation=generation,
     )
-    handle._ops = generated._ops
+    handle._invoke = generated._invoke
+    handle._capabilities = generated._capabilities
     handle._owner = generated._owner
     handle._descriptor_ownership = generated._descriptor_ownership
     handle._to_numpy_policy = generated._to_numpy_policy
@@ -278,39 +279,11 @@ def _bind_contract_native_array_handle(
     # The storage just attached is the wrapper's own and lives as long as the
     # handle, so the handle can publish it the way a module array publishes
     # its entity.  Later calls then reach it from C without coming back here.
-    handle._native_ops = native_ops
+    handle._native_backend = generated._native_backend
     handle._contract_default = False
     generated._closed = True
     if pending is not None:
-        handle._call_op("associate", pending)
-
-
-def _generated_handle_operation(operation: HandleOperation) -> HandleOperation:
-    """Adapt a generated operation callable to the handle operation protocol."""
-
-    def call(_handle: NativeArrayHandleBase, *args: Any) -> Any:
-        return operation(*args)
-
-    return call
-
-
-def _generated_owned_handle_operation(operation: HandleOperation, owner: Any) -> HandleOperation:
-    """Adapt an operation whose first argument is persistent native owner storage."""
-
-    def call(_handle: NativeArrayHandleBase, *args: Any) -> Any:
-        return operation(owner, *args)
-
-    return call
-
-
-def _generated_shape_operation(operation: HandleOperation, *, owner: Any = None) -> HandleOperation:
-    """Adapt generated shape operations from one runtime shape tuple to scalar extents."""
-
-    def call(_handle: NativeArrayHandleBase, shape: Sequence[int]) -> Any:
-        extents = tuple(np.int64(extent) for extent in shape)
-        return operation(*extents) if owner is None else operation(owner, *extents)
-
-    return call
+        handle._call_operation("associate", pending)
 
 
 def _descriptor_view_buffer_window(
@@ -329,9 +302,9 @@ def _descriptor_view_buffer_window(
 
 
 class NativeArrayHandleBase:
-    """Shared runtime state and operation dispatch for native array handles."""
+    """Shared runtime state and single-call dispatch for native array handles."""
 
-    _REQUIRED_DESCRIPTOR_OPS: frozenset[str] = frozenset()
+    _REQUIRED_CAPABILITIES: frozenset[str] = frozenset()
     _VALID_DESCRIPTOR_KINDS = frozenset({"allocatable", "pointer"})
     _VALID_DESCRIPTOR_OWNERSHIP = frozenset({"borrowed", "owned"})
     _VALID_TO_NUMPY_POLICIES = frozenset(
@@ -348,7 +321,8 @@ class NativeArrayHandleBase:
         *,
         dtype: Any,
         rank: int,
-        ops: Mapping[str, HandleOperation],
+        invoke: HandleDispatcher,
+        capabilities: Iterable[str],
         owner: Any = None,
         descriptor_kind: str,
         descriptor_ownership: str,
@@ -368,19 +342,19 @@ class NativeArrayHandleBase:
             )
         self._dtype = None if dtype is None else np.dtype(dtype)
         self._rank = int(rank)
-        self._ops = self._normalize_ops(ops)
+        if not callable(invoke):
+            raise TypeError(f"native array handle dispatcher must be callable; received {type(invoke).__name__}")
+        self._invoke: HandleDispatcher | None = invoke
+        self._capabilities = self._normalize_capabilities(capabilities)
         self._owner = owner
         self._descriptor_kind = descriptor_kind
         self._descriptor_ownership = descriptor_ownership
         self._to_numpy_policy = to_numpy_policy
         self._generation = generation
-        # Holds the most recent borrowed descriptor copy so it outlives the call
-        # that reads it; see _generated_borrowed_descriptor_operation.
-        self._borrowed_descriptor: Any = None
-        # Optional capsule publishing this entity's native entry points.
-        self._native_ops: Any = None
+        # Optional capsule publishing this entity's native descriptor backend.
+        self._native_backend: Any = None
         self._contract_default = False
-        self._validate_required_ops()
+        self._validate_required_capabilities()
         self._closed = False
 
     @property
@@ -391,7 +365,7 @@ class NativeArrayHandleBase:
 
     def _deferred_character_dtype(self) -> np.dtype:
         """Resolve one deferred character width from generated native state."""
-        length = operator.index(self._call_op("element_length"))
+        length = operator.index(self._call_operation("element_length"))
         if length < 0:
             raise ValueError("native character array element length must be non-negative")
         return np.dtype(f"S{length}")
@@ -408,7 +382,7 @@ class NativeArrayHandleBase:
         than being asked about it first, and the extents it returns are the
         ones the compiler recorded.
         """
-        shape = self._call_op("shape")
+        shape = self._call_operation("shape")
         if shape is None:
             return None
         normalized = self._normalize_shape(shape)
@@ -454,13 +428,17 @@ class NativeArrayHandleBase:
         """Release generated owner storage for an owned native descriptor handle."""
         if self.closed or not self.owned:
             return None
-        operation = self._ops["destroy"]
+        invoke = self._invoke
+        if invoke is None:
+            return None
         try:
-            return operation(self)
+            return self._call_operation("destroy")
         finally:
             self._closed = True
             self._owner = None
-            self._ops = {}
+            self._native_backend = None
+            self._invoke = None
+            self._capabilities = frozenset()
 
     def __del__(self) -> None:
         with suppress(Exception):
@@ -482,7 +460,7 @@ class NativeArrayHandleBase:
             raise NotImplementedError(
                 f"{self.descriptor_kind} handle to_numpy extraction is unsupported by completed policy"
             )
-        value = self._call_op("to_numpy")
+        value = self._call_operation("to_numpy")
         if value is None:
             return None
         self._validate_numpy_result(value)
@@ -495,14 +473,19 @@ class NativeArrayHandleBase:
             self._validate_contiguous_numpy_result(value)
         return value
 
-    def _call_op(self, name: str, *args: Any) -> Any:
+    def _call_operation(self, name: str, *args: Any) -> Any:
         if self.closed:
             raise ReferenceError(f"{self.descriptor_kind} handle is closed")
-        try:
-            operation = self._ops[name]
-        except KeyError:
+        if name not in self._capabilities:
             raise NotImplementedError(f"{self.descriptor_kind} handle operation {name!r} is not available") from None
-        return operation(self, *args)
+        invoke = self._invoke
+        if invoke is None:
+            raise ReferenceError(f"{self.descriptor_kind} handle is closed")
+        if name in {"allocate", "resize"}:
+            args = tuple(np.int64(extent) for extent in args[0])
+        if self.owned and self._owner is not None:
+            args = (self._owner, *args)
+        return invoke(name, args)
 
     def _validate_numpy_result(self, value: Any) -> None:
         if not isinstance(value, np.ndarray):
@@ -535,30 +518,26 @@ class NativeArrayHandleBase:
         except TypeError:
             return self.dtype == expected_dtype
 
-    def _validate_required_ops(self) -> None:
-        if "shape" not in self._ops:
+    def _validate_required_capabilities(self) -> None:
+        if "shape" not in self._capabilities:
             raise ValueError(f"{self.descriptor_kind} native array handle requires generated operation 'shape'")
-        for name in sorted(self._REQUIRED_DESCRIPTOR_OPS):
-            if name not in self._ops:
+        for name in sorted(self._REQUIRED_CAPABILITIES):
+            if name not in self._capabilities:
                 raise ValueError(f"{self.descriptor_kind} native array handle requires generated operation {name!r}")
-        if self.to_numpy_policy != "unsupported" and "to_numpy" not in self._ops:
+        if self.to_numpy_policy != "unsupported" and "to_numpy" not in self._capabilities:
             raise ValueError(
                 f"{self.descriptor_kind} native array handle with to_numpy_policy "
                 f"{self.to_numpy_policy!r} requires generated operation 'to_numpy'"
             )
-        if self.owned and "destroy" not in self._ops:
+        if self.owned and "destroy" not in self._capabilities:
             raise ValueError(f"{self.descriptor_kind} owned native array handle requires generated operation 'destroy'")
 
     @staticmethod
-    def _normalize_ops(ops: Mapping[str, HandleOperation]) -> dict[str, HandleOperation]:
-        normalized = dict(ops)
-        for name, operation in normalized.items():
+    def _normalize_capabilities(capabilities: Iterable[str]) -> frozenset[str]:
+        normalized = frozenset(capabilities)
+        for name in normalized:
             if not isinstance(name, str):
-                raise TypeError(f"native array handle operation names must be strings; received {type(name).__name__}")
-            if not callable(operation):
-                raise TypeError(
-                    f"native array handle operation {name!r} must be callable; received {type(operation).__name__}"
-                )
+                raise TypeError(f"native array handle capability names must be strings; received {type(name).__name__}")
         return normalized
 
     @staticmethod
@@ -576,14 +555,15 @@ class NativeArrayHandleBase:
 class AllocatableArray(NativeArrayHandleBase):
     """Runtime handle for a native allocatable array descriptor."""
 
-    _REQUIRED_DESCRIPTOR_OPS = frozenset({"allocated"})
+    _REQUIRED_CAPABILITIES = frozenset({"allocated"})
 
     def __init__(
         self,
         *,
         dtype: Any,
         rank: int,
-        ops: Mapping[str, HandleOperation],
+        invoke: HandleDispatcher,
+        capabilities: Iterable[str],
         owner: Any = None,
         descriptor_ownership: str = "borrowed",
         to_numpy_policy: str = "borrowed_view",
@@ -592,7 +572,8 @@ class AllocatableArray(NativeArrayHandleBase):
         super().__init__(
             dtype=dtype,
             rank=rank,
-            ops=ops,
+            invoke=invoke,
+            capabilities=capabilities,
             owner=owner,
             descriptor_kind="allocatable",
             descriptor_ownership=descriptor_ownership,
@@ -602,29 +583,30 @@ class AllocatableArray(NativeArrayHandleBase):
 
     @property
     def allocated(self) -> bool:
-        return bool(self._call_op("allocated"))
+        return bool(self._call_operation("allocated"))
 
     def _present(self) -> bool:
         return self.allocated
 
     def deallocate(self) -> Any:
-        return self._call_op("deallocate")
+        return self._call_operation("deallocate")
 
     def resize(self, shape: Sequence[int] | int) -> Any:
-        return self._call_op("resize", self._normalize_shape(shape))
+        return self._call_operation("resize", self._normalize_shape(shape))
 
 
 class PointerArray(NativeArrayHandleBase):
     """Runtime handle for a native pointer array descriptor."""
 
-    _REQUIRED_DESCRIPTOR_OPS = frozenset({"associated", "nullify"})
+    _REQUIRED_CAPABILITIES = frozenset({"associated", "nullify"})
 
     def __init__(
         self,
         *,
         dtype: Any,
         rank: int,
-        ops: Mapping[str, HandleOperation],
+        invoke: HandleDispatcher,
+        capabilities: Iterable[str],
         owner: Any = None,
         descriptor_ownership: str = "borrowed",
         to_numpy_policy: str = "borrowed_view",
@@ -633,7 +615,8 @@ class PointerArray(NativeArrayHandleBase):
         super().__init__(
             dtype=dtype,
             rank=rank,
-            ops=ops,
+            invoke=invoke,
+            capabilities=capabilities,
             owner=owner,
             descriptor_kind="pointer",
             descriptor_ownership=descriptor_ownership,
@@ -643,7 +626,7 @@ class PointerArray(NativeArrayHandleBase):
 
     @property
     def associated(self) -> bool:
-        return bool(self._call_op("associated"))
+        return bool(self._call_operation("associated"))
 
     def _present(self) -> bool:
         return self.associated
@@ -655,7 +638,7 @@ class PointerArray(NativeArrayHandleBase):
         not make the target follow the source afterwards. Reading the facts
         here is what makes that snapshot.
         """
-        facts = _descriptor_facts(self._call_op("descriptor"), self.rank)
+        facts = _descriptor_facts(self._call_operation("descriptor"), self.rank)
         itemsize = np.dtype(self.dtype).itemsize
         if facts[0] != 0 and facts[1] != itemsize:
             raise ValueError(f"pointer handle element width {facts[1]} does not match NumPy dtype itemsize {itemsize}")
@@ -677,20 +660,20 @@ class PointerArray(NativeArrayHandleBase):
         if self._contract_default:
             # No native storage yet: keep the association, and the handle it
             # came from, until storage arrives and it can be replayed.
-            return self._call_op("_associate_facts", facts, other)
-        return self._call_op("associate", facts)
+            return self._call_operation("_associate_facts", facts, other)
+        return self._call_operation("associate", facts)
 
     def nullify(self) -> Any:
-        return self._call_op("nullify")
+        return self._call_operation("nullify")
 
     def allocate(self, shape: Sequence[int] | int) -> Any:
-        return self._call_op("allocate", self._normalize_shape(shape))
+        return self._call_operation("allocate", self._normalize_shape(shape))
 
     def deallocate(self) -> Any:
-        return self._call_op("deallocate")
+        return self._call_operation("deallocate")
 
     def resize(self, shape: Sequence[int] | int) -> Any:
-        return self._call_op("resize", self._normalize_shape(shape))
+        return self._call_operation("resize", self._normalize_shape(shape))
 
 
 def _native_array_backend_for_binding(
@@ -700,7 +683,7 @@ def _native_array_backend_for_binding(
     expected_dtype: Any = None,
     expected_rank: int | None = None,
     optional_absent: bool = False,
-    bind_default: HandleOperation | None = None,
+    bind_default: Callable[..., Any] | None = None,
 ) -> tuple[Any | None, ...]:
     """Return the backend capsule a descriptor argument hands over.
 
@@ -736,7 +719,7 @@ def _native_array_backend_for_binding(
                 f"writable {descriptor_kind} contract handle requires generated persistent descriptor storage"
             )
         bind_default(value)
-    backend = value._native_ops
+    backend = value._native_backend
     if backend is None:
         raise TypeError(
             f"writable {descriptor_kind} descriptor argument requires generated persistent descriptor storage"
@@ -752,7 +735,7 @@ def _native_array_backend_for_binding_positional(
     expected_dtype: Any = None,
     expected_rank: int | None = None,
     optional_absent: bool = False,
-    bind_default: HandleOperation | None = None,
+    bind_default: Callable[..., Any] | None = None,
 ) -> tuple[Any | None, ...]:
     """Positional wrapper used by projected-handle CPython binding code."""
     return _native_array_backend_for_binding(
@@ -773,23 +756,28 @@ __all__ = (
 
 
 if __name__ == "__main__":
-    # Generated extensions supply small operation dictionaries like this one.
-    # The adapter turns their raw call signatures into the stable handle API.
+    # Generated extensions supply one dispatcher and its completed capabilities.
     state = {"array": np.array([1.0, 2.0, 3.0], dtype=np.float64)}
 
     def resize(*extents: np.int64) -> None:
         state["array"] = np.zeros(tuple(int(extent) for extent in extents), dtype=np.float64)
 
-    array = _native_array_handle_from_generated_ops(
+    operations = {
+        "allocated": lambda: True,
+        "shape": lambda: state["array"].shape,
+        "to_numpy": lambda: state["array"],
+        "resize": resize,
+    }
+
+    def invoke(operation: str, args: tuple[Any, ...]) -> Any:
+        return operations[operation](*args)
+
+    array = _native_array_handle_from_generated_dispatch(
         "allocatable",
         np.float64,
         1,
-        {
-            "allocated": lambda: True,
-            "shape": lambda: state["array"].shape,
-            "to_numpy": lambda: state["array"],
-            "resize": resize,
-        },
+        invoke,
+        operations,
     )
 
     print(f"Runtime handle: {type(array).__name__}")

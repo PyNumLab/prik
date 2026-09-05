@@ -9,6 +9,7 @@ from prik.runtime.handles import (
     _bind_contract_native_array_handle,
     _native_array_backend_for_binding,
 )
+from tests.fortran._support.native_array_handles import _generated_handle_dispatch, _handle_dispatch
 
 
 def test_fresh_contract_handle_has_no_descriptor_to_hand_over_on_its_own():
@@ -67,10 +68,12 @@ def test_non_array_allocatable_annotations_are_not_factories(factory, message: s
             lambda: AllocatableArray(
                 dtype="float64",
                 rank=1,
-                ops={
-                    "shape": lambda _handle: None,
-                    "allocated": lambda _handle: False,
-                },
+                **_handle_dispatch(
+                    {
+                        "shape": lambda _handle: None,
+                        "allocated": lambda _handle: False,
+                    }
+                ),
                 to_numpy_policy="unsupported",
             ),
             "float64",
@@ -104,12 +107,14 @@ def test_generated_storage_rejects_incompatible_allocatable_contract_handles(
     handle = prepare()
 
     with pytest.raises(error, match=message):
+        operations = {}
         _bind_contract_native_array_handle(
             handle,
             "allocatable",
             dtype,
             rank,
-            {},
+            _generated_handle_dispatch(operations),
+            operations,
             object(),
             "owned",
             "unsupported",
@@ -128,20 +133,22 @@ def test_writable_contract_handle_adopts_generated_storage_and_closes_once():
     owner = object()
 
     def bind_default(value):
+        operations = {
+            "shape": lambda received_owner: calls.append(("shape", received_owner)) or None,
+            "allocated": lambda received_owner: False,
+            "destroy": lambda received_owner: calls.append(("destroy", received_owner)),
+        }
         _bind_contract_native_array_handle(
             value,
             "allocatable",
             "float64",
             1,
-            {
-                "shape": lambda received_owner: calls.append(("shape", received_owner)) or None,
-                "allocated": lambda received_owner: False,
-                "destroy": lambda received_owner: calls.append(("destroy", received_owner)),
-            },
+            _generated_handle_dispatch(operations),
+            operations,
             owner,
             "owned",
             "unsupported",
-            native_ops=owner,
+            native_backend=owner,
         )
 
     assert _native_array_backend_for_binding(
@@ -163,12 +170,14 @@ def test_generated_storage_rejects_a_closed_contract_handle():
     handle.close()
 
     with pytest.raises(ReferenceError, match="handle is closed"):
+        operations = {}
         _bind_contract_native_array_handle(
             handle,
             "allocatable",
             "float64",
             1,
-            {},
+            _generated_handle_dispatch(operations),
+            operations,
             object(),
             "owned",
             "unsupported",

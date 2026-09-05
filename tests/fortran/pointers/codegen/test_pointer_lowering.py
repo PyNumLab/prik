@@ -134,3 +134,23 @@ def test_pointer_lowering_assigns_descriptors_and_emits_manual_target_release():
     # Release is manual and caller-driven, matching the ``deallocate`` a Fortran
     # caller would write for the same pointer; prik never runs it on its own.
     assert "deallocate(result)" in pointer_operations
+
+
+def test_nullable_scalar_pointer_result_uses_attribute_independent_storage_sizing():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Addr, Aliased, Annotated, Arg, Destruction, Float64, Ownership, Pointer, Return, Transfer, native_call
+
+@native_call([Addr(Arg(0))], result=Pointer(Return(0)))
+def select_scalar(
+    value: Annotated[Float64, Aliased],
+) -> Annotated[Float64, Ownership("python"), Transfer("snapshot_copy"), Destruction("python_refcount")] | None: ...
+""",
+        module_name="pointer_scalar_lowering",
+    )
+    complete_semantic_policies(module)
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "storage_size(result_value, kind=c_size_t) / 8_c_size_t" in bridge_source
+    assert "c_sizeof(result_value)" not in bridge_source

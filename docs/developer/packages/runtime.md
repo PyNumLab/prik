@@ -23,22 +23,23 @@ select a different view behavior from local descriptor facts.
 ## A Native Array Handle At Runtime
 
 ```text
-generated operation dictionary + native backend capsule
+generated dispatcher + completed capability set + native backend capsule
   + dtype, rank, ownership, and view policy
   -> NativeArrayHandleBase validation and owner retention
   -> AllocatableArray or PointerArray
   -> state, lifecycle, association, and to_numpy() operations
 ```
 
-The operation dictionary is the boundary between generated extension code and
-the stable Python handle API. An operation exists only when the completed plan
-allows the generator to expose it. Missing operations fail explicitly rather
-than being inferred from `allocatable` or `pointer` alone.
+The dispatcher is the single Python call boundary between generated extension
+code and the stable handle API. Its immutable capability set comes from the
+completed plan and states which operation names the dispatcher accepts.
+Missing capabilities fail explicitly rather than being inferred from
+`allocatable` or `pointer` alone.
 
 ### The Backend Capsule
 
 Every generated handle publishes one versioned capsule,
-`prik.native_array_backend.v1`, on `_native_ops`. It is the whole
+`prik.native_array_backend.v1`, on `_native_backend`. It is the whole
 cross-extension ABI for an array handle:
 
 ```c
@@ -123,13 +124,13 @@ prik/runtime/
 ```
 
 - [`handles.py`](../../../prik/runtime/handles.py) contains the Python runtime.
-  `NativeArrayHandleBase` validates common metadata and operations.
+  `NativeArrayHandleBase` validates common metadata, the dispatcher, and its
+  completed capabilities.
   `AllocatableArray` adds allocation state, resize, and deallocation;
   `PointerArray` adds association, nullification, allocation, resize, and
-  deallocation when supplied. Internal adapters translate generated call
-  signatures. A handle created from a `.pyi` contract answers from a fact
-  tuple of its own until a call attaches generated storage; every other handle
-  answers from its descriptor.
+  deallocation when supplied. A handle created from a `.pyi` contract answers
+  from a fact tuple of its own until a call attaches generated storage; every
+  other handle answers from its descriptor.
 - `native_support/prik_binding.h` contains header-only CPython/NumPy
   conversion, descriptor, validation, capsule, and release support. Change it
   only with its generated C users and `prik/compiler/native_support.py`.
@@ -157,11 +158,10 @@ Resized shape: (4,)
 Generated resize received NumPy extents: True
 ```
 
-The example supplies the same Python operation-dictionary shape as generated
-code.
-It creates an allocatable handle, reads its live NumPy view, and routes a
-resize through the adapter. The native header has no standalone Python route;
-the compiler installs it into a generated `binding_support/` directory.
+The example supplies the same dispatcher and capability set as generated code.
+It creates an allocatable handle, reads its live NumPy view, and routes a resize
+through the dispatcher. The native header has no standalone Python route; the
+compiler installs it into a generated `binding_support/` directory.
 
 ## Change Routes And Evidence
 

@@ -367,7 +367,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     # fact-reporting one is gone: nothing rebuilds a descriptor in C.
     assert '"_native_array_descriptor_argument_for_binding_positional"' not in c_source
     assert '"_native_array_backend_for_binding_positional"' in c_source
-    assert '"_native_array_handle_from_generated_ops"' in c_source
+    assert '"_native_array_handle_from_generated_dispatch"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
     assert "prik_native_array_backend_capsule_new(" in c_source
     assert "prik_native_array_backend_for_descriptor(" in c_source
@@ -376,7 +376,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "prik_native_array_backend_release(owner_backend)" in c_source
     assert ("bound_values_native_backend = prik_native_array_backend_for_descriptor(bound_values_item") in c_source
     assert "prik_bind_default_memory_handles_replace_values" in c_source
-    assert "prik_owned_memory_handles_replace_values_destroy" in c_source
+    assert "prik_owned_memory_handles_replace_values_dispatch" in c_source
     assert "bound_values_default_binder" in c_source
     assert "CFI_CDESC_T(1)" in c_source
     assert "CFI_CDESC_T(2)" in c_source
@@ -422,23 +422,22 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     )
 
 
-def test_owned_descriptor_lifecycle_operations_do_not_materialize_descriptor_locals():
+def test_owned_descriptor_handles_publish_one_dispatcher_and_capability_tuple():
     artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    for operation in ("allocated", "shape", "to_numpy", "destroy"):
-        function = _generated_c_function(
-            c_source,
-            f"prik_owned_memory_handles_make_return_{operation}",
-        )
-        assert "owner_backend" in function
-        assert "owner_descriptor" not in function
-
-    deallocate = _generated_c_function(
+    dispatch = _generated_c_function(
         c_source,
-        "prik_owned_memory_handles_make_return_deallocate",
+        "prik_owned_memory_handles_make_return_dispatch",
     )
-    assert "owner_descriptor" in deallocate
+    assert 'strcmp(operation, "allocated") == 0' in dispatch
+    assert 'strcmp(operation, "shape") == 0' in dispatch
+    assert 'strcmp(operation, "to_numpy") == 0' in dispatch
+    assert 'strcmp(operation, "destroy") == 0' in dispatch
+    assert "owner_backend" in dispatch
+    assert "owner_descriptor" in dispatch
+    assert 'Py_BuildValue("(ssssss)", "allocated", "deallocate", "destroy", "resize", "shape", "to_numpy")' in c_source
+    assert "PyDict_SetItemString" not in c_source
 
 
 @pytest.mark.parametrize(

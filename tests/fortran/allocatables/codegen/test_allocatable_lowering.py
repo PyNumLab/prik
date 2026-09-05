@@ -50,7 +50,10 @@ def test_plain_module_allocatable_uses_standard_descriptor_callback_without_copy
     # supplies; nothing copies the descriptor out to be read in Python.
     assert "prik_native_array_read_shape(void * descriptor, void * context)" in c_source
     assert "source->base_addr" in c_source
-    assert "Py_BuildValue" not in c_source
+    # The capability tuple is the only Python object the module builds; no
+    # descriptor field is packed into Python values for the handle to read back.
+    built = [line.strip() for line in c_source.splitlines() if "Py_BuildValue" in line]
+    assert built and all("build_capabilities" in line for line in built)
     assert "subroutine bind_c_plain_allocatable_descriptor(" in bridge_source
     assert 'bind(c, name="bind_c_plain_allocatable_descriptor")' in bridge_source
     assert "type(c_funptr), value :: callback_address" in bridge_source

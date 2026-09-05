@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -159,6 +160,7 @@ module fhandle_descriptor_matrix_f90
   character(len=:), allocatable :: deferred_words(:)
   real(8), allocatable :: empty(:)
   real(8), allocatable :: spare(:)
+  real(8), allocatable :: probe(:)
   real(8), allocatable :: cube(:, :, :)
   real(8), target :: store(8)
   real(8), pointer :: reversed(:) => null()
@@ -179,6 +181,7 @@ contains
     allocate(character(len=6) :: deferred_words(2))
     deferred_words = ['alphas', 'bravos']
     allocate(empty(0))
+    allocate(probe(3)); probe = 2.0_8
     allocate(cube(2, 3, 4)); cube = 1.0_8
     store = [(1.0_8 * i, i = 1, 8)]
     reversed => store(8:1:-1)
@@ -389,3 +392,36 @@ def test_reallocating_through_a_dummy_updates_every_later_inquiry(descriptor_mat
     assert spare.to_numpy() is None
     with pytest.raises(ValueError, match="unallocated"):
         descriptor_matrix.assumed_total(spare)
+
+
+def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_matrix):
+    """Argument handoff costs no Python frame once the arguments are parsed.
+
+    A handle publishes its backend to C, so the binding reads the capsule,
+    validates it against the dummy and enters the descriptor itself. Nothing on
+    that path imports the runtime, looks an operation up on the handle, or packs
+    descriptor fields into Python values for C to read back -- which is the
+    whole point of the capsule, and is only observable as the absence of a
+    Python call.
+    """
+    ordinary = descriptor_matrix.ints
+    descriptor = descriptor_matrix.probe
+    int_total = descriptor_matrix.int_total
+    reshape_alloc = descriptor_matrix.reshape_alloc
+    assumed_total = descriptor_matrix.assumed_total
+    called: list[str] = []
+
+    def record(frame, event, _arg):
+        if event == "call":
+            called.append(f"{frame.f_code.co_filename}:{frame.f_code.co_name}")
+
+    sys.setprofile(record)
+    try:
+        int_total(ordinary)
+        assumed_total(descriptor)
+        reshape_alloc(descriptor, np.int32(2))
+    finally:
+        sys.setprofile(None)
+
+    assert called == []
+    assert descriptor.shape == (2,)
