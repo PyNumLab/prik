@@ -38,6 +38,12 @@ release tags add a leading `v` to the package version.
   strides directly, so negative strides and non-contiguous pointer targets are
   exposed without an intermediate buffer.
 
+- A borrowed module or derived-field array handle passed to an entrypoint with
+  more than one allocatable or pointer dummy is now refused, naming the
+  argument. Such a descriptor is only valid inside the call that borrows it,
+  and only one dummy per call can be reached that way; caller-created handles,
+  which own persistent descriptor storage, are unaffected.
+
 - Fixed writable module and derived-field allocatable arrays, and reject
   PROTECTED module arrays during policy completion when writable access would be
   required.

@@ -8127,8 +8127,19 @@ class CBindingGenerator(ClassVisitor):
                             CReturn(CodeExpression("NULL")),
                         ),
                     ),
+                    CComment("This call is made outside any consumer, so the descriptor must outlive one."),
                     CExpressionStatement(
-                        CodeExpression(f"{names.value_name} = (CFI_cdesc_t *){prefix}_native_backend->context")
+                        CodeExpression(
+                            f"{names.value_name} = (CFI_cdesc_t *)prik_native_array_backend_persistent_descriptor("
+                            f'{prefix}_native_backend, "{plan.binding.python_name}")'
+                        )
+                    ),
+                    CIf(
+                        CodeExpression(f"{names.value_name} == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")),
+                            CReturn(CodeExpression("NULL")),
+                        ),
                     ),
                 ),
                 else_body=absent,

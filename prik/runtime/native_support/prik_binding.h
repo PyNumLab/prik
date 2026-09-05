@@ -317,6 +317,37 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
 }
 
 /*
+ * Take a descriptor that stays valid after this returns.
+ *
+ * `prik_native_array_owned_with_descriptor` hands its consumer the context
+ * itself, so an owned backend's context *is* persistent descriptor storage and
+ * a caller may hold it for as long as the handle lives.  A borrowed backend's
+ * descriptor is instead built by the Fortran runtime for one call and is gone
+ * when the consumer returns, so there is nothing here to hand back: such a
+ * handle can only be reached from inside `with_descriptor`.  `release` is
+ * non-NULL exactly for storage this extension owns, which is the same fact and
+ * the one that survives being read from another extension, where the inline
+ * entry point above is a different function.
+ *
+ * A caller that cannot enter the consumer is told so rather than handed a
+ * pointer that would dangle the moment the call it was fetched for begins.
+ */
+static inline void *prik_native_array_backend_persistent_descriptor(
+    prik_native_array_backend *backend,
+    const char *argument_name)
+{
+    if (backend->release == NULL) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "argument %s is a borrowed native array handle, whose descriptor is only valid inside a call; "
+            "this entrypoint takes more than one descriptor argument and cannot enter it",
+            argument_name);
+        return NULL;
+    }
+    return backend->context;
+}
+
+/*
  * Read a backend for an ordinary array actual.
  *
  * An ordinary array dummy takes the storage behind a handle, not the handle's

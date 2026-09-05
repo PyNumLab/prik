@@ -102,6 +102,14 @@ associated with, which matters because a handle created from a `.pyi` contract
 has no native storage until a call gives it some and so has nowhere else to
 record it.
 
+A call is made inside the consumer holding its argument's descriptor, and
+only one call can be inside one consumer. An entrypoint that takes a second
+descriptor dummy therefore needs descriptors that outlive a consumer, which
+only an owned backend has -- its `context` *is* persistent descriptor storage.
+A caller-created handle is placed there; a borrowed module array or field is
+refused by the binding, naming the argument, rather than handed a descriptor
+that would dangle.
+
 ### Views And Ownership
 
 `to_numpy()` builds the view in C while the descriptor is live, over the

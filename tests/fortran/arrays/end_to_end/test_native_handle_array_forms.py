@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from prik import contracts
 from prik.runtime.handles import AllocatableArray, PointerArray
 from tests.fortran._support.wrapper_build import _build_text_and_import
 
@@ -161,6 +162,8 @@ module fhandle_descriptor_matrix_f90
   real(8), allocatable :: empty(:)
   real(8), allocatable :: spare(:)
   real(8), allocatable :: probe(:)
+  real(8), allocatable :: pair_left(:)
+  real(8), allocatable :: pair_right(:)
   real(8), allocatable :: cube(:, :, :)
   real(8), target :: store(8)
   real(8), pointer :: reversed(:) => null()
@@ -182,6 +185,8 @@ contains
     deferred_words = ['alphas', 'bravos']
     allocate(empty(0))
     allocate(probe(3)); probe = 2.0_8
+    allocate(pair_left(3));  pair_left = 6.0_8
+    allocate(pair_right(3)); pair_right = 7.0_8
     allocate(cube(2, 3, 4)); cube = 1.0_8
     store = [(1.0_8 * i, i = 1, 8)]
     reversed => store(8:1:-1)
@@ -198,6 +203,16 @@ contains
     allocate(values(n))
     values = 4.0_8
   end subroutine reshape_alloc
+
+  subroutine grow_pair(first, second, n)
+    real(8), allocatable, intent(inout) :: first(:), second(:)
+    integer(4), intent(in) :: n
+
+    if (allocated(first)) deallocate(first)
+    if (allocated(second)) deallocate(second)
+    allocate(first(n));  first = 8.0_8
+    allocate(second(n)); second = 9.0_8
+  end subroutine grow_pair
 
   function assumed_total(actual) result(total)
     real(8), intent(in) :: actual(:)
@@ -425,3 +440,33 @@ def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_
 
     assert called == []
     assert descriptor.shape == (2,)
+
+
+def test_two_descriptor_dummies_take_owned_storage_and_refuse_a_borrowed_handle(descriptor_matrix):
+    """A descriptor only one call can hold is refused, not handed over to be dangled.
+
+    Reaching a borrowed entity means making the call inside the consumer that
+    holds its descriptor, and only one call can be inside one consumer. An
+    entrypoint with a second descriptor dummy therefore needs descriptors that
+    outlive a consumer, which only an owned handle has: a caller-created one is
+    placed, and a module array is refused while both handles stay usable.
+    """
+    left = descriptor_matrix.pair_left
+    right = descriptor_matrix.pair_right
+
+    with pytest.raises(TypeError, match="borrowed native array handle"):
+        descriptor_matrix.grow_pair(left, right, np.int32(2))
+    assert left.shape == (3,)
+    assert right.shape == (3,)
+
+    owned_first = contracts.Allocatable[contracts.Float64[:]]()
+    owned_second = contracts.Allocatable[contracts.Float64[:]]()
+    try:
+        descriptor_matrix.grow_pair(owned_first, owned_second, np.int32(2))
+        assert owned_first.shape == (2,)
+        assert owned_second.shape == (2,)
+        np.testing.assert_allclose(owned_first.to_numpy(), np.array([8.0, 8.0]))
+        np.testing.assert_allclose(owned_second.to_numpy(), np.array([9.0, 9.0]))
+    finally:
+        owned_first.close()
+        owned_second.close()
