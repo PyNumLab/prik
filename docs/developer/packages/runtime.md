@@ -72,20 +72,29 @@ address for a field, descriptor storage for an owned handle, and `NULL` for a
 module variable. `release` is non-`NULL` when the extension owns `context`.
 Clearing `context` after release makes `close()` and finalization idempotent.
 
-The capsule name carries the ABI version, and carrying it there is what makes
-a magic word and a version field redundant: both would be fields the stranger
-also wrote, and comparing them means dereferencing its pointer first. The
-obligation is that the record may not change while the name does not. Adding a
-field, reordering two, widening one, or changing what a field means makes it
-`prik.native_array_backend.v2` — `struct_size` cannot see a same-width
-reordering, so the name is the only thing separating the two layouts. The
-record and the name are pinned together in
-`tests/fortran/infrastructure/runtime/test_native_support.py`. `struct_size` validates the backend
-layout, and `descriptor_size` records `sizeof(CFI_CDESC_T(rank))` for the
-producing extension. A consumer validates `descriptor_kind`, `rank`,
-`cfi_type`, `element_size`, and descriptor size against its dummy before
-entering Fortran. `element_size` is `0` for widths determined at run time, such
-as deferred-length character arrays.
+The capsule name carries the layout, not a version anyone maintains. It is
+`prik.native_array_backend.v2.<tag>`, where the tag folds `sizeof` and
+`offsetof` for the record and every field in it, in order. Two extensions
+therefore agree on the name exactly when they agree on the record, and
+`PyCapsule_GetPointer` compares names *before* returning the pointer — so a
+producer built from a different header is refused without a byte being read
+through it. That matters most for `context`, `with_descriptor` and `release`:
+they are bare addresses, nothing can sanity-check them after the fact, and
+calling one from a mismatched record is a crash. A version field could not
+have done this job, because reading it already assumes the layout in question.
+
+`.v2` remains for people. It says which generation of the ABI is meant, and it
+is what changes when the record keeps its shape but a field takes on a new
+meaning — the one drift a mechanical tag cannot see. `descriptor_size` stays in
+the record because it attests the producer's `CFI_CDESC_T(rank)` layout, which
+is the compiler's, not this header's, and so is not folded into the tag. A
+reader still validates `descriptor_kind`, `rank`, `cfi_type` and `element_size`
+against the dummy it is filling. `element_size` is `0` for widths determined at
+run time, such as deferred-length character arrays.
+
+The record and the tag's field list are pinned together in
+`tests/fortran/infrastructure/runtime/test_native_support.py`, so a field added
+to one and not the other fails there rather than silently keeping the old name.
 
 ### Inquiries Read The Descriptor
 

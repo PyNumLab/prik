@@ -4462,8 +4462,7 @@ class CBindingGenerator(ClassVisitor):
                 self._module_native_array_backend_name(variable),
                 "static prik_native_array_backend",
                 CodeExpression(
-                    "{(uint32_t)sizeof(prik_native_array_backend), "
-                    f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, "
+                    f"{{{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, "
                     f"(uint32_t)sizeof(CFI_CDESC_T({handle.array.rank})), {cfi_type}, {element_size}, "
                     f"NULL, {forward}, NULL}}"
                 ),
@@ -4538,7 +4537,10 @@ class CBindingGenerator(ClassVisitor):
         """Return the expression publishing this variable's native backend."""
         if not self._uses_module_descriptor_backend(variable):
             return "Py_None"
-        return f"PyCapsule_New(&{self._module_native_array_backend_name(variable)}, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME, NULL)"
+        return (
+            f"PyCapsule_New(&{self._module_native_array_backend_name(variable)}, "
+            "prik_native_array_backend_capsule_name(), NULL)"
+        )
 
     def _module_with_descriptor_name(self, variable: ModuleVariablePlan) -> str:
         """Return the forwarder name that drives this variable's descriptor bridge."""

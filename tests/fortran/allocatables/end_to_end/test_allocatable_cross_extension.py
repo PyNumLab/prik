@@ -140,13 +140,22 @@ def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_
     capsule_get = ctypes.pythonapi.PyCapsule_GetPointer
     capsule_get.restype = ctypes.c_void_p
     capsule_get.argtypes = (ctypes.py_object, ctypes.c_char_p)
-    # Stand in for an extension that published the same record under a
-    # different version. The address is this handle's own live backend, so
-    # only the name differs and only the name can do the refusing.
-    address = capsule_get(values._native_backend, b"prik.native_array_backend.v1")
-    assert address
-    values._native_backend = capsule_new(address, b"prik.native_array_backend.v2", None)
+    capsule_name = ctypes.pythonapi.PyCapsule_GetName
+    capsule_name.restype = ctypes.c_char_p
+    capsule_name.argtypes = (ctypes.py_object,)
 
+    published = capsule_name(values._native_backend)
+    # The layout is folded into the name, so this is what an extension built
+    # from any other record would publish instead.
+    assert published.startswith(b"prik.native_array_backend.v2.")
+    address = capsule_get(values._native_backend, published)
+    assert address
+    stranger = published[: published.rindex(b".")] + b".0000000000000000"
+    values._native_backend = capsule_new(address, stranger, None)
+
+    # The address is this handle's own live backend, so only the name differs
+    # and only the name can do the refusing -- before anything is read through
+    # it, which is the point for the three fields that are bare addresses.
     with pytest.raises(ValueError, match="PyCapsule_GetPointer called with incorrect name"):
         module.total_a(values)
 

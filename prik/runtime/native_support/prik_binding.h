@@ -8,7 +8,9 @@
 #include <Python.h>
 #include <complex.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,23 +26,29 @@
 #include <numpy/arrayscalars.h>
 
 /*
- * One versioned capsule publishes everything a generated binding needs from
- * another extension's array handle. The version lives in the capsule name:
- * PyCapsule_GetPointer refuses a capsule created under any other name, so a
- * reader asks for the one version it understands and every other producer is
- * turned away before a field is read. That is what makes a separate magic word
- * and version field redundant -- both were fields the stranger also wrote, and
- * comparing them meant dereferencing its pointer first.
+ * One capsule publishes everything a generated binding needs from another
+ * extension's array handle, and its name is derived from the record's own
+ * layout rather than from a version anyone maintains by hand.
  *
- * The obligation this creates: the record below may not change while the name
- * stays the same. Add a field, reorder two, widen one, or change what a field
- * means, and this becomes .v2 -- every .v1 consumer then refuses it, instead of
- * reading a same-width reordering straight through. `struct_size` cannot see
- * such a reordering, so the name is the only thing standing between the two
- * layouts. The record and this name are pinned together by
- * test_the_backend_record_and_its_version_name_change_together.
+ * The problem it solves: a capsule carries an address, and C has no runtime
+ * types, so a reader has to decide what is at that address using offsets its
+ * own compiler baked in. Two extensions built from different snapshots of this
+ * header disagree about those offsets while agreeing about everything they can
+ * name. Comparing a version *field* cannot settle it -- reading the field
+ * already assumes the layout in question -- and it goes wrong worst on
+ * `context`, `with_descriptor` and `release`, which are opaque addresses no
+ * reader can sanity-check before calling one.
+ *
+ * So the layout is folded into the capsule name. PyCapsule_GetPointer compares
+ * names before it hands back the pointer, so a producer whose record differs in
+ * size, in field order, or in any field's width is refused without a single
+ * byte being dereferenced. Nothing has to be remembered for that to hold: the
+ * tag is computed from `sizeof` and `offsetof`, so it moves when the record
+ * does. `.v2` in the name stays for people -- it says which generation of this
+ * ABI is meant, and it is what changes when the record keeps its shape but a
+ * field takes on a new meaning, which no mechanical tag can see.
  */
-#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME "prik.native_array_backend.v1"
+#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v2"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
 
@@ -121,11 +129,11 @@ typedef struct {
  * persistent storage it allocated, which stays valid for the handle's life.
  * Consumers cannot tell the two apart, and must not try to.
  *
- * The leading metadata refuses an incompatible producer before any descriptor
- * is interpreted:
- *  - struct_size attests this exact record layout;
+ * The metadata refuses an incompatible producer before any descriptor is
+ * interpreted. The record's own layout is attested by the capsule name, so
+ * nothing here restates it; what remains is what the name cannot know:
  *  - descriptor_size attests the producer's CFI_CDESC_T(rank) layout, which
- *    nothing in the descriptor itself can be read to establish;
+ *    neither this record nor the descriptor itself can be read to establish;
  *  - descriptor_kind, rank, cfi_type and element_size are what a reader
  *    compares against the dummy it is filling, and reporting them here means
  *    a mismatch is refused without entering Fortran at all.
@@ -134,7 +142,6 @@ typedef struct {
  * descriptor's elem_len instead.
  */
 typedef struct {
-    uint32_t struct_size;
     uint32_t descriptor_kind;
     uint32_t rank;
     uint32_t descriptor_size;
@@ -144,6 +151,72 @@ typedef struct {
     prik_native_array_with_descriptor_fn with_descriptor;
     prik_native_array_release_fn release;
 } prik_native_array_backend;
+
+/*
+ * Fold this record's layout into one tag.
+ *
+ * Every field contributes both where it starts and how wide it is, in
+ * declaration order, so a reorder, a widening, an insertion and a removal all
+ * change the result; the total size goes in first so a trailing change cannot
+ * be silent either. FNV-1a is used because the mixing is order-dependent --
+ * XOR-ing the offsets would give the same tag for two fields exchanged.
+ *
+ * A tag cannot see a field that keeps its offset and width but changes what it
+ * means. That is what the version in the name is for.
+ */
+static inline uint64_t prik_native_array_backend_layout_tag(void)
+{
+    const size_t layout[] = {
+        sizeof(prik_native_array_backend),
+        offsetof(prik_native_array_backend, descriptor_kind),
+        sizeof(((prik_native_array_backend *)0)->descriptor_kind),
+        offsetof(prik_native_array_backend, rank),
+        sizeof(((prik_native_array_backend *)0)->rank),
+        offsetof(prik_native_array_backend, descriptor_size),
+        sizeof(((prik_native_array_backend *)0)->descriptor_size),
+        offsetof(prik_native_array_backend, cfi_type),
+        sizeof(((prik_native_array_backend *)0)->cfi_type),
+        offsetof(prik_native_array_backend, element_size),
+        sizeof(((prik_native_array_backend *)0)->element_size),
+        offsetof(prik_native_array_backend, context),
+        sizeof(((prik_native_array_backend *)0)->context),
+        offsetof(prik_native_array_backend, with_descriptor),
+        sizeof(((prik_native_array_backend *)0)->with_descriptor),
+        offsetof(prik_native_array_backend, release),
+        sizeof(((prik_native_array_backend *)0)->release),
+    };
+    uint64_t tag = UINT64_C(14695981039346656037);
+    size_t index;
+
+    for (index = 0; index < sizeof(layout) / sizeof(layout[0]); ++index) {
+        tag = (tag ^ (uint64_t)layout[index]) * UINT64_C(1099511628211);
+    }
+    return tag;
+}
+
+/*
+ * Name the capsule this extension publishes and accepts.
+ *
+ * Both sides build this string from their own header, so two extensions agree
+ * on it exactly when they agree on the record. The name is what
+ * PyCapsule_GetPointer compares, which is why a disagreement is reported
+ * before the pointer is handed over rather than after something has been read
+ * through it.
+ */
+static inline const char *prik_native_array_backend_capsule_name(void)
+{
+    static char name[80];
+
+    if (name[0] == '\0') {
+        /* Every caller computes the same bytes, so a race writes them twice. */
+        snprintf(
+            name,
+            sizeof(name),
+            PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX ".%016llx",
+            (unsigned long long)prik_native_array_backend_layout_tag());
+    }
+    return name;
+}
 
 /*
  * Hand over a descriptor the wrapper itself owns.
@@ -194,7 +267,7 @@ static inline void prik_native_array_backend_capsule_destructor(PyObject *capsul
 
     PyErr_Fetch(&error_type, &error_value, &error_traceback);
     backend = (prik_native_array_backend *)PyCapsule_GetPointer(
-        capsule, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME);
+        capsule, prik_native_array_backend_capsule_name());
     if (backend == NULL) {
         PyErr_Clear();
     } else {
@@ -246,7 +319,6 @@ static inline PyObject *prik_native_array_backend_capsule_new(
         PyErr_NoMemory();
         return NULL;
     }
-    backend->struct_size = (uint32_t)sizeof(*backend);
     backend->descriptor_kind = descriptor_kind;
     backend->rank = rank;
     backend->descriptor_size = descriptor_size;
@@ -256,7 +328,7 @@ static inline PyObject *prik_native_array_backend_capsule_new(
     backend->with_descriptor = with_descriptor;
     backend->release = release;
     capsule = PyCapsule_New(
-        backend, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME, prik_native_array_backend_capsule_destructor);
+        backend, prik_native_array_backend_capsule_name(), prik_native_array_backend_capsule_destructor);
     if (capsule == NULL) {
         backend->context = NULL;
         free(backend);
@@ -276,11 +348,11 @@ static inline prik_native_array_backend *prik_native_array_backend_from_capsule(
     prik_native_array_backend *backend;
 
     backend = (prik_native_array_backend *)PyCapsule_GetPointer(
-        capsule, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME);
+        capsule, prik_native_array_backend_capsule_name());
     if (backend == NULL) {
         return NULL;
     }
-    if (backend->struct_size != (uint32_t)sizeof(*backend) || backend->with_descriptor == NULL) {
+    if (backend->with_descriptor == NULL) {
         PyErr_SetString(PyExc_TypeError, "incompatible prik native array backend record");
         return NULL;
     }

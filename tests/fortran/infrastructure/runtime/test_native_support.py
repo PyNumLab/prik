@@ -40,8 +40,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert f"prik_{suffix}_to_numpy" in header
 
 
-BACKEND_RECORD_V1 = (
-    ("uint32_t", "struct_size"),
+BACKEND_RECORD_V2 = (
     ("uint32_t", "descriptor_kind"),
     ("uint32_t", "rank"),
     ("uint32_t", "descriptor_size"),
@@ -60,33 +59,45 @@ def _backend_record_fields(header: str) -> tuple[tuple[str, str], ...]:
     assert body is not None, "prik_native_array_backend is not declared as one struct"
     fields = []
     for line in body.group(1).strip().splitlines():
-        declaration = line.strip().rstrip(";")
-        spelling, _, name = declaration.rpartition(" ")
+        spelling, _, name = line.strip().rstrip(";").rpartition(" ")
         if name.startswith("*"):
             spelling, name = f"{spelling} *", name[1:]
         fields.append((spelling.strip(), name))
     return tuple(fields)
 
 
-def test_the_backend_record_and_its_version_name_change_together():
-    """The capsule name is the ABI version, so the record may not move under it.
+def _layout_tag_members(header: str) -> tuple[str, ...]:
+    """Return the field names the layout tag folds, in the order it folds them."""
+    body = re.search(r"const size_t layout\[\] = \{(.*?)\};", header, re.S)
+    assert body is not None, "the layout tag does not declare what it folds"
+    return tuple(re.findall(r"offsetof\(prik_native_array_backend, (\w+)\)", body.group(1)))
 
-    Nothing inside the record says which layout wrote it: a reader asks
-    ``PyCapsule_GetPointer`` for the one version it understands, and every
-    other producer is refused before a field is read.  That only holds while
-    the name is renamed whenever the record changes -- and a same-width
-    reordering, `descriptor_kind` and `rank` swapped say, would otherwise be
-    read straight through by a consumer that still recognizes the name, since
-    `struct_size` sees no difference.
 
-    So the two are pinned here together.  If this test fails because the
-    record genuinely changed, publish it under a new version name and update
-    both halves; do not update the layout alone.
+def test_the_capsule_name_is_derived_from_the_whole_record():
+    """Two extensions agree on the name exactly when they agree on the record.
+
+    A capsule carries an address and C has no runtime types, so a reader
+    interprets it with offsets its own compiler baked in.  Comparing a version
+    field cannot settle a disagreement -- reading the field already assumes the
+    layout in question -- and it fails worst on `context`, `with_descriptor`
+    and `release`, which are opaque addresses nothing can sanity-check before
+    one of them is called.
+
+    So the layout is folded into the name, which PyCapsule_GetPointer compares
+    before handing the pointer back.  Every field must contribute its offset
+    and its width, or a change to the field it forgot would keep the old name:
+    the record and the tag are therefore required to list the same fields in
+    the same order.
     """
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
 
-    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME "prik.native_array_backend.v1"' in header
-    assert _backend_record_fields(header) == BACKEND_RECORD_V1
+    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v2"' in header
+    assert _backend_record_fields(header) == BACKEND_RECORD_V2
+    assert _layout_tag_members(header) == tuple(name for _spelling, name in BACKEND_RECORD_V2)
+    # The size goes in first, so a change that only moves the tail is caught too.
+    assert "sizeof(prik_native_array_backend)," in header
+    for _spelling, name in BACKEND_RECORD_V2:
+        assert f"sizeof(((prik_native_array_backend *)0)->{name})" in header
 
 
 def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
@@ -104,6 +115,8 @@ def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
         "prik_native_array_backend_for_descriptor",
         "prik_native_array_backend_for_actual",
         "prik_native_array_backend_owned_descriptor",
+        "prik_native_array_backend_layout_tag",
+        "prik_native_array_backend_capsule_name",
         "prik_native_array_backend_release",
         "prik_native_array_owned_with_descriptor",
     ):
