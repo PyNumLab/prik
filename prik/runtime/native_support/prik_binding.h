@@ -317,6 +317,32 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
 }
 
 /*
+ * Take the descriptor a backend owns.
+ *
+ * `prik_native_array_owned_with_descriptor` hands its consumer the context
+ * itself, so an owned backend's context *is* persistent descriptor storage and
+ * may be held for as long as the handle lives.  Only the operations published
+ * on an owned handle -- allocate, resize, deallocate, destroy -- ask for it,
+ * and only ever about their own handle's storage; a borrowed backend has
+ * nothing of the kind, and saying so here keeps a mis-wired one an error
+ * instead of a null descriptor handed to CFI_allocate.
+ *
+ * `release` is non-NULL exactly for storage this extension owns, which is the
+ * same fact and the one that survives being read from another extension, where
+ * the inline entry point above is a different function.
+ */
+static inline void *prik_native_array_backend_owned_descriptor(prik_native_array_backend *backend)
+{
+    if (backend->release == NULL) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle operation needs storage the handle owns; this one borrows its descriptor");
+        return NULL;
+    }
+    return backend->context;
+}
+
+/*
  * Read a backend for an ordinary array actual.
  *
  * An ordinary array dummy takes the storage behind a handle, not the handle's

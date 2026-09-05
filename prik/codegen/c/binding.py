@@ -5099,8 +5099,12 @@ class CBindingGenerator(ClassVisitor):
             *(
                 (
                     CExpressionStatement(
-                        CodeExpression(f"{prefix}_descriptor = (CFI_cdesc_t *){prefix}_backend->context")
+                        CodeExpression(
+                            f"{prefix}_descriptor = (CFI_cdesc_t *)prik_native_array_backend_owned_descriptor("
+                            f"{prefix}_backend)"
+                        )
                     ),
+                    CExpressionStatement(CodeExpression(f"if ({prefix}_descriptor == NULL) return NULL")),
                 )
                 if materialize_descriptor
                 else ()
@@ -5189,7 +5193,12 @@ class CBindingGenerator(ClassVisitor):
                 )
             ),
             CExpressionStatement(CodeExpression("if (owner_backend == NULL) return NULL")),
-            CExpressionStatement(CodeExpression("owner_descriptor = (CFI_cdesc_t *)owner_backend->context")),
+            CExpressionStatement(
+                CodeExpression(
+                    "owner_descriptor = (CFI_cdesc_t *)prik_native_array_backend_owned_descriptor(owner_backend)"
+                )
+            ),
+            CExpressionStatement(CodeExpression("if (owner_descriptor == NULL) return NULL")),
         ]
         for axis, item in enumerate(extent_objects):
             nodes.extend(
