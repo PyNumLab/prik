@@ -16,7 +16,6 @@ def test_allocatable_descriptor_hook_accepts_unallocated_descriptor_without_nump
             "shape": lambda _handle: None,
             "allocated": lambda _handle: False,
             "to_numpy": lambda _handle: pytest.fail("descriptor handoff must not call to_numpy"),
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "descriptor": lambda _handle: calls.append("descriptor") or descriptor,
         },
         to_numpy_policy="unsupported",

@@ -15,31 +15,12 @@ from tests.fortran._support.wrapper_build import (
     _sole_native_module,
 )
 from prik import build_pyi_extension
-from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACTS = FIXTURES / "contracts"
 ARRAY_FIXED_SOURCE = FIXTURES / "native" / "fmath_arrays.f"
 ARRAY_F90_SOURCE = FIXTURES / "native" / "fmath_arrays_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
-
-
-def _native_array_actual(value: np.ndarray, *, pointer: bool):
-    state_name = "associated" if pointer else "allocated"
-    operations = {
-        "array_actual": lambda _handle: _NativeArrayHandoff(value.ctypes.data),
-        "descriptor": lambda _handle: _NativeArrayHandoff(value.ctypes.data),
-        "shape": lambda _handle: value.shape,
-        "layout": lambda _handle: "F" if value.flags.f_contiguous else "C",
-        "writeable": lambda _handle: value.flags.writeable,
-        "native_byte_order": lambda _handle: value.dtype.isnative,
-        "aligned": lambda _handle: value.flags.aligned,
-        "to_numpy": lambda _handle: value,
-        state_name: lambda _handle: True,
-        "nullify" if pointer else "deallocate": lambda _handle: None,
-    }
-    handle_type = PointerArray if pointer else AllocatableArray
-    return handle_type(dtype=value.dtype, rank=value.ndim, ops=operations)
 
 
 def test_fortran_array_wrapper_pipeline_matches_fmath_results_with_contiguous_arrays(
@@ -105,14 +86,6 @@ def test_required_array_buffers_use_canonical_wrapper_plan(tmp_path: Path):
     output = np.zeros_like(values)
     assert module.square_r8_contiguous(np.int32(values.size), values, output) == np.int32(values.size)
     np.testing.assert_array_equal(output, values**2)
-
-    handle_output = np.zeros_like(values)
-    assert module.square_r8_contiguous(
-        np.int32(values.size),
-        _native_array_actual(values, pointer=False),
-        _native_array_actual(handle_output, pointer=True),
-    ) == np.int32(values.size)
-    np.testing.assert_array_equal(handle_output, values**2)
 
     empty = np.empty(0, dtype=np.float64)
     assert module.square_r8_contiguous(np.int32(0), empty, empty.copy()) == np.int32(0)

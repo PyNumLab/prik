@@ -6,7 +6,6 @@ from prik.runtime.handles import (
     AllocatableArray,
     NativeArrayHandleBase,
     PointerArray,
-    _native_array_actual_for_binding,
     _native_array_descriptor_for_binding,
     _native_array_handle_from_generated_ops,
 )
@@ -175,14 +174,13 @@ def test_to_numpy_rejects_generated_array_with_wrong_rank_or_dtype():
         wrong_dtype.to_numpy()
 
 
-def test_runtime_handle_shapes_reject_negative_extents_before_binding_handoff():
+def test_runtime_handle_shapes_reject_negative_extents_before_descriptor_handoff():
     handle = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
             "shape": lambda _handle: (-1,),
             "allocated": lambda _handle: True,
-            "array_actual": lambda _handle: pytest.fail("negative shape must block native handoff"),
             "descriptor": lambda _handle: pytest.fail("negative shape must block descriptor handoff"),
         },
         to_numpy_policy="unsupported",
@@ -190,8 +188,6 @@ def test_runtime_handle_shapes_reject_negative_extents_before_binding_handoff():
 
     with pytest.raises(ValueError, match="non-negative"):
         _ = handle.shape
-    with pytest.raises(ValueError, match="non-negative"):
-        _native_array_actual_for_binding(handle)
     with pytest.raises(ValueError, match="non-negative"):
         _native_array_descriptor_for_binding(handle, descriptor_kind="allocatable")
     with pytest.raises(ValueError, match="non-negative"):
@@ -201,7 +197,6 @@ def test_runtime_handle_shapes_reject_negative_extents_before_binding_handoff():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: _handoff(228),
             "shape": lambda _handle: (1,),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: _handoff(229),
@@ -252,7 +247,6 @@ def test_pointer_associate_accepts_reassociation_and_an_unassociated_source():
             rank=1,
             ops={
                 "shape": lambda _handle: tuple(dimension["extent"] for dimension in state["descriptor"]["dim"]),
-                "array_actual": lambda _handle: _handoff(state["descriptor"]["base_addr"]),
                 "descriptor": lambda _handle: state["descriptor"],
                 "to_numpy": lambda _handle: state["descriptor"],
                 "associated": lambda _handle: state["descriptor"]["base_addr"] != 0,
@@ -290,7 +284,6 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
         rank=1,
         ops={
             "shape": lambda _handle: value.shape,
-            "array_actual": lambda _handle: _handoff(value.ctypes.data),
             "descriptor": lambda _handle: source_state["descriptor"],
             "to_numpy": lambda _handle: source_state["descriptor"],
             "associated": lambda _handle: True,
@@ -306,7 +299,6 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
         1,
         {
             "shape": lambda: None,
-            "array_actual": lambda: 1,
             "descriptor": lambda: 1,
             "associated": lambda: False,
             "associate": lambda facts: received.append(facts),
@@ -520,23 +512,12 @@ def test_common_handle_requires_generated_shape_operation():
         AllocatableArray(dtype="float64", rank=1, ops={})
 
 
-def test_common_handle_requires_generated_handoff_operations():
-    with pytest.raises(ValueError, match="requires generated operation 'array_actual'"):
-        AllocatableArray(
-            dtype="float64",
-            rank=1,
-            ops={
-                "shape": lambda _handle: (1,),
-                "allocated": lambda _handle: True,
-            },
-            to_numpy_policy="unsupported",
-        )
+def test_common_handle_requires_generated_descriptor_operation():
     with pytest.raises(ValueError, match="requires generated operation 'descriptor'"):
         AllocatableArray(
             dtype="float64",
             rank=1,
             ops={
-                "array_actual": lambda _handle: _handoff(244),
                 "shape": lambda _handle: (1,),
                 "allocated": lambda _handle: True,
             },

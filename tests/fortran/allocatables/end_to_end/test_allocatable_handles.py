@@ -1,7 +1,6 @@
 """Allocatable result, module-array, and component-view ownership tests."""
 
 import gc
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,16 +24,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
-
-
-def _allocatable_dummy_handoff_supported() -> bool:
-    """Report whether this compiler accepts a handle at an allocatable dummy.
-
-    ifx rejects the established descriptor for that argument form regardless of
-    the bounds it carries, so the round-trip below is checked where it works.
-    The descriptor facts themselves are asserted on every compiler.
-    """
-    return "ifx" not in os.environ.get("PRIK_TEST_FORTRAN_COMPILER", "gfortran")
 
 
 PLAIN_ALLOCATABLE_MODULE_SOURCE = """\
@@ -455,8 +444,6 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
     # The bound is not a reported fact but part of the value: an allocatable
     # dummy adopts the bounds of the descriptor it is given, so a wrong one
     # makes the callee index the wrong elements.
-    if not _allocatable_dummy_handoff_supported():
-        return
     for name in ("plain_a", "tgt_a"):
         handle = getattr(module, name)
         assert module.lower_bound_of(handle) == np.int32(5), name

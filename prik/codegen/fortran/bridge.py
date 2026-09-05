@@ -2542,8 +2542,6 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._module_native_array_state_operation(plan, operation)
         if operation is NativeArrayOperation.ELEMENT_LENGTH:
             return self._module_native_array_element_length_operation(plan)
-        if operation is NativeArrayOperation.ARRAY_ACTUAL:
-            return self._module_native_array_actual_operation(plan)
         if operation is NativeArrayOperation.SHAPE:
             return self._module_native_array_shape_operation(plan)
         if operation is NativeArrayOperation.DESCRIPTOR:
@@ -2575,28 +2573,6 @@ class FortranBridgeGenerator(ClassVisitor):
             result_type="logical(c_bool)",
             bind_name=name,
             body=(FortranAssignment("result", CodeExpression(expression)),),
-        )
-
-    def _module_native_array_actual_operation(self, plan: ModuleVariablePlan) -> FortranFunction:
-        """Return current module-array data storage without changing ownership.
-
-        A descriptor-reading module allocatable plans no such operation, so only
-        the address route reaches this.
-        """
-        name = self._module_native_array_operation_name(plan, NativeArrayOperation.ARRAY_ACTUAL)
-        native = self._native_variable_name(plan)
-        return FortranFunction(
-            name=name,
-            result_name="result",
-            result_type="type(c_ptr)",
-            bind_name=name,
-            body=(
-                FortranIf(
-                    CodeExpression(self._module_native_array_presence_expression(plan)),
-                    body=(FortranAssignment("result", CodeExpression(f"c_loc({native})")),),
-                    else_body=(FortranAssignment("result", CodeExpression("c_null_ptr")),),
-                ),
-            ),
         )
 
     def _module_native_array_element_length_operation(self, plan: ModuleVariablePlan) -> FortranFunction:
@@ -6922,14 +6898,7 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Native handle field {field.owner_path!r} has no operation plan")
         procedures = []
         for operation in handle.operations:
-            if operation in {
-                NativeArrayOperation.NATIVE_BYTE_ORDER,
-                NativeArrayOperation.ALIGNED,
-                NativeArrayOperation.WRITEABLE,
-                NativeArrayOperation.LAYOUT,
-                NativeArrayOperation.TO_NUMPY,
-                NativeArrayOperation.ARRAY_ACTUAL,
-            }:
+            if operation is NativeArrayOperation.TO_NUMPY:
                 continue
             procedures.append(self._native_handle_field_procedure(owner, field, operation))
         return tuple(procedures)

@@ -8,7 +8,6 @@ from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _bind_contract_native_array_handle,
-    _native_array_actual_for_binding,
 )
 
 
@@ -66,7 +65,6 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
         rank=1,
         ops={
             "shape": lambda _handle: value.shape,
-            "array_actual": lambda _handle: int(value.ctypes.data),
             "descriptor": lambda _handle: source_state["descriptor"],
             "to_numpy": lambda _handle: source_state["descriptor"],
             "associated": lambda _handle: source_state["descriptor"]["base_addr"] != 0,
@@ -81,7 +79,6 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
     assert target.associated is True
     assert target.shape == (3,)
     np.testing.assert_array_equal(target.to_numpy(), value)
-    assert _native_array_actual_for_binding(target).address == value.ctypes.data
 
     source.nullify()
     assert source.associated is False
@@ -101,7 +98,6 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
         rank=1,
         ops={
             "shape": lambda _handle: value.shape,
-            "array_actual": lambda _handle: int(value.ctypes.data),
             "descriptor": lambda _handle: descriptor,
             "to_numpy": lambda _handle: descriptor,
             "associated": lambda _handle: True,
@@ -127,7 +123,6 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
         1,
         {
             "shape": lambda _owner: value.shape if state["associated"] else None,
-            "array_actual": lambda _owner: int(value.ctypes.data),
             "descriptor": lambda received_owner: received_owner,
             "associated": lambda _owner: state["associated"],
             "associate": associate,

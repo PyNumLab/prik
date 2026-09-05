@@ -22,6 +22,7 @@ module flogical_view_f90
   logical(c_bool) :: narrow(4)
   logical :: wide(4)
   logical(c_bool), allocatable :: narrow_alloc(:)
+  logical, allocatable :: wide_alloc(:)
 
 contains
 
@@ -30,6 +31,8 @@ contains
     wide = [.true., .false., .true., .false.]
     if (.not. allocated(narrow_alloc)) allocate(narrow_alloc(4))
     narrow_alloc = [.true., .true., .false., .false.]
+    if (.not. allocated(wide_alloc)) allocate(wide_alloc(4))
+    wide_alloc = [.true., .false., .true., .false.]
   end subroutine setup
 
   subroutine negate()
@@ -46,6 +49,18 @@ contains
     integer :: total
     total = count(wide)
   end function count_wide
+
+  function count_narrow_actual(values) result(total)
+    logical(c_bool), intent(in) :: values(:)
+    integer :: total
+    total = count(values)
+  end function count_narrow_actual
+
+  function count_wide_actual(values) result(total)
+    logical, intent(in) :: values(:)
+    integer :: total
+    total = count(values)
+  end function count_wide_actual
 end module flogical_view_f90
 """
 
@@ -79,6 +94,12 @@ def test_a_wider_logical_reports_the_width_its_elements_occupy(logical_view):
 
     assert wide.dtype == np.dtype(np.int32)
     assert wide.astype(bool).tolist() == [True, False, True, False]
+    assert logical_view.wide_alloc.to_numpy().dtype == np.dtype(np.int32)
+
+
+def test_logical_allocatable_handles_reach_matching_ordinary_dummies(logical_view):
+    assert logical_view.count_narrow_actual(logical_view.narrow_alloc) == np.int32(2)
+    assert logical_view.count_wide_actual(logical_view.wide_alloc) == np.int32(2)
 
 
 def test_a_held_view_keeps_agreeing_with_fortran_across_native_writes(logical_view):

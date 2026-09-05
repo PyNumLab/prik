@@ -8,7 +8,6 @@ import pytest
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
 )
-from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ASSUMED_RANK_F90_SOURCE = FIXTURES / "native" / "fassumed_rank_f90.f90"
@@ -30,41 +29,6 @@ def assumed_rank_module(request: pytest.FixtureRequest, tmp_path_factory: pytest
         },
         CONTRACT_FIXTURES / "fassumed_rank_f90",
         request.param,
-    )
-
-
-def _allocated_handle_for_rejected_assumed_rank(value):
-    return AllocatableArray(
-        dtype=value.dtype,
-        rank=value.ndim,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("assumed-rank path must reject handles before handoff"),
-            "descriptor": lambda _handle: _NativeArrayHandoff(401),
-            "shape": lambda _handle: value.shape,
-            "layout": lambda _handle: "F" if value.flags.f_contiguous else "C",
-            "writeable": lambda _handle: value.flags.writeable,
-            "native_byte_order": lambda _handle: value.dtype.isnative,
-            "aligned": lambda _handle: value.flags.aligned,
-            "to_numpy": lambda _handle: value,
-            "allocated": lambda _handle: True,
-            "deallocate": lambda _handle: None,
-            "resize": lambda _handle, _shape: None,
-        },
-    )
-
-
-def _unassociated_handle_for_rejected_assumed_rank():
-    return PointerArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("assumed-rank path must reject handles before handoff"),
-            "descriptor": lambda _handle: _NativeArrayHandoff(402),
-            "shape": lambda _handle: None,
-            "to_numpy": lambda _handle: None,
-            "associated": lambda _handle: False,
-            "nullify": lambda _handle: None,
-        },
     )
 
 
@@ -91,12 +55,6 @@ def test_assumed_rank_arguments_dispatch_to_runtime_rank(
     rank16 = np.empty((1,) * (_MAX_WRAPPER_TEST_RANK + 1), dtype=np.float64, order="F")
     with pytest.raises(TypeError):
         module.rank_weighted_sum(rank16)
-
-    handle_values = np.asfortranarray(np.array([1.0, 2.0], dtype=np.float64))
-    with pytest.raises(TypeError):
-        module.rank_weighted_sum(_allocated_handle_for_rejected_assumed_rank(handle_values))
-    with pytest.raises(TypeError):
-        module.rank_weighted_sum(_unassociated_handle_for_rejected_assumed_rank())
 
 
 def test_assumed_rank_bridge_dispatches_each_runtime_rank_argument(

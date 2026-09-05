@@ -7,49 +7,18 @@ import pytest
 
 from prik import build_pyi_extension
 from tests.fortran._support.wrapper_build import (
-    _compile_native_object,
     _build_source_or_generated_pyi_and_import,
+    _compile_native_object,
+    _compiler,
     _import_from_build_dir,
     _sole_native_module,
 )
 from prik.contracts import Allocatable, Float64, Pointer
-from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OPTIONAL_F90_SOURCE = FIXTURES / "native" / "foptional_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
-
-
-def _unallocated_handle_for_rejected_optional_array():
-    return AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("optional array path must reject handles before handoff"),
-            "descriptor": lambda _handle: _NativeArrayHandoff(501),
-            "shape": lambda _handle: None,
-            "to_numpy": lambda _handle: None,
-            "allocated": lambda _handle: False,
-            "deallocate": lambda _handle: None,
-            "resize": lambda _handle, _shape: None,
-        },
-    )
-
-
-def _unassociated_handle_for_rejected_optional_array():
-    return PointerArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "array_actual": lambda _handle: pytest.fail("optional array path must reject handles before handoff"),
-            "descriptor": lambda _handle: _NativeArrayHandoff(502),
-            "shape": lambda _handle: None,
-            "to_numpy": lambda _handle: None,
-            "associated": lambda _handle: False,
-            "nullify": lambda _handle: None,
-        },
-    )
 
 
 def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path: Path):
@@ -59,6 +28,7 @@ def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path
 
     result = build_pyi_extension(
         entry,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
@@ -92,6 +62,7 @@ def test_optional_array_descriptors_preserve_presence_and_storage_state(tmp_path
 
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "array_descriptors",
@@ -177,10 +148,6 @@ def test_optional_arguments_drive_fortran_present_behavior(
         module.summarize(np.int32(5), scale="bad")
     with pytest.raises(TypeError):
         module.fill_optional(np.int32(3), np.empty(3, dtype=np.float32))
-    with pytest.raises(TypeError):
-        module.fill_optional(np.int32(3), _unallocated_handle_for_rejected_optional_array())
-    with pytest.raises(TypeError):
-        module.fill_optional(np.int32(3), _unassociated_handle_for_rejected_optional_array())
 
 
 def test_optional_array_buffers_preserve_omission_and_identity(tmp_path: Path):
@@ -189,6 +156,7 @@ def test_optional_array_buffers_preserve_omission_and_identity(tmp_path: Path):
     contract_package = FIXTURES / "edited_contracts" / "optional_arrays"
     result = build_pyi_extension(
         contract_package / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",

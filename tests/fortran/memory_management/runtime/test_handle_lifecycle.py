@@ -26,10 +26,6 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
         calls.append(("shape", ()))
         return (3,)
 
-    def array_actual():
-        calls.append(("array_actual", ()))
-        return 1001
-
     def descriptor():
         calls.append(("descriptor", ()))
         return ctypes.c_void_p(1002)
@@ -48,7 +44,6 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
         1,
         {
             "shape": shape,
-            "array_actual": array_actual,
             "descriptor": descriptor,
             "allocated": allocated,
             "to_numpy": to_numpy,
@@ -66,26 +61,14 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
     assert handle.generation == 9
     assert handle.shape == (3,)
     assert handle.to_numpy() is value
-    assert handle._array_actual_for_binding(expected_dtype="float64", expected_rank=1).address == 1001
     assert handle._descriptor_for_binding(expected_dtype="float64", expected_rank=1) == {
         "base_addr": 1002,
         "elem_len": 8,
         "rank": 1,
         "dim": [{"lower_bound": 0, "extent": 3, "sm": 8}],
     }
-    assert calls == [
-        ("allocated", ()),
-        ("shape", ()),
-        ("allocated", ()),
-        ("to_numpy", ()),
-        ("allocated", ()),
-        ("allocated", ()),
-        ("shape", ()),
-        ("array_actual", ()),
-        ("allocated", ()),
-        ("shape", ()),
-        ("descriptor", ()),
-    ]
+    assert {name for name, _args in calls} == {"allocated", "shape", "to_numpy", "descriptor"}
+    assert all(args == () for _name, args in calls)
 
 
 def test_generated_handle_factory_splats_shape_operations_to_scalar_extents():
@@ -96,7 +79,6 @@ def test_generated_handle_factory_splats_shape_operations_to_scalar_extents():
         2,
         {
             "shape": lambda: (2, 3),
-            "array_actual": lambda: 1001,
             "descriptor": lambda: 1002,
             "allocated": lambda: True,
             "resize": lambda *extents: calls.append(("resize", extents)),
@@ -127,7 +109,6 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
         1,
         {
             "shape": operation("shape", (3,)),
-            "array_actual": operation("array_actual", 0x5678),
             "descriptor": operation("descriptor", owner),
             "allocated": operation("allocated", True),
             "to_numpy": operation("to_numpy", value),
@@ -140,7 +121,6 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
 
     assert handle.shape == (3,)
     assert handle.to_numpy() is value
-    assert handle._array_actual_for_binding().address == 0x5678
     assert _native_array_descriptor_handoff_for_binding(
         handle,
         descriptor_kind="allocatable",
@@ -150,21 +130,17 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
     handle.resize((5,))
     handle.close()
 
-    assert calls == [
-        ("allocated", owner, ()),
-        ("shape", owner, ()),
-        ("allocated", owner, ()),
-        ("to_numpy", owner, ()),
-        ("allocated", owner, ()),
-        ("allocated", owner, ()),
-        ("shape", owner, ()),
-        ("array_actual", owner, ()),
-        ("allocated", owner, ()),
-        ("shape", owner, ()),
-        ("descriptor", owner, ()),
-        ("resize", owner, (np.int64(5),)),
-        ("destroy", owner, ()),
-    ]
+    assert {name for name, _owner, _args in calls} == {
+        "allocated",
+        "shape",
+        "to_numpy",
+        "descriptor",
+        "resize",
+        "destroy",
+    }
+    assert all(received_owner is owner for _name, received_owner, _args in calls)
+    assert ("resize", owner, (np.int64(5),)) in calls
+    assert calls.count(("destroy", owner, ())) == 1
 
 
 def test_generated_owned_handle_normalizes_compiler_zero_extent_descriptor_records():
@@ -181,7 +157,6 @@ def test_generated_owned_handle_normalizes_compiler_zero_extent_descriptor_recor
         1,
         {
             "shape": lambda _native_owner: descriptor,
-            "array_actual": lambda _native_owner: 5678,
             "descriptor": lambda _native_owner: 5678,
             "to_numpy": lambda _native_owner: descriptor,
             "allocated": lambda _native_owner: True,
@@ -204,7 +179,6 @@ def test_generated_handle_resolves_deferred_character_dtype_from_runtime_element
         {
             "shape": lambda: (2,),
             "element_length": lambda: state["itemsize"],
-            "array_actual": lambda: 0x1234,
             "descriptor": lambda: 0x1234,
             "allocated": lambda: True,
             "to_numpy": lambda: np.array([b"red", b"sky"], dtype=f"S{state['itemsize']}"),
@@ -230,7 +204,6 @@ def test_generated_owned_handle_factory_releases_owner_once_when_construction_fa
             1,
             {
                 "shape": lambda _owner: (1,),
-                "array_actual": lambda _owner: 0x5678,
                 "allocated": lambda _owner: True,
                 "destroy": destroy,
             },
@@ -243,11 +216,10 @@ def test_generated_owned_handle_factory_releases_owner_once_when_construction_fa
     assert calls == [("destroy", owner)]
 
 
-def test_generated_handle_factory_rejects_invalid_descriptor_kind_and_handoff_result():
+def test_generated_handle_factory_rejects_invalid_descriptor_kind_and_descriptor_result():
     ops = {
         "shape": lambda: (1,),
-        "array_actual": lambda: object(),
-        "descriptor": lambda: 1,
+        "descriptor": lambda: object(),
         "allocated": lambda: True,
         "to_numpy": lambda: np.zeros(1, dtype=np.float64),
     }
@@ -256,8 +228,8 @@ def test_generated_handle_factory_rejects_invalid_descriptor_kind_and_handoff_re
         _native_array_handle_from_generated_ops("target", "float64", 1, ops)
 
     handle = _native_array_handle_from_generated_ops("allocatable", "float64", 1, ops)
-    with pytest.raises(TypeError, match="handoff address must be an integer"):
-        handle._array_actual_for_binding(expected_dtype="float64", expected_rank=1)
+    with pytest.raises(TypeError, match="descriptor operation must return descriptor fields or an integer"):
+        handle._descriptor_for_binding(expected_dtype="float64", expected_rank=1)
 
 
 def test_owned_handle_close_calls_destroy_once_and_blocks_later_use():

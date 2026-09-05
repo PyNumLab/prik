@@ -48,7 +48,16 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
+    assert (
+        "prik_native_array_backend_for_actual(bound_values_table_capsule, 2, 2, "
+        'CFI_type_double, sizeof(double), "float64", "values")'
+    ) in c_source
+    assert (
+        "bound_values_table->with_descriptor(bound_values_table->context, "
+        "prik_fill_array_actual_strided_arrays_strided_values, &bound_values_table_result)"
+    ) in c_source
+    assert "relative_stride = (int64_t)(source->dim[0].sm / base_bytes)" in c_source
+    assert "out->upper_bounds[1] = upper_bound" in c_source
     assert "NPY_FLOAT64, 2, 2, PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F, 0, 1" in c_source
     assert "bound_values_upper_bound_0 = bound_values_actual.upper_bounds[0]" in c_source
     assert "bound_values_stride_1 = bound_values_actual.strides[1]" in c_source

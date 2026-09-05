@@ -26,7 +26,6 @@ def test_descriptor_hook_rejects_generated_none_handoff():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: None,
             "allocated": lambda _handle: False,
             "descriptor": lambda _handle: None,
@@ -46,7 +45,6 @@ def test_descriptor_hook_validates_expected_dtype_rank_and_current_shape():
         dtype=np.dtype(np.float64),
         rank=2,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (2, 3),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: descriptor,
@@ -82,7 +80,6 @@ def test_descriptor_binding_helper_accepts_matching_handles_and_optional_none():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (0,),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: alloc_descriptor,
@@ -93,7 +90,6 @@ def test_descriptor_binding_helper_accepts_matching_handles_and_optional_none():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: None,
             "associated": lambda _handle: False,
             "nullify": lambda _handle: None,
@@ -133,7 +129,6 @@ def test_descriptor_binding_helper_rejects_plain_arrays_none_and_wrong_kind():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (1,),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: _handoff(238),
@@ -160,7 +155,6 @@ def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_st
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (2,),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: direct,
@@ -199,7 +193,6 @@ def test_owned_standard_descriptor_supplies_the_only_read_only_handoff():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (2,),
             "associated": lambda _handle: True,
             "nullify": lambda _handle: None,
@@ -233,7 +226,6 @@ def test_owned_standard_descriptor_supplies_the_only_read_only_handoff():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
             "shape": lambda _handle: (2,),
             "allocated": lambda _handle: True,
             "descriptor": lambda _handle: _handoff(0x5678),

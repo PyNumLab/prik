@@ -880,13 +880,8 @@ class NativeArrayOperation(str, Enum):
     ASSOCIATED = "associated"
     SHAPE = "shape"
     ELEMENT_LENGTH = "element_length"
-    ARRAY_ACTUAL = "array_actual"
     DESCRIPTOR = "descriptor"
     TO_NUMPY = "to_numpy"
-    NATIVE_BYTE_ORDER = "native_byte_order"
-    ALIGNED = "aligned"
-    WRITEABLE = "writeable"
-    LAYOUT = "layout"
     CONTIGUOUS = "contiguous"
     ALLOCATE = "allocate"
     DEALLOCATE = "deallocate"
@@ -1074,7 +1069,7 @@ class NativeArrayActualPolicy:
 
     accepted_sources: tuple[NativeArraySourceKind, ...]
     dtype: str
-    rank: int
+    rank: int | None
     shape: tuple[str, ...]
     order: str | None
     writable: bool

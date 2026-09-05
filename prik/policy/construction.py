@@ -6210,17 +6210,10 @@ def _native_array_handle_wrapper_policy(
     operations = {
         _native_array_enum(NativeArrayOperation, item, owner_path, "operation") for item in completed.operations
     }
-    operations.update(
-        {
-            NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
-            NativeArrayOperation.DESCRIPTOR,
-            NativeArrayOperation.NATIVE_BYTE_ORDER,
-            NativeArrayOperation.ALIGNED,
-            NativeArrayOperation.WRITEABLE,
-            NativeArrayOperation.LAYOUT,
-        }
-    )
+    # Shape and the descriptor are what a handle is asked for.  The storage
+    # facts an ordinary dummy needs are read from the descriptor in the
+    # binding, so no operation reports them.
+    operations.update({NativeArrayOperation.SHAPE, NativeArrayOperation.DESCRIPTOR})
     if semantic_type.name == "String":
         operations.add(NativeArrayOperation.ELEMENT_LENGTH)
         if semantic_type.metadata.get("fortran_character_length") == ":":
@@ -6340,12 +6333,7 @@ def _native_array_default_handle_policy(
             if operation
             in {
                 NativeArrayOperation.SHAPE,
-                NativeArrayOperation.ARRAY_ACTUAL,
                 NativeArrayOperation.DESCRIPTOR,
-                NativeArrayOperation.NATIVE_BYTE_ORDER,
-                NativeArrayOperation.ALIGNED,
-                NativeArrayOperation.WRITEABLE,
-                NativeArrayOperation.LAYOUT,
                 NativeArrayOperation.CONTIGUOUS,
             }
         )
@@ -6532,11 +6520,11 @@ def _native_array_actual_dtype(argument: models.SemanticArgument) -> str | None:
 
     A character actual is matched on its declared width as well as its kind,
     because a handle whose elements are a different length describes different
-    storage.  A width the declaration does not fix cannot be matched at all.
+    storage. An assumed width is read from the live descriptor.
     """
     if argument.semantic_type.name == "String":
         length = _character_length(argument.semantic_type)
-        return None if length is None else f"S{length}"
+        return "S" if length is None else f"S{length}"
     return _NUMPY_DTYPE_NAMES.get(argument.semantic_type.name)
 
 
@@ -6557,8 +6545,6 @@ def _native_array_actual_policy(
     if (
         array is None
         or array.native_order != array.order
-        or array.rank is None
-        or argument.optional
         or decision.transfer is TransferMode.COPY_RETURN
         or decision.python_barrier_action is not PythonBarrierAction.ARRAY_STORAGE
         or decision.native_barrier_action is not NativeBarrierAction.PASS_ARRAY_BUFFER

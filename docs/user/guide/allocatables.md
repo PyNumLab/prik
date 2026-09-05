@@ -50,6 +50,11 @@ Use ordinary `T[...]` when the callable needs only array data:
 def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
+An allocated handle may be passed to that ordinary Fortran array argument;
+PRIK reads the live storage from its descriptor and applies the ordinary array
+contract. This also works for optional, strided, flattened, and assumed-rank
+ordinary arguments when their declared constraints match the handle.
+
 A plain NumPy array cannot satisfy an `Allocatable[T[...]]` parameter because
 it does not carry native allocation state. Use `to_numpy()` when Python needs
 the current array data held by an allocatable handle.

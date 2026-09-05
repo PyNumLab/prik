@@ -7,7 +7,6 @@ what each is exposed as, whether it stays live, and what happens when it is
 handed back to an ordinary Fortran array dummy.
 """
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -18,16 +17,6 @@ from tests.fortran._support.wrapper_build import _build_and_import
 FIXTURES = Path(__file__).parent / "fixtures"
 ARRAY_FORMS_F90_SOURCE = FIXTURES / "native" / "fmodule_array_forms_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
-
-
-def _allocatable_dummy_handoff_supported() -> bool:
-    """Report whether this compiler accepts a handle at an allocatable dummy.
-
-    ifx rejects the established descriptor for that argument form regardless of
-    the bounds it carries, so the round-trip below is checked where it works.
-    The descriptor facts themselves are asserted on every compiler.
-    """
-    return "ifx" not in os.environ.get("PRIK_TEST_FORTRAN_COMPILER", "gfortran")
 
 
 @pytest.fixture(scope="module")
@@ -162,9 +151,8 @@ def test_only_an_allocatable_dummy_carries_the_declared_lower_bound(array_forms)
     """
     assert array_forms.alloc_shifted._descriptor_record_for_binding()["dim"][0]["lower_bound"] == 5
     assert array_forms.alloc_plain._descriptor_record_for_binding()["dim"][0]["lower_bound"] == 1
-    if _allocatable_dummy_handoff_supported():
-        assert array_forms.lower_bound_of(array_forms.alloc_shifted) == np.int32(5)
-        assert array_forms.lower_bound_of(array_forms.alloc_plain) == np.int32(1)
+    assert array_forms.lower_bound_of(array_forms.alloc_shifted) == np.int32(5)
+    assert array_forms.lower_bound_of(array_forms.alloc_plain) == np.int32(1)
 
     # `fixed_shifted` is declared (5:8) and sums the same as any other four
     # elements: nothing downstream can tell where it started.

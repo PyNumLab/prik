@@ -50,25 +50,8 @@ from .models import (
 )
 
 
-_FIELD_HANDLE_LOCAL_OPERATIONS = frozenset(
-    {
-        NativeArrayOperation.NATIVE_BYTE_ORDER,
-        NativeArrayOperation.ALIGNED,
-        NativeArrayOperation.WRITEABLE,
-        NativeArrayOperation.LAYOUT,
-        NativeArrayOperation.TO_NUMPY,
-        NativeArrayOperation.ARRAY_ACTUAL,
-    }
-)
-_MODULE_HANDLE_LOCAL_OPERATIONS = frozenset(
-    {
-        NativeArrayOperation.NATIVE_BYTE_ORDER,
-        NativeArrayOperation.ALIGNED,
-        NativeArrayOperation.WRITEABLE,
-        NativeArrayOperation.LAYOUT,
-        NativeArrayOperation.TO_NUMPY,
-    }
-)
+_FIELD_HANDLE_LOCAL_OPERATIONS = frozenset({NativeArrayOperation.TO_NUMPY})
+_MODULE_HANDLE_LOCAL_OPERATIONS = frozenset({NativeArrayOperation.TO_NUMPY})
 _OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
     {
         NativeArrayOperation.ALLOCATED,
@@ -1020,14 +1003,6 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             return NativeEntrypointSignaturePlan((), self._bool_result())
         if operation is NativeArrayOperation.ELEMENT_LENGTH:
             return NativeEntrypointSignaturePlan((), self._int64_result())
-        if operation is NativeArrayOperation.ARRAY_ACTUAL:
-            # Reading the descriptor already hands the consumer everything an
-            # actual needs, so this operation would repeat that procedure
-            # exactly. It is left unplanned and the binding calls the
-            # descriptor symbol with a callback that keeps only the address.
-            if self._uses_module_allocatable_descriptor(variable):
-                return None
-            return NativeEntrypointSignaturePlan((), self._opaque_result())
         if operation is NativeArrayOperation.SHAPE:
             extents = tuple(
                 self._int64_parameter(f"extent_{axis}", reference=True, intent="out")

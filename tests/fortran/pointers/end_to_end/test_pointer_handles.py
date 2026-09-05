@@ -14,6 +14,7 @@ from tests.fortran._support.wrapper_build import (
     _build_text_and_import,
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
+    _compiler,
     _import_from_build_dir,
     _sole_native_module,
 )
@@ -193,6 +194,7 @@ def {total_name}(values: Pointer[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=workdir / "build",
@@ -231,6 +233,7 @@ def _pointer_handle_module(build_mode: str, tmp_path: Path):
     native_object = _compile_native_object(source, tmp_path / "native")
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",
@@ -247,6 +250,7 @@ def _pointer_descriptor_view_module(tmp_path: Path):
     contract = CONTRACT_FIXTURES / "fpointer_handles_policy" / "__init__.pyi"
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",
@@ -271,8 +275,7 @@ def test_module_and_derived_pointer_handles_track_native_association(
     assert module.module_values is module_handle
     assert module_handle.associated is True
     assert module_handle.shape == (2,)
-    with pytest.raises(ValueError, match="target is noncontiguous"):
-        module.sum_values(module_handle)
+    assert module.sum_values(module_handle) == np.float64(6.0)
     with pytest.raises(NotImplementedError, match="to_numpy extraction is unsupported"):
         module_handle.to_numpy()
 
@@ -477,6 +480,7 @@ def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
@@ -548,6 +552,7 @@ def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
@@ -748,6 +753,7 @@ def total(values: Pointer[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",

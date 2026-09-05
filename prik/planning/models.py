@@ -510,7 +510,7 @@ class NativeArrayActualPlan(StageRecord):
 
     accepted_sources: tuple[NativeArraySourceKind, ...]
     dtype: str
-    rank: int
+    rank: int | None
     shape: tuple[str, ...]
     order: str | None
     writable: bool

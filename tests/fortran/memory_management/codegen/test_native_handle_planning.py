@@ -368,12 +368,14 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
-    assert "prik_native_array_handle_capsule_new(" in c_source
-    assert "prik_native_array_handle_from_capsule(" in c_source
+    assert "prik_native_array_backend_capsule_new(" in c_source
+    assert "prik_native_array_backend_for_descriptor(" in c_source
     assert "PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
     assert "PRIK_NATIVE_ARRAY_KIND_POINTER" in c_source
-    assert "prik_native_array_handle_release(owner_handle)" in c_source
-    assert "bound_values_native_handle = prik_native_array_handle_from_capsule(bound_values_item" in c_source
+    assert "prik_native_array_backend_release(owner_backend)" in c_source
+    assert (
+        "bound_values_native_backend = prik_native_array_backend_for_descriptor(bound_values_item"
+    ) in c_source
     assert "prik_bind_default_memory_handles_replace_values" in c_source
     assert "prik_owned_memory_handles_replace_values_destroy" in c_source
     assert "bound_values_default_binder" in c_source
@@ -414,20 +416,21 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
     assert "result_owner_status = CFI_establish(result, NULL, CFI_attribute_pointer" in c_source
     assert (
-        "PRIK_NATIVE_ARRAY_KIND_POINTER, 1, CFI_type_double, sizeof(double), sizeof(CFI_CDESC_T(1)), result" in c_source
+        "PRIK_NATIVE_ARRAY_KIND_POINTER, 1, (uint32_t)sizeof(CFI_CDESC_T(1)), CFI_type_double, "
+        "sizeof(double), result" in c_source
     )
 
 
-def test_constant_owned_handle_operations_do_not_emit_unused_descriptor_locals():
+def test_owned_descriptor_lifecycle_operations_do_not_materialize_descriptor_locals():
     artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    for operation in ("aligned", "descriptor", "destroy", "layout", "native_byte_order", "writeable"):
+    for operation in ("descriptor", "destroy"):
         function = _generated_c_function(
             c_source,
             f"prik_owned_memory_handles_make_return_{operation}",
         )
-        assert "owner_handle" in function
+        assert "owner_backend" in function
         assert "owner_descriptor" not in function
 
     allocated = _generated_c_function(

@@ -19,10 +19,7 @@ def _handoff(address=1):
 
 
 def _required_handoff_ops():
-    return {
-        "array_actual": lambda _handle: _handoff(101),
-        "descriptor": lambda _handle: _handoff(102),
-    }
+    return {"descriptor": lambda _handle: _handoff(102)}
 
 
 def _common_ops(state: _ArrayState):

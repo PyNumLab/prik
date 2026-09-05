@@ -69,7 +69,6 @@ def test_non_array_allocatable_annotations_are_not_factories(factory, message: s
                 rank=1,
                 ops={
                     "shape": lambda _handle: None,
-                    "array_actual": lambda _handle: None,
                     "descriptor": lambda _handle: None,
                     "allocated": lambda _handle: False,
                 },
@@ -131,7 +130,6 @@ def test_writable_contract_handle_adopts_generated_storage_and_closes_once():
             1,
             {
                 "shape": lambda received_owner: calls.append(("shape", received_owner)) or None,
-                "array_actual": lambda received_owner: 0x5678,
                 "descriptor": lambda received_owner: received_owner,
                 "allocated": lambda received_owner: False,
                 "destroy": lambda received_owner: calls.append(("destroy", received_owner)),

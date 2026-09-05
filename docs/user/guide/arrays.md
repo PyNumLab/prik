@@ -550,6 +550,15 @@ Use this list when reading or editing a generated `.pyi` contract:
   leading axes flattened
 - `T[...]`: assumed-rank, currently rank 1-15
 
+An allocated `Allocatable[T[...]]` handle or associated `Pointer[T[...]]`
+handle can also satisfy a matching ordinary Fortran array argument. The same
+element type, rank, shape, layout, contiguity, and writeability requirements
+apply as for a NumPy array. This includes explicit-shape, assumed-shape,
+positive-strided, assumed-size/`Flat`, and assumed-rank arguments, plus
+fixed-width and assumed-width character arrays. An absent handle is rejected;
+pass `None` only when the ordinary argument itself is optional. C array
+arguments accept NumPy arrays, not Fortran descriptor handles.
+
 Generated contracts may describe a shape with visible arguments, such as
 `T[rows, columns]`. Most users should keep those generated relationships
 unchanged. If you need to edit a complex shape or use a native function to

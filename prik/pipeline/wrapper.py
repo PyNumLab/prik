@@ -3069,7 +3069,6 @@ class WrapperGenerator:
         roles = handle.default_handle.operation_roles
         required = {
             NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
             NativeArrayOperation.DESCRIPTOR,
             NativeArrayOperation.DESTROY,
         }
@@ -3160,11 +3159,17 @@ class WrapperGenerator:
         if actual is None:
             return ()
         array = plan.array
-        expected_sources = (
-            NativeArraySourceKind.NDARRAY,
+        expected_sources = (NativeArraySourceKind.NDARRAY,)
+        handle_sources = {
             NativeArraySourceKind.ALLOCATABLE_HANDLE,
             NativeArraySourceKind.POINTER_HANDLE,
-        )
+        }
+        if handle_sources.intersection(actual.accepted_sources):
+            expected_sources = (
+                *expected_sources,
+                NativeArraySourceKind.ALLOCATABLE_HANDLE,
+                NativeArraySourceKind.POINTER_HANDLE,
+            )
         diagnostics = [
             *self._native_array_actual_source_diagnostics(plan, expected_sources),
             *self._native_array_actual_shape_diagnostics(plan),
@@ -3427,11 +3432,7 @@ class WrapperGenerator:
         handle: NativeArrayHandlePlan,
     ) -> set[NativeArrayOperation]:
         """Return common operations required by the completed descriptor kind."""
-        required = {
-            NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
-            NativeArrayOperation.DESCRIPTOR,
-        }
+        required = {NativeArrayOperation.SHAPE, NativeArrayOperation.DESCRIPTOR}
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
             required.add(NativeArrayOperation.ASSOCIATE)
         return required

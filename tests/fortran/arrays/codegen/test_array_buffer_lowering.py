@@ -74,12 +74,11 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "double bind_c_sum_values(void * values, int64_t values_extent_0);" in c_source
-    # One shared binder call carries every completed selector: dtype, rank
-    # bounds, layout, contiguity, writeability, diagnostic names, and the nine
-    # selectors the native-handle route consumes.
+    # One shared binder call carries the completed NumPy selectors; a generated
+    # native handle is resolved separately through its descriptor table.
     assert (
         "prik_bind_array(bound_values_obj, NPY_FLOAT64, 1, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
-        '1, 1, "numpy.float64", "float64", "values", NULL, 0, 1, 1, 1, 0, 0, 0, 1, 0, -1, '
+        '1, 1, "numpy.float64", "values", 0, '
         "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
     ) in c_source
     assert c_source.count("prik_bind_array(bound_values_obj") == 1

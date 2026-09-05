@@ -23,16 +23,19 @@ select a different view behavior from local descriptor facts.
 ## A Native Array Handle At Runtime
 
 ```text
-generated operation dictionary + dtype, rank, ownership, and view policy
+generated operation dictionary + native descriptor table
+  + dtype, rank, ownership, and view policy
   -> NativeArrayHandleBase validation and owner retention
   -> AllocatableArray or PointerArray
   -> state, lifecycle, association, and to_numpy() operations
 ```
 
 The operation dictionary is the boundary between generated extension code and
-the stable Python handle API. An operation exists only when the completed plan
-allows the generator to expose it. Missing operations fail explicitly rather
-than being inferred from `allocatable` or `pointer` alone.
+the stable Python handle API. The versioned native table is the cross-extension
+C boundary used to inspect a live descriptor without serializing it through
+Python. An operation exists only when the completed plan allows the generator
+to expose it. Missing operations fail explicitly rather than being inferred
+from `allocatable` or `pointer` alone.
 
 ## Local Structure
 
@@ -75,7 +78,8 @@ Resized shape: (4,)
 Generated resize received NumPy extents: True
 ```
 
-The example supplies the same operation-dictionary shape as generated code.
+The example supplies the same Python operation-dictionary shape as generated
+code.
 It creates an allocatable handle, reads its live NumPy view, and routes a
 resize through the adapter. The native header has no standalone Python route;
 the compiler installs it into a generated `binding_support/` directory.

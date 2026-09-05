@@ -23,9 +23,14 @@
 #include <numpy/arrayobject.h>
 #include <numpy/arrayscalars.h>
 
-#define PRIK_NATIVE_ARRAY_HANDLE_ABI_VERSION 1u
-#define PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME "prik.native_array_handle.v1"
-#define PRIK_NATIVE_ARRAY_HANDLE_MAGIC UINT64_C(0x583250594e414831)
+/*
+ * One versioned capsule publishes everything a generated binding needs from
+ * another extension's array handle. The version lives in the capsule name:
+ * PyCapsule_GetPointer refuses a capsule created under any other name, so a
+ * layout change is made by naming a new capsule rather than by adding a
+ * separate magic word and version field for the reader to compare.
+ */
+#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME "prik.native_array_backend.v1"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
 
@@ -59,21 +64,30 @@ void *prik_capture_address(void *base)
 }
 #endif
 
-#define PRIK_NATIVE_ARRAY_OPS_ABI_VERSION 1u
-#define PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME "prik.native_array_ops.v1"
-#define PRIK_NATIVE_ARRAY_OPS_MAGIC UINT64_C(0x583250594e414f50)
-
 /*
- * Consumer for one descriptor the Fortran runtime builds for a single call.
+ * Consumer for one descriptor that is valid only while it runs.
  * The descriptor stays a compiler-owned representation here, as everywhere
- * else in this header, so this record does not depend on the Fortran interop
- * header and stays usable from a C-only extension.
+ * else in this header, so this signature does not depend on the Fortran
+ * interop header and stays usable from a C-only extension.
  */
 typedef void (*prik_native_array_descriptor_fn)(void *descriptor, void *context);
 
 /*
+ * Enter the native entity and run `consumer` while its descriptor is live.
+ * `context` is whatever that entity needs to be reached; see the backend
+ * record below.
+ */
+typedef void (*prik_native_array_with_descriptor_fn)(
+    void *context,
+    prik_native_array_descriptor_fn consumer,
+    void *consumer_context);
+
+/* Release the storage a backend owns. NULL when the backend borrows it. */
+typedef void (*prik_native_array_release_fn)(void *context);
+
+/*
  * Bridges a generated descriptor bridge, whose consumer takes the compiler's
- * descriptor type, to a table consumer that takes it as void *. Forwarding
+ * descriptor type, to a backend consumer that takes it as void *. Forwarding
  * through this record avoids casting between function pointer types.
  */
 typedef struct {
@@ -82,28 +96,44 @@ typedef struct {
 } prik_native_array_descriptor_forward;
 
 /*
- * Versioned cross-extension table of native entry points for one array
- * handle. The pointers are the generated bridge symbols for the entity the
- * handle stands for, and `owner` is the address that entity needs -- the
- * parent object for a derived-type field, NULL for a module variable. It is
- * resolved once when the handle is built, so reaching the entity costs one
- * indirect call instead of a Python attribute lookup per operation.
+ * Versioned cross-extension backend for one array handle.
  *
- * `scoped_descriptor` invokes a consumer while the runtime's descriptor is
- * valid. The consumer decides what to do with it: copy the record out, or
- * make the native call in place while it is still live.
+ * `with_descriptor(context, ...)` is the single entry point: it produces a
+ * live descriptor and runs the consumer on it. `context` is the address that
+ * entity needs -- the parent object for a derived-type field, the wrapper's
+ * own descriptor storage for an owned handle, NULL for a module variable --
+ * and is resolved once when the handle is built, so reaching the entity costs
+ * one indirect call instead of a Python attribute lookup per operation.
+ *
+ * A borrowed backend enters Fortran, which builds the descriptor for the call
+ * and copies back what the consumer wrote; the descriptor is gone when the
+ * consumer returns and must never be retained. An owned backend hands over the
+ * persistent storage it allocated, which stays valid for the handle's life.
+ * Consumers cannot tell the two apart, and must not try to.
+ *
+ * The leading metadata refuses an incompatible producer before any descriptor
+ * is interpreted:
+ *  - struct_size attests this exact record layout;
+ *  - descriptor_size attests the producer's CFI_CDESC_T(rank) layout, which
+ *    nothing in the descriptor itself can be read to establish;
+ *  - descriptor_kind, rank, cfi_type and element_size are what a reader
+ *    compares against the dummy it is filling, and reporting them here means
+ *    a mismatch is refused without entering Fortran at all.
+ * element_size is 0 when the element width is only known at run time, as for
+ * a deferred-length character array; such a reader takes it from the live
+ * descriptor's elem_len instead.
  */
 typedef struct {
-    uint64_t magic;
-    uint32_t abi_version;
     uint32_t struct_size;
     uint32_t descriptor_kind;
     uint32_t rank;
+    uint32_t descriptor_size;
     int32_t cfi_type;
     size_t element_size;
-    void *owner;
-    void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context);
-} prik_native_array_ops;
+    void *context;
+    prik_native_array_with_descriptor_fn with_descriptor;
+    prik_native_array_release_fn release;
+} prik_native_array_backend;
 
 /*
  * Hand over a descriptor the wrapper itself owns.
@@ -112,180 +142,225 @@ typedef struct {
  * allocated its descriptor when the handle was first bound and keeps it for
  * the handle's lifetime. There is no call-scoped window to stay inside, so
  * the consumer runs on that storage directly. Publishing it through the same
- * table lets such a handle reach a call the way a module array does, without
- * a Python round trip per call.
+ * backend lets such a handle reach a call the way a module array does.
  */
-static inline void prik_native_array_owned_scoped_descriptor(
-    void *owner,
+static inline void prik_native_array_owned_with_descriptor(
+    void *context,
     prik_native_array_descriptor_fn consumer,
-    void *context)
+    void *consumer_context)
 {
-    consumer(owner, context);
-}
-
-/* Free the per-handle entry-point table a capsule owns. */
-static inline void prik_native_array_ops_capsule_destructor(PyObject *capsule)
-{
-    void *ops;
-
-    ops = PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
-    if (ops == NULL) {
-        PyErr_Clear();
-        return;
-    }
-    free(ops);
+    consumer(context, consumer_context);
 }
 
 /*
- * Publish a per-handle entry-point table. A handle whose entity needs an
- * owner address cannot share one file-scope record, so its table is built
- * when the handle is and released with the capsule that carries it.
+ * Release owned storage exactly once.
+ *
+ * `release` is non-NULL only when `context` is storage this extension
+ * allocated, so a borrowed backend -- a module variable's, a field's -- never
+ * reaches the free below and Python never releases native storage it does not
+ * own. Clearing `context` makes the release idempotent, so an explicit
+ * close() and finalization can both run.
  */
-static inline PyObject *prik_native_array_ops_capsule_new(
+static inline void prik_native_array_backend_release(prik_native_array_backend *backend)
+{
+    void *context;
+
+    if (backend == NULL || backend->release == NULL || backend->context == NULL) {
+        return;
+    }
+    context = backend->context;
+    backend->context = NULL;
+    backend->release(context);
+    free(context);
+}
+
+/* Finalize one backend record owned by a Python capsule. */
+static inline void prik_native_array_backend_capsule_destructor(PyObject *capsule)
+{
+    PyObject *error_type = NULL;
+    PyObject *error_value = NULL;
+    PyObject *error_traceback = NULL;
+    prik_native_array_backend *backend;
+
+    PyErr_Fetch(&error_type, &error_value, &error_traceback);
+    backend = (prik_native_array_backend *)PyCapsule_GetPointer(
+        capsule, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME);
+    if (backend == NULL) {
+        PyErr_Clear();
+    } else {
+        prik_native_array_backend_release(backend);
+        free(backend);
+    }
+    PyErr_Restore(error_type, error_value, error_traceback);
+}
+
+/*
+ * Publish a per-handle backend.
+ *
+ * A handle whose entity needs a context address, or whose storage this
+ * extension owns, cannot share one file-scope record, so its backend is built
+ * when the handle is and released with the capsule that carries it. A module
+ * variable needs neither, and publishes a file-scope record directly.
+ *
+ * Ownership of `context` transfers only on success: when this returns NULL the
+ * caller is still responsible for releasing it.
+ */
+static inline PyObject *prik_native_array_backend_capsule_new(
     uint32_t descriptor_kind,
     uint32_t rank,
+    uint32_t descriptor_size,
     int cfi_type,
     size_t element_size,
-    void *owner,
-    void (*scoped_descriptor)(void *owner, prik_native_array_descriptor_fn consumer, void *context))
+    void *context,
+    prik_native_array_with_descriptor_fn with_descriptor,
+    prik_native_array_release_fn release)
 {
-    prik_native_array_ops *ops;
+    prik_native_array_backend *backend;
     PyObject *capsule;
 
-    if (scoped_descriptor == NULL) {
-        PyErr_SetString(PyExc_ValueError, "prik native array ops needs a descriptor entry point");
+    if (descriptor_kind != PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE
+        && descriptor_kind != PRIK_NATIVE_ARRAY_KIND_POINTER) {
+        PyErr_SetString(PyExc_ValueError, "invalid prik native array descriptor kind");
         return NULL;
     }
-    ops = (prik_native_array_ops *)calloc(1, sizeof(*ops));
-    if (ops == NULL) {
+    if (with_descriptor == NULL) {
+        PyErr_SetString(PyExc_ValueError, "prik native array backend needs a descriptor entry point");
+        return NULL;
+    }
+    if (release != NULL && context == NULL) {
+        PyErr_SetString(PyExc_ValueError, "prik native array backend has no storage to release");
+        return NULL;
+    }
+    backend = (prik_native_array_backend *)calloc(1, sizeof(*backend));
+    if (backend == NULL) {
         PyErr_NoMemory();
         return NULL;
     }
-    ops->magic = PRIK_NATIVE_ARRAY_OPS_MAGIC;
-    ops->abi_version = PRIK_NATIVE_ARRAY_OPS_ABI_VERSION;
-    ops->struct_size = (uint32_t)sizeof(*ops);
-    ops->descriptor_kind = descriptor_kind;
-    ops->rank = rank;
-    ops->cfi_type = (int32_t)cfi_type;
-    ops->element_size = element_size;
-    ops->owner = owner;
-    ops->scoped_descriptor = scoped_descriptor;
-    capsule = PyCapsule_New(ops, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME, prik_native_array_ops_capsule_destructor);
+    backend->struct_size = (uint32_t)sizeof(*backend);
+    backend->descriptor_kind = descriptor_kind;
+    backend->rank = rank;
+    backend->descriptor_size = descriptor_size;
+    backend->cfi_type = (int32_t)cfi_type;
+    backend->element_size = element_size;
+    backend->context = context;
+    backend->with_descriptor = with_descriptor;
+    backend->release = release;
+    capsule = PyCapsule_New(
+        backend, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME, prik_native_array_backend_capsule_destructor);
     if (capsule == NULL) {
-        free(ops);
+        backend->context = NULL;
+        free(backend);
     }
     return capsule;
 }
 
-/* Decode one ops capsule, rejecting a record this extension cannot read. */
 /*
- * Read a table for an ordinary array actual.
+ * Unwrap a backend capsule and check what makes its record usable at all.
+ *
+ * A backend that owns its storage and has released it is closed; a borrowed
+ * one has no storage of its own and its NULL context means only that its
+ * entity needs no address.
+ */
+static inline prik_native_array_backend *prik_native_array_backend_from_capsule(PyObject *capsule)
+{
+    prik_native_array_backend *backend;
+
+    backend = (prik_native_array_backend *)PyCapsule_GetPointer(
+        capsule, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME);
+    if (backend == NULL) {
+        return NULL;
+    }
+    if (backend->struct_size != (uint32_t)sizeof(*backend) || backend->with_descriptor == NULL) {
+        PyErr_SetString(PyExc_TypeError, "incompatible prik native array backend record");
+        return NULL;
+    }
+    if (backend->release != NULL && backend->context == NULL) {
+        PyErr_SetString(PyExc_ReferenceError, "prik native array handle is closed");
+        return NULL;
+    }
+    return backend;
+}
+
+/*
+ * Read a backend for a descriptor dummy.
+ *
+ * Such a dummy is declared allocatable or pointer, so the handle's own kind
+ * has to be the declared one; everything else about the storage must match the
+ * declaration too. `expected_element_size` is 0 for a dummy that takes its
+ * width from the actual.
+ */
+static inline prik_native_array_backend *prik_native_array_backend_for_descriptor(
+    PyObject *capsule,
+    uint32_t expected_descriptor_kind,
+    uint32_t expected_rank,
+    uint32_t expected_descriptor_size,
+    int expected_cfi_type,
+    size_t expected_element_size)
+{
+    prik_native_array_backend *backend;
+
+    backend = prik_native_array_backend_from_capsule(capsule);
+    if (backend == NULL) {
+        return NULL;
+    }
+    if (backend->descriptor_size != expected_descriptor_size) {
+        PyErr_SetString(PyExc_TypeError, "incompatible Fortran descriptor storage size");
+        return NULL;
+    }
+    if (backend->descriptor_kind != expected_descriptor_kind || backend->rank != expected_rank
+        || backend->cfi_type != expected_cfi_type
+        || (expected_element_size != 0 && backend->element_size != expected_element_size)) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
+        return NULL;
+    }
+    return backend;
+}
+
+/*
+ * Read a backend for an ordinary array actual.
  *
  * An ordinary array dummy takes the storage behind a handle, not the handle's
  * descriptor kind: an allocatable and a pointer are equally acceptable there,
  * so the kind is not compared. Everything that decides whether the storage
- * matches the dummy -- rank, element type and element size -- still is.
+ * matches the dummy -- rank, element type and element size -- still is, and a
+ * character dummy that takes its width from the actual passes 0 for the size.
  */
-static inline prik_native_array_ops *prik_native_array_ops_actual_from_capsule(
+static inline prik_native_array_backend *prik_native_array_backend_for_actual(
     PyObject *capsule,
-    uint32_t expected_rank,
+    uint32_t minimum_rank,
+    uint32_t maximum_rank,
     int expected_cfi_type,
     size_t expected_element_size,
     const char *dtype_name,
     const char *argument_name)
 {
-    prik_native_array_ops *ops;
+    prik_native_array_backend *backend;
 
-    ops = (prik_native_array_ops *)PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
-    if (ops == NULL) {
+    backend = prik_native_array_backend_from_capsule(capsule);
+    if (backend == NULL) {
         return NULL;
     }
-    if (ops->magic != PRIK_NATIVE_ARRAY_OPS_MAGIC
-        || ops->abi_version != PRIK_NATIVE_ARRAY_OPS_ABI_VERSION
-        || ops->struct_size != (uint32_t)sizeof(*ops)
-        || ops->scoped_descriptor == NULL) {
-        PyErr_SetString(PyExc_TypeError, "incompatible prik native array ops record");
-        return NULL;
-    }
-    /* Zero means the handle states the fact rather than matching one: a
-       character dummy takes its width from the actual, and a dummy whose
-       storage is flattened takes an actual of any rank.
-
-       A handle describing different storage is reported here, naming what the
-       dummy expects and what the handle carries. */
-    if ((expected_rank != 0 && ops->rank != expected_rank) || ops->cfi_type != expected_cfi_type
-        || (expected_element_size != 0 && ops->element_size != expected_element_size)) {
+    if (backend->rank < minimum_rank || backend->rank > maximum_rank
+        || backend->cfi_type != expected_cfi_type
+        || (expected_element_size != 0 && backend->element_size != expected_element_size)) {
         PyErr_Format(
             PyExc_TypeError,
             "%s handle of rank %u with %zu-byte elements does not match expected dtype %s for argument %s",
-            ops->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER ? "pointer" : "allocatable",
-            (unsigned)ops->rank,
-            ops->element_size,
+            backend->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER ? "pointer" : "allocatable",
+            (unsigned)backend->rank,
+            backend->element_size,
             dtype_name,
             argument_name);
         return NULL;
     }
-    return ops;
+    return backend;
 }
-
-static inline prik_native_array_ops *prik_native_array_ops_from_capsule(
-    PyObject *capsule,
-    uint32_t expected_descriptor_kind,
-    uint32_t expected_rank,
-    int expected_cfi_type,
-    size_t expected_element_size)
-{
-    prik_native_array_ops *ops;
-
-    ops = (prik_native_array_ops *)PyCapsule_GetPointer(capsule, PRIK_NATIVE_ARRAY_OPS_CAPSULE_NAME);
-    if (ops == NULL) {
-        return NULL;
-    }
-    if (ops->magic != PRIK_NATIVE_ARRAY_OPS_MAGIC
-        || ops->abi_version != PRIK_NATIVE_ARRAY_OPS_ABI_VERSION
-        || ops->struct_size != (uint32_t)sizeof(*ops)) {
-        PyErr_SetString(PyExc_TypeError, "incompatible prik native array ops record");
-        return NULL;
-    }
-    if (ops->scoped_descriptor == NULL) {
-        PyErr_SetString(PyExc_TypeError, "prik native array ops record has no descriptor entry point");
-        return NULL;
-    }
-    if (ops->descriptor_kind != expected_descriptor_kind || ops->rank != expected_rank
-        || ops->cfi_type != expected_cfi_type || ops->element_size != expected_element_size) {
-        PyErr_SetString(PyExc_TypeError, "native array handle does not match the declared dummy argument");
-        return NULL;
-    }
-    return ops;
-}
-
-typedef void (*prik_native_array_release_fn)(void *descriptor);
-
-/*
- * Versioned cross-extension record for one persistent Fortran array
- * descriptor. The descriptor representation remains compiler-owned; this
- * record only makes its metadata, ownership, and validation ABI common to
- * independently generated prik extensions.
- */
-typedef struct {
-    uint64_t magic;
-    uint32_t abi_version;
-    uint32_t struct_size;
-    uint32_t descriptor_kind;
-    uint32_t rank;
-    int32_t cfi_type;
-    uint32_t reserved;
-    size_t element_size;
-    size_t descriptor_size;
-    void *descriptor;
-    prik_native_array_release_fn release;
-} prik_native_array_handle;
 
 #define PRIK_MAX_ARRAY_RANK 15
 
 #ifdef PRIK_BINDING_NATIVE_ARRAY_ACTUAL
 
-/* Mechanical result of the normal-array native-handle slow path. */
+/* Mechanical result of reading a live handle descriptor for an ordinary array. */
 typedef struct {
     void *data;
     int64_t rank;
@@ -296,7 +371,6 @@ typedef struct {
 } prik_array_actual;
 #endif
 
-/* Release descriptor payload and storage at most once while retaining the record. */
 /* Build a Python string from caller-supplied status-message storage.
 
    The read never passes ``capacity`` because a native writer is not obliged to
@@ -316,313 +390,6 @@ static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t c
     return PyUnicode_FromStringAndSize(bytes, length);
 }
 
-
-/*
- * Release for a descriptor this extension copied but does not own. The copy
- * itself is freed by prik_native_array_handle_release; the Fortran allocation
- * it describes belongs to the module or parent object that declared it and
- * must never be deallocated here.
- */
-static inline void prik_release_borrowed_native_descriptor(void *descriptor)
-{
-    (void)descriptor;
-}
-
-static inline void prik_native_array_handle_release(prik_native_array_handle *handle)
-{
-    void *descriptor;
-
-    if (handle == NULL || handle->descriptor == NULL) {
-        return;
-    }
-    descriptor = handle->descriptor;
-    handle->descriptor = NULL;
-    if (handle->release != NULL) {
-        handle->release(descriptor);
-    }
-    free(descriptor);
-}
-
-/* Finalize one native handle record owned by a Python capsule. */
-static inline void prik_native_array_handle_capsule_destructor(PyObject *capsule)
-{
-    PyObject *error_type = NULL;
-    PyObject *error_value = NULL;
-    PyObject *error_traceback = NULL;
-    prik_native_array_handle *handle;
-
-    PyErr_Fetch(&error_type, &error_value, &error_traceback);
-    handle = (prik_native_array_handle *)PyCapsule_GetPointer(
-        capsule, PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME);
-    if (handle == NULL) {
-        PyErr_Clear();
-    } else {
-        prik_native_array_handle_release(handle);
-        handle->magic = 0;
-        free(handle);
-    }
-    PyErr_Restore(error_type, error_value, error_traceback);
-}
-
-/*
- * Create a capsule that takes descriptor ownership only on success. The
- * caller remains responsible for descriptor cleanup when this function
- * returns NULL.
- */
-static inline PyObject *prik_native_array_handle_capsule_new(
-    uint32_t descriptor_kind,
-    uint32_t rank,
-    int cfi_type,
-    size_t element_size,
-    size_t descriptor_size,
-    void *descriptor,
-    prik_native_array_release_fn release)
-{
-    prik_native_array_handle *handle;
-    PyObject *capsule;
-
-    if (descriptor_kind != PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE
-        && descriptor_kind != PRIK_NATIVE_ARRAY_KIND_POINTER) {
-        PyErr_SetString(PyExc_ValueError, "invalid prik native array descriptor kind");
-        return NULL;
-    }
-    if (descriptor == NULL || descriptor_size == 0 || element_size == 0 || release == NULL) {
-        PyErr_SetString(PyExc_ValueError, "incomplete prik native array handle storage");
-        return NULL;
-    }
-    handle = (prik_native_array_handle *)calloc(1, sizeof(*handle));
-    if (handle == NULL) {
-        PyErr_NoMemory();
-        return NULL;
-    }
-    handle->magic = PRIK_NATIVE_ARRAY_HANDLE_MAGIC;
-    handle->abi_version = PRIK_NATIVE_ARRAY_HANDLE_ABI_VERSION;
-    handle->struct_size = (uint32_t)sizeof(*handle);
-    handle->descriptor_kind = descriptor_kind;
-    handle->rank = rank;
-    handle->cfi_type = (int32_t)cfi_type;
-    handle->element_size = element_size;
-    handle->descriptor_size = descriptor_size;
-    handle->descriptor = descriptor;
-    handle->release = release;
-    capsule = PyCapsule_New(
-        handle,
-        PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME,
-        prik_native_array_handle_capsule_destructor);
-    if (capsule == NULL) {
-        handle->descriptor = NULL;
-        handle->magic = 0;
-        free(handle);
-    }
-    return capsule;
-}
-
-/* Validate and unwrap one cross-extension native array handle capsule. */
-static inline prik_native_array_handle *prik_native_array_handle_from_capsule(
-    PyObject *capsule,
-    uint32_t expected_kind,
-    uint32_t expected_rank,
-    int expected_cfi_type,
-    size_t expected_element_size,
-    size_t expected_descriptor_size)
-{
-    prik_native_array_handle *handle;
-
-    if (!PyCapsule_IsValid(capsule, PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME)) {
-        PyErr_SetString(PyExc_TypeError, "incompatible prik native array handle capsule");
-        return NULL;
-    }
-    handle = (prik_native_array_handle *)PyCapsule_GetPointer(
-        capsule, PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME);
-    if (handle == NULL) {
-        return NULL;
-    }
-    if (handle->magic != PRIK_NATIVE_ARRAY_HANDLE_MAGIC
-        || handle->abi_version != PRIK_NATIVE_ARRAY_HANDLE_ABI_VERSION
-        || handle->struct_size != sizeof(*handle)) {
-        PyErr_SetString(PyExc_TypeError, "incompatible prik native array handle ABI");
-        return NULL;
-    }
-    if (handle->descriptor_kind != expected_kind) {
-        PyErr_SetString(PyExc_TypeError, "prik native array descriptor kind does not match");
-        return NULL;
-    }
-    if (handle->rank != expected_rank) {
-        PyErr_SetString(PyExc_ValueError, "prik native array descriptor rank does not match");
-        return NULL;
-    }
-    if (handle->cfi_type != expected_cfi_type) {
-        PyErr_SetString(PyExc_TypeError, "prik native array element type does not match");
-        return NULL;
-    }
-    if (expected_element_size != 0 && handle->element_size != expected_element_size) {
-        PyErr_SetString(PyExc_TypeError, "prik native array element size does not match");
-        return NULL;
-    }
-    if (handle->descriptor_size != expected_descriptor_size) {
-        PyErr_SetString(PyExc_TypeError, "incompatible Fortran descriptor storage size");
-        return NULL;
-    }
-    if (handle->descriptor == NULL) {
-        PyErr_SetString(PyExc_ReferenceError, "prik native array handle is closed");
-        return NULL;
-    }
-    return handle;
-}
-
-/*
- * Execute the Python native-handle handoff once per slow-path call site.
- * The completed wrapper plan supplies every contract selector; this helper
- * only performs reference management and decodes the returned ABI fields.
- */
-#ifdef PRIK_BINDING_NATIVE_ARRAY_ACTUAL
-PRIK_NO_INLINE static int prik_array_actual_unpack(
-    PyObject *value,
-    const char *dtype,
-    int expected_rank,
-    PyObject *expected_shape,
-    const char *expected_layout,
-    int require_writeable,
-    int require_native_byte_order,
-    int require_aligned,
-    int include_rank,
-    int include_itemsize,
-    int include_strides,
-    int require_contiguous,
-    int flatten_storage,
-    int flat_axis,
-    prik_array_actual *actual)
-{
-    PyObject *runtime = NULL;
-    PyObject *helper = NULL;
-    PyObject *layout = NULL;
-    PyObject *packed = NULL;
-    PyObject *item;
-    Py_ssize_t expected_fields;
-    Py_ssize_t position;
-    int axis;
-
-    if (expected_shape == NULL || actual == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "prik generated an incomplete native array actual");
-        return -1;
-    }
-    if (expected_rank < 1 || expected_rank > PRIK_MAX_ARRAY_RANK) {
-        PyErr_SetString(PyExc_RuntimeError, "prik generated an invalid native array rank");
-        return -1;
-    }
-
-    actual->data = NULL;
-    actual->rank = 0;
-    actual->itemsize = 0;
-    for (axis = 0; axis < PRIK_MAX_ARRAY_RANK; axis++) {
-        actual->extents[axis] = 0;
-        actual->upper_bounds[axis] = 0;
-        actual->strides[axis] = 1;
-    }
-
-    if (expected_layout == NULL) {
-        layout = Py_None;
-        Py_INCREF(layout);
-    } else {
-        layout = PyUnicode_FromString(expected_layout);
-        if (layout == NULL) {
-            return -1;
-        }
-    }
-    runtime = PyImport_ImportModule("prik.runtime.handles");
-    if (runtime == NULL) {
-        Py_DECREF(layout);
-        return -1;
-    }
-    helper = PyObject_GetAttrString(runtime, "_native_array_actual_argument_for_binding_positional");
-    Py_DECREF(runtime);
-    if (helper == NULL) {
-        Py_DECREF(layout);
-        return -1;
-    }
-    packed = PyObject_CallFunction(
-        helper,
-        "OsiOOiiiiiiiii",
-        value,
-        dtype,
-        expected_rank,
-        expected_shape,
-        layout,
-        require_writeable,
-        require_native_byte_order,
-        require_aligned,
-        include_rank,
-        include_itemsize,
-        include_strides,
-        require_contiguous,
-        flatten_storage,
-        flat_axis);
-    Py_DECREF(helper);
-    Py_DECREF(layout);
-    if (packed == NULL) {
-        return -1;
-    }
-
-    expected_fields = 1 + include_rank + include_itemsize + expected_rank;
-    if (include_strides) {
-        expected_fields += 2 * expected_rank;
-    }
-    if (!PyTuple_Check(packed) || PyTuple_GET_SIZE(packed) != expected_fields) {
-        PyErr_SetString(PyExc_RuntimeError, "prik native array handoff returned invalid ABI fields");
-        Py_DECREF(packed);
-        return -1;
-    }
-
-    position = 0;
-    actual->data = PyLong_AsVoidPtr(PyTuple_GET_ITEM(packed, position++));
-    if (actual->data == NULL && PyErr_Occurred()) {
-        Py_DECREF(packed);
-        return -1;
-    }
-    if (include_rank) {
-        actual->rank = (int64_t)PyLong_AsLongLong(PyTuple_GET_ITEM(packed, position++));
-        if (PyErr_Occurred()) {
-            Py_DECREF(packed);
-            return -1;
-        }
-    }
-    if (include_itemsize) {
-        actual->itemsize = (int64_t)PyLong_AsLongLong(PyTuple_GET_ITEM(packed, position++));
-        if (PyErr_Occurred()) {
-            Py_DECREF(packed);
-            return -1;
-        }
-    }
-    for (axis = 0; axis < expected_rank; axis++) {
-        item = PyTuple_GET_ITEM(packed, position++);
-        actual->extents[axis] = (int64_t)PyLong_AsLongLong(item);
-        if (PyErr_Occurred()) {
-            Py_DECREF(packed);
-            return -1;
-        }
-    }
-    if (include_strides) {
-        for (axis = 0; axis < expected_rank; axis++) {
-            item = PyTuple_GET_ITEM(packed, position++);
-            actual->upper_bounds[axis] = (int64_t)PyLong_AsLongLong(item);
-            if (PyErr_Occurred()) {
-                Py_DECREF(packed);
-                return -1;
-            }
-        }
-        for (axis = 0; axis < expected_rank; axis++) {
-            item = PyTuple_GET_ITEM(packed, position++);
-            actual->strides[axis] = (int64_t)PyLong_AsLongLong(item);
-            if (PyErr_Occurred()) {
-                Py_DECREF(packed);
-                return -1;
-            }
-        }
-    }
-    Py_DECREF(packed);
-    return 0;
-}
-#endif
 
 /* Completed selectors for compact ordinary NumPy-array validation. */
 #define PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS 0
@@ -765,17 +532,9 @@ static inline int prik_array_validate(
  *
  * A wrapper needs two things from an array argument: the raw pointer handed to
  * the native entrypoint, and one extent per contract axis. Obtaining them takes
- * two routes. A NumPy array is validated and read directly, which is the route
- * every ordinary call takes. Anything else is a native array handle returned
- * earlier by generated code, whose Fortran-owned descriptor is resolved through
- * prik.runtime.handles; that route also produces the diagnostics for an
- * argument that is neither.
- *
- * Both routes live here so the emitted wrapper carries one call instead of the
- * whole sequence. Every parameter is a selector already decided by the
- * completed wrapper plan; this helper makes no interoperability decision of
- * its own, and each is passed directly rather than through a descriptor struct
- * so the values arrive in registers instead of behind a pointer.
+ * two routes. This helper validates and reads NumPy arrays. Generated wrappers
+ * read native handles through their versioned descriptor table before falling
+ * back here for the NumPy route and the common wrong-type diagnostic.
  *
  *   object              the Python argument to bind
  *   numpy_type          NPY_* element selector the plan chose for this array
@@ -789,18 +548,11 @@ static inline int prik_array_validate(
  *   require_contiguous  non-zero when the plan requires contiguous storage
  *   require_writeable   non-zero when the plan may write through this argument
  *   python_type         public dtype name used in diagnostics, "numpy.float64"
- *   dtype_name          handoff dtype name for the handle route, "float64"
  *   argument_name       public argument name used in diagnostics
- *   order               handoff ordering for the handle route, "F", "C", or NULL
  *   flatten_axis        contract axis that absorbs every trailing runtime axis;
  *                       `rank - 1` when the plan does not flatten
- *   actual_*            the nine handle-route selectors passed straight through
- *                       to prik_array_actual_unpack
  *   fixed               one entry per contract axis: the required extent, or
- *                       -1 when the axis is free. A required extent is checked
- *                       on the direct route and becomes the expected-shape
- *                       entry on the handle route; a free axis is neither
- *                       checked nor constrained
+ *                       -1 when the axis is free
  *   data                receives the pointer passed to the native entrypoint
  *   extents             receives one extent per contract axis
  *
@@ -817,19 +569,8 @@ PRIK_NO_INLINE static int prik_bind_array(
     int require_contiguous,
     int require_writeable,
     const char *python_type,
-    const char *dtype_name,
     const char *argument_name,
-    const char *order,
     int flatten_axis,
-    int actual_writable,
-    int actual_native_byte_order,
-    int actual_aligned,
-    int actual_runtime_rank,
-    int actual_itemsize,
-    int actual_strides,
-    int actual_contiguous,
-    int actual_flatten,
-    int actual_flat_axis,
     const long long *fixed,
     void **data,
     int64_t *extents)
@@ -862,41 +603,15 @@ PRIK_NO_INLINE static int prik_bind_array(
         }
         return 0;
     }
-    {
-        PyObject *shape = PyTuple_New(rank);
-        prik_array_actual actual;
-        if (shape == NULL) {
-            return -1;
-        }
-        for (axis = 0; axis < rank; ++axis) {
-            PyObject *item;
-            if (fixed[axis] >= 0) {
-                item = PyLong_FromLongLong(fixed[axis]);
-            } else {
-                Py_INCREF(Py_None);
-                item = Py_None;
-            }
-            if (item == NULL) {
-                Py_DECREF(shape);
-                return -1;
-            }
-            PyTuple_SET_ITEM(shape, axis, item);
-        }
-        if (prik_array_actual_unpack(
-                object, dtype_name, rank, shape, order,
-                actual_writable, actual_native_byte_order, actual_aligned,
-                actual_runtime_rank, actual_itemsize, actual_strides,
-                actual_contiguous, actual_flatten, actual_flat_axis, &actual) < 0) {
-            Py_DECREF(shape);
-            return -1;
-        }
-        Py_DECREF(shape);
-        *data = actual.data;
-        for (axis = 0; axis < rank; ++axis) {
-            extents[axis] = actual.extents[axis];
-        }
-        return 0;
-    }
+    /* A generated wrapper takes an accepted handle route before calling this
+       ndarray-only helper. */
+    PyErr_Format(
+        PyExc_TypeError,
+        "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
+        python_type,
+        argument_name,
+        Py_TYPE(object)->tp_name);
+    return -1;
 }
 #endif
 

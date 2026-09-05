@@ -49,10 +49,12 @@ Use ordinary `T[...]` when the callable needs only array data:
 def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
-An associated pointer handle may satisfy an ordinary array parameter when its
-dtype, rank, shape, layout, and contiguity meet that parameter's contract. A
-plain NumPy array cannot satisfy a `Pointer[T[...]]` parameter because it does
-not carry a native pointer descriptor.
+An associated pointer handle may satisfy an ordinary Fortran array parameter
+when its dtype, rank, shape, layout, contiguity, and writeability meet that
+parameter's contract. Positive-strided targets are accepted by matching
+strided arguments; optional, flattened, and assumed-rank ordinary arguments
+use the same rules. A plain NumPy array cannot satisfy a `Pointer[T[...]]`
+parameter because it does not carry a native pointer descriptor.
 
 ---
 
