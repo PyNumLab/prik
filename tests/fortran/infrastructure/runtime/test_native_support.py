@@ -1,5 +1,7 @@
 """Public native-binding support surface checks."""
 
+import re
+
 from tests.fortran._support.paths import REPO_ROOT
 
 
@@ -38,34 +40,70 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert f"prik_{suffix}_to_numpy" in header
 
 
-def test_native_array_backend_capsule_states_one_version_and_one_entry_point():
-    """The cross-extension array ABI: its version, layout, and validation.
+BACKEND_RECORD_V1 = (
+    ("uint32_t", "struct_size"),
+    ("uint32_t", "descriptor_kind"),
+    ("uint32_t", "rank"),
+    ("uint32_t", "descriptor_size"),
+    ("int32_t", "cfi_type"),
+    ("size_t", "element_size"),
+    ("void *", "context"),
+    ("prik_native_array_with_descriptor_fn", "with_descriptor"),
+    ("prik_native_array_release_fn", "release"),
+)
 
-    Independently generated extensions exchange array handles through this one
-    capsule, so its name carries the version -- PyCapsule_GetPointer refuses a
-    capsule created under any other name -- and the record carries only what a
-    reader must compare before it interprets a descriptor it did not build.
+
+def _backend_record_fields(header: str) -> tuple[tuple[str, str], ...]:
+    """Return the declared record in order, as (type, name) pairs."""
+    # A struct body has no braces of its own, so this cannot span the record before it.
+    body = re.search(r"typedef struct \{\n([^{}]*?)\n\} prik_native_array_backend;", header, re.S)
+    assert body is not None, "prik_native_array_backend is not declared as one struct"
+    fields = []
+    for line in body.group(1).strip().splitlines():
+        declaration = line.strip().rstrip(";")
+        spelling, _, name = declaration.rpartition(" ")
+        if name.startswith("*"):
+            spelling, name = f"{spelling} *", name[1:]
+        fields.append((spelling.strip(), name))
+    return tuple(fields)
+
+
+def test_the_backend_record_and_its_version_name_change_together():
+    """The capsule name is the ABI version, so the record may not move under it.
+
+    Nothing inside the record says which layout wrote it: a reader asks
+    ``PyCapsule_GetPointer`` for the one version it understands, and every
+    other producer is refused before a field is read.  That only holds while
+    the name is renamed whenever the record changes -- and a same-width
+    reordering, `descriptor_kind` and `rank` swapped say, would otherwise be
+    read straight through by a consumer that still recognizes the name, since
+    `struct_size` sees no difference.
+
+    So the two are pinned here together.  If this test fails because the
+    record genuinely changed, publish it under a new version name and update
+    both halves; do not update the layout alone.
     """
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
 
     assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME "prik.native_array_backend.v1"' in header
-    # One entry point reaches the descriptor; the context is what it needs to
-    # get there, and a release marks that context as this extension's to free.
-    assert "prik_native_array_with_descriptor_fn with_descriptor;" in header
-    assert "prik_native_array_release_fn release;" in header
-    assert "void *context;" in header
-    # The compatibility tags a reader compares before trusting the producer.
-    for field in ("uint32_t struct_size;", "uint32_t descriptor_kind;", "uint32_t rank;"):
-        assert field in header
-    assert "uint32_t descriptor_size;" in header
-    assert "int32_t cfi_type;" in header
-    assert "size_t element_size;" in header
+    assert _backend_record_fields(header) == BACKEND_RECORD_V1
+
+
+def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
+    """One entry point reaches the descriptor; the readers validate a producer.
+
+    The context is what that entry point needs to get there, and a release
+    marks that context as this extension's to free.
+    """
+    header = SUPPORT_HEADER.read_text(encoding="utf-8")
+
     for name in (
         "prik_native_array_backend_capsule_new",
         "prik_native_array_backend_capsule_destructor",
         "prik_native_array_backend_from_capsule",
         "prik_native_array_backend_for_descriptor",
         "prik_native_array_backend_for_actual",
+        "prik_native_array_backend_owned_descriptor",
         "prik_native_array_backend_release",
         "prik_native_array_owned_with_descriptor",
     ):

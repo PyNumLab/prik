@@ -27,8 +27,18 @@
  * One versioned capsule publishes everything a generated binding needs from
  * another extension's array handle. The version lives in the capsule name:
  * PyCapsule_GetPointer refuses a capsule created under any other name, so a
- * layout change is made by naming a new capsule rather than by adding a
- * separate magic word and version field for the reader to compare.
+ * reader asks for the one version it understands and every other producer is
+ * turned away before a field is read. That is what makes a separate magic word
+ * and version field redundant -- both were fields the stranger also wrote, and
+ * comparing them meant dereferencing its pointer first.
+ *
+ * The obligation this creates: the record below may not change while the name
+ * stays the same. Add a field, reorder two, widen one, or change what a field
+ * means, and this becomes .v2 -- every .v1 consumer then refuses it, instead of
+ * reading a same-width reordering straight through. `struct_size` cannot see
+ * such a reordering, so the name is the only thing standing between the two
+ * layouts. The record and this name are pinned together by
+ * test_the_backend_record_and_its_version_name_change_together.
  */
 #define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME "prik.native_array_backend.v1"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u

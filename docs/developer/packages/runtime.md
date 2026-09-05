@@ -72,7 +72,15 @@ address for a field, descriptor storage for an owned handle, and `NULL` for a
 module variable. `release` is non-`NULL` when the extension owns `context`.
 Clearing `context` after release makes `close()` and finalization idempotent.
 
-The capsule name carries the ABI version. `struct_size` validates the backend
+The capsule name carries the ABI version, and carrying it there is what makes
+a magic word and a version field redundant: both would be fields the stranger
+also wrote, and comparing them means dereferencing its pointer first. The
+obligation is that the record may not change while the name does not. Adding a
+field, reordering two, widening one, or changing what a field means makes it
+`prik.native_array_backend.v2` — `struct_size` cannot see a same-width
+reordering, so the name is the only thing separating the two layouts. The
+record and the name are pinned together in
+`tests/fortran/infrastructure/runtime/test_native_support.py`. `struct_size` validates the backend
 layout, and `descriptor_size` records `sizeof(CFI_CDESC_T(rank))` for the
 producing extension. A consumer validates `descriptor_kind`, `rank`,
 `cfi_type`, `element_size`, and descriptor size against its dummy before
