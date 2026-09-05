@@ -43,12 +43,13 @@
  * names before it hands back the pointer, so a producer whose record differs in
  * size, in field order, or in any field's width is refused without a single
  * byte being dereferenced. Nothing has to be remembered for that to hold: the
- * tag is computed from `sizeof` and `offsetof`, so it moves when the record
- * does. `.v2` in the name stays for people -- it says which generation of this
- * ABI is meant, and it is what changes when the record keeps its shape but a
- * field takes on a new meaning, which no mechanical tag can see.
+ * tag is computed from the record itself, so it moves when the record does.
+ * There is no version number beside it, because there is nothing left for one
+ * to distinguish: a field's name is folded in along with its offset and width,
+ * so even a field that keeps its shape and takes on a new meaning is caught,
+ * as long as it is renamed to say so.
  */
-#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v2"
+#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
 
@@ -153,43 +154,53 @@ typedef struct {
 } prik_native_array_backend;
 
 /*
- * Fold this record's layout into one tag.
+ * Describe one field for the layout tag: its name, where it starts, how wide
+ * it is. All three come from the same token, so they cannot disagree.
+ */
+#define PRIK_NATIVE_ARRAY_BACKEND_FIELD(member)                                \
+    {#member, offsetof(prik_native_array_backend, member), sizeof(((prik_native_array_backend *)0)->member)}
+
+/*
+ * Fold this record into one tag.
  *
- * Every field contributes both where it starts and how wide it is, in
- * declaration order, so a reorder, a widening, an insertion and a removal all
- * change the result; the total size goes in first so a trailing change cannot
- * be silent either. FNV-1a is used because the mixing is order-dependent --
- * XOR-ing the offsets would give the same tag for two fields exchanged.
+ * Every field contributes its name, its offset and its width, in declaration
+ * order, and the total size goes in first. A reorder, a widening, an
+ * insertion, a removal and a rename all change the result. FNV-1a is used
+ * because the mixing has to be order-dependent -- XOR-ing the offsets would
+ * give the same tag for two fields exchanged.
  *
- * A tag cannot see a field that keeps its offset and width but changes what it
- * means. That is what the version in the name is for.
+ * Names are folded so that the one drift offsets cannot show -- a field that
+ * keeps its shape and takes on a new meaning -- is reachable too: rename it,
+ * which is what you would do anyway, and every reader built against the old
+ * meaning stops recognizing this record.
  */
 static inline uint64_t prik_native_array_backend_layout_tag(void)
 {
-    const size_t layout[] = {
-        sizeof(prik_native_array_backend),
-        offsetof(prik_native_array_backend, descriptor_kind),
-        sizeof(((prik_native_array_backend *)0)->descriptor_kind),
-        offsetof(prik_native_array_backend, rank),
-        sizeof(((prik_native_array_backend *)0)->rank),
-        offsetof(prik_native_array_backend, descriptor_size),
-        sizeof(((prik_native_array_backend *)0)->descriptor_size),
-        offsetof(prik_native_array_backend, cfi_type),
-        sizeof(((prik_native_array_backend *)0)->cfi_type),
-        offsetof(prik_native_array_backend, element_size),
-        sizeof(((prik_native_array_backend *)0)->element_size),
-        offsetof(prik_native_array_backend, context),
-        sizeof(((prik_native_array_backend *)0)->context),
-        offsetof(prik_native_array_backend, with_descriptor),
-        sizeof(((prik_native_array_backend *)0)->with_descriptor),
-        offsetof(prik_native_array_backend, release),
-        sizeof(((prik_native_array_backend *)0)->release),
+    static const struct {
+        const char *name;
+        size_t offset;
+        size_t width;
+    } layout[] = {
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_kind),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(rank),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_size),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(cfi_type),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(element_size),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(context),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(with_descriptor),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(release),
     };
     uint64_t tag = UINT64_C(14695981039346656037);
     size_t index;
+    const char *character;
 
+    tag = (tag ^ (uint64_t)sizeof(prik_native_array_backend)) * UINT64_C(1099511628211);
     for (index = 0; index < sizeof(layout) / sizeof(layout[0]); ++index) {
-        tag = (tag ^ (uint64_t)layout[index]) * UINT64_C(1099511628211);
+        for (character = layout[index].name; *character != '\0'; ++character) {
+            tag = (tag ^ (uint64_t)(unsigned char)*character) * UINT64_C(1099511628211);
+        }
+        tag = (tag ^ (uint64_t)layout[index].offset) * UINT64_C(1099511628211);
+        tag = (tag ^ (uint64_t)layout[index].width) * UINT64_C(1099511628211);
     }
     return tag;
 }

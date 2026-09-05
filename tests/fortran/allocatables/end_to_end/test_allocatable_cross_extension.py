@@ -147,7 +147,7 @@ def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_
     published = capsule_name(values._native_backend)
     # The layout is folded into the name, so this is what an extension built
     # from any other record would publish instead.
-    assert published.startswith(b"prik.native_array_backend.v2.")
+    assert published.startswith(b"prik.native_array_backend.")
     address = capsule_get(values._native_backend, published)
     assert address
     stranger = published[: published.rindex(b".")] + b".0000000000000000"

@@ -40,7 +40,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert f"prik_{suffix}_to_numpy" in header
 
 
-BACKEND_RECORD_V2 = (
+BACKEND_RECORD = (
     ("uint32_t", "descriptor_kind"),
     ("uint32_t", "rank"),
     ("uint32_t", "descriptor_size"),
@@ -68,9 +68,9 @@ def _backend_record_fields(header: str) -> tuple[tuple[str, str], ...]:
 
 def _layout_tag_members(header: str) -> tuple[str, ...]:
     """Return the field names the layout tag folds, in the order it folds them."""
-    body = re.search(r"const size_t layout\[\] = \{(.*?)\};", header, re.S)
+    body = re.search(r"\} layout\[\] = \{(.*?)\};", header, re.S)
     assert body is not None, "the layout tag does not declare what it folds"
-    return tuple(re.findall(r"offsetof\(prik_native_array_backend, (\w+)\)", body.group(1)))
+    return tuple(re.findall(r"PRIK_NATIVE_ARRAY_BACKEND_FIELD\((\w+)\)", body.group(1)))
 
 
 def test_the_capsule_name_is_derived_from_the_whole_record():
@@ -83,21 +83,28 @@ def test_the_capsule_name_is_derived_from_the_whole_record():
     and `release`, which are opaque addresses nothing can sanity-check before
     one of them is called.
 
-    So the layout is folded into the name, which PyCapsule_GetPointer compares
-    before handing the pointer back.  Every field must contribute its offset
-    and its width, or a change to the field it forgot would keep the old name:
-    the record and the tag are therefore required to list the same fields in
+    So the record names its own capsule, and there is no version number beside
+    the tag because nothing is left for one to distinguish: each field folds in
+    its name as well as its offset and width, so a field that keeps its shape
+    and takes on a new meaning is caught too, as long as it is renamed to say
+    so.  Every field must contribute, or a change to the one it forgot would
+    keep the old name -- so the record and the tag must list the same fields in
     the same order.
     """
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
 
-    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v2"' in header
-    assert _backend_record_fields(header) == BACKEND_RECORD_V2
-    assert _layout_tag_members(header) == tuple(name for _spelling, name in BACKEND_RECORD_V2)
+    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend"' in header
+    assert _backend_record_fields(header) == BACKEND_RECORD
+    assert _layout_tag_members(header) == tuple(name for _spelling, name in BACKEND_RECORD)
+    # Name, offset and width all come from the one token naming the field.
+    assert (
+        "{#member, offsetof(prik_native_array_backend, member), "
+        "sizeof(((prik_native_array_backend *)0)->member)}" in header
+    )
     # The size goes in first, so a change that only moves the tail is caught too.
-    assert "sizeof(prik_native_array_backend)," in header
-    for _spelling, name in BACKEND_RECORD_V2:
-        assert f"sizeof(((prik_native_array_backend *)0)->{name})" in header
+    assert "tag = (tag ^ (uint64_t)sizeof(prik_native_array_backend))" in header
+    # And the name is folded, which is what makes a rename reach every reader.
+    assert "for (character = layout[index].name; *character != '\\0'; ++character)" in header
 
 
 def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
