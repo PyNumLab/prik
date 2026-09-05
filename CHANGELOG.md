@@ -21,11 +21,14 @@ release tags add a leading `v` to the package version.
   generation; module and field handles expose only operations that do not
   require an unsupported `bind(C)` descriptor interface.
 
-- Generated array handles publish one versioned native capsule,
-  `prik.native_array_backend.v1`, replacing the separate descriptor-operation
-  table and owned-descriptor record. It carries a single entry point that runs
-  a consumer while the handle's descriptor is live. Extensions built against
-  the earlier branch-only table must be regenerated.
+- Generated array handles publish one native capsule, replacing the separate
+  descriptor-operation table and owned-descriptor record. It carries a single
+  entry point that runs a consumer while the handle's descriptor is live. Its
+  name, `prik.native_array_backend.<layout tag>`, is derived from the record's
+  own layout — every field's name, offset and width — so extensions built from
+  different PRIK versions refuse each other's handles instead of reading them at
+  the wrong offsets. Extensions built against the earlier branch-only table must
+  be regenerated.
 
 - Generated Fortran allocatable and pointer handles can be passed directly to
   matching ordinary array arguments. Supported forms include explicit and
