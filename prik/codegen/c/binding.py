@@ -180,6 +180,20 @@ class _COverloadDispatch:
     public: bool
 
 
+# Every inquiry a handle answers is read from the live descriptor its entry
+# point supplies, so none of these needs a Fortran procedure of its own.
+_DESCRIPTOR_ANSWERED_OPERATIONS = frozenset(
+    {
+        NativeArrayOperation.ALLOCATED,
+        NativeArrayOperation.ASSOCIATED,
+        NativeArrayOperation.CONTIGUOUS,
+        NativeArrayOperation.DESCRIPTOR,
+        NativeArrayOperation.ELEMENT_LENGTH,
+        NativeArrayOperation.SHAPE,
+        NativeArrayOperation.TO_NUMPY,
+    }
+)
+
 _BINDING_GETTER_SUMMARIES = {
     ModuleGetterAction.CONSTANT_VALUE: "The value is a constant placed in the module dictionary at import.",
     ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Builds a Python object from the compiler-evaluated constant.",
@@ -321,6 +335,9 @@ class CBindingGenerator(ClassVisitor):
             declarations=self._module_declarations(plan),
             functions=(
                 *self._module_allocator_functions(needs_free),
+                # Every handle inquiry runs through these, so they precede the
+                # first handle operation that names one.
+                *self._native_array_projection_functions(plan),
                 *self._extent_expression_support_functions(plan),
                 *self._callback_runtime_functions(plan),
                 *self._derived_call_runtime_functions(plan),
@@ -3070,7 +3087,9 @@ class CBindingGenerator(ClassVisitor):
             return "Py_None"
         return f"{prefix}_native_ops"
 
-    def _field_handle_backend_capsule_nodes(self, owner, field: DerivedFieldPlan, prefix: str, owner_name: str) -> tuple:
+    def _field_handle_backend_capsule_nodes(
+        self, owner, field: DerivedFieldPlan, prefix: str, owner_name: str
+    ) -> tuple:
         """Build the entry-point table this field handle publishes.
 
         A derived-type field reaches its entity through the parent's address,
@@ -3671,14 +3690,6 @@ class CBindingGenerator(ClassVisitor):
             # The getter that publishes this field's table is emitted before the
             # forwarder it names, so the forwarder is declared here.
             declarations.extend(self._field_handle_with_descriptor_prototypes(field, descriptor_callback))
-            declarations.append(
-                CFunctionPrototype(
-                    descriptor_callback,
-                    "void",
-                    (CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
-                    storage="static",
-                )
-            )
             handle = field.native_array_handle
             if handle is None:
                 continue
@@ -3716,7 +3727,6 @@ class CBindingGenerator(ClassVisitor):
                 )
             )
         for owner, field, operation_name, descriptor_callback in self._derived_handle_targets(plan):
-            functions.extend(self._field_handle_descriptor_callbacks(field, descriptor_callback))
             functions.extend(
                 self._field_handle_backend_nodes(
                     field,
@@ -3817,31 +3827,6 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _field_handle_descriptor_callbacks(
-        self,
-        field: DerivedFieldPlan,
-        descriptor_name: str,
-    ) -> tuple[CFunction, ...]:
-        """Decode one current field descriptor without copying its payload."""
-        handle = field.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native handle field {field.owner_path!r} has no descriptor rank")
-        descriptor = CFunction(
-            descriptor_name,
-            "void",
-            parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
-            storage="static",
-            body=(
-                CExpressionStatement(CodeExpression("*(PyObject **)context = NULL")),
-                *self._native_array_descriptor_record_nodes(
-                    handle.array.rank,
-                    "descriptor",
-                    return_target="*(PyObject **)context",
-                ),
-            ),
-        )
-        return (descriptor,)
-
     def _field_handle_operation_function(
         self,
         owner,
@@ -3862,25 +3847,21 @@ class CBindingGenerator(ClassVisitor):
         """Dispatch one operation without inferring descriptor ownership."""
         prefix = self._field_handle_owner_nodes(owner)
         owner_args = self._field_handle_owner_arguments(owner)
-        if operation in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}:
-            callback = self._field_handle_descriptor_callback(owner, field)
-            descriptor_bridge = self._field_handle_bridge_name(
-                owner,
-                field,
-                NativeArrayOperation.DESCRIPTOR,
+        handle = field.native_array_handle
+        if handle is not None and operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
+            if handle.descriptor_inquiries:
+                return (*prefix, *self._field_handle_inquiry_nodes(owner, field, operation, owner_args))
+            return (
+                *prefix,
+                *self._native_array_bridge_inquiry_nodes(
+                    operation,
+                    f"{self._field_handle_bridge_name(owner, field, operation)}({owner_args})",
+                    handle.array.rank,
+                    self._field_handle_bridge_name(owner, field, NativeArrayOperation.SHAPE),
+                    owner_args,
+                ),
             )
-            return (*prefix, *self._field_handle_descriptor_nodes(descriptor_bridge, owner_args, callback))
         bridge = self._field_handle_bridge_name(owner, field, operation)
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            return (*prefix, CReturn(CodeExpression(f"PyBool_FromLong({bridge}({owner_args}))")))
-        if operation is NativeArrayOperation.ELEMENT_LENGTH:
-            return (*prefix, CReturn(CodeExpression(f"PyLong_FromLongLong((long long){bridge}({owner_args}))")))
-        if operation is NativeArrayOperation.SHAPE:
-            return (*prefix, *self._field_handle_shape_nodes(field, bridge, owner_args))
         if operation is NativeArrayOperation.ASSOCIATE:
             return self._field_handle_associate_body(field, prefix, bridge, owner_args)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
@@ -3893,6 +3874,37 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
             )
         raise ValueError(f"Unsupported field handle operation for {field.owner_path!r}: {operation!r}")
+
+    def _field_handle_inquiry_nodes(
+        self,
+        owner,
+        field: DerivedFieldPlan,
+        operation: NativeArrayOperation,
+        owner_args: str,
+    ) -> tuple:
+        """Answer one inquiry from the descriptor this field exposes.
+
+        A view over a field's storage must keep the parent object alive, and
+        the parent is exactly the object this operation was bound to, so it
+        becomes the view's base.
+        """
+        handle = field.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Native handle field {field.owner_path!r} has no descriptor rank")
+        return self._native_array_projection_call_nodes(
+            operation,
+            rank=handle.array.rank,
+            numpy_type=self._field_native_array_numpy_type(field),
+            base="self",
+            entry_point=self._field_handle_with_descriptor_name(self._field_handle_descriptor_callback(owner, field)),
+            context=owner_args or "NULL",
+        )
+
+    def _field_native_array_numpy_type(self, field: DerivedFieldPlan) -> str:
+        """Return the NumPy element type one field handle's view is built with."""
+        if field.string_element:
+            return "NPY_STRING"
+        return PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_numpy_type
 
     def _field_handle_associate_body(
         self,
@@ -3941,41 +3953,6 @@ class CBindingGenerator(ClassVisitor):
             return self._derived_handle_descriptor_callback_name(owner, field)
         variable, member = owner
         return self._module_member_handle_descriptor_callback_name(variable, member)
-
-    def _field_handle_shape_nodes(self, field: DerivedFieldPlan, bridge: str, owner_args: str) -> tuple:
-        """Build field handle shape nodes from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        handle = field.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native handle field {field.owner_path!r} has no shape rank")
-        extents = tuple(f"extent_{axis}" for axis in range(handle.array.rank))
-        call_args = ", ".join((*((owner_args,) if owner_args else ()), *(f"&{item}" for item in extents)))
-        return (
-            *(CDeclaration(item, "int64_t", CodeExpression("0")) for item in extents),
-            CExpressionStatement(CodeExpression(f"{bridge}({call_args})")),
-            CDeclaration("shape", "PyObject *", CodeExpression(f"PyTuple_New({handle.array.rank})")),
-            CIf(CodeExpression("shape == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-            *(
-                CExpressionStatement(
-                    CodeExpression(f"PyTuple_SET_ITEM(shape, {axis}, PyLong_FromLongLong((long long){extent}))")
-                )
-                for axis, extent in enumerate(extents)
-            ),
-            CIf(
-                CodeExpression("PyErr_Occurred()"),
-                body=(CExpressionStatement(CodeExpression("Py_DECREF(shape)")), CReturn(CodeExpression("NULL"))),
-            ),
-            CReturn(CodeExpression("shape")),
-        )
-
-    @staticmethod
-    def _field_handle_descriptor_nodes(bridge: str, owner_args: str, callback: str) -> tuple:
-        """Build field handle descriptor nodes from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        arguments = ", ".join((*((owner_args,) if owner_args else ()), callback, "&descriptor_record"))
-        return (
-            CDeclaration("descriptor_record", "PyObject *", CodeExpression("NULL")),
-            CExpressionStatement(CodeExpression(f"{bridge}({arguments})")),
-            CReturn(CodeExpression("descriptor_record")),
-        )
 
     def _field_handle_shape_mutation_nodes(self, field: DerivedFieldPlan, bridge: str, owner_args: str) -> tuple:
         """Build field handle shape mutation nodes from the supplied completed binding records; emitted nodes only project completed binding actions."""
@@ -4141,7 +4118,7 @@ class CBindingGenerator(ClassVisitor):
             *(
                 callback
                 for variable in self._module_native_array_variables(plan)
-                for callback in self._module_allocatable_descriptor_callbacks(variable)
+                for callback in self._module_native_array_backend_functions(variable)
             ),
             *(
                 self._module_native_array_operation_function(variable, operation)
@@ -4248,46 +4225,93 @@ class CBindingGenerator(ClassVisitor):
         operation: NativeArrayOperation,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Dispatch one module operation without rediscovering semantic policy."""
+        handle = variable.native_array_handle
+        if handle is not None and operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
+            if handle.descriptor_inquiries:
+                return self._module_native_array_inquiry_body(variable, operation)
+            return self._native_array_bridge_inquiry_nodes(
+                operation,
+                f"{self._module_native_array_bridge_operation_name(variable, operation)}()",
+                handle.array.rank,
+                self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.SHAPE),
+                "",
+            )
+        return self._module_native_array_data_operation_body(variable, operation)
+
+    def _native_array_bridge_inquiry_nodes(
+        self,
+        operation: NativeArrayOperation,
+        call: str,
+        rank: int,
+        shape_bridge: str,
+        owner_args: str,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Answer one inquiry through a generated Fortran procedure.
+
+        Only a declaration with no legal bind(C) descriptor interface takes this
+        route; completed policy says which, and it is the compiler's own
+        inquiry that answers rather than a descriptor nothing may build.
+        """
         if operation in {
             NativeArrayOperation.ALLOCATED,
             NativeArrayOperation.ASSOCIATED,
             NativeArrayOperation.CONTIGUOUS,
-            NativeArrayOperation.ELEMENT_LENGTH,
         }:
-            return self._module_native_array_query_body(variable, operation)
-        return self._module_native_array_data_operation_body(variable, operation)
+            return (CReturn(CodeExpression(f"PyBool_FromLong({call})")),)
+        if operation is NativeArrayOperation.ELEMENT_LENGTH:
+            return (CReturn(CodeExpression(f"PyLong_FromLongLong((long long){call})")),)
+        if operation is not NativeArrayOperation.SHAPE:
+            raise ValueError(f"Native array inquiry {operation.value!r} has no generated Fortran lowering")
+        extents = tuple(f"extent_{axis}" for axis in range(rank))
+        arguments = ", ".join((*((owner_args,) if owner_args else ()), *(f"&{name}" for name in extents)))
+        return (
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in extents),
+            CExpressionStatement(CodeExpression(f"{shape_bridge}({arguments})")),
+            CDeclaration("shape", "PyObject *", CodeExpression(f"PyTuple_New({rank})")),
+            CIf(CodeExpression("shape == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+            *(
+                CExpressionStatement(
+                    CodeExpression(f"PyTuple_SET_ITEM(shape, {axis}, PyLong_FromLongLong((long long){name}))")
+                )
+                for axis, name in enumerate(extents)
+            ),
+            CExpressionStatement(CodeExpression("if (PyErr_Occurred()) { Py_DECREF(shape); return NULL; }")),
+            CReturn(CodeExpression("shape")),
+        )
 
-    def _module_native_array_query_body(
+    def _module_native_array_inquiry_body(
         self,
         variable: ModuleVariablePlan,
         operation: NativeArrayOperation,
-    ) -> tuple[CReturn, ...]:
-        """Return one scalar fact queried from the native bridge."""
-        call = f"{self._module_native_array_bridge_operation_name(variable, operation)}()"
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            expression = f"PyBool_FromLong({call})"
-        elif operation is NativeArrayOperation.ELEMENT_LENGTH:
-            expression = f"PyLong_FromLongLong((long long){call})"
-        else:
-            raise ValueError(f"Module handle query {operation!r} has no scalar lowering")
-        return (CReturn(CodeExpression(expression)),)
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Answer one inquiry from the descriptor this module array exposes."""
+        handle = variable.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Module handle {variable.owner_path!r} has no descriptor rank")
+        return self._native_array_projection_call_nodes(
+            operation,
+            rank=handle.array.rank,
+            numpy_type=self._module_native_array_numpy_type(variable),
+            # Module storage outlives any view of it, so a view retains nothing.
+            base="NULL",
+            entry_point=self._module_with_descriptor_name(variable),
+            context="NULL",
+        )
+
+    def _module_native_array_numpy_type(self, variable: ModuleVariablePlan) -> str:
+        """Return the NumPy element type one module array's view is built with."""
+        if variable.datatype_family is DatatypeFamily.STRING:
+            return "NPY_STRING"
+        # A wider logical is exposed with the integer dtype its elements
+        # occupy, which is what the array projection already selected.
+        return PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name).array_numpy_type
 
     def _module_native_array_data_operation_body(
         self,
         variable: ModuleVariablePlan,
         operation: NativeArrayOperation,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Lower shape, extraction, descriptor, and mutation operations."""
-        if operation is NativeArrayOperation.SHAPE:
-            return self._module_native_array_shape_body(variable)
-        if operation is NativeArrayOperation.TO_NUMPY:
-            return self._module_native_array_descriptor_body(variable)
-        if operation is NativeArrayOperation.DESCRIPTOR:
-            return self._module_native_array_descriptor_body(variable)
+        """Lower the mutations that must reach the module variable itself."""
         if operation is NativeArrayOperation.ASSOCIATE:
             return (
                 CDeclaration("source_packed", "PyObject *"),
@@ -4344,20 +4368,6 @@ class CBindingGenerator(ClassVisitor):
             CReturn(CodeExpression("shape")),
         )
 
-    def _module_native_array_descriptor_body(
-        self,
-        variable: ModuleVariablePlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Return standard descriptor facts for module extraction and handoff."""
-        handle = variable.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Module handle {variable.owner_path!r} has no descriptor rank")
-        if self._uses_module_allocatable_descriptor(variable):
-            return self._module_allocatable_descriptor_body(variable)
-        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            return self._module_pointer_descriptor_body(variable)
-        raise ValueError(f"Module handle {variable.owner_path!r} has no planned descriptor handoff")
-
     @staticmethod
     def _uses_module_allocatable_descriptor(variable: ModuleVariablePlan) -> bool:
         """Return whether a handle reaches its descriptor through a consumer.
@@ -4376,51 +4386,17 @@ class CBindingGenerator(ClassVisitor):
             }
         )
 
-    def _module_allocatable_descriptor_body(
-        self,
-        variable: ModuleVariablePlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CReturn, ...]:
-        """Request the current standard descriptor and return its decoded facts."""
-        callback = self._module_descriptor_callback_name(variable)
-        return (
-            CDeclaration("descriptor_record", "PyObject *", CodeExpression("NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.DESCRIPTOR)}("
-                    f"{callback}, &descriptor_record)"
-                )
-            ),
-            CReturn(CodeExpression("descriptor_record")),
-        )
-
-    def _module_allocatable_descriptor_callbacks(
+    def _module_native_array_backend_functions(
         self,
         variable: ModuleVariablePlan,
     ) -> tuple[CFunction, ...]:
-        """Return the C consumer for descriptor-record operations."""
+        """Return the entry point one module array publishes, and its record."""
         if not self._uses_module_allocatable_descriptor(variable):
             return ()
         handle = variable.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {variable.owner_path!r} has no descriptor rank")
-        descriptor_callback = CFunction(
-            self._module_descriptor_callback_name(variable),
-            "void",
-            parameters=(CParameter("descriptor", "CFI_cdesc_t *"), CParameter("context", "void *")),
-            storage="static",
-            body=(
-                CExpressionStatement(CodeExpression("*(PyObject **)context = NULL")),
-                *self._native_array_descriptor_record_nodes(
-                    handle.array.rank,
-                    "descriptor",
-                    return_target="*(PyObject **)context",
-                ),
-            ),
-        )
-        return (
-            descriptor_callback,
-            *self._module_native_array_backend_nodes(variable, handle),
-        )
+        return self._module_native_array_backend_nodes(variable, handle)
 
     def _module_native_array_backend_nodes(
         self,
@@ -4544,9 +4520,7 @@ class CBindingGenerator(ClassVisitor):
         """Return the expression publishing this variable's native entry-point table."""
         if not self._uses_module_allocatable_descriptor(variable):
             return "Py_None"
-        return (
-            f"PyCapsule_New(&{self._module_native_array_backend_name(variable)}, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME, NULL)"
-        )
+        return f"PyCapsule_New(&{self._module_native_array_backend_name(variable)}, PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_NAME, NULL)"
 
     def _module_with_descriptor_name(self, variable: ModuleVariablePlan) -> str:
         """Return the forwarder name that drives this variable's descriptor bridge."""
@@ -4560,49 +4534,6 @@ class CBindingGenerator(ClassVisitor):
         """Return the binding-local module descriptor callback name derived from the supplied completed binding records; this helper preserves completed policy."""
         owner = re.sub(r"\W", "_", variable.owner_path).casefold()
         return f"prik_module_{owner}_descriptor_callback"
-
-    def _module_pointer_descriptor_body(
-        self,
-        variable: ModuleVariablePlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Decode a call-local standard pointer descriptor without copying data."""
-        handle = variable.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Pointer module handle {variable.owner_path!r} has no descriptor rank")
-        cfi_type = self._module_native_array_cfi_type(variable)
-        if cfi_type is None:
-            raise ValueError(f"Pointer module handle {variable.owner_path!r} has no CFI type")
-        rank = handle.array.rank
-        elem_len = self._module_native_array_elem_size(variable)
-        return (
-            CDeclaration("descriptor_storage", f"CFI_CDESC_T({rank})"),
-            CDeclaration("descriptor", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)&descriptor_storage")),
-            CDeclaration("status", "int", CodeExpression("CFI_SUCCESS")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"status = CFI_establish(descriptor, NULL, CFI_attribute_pointer, "
-                    f"{cfi_type}, {elem_len}, {rank}, NULL)"
-                )
-            ),
-            CIf(
-                CodeExpression("status != CFI_SUCCESS"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(
-                            'PyErr_SetString(PyExc_RuntimeError, "failed to establish pointer descriptor reader")'
-                        )
-                    ),
-                    CReturn(CodeExpression("NULL")),
-                ),
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{self._module_native_array_bridge_operation_name(variable, NativeArrayOperation.DESCRIPTOR)}"
-                    "(descriptor)"
-                )
-            ),
-            *self._native_array_descriptor_record_nodes(rank, "descriptor"),
-        )
 
     def _descriptor_record_return_nodes(
         self,
@@ -4907,6 +4838,8 @@ class CBindingGenerator(ClassVisitor):
         operation: NativeArrayOperation,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Return one operation body over persistent CFI owner storage."""
+        if operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
+            return self._owned_native_array_inquiry_body(result, operation)
         if operation is NativeArrayOperation.ASSOCIATE:
             return self._owned_native_array_associate_body(result)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
@@ -4915,29 +4848,50 @@ class CBindingGenerator(ClassVisitor):
                 release_existing=operation is NativeArrayOperation.RESIZE,
             )
         handler = self._owned_native_array_operation_handler(operation)
-        materialize_descriptor = operation not in {
-            NativeArrayOperation.DESCRIPTOR,
-            NativeArrayOperation.DESTROY,
-        }
         return (
             *self._owned_native_array_owner_nodes(
                 result,
                 "owner",
-                materialize_descriptor=materialize_descriptor,
+                materialize_descriptor=operation is not NativeArrayOperation.DESTROY,
             ),
             *handler(result),
         )
 
+    def _owned_native_array_inquiry_body(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Answer one inquiry from the descriptor this handle owns.
+
+        The storage is already here, so the entry point hands it straight to the
+        consumer.  A view over it must keep the capsule that owns the storage
+        alive, so that capsule becomes the view's base.
+        """
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned native array handle {result.owner_path!r} has no descriptor rank")
+        return (
+            *self._owned_native_array_owner_nodes(result, "owner", materialize_descriptor=False),
+            *self._native_array_projection_call_nodes(
+                operation,
+                rank=handle.array.rank,
+                numpy_type=self._owned_native_array_numpy_type(result),
+                base="owner_obj",
+                entry_point="owner_backend->with_descriptor",
+                context="owner_backend->context",
+            ),
+        )
+
+    def _owned_native_array_numpy_type(self, plan: ArgumentTransferPlan | ResultPlan) -> str:
+        """Return the NumPy element type one owned handle's view is built with."""
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return "NPY_STRING"
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_numpy_type
+
     def _owned_native_array_operation_handler(self, operation: NativeArrayOperation):
         """Return one directly named operation lowerer."""
         handlers = {
-            NativeArrayOperation.SHAPE: self._owned_native_array_shape_body,
-            NativeArrayOperation.TO_NUMPY: self._owned_native_array_to_numpy_body,
-            NativeArrayOperation.ELEMENT_LENGTH: self._owned_native_array_element_length_body,
-            NativeArrayOperation.DESCRIPTOR: self._owned_native_array_descriptor_body,
-            NativeArrayOperation.ALLOCATED: self._owned_native_array_allocated_body,
-            NativeArrayOperation.ASSOCIATED: self._owned_native_array_associated_body,
-            NativeArrayOperation.CONTIGUOUS: self._owned_native_array_contiguous_body,
             NativeArrayOperation.DEALLOCATE: self._owned_native_array_deallocate_body,
             NativeArrayOperation.NULLIFY: self._owned_native_array_nullify_body,
             NativeArrayOperation.DESTROY: self._owned_native_array_destroy_body,
@@ -8232,7 +8186,7 @@ class CBindingGenerator(ClassVisitor):
                 names,
                 # Only a handle owning its descriptor reaches this path now: one
                 # that publishes native entry points is placed through them.
-                "_native_array_descriptor_handoff_for_binding_positional",
+                "_native_array_backend_for_binding_positional",
                 default_binder_definition=binder_definition,
             )
         )
@@ -8263,7 +8217,7 @@ class CBindingGenerator(ClassVisitor):
         """Return binding-local Python objects used by one runtime helper call."""
         declarations = tuple(
             CDeclaration(f"{prefix}_{suffix}", "PyObject *", CodeExpression("NULL"))
-            for suffix in ("runtime", "helper", "shape", "packed", "item")
+            for suffix in ("runtime", "helper", "packed", "item")
         )
         if include_default_binder:
             return (*declarations, CDeclaration(f"{prefix}_default_binder", "PyObject *", CodeExpression("NULL")))
@@ -8303,11 +8257,6 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_runtime)")),
             CExpressionStatement(CodeExpression(f"if ({prefix}_helper == NULL) return NULL")),
-            CExpressionStatement(CodeExpression(f"{prefix}_shape = PyTuple_New({handle.array.rank})")),
-            CExpressionStatement(
-                CodeExpression(f"if ({prefix}_shape == NULL) {{ Py_DECREF({prefix}_helper); return NULL; }}")
-            ),
-            *self._native_descriptor_expected_shape_nodes(plan, context, names),
         ]
         binder_argument = ""
         binder_format = ""
@@ -8319,10 +8268,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"{binder} = PyCFunction_NewEx(&{default_binder_definition}, NULL, NULL)")
                     ),
                     CExpressionStatement(
-                        CodeExpression(
-                            f"if ({binder} == NULL) {{ Py_DECREF({prefix}_helper); "
-                            f"Py_DECREF({prefix}_shape); return NULL; }}"
-                        )
+                        CodeExpression(f"if ({binder} == NULL) {{ Py_DECREF({prefix}_helper); return NULL; }}")
                     ),
                 )
             )
@@ -8331,9 +8277,9 @@ class CBindingGenerator(ClassVisitor):
         nodes.append(
             CExpressionStatement(
                 CodeExpression(
-                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "Os{dtype_format}iOi{binder_format}", '
+                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "Os{dtype_format}ii{binder_format}", '
                     f'{names.object_name}, "{handle.descriptor_kind.value}", {dtype_argument}, '
-                    f"{handle.array.rank}, {prefix}_shape, {int(handle.optional_absent)}{binder_argument})"
+                    f"{handle.array.rank}, {int(handle.optional_absent)}{binder_argument})"
                 )
             )
         )
@@ -8342,42 +8288,9 @@ class CBindingGenerator(ClassVisitor):
         nodes.extend(
             (
                 CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_helper)")),
-                CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_shape)")),
                 CExpressionStatement(CodeExpression(f"if ({prefix}_packed == NULL) return NULL")),
             )
         )
-        return tuple(nodes)
-
-    def _native_descriptor_expected_shape_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        context: _CFunctionContext,
-        names: _CArgumentNames,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Materialize the descriptor's declared shape for runtime validation."""
-        handle = plan.native_array_handle
-        if handle is None:
-            return ()
-        prefix = names.value_name
-        nodes = []
-        for axis, expression in enumerate(handle.array.shape):
-            if expression in {":", "::Strided", "Flat"}:
-                nodes.append(CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")))
-                item = "Py_None"
-            else:
-                expected = self._array_extent_expression(handle.array, axis, expression, context)
-                item = f"PyLong_FromLongLong((long long)({expected}))"
-            nodes.extend(
-                (
-                    CExpressionStatement(CodeExpression(f"PyTuple_SET_ITEM({prefix}_shape, {axis}, {item})")),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"if (PyTuple_GET_ITEM({prefix}_shape, {axis}) == NULL) {{ "
-                            f"Py_DECREF({prefix}_helper); Py_DECREF({prefix}_shape); return NULL; }}"
-                        )
-                    ),
-                )
-            )
         return tuple(nodes)
 
     def _native_descriptor_presence_unpack_nodes(
@@ -10198,6 +10111,316 @@ class CBindingGenerator(ClassVisitor):
                 nodes.append(CExpressionStatement(CodeExpression(f"out->extents[{axis}] = upper_bound + 1")))
             nodes.append(CExpressionStatement(CodeExpression(f"base_bytes *= (CFI_index_t)out->extents[{axis}]")))
         return tuple(nodes)
+
+    # One live descriptor answers every handle inquiry.
+    #
+    # `with_descriptor` is the only way to reach a handle's descriptor, and it
+    # works the same whether the descriptor is one Fortran built for the call
+    # or persistent storage this wrapper owns. Every inquiry a handle answers
+    # is therefore one of these consumers run through that entry point: the
+    # descriptor is read where it is valid and only the finished Python object
+    # leaves. Nothing copies a descriptor out, and no operation needs a Fortran
+    # procedure of its own to report what the descriptor already says.
+    NATIVE_ARRAY_PROJECTION_RECORD = "prik_native_array_projection"
+
+    def _native_array_projection_record(self) -> CStructDefinition:
+        """Define what one descriptor inquiry is asked for and what it reports."""
+        return CStructDefinition(
+            self.NATIVE_ARRAY_PROJECTION_RECORD,
+            (
+                CParameter("rank", "int"),
+                CParameter("numpy_type", "int"),
+                # The object a view must keep alive, or NULL when the storage
+                # outlives every view of it, as a module variable's does.
+                CParameter("base", "PyObject *"),
+                CParameter("result", "PyObject *"),
+            ),
+        )
+
+    def _native_array_projection_consumer(
+        self,
+        name: str,
+        body: tuple,
+        *doc: str,
+    ) -> CFunction:
+        """Wrap one descriptor reader in the shared consumer signature."""
+        record = self.NATIVE_ARRAY_PROJECTION_RECORD
+        return CFunction(
+            name,
+            "void",
+            parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+            storage="static",
+            body=(
+                CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
+                CDeclaration("out", f"{record} *", CodeExpression(f"({record} *)context")),
+                *body,
+            ),
+            doc=doc,
+        )
+
+    def _native_array_projection_functions(self, plan: ModulePlan) -> tuple:
+        """Emit the record and the consumers every handle inquiry runs."""
+        if not self._reads_native_descriptors:
+            return ()
+        return (
+            self._native_array_projection_record(),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.ALLOCATED),
+                (
+                    CComment("A descriptor with no address describes storage that is not there."),
+                    CExpressionStatement(CodeExpression("out->result = PyBool_FromLong(source->base_addr != NULL)")),
+                    CReturn(),
+                ),
+                "Report whether this handle's storage is present.",
+            ),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.CONTIGUOUS),
+                (
+                    CComment("CFI_is_contiguous needs a descriptor that describes something,"),
+                    CComment("and absent storage is not contiguous storage."),
+                    CIf(
+                        CodeExpression("source->base_addr == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("out->result = PyBool_FromLong(0)")),
+                            CReturn(),
+                        ),
+                    ),
+                    CExpressionStatement(
+                        CodeExpression("out->result = PyBool_FromLong(CFI_is_contiguous(source) != 0)")
+                    ),
+                    CReturn(),
+                ),
+                "Report whether this handle's storage is contiguous.",
+            ),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.ELEMENT_LENGTH),
+                (
+                    CExpressionStatement(
+                        CodeExpression("out->result = PyLong_FromLongLong((long long)source->elem_len)")
+                    ),
+                    CReturn(),
+                ),
+                "Report this handle's element width, which a deferred-length",
+                "character array only knows at run time.",
+            ),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.SHAPE),
+                (
+                    CDeclaration("shape", "PyObject *", CodeExpression("NULL")),
+                    CDeclaration("extent", "PyObject *", CodeExpression("NULL")),
+                    CDeclaration("axis", "int", CodeExpression("0")),
+                    CComment("Storage that is not there has no shape to report."),
+                    CIf(
+                        CodeExpression("source->base_addr == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("out->result = Py_NewRef(Py_None)")),
+                            CReturn(),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("shape = PyTuple_New(out->rank)")),
+                    CIf(CodeExpression("shape == NULL"), body=(CReturn(),)),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < out->rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CComment("A compiler may report an empty dimension as extent -1."),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "extent = PyLong_FromLongLong((long long)(source->dim[axis].extent == -1 "
+                                    "? 0 : source->dim[axis].extent))"
+                                )
+                            ),
+                            CIf(
+                                CodeExpression("extent == NULL"),
+                                body=(
+                                    CExpressionStatement(CodeExpression("Py_DECREF(shape)")),
+                                    CReturn(),
+                                ),
+                            ),
+                            CExpressionStatement(CodeExpression("PyTuple_SET_ITEM(shape, axis, extent)")),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("out->result = shape")),
+                    CReturn(),
+                ),
+                "Report this handle's current extents as one Python tuple.",
+            ),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.DESCRIPTOR),
+                (
+                    CDeclaration("facts", "PyObject *", CodeExpression("NULL")),
+                    CDeclaration("value", "PyObject *", CodeExpression("NULL")),
+                    CDeclaration("axis", "int", CodeExpression("0")),
+                    CDeclaration("slot", "int", CodeExpression("0")),
+                    CExpressionStatement(CodeExpression("facts = PyTuple_New(3 + 3 * out->rank)")),
+                    CIf(CodeExpression("facts == NULL"), body=(CReturn(),)),
+                    CExpressionStatement(
+                        CodeExpression("PyTuple_SET_ITEM(facts, 0, PyLong_FromVoidPtr(source->base_addr))")
+                    ),
+                    CExpressionStatement(
+                        CodeExpression("PyTuple_SET_ITEM(facts, 1, PyLong_FromLongLong((long long)source->elem_len))")
+                    ),
+                    CExpressionStatement(
+                        CodeExpression("PyTuple_SET_ITEM(facts, 2, PyLong_FromLong((long)out->rank))")
+                    ),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < out->rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CExpressionStatement(CodeExpression("slot = 3 + 3 * axis")),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "PyTuple_SET_ITEM(facts, slot, "
+                                    "PyLong_FromLongLong((long long)source->dim[axis].lower_bound))"
+                                )
+                            ),
+                            CComment("A compiler may report an empty dimension as extent -1."),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "PyTuple_SET_ITEM(facts, slot + 1, PyLong_FromLongLong((long long)("
+                                    "source->dim[axis].extent == -1 ? 0 : source->dim[axis].extent)))"
+                                )
+                            ),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "PyTuple_SET_ITEM(facts, slot + 2, "
+                                    "PyLong_FromLongLong((long long)source->dim[axis].sm))"
+                                )
+                            ),
+                        ),
+                    ),
+                    CFor(
+                        "slot = 0",
+                        CodeExpression("slot < 3 + 3 * out->rank"),
+                        CodeExpression("++slot"),
+                        body=(
+                            CExpressionStatement(CodeExpression("value = PyTuple_GET_ITEM(facts, slot)")),
+                            CIf(
+                                CodeExpression("value == NULL"),
+                                body=(
+                                    CExpressionStatement(CodeExpression("Py_DECREF(facts)")),
+                                    CReturn(),
+                                ),
+                            ),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("out->result = facts")),
+                    CReturn(),
+                ),
+                "Report what this pointer is associated with, as the flat facts a",
+                "pointer with no storage of its own records and later replays.",
+            ),
+            self._native_array_projection_consumer(
+                self._native_array_projection_name(NativeArrayOperation.TO_NUMPY),
+                (
+                    CDeclaration("dimensions[PRIK_MAX_ARRAY_RANK]", "npy_intp"),
+                    CDeclaration("strides[PRIK_MAX_ARRAY_RANK]", "npy_intp"),
+                    CDeclaration("view", "PyObject *", CodeExpression("NULL")),
+                    CDeclaration("axis", "int", CodeExpression("0")),
+                    CComment("Storage that is not there exposes no view."),
+                    CIf(
+                        CodeExpression("source->base_addr == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("out->result = Py_NewRef(Py_None)")),
+                            CReturn(),
+                        ),
+                    ),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < out->rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CComment("A compiler may report an empty dimension as extent -1."),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "dimensions[axis] = (npy_intp)(source->dim[axis].extent == -1 "
+                                    "? 0 : source->dim[axis].extent)"
+                                )
+                            ),
+                            CComment("The descriptor's stride multiplier is already the byte stride"),
+                            CComment("NumPy wants, negative strides for a reversed target included."),
+                            CExpressionStatement(CodeExpression("strides[axis] = (npy_intp)source->dim[axis].sm")),
+                        ),
+                    ),
+                    CComment("The element width is only consulted for a flexible dtype, which is"),
+                    CComment("how a character array takes its width from the descriptor."),
+                    CExpressionStatement(
+                        CodeExpression(
+                            "view = PyArray_New(&PyArray_Type, out->rank, dimensions, out->numpy_type, strides, "
+                            "source->base_addr, (int)source->elem_len, NPY_ARRAY_WRITEABLE, NULL)"
+                        )
+                    ),
+                    CIf(CodeExpression("view == NULL"), body=(CReturn(),)),
+                    CComment("The view borrows this storage, so it retains whatever keeps the"),
+                    CComment("storage valid: the parent object of a field, the capsule owning an"),
+                    CComment("owned descriptor. A module variable outlives every view of it."),
+                    CIf(
+                        CodeExpression("out->base != NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("Py_INCREF(out->base)")),
+                            CIf(
+                                CodeExpression("PyArray_SetBaseObject((PyArrayObject *)view, out->base) < 0"),
+                                body=(
+                                    CExpressionStatement(CodeExpression("Py_DECREF(out->base)")),
+                                    CExpressionStatement(CodeExpression("Py_DECREF(view)")),
+                                    CReturn(),
+                                ),
+                            ),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("out->result = view")),
+                    CReturn(),
+                ),
+                "Build the NumPy view over this handle's storage.",
+            ),
+        )
+
+    @staticmethod
+    def _native_array_projection_name(operation: NativeArrayOperation) -> str:
+        """Return the shared consumer that answers one descriptor inquiry."""
+        return f"prik_native_array_read_{operation.value}"
+
+    def _native_array_projection_call_nodes(
+        self,
+        operation: NativeArrayOperation,
+        *,
+        rank: int,
+        numpy_type: str,
+        base: str,
+        entry_point: str,
+        context: str,
+    ) -> tuple:
+        """Run one inquiry through a handle's descriptor entry point.
+
+        The consumer reports absence itself, so the caller does not ask first;
+        a NULL result with no exception set means the descriptor was never
+        reached, which only a broken entry point can cause.
+        """
+        record = self.NATIVE_ARRAY_PROJECTION_RECORD
+        consumer = self._native_array_projection_name(
+            NativeArrayOperation.ALLOCATED if operation is NativeArrayOperation.ASSOCIATED else operation
+        )
+        return (
+            CDeclaration(
+                "projection",
+                record,
+                CodeExpression(f"{{{rank}, {numpy_type}, {base}, NULL}}"),
+            ),
+            CExpressionStatement(CodeExpression(f"{entry_point}({context}, {consumer}, &projection)")),
+            CIf(
+                CodeExpression("projection.result == NULL && !PyErr_Occurred()"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            'PyErr_SetString(PyExc_RuntimeError, "native array handle did not report a descriptor")'
+                        )
+                    ),
+                ),
+            ),
+            CReturn(CodeExpression("projection.result")),
+        )
 
     def _array_actual_reader_functions(self, plan: ModulePlan) -> tuple:
         """Emit the record and reader for each array dummy a handle may reach.

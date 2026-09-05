@@ -320,7 +320,7 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
     module, wrapper_source_text = _plain_allocatable_module(pyi_parity_build_mode, tmp_path)
 
     assert "void (*callback)(CFI_cdesc_t *, void *)" in wrapper_source_text
-    assert "descriptor->base_addr" in wrapper_source_text
+    assert "source->base_addr" in wrapper_source_text
 
     handle = module.values
     assert isinstance(handle, AllocatableArray)
@@ -386,6 +386,12 @@ contains
     value = x(index)
   end function element_at
 
+  function deferred_word_bound_and_width(x) result(packed)
+    character(len=:), allocatable, intent(in) :: x(:)
+    integer(int32) :: packed
+    packed = 100 * lbound(x, 1) + len(x)
+  end function deferred_word_bound_and_width
+
   subroutine setup()
     allocate(plain_a(5:8))
     plain_a = 1.0d0
@@ -423,31 +429,23 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
     )
     module.setup()
 
-    for name in ("plain_a", "tgt_a", "defaulted"):
-        handle = getattr(module, name)
-        record = handle._descriptor_record_for_binding()
-        # A defaulted allocation still starts at one, which the reconstruction
-        # also got wrong by reporting zero.
-        assert record["dim"][0]["lower_bound"] == (1 if name == "defaulted" else 5), name
-        assert record["dim"][0]["extent"] == 4, name
-        assert record["elem_len"] == 8, name
-        # The Python view is unaffected: NumPy indexing stays zero-based.
-        assert handle.to_numpy().shape == (4,)
-
-    # A character allocatable reads the same descriptor, and its element length
-    # comes from the array rather than from a width the binding assumed.
-    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
-        record = getattr(module, name)._descriptor_record_for_binding()
-        assert record["dim"][0]["lower_bound"] == 5, name
-        assert record["elem_len"] == width, name
-
     # The bound is not a reported fact but part of the value: an allocatable
     # dummy adopts the bounds of the descriptor it is given, so a wrong one
     # makes the callee index the wrong elements.
-    for name in ("plain_a", "tgt_a"):
+    for name, bound in (("plain_a", 5), ("tgt_a", 5), ("defaulted", 1)):
         handle = getattr(module, name)
-        assert module.lower_bound_of(handle) == np.int32(5), name
-        assert module.element_at(handle, np.int32(5)) == handle.to_numpy()[0], name
+        assert module.lower_bound_of(handle) == np.int32(bound), name
+        assert module.element_at(handle, np.int32(bound)) == handle.to_numpy()[0], name
+        # The Python view is unaffected: NumPy indexing stays zero-based.
+        assert handle.to_numpy().shape == (4,)
+
+    # A character allocatable carries the same bounds, and its element length
+    # comes from the array rather than from a width the binding assumed.
+    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
+        assert getattr(module, name).dtype == np.dtype(f"S{width}"), name
+    # A deferred-length actual reaches an allocatable dummy carrying both, so
+    # the bound and the width are read back out of the array itself.
+    assert module.deferred_word_bound_and_width(module.deferred_words) == np.int32(506)
 
 
 BORROWED_DESCRIPTOR_SOURCE = """\

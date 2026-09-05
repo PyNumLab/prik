@@ -8,23 +8,12 @@ from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _bind_contract_native_array_handle,
+    _numpy_view_from_descriptor_facts,
 )
-
-
-def _pointer_descriptor(value):
-    return {
-        "base_addr": int(value.ctypes.data),
-        "elem_len": int(value.dtype.itemsize),
-        "rank": value.ndim,
-        "dim": [
-            {
-                "lower_bound": 1,
-                "extent": int(extent),
-                "sm": int(stride),
-            }
-            for extent, stride in zip(value.shape, value.strides, strict=True)
-        ],
-    }
+from tests.fortran._support.native_array_handles import (
+    _absent_descriptor_facts,
+    _descriptor_facts_for_array,
+)
 
 
 def test_contract_default_handle_constructors_preserve_dtype_rank_and_empty_state():
@@ -50,25 +39,20 @@ def test_contract_default_handle_constructors_preserve_dtype_rank_and_empty_stat
 
 def test_fresh_pointer_associate_copies_association_without_following_source_descriptor():
     value = np.arange(6, dtype=np.float64)[::2]
-    source_state = {"descriptor": _pointer_descriptor(value)}
+    source_state = {"facts": _descriptor_facts_for_array(value)}
 
     def source_nullify(_handle):
-        source_state["descriptor"] = {
-            "base_addr": 0,
-            "elem_len": 8,
-            "rank": 1,
-            "dim": [{"lower_bound": 0, "extent": 0, "sm": 8}],
-        }
+        source_state["facts"] = _absent_descriptor_facts("float64", 1)
 
     source = PointerArray(
         dtype="float64",
         rank=1,
         ops={
-            "shape": lambda _handle: value.shape,
-            "descriptor": lambda _handle: source_state["descriptor"],
-            "to_numpy": lambda _handle: source_state["descriptor"],
-            "associated": lambda _handle: source_state["descriptor"]["base_addr"] != 0,
-            "associate": lambda _handle, descriptor: source_state.update(descriptor=descriptor),
+            "shape": lambda _handle: value.shape if source_state["facts"][0] else None,
+            "descriptor": lambda _handle: source_state["facts"],
+            "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(source_state["facts"], "float64"),
+            "associated": lambda _handle: source_state["facts"][0] != 0,
+            "associate": lambda _handle, facts: source_state.update(facts=facts),
             "nullify": source_nullify,
         },
         to_numpy_policy="descriptor_view",
@@ -92,16 +76,16 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
 
 def test_fresh_pointer_pending_association_is_applied_when_native_storage_attaches():
     value = np.arange(4, dtype=np.float64)
-    descriptor = _pointer_descriptor(value)
+    facts = _descriptor_facts_for_array(value)
     source = PointerArray(
         dtype="float64",
         rank=1,
         ops={
             "shape": lambda _handle: value.shape,
-            "descriptor": lambda _handle: descriptor,
-            "to_numpy": lambda _handle: descriptor,
+            "descriptor": lambda _handle: facts,
+            "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(facts, "float64"),
             "associated": lambda _handle: True,
-            "associate": lambda _handle, _descriptor: None,
+            "associate": lambda _handle, _facts: None,
             "nullify": lambda _handle: None,
         },
         to_numpy_policy="descriptor_view",
@@ -123,7 +107,7 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
         1,
         {
             "shape": lambda _owner: value.shape if state["associated"] else None,
-            "descriptor": lambda received_owner: received_owner,
+            "descriptor": lambda _owner: facts,
             "associated": lambda _owner: state["associated"],
             "associate": associate,
             "nullify": lambda _owner: state.update(associated=False),

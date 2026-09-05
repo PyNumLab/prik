@@ -7,7 +7,7 @@ import prik.contracts as contracts
 from prik.runtime.handles import (
     AllocatableArray,
     _bind_contract_native_array_handle,
-    _native_array_descriptor_handoff_for_binding,
+    _native_array_backend_for_binding,
 )
 
 
@@ -22,7 +22,7 @@ def test_fresh_contract_handle_has_no_descriptor_to_hand_over_on_its_own():
     handle = contracts.Allocatable[contracts.Float64[:]]()
 
     with pytest.raises(TypeError, match="requires generated persistent descriptor storage"):
-        _native_array_descriptor_handoff_for_binding(
+        _native_array_backend_for_binding(
             handle,
             descriptor_kind="allocatable",
             expected_dtype=np.float64,
@@ -69,7 +69,6 @@ def test_non_array_allocatable_annotations_are_not_factories(factory, message: s
                 rank=1,
                 ops={
                     "shape": lambda _handle: None,
-                    "descriptor": lambda _handle: None,
                     "allocated": lambda _handle: False,
                 },
                 to_numpy_policy="unsupported",
@@ -118,6 +117,12 @@ def test_generated_storage_rejects_incompatible_allocatable_contract_handles(
 
 
 def test_writable_contract_handle_adopts_generated_storage_and_closes_once():
+    """Binding attaches storage, and the backend over it is what goes to the call.
+
+    An owned handle's backend and its owner are the same capsule: the record
+    holds the descriptor the binder allocated, and every later call reads it
+    without coming back through Python.
+    """
     handle = contracts.Allocatable[contracts.Float64[:]]()
     calls = []
     owner = object()
@@ -130,16 +135,16 @@ def test_writable_contract_handle_adopts_generated_storage_and_closes_once():
             1,
             {
                 "shape": lambda received_owner: calls.append(("shape", received_owner)) or None,
-                "descriptor": lambda received_owner: received_owner,
                 "allocated": lambda received_owner: False,
                 "destroy": lambda received_owner: calls.append(("destroy", received_owner)),
             },
             owner,
             "owned",
             "unsupported",
+            native_ops=owner,
         )
 
-    assert _native_array_descriptor_handoff_for_binding(
+    assert _native_array_backend_for_binding(
         handle,
         descriptor_kind="allocatable",
         expected_dtype=np.float64,

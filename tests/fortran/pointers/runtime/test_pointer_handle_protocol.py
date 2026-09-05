@@ -6,24 +6,26 @@ from prik.runtime.handles import (
     AllocatableArray,
     NativeArrayHandleBase,
     PointerArray,
-    _native_array_descriptor_for_binding,
     _native_array_handle_from_generated_ops,
+    _numpy_view_from_descriptor_facts,
 )
 from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _common_ops,
-    _handoff,
-    _pointer_descriptor_for_array,
-    _required_handoff_ops,
+    _descriptor_facts_for_array,
 )
 
 
-def test_pointer_to_numpy_short_circuits_unassociated_state_before_unsupported_policy():
+def test_pointer_to_numpy_reports_unassociated_state_before_an_unsupported_policy():
+    """There is nothing to expose either way when the target is not there.
+
+    A policy that blocks extraction still has to answer an unassociated
+    pointer with None rather than refusing, because no view is being withheld.
+    """
     handle = PointerArray(
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: None,
             "associated": lambda _handle: False,
             "nullify": lambda _handle: None,
@@ -34,17 +36,16 @@ def test_pointer_to_numpy_short_circuits_unassociated_state_before_unsupported_p
     assert handle.to_numpy() is None
 
 
-def test_shape_short_circuits_absent_descriptor_state_before_generated_shape():
-    def fail_shape(_handle):
-        pytest.fail("absent descriptor state must not call generated shape")
+def test_shape_reports_absent_descriptor_state_without_being_asked_first():
+    def fail_state(_handle):
+        pytest.fail("the shape inquiry reads the descriptor, which records absence itself")
 
     allocatable = AllocatableArray(
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
-            "shape": fail_shape,
-            "allocated": lambda _handle: False,
+            "shape": lambda _handle: None,
+            "allocated": fail_state,
         },
         to_numpy_policy="unsupported",
     )
@@ -52,9 +53,8 @@ def test_shape_short_circuits_absent_descriptor_state_before_generated_shape():
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
-            "shape": fail_shape,
-            "associated": lambda _handle: False,
+            "shape": lambda _handle: None,
+            "associated": fail_state,
             "nullify": lambda _handle: None,
         },
         to_numpy_policy="unsupported",
@@ -71,7 +71,6 @@ def test_to_numpy_contiguous_view_policy_rejects_non_contiguous_storage():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: strided.shape,
             "to_numpy": lambda _handle: strided,
             "associated": lambda _handle: True,
@@ -90,7 +89,6 @@ def test_to_numpy_descriptor_view_policy_never_copies_storage():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: source.shape,
             "to_numpy": lambda _handle: source,
             "associated": lambda _handle: True,
@@ -116,7 +114,6 @@ def test_to_numpy_rejects_generated_non_numpy_results(policy: str):
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (2,),
             "to_numpy": lambda _handle: [1.0, 2.0],
             "allocated": lambda _handle: True,
@@ -130,28 +127,11 @@ def test_to_numpy_rejects_generated_non_numpy_results(policy: str):
         handle.to_numpy()
 
 
-def test_to_numpy_rejects_generated_none_for_present_descriptor_state():
-    handle = AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            **_required_handoff_ops(),
-            "shape": lambda _handle: (2,),
-            "to_numpy": lambda _handle: None,
-            "allocated": lambda _handle: True,
-        },
-    )
-
-    with pytest.raises(TypeError, match="returned None for present descriptor state"):
-        handle.to_numpy()
-
-
 def test_to_numpy_rejects_generated_array_with_wrong_rank_or_dtype():
     wrong_rank = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (2,),
             "to_numpy": lambda _handle: np.zeros((1, 2), dtype=np.float64),
             "allocated": lambda _handle: True,
@@ -164,7 +144,6 @@ def test_to_numpy_rejects_generated_array_with_wrong_rank_or_dtype():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (2,),
             "to_numpy": lambda _handle: np.zeros(2, dtype=np.int32),
             "allocated": lambda _handle: True,
@@ -174,14 +153,14 @@ def test_to_numpy_rejects_generated_array_with_wrong_rank_or_dtype():
         wrong_dtype.to_numpy()
 
 
-def test_runtime_handle_shapes_reject_negative_extents_before_descriptor_handoff():
+def test_runtime_handle_shapes_reject_negative_extents():
     handle = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
             "shape": lambda _handle: (-1,),
             "allocated": lambda _handle: True,
-            "descriptor": lambda _handle: pytest.fail("negative shape must block descriptor handoff"),
+            "resize": lambda _handle, _shape: None,
         },
         to_numpy_policy="unsupported",
     )
@@ -189,22 +168,7 @@ def test_runtime_handle_shapes_reject_negative_extents_before_descriptor_handoff
     with pytest.raises(ValueError, match="non-negative"):
         _ = handle.shape
     with pytest.raises(ValueError, match="non-negative"):
-        _native_array_descriptor_for_binding(handle, descriptor_kind="allocatable")
-    with pytest.raises(ValueError, match="non-negative"):
         handle.resize(-1)
-
-    valid_handle = AllocatableArray(
-        dtype=np.dtype(np.float64),
-        rank=1,
-        ops={
-            "shape": lambda _handle: (1,),
-            "allocated": lambda _handle: True,
-            "descriptor": lambda _handle: _handoff(229),
-        },
-        to_numpy_policy="unsupported",
-    )
-    with pytest.raises(ValueError, match="non-negative"):
-        valid_handle._descriptor_for_binding(expected_shape=(-1,))
 
 
 def test_pointer_handle_uses_common_base_and_nullify_operation():
@@ -235,36 +199,29 @@ def test_pointer_handle_uses_common_base_and_nullify_operation():
     assert handle.to_numpy() is None
 
 
-def test_pointer_associate_accepts_reassociation_and_an_unassociated_source():
+def test_pointer_associate_copies_the_target_as_it_stands_and_does_not_follow_it():
+    """A pointer assignment snapshots the source's target, it does not track it."""
     first_value = np.arange(3, dtype=np.float64)
     second_value = np.arange(4, dtype=np.float64)
-    destination_state = {"descriptor": _pointer_descriptor_for_array(first_value)}
-    source_state = {"descriptor": _pointer_descriptor_for_array(second_value)}
+    absent = (0, 8, 1, 0, 0, 8)
 
     def pointer(state):
         return PointerArray(
             dtype="float64",
             rank=1,
             ops={
-                "shape": lambda _handle: tuple(dimension["extent"] for dimension in state["descriptor"]["dim"]),
-                "descriptor": lambda _handle: state["descriptor"],
-                "to_numpy": lambda _handle: state["descriptor"],
-                "associated": lambda _handle: state["descriptor"]["base_addr"] != 0,
-                "associate": lambda _handle, descriptor: state.update(descriptor=descriptor),
-                "nullify": lambda _handle: state.update(
-                    descriptor={
-                        "base_addr": 0,
-                        "elem_len": 8,
-                        "rank": 1,
-                        "dim": [{"lower_bound": 0, "extent": 0, "sm": 8}],
-                    }
-                ),
+                "shape": lambda _handle: (state["facts"][4],) if state["facts"][0] else None,
+                "descriptor": lambda _handle: state["facts"],
+                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(state["facts"], "float64"),
+                "associated": lambda _handle: state["facts"][0] != 0,
+                "associate": lambda _handle, facts: state.update(facts=facts),
+                "nullify": lambda _handle: state.update(facts=absent),
             },
             to_numpy_policy="descriptor_view",
         )
 
-    destination = pointer(destination_state)
-    source = pointer(source_state)
+    destination = pointer({"facts": _descriptor_facts_for_array(first_value)})
+    source = pointer({"facts": _descriptor_facts_for_array(second_value)})
 
     destination.associate(source)
     assert destination.associated is True
@@ -272,25 +229,24 @@ def test_pointer_associate_accepts_reassociation_and_an_unassociated_source():
     np.testing.assert_array_equal(destination.to_numpy(), second_value)
 
     source.nullify()
+    assert destination.associated is True
     destination.associate(source)
     assert destination.associated is False
 
 
-def test_generated_pointer_associate_packs_standard_descriptor_facts():
+def test_generated_pointer_associate_hands_over_flat_descriptor_facts():
     value = np.arange(6, dtype=np.float64)[::2]
-    source_state = {"descriptor": _pointer_descriptor_for_array(value)}
     source = PointerArray(
         dtype="float64",
         rank=1,
         ops={
             "shape": lambda _handle: value.shape,
-            "descriptor": lambda _handle: source_state["descriptor"],
-            "to_numpy": lambda _handle: source_state["descriptor"],
+            "descriptor": lambda _handle: _descriptor_facts_for_array(value),
             "associated": lambda _handle: True,
-            "associate": lambda _handle, descriptor: source_state.update(descriptor=descriptor),
             "nullify": lambda _handle: None,
+            "associate": lambda _handle, _facts: None,
         },
-        to_numpy_policy="descriptor_view",
+        to_numpy_policy="unsupported",
     )
     received = []
     destination = _native_array_handle_from_generated_ops(
@@ -299,7 +255,7 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
         1,
         {
             "shape": lambda: None,
-            "descriptor": lambda: 1,
+            "descriptor": lambda: None,
             "associated": lambda: False,
             "associate": lambda facts: received.append(facts),
             "nullify": lambda: None,
@@ -309,16 +265,7 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
 
     destination.associate(source)
 
-    assert received == [
-        (
-            int(value.ctypes.data),
-            8,
-            1,
-            1,
-            3,
-            16,
-        )
-    ]
+    assert received == [(int(value.ctypes.data), 8, 1, 1, 3, 16)]
 
 
 @pytest.mark.parametrize(
@@ -330,7 +277,6 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
                 dtype="int32",
                 rank=1,
                 ops={
-                    **_required_handoff_ops(),
                     "shape": lambda _handle: None,
                     "associated": lambda _handle: False,
                     "nullify": lambda _handle: None,
@@ -345,7 +291,6 @@ def test_generated_pointer_associate_packs_standard_descriptor_facts():
                 dtype="float64",
                 rank=2,
                 ops={
-                    **_required_handoff_ops(),
                     "shape": lambda _handle: None,
                     "associated": lambda _handle: False,
                     "nullify": lambda _handle: None,
@@ -362,7 +307,6 @@ def test_pointer_associate_rejects_incompatible_sources(other, error, message):
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: None,
             "associated": lambda _handle: False,
             "associate": lambda _handle, _descriptor: None,
@@ -441,7 +385,6 @@ def test_pointer_to_numpy_reports_missing_descriptor_extraction():
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (2,),
             "associated": lambda _handle: True,
             "nullify": lambda _handle: None,
@@ -458,7 +401,6 @@ def test_to_numpy_policy_unsupported_reports_completed_policy_block():
         dtype=np.dtype(np.float64),
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (2,),
             "to_numpy": lambda _handle: pytest.fail("unsupported policy must not call generated extraction"),
             "associated": lambda _handle: True,
@@ -476,7 +418,6 @@ def test_common_shape_dispatch_validates_rank():
         dtype="float64",
         rank=2,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: (4,),
             "to_numpy": lambda _handle: None,
             "allocated": lambda _handle: True,
@@ -512,26 +453,12 @@ def test_common_handle_requires_generated_shape_operation():
         AllocatableArray(dtype="float64", rank=1, ops={})
 
 
-def test_common_handle_requires_generated_descriptor_operation():
-    with pytest.raises(ValueError, match="requires generated operation 'descriptor'"):
-        AllocatableArray(
-            dtype="float64",
-            rank=1,
-            ops={
-                "shape": lambda _handle: (1,),
-                "allocated": lambda _handle: True,
-            },
-            to_numpy_policy="unsupported",
-        )
-
-
 def test_extraction_enabled_handle_requires_generated_to_numpy_operation():
     with pytest.raises(ValueError, match="requires generated operation 'to_numpy'"):
         AllocatableArray(
             dtype="float64",
             rank=1,
             ops={
-                **_required_handoff_ops(),
                 "shape": lambda _handle: (1,),
                 "allocated": lambda _handle: True,
             },
@@ -545,7 +472,6 @@ def test_pointer_handle_requires_generated_associated_and_nullify_operations():
             dtype="float64",
             rank=1,
             ops={
-                **_required_handoff_ops(),
                 "shape": lambda _handle: (1,),
                 "nullify": lambda _handle: None,
             },
@@ -555,7 +481,6 @@ def test_pointer_handle_requires_generated_associated_and_nullify_operations():
             dtype="float64",
             rank=1,
             ops={
-                **_required_handoff_ops(),
                 "shape": lambda _handle: (1,),
                 "associated": lambda _handle: True,
             },

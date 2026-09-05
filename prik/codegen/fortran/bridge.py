@@ -114,6 +114,20 @@ from prik.codegen.visitor import ClassVisitor
 # address. The binding defines it; the bridge declares and calls it.
 _MODULE_ARRAY_CAPTURE_NAME = "prik_capture_address"
 
+# The binding answers these from the live descriptor the handle's entry point
+# supplies, so the bridge emits no procedure of its own for them.
+_DESCRIPTOR_ANSWERED_OPERATIONS = frozenset(
+    {
+        NativeArrayOperation.ALLOCATED,
+        NativeArrayOperation.ASSOCIATED,
+        NativeArrayOperation.CONTIGUOUS,
+        NativeArrayOperation.DESCRIPTOR,
+        NativeArrayOperation.ELEMENT_LENGTH,
+        NativeArrayOperation.SHAPE,
+        NativeArrayOperation.TO_NUMPY,
+    }
+)
+
 _MODULE_GETTER_SUMMARIES = {
     ModuleGetterAction.CONSTANT_VALUE: "The value is a compile-time constant materialized by the binding.",
     ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Returns the compiler-evaluated constant by value.",
@@ -6896,12 +6910,19 @@ class FortranBridgeGenerator(ClassVisitor):
         handle = field.native_array_handle
         if handle is None:
             raise ValueError(f"Native handle field {field.owner_path!r} has no operation plan")
-        procedures = []
-        for operation in handle.operations:
-            if operation is NativeArrayOperation.TO_NUMPY:
-                continue
-            procedures.append(self._native_handle_field_procedure(owner, field, operation))
-        return tuple(procedures)
+        # The descriptor entry point is what the binding runs every inquiry
+        # through, so it is emitted for the handle itself; the rest are the
+        # mutations that must reach the field.
+        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned.extend(
+            operation
+            for operation in handle.operations
+            # The descriptor entry point is already planned, and a NumPy view is
+            # a Python object, which only the binding can build.
+            if operation not in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}
+            and (not handle.descriptor_inquiries or operation not in _DESCRIPTOR_ANSWERED_OPERATIONS)
+        )
+        return tuple(self._native_handle_field_procedure(owner, field, operation) for operation in planned)
 
     def _native_handle_field_procedure(
         self,

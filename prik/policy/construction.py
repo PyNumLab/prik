@@ -6210,12 +6210,31 @@ def _native_array_handle_wrapper_policy(
     operations = {
         _native_array_enum(NativeArrayOperation, item, owner_path, "operation") for item in completed.operations
     }
-    # Shape and the descriptor are what a handle is asked for.  The storage
-    # facts an ordinary dummy needs are read from the descriptor in the
-    # binding, so no operation reports them.
-    operations.update({NativeArrayOperation.SHAPE, NativeArrayOperation.DESCRIPTOR})
+    # Shape is what every handle is asked for.  Everything an argument needs
+    # is read from the live descriptor in the binding, so no operation
+    # reports it; only a pointer still reports one, because a pointer that has
+    # no storage of its own has nowhere else to record what it was pointed at.
+    operations.add(NativeArrayOperation.SHAPE)
+    if descriptor == "pointer":
+        operations.add(NativeArrayOperation.DESCRIPTOR)
     if semantic_type.name == "String":
         operations.add(NativeArrayOperation.ELEMENT_LENGTH)
+    # A bind(C) character dummy must have an assumed or constant length, so a
+    # deferred-length pointer array has no legal descriptor interface at all.
+    # Its state, shape and width still come from the compiler's own inquiries;
+    # anything that has to reach the descriptor itself does not exist for it.
+    descriptor_inquiries = not (
+        descriptor == "pointer" and semantic_type.metadata.get("fortran_character_length") == ":"
+    )
+    if not descriptor_inquiries:
+        operations.difference_update(
+            {
+                NativeArrayOperation.DESCRIPTOR,
+                NativeArrayOperation.ASSOCIATE,
+                NativeArrayOperation.TO_NUMPY,
+            }
+        )
+        output_projection = NativeArrayOutputProjection.NONE
         if semantic_type.metadata.get("fortran_character_length") == ":":
             operations.difference_update({NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE})
     if descriptor == "pointer":
@@ -6271,13 +6290,13 @@ def _native_array_handle_wrapper_policy(
             owner_path,
             "destroy behavior",
         ),
-        extraction_action=_native_array_enum(
-            NativeArrayExtractionAction,
-            completed.to_numpy,
-            owner_path,
-            "extraction action",
+        extraction_action=(
+            _native_array_enum(NativeArrayExtractionAction, completed.to_numpy, owner_path, "extraction action")
+            if descriptor_inquiries
+            else NativeArrayExtractionAction.UNSUPPORTED
         ),
         descriptor_interop=interop,
+        descriptor_inquiries=descriptor_inquiries,
         nullable=completed.nullable,
         optional_absent=completed.optional_absent,
         storage_mode=_native_array_enum(StorageMode, completed.storage_mode, owner_path, "storage mode"),
@@ -6335,6 +6354,7 @@ def _native_array_default_handle_policy(
                 NativeArrayOperation.SHAPE,
                 NativeArrayOperation.DESCRIPTOR,
                 NativeArrayOperation.CONTIGUOUS,
+                NativeArrayOperation.ELEMENT_LENGTH,
             }
         )
     return NativeArrayDefaultHandlePolicy(

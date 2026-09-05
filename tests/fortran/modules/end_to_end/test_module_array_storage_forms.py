@@ -149,8 +149,6 @@ def test_only_an_allocatable_dummy_carries_the_declared_lower_bound(array_forms)
     the actual's descriptor, so it adopts them -- which is why a module
     allocatable has to report the bounds it really has.
     """
-    assert array_forms.alloc_shifted._descriptor_record_for_binding()["dim"][0]["lower_bound"] == 5
-    assert array_forms.alloc_plain._descriptor_record_for_binding()["dim"][0]["lower_bound"] == 1
     assert array_forms.lower_bound_of(array_forms.alloc_shifted) == np.int32(5)
     assert array_forms.lower_bound_of(array_forms.alloc_plain) == np.int32(1)
 

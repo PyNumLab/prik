@@ -45,9 +45,12 @@ def test_plain_module_allocatable_uses_standard_descriptor_callback_without_copy
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "void (*callback)(CFI_cdesc_t *, void *)" in c_source
-    assert "prik_module_allocatable_module_handles_plain_allocatable_descriptor_callback" in c_source
-    assert "descriptor->base_addr" in c_source
-    assert "Py_BuildValue" in c_source
+    assert "prik_module_allocatable_module_handles_plain_allocatable_descriptor_callback_with_descriptor" in c_source
+    # Every inquiry runs one shared consumer over the descriptor the bridge
+    # supplies; nothing copies the descriptor out to be read in Python.
+    assert "prik_native_array_read_shape(void * descriptor, void * context)" in c_source
+    assert "source->base_addr" in c_source
+    assert "Py_BuildValue" not in c_source
     assert "subroutine bind_c_plain_allocatable_descriptor(" in bridge_source
     assert 'bind(c, name="bind_c_plain_allocatable_descriptor")' in bridge_source
     assert "type(c_funptr), value :: callback_address" in bridge_source
@@ -74,9 +77,9 @@ def test_allocated_direct_result_assigns_then_moves_into_owned_descriptor():
     assert "deallocate(result)" in procedure
     assert "call prik_collect_allocatable_array_result(native_make(n), result)" not in procedure
     assert "result = result_value" not in procedure
-    assert "function bind_c_owned_result_" in bridge_source
-    assert "_allocated(" in bridge_source
-    assert "real(c_double), allocatable, dimension(:), intent(in) :: result" in bridge_source
+    # Allocation state is read from the owned descriptor in the binding, so no
+    # Fortran inquiry is emitted for it.
+    assert "_allocated(" not in bridge_source
     assert "subroutine bind_c_owned_result_" in bridge_source
     assert "_deallocate(" in bridge_source
     assert "real(c_double), allocatable, dimension(:), intent(inout) :: result" in bridge_source

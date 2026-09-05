@@ -2253,6 +2253,7 @@ class WrapperPlanner(ClassVisitor):
             destroy_behavior=policy.destroy_behavior,
             extraction_action=policy.extraction_action,
             descriptor_interop=policy.descriptor_interop,
+            descriptor_inquiries=policy.descriptor_inquiries,
             nullable=policy.nullable,
             optional_absent=policy.optional_absent,
             storage_mode=policy.storage_mode,

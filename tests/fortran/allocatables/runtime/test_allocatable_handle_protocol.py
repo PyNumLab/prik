@@ -9,7 +9,6 @@ from prik.runtime.handles import (
 from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _common_ops,
-    _required_handoff_ops,
 )
 
 
@@ -47,15 +46,19 @@ def test_allocatable_handle_uses_common_metadata_shape_owner_and_numpy_dispatch(
     assert handle.allocated is True
 
 
-def test_allocatable_to_numpy_short_circuits_unallocated_state_before_generated_extraction():
+def test_allocatable_extraction_reports_unallocated_state_as_no_view():
+    """Absence is reported by the extraction, not asked about beforehand.
+
+    The generated extraction reads the descriptor, which is where whether the
+    storage exists is recorded, so nothing has to test allocation first.
+    """
     handle = AllocatableArray(
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: None,
-            "to_numpy": lambda _handle: pytest.fail("unallocated handles must not call generated extraction"),
-            "allocated": lambda _handle: False,
+            "to_numpy": lambda _handle: None,
+            "allocated": lambda _handle: pytest.fail("extraction must not need the allocation state"),
         },
     )
 
@@ -139,7 +142,6 @@ def test_allocatable_handle_requires_generated_allocated_operation():
             dtype="float64",
             rank=1,
             ops={
-                **_required_handoff_ops(),
                 "shape": lambda _handle: (1,),
                 "to_numpy": lambda _handle: None,
             },
@@ -151,7 +153,6 @@ def test_allocatable_operations_are_gated_by_the_completed_ops_table():
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: None,
             "allocated": lambda _handle: False,
         },
@@ -170,7 +171,6 @@ def test_close_is_a_noop_for_a_borrowed_allocatable_handle():
         dtype="float64",
         rank=1,
         ops={
-            **_required_handoff_ops(),
             "shape": lambda _handle: None,
             "allocated": lambda _handle: False,
         },

@@ -94,9 +94,7 @@ def test_native_array_backend_release_is_idempotent_and_never_frees_borrowed_sto
     assert "free(context);" in body
     # A released owned backend reports itself closed rather than handing over
     # storage that is gone.
-    reader = header[
-        header.index("static inline prik_native_array_backend *prik_native_array_backend_from_capsule(") :
-    ]
+    reader = header[header.index("static inline prik_native_array_backend *prik_native_array_backend_from_capsule(") :]
     reader = reader[: reader.index("\n}\n")]
     assert "backend->release != NULL && backend->context == NULL" in reader
     assert "prik native array handle is closed" in reader

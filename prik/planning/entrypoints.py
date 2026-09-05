@@ -24,7 +24,6 @@ from prik.policy.models import (
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDefaultConstruction,
-    NativeArrayDescriptorInterop,
     NativeArrayOperation,
     NativeDescriptorHandoffABI,
 )
@@ -50,14 +49,21 @@ from .models import (
 )
 
 
-_FIELD_HANDLE_LOCAL_OPERATIONS = frozenset({NativeArrayOperation.TO_NUMPY})
-_MODULE_HANDLE_LOCAL_OPERATIONS = frozenset({NativeArrayOperation.TO_NUMPY})
-_OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
+# Answered in the binding from the descriptor the handle's entry point
+# supplies, so no Fortran procedure is planned for them.
+_DESCRIPTOR_ANSWERED_OPERATIONS = frozenset(
     {
         NativeArrayOperation.ALLOCATED,
         NativeArrayOperation.ASSOCIATED,
         NativeArrayOperation.CONTIGUOUS,
+        NativeArrayOperation.DESCRIPTOR,
+        NativeArrayOperation.ELEMENT_LENGTH,
         NativeArrayOperation.SHAPE,
+        NativeArrayOperation.TO_NUMPY,
+    }
+)
+_OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
+    {
         NativeArrayOperation.ASSOCIATE,
         NativeArrayOperation.DEALLOCATE,
         NativeArrayOperation.NULLIFY,
@@ -715,9 +721,18 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             raise ValueError(f"Native handle field {field.owner_path!r} has no completed rank")
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
         operations = []
-        for operation in handle.operations:
-            if operation in _FIELD_HANDLE_LOCAL_OPERATIONS:
-                continue
+        # The descriptor entry point is what every inquiry runs through, so it
+        # is planned for the handle rather than for one of its capabilities.
+        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned.extend(
+            operation
+            for operation in handle.operations
+            # The descriptor entry point is already planned, and a NumPy view is
+            # a Python object, which only the binding can build.
+            if operation not in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}
+            and (not handle.descriptor_inquiries or operation not in _DESCRIPTOR_ANSWERED_OPERATIONS)
+        )
+        for operation in planned:
             signature = self._field_handle_signature(field, handle, operation, owner_values)
             operations.append(
                 self._operation(
@@ -977,9 +992,18 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {variable.owner_path!r} has no completed operation plan")
         operations = []
-        for operation in handle.operations:
-            if operation in _MODULE_HANDLE_LOCAL_OPERATIONS:
-                continue
+        # The descriptor entry point is what every inquiry runs through, so it
+        # is planned for the handle rather than for one of its capabilities.
+        planned = [NativeArrayOperation.DESCRIPTOR]
+        planned.extend(
+            operation
+            for operation in handle.operations
+            # The descriptor entry point is already planned, and a NumPy view is
+            # a Python object, which only the binding can build.
+            if operation not in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}
+            and (not handle.descriptor_inquiries or operation not in _DESCRIPTOR_ANSWERED_OPERATIONS)
+        )
+        for operation in planned:
             signature = self._module_native_array_signature(variable, handle, operation)
             if signature is None:
                 continue
@@ -1010,12 +1034,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             )
             return NativeEntrypointSignaturePlan(extents, self._void_result())
         if operation is NativeArrayOperation.DESCRIPTOR:
-            if self._uses_module_allocatable_descriptor(variable):
-                return self._module_descriptor_callback_signature(variable, handle)
-            if handle.descriptor_kind.value != "pointer":
-                return None
-            descriptor = self._descriptor_parameter("descriptor", handle, variable.semantic_type_name, intent="out")
-            return NativeEntrypointSignaturePlan((descriptor,), self._void_result())
+            return self._module_descriptor_callback_signature(variable, handle)
         if operation is NativeArrayOperation.ASSOCIATE:
             source = self._descriptor_parameter("source", handle, variable.semantic_type_name, intent="in")
             return NativeEntrypointSignaturePlan((source,), self._void_result())
@@ -1033,24 +1052,6 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             descriptor_kind=handle.descriptor_kind,
         )
         return NativeEntrypointSignaturePlan((callback, self._opaque_parameter("context")), self._void_result())
-
-    @staticmethod
-    def _uses_module_allocatable_descriptor(variable: ModuleVariablePlan) -> bool:
-        """Report whether a module array reaches its descriptor through a consumer.
-
-        The variable is handed to a consumer rather than filling a record
-        supplied from C, so the descriptor that crosses is one the compiler
-        built. Allocatable and pointer variables both do this.
-        """
-        handle = variable.native_array_handle
-        return bool(
-            handle is not None
-            and handle.descriptor_interop
-            in {
-                NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR,
-                NativeArrayDescriptorInterop.POINTER_C_DESCRIPTOR,
-            }
-        )
 
     @staticmethod
     def _nullable_derived_module_proxy(variable: ModuleVariablePlan) -> bool:

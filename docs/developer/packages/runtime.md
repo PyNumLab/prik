@@ -23,7 +23,7 @@ select a different view behavior from local descriptor facts.
 ## A Native Array Handle At Runtime
 
 ```text
-generated operation dictionary + native descriptor table
+generated operation dictionary + native backend capsule
   + dtype, rank, ownership, and view policy
   -> NativeArrayHandleBase validation and owner retention
   -> AllocatableArray or PointerArray
@@ -31,11 +31,86 @@ generated operation dictionary + native descriptor table
 ```
 
 The operation dictionary is the boundary between generated extension code and
-the stable Python handle API. The versioned native table is the cross-extension
-C boundary used to inspect a live descriptor without serializing it through
-Python. An operation exists only when the completed plan allows the generator
-to expose it. Missing operations fail explicitly rather than being inferred
-from `allocatable` or `pointer` alone.
+the stable Python handle API. An operation exists only when the completed plan
+allows the generator to expose it. Missing operations fail explicitly rather
+than being inferred from `allocatable` or `pointer` alone.
+
+### The Backend Capsule
+
+Every generated handle publishes one versioned capsule,
+`prik.native_array_backend.v1`, on `_native_ops`. It is the whole
+cross-extension ABI for an array handle:
+
+```c
+typedef struct {
+    uint32_t struct_size;
+    uint32_t descriptor_kind;
+    uint32_t rank;
+    uint32_t descriptor_size;
+    int32_t  cfi_type;
+    size_t   element_size;
+    void    *context;
+    prik_native_array_with_descriptor_fn with_descriptor;
+    prik_native_array_release_fn release;
+} prik_native_array_backend;
+```
+
+`with_descriptor(context, consumer, consumer_context)` is the only route to a
+descriptor. It produces a live one and runs the consumer on it:
+
+- **Borrowed** — a module variable or a derived-type field. The entry point
+  enters Fortran, which builds the descriptor for that call and copies back
+  what the consumer wrote. The descriptor is gone when the consumer returns and
+  must never be retained, copied, or serialized.
+- **Owned** — a native result, or a contract handle that has been given
+  storage. The binding allocated a descriptor and keeps it for the handle's
+  life, so the entry point hands that storage straight to the consumer.
+
+Consumers cannot tell the two apart and must not try to. `context` is whatever
+the entity needs to be reached: the parent's address for a field, the
+descriptor storage for an owned handle, `NULL` for a module variable.
+`release` is non-`NULL` exactly when `context` is storage this extension
+allocated, so a borrowed backend can never free anything, and clearing
+`context` after one release makes `close()` and finalization both safe.
+
+The version lives in the capsule name: `PyCapsule_GetPointer` refuses a
+capsule created under any other name, so no magic word or second version field
+is carried. `struct_size` catches a layout change made without renaming;
+`descriptor_size` is `sizeof(CFI_CDESC_T(rank))` and is the only way one
+extension can attest another's CFI layout, which nothing inside a descriptor
+can establish. `descriptor_kind`, `rank`, `cfi_type` and `element_size` are
+what a reader compares against the dummy it is filling, so a mismatched actual
+is refused before any Fortran is entered. `element_size` is `0` when the width
+is only known at run time, as for a deferred-length character array.
+
+### Inquiries Read The Descriptor
+
+`shape`, `allocated`, `associated`, `contiguous`, `element_length` and
+`to_numpy` are all answered by small shared C consumers run through
+`with_descriptor`, for borrowed and owned handles alike. Nothing crosses into
+Python except the finished object, so no descriptor is serialized into Python
+fields and no field is decoded back into C. There is correspondingly no Fortran
+procedure per variable for any of them; the bridge emits only the descriptor
+entry point and the mutations that must reach the entity itself — `allocate`,
+`resize`, `deallocate`, `nullify`, `associate` and `destroy`.
+
+A pointer additionally reports `descriptor` as a flat fact tuple — base
+address, element width, rank, then a lower bound, extent and byte stride per
+axis. That is how a pointer assignment snapshots what another pointer is
+associated with, which matters because a handle created from a `.pyi` contract
+has no native storage until a call gives it some and so has nowhere else to
+record it.
+
+### Views And Ownership
+
+`to_numpy()` builds the view in C while the descriptor is live, over the
+storage the descriptor names, with the descriptor's own byte strides — so
+negative strides, non-contiguous pointer targets and zero-sized dimensions all
+come through unchanged. The view's base is what keeps that storage valid: the
+parent object for a derived-type field, the backend capsule for an owned
+handle, and nothing for a module variable, whose storage outlives every view of
+it. An owned handle's view additionally retains the handle, because closing the
+handle is what releases the storage.
 
 ## Local Structure
 
@@ -52,7 +127,9 @@ prik/runtime/
   `AllocatableArray` adds allocation state, resize, and deallocation;
   `PointerArray` adds association, nullification, allocation, resize, and
   deallocation when supplied. Internal adapters translate generated call
-  signatures and descriptor handoffs.
+  signatures. A handle created from a `.pyi` contract answers from a fact
+  tuple of its own until a call attaches generated storage; every other handle
+  answers from its descriptor.
 - `native_support/prik_binding.h` contains header-only CPython/NumPy
   conversion, descriptor, validation, capsule, and release support. Change it
   only with its generated C users and `prik/compiler/native_support.py`.
@@ -60,9 +137,11 @@ prik/runtime/
 
 `to_numpy()` returns `None` for an absent allocatable or pointer and otherwise
 validates the completed view policy, dtype, rank, and any required contiguity.
-Native argument handoff performs the additional expected shape, layout,
-alignment, byte-order, and writeability checks. A returned NumPy array is a
-view of native storage; a caller that needs independent storage must copy it.
+Native argument handoff is performed in the binding, against the live
+descriptor, and refuses a mismatched dtype, rank, fixed shape, character width,
+layout, byte order, alignment, writeability, or contiguity there. A returned
+NumPy array is a view of native storage; a caller that needs independent
+storage must copy it.
 
 ## Run The Handle Demonstration
 

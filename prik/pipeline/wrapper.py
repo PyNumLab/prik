@@ -3069,11 +3069,10 @@ class WrapperGenerator:
         roles = handle.default_handle.operation_roles
         required = {
             NativeArrayOperation.SHAPE,
-            NativeArrayOperation.DESCRIPTOR,
             NativeArrayOperation.DESTROY,
         }
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            required.add(NativeArrayOperation.ASSOCIATE)
+            required.update({NativeArrayOperation.ASSOCIATE, NativeArrayOperation.DESCRIPTOR})
         diagnostics = []
         complete = len(set(operations)) == len(operations) and required.issubset(operations)
         if not complete:
@@ -3431,10 +3430,16 @@ class WrapperGenerator:
     def _required_native_array_operations(
         handle: NativeArrayHandlePlan,
     ) -> set[NativeArrayOperation]:
-        """Return common operations required by the completed descriptor kind."""
-        required = {NativeArrayOperation.SHAPE, NativeArrayOperation.DESCRIPTOR}
-        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            required.add(NativeArrayOperation.ASSOCIATE)
+        """Return common operations required by the completed descriptor kind.
+
+        Every handle reports its shape.  A pointer additionally reports the
+        descriptor it is associated with and accepts a new association, because
+        a pointer that has no storage of its own has nowhere else to record
+        what another pointer was pointed at.
+        """
+        required = {NativeArrayOperation.SHAPE}
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER and handle.descriptor_inquiries:
+            required.update({NativeArrayOperation.ASSOCIATE, NativeArrayOperation.DESCRIPTOR})
         return required
 
     def _array_action_diagnostics(

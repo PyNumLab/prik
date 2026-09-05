@@ -349,10 +349,11 @@ def test_deferred_character_module_handles_use_runtime_element_length():
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert '"elem_len", (unsigned long long)descriptor->elem_len' in c_source
-    assert "bind_c_module_names_element_length()" in c_source
-    assert "function bind_c_module_names_element_length() result(result)" in bridge_source
-    assert "result = len(native_module_names, kind=c_int64_t)" in bridge_source
+    assert "out->result = PyLong_FromLongLong((long long)source->elem_len)" in c_source
+    assert "prik_native_array_read_element_length" in c_source
+    # The width comes out of the descriptor, so the bridge carries no inquiry
+    # of its own for it.
+    assert "bind_c_module_names_element_length" not in bridge_source
 
 
 def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
@@ -365,7 +366,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     # Descriptor arguments reach the runtime through one packer.  The
     # fact-reporting one is gone: nothing rebuilds a descriptor in C.
     assert '"_native_array_descriptor_argument_for_binding_positional"' not in c_source
-    assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
+    assert '"_native_array_backend_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
     assert "prik_native_array_backend_capsule_new(" in c_source
@@ -373,9 +374,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
     assert "PRIK_NATIVE_ARRAY_KIND_POINTER" in c_source
     assert "prik_native_array_backend_release(owner_backend)" in c_source
-    assert (
-        "bound_values_native_backend = prik_native_array_backend_for_descriptor(bound_values_item"
-    ) in c_source
+    assert ("bound_values_native_backend = prik_native_array_backend_for_descriptor(bound_values_item") in c_source
     assert "prik_bind_default_memory_handles_replace_values" in c_source
     assert "prik_owned_memory_handles_replace_values_destroy" in c_source
     assert "bound_values_default_binder" in c_source
@@ -405,11 +404,13 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "call prik_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
     assert "if (allocated(value)) then" in bridge_source
     assert "call move_alloc(value, result)" in bridge_source
-    assert "allocated(CFI_cdesc_t * result);" in c_source
-    assert "_allocated(owner_descriptor));" in c_source
+    # An owned handle answers its inquiries from the descriptor it holds, so
+    # only the mutations reach Fortran.
+    assert "bind_c_owned_result_allocated(" not in c_source
+    assert "_shape(owner_descriptor" not in c_source
     assert "_deallocate(owner_descriptor);" in c_source
     assert "_destroy(owner_descriptor);" in c_source
-    assert "_shape(owner_descriptor, &extent_0);" in c_source
+    assert "owner_backend->with_descriptor(owner_backend->context, prik_native_array_read_shape" in c_source
     assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
     assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
@@ -425,7 +426,7 @@ def test_owned_descriptor_lifecycle_operations_do_not_materialize_descriptor_loc
     artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    for operation in ("descriptor", "destroy"):
+    for operation in ("allocated", "shape", "to_numpy", "destroy"):
         function = _generated_c_function(
             c_source,
             f"prik_owned_memory_handles_make_return_{operation}",
@@ -433,11 +434,11 @@ def test_owned_descriptor_lifecycle_operations_do_not_materialize_descriptor_loc
         assert "owner_backend" in function
         assert "owner_descriptor" not in function
 
-    allocated = _generated_c_function(
+    deallocate = _generated_c_function(
         c_source,
-        "prik_owned_memory_handles_make_return_allocated",
+        "prik_owned_memory_handles_make_return_deallocate",
     )
-    assert "owner_descriptor" in allocated
+    assert "owner_descriptor" in deallocate
 
 
 @pytest.mark.parametrize(

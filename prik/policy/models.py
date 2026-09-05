@@ -1121,6 +1121,14 @@ class NativeArrayHandleWrapperPolicy:
     destroy_behavior: NativeArrayDestroyBehavior
     extraction_action: NativeArrayExtractionAction
     descriptor_interop: NativeArrayDescriptorInterop
+    # A handle answers its inquiries -- shape, state, element width,
+    # contiguity, the NumPy view -- from the live descriptor its entry point
+    # supplies, unless its declaration cannot cross a bind(C) descriptor
+    # interface at all. A deferred-length character pointer is that case: the
+    # standard does not allow such a dummy in a bind(C) interface, and GNU
+    # Fortran mistranslates the descriptor rather than rejecting it, so those
+    # inquiries stay on generated Fortran procedures of their own.
+    descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: StorageMode

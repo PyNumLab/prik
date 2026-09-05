@@ -19,9 +19,20 @@ release tags add a leading `v` to the package version.
   rank 1 through 15, optional arrays, and fixed- or assumed-width character
   arrays. C array arguments continue to accept NumPy arrays only.
 
-- Added a versioned native descriptor-operation table for generated array
-  handles. Ordinary argument handoff, shape queries, and NumPy views can use the
-  descriptor directly without serializing descriptor fields through Python.
+- Generated array handles now publish one versioned native capsule,
+  `prik.native_array_backend.v1`, replacing the separate descriptor-operation
+  table and owned-descriptor record. It carries a single entry point that runs
+  a consumer while the handle's descriptor is live, whether that descriptor is
+  one Fortran builds for the call or persistent storage the wrapper owns.
+  Extensions built against the earlier branch-only table must be regenerated.
+
+- Argument handoff, shape, allocation and association state, element width,
+  contiguity and NumPy views are now all read from that live descriptor in C.
+  No descriptor is serialized into Python fields and decoded back, and the
+  generated Fortran bridge no longer carries a procedure per variable for any
+  of those inquiries. A NumPy view now carries the descriptor's own byte
+  strides directly, so negative strides and non-contiguous pointer targets are
+  exposed without an intermediate buffer.
 
 - Fixed writable module and derived-field allocatable arrays, and reject
   PROTECTED module arrays during policy completion when writable access would be
