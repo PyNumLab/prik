@@ -93,6 +93,10 @@ contains
     module_values => module_storage(2:4)
   end subroutine associate_module_contiguous
 
+  subroutine associate_module_reversed()
+    module_values => module_storage(5:2:-1)
+  end subroutine associate_module_reversed
+
   subroutine select_module_values(values)
     real(8), pointer, intent(out) :: values(:)
     values => module_storage(2:4)
@@ -391,6 +395,33 @@ def test_caller_created_pointer_crosses_separately_built_extensions(tmp_path: Pa
     second_values.close()
     values.close()
     assert values.closed is True
+
+
+def test_a_reversed_pointer_target_keeps_its_data_pointer_strides_and_span(tmp_path: Path):
+    """A negative stride reaches the view exactly as the descriptor records it.
+
+    The descriptor's base address is the first element in Fortran order and its
+    stride multiplier is signed, which is also what NumPy indexes with, so the
+    view is built from them directly rather than from a window computed around
+    them.
+    """
+    module = _pointer_descriptor_view_module(tmp_path)
+    handle = module.module_values
+    module.associate_module_reversed()
+
+    view = handle.to_numpy()
+
+    assert view.shape == (4,)
+    assert view.strides == (-8,)
+    np.testing.assert_allclose(view, np.array([5.0, 4.0, 3.0, 2.0], dtype=np.float64))
+
+    # The view spans the same storage as the forward slice of the same target.
+    view[0] = np.float64(50.0)
+    module.associate_module_contiguous()
+    np.testing.assert_allclose(module_handle_view := handle.to_numpy(), np.array([2.0, 3.0, 4.0]))
+    assert module_handle_view.strides == (8,)
+    module.associate_module_reversed()
+    np.testing.assert_allclose(handle.to_numpy(), np.array([50.0, 4.0, 3.0, 2.0]))
 
 
 def test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime(tmp_path: Path):

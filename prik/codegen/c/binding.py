@@ -4535,27 +4535,6 @@ class CBindingGenerator(ClassVisitor):
         owner = re.sub(r"\W", "_", variable.owner_path).casefold()
         return f"prik_module_{owner}_descriptor_callback"
 
-    def _descriptor_record_return_nodes(
-        self,
-        base_addr: str,
-        elem_len: str,
-        rank: int,
-    ) -> tuple[CDeclaration | CExpressionStatement | CReturn, ...]:
-        """Finish one standard descriptor mapping from existing dimensions."""
-        return (
-            CDeclaration(
-                "descriptor_record",
-                "PyObject *",
-                CodeExpression(
-                    f'Py_BuildValue("{{sK,sK,si,sO}}", "base_addr", '
-                    f'(unsigned long long)(uintptr_t){base_addr}, "elem_len", '
-                    f'(unsigned long long)({elem_len}), "rank", {rank}, "dim", dimensions)'
-                ),
-            ),
-            CExpressionStatement(CodeExpression("Py_DECREF(dimensions)")),
-            CReturn(CodeExpression("descriptor_record")),
-        )
-
     def _module_native_array_shape_mutation_body(
         self,
         variable: ModuleVariablePlan,
@@ -4918,242 +4897,6 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
 
-    def _owned_native_array_to_numpy_body(
-        self,
-        result: ResultPlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Build the NumPy view over one owned descriptor's storage.
-
-        The descriptor is already here, so the view is built from it directly
-        rather than reported as fields for the runtime to decode back.  The
-        capsule owning the descriptor becomes the array's base, so the storage
-        outlives any view taken of it.
-        """
-        handle = result.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
-        # A pointer describes its target to another pointer through these
-        # fields, and a view cannot carry the Fortran lower bounds an
-        # association preserves.  A character element width is only known at
-        # runtime.  Both keep reporting fields; an allocatable never associates,
-        # so its extraction hands back the view itself.
-        if (
-            result.datatype_family is DatatypeFamily.STRING
-            or handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE
-        ):
-            return self._native_array_descriptor_record_nodes(handle.array.rank, "owner_descriptor")
-        rank = handle.array.rank
-        scalar = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-        nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
-            CDeclaration(f"view_dimensions[{rank}]", "npy_intp"),
-            CDeclaration(f"view_strides[{rank}]", "npy_intp"),
-            CDeclaration("view", "PyObject *", CodeExpression("NULL")),
-            CComment("An unallocated or disassociated descriptor exposes no storage."),
-            CIf(
-                CodeExpression("owner_descriptor->base_addr == NULL"),
-                body=(CReturn(CodeExpression("Py_NewRef(Py_None)")),),
-            ),
-        ]
-        for axis in range(rank):
-            nodes.extend(
-                (
-                    # A compiler may report an empty dimension as extent -1.
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"view_dimensions[{axis}] = (npy_intp)(owner_descriptor->dim[{axis}].extent == -1 "
-                            f"? 0 : owner_descriptor->dim[{axis}].extent)"
-                        )
-                    ),
-                    CExpressionStatement(
-                        CodeExpression(f"view_strides[{axis}] = (npy_intp)owner_descriptor->dim[{axis}].sm")
-                    ),
-                )
-            )
-        nodes.extend(
-            (
-                CExpressionStatement(
-                    CodeExpression(
-                        f"view = PyArray_New(&PyArray_Type, {rank}, view_dimensions, "
-                        f"{scalar.numpy_type_macro}, view_strides, owner_descriptor->base_addr, 0, "
-                        f"NPY_ARRAY_WRITEABLE, NULL)"
-                    )
-                ),
-                CIf(CodeExpression("view == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                CComment("The view borrows the descriptor's storage, so it keeps the capsule"),
-                CComment("that owns the descriptor alive for as long as the view exists."),
-                CExpressionStatement(CodeExpression("Py_INCREF(owner_obj)")),
-                CIf(
-                    CodeExpression("PyArray_SetBaseObject((PyArrayObject *)view, owner_obj) < 0"),
-                    body=(
-                        CExpressionStatement(CodeExpression("Py_DECREF(owner_obj)")),
-                        CExpressionStatement(CodeExpression("Py_DECREF(view)")),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                ),
-                CReturn(CodeExpression("view")),
-            )
-        )
-        return tuple(nodes)
-
-    def _owned_native_array_descriptor_record_body(
-        self,
-        result: ResultPlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Expose one owned descriptor record for shape or NumPy extraction."""
-        handle = result.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
-        return self._native_array_descriptor_record_nodes(handle.array.rank, "owner_descriptor")
-
-    def _owned_native_array_shape_body(
-        self,
-        result: ResultPlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Expose extents using the typed compiler descriptor inquiry."""
-        if self._is_owned_deferred_character_result(result):
-            return self._owned_native_array_descriptor_record_body(result)
-        handle = result.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
-        dimensions = tuple(f"extent_{axis}" for axis in range(handle.array.rank))
-        return (
-            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in dimensions),
-            CComment("Storage that is not there has no shape, and the compiler's"),
-            CComment("inquiry has nothing to answer about, so report it here."),
-            CIf(
-                CodeExpression("owner_descriptor->base_addr == NULL"),
-                body=(CReturn(CodeExpression("Py_NewRef(Py_None)")),),
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{self._owned_native_array_bridge_operation_name(result, NativeArrayOperation.SHAPE)}"
-                    f"(owner_descriptor, {', '.join(f'&{name}' for name in dimensions)})"
-                )
-            ),
-            CReturn(CodeExpression(f'Py_BuildValue("({",".join("L" for _ in dimensions)})", {", ".join(dimensions)})')),
-        )
-
-    def _owned_native_array_element_length_body(self, _result: ResultPlan) -> tuple[CReturn, ...]:
-        """Expose the current deferred character element width."""
-        return (CReturn(CodeExpression("PyLong_FromSize_t(owner_descriptor->elem_len)")),)
-
-    def _owned_native_array_descriptor_body(
-        self,
-        _result: ResultPlan,
-    ) -> tuple[CExpressionStatement | CReturn, ...]:
-        """Expose the versioned owner capsule for cross-extension handoff."""
-        return (
-            CExpressionStatement(CodeExpression("Py_INCREF(owner_obj)")),
-            CReturn(CodeExpression("owner_obj")),
-        )
-
-    def _owned_native_array_allocated_body(self, _result: ResultPlan) -> tuple[CReturn, ...]:
-        """Report the current allocation state."""
-        if self._is_owned_deferred_character_result(_result):
-            return (CReturn(CodeExpression("PyBool_FromLong(owner_descriptor->base_addr != NULL)")),)
-        return (
-            CReturn(
-                CodeExpression(
-                    f"PyBool_FromLong({self._owned_native_array_bridge_operation_name(_result, NativeArrayOperation.ALLOCATED)}"
-                    "(owner_descriptor))"
-                )
-            ),
-        )
-
-    def _owned_native_array_associated_body(self, result: ResultPlan) -> tuple[CReturn, ...]:
-        """Report the current pointer association state."""
-        return self._owned_native_array_bridge_state_body(result, NativeArrayOperation.ASSOCIATED)
-
-    def _owned_native_array_contiguous_body(self, result: ResultPlan) -> tuple[CReturn, ...]:
-        """Report whether the current pointer target is contiguous."""
-        return self._owned_native_array_bridge_state_body(result, NativeArrayOperation.CONTIGUOUS)
-
-    def _owned_native_array_bridge_state_body(
-        self,
-        result: ResultPlan,
-        operation: NativeArrayOperation,
-    ) -> tuple[CReturn, ...]:
-        """Call one typed compiler descriptor inquiry."""
-        return (
-            CReturn(
-                CodeExpression(
-                    f"PyBool_FromLong({self._owned_native_array_bridge_operation_name(result, operation)}"
-                    "(owner_descriptor))"
-                )
-            ),
-        )
-
-    def _owned_native_array_deallocate_body(
-        self,
-        result: ResultPlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Deallocate payload while retaining owner storage."""
-        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.DEALLOCATE, free_owner=False)
-
-    def _owned_native_array_nullify_body(
-        self,
-        result: ResultPlan,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Clear pointer association while retaining owner storage."""
-        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.NULLIFY, free_owner=False)
-
-    def _owned_native_array_destroy_body(
-        self,
-        _result: ResultPlan,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Destroy payload and persistent owner storage."""
-        return (
-            CExpressionStatement(CodeExpression("prik_native_array_backend_release(owner_backend)")),
-            CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
-        )
-
-    def _owned_native_array_owner_nodes(
-        self,
-        plan: ArgumentTransferPlan | ResultPlan,
-        prefix: str,
-        *,
-        trailing_objects: tuple[str, ...] = (),
-        materialize_descriptor: bool = True,
-    ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Decode a versioned descriptor owner capsule from a validated plan."""
-        handle = plan.native_array_handle
-        cfi_type = self._native_array_cfi_type(plan)
-        return (
-            CDeclaration(f"{prefix}_obj", "PyObject *"),
-            *(CDeclaration(name, "PyObject *") for name in trailing_objects),
-            CDeclaration(f"{prefix}_backend", "prik_native_array_backend *", CodeExpression("NULL")),
-            *(
-                (CDeclaration(f"{prefix}_descriptor", "CFI_cdesc_t *", CodeExpression("NULL")),)
-                if materialize_descriptor
-                else ()
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f'if (!PyArg_ParseTuple(args, "{"O" * (1 + len(trailing_objects))}", '
-                    f"&{prefix}_obj{', ' if trailing_objects else ''}"
-                    f"{', '.join(f'&{name}' for name in trailing_objects)})) return NULL"
-                )
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{prefix}_backend = prik_native_array_backend_for_descriptor({prefix}_obj, "
-                    f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, "
-                    f"(uint32_t)sizeof(CFI_CDESC_T({handle.array.rank})), {cfi_type}, "
-                    f"{self._native_array_expected_element_size(plan)})"
-                )
-            ),
-            CExpressionStatement(CodeExpression(f"if ({prefix}_backend == NULL) return NULL")),
-            *(
-                (
-                    CExpressionStatement(
-                        CodeExpression(f"{prefix}_descriptor = (CFI_cdesc_t *){prefix}_backend->context")
-                    ),
-                )
-                if materialize_descriptor
-                else ()
-            ),
-        )
-
     def _pointer_association_source_nodes(
         self,
         plan: ArgumentTransferPlan | ResultPlan | ModuleVariablePlan | DerivedFieldPlan,
@@ -5280,65 +5023,76 @@ class CBindingGenerator(ClassVisitor):
             return "CFI_type_char"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).cfi_type_spelling
 
-    def _native_array_descriptor_record_nodes(
+    def _owned_native_array_deallocate_body(
         self,
-        rank: int,
-        descriptor_name: str,
-        *,
-        return_target: str | None = None,
+        result: ResultPlan,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
-        """Decode a standard C descriptor into the runtime's mapping protocol."""
-        failure_return = CReturn() if return_target is not None else CReturn(CodeExpression("NULL"))
-        nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
-            CDeclaration("dimensions", "PyObject *", CodeExpression(f"PyList_New({rank})")),
-            CIf(CodeExpression("dimensions == NULL"), body=(failure_return,)),
-        ]
-        for axis in range(rank):
-            item = f"dimension_{axis}"
-            nodes.extend(
-                (
-                    CDeclaration(
-                        item,
-                        "PyObject *",
-                        CodeExpression(
-                            f'Py_BuildValue("{{sL,sL,sL}}", "lower_bound", '
-                            f'(long long){descriptor_name}->dim[{axis}].lower_bound, "extent", '
-                            f'(long long){descriptor_name}->dim[{axis}].extent, "sm", '
-                            f"(long long){descriptor_name}->dim[{axis}].sm)"
-                        ),
-                    ),
-                    CIf(
-                        CodeExpression(f"{item} == NULL"),
-                        body=(
-                            CExpressionStatement(CodeExpression("Py_DECREF(dimensions)")),
-                            failure_return,
-                        ),
-                    ),
-                    CExpressionStatement(CodeExpression(f"PyList_SET_ITEM(dimensions, {axis}, {item})")),
-                )
-            )
-        nodes.extend(
-            (
-                CDeclaration(
-                    "descriptor_record",
-                    "PyObject *",
-                    CodeExpression(
-                        f'Py_BuildValue("{{sK,sK,si,sO}}", "base_addr", '
-                        f'(unsigned long long)(uintptr_t){descriptor_name}->base_addr, "elem_len", '
-                        f'(unsigned long long){descriptor_name}->elem_len, "rank", '
-                        f'(int){descriptor_name}->rank, "dim", dimensions)'
-                    ),
-                ),
-                CExpressionStatement(CodeExpression("Py_DECREF(dimensions)")),
-                (
-                    CExpressionStatement(CodeExpression(f"{return_target} = descriptor_record"))
-                    if return_target is not None
-                    else CReturn(CodeExpression("descriptor_record"))
-                ),
-                *((CReturn(),) if return_target is not None else ()),
-            )
+        """Deallocate payload while retaining owner storage."""
+        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.DEALLOCATE, free_owner=False)
+
+    def _owned_native_array_nullify_body(
+        self,
+        result: ResultPlan,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Clear pointer association while retaining owner storage."""
+        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.NULLIFY, free_owner=False)
+
+    def _owned_native_array_destroy_body(
+        self,
+        _result: ResultPlan,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Destroy payload and persistent owner storage."""
+        return (
+            CExpressionStatement(CodeExpression("prik_native_array_backend_release(owner_backend)")),
+            CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
-        return tuple(nodes)
+
+    def _owned_native_array_owner_nodes(
+        self,
+        plan: ArgumentTransferPlan | ResultPlan,
+        prefix: str,
+        *,
+        trailing_objects: tuple[str, ...] = (),
+        materialize_descriptor: bool = True,
+    ) -> tuple[CDeclaration | CExpressionStatement, ...]:
+        """Decode a versioned descriptor owner capsule from a validated plan."""
+        handle = plan.native_array_handle
+        cfi_type = self._native_array_cfi_type(plan)
+        return (
+            CDeclaration(f"{prefix}_obj", "PyObject *"),
+            *(CDeclaration(name, "PyObject *") for name in trailing_objects),
+            CDeclaration(f"{prefix}_backend", "prik_native_array_backend *", CodeExpression("NULL")),
+            *(
+                (CDeclaration(f"{prefix}_descriptor", "CFI_cdesc_t *", CodeExpression("NULL")),)
+                if materialize_descriptor
+                else ()
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f'if (!PyArg_ParseTuple(args, "{"O" * (1 + len(trailing_objects))}", '
+                    f"&{prefix}_obj{', ' if trailing_objects else ''}"
+                    f"{', '.join(f'&{name}' for name in trailing_objects)})) return NULL"
+                )
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f"{prefix}_backend = prik_native_array_backend_for_descriptor({prefix}_obj, "
+                    f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, "
+                    f"(uint32_t)sizeof(CFI_CDESC_T({handle.array.rank})), {cfi_type}, "
+                    f"{self._native_array_expected_element_size(plan)})"
+                )
+            ),
+            CExpressionStatement(CodeExpression(f"if ({prefix}_backend == NULL) return NULL")),
+            *(
+                (
+                    CExpressionStatement(
+                        CodeExpression(f"{prefix}_descriptor = (CFI_cdesc_t *){prefix}_backend->context")
+                    ),
+                )
+                if materialize_descriptor
+                else ()
+            ),
+        )
 
     def _owned_native_array_deallocate_nodes(
         self,
@@ -8623,12 +8377,6 @@ class CBindingGenerator(ClassVisitor):
         if plan.datatype_family is DatatypeFamily.STRING:
             return "CFI_type_char"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).cfi_type_spelling
-
-    def _module_native_array_elem_size(self, plan: ModuleVariablePlan) -> str:
-        """Return the completed numeric size or runtime character element length."""
-        if plan.datatype_family is DatatypeFamily.STRING:
-            return f"{self._module_native_array_bridge_operation_name(plan, NativeArrayOperation.ELEMENT_LENGTH)}()"
-        return f"sizeof({PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).c_spelling})"
 
     def _native_array_handle_factory_call(
         self,

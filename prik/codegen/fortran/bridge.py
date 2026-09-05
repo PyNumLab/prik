@@ -1916,91 +1916,16 @@ class FortranBridgeGenerator(ClassVisitor):
         result: ArgumentTransferPlan | ResultPlan,
         operation: NativeArrayOperation,
     ) -> FortranFunction | None:
-        """Dispatch one generated operation selected by completed handle policy."""
-        if operation in {NativeArrayOperation.ALLOCATED, NativeArrayOperation.ASSOCIATED}:
-            return self._owned_native_array_result_state_operation(result, operation)
-        if operation is NativeArrayOperation.CONTIGUOUS:
-            return self._owned_native_array_result_contiguous_operation(result)
-        if operation is NativeArrayOperation.SHAPE:
-            return self._owned_native_array_result_shape_operation(result)
+        """Dispatch one generated operation selected by completed handle policy.
+
+        An owned handle already holds its descriptor, so every inquiry is read
+        from it in the binding and only the mutations reach Fortran.
+        """
         if operation is NativeArrayOperation.ASSOCIATE:
             return self._owned_native_array_result_associate_operation(result)
         if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY, NativeArrayOperation.DESTROY}:
             return self._owned_native_array_result_release_operation(result, operation)
         return None
-
-    def _owned_native_array_result_state_operation(
-        self,
-        result: ArgumentTransferPlan | ResultPlan,
-        operation: NativeArrayOperation,
-    ) -> FortranFunction:
-        """Return descriptor presence using its completed compiler inquiry."""
-        inquiry = self._owned_native_array_result_presence_inquiry(result)
-        name = self._owned_native_array_result_operation_name(result, operation)
-        return FortranFunction(
-            name=name,
-            parameters=(self._owned_native_array_result_parameter(result, intent="in"),),
-            result_name="state",
-            result_type="logical(c_bool)",
-            bind_name=name,
-            body=(FortranAssignment("state", CodeExpression(f"{inquiry}(result)")),),
-        )
-
-    def _owned_native_array_result_contiguous_operation(
-        self,
-        result: ArgumentTransferPlan | ResultPlan,
-    ) -> FortranFunction:
-        """Return target contiguity without querying an absent pointer target."""
-        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.CONTIGUOUS)
-        return FortranFunction(
-            name=name,
-            parameters=(self._owned_native_array_result_parameter(result, intent="in"),),
-            result_name="state",
-            result_type="logical(c_bool)",
-            bind_name=name,
-            body=(
-                FortranAssignment("state", CodeExpression(".false._c_bool")),
-                FortranIf(
-                    CodeExpression("associated(result)"),
-                    body=(FortranAssignment("state", CodeExpression("is_contiguous(result)")),),
-                ),
-            ),
-        )
-
-    def _owned_native_array_result_shape_operation(
-        self,
-        result: ArgumentTransferPlan | ResultPlan,
-    ) -> FortranFunction:
-        """Return shape through Fortran when the owned descriptor is allocated."""
-        handle = result.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
-        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.SHAPE)
-        extents = tuple(FortranParameter(f"extent_{axis}", "integer(c_int64_t)") for axis in range(handle.array.rank))
-        present = tuple(
-            FortranAssignment(
-                f"extent_{axis}",
-                CodeExpression(f"size(result, {axis + 1}, kind=c_int64_t)"),
-            )
-            for axis in range(handle.array.rank)
-        )
-        absent = tuple(
-            FortranAssignment(f"extent_{axis}", CodeExpression("0_c_int64_t")) for axis in range(handle.array.rank)
-        )
-        inquiry = self._owned_native_array_result_presence_inquiry(result)
-        return FortranFunction(
-            name=name,
-            parameters=(self._owned_native_array_result_parameter(result, intent="in"), *extents),
-            bind_name=name,
-            body=(
-                FortranIf(
-                    CodeExpression(f"{inquiry}(result)"),
-                    body=present,
-                    else_body=absent,
-                ),
-            ),
-            is_subroutine=True,
-        )
 
     def _owned_native_array_result_release_operation(
         self,
