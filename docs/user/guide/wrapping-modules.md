@@ -136,23 +136,12 @@ The whole variable cannot be reassigned (`mod.grid = ...` raises
 `AttributeError`); its shape belongs to the Fortran declaration. Write into the
 view instead, with `mod.grid[:] = ...`.
 
-- The `target` attribute is not required. It is what lets `c_loc` name a
-  variable in Fortran, not what gives a module array its address, so for an
-  ordinary declaration PRIK takes the address on the C side instead: the whole
-  array is passed to `prik_capture_address`, a `bind(C)` primitive in PRIK's
-  bundled support header whose assumed-size dummy receives the bare base
-  address. Both forms produce the same live view.
-- Derived-type array fields never needed `target` either, and are borrowed the
-  same way. An object reached through its address makes its components
-  addressable, so `c_loc` names them directly; a member of a module object
-  declared without `target` takes the same C-side route as a module array. A
-  plain `real(real64) :: grid(2, 3)` component is a live view whether the type,
-  the field, or the containing module variable declares the attribute.
-- A Fortran `logical` array is borrowed only when its kind is one byte wide
-  (`logical(c_bool)`). A wider kind — including the default `logical` on common
-  compilers — cannot be aliased by NumPy's one-byte bool, so it is reported
-  unsupported rather than exposed as a view that would read the wrong elements.
-  Return it from a procedure instead, which converts each element.
+- Fixed-shape module arrays and derived-type array fields expose live views
+  whether or not their declarations include `target`.
+- A `logical(c_bool)` array uses `numpy.bool_`; wider logical kinds use the
+  matching NumPy integer dtype. See the
+  [logical type mapping](data-types.md#scalar-type-mapping) for reading and
+  writing those values.
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.
@@ -161,13 +150,9 @@ view instead, with `mod.grid[:] = ...`.
 
 !!! warning "A borrowed view assumes module storage stays put"
 
-    The Fortran standard does not require a module variable to occupy one
-    address for the life of the program, so a view held across native code that
-    could relocate module storage — device offload, for instance — is your
-    responsibility rather than something the language guarantees. This holds on
-    the toolchains PRIK tests, and declaring `target` puts the language behind
-    it. If you would rather not hold a view at all, copy what you need:
-    `np.array(mod.grid)`.
+    A module view borrows the variable's current address. Copy it with
+    `np.array(mod.grid)` before native work that may relocate that storage.
+    Declaring the variable `target` gives its address Fortran-defined stability.
 
 ---
 

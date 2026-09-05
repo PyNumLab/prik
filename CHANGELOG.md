@@ -10,43 +10,26 @@ release tags add a leading `v` to the package version.
 - Fixed Fortran allocatable and pointer descriptor arguments to use the
   compiler's live descriptor. This works on Intel ifx as well as GNU Fortran,
   preserves lower bounds, allocation and association changes, and covers
-  required and optional dummies reached from module variables, fields, results,
-  and caller-created handles.
+  required and optional dummies, multiple descriptor dummies per call,
+  `intent(out)` and status-bearing calls, and handles from module variables,
+  fields, results, and caller-created storage.
 
-- Generated Fortran allocatable and pointer handles can satisfy matching
-  ordinary array arguments without conversion through NumPy. Supported forms
-  include explicit and assumed shape, positive strides, assumed size, assumed
-  rank 1 through 15, optional arrays, and fixed- or assumed-width character
-  arrays. C array arguments continue to accept NumPy arrays only.
+- Generated Fortran allocatable and pointer handles can be passed directly to
+  matching ordinary array arguments. Supported forms include explicit and
+  assumed shape, positive strides, assumed size, assumed rank 1 through 15,
+  optional arrays, and fixed- or assumed-width character arrays. C array
+  arguments accept NumPy arrays.
 
-- Generated array handles now publish one versioned native capsule,
-  `prik.native_array_backend.v1`, replacing the separate descriptor-operation
-  table and owned-descriptor record. It carries a single entry point that runs
-  a consumer while the handle's descriptor is live, whether that descriptor is
-  one Fortran builds for the call or persistent storage the wrapper owns.
-  Extensions built against the earlier branch-only table must be regenerated.
+- Descriptor-backed NumPy views preserve native byte strides, including
+  negative strides, non-contiguous pointer targets, and zero-sized dimensions.
 
-- Argument handoff, shape, allocation and association state, element width,
-  contiguity and NumPy views are now all read from that live descriptor in C.
-  No descriptor is serialized into Python fields and decoded back, and the
-  generated Fortran bridge no longer carries a procedure per variable for any
-  of those inquiries. A NumPy view now carries the descriptor's own byte
-  strides directly, so negative strides and non-contiguous pointer targets are
-  exposed without an intermediate buffer.
+- Writable module and derived-field allocatable arrays support allocation and
+  reassignment. PRIK rejects `protected` module arrays when the generated API
+  would require writable access.
 
-- Fortran entrypoints can now accept generated array handles for several
-  allocatable or pointer dummies in one call, including calls with `intent(out)`
-  arguments or status outputs. Allocation and association changes reach each
-  supplied module, field, result, or caller-created handle.
-
-- Fixed writable module and derived-field allocatable arrays, and reject
-  PROTECTED module arrays during policy completion when writable access would be
-  required.
-
-- Fixed module array views and descriptor facts across fixed, target,
-  allocatable, pointer, shifted-bound, character, and logical storage. Ordinary
-  fixed-shape module arrays no longer require TARGET solely to expose a live
-  NumPy view.
+- Module array views cover fixed, target, allocatable, pointer, shifted-bound,
+  character, and logical storage. Ordinary fixed-shape module arrays expose
+  live NumPy views with or without `target`.
 
 - PRIK now selects interoperable Fortran logical storage on Intel and
   PGI/NVIDIA compilers. Use `--no-standard-logicals` or

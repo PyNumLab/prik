@@ -684,7 +684,7 @@ contract is generated.
 
 | Family | Available names | Normal Python boundary |
 | --- | --- | --- |
-| Boolean | `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64` | Scalars are `bool`; arrays are aliased and use the integer dtype of the same width (`numpy.uint8`, `int16`, `int32`, `int64`). Read with `.astype(bool)`. |
+| Boolean | `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64` | Scalar inputs accept `bool` or `numpy.bool_`; results are `bool`. `Bool` and `Bool8` arrays use `numpy.bool_`; wider arrays use `int16`, `int32`, or `int64`. |
 | Signed integer | `Int`, `Int8`, `Int16`, `Int32`, `Int64` | Matching NumPy integer scalar or array dtype. `Int` retains target-dependent C `int` identity. |
 | Unsigned integer | `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `SizeT` | Matching NumPy unsigned scalar or array dtype; `UInt` and `SizeT` are target-dependent. |
 | Real | `Float16`, `Float32`, `Float64`, `Float128` | Matching NumPy real dtype when the selected target supports it. |

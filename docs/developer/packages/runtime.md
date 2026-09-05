@@ -56,8 +56,8 @@ typedef struct {
 } prik_native_array_backend;
 ```
 
-`with_descriptor(context, consumer, consumer_context)` is the only route to a
-descriptor. It produces a live one and runs the consumer on it:
+`with_descriptor(context, consumer, consumer_context)` supplies a live
+descriptor and runs the consumer on it:
 
 - **Borrowed** — a module variable or a derived-type field. The entry point
   enters Fortran, which builds the descriptor for that call and copies back
@@ -67,40 +67,32 @@ descriptor. It produces a live one and runs the consumer on it:
   storage. The binding allocated a descriptor and keeps it for the handle's
   life, so the entry point hands that storage straight to the consumer.
 
-Consumers cannot tell the two apart and must not try to. `context` is whatever
-the entity needs to be reached: the parent's address for a field, the
-descriptor storage for an owned handle, `NULL` for a module variable.
-`release` is non-`NULL` exactly when `context` is storage this extension
-allocated, so a borrowed backend can never free anything, and clearing
-`context` after one release makes `close()` and finalization both safe.
+Consumers use the same contract for both forms. `context` is the parent's
+address for a field, descriptor storage for an owned handle, and `NULL` for a
+module variable. `release` is non-`NULL` when the extension owns `context`.
+Clearing `context` after release makes `close()` and finalization idempotent.
 
-The version lives in the capsule name: `PyCapsule_GetPointer` refuses a
-capsule created under any other name, so no magic word or second version field
-is carried. `struct_size` catches a layout change made without renaming;
-`descriptor_size` is `sizeof(CFI_CDESC_T(rank))` and is the only way one
-extension can attest another's CFI layout, which nothing inside a descriptor
-can establish. `descriptor_kind`, `rank`, `cfi_type` and `element_size` are
-what a reader compares against the dummy it is filling, so a mismatched actual
-is refused before any Fortran is entered. `element_size` is `0` when the width
-is only known at run time, as for a deferred-length character array.
+The capsule name carries the ABI version. `struct_size` validates the backend
+layout, and `descriptor_size` records `sizeof(CFI_CDESC_T(rank))` for the
+producing extension. A consumer validates `descriptor_kind`, `rank`,
+`cfi_type`, `element_size`, and descriptor size against its dummy before
+entering Fortran. `element_size` is `0` for widths determined at run time, such
+as deferred-length character arrays.
 
 ### Inquiries Read The Descriptor
 
 `shape`, `allocated`, `associated`, `contiguous`, `element_length` and
 `to_numpy` are all answered by small shared C consumers run through
-`with_descriptor`, for borrowed and owned handles alike. Nothing crosses into
-Python except the finished object, so no descriptor is serialized into Python
-fields and no field is decoded back into C. There is correspondingly no Fortran
-procedure per variable for any of them; the bridge emits only the descriptor
-entry point and the mutations that must reach the entity itself — `allocate`,
-`resize`, `deallocate`, `nullify`, `associate` and `destroy`.
+`with_descriptor`, for borrowed and owned handles alike. Each consumer returns
+the completed Python value. The bridge provides the descriptor entry point and
+the mutations that act on the entity itself: `allocate`, `resize`,
+`deallocate`, `nullify`, `associate`, and `destroy`.
 
-A pointer additionally reports `descriptor` as a flat fact tuple — base
-address, element width, rank, then a lower bound, extent and byte stride per
-axis. That is how a pointer assignment snapshots what another pointer is
-associated with, which matters because a handle created from a `.pyi` contract
-has no native storage until a call gives it some and so has nowhere else to
-record it.
+A pointer additionally reports `descriptor` as a flat fact tuple: base address,
+element width, rank, then a lower bound, extent, and byte stride per axis. A
+pointer assignment uses this snapshot. A handle created from a `.pyi` contract
+retains the snapshot until a call attaches native storage and replays the
+association.
 
 A call with more than one allocatable or pointer dummy enters each argument's
 backend in turn. Each consumer records its descriptor and enters the next, and
@@ -168,8 +160,8 @@ Generated resize received NumPy extents: True
 
 The example supplies the same dispatcher and capability set as generated code.
 It creates an allocatable handle, reads its live NumPy view, and routes a resize
-through the dispatcher. The native header has no standalone Python route; the
-compiler installs it into a generated `binding_support/` directory.
+through the dispatcher. The compiler installs the native header into the
+generated `binding_support/` directory.
 
 ## Change Routes And Evidence
 

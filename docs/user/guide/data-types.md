@@ -195,7 +195,7 @@ table below explains the target-mantissa rule.
 | `complex(4)` | `Complex64` | `np.complex64` | `np.complex64` |
 | `complex(8)` | `Complex128` | `np.complex128` | `np.complex128` |
 | `complex(c_long_double_complex)` — `complex(10)` on x86-64 | `Complex256` | `np.clongdouble` | `np.clongdouble` |
-| `logical` | `Bool8`-`Bool64` | `bool` | `bool` |
+| `logical` | `Bool8`-`Bool64` | `bool` or `np.bool_` | `bool` |
 | `character` | `String` / `String[n]` | Depends on the string boundary | Depends on the string boundary |
 | Derived Type | Generated Class | Instance of that class | Instance of that class |
 
@@ -206,25 +206,22 @@ double` is IEEE quad, `real(16)` maps to it instead. PRIK decides from the
 mantissa width the compiler reports, never from storage size — see
 [Unsupported Widths And Forms](#unsupported-widths-and-forms).
 
-Boolean contract names describe native storage. A scalar crosses by value and is
-converted, so it stays a Python `bool`. An **array is aliased**, element for
-element, and NumPy has no Boolean wider than one byte — so a logical array
-reports the integer dtype of matching width:
+Boolean contract names describe native storage. Scalars cross as Python
+`bool`. Arrays are aliased element by element: one-byte logical arrays use
+`numpy.bool_`, and wider kinds use the integer dtype of matching width.
 
 | Semantic Contract | Native Logical Storage Represented | Scalar Input | Direct Result | Array Storage |
 | --- | --- | --- | --- | --- |
-| `Bool` | 8 bits; portable default, equivalent to `Bool8` | `bool` | `bool` | `dtype=np.bool_` |
-| `Bool8` | 8 bits | `bool` | `bool` | `dtype=np.bool_` |
-| `Bool16` | 16 bits | `bool` | `bool` | `dtype=np.int16` |
-| `Bool32` | 32 bits | `bool` | `bool` | `dtype=np.int32` |
-| `Bool64` | 64 bits | `bool` | `bool` | `dtype=np.int64` |
+| `Bool` | 8 bits; portable default, equivalent to `Bool8` | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool8` | 8 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool16` | 16 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int16` |
+| `Bool32` | 32 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int32` |
+| `Bool64` | 64 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int64` |
 
 Generated contracts select a numbered name after probing the chosen compiler.
 
-A `logical(c_bool)` array is one byte per element holding zero or one, which is
-exactly `numpy.bool_`, so it is exposed as a NumPy Boolean and needs no
-conversion. A wider kind has no NumPy Boolean to be — there is none larger than
-a byte — so it reports the integer of matching width and is read with
+A `logical(c_bool)` array uses `numpy.bool_`. Wider logical kinds use the
+integer dtype of matching width and can be read as Boolean values with
 `.astype(bool)`:
 
 ```python
@@ -234,16 +231,13 @@ wide.astype(bool)            # array([True, False, True])
 wide[0] = 0                  # visible to Fortran
 ```
 
-Write only `0` or `1` into an integer-typed logical array. Any other value is
-undefined in Fortran itself, not just through PRIK: writing raw `2` into a
-`logical` array and asking `count()` gives `4` on gfortran and `0` on ifx, and
-each compiler then contradicts itself about whether a single element is true.
+Write only `0` or `1` into an integer-typed logical array. Other integer values
+are not portable Fortran logical representations.
 
 ### Compiler options for interoperable logicals
 
-A Fortran `logical` has no fixed representation, and several compilers default
-to one their own C compiler cannot read. PRIK requests the option that selects
-the interoperable form, so this is handled for you:
+PRIK requests each compiler's interoperable representation for Fortran
+`logical` values:
 
 | Compiler | Option PRIK passes |
 | --- | --- |
@@ -251,9 +245,7 @@ the interoperable form, so this is handled for you:
 | Intel `ifx` / `ifort` | `-standard-semantics` |
 | PGI / NVIDIA | `-Munixlogical` |
 
-Without it, Intel stores all bits set for `.true.`, so a `logical(c_bool)` array
-handed to C contains `255` where `_Bool` is defined to hold `1` — and C then
-miscounts it. If you override PRIK's compiler flags, keep this one.
+Keep the listed option when overriding PRIK's compiler flags.
 
 #### Turning it off for prebuilt Intel objects
 
@@ -280,13 +272,9 @@ build_fortran_extension(
 )
 ```
 
-That restores link compatibility at the cost of the guarantee above: `.true.`
-is stored as all bits set again, so a `logical(c_bool)` array reaching NumPy
-holds `255` for true. Comparisons against `True` and `.astype(bool)` still read
-it correctly, because every non-zero value is true — but `numpy.bool_` values
-that are neither `0` nor `1` are outside what NumPy documents, and
-`tobytes()`, buffer sharing, and anything reading the raw byte will see `255`.
-Prefer rebuilding the dependency.
+Disabling standard logicals also disables the interoperable representation
+guarantee. Prefer rebuilding the dependency with `-standard-semantics` when
+possible.
 
 ---
 
