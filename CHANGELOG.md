@@ -14,6 +14,12 @@ release tags add a leading `v` to the package version.
   `intent(out)` and status-bearing calls, and handles from module variables,
   fields, results, and caller-created storage.
 
+- Generated array handles publish one versioned native capsule,
+  `prik.native_array_backend.v1`, replacing the separate descriptor-operation
+  table and owned-descriptor record. It carries a single entry point that runs
+  a consumer while the handle's descriptor is live. Extensions built against
+  the earlier branch-only table must be regenerated.
+
 - Generated Fortran allocatable and pointer handles can be passed directly to
   matching ordinary array arguments. Supported forms include explicit and
   assumed shape, positive strides, assumed size, assumed rank 1 through 15,
