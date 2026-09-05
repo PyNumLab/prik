@@ -164,6 +164,7 @@ module fhandle_descriptor_matrix_f90
   real(8), allocatable :: empty(:)
   real(8), allocatable :: spare(:)
   real(8), allocatable :: probe(:)
+  real(8), allocatable :: optional_probe(:)
   real(8), allocatable :: pair_left(:)
   real(8), allocatable :: pair_right(:)
   real(8), allocatable :: pair_third(:)
@@ -188,6 +189,7 @@ contains
     deferred_words = ['alphas', 'bravos']
     allocate(empty(0))
     allocate(probe(3)); probe = 2.0_8
+    allocate(optional_probe(3)); optional_probe = 2.0_8
     allocate(pair_left(3));  pair_left = 6.0_8
     allocate(pair_right(3)); pair_right = 7.0_8
     allocate(pair_third(3)); pair_third = 8.0_8
@@ -233,6 +235,19 @@ contains
     allocate(second(n)); second = 9.0_8
     allocate(third(n));  third = 10.0_8
   end subroutine grow_three
+
+  function optional_state(values) result(state)
+    real(8), allocatable, optional, intent(in) :: values(:)
+    integer(4) :: state
+
+    if (.not. present(values)) then
+      state = 0
+    else if (.not. allocated(values)) then
+      state = 1
+    else
+      state = int(sum(values), kind=4)
+    end if
+  end function optional_state
 
   subroutine grow_and_count(values, n, produced)
     real(8), allocatable, intent(inout) :: values(:)
@@ -566,3 +581,37 @@ def test_a_handle_reaches_a_call_with_a_hidden_output_without_running_python(des
     assert called == []
     assert int(produced[1]) == 4
     assert spare.shape == (4,)
+
+
+def test_an_optional_descriptor_argument_runs_no_python_however_it_is_supplied(descriptor_matrix):
+    """Absence is decided in C, for an omitted argument as much as a supplied one.
+
+    An absent optional has no handle to publish a backend, so nothing is
+    entered for it and the binding establishes the unallocated placeholder the
+    bridge is handed. Deciding that needs the argument object and nothing else,
+    so none of the three ways of supplying it goes back into Python.
+    """
+    # This array is this test's alone, so its sum stays what the fixture set.
+    present = descriptor_matrix.optional_probe
+    called: list[str] = []
+
+    def record(frame, event, _arg):
+        if event == "call":
+            called.append(frame.f_code.co_name)
+
+    descriptor_matrix.optional_state()
+    descriptor_matrix.optional_state(None)
+    descriptor_matrix.optional_state(present)
+
+    sys.setprofile(record)
+    try:
+        omitted = descriptor_matrix.optional_state()
+        explicit_none = descriptor_matrix.optional_state(None)
+        supplied = descriptor_matrix.optional_state(present)
+    finally:
+        sys.setprofile(None)
+
+    assert called == []
+    assert omitted == np.int32(0)
+    assert explicit_none == np.int32(0)
+    assert supplied == np.int32(6)

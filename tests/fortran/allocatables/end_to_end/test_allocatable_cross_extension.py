@@ -1,5 +1,6 @@
 """Cross-extension allocatable descriptor and native-memory evidence."""
 
+import ctypes
 import shutil
 import subprocess
 import sys
@@ -107,6 +108,47 @@ def test_caller_created_allocatable_crosses_separately_built_extensions(tmp_path
 
     values.close()
     assert values.closed is True
+
+
+def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_path: Path):
+    """The capsule name is the ABI version, and it is what refuses a stranger.
+
+    Nothing in the record says which layout wrote it, so the name has to:
+    ``PyCapsule_GetPointer`` matches names exactly, and a reader asks for the
+    one version it understands. An extension built against any other layout --
+    an older PRIK, a future one -- is therefore refused before a single field
+    is read, which is the whole reason the version is spelled in the name
+    rather than compared out of a header field.
+    """
+    module = _build_text_and_import(
+        ALLOCATABLE_CROSS_A_SOURCE,
+        "fallocatable_cross_a.f90",
+        tmp_path,
+        {
+            "bind_c_fallocatable_cross_a_wrapper.f90",
+            "fallocatable_cross_a_wrapper.c",
+            "fallocatable_cross_a_wrapper.h",
+        },
+    )
+    values = Allocatable[Float64[:]]()
+    module.select_a(values)
+    assert module.total_a(values) == np.float64(3.0)
+
+    capsule_new = ctypes.pythonapi.PyCapsule_New
+    capsule_new.restype = ctypes.py_object
+    capsule_new.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
+    capsule_get = ctypes.pythonapi.PyCapsule_GetPointer
+    capsule_get.restype = ctypes.c_void_p
+    capsule_get.argtypes = (ctypes.py_object, ctypes.c_char_p)
+    # Stand in for an extension that published the same record under a
+    # different version. The address is this handle's own live backend, so
+    # only the name differs and only the name can do the refusing.
+    address = capsule_get(values._native_backend, b"prik.native_array_backend.v1")
+    assert address
+    values._native_backend = capsule_new(address, b"prik.native_array_backend.v2", None)
+
+    with pytest.raises(ValueError, match="PyCapsule_GetPointer called with incorrect name"):
+        module.total_a(values)
 
 
 @pytest.mark.skipif(shutil.which("valgrind") is None, reason="Valgrind is required for native ownership checks")
