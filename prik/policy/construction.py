@@ -149,6 +149,7 @@ from prik.policy.models import (
     NativeStatusErrorPolicy,
     ModuleVariablePolicy,
     LifecyclePolicy,
+    ArrayEntrypointABI,
     ArrayHandoffPolicy,
     ProcedurePrototypeArgumentPolicy,
     ProcedurePrototypeResultPolicy,
@@ -7410,6 +7411,8 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
     order = _array_handoff_order(array.order, array.category)
     contiguous = _array_handoff_contiguous(array.contiguous, array.category)
+    entrypoint_abi = _array_entrypoint_abi(array.category)
+    signed_strides = _array_handoff_signed_strides(entrypoint_abi, contiguous)
     return ArrayHandoffPolicy(
         rank=rank,
         shape=shape,
@@ -7417,7 +7420,9 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         order=order,
         native_order=_array_handoff_native_order(array.order, array.copy_order, array.category),
         contiguous=contiguous,
-        python_layout=_array_handoff_python_layout(order, contiguous, rank),
+        python_layout=_array_handoff_python_layout(order, contiguous, rank, signed_strides),
+        entrypoint_abi=entrypoint_abi,
+        signed_strides=signed_strides,
         minimum_rank=minimum_rank,
         maximum_rank=maximum_rank,
         flatten_python_storage=flatten_python_storage,
@@ -7477,16 +7482,60 @@ def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> 
     return None
 
 
+# Ordinary arrays are still handed over as an address plus extents. The
+# descriptor-carrying mechanism they are entitled to by ABI is being built; this
+# names the one fact that gates it, so the two land together.
+_ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = False
+
+
+def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
+    """Complete how one array dummy is reached, by asking the direct question.
+
+    A ``bind(C)`` procedure with no bridge receives the address of the first
+    element and nothing more for an explicit-shape or assumed-size dummy, and
+    for a raw C pointer: the declaration already says what the layout is, so
+    there is nothing to convey.  Every other form -- assumed-shape,
+    deferred-shape, assumed-rank, and a contract that names no Fortran category
+    because a bridge dummy will be generated for it -- is reached through a
+    ``CFI_cdesc_t *``, which carries an extent and a signed byte stride per
+    axis.
+    """
+    if category in {"explicit_shape", "assumed_size", "raw_address", SCALAR_STORAGE_CATEGORY}:
+        return ArrayEntrypointABI.RAW_ADDRESS
+    return ArrayEntrypointABI.C_DESCRIPTOR
+
+
+def _array_handoff_signed_strides(
+    entrypoint_abi: ArrayEntrypointABI,
+    contiguous: bool | None,
+) -> bool:
+    """Complete whether an axis of the actual may run backwards.
+
+    Three things have to hold.  The entrypoint must carry a descriptor, because
+    a bare address says nothing about which way an axis runs.  The dummy must
+    not require contiguous storage, which a reversed axis is not -- a
+    ``CONTIGUOUS`` dummy keeps its requirement whatever its calling convention
+    carries.  And the actual must reach it as a descriptor: an ordinary array
+    is still carried to its dummy as an address with extents beside it, and
+    that carries no direction however the dummy is declared.
+    """
+    if entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or contiguous is True:
+        return False
+    return _ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS
+
+
 def _array_handoff_python_layout(
     order: str | None,
     contiguous: bool | None,
     rank: int | None,
+    signed_strides: bool = False,
 ) -> ArrayPythonLayout:
     """Select the layout every accepted Python array actual must already have."""
     if contiguous is None:
         return ArrayPythonLayout.ANY_STRIDED
     if contiguous is False:
-        return ArrayPythonLayout.POSITIVE_STRIDED_F
+        # The section rules are the same either way; only the sign is at stake.
+        return ArrayPythonLayout.SIGNED_STRIDED_F if signed_strides else ArrayPythonLayout.POSITIVE_STRIDED_F
     if order == "ORDER_C":
         return ArrayPythonLayout.C_CONTIGUOUS
     if order == "ORDER_F" or (rank is not None and rank > 1):
@@ -7607,6 +7656,9 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         native_order=order,
         contiguous=True,
         python_layout=_array_handoff_python_layout(order, True, rank),
+        # A raw C address is the whole ABI here: nothing conveys a stride.
+        entrypoint_abi=ArrayEntrypointABI.RAW_ADDRESS,
+        signed_strides=False,
         minimum_rank=rank,
         maximum_rank=rank,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,

@@ -166,25 +166,32 @@ def test_rank2_assumed_shape_accepts_fortran_ordered_strided_views(compiled_mult
 
 
 def test_rank2_assumed_shape_rejects_non_positive_strides(compiled_multid_array_module):
+    """Each refusal names the restriction it comes from, not one shared phrase.
+
+    A reversed axis and a broadcast axis fail for different reasons: the first
+    is a perfectly good array section this entrypoint has no way to describe,
+    because it receives an address; the second is not a section at all, since
+    Fortran has no form for an element repeated by a zero step.
+    """
     source = _matrix()
     out = np.zeros_like(source, order="F")
     checksum = np.zeros(1, dtype=np.float64)
 
     reversed_source = _reversed_fortran_matrix()
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+    with pytest.raises(TypeError, match=r"runs backwards along axis \d+"):
         compiled_multid_array_module.scale2_strided(reversed_source, out)
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+    with pytest.raises(TypeError, match=r"cannot record a direction"):
         compiled_multid_array_module.checksum2_strided(reversed_source, checksum)
 
     broadcast_source = _broadcast_fortran_like_matrix()
     assert broadcast_source.strides[0] == 0
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+    with pytest.raises(TypeError, match=r"not a Fortran array section"):
         compiled_multid_array_module.scale2_strided(broadcast_source, out)
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+    with pytest.raises(TypeError, match=r"not a Fortran array section"):
         compiled_multid_array_module.checksum2_strided(broadcast_source, checksum)
 
     reversed_out = _reversed_fortran_matrix()
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+    with pytest.raises(TypeError, match=r"runs backwards along axis \d+"):
         compiled_multid_array_module.scale2_strided(source, reversed_out)
 
 

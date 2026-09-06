@@ -510,7 +510,95 @@ static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t c
 #define PRIK_ARRAY_LAYOUT_C_CONTIGUOUS 1
 #define PRIK_ARRAY_LAYOUT_F_CONTIGUOUS 2
 #define PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F 3
-#define PRIK_ARRAY_LAYOUT_ANY_STRIDED 4
+#define PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F 4
+#define PRIK_ARRAY_LAYOUT_ANY_STRIDED 5
+
+/*
+ * Report why one strided array cannot be described to Fortran.
+ *
+ * A Fortran array section runs over a contiguous parent: each axis advances by
+ * a whole number of elements, the axes are ordered by how far they step, and no
+ * axis steps back into another's span. A view that breaks those rules -- one
+ * NumPy made by broadcasting, or by overlapping itself -- has no parent to be a
+ * section of, whatever its strides say, so it cannot be handed over without
+ * copying. An axis that merely runs backwards breaks none of them, and is
+ * refused only where the entrypoint takes an address and so has nowhere to say
+ * so.
+ */
+static inline int prik_array_refuse_section(
+    const char *argument_name,
+    int axis,
+    int signed_strides)
+{
+    PyErr_Format(
+        PyExc_TypeError,
+        "Argument %s has a layout at axis %d that is not a Fortran array section: "
+        "each axis must step a whole number of elements%s, in increasing order of step, without overlapping",
+        argument_name,
+        axis,
+        signed_strides ? "" : " forward");
+    return -1;
+}
+
+/*
+ * Validate one axis of an F-ordered strided array.
+ *
+ * ``signed_strides`` says whether an axis may run backwards, which is exactly
+ * whether the entrypoint carries a descriptor to record it in. Everything else
+ * is required either way, because it is what makes the view a section at all.
+ */
+static inline int prik_array_validate_strided_axis(
+    PyArrayObject *array,
+    int axis,
+    int signed_strides,
+    const char *argument_name)
+{
+    npy_intp stride = PyArray_STRIDE(array, axis);
+    npy_intp itemsize = PyArray_ITEMSIZE(array);
+    npy_intp span;
+    npy_intp previous;
+
+    if (itemsize <= 0 || (stride % itemsize) != 0) {
+        /* A step that is not a whole element has no Fortran spelling at all. */
+        return prik_array_refuse_section(argument_name, axis, signed_strides);
+    }
+    if (PyArray_SIZE(array) == 0 || PyArray_DIM(array, axis) <= 1) {
+        /* One element cannot step anywhere, and no element cannot either. */
+        return 0;
+    }
+    if (stride == 0) {
+        /* A repeated element: NumPy broadcasting, which Fortran has no form for. */
+        return prik_array_refuse_section(argument_name, axis, signed_strides);
+    }
+    if (!signed_strides && stride < 0) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Argument %s runs backwards along axis %d, and this entrypoint receives only an address, "
+            "which cannot record a direction",
+            argument_name,
+            axis);
+        return -1;
+    }
+    if (axis > 0 && PyArray_DIM(array, axis - 1) > 0) {
+        previous = PyArray_STRIDE(array, axis - 1);
+        previous = previous < 0 ? -previous : previous;
+        span = previous * PyArray_DIM(array, axis - 1);
+        if ((stride < 0 ? -stride : stride) < span) {
+            /*
+             * This axis steps less far than the one before it covers, so the
+             * axes are either in the wrong order for Fortran or they overlap.
+             * Both are the same measurement, and ordering is what a caller can
+             * actually act on.
+             */
+            PyErr_Format(
+                PyExc_TypeError,
+                "Argument %s has incompatible layout; expected ordering (F)",
+                argument_name);
+            return -1;
+        }
+    }
+    return 0;
+}
 
 /*
  * Validate mechanics shared by every ordinary NumPy-array argument. The
@@ -552,23 +640,10 @@ static inline int prik_array_validate_ndarray(
     }
     if (layout == PRIK_ARRAY_LAYOUT_ANY_STRIDED) {
         /* The plan accepts whatever strides the caller's array already has. */
-    } else if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {
+    } else if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F || layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F) {
+        int signed_strides = layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F;
         for (axis = 0; axis < rank; axis++) {
-            npy_intp stride = PyArray_STRIDE(array, axis);
-            if ((stride % PyArray_ITEMSIZE(array)) != 0
-                || (PyArray_SIZE(array) > 0 && PyArray_DIM(array, axis) > 1 && stride <= 0)) {
-                PyErr_Format(
-                    PyExc_TypeError,
-                    "Argument %s has incompatible layout; expected ordering (F)",
-                    argument_name);
-                return -1;
-            }
-            if (axis > 0 && PyArray_SIZE(array) > 0 && PyArray_DIM(array, axis - 1) > 0
-                && stride < PyArray_STRIDE(array, axis - 1) * PyArray_DIM(array, axis - 1)) {
-                PyErr_Format(
-                    PyExc_TypeError,
-                    "Argument %s has incompatible layout; expected ordering (F)",
-                    argument_name);
+            if (prik_array_validate_strided_axis(array, axis, signed_strides, argument_name) < 0) {
                 return -1;
             }
         }

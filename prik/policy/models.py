@@ -137,13 +137,40 @@ class ArrayPythonLayout(str, Enum):
     Policy selects the constraint; a backend only enforces it. ``ANY_STRIDED``
     states that the contract constrains neither ordering nor contiguity, so the
     caller's own strides reach the native call unchanged.
+
+    ``SIGNED_STRIDED_F`` is ``POSITIVE_STRIDED_F`` with the sign requirement
+    lifted: the axes must still be a Fortran array section -- ordered by
+    magnitude of stride, each a whole number of elements, none overlapping
+    another -- because that is what can be described to Fortran, but an axis
+    may run backwards. It is selected only where the entrypoint carries a
+    descriptor, since an address alone cannot say which way an axis runs.
     """
 
     ANY_CONTIGUOUS = "any_contiguous"
     C_CONTIGUOUS = "c_contiguous"
     F_CONTIGUOUS = "f_contiguous"
     POSITIVE_STRIDED_F = "positive_strided_f"
+    SIGNED_STRIDED_F = "signed_strided_f"
     ANY_STRIDED = "any_strided"
+
+
+class ArrayEntrypointABI(str, Enum):
+    """Completed shape in which one array actual reaches its native dummy.
+
+    This is the answer to the project's direct-entrypoint question for arrays:
+    what would a ``bind(C)`` procedure with no bridge receive? An
+    ``assumed_shape`` or ``assumed_rank`` dummy is interoperable and receives a
+    ``CFI_cdesc_t *``, which carries a signed byte stride per axis. An
+    ``explicit_shape`` or ``assumed_size`` dummy receives the address of its
+    first element and nothing else, so nothing about its layout can be
+    conveyed, and only the layout the dummy already assumes is acceptable.
+
+    A bridge implements whichever of these the direct route would have used;
+    it does not get to pick.
+    """
+
+    RAW_ADDRESS = "raw_address"
+    C_DESCRIPTOR = "c_descriptor"
 
 
 class ArgumentHandoffMode(str, Enum):
@@ -977,6 +1004,12 @@ class ArrayHandoffPolicy:
     native_order: str | None
     contiguous: bool | None
     python_layout: ArrayPythonLayout
+    # How this dummy is reached, and therefore what can be said about layout.
+    entrypoint_abi: ArrayEntrypointABI
+    # Whether an axis of the actual may run backwards. Only a descriptor can
+    # carry that, and only a dummy that does not require contiguous storage can
+    # accept it.
+    signed_strides: bool
     minimum_rank: int
     maximum_rank: int
     flatten_python_storage: bool = False
@@ -1431,6 +1464,8 @@ if __name__ == "__main__":
         native_order="F",
         contiguous=True,
         python_layout=ArrayPythonLayout.F_CONTIGUOUS,
+        entrypoint_abi=ArrayEntrypointABI.RAW_ADDRESS,
+        signed_strides=False,
         minimum_rank=2,
         maximum_rank=2,
     )

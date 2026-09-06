@@ -7431,6 +7431,7 @@ class CBindingGenerator(ClassVisitor):
         ArrayPythonLayout.C_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS",
         ArrayPythonLayout.F_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_F_CONTIGUOUS",
         ArrayPythonLayout.POSITIVE_STRIDED_F: "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F",
+        ArrayPythonLayout.SIGNED_STRIDED_F: "PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F",
         ArrayPythonLayout.ANY_STRIDED: "PRIK_ARRAY_LAYOUT_ANY_STRIDED",
     }
 
