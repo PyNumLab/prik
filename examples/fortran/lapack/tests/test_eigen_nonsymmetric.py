@@ -72,7 +72,8 @@ def test_dgees_computes_real_schur_decomposition(prik_lapack, scipy_lapack):
         np.int32(2),
         np.empty(64),
         np.int32(64),
-        np.zeros(2, dtype=np.bool_),
+        # BWORK is a default-kind LOGICAL array, four bytes to an element.
+        np.zeros(2, dtype=np.int32),
         np.int32(0),
     )
     scipy_t, scipy_sdim, scipy_wr, scipy_wi, scipy_vs, _work, scipy_info = scipy_lapack.dgees(
@@ -202,8 +203,11 @@ def test_dtrsen_reorders_selected_schur_eigenvalue(prik_lapack, scipy_lapack, f2
     prik_q, f2py_q = identity.copy(order="F"), identity.copy(order="F")
     prik_wr, prik_wi = np.empty(2), np.empty(2)
     f2py_wr, f2py_wi = np.empty(2), np.empty(2)
+    # A default-kind Fortran LOGICAL is four bytes wide under gfortran, and an
+    # array of them is aliased element for element, so every binding here takes
+    # the matching integer dtype rather than a one-byte numpy.bool_ buffer.
     selection = np.array([False, True], dtype=np.bool_)
-    prik_selection = selection.copy()
+    prik_selection = selection.astype(np.int32)
 
     prik_scalars = prik_lapack.dtrsen(
         "N",

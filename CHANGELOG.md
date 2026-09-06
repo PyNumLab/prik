@@ -61,7 +61,10 @@ release tags add a leading `v` to the package version.
   `standard_logicals=False` only when linking Intel objects compiled without
   that option. Wider logical arrays are exposed with their matching integer
   dtype, including caller-created allocatable and pointer handles;
-  `logical(c_bool)` remains `numpy.bool_`.
+  `logical(c_bool)` remains `numpy.bool_`. A wider logical array argument is
+  now aliased rather than converted, so it takes that integer dtype where a
+  one-byte `numpy.bool_` buffer was previously copied in and out. Logical
+  scalars are unaffected and stay Python `bool` in every kind.
 
 ## 0.4.3 — 2026-08-31
 
