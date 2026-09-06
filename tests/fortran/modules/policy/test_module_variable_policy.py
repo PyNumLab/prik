@@ -9,7 +9,12 @@ from prik.printers.pyi import PyiPrinter
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.policy.ownership import AssignmentMode
-from prik.policy.models import ModuleArrayAddressMechanism, ModuleGetterAction, ModuleVariablePolicy
+from prik.policy.models import (
+    ModuleArrayAddressMechanism,
+    ModuleGetterAction,
+    ModuleVariablePolicy,
+    NativeArrayDescriptorAttribute,
+)
 
 
 def test_scalar_module_variable_policy_completes_access_and_storage_before_planning():
@@ -50,6 +55,35 @@ selected_scale: Pointer[Float64]
     assert policies["selected_scale"].descriptor_kind == "pointer"
     assert policies["selected_scale"].setter_action is SetterAction.REJECT_REPLACEMENT
     assert policies["selected_scale"].native_assignment is AssignmentMode.NONE
+
+
+def test_fixed_character_handles_publish_only_the_descriptor_attribute_their_callback_can_supply():
+    parsed = parse_fortran_project(
+        {
+            "character_arrays.f90": """
+module character_arrays
+  character(len=5), allocatable :: fixed_alloc(:)
+  character(len=5), pointer :: fixed_pointer(:) => null()
+  character(len=:), allocatable :: deferred_alloc(:)
+  real(8), allocatable :: numbers(:)
+end module character_arrays
+"""
+        }
+    )
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="character_arrays")
+    complete_semantic_policies(module)
+
+    handles = {
+        variable.name: variable.metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA].native_array_handle
+        for variable in module.variables
+    }
+
+    assert handles["fixed_alloc"].descriptor_attribute is NativeArrayDescriptorAttribute.OTHER
+    assert handles["fixed_pointer"].descriptor_attribute is NativeArrayDescriptorAttribute.OTHER
+    assert handles["deferred_alloc"].descriptor_attribute is NativeArrayDescriptorAttribute.ALLOCATABLE
+    assert handles["numbers"].descriptor_attribute is NativeArrayDescriptorAttribute.ALLOCATABLE
 
 
 def test_symbolic_source_parameters_use_native_getters_while_literals_stay_in_binding():

@@ -400,7 +400,8 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
     assert "result_owner_status = CFI_establish(result, NULL, CFI_attribute_pointer" in c_source
     assert (
-        "PRIK_NATIVE_ARRAY_KIND_POINTER, 1, (uint32_t)sizeof(CFI_CDESC_T(1)), CFI_type_double, "
+        "PRIK_NATIVE_ARRAY_KIND_POINTER, PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER, 1, "
+        "(uint32_t)sizeof(CFI_CDESC_T(1)), CFI_type_double, "
         "sizeof(double), result" in c_source
     )
 

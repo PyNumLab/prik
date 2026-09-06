@@ -47,6 +47,7 @@ from prik.policy.models import (
     ModuleObjectAccessMechanism,
     CharacterLocalRelease,
     NativeArrayDescriptorKind,
+    NativeArrayDescriptorAttribute,
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
     NativeArrayOperation,
@@ -2570,7 +2571,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _module_native_array_descriptor_operation(self, plan: ModuleVariablePlan) -> FortranFunction | None:
         """Expose current module descriptor state through the selected mechanism."""
         if self._uses_module_descriptor_backend(plan):
-            return self._module_allocatable_descriptor_callback_operation(
+            return self._module_descriptor_callback_operation(
                 plan,
                 NativeArrayOperation.DESCRIPTOR,
             )
@@ -2580,9 +2581,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _uses_module_descriptor_backend(plan: ModuleVariablePlan) -> bool:
         """Return whether a handle reaches its descriptor through a consumer.
 
-        A module array hands its variable to a consumer rather than filling a
-        record supplied from C, so the descriptor that crosses is always one
-        this compiler built. Both allocatable and pointer variables do this.
+        A module array hands a plan-selected descriptor projection to a
+        consumer rather than filling a record supplied from C.
         """
         handle = plan.native_array_handle
         return bool(
@@ -2594,14 +2594,31 @@ class FortranBridgeGenerator(ClassVisitor):
             }
         )
 
-    def _module_allocatable_descriptor_callback_operation(
+    def _module_descriptor_callback_operation(
         self,
         plan: ModuleVariablePlan,
         operation: NativeArrayOperation,
     ) -> FortranFunction:
-        """Pass the current allocatable descriptor to a C callback without copying."""
+        """Run a C callback on the current module-array descriptor projection."""
         name = self._module_native_array_operation_name(plan, operation)
         interface_name = self._module_descriptor_callback_interface_name(plan)
+        callback = FortranCall(
+            "callback",
+            (CodeExpression(self._native_variable_name(plan)), CodeExpression("context")),
+        )
+        handle = plan.native_array_handle
+        if handle is None:
+            raise ValueError(f"Module handle {plan.owner_path!r} has no descriptor policy")
+        invoke = (
+            (
+                FortranIf(
+                    CodeExpression(self._module_native_array_presence_expression(plan)),
+                    body=(callback,),
+                ),
+            )
+            if handle.descriptor_attribute is NativeArrayDescriptorAttribute.OTHER
+            else (callback,)
+        )
         return FortranFunction(
             name=name,
             parameters=(
@@ -2615,10 +2632,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     "c_f_procpointer",
                     (CodeExpression("callback_address"), CodeExpression("callback")),
                 ),
-                FortranCall(
-                    "callback",
-                    (CodeExpression(self._native_variable_name(plan)), CodeExpression("context")),
-                ),
+                *invoke,
             ),
             is_subroutine=True,
         )
@@ -2736,35 +2750,20 @@ class FortranBridgeGenerator(ClassVisitor):
         plan: ModuleVariablePlan,
         rank: int,
     ) -> tuple[str, tuple[str, ...]]:
-        """Return the type and attributes of one descriptor-consumer value dummy.
+        """Return the plan-selected descriptor callback dummy.
 
-        The dummy is always ``allocatable`` so that the descriptor it receives
-        describes the module variable itself. An assumed-shape dummy would
-        renumber the bounds from zero, losing a declared lower bound, and GCC
-        rejects an assumed-shape character one outright.
-
-        A character array that declares its own width is the exception, and has
-        to be. An interoperable allocatable or pointer character dummy must
-        declare deferred length, and argument association requires the actual to
-        declare deferred length exactly when the dummy does -- so for an actual
-        whose width is fixed, no allocatable dummy exists that it may be
-        associated with. Such an array is therefore taken by an assumed-shape
-        assumed-length dummy, which costs it the declared lower bound and leaves
-        allocation state out of reach, and is the only form that can receive it.
-
-        The runtime never reaches this operation while the array is
-        unallocated: ``AllocatableArray.to_numpy`` and ``shape`` both return
-        early on ``allocated``.
+        Allocatable and pointer descriptors preserve their entity semantics.
+        An ``other`` descriptor is the ordinary assumed-shape projection used
+        for fixed-width character storage; the callback is entered only while
+        that storage is present.
         """
         dimension = self._array_dimension_attribute(rank)
         handle = plan.native_array_handle
-        attribute = (
-            "pointer"
-            if handle is not None and handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
-            else "allocatable"
-        )
-        if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
+        if handle is None:
+            raise ValueError(f"Module handle {plan.owner_path!r} has no descriptor policy")
+        if handle.descriptor_attribute is NativeArrayDescriptorAttribute.OTHER:
             return "character(kind=c_char, len=*)", (dimension, "intent(inout)")
+        attribute = handle.descriptor_attribute.value
         return self._module_native_array_element_type(plan), (attribute, dimension, "intent(inout)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
@@ -7111,6 +7110,31 @@ class FortranBridgeGenerator(ClassVisitor):
         """Build the descriptor-export procedure for one native-array-handle field."""
         name = self._native_handle_field_bridge_name(owner, field, NativeArrayOperation.DESCRIPTOR)
         interface = self._native_handle_field_callback_interface_name(owner, field)
+        callback = FortranCall(
+            "callback",
+            (
+                CodeExpression(self._native_handle_field_expression(owner, field)),
+                CodeExpression("context"),
+            ),
+        )
+        handle = field.native_array_handle
+        if handle is None:
+            raise ValueError(f"Native handle field {field.owner_path!r} has no descriptor policy")
+        invoke = (
+            (
+                FortranIf(
+                    CodeExpression(
+                        self._native_handle_field_presence(
+                            field,
+                            self._native_handle_field_expression(owner, field),
+                        )
+                    ),
+                    body=(callback,),
+                ),
+            )
+            if handle.descriptor_attribute is NativeArrayDescriptorAttribute.OTHER
+            else (callback,)
+        )
         return FortranFunction(
             name=name,
             parameters=(
@@ -7129,13 +7153,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     "c_f_procpointer",
                     (CodeExpression("callback_address"), CodeExpression("callback")),
                 ),
-                FortranCall(
-                    "callback",
-                    (
-                        CodeExpression(self._native_handle_field_expression(owner, field)),
-                        CodeExpression("context"),
-                    ),
-                ),
+                *invoke,
             ),
             is_subroutine=True,
         )
@@ -8258,12 +8276,20 @@ class FortranBridgeGenerator(ClassVisitor):
         handle = field.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Native handle field {field.owner_path!r} has no callback rank")
-        attribute = "allocatable" if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
-        element_type = (
-            "character(kind=c_char, len=:)"
-            if field.string_element
-            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_fortran_type
-        )
+        if handle.descriptor_attribute is NativeArrayDescriptorAttribute.OTHER:
+            element_type = "character(kind=c_char, len=*)"
+            attributes = (self._array_dimension_attribute(handle.array.rank), "intent(inout)")
+        else:
+            element_type = (
+                "character(kind=c_char, len=:)"
+                if field.string_element
+                else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_fortran_type
+            )
+            attributes = (
+                handle.descriptor_attribute.value,
+                self._array_dimension_attribute(handle.array.rank),
+                "intent(inout)",
+            )
         imports = (self._iso_symbol(field.semantic_type_name), "c_ptr")
         return FortranInterfaceProcedure(
             name=name,
@@ -8272,12 +8298,10 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranParameter(
                     "value",
                     element_type,
-                    # intent(inout), so a callee reached through this descriptor
-                    # can change the field's allocation and have the compiler
-                    # copy that back. intent(in) leaves the copy-back
-                    # unspecified, which happens to work on the compilers tested
-                    # but is not something the standard obliges them to do.
-                    (attribute, self._array_dimension_attribute(handle.array.rank), "intent(inout)"),
+                    # A true descriptor attribute carries allocation or
+                    # association changes. An ordinary projection writes only
+                    # through the storage already present.
+                    attributes,
                 ),
                 FortranParameter("context", "type(c_ptr)", ("value",)),
             ),

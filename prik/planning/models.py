@@ -70,6 +70,7 @@ from prik.policy.models import (
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorInterop,
+    NativeArrayDescriptorAttribute,
     CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
@@ -569,6 +570,7 @@ class NativeArrayHandlePlan(StageRecord):
     """
 
     descriptor_kind: NativeArrayDescriptorKind
+    descriptor_attribute: NativeArrayDescriptorAttribute
     handle_kind: NativeArrayHandleKind
     origin: NativeArrayHandleOrigin
     owner: OwnershipOwner

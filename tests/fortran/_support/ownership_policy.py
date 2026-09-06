@@ -122,6 +122,7 @@ def _hidden_output_context(**kwargs) -> OwnershipContext:
 def _native_array_policy(
     *,
     descriptor_kind: str = "allocatable",
+    descriptor_attribute: str | None = None,
     handle_kind: str = "borrowed_module_descriptor",
     to_numpy: str = "borrowed_view",
     descriptor_interop: str = "none",
@@ -132,6 +133,7 @@ def _native_array_policy(
 ) -> NativeArrayHandlePolicy:
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
+        descriptor_attribute=descriptor_attribute or descriptor_kind,
         handle_kind=handle_kind,
         origin="module_variable",
         owner="native",

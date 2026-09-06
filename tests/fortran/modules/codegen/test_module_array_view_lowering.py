@@ -183,27 +183,13 @@ def _character_bridge_source():
     return FortranSourcePrinter().visit(FortranBridgeGenerator().visit(plan))
 
 
-def test_no_interoperable_character_dummy_is_allocatable_with_assumed_length():
-    """An interoperable allocatable character dummy must declare deferred length.
-
-    An allocatable or pointer character dummy of a BIND(C) procedure may not
-    have assumed length; and argument association requires the actual to have
-    deferred length exactly when the dummy does. So an array whose width is
-    fixed has no allocatable dummy it can be associated with, and is taken by
-    an assumed-shape one instead.
-
-    GNU Fortran 13 rejects the combination; 11 and Intel's ifx accept it
-    silently, so nothing that compiles here would have caught it.
-    """
+def test_fixed_character_callbacks_use_an_ordinary_descriptor_projection():
+    """The callback declaration matches the descriptor attribute policy selected upstream."""
     source = _character_bridge_source()
-    offenders = [
-        line.strip()
-        for line in source.splitlines()
-        if "character(" in line and "len=*" in line and ("allocatable" in line or "pointer" in line)
-    ]
 
-    assert offenders == []
-    # The fixed-width arrays keep their width and lose only the attribute.
-    assert "character(kind=c_char, len=*), dimension(:), intent(inout) :: value" in source
-    # A numeric array is unaffected: nothing stops its dummy being allocatable.
-    assert "allocatable" in source
+    assert source.count("character(kind=c_char, len=*), dimension(:), intent(inout) :: value") == 2
+    assert "character(kind=c_char, len=:), allocatable, dimension(:), intent(inout) :: value" in source
+    assert "real(c_double), allocatable, dimension(:), intent(inout) :: value" in source
+    assert "if (allocated(native_fixed_alloc)) then" in source
+    assert "if (associated(native_fixed_ptr)) then" in source
+    assert "call callback(native_deferred_alloc, context)" in source

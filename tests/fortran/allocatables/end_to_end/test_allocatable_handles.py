@@ -373,6 +373,8 @@ module falloc_lower_bounds_f90
   real(real64), allocatable, target :: tgt_a(:)
   real(real64), allocatable, target :: defaulted(:)
   character(len=5), allocatable, target :: fixed_words(:)
+  character(len=5), allocatable :: missing_words(:)
+  character(len=5), pointer :: missing_pointer(:) => null()
   character(len=:), allocatable, target :: deferred_words(:)
 contains
   function lower_bound_of(x) result(bound)
@@ -448,6 +450,38 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
     # A deferred-length actual reaches an allocatable dummy carrying both, so
     # the bound and the width are read back out of the array itself.
     assert module.deferred_word_bound_and_width(module.deferred_words) == np.int32(506)
+
+
+def test_fixed_character_projection_reports_absence(tmp_path: Path):
+    module = _build_text_and_import(
+        LOWER_BOUND_SOURCE,
+        "falloc_lower_bounds_f90.f90",
+        tmp_path,
+        {
+            "bind_c_falloc_lower_bounds_f90_wrapper.f90",
+            "falloc_lower_bounds_f90_wrapper.c",
+            "falloc_lower_bounds_f90_wrapper.h",
+        },
+    )
+    module.setup()
+
+    missing = module.missing_words
+    assert missing.allocated is False
+    assert missing.shape is None
+    assert missing.to_numpy() is None
+    assert missing.dtype == np.dtype("S5")
+
+    missing_pointer = module.missing_pointer
+    assert missing_pointer.associated is False
+    assert missing_pointer.shape is None
+    missing_pointer.associate(missing_pointer)
+    assert missing_pointer.associated is False
+
+    fixed = module.fixed_words
+    assert fixed.allocated is True
+    assert fixed.to_numpy().tolist() == [b"aaaaa"] * 4
+    with pytest.raises(TypeError, match="descriptor attribute required by the dummy"):
+        module.deferred_word_bound_and_width(fixed)
 
 
 BORROWED_DESCRIPTOR_SOURCE = """\

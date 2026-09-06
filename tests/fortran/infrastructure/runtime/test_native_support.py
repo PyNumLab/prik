@@ -42,6 +42,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
 
 BACKEND_RECORD = (
     ("uint32_t", "descriptor_kind"),
+    ("uint32_t", "descriptor_attribute"),
     ("uint32_t", "rank"),
     ("uint32_t", "descriptor_size"),
     ("int32_t", "cfi_type"),
@@ -112,6 +113,10 @@ def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
         "prik_native_array_owned_with_descriptor",
     ):
         assert name in header
+
+    assert "invalid prik native array descriptor attribute" in header
+    assert "backend->descriptor_attribute != expected_descriptor_attribute" in header
+    assert "does not expose the descriptor attribute required by the dummy argument" in header
 
 
 def test_native_array_backend_release_is_idempotent_and_never_frees_borrowed_storage():

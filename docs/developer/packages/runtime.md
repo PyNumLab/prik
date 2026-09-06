@@ -44,8 +44,8 @@ cross-extension ABI for an array handle:
 
 ```c
 typedef struct {
-    uint32_t struct_size;
     uint32_t descriptor_kind;
+    uint32_t descriptor_attribute;
     uint32_t rank;
     uint32_t descriptor_size;
     int32_t  cfi_type;
@@ -60,9 +60,11 @@ typedef struct {
 descriptor and runs the consumer on it:
 
 - **Borrowed** — a module variable or a derived-type field. The entry point
-  enters Fortran, which builds the descriptor for that call and copies back
-  what the consumer wrote. The descriptor is gone when the consumer returns and
-  must never be retained, copied, or serialized.
+  enters Fortran and supplies the plan-selected descriptor for that call. The
+  descriptor is gone when the consumer returns and must never be retained,
+  copied, or serialized. An ordinary projection does not invoke the consumer
+  while its allocatable or pointer entity has no storage; inquiries return the
+  corresponding absent value.
 - **Owned** — a native result, or a contract handle that has been given
   storage. The binding allocated a descriptor and keeps it for the handle's
   life, so the entry point hands that storage straight to the consumer.
@@ -81,10 +83,12 @@ an incompatible producer is therefore refused before its fields are read.
 
 `descriptor_size` stays in the record because it attests the producer's
 `CFI_CDESC_T(rank)` layout, which is the compiler's, not this header's, and so
-is not folded into the tag. A reader still validates `descriptor_kind`, `rank`,
-`cfi_type` and `element_size` against the dummy it is filling. `element_size`
-is `0` for widths determined at run time, such as deferred-length character
-arrays.
+is not folded into the tag. `descriptor_kind` identifies the native entity;
+`descriptor_attribute` identifies the descriptor supplied to a consumer. A
+descriptor-dummy call requires both to match, while ordinary-array consumers
+can use a descriptor with the `other` attribute. Readers also validate `rank`,
+`cfi_type` and `element_size`. `element_size` is `0` for widths determined at
+run time, such as deferred-length character arrays.
 
 ### Inquiries Read The Descriptor
 

@@ -151,6 +151,9 @@ module fhandle_descriptor_matrix_f90
   type :: holder
     real(8), allocatable :: field_allocatable_values_with_long_name(:)
     logical(4), allocatable :: field_flags(:)
+    character(len=4), allocatable :: field_fixed_words(:)
+    character(len=4), allocatable :: field_missing_words(:)
+    character(len=4), pointer :: field_missing_pointer(:) => null()
     real(8), pointer :: field_ptr(:) => null()
     character(len=:), pointer :: field_words(:) => null()
   end type holder
@@ -200,6 +203,7 @@ contains
     allocate(parent%field_allocatable_values_with_long_name(3))
     parent%field_allocatable_values_with_long_name = 5.0_8
     allocate(parent%field_flags(3)); parent%field_flags = [.true., .false., .true.]
+    allocate(parent%field_fixed_words(2)); parent%field_fixed_words = ['abcd', 'efgh']
     parent%field_ptr => store(2:6:2)
     allocate(character(len=5) :: parent%field_words(2))
     parent%field_words = ['alpha', 'beta ']
@@ -430,6 +434,9 @@ def test_a_derived_type_field_view_retains_its_parent(descriptor_matrix):
     field = parent.field_allocatable_values_with_long_name
     pointer_field = parent.field_ptr
     logical_field = parent.field_flags
+    fixed_words_field = parent.field_fixed_words
+    missing_words_field = parent.field_missing_words
+    missing_pointer_field = parent.field_missing_pointer
     words_field = parent.field_words
 
     assert field.shape == (3,)
@@ -438,6 +445,18 @@ def test_a_derived_type_field_view_retains_its_parent(descriptor_matrix):
     assert pointer_field.shape == (3,)
     assert logical_field.dtype == np.dtype(np.int32)
     np.testing.assert_array_equal(logical_field.to_numpy().astype(bool), [True, False, True])
+    assert fixed_words_field.allocated is True
+    assert fixed_words_field.shape == (2,)
+    assert fixed_words_field.dtype == np.dtype("S4")
+    assert fixed_words_field.to_numpy().tolist() == [b"abcd", b"efgh"]
+    assert descriptor_matrix.word_width(fixed_words_field) == np.int32(4)
+    assert missing_words_field.allocated is False
+    assert missing_words_field.shape is None
+    assert missing_words_field.to_numpy() is None
+    assert missing_pointer_field.associated is False
+    assert missing_pointer_field.shape is None
+    missing_pointer_field.associate(missing_pointer_field)
+    assert missing_pointer_field.associated is False
     assert words_field.associated is True
     assert words_field.shape == (2,)
     assert words_field.dtype == np.dtype("S5")

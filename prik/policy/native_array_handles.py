@@ -37,6 +37,7 @@ class NativeArrayHandlePolicy:
     """Completed post-IR policy for a native allocatable or pointer array handle."""
 
     descriptor_kind: str
+    descriptor_attribute: str
     handle_kind: str
     origin: str
     owner: str
@@ -388,6 +389,7 @@ if __name__ == "__main__":
     mark_native_array_handle(example_type, "pointer")
     example_policy = NativeArrayHandlePolicy(
         descriptor_kind="pointer",
+        descriptor_attribute="pointer",
         handle_kind="pointer",
         origin="module",
         owner="native",

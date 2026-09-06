@@ -106,6 +106,12 @@ and its current element width, and can be nullified or deallocated. It cannot
 be passed as a pointer-descriptor argument or exposed with `to_numpy()`, because
 Fortran does not permit its descriptor form in a `bind(C)` interface.
 
+PRIK does not wrap `Pointer[String[N][...]]` parameters: a fixed-width
+character pointer array has no interoperable pointer descriptor interface that
+preserves its association semantics. A fixed-width character module or field
+pointer can still expose a NumPy view and satisfy an ordinary
+`String[N][...]` array parameter.
+
 ---
 
 ## Associate Two Pointers

@@ -112,3 +112,25 @@ end module deferred_field_state
     assert "result = associated(owner%words)" in shape
     assert "_words_consumer" not in source
     assert "character(kind=c_char, len=:), pointer, dimension(:), intent(inout)" not in source
+
+
+def test_fixed_character_descriptor_fields_use_guarded_ordinary_projections():
+    source = _bridge_source_for(
+        """
+module fixed_character_fields
+  implicit none
+  type :: box
+    character(len=5), allocatable :: words(:)
+    character(len=5), pointer :: aliases(:) => null()
+  end type box
+  type(box) :: plain_box
+end module fixed_character_fields
+""",
+        "fixed_character_fields",
+    )
+
+    assert source.count("character(kind=c_char, len=*), dimension(:), intent(inout) :: value") == 4
+    assert "if (allocated(owner%words)) then" in source
+    assert "if (associated(owner%aliases)) then" in source
+    assert "if (allocated(native_plain_box%words)) then" in source
+    assert "if (associated(native_plain_box%aliases)) then" in source

@@ -325,6 +325,27 @@ end module fixed_update
     assert policy.results[0].updates_argument is True
 
 
+@pytest.mark.parametrize("attribute", ["allocatable", "pointer"])
+def test_fixed_length_character_array_descriptor_arguments_are_blocked(tmp_path: Path, attribute: str):
+    module = _semantic_module_from_text(
+        f"""
+module fixed_array_descriptor
+  implicit none
+contains
+  subroutine inspect(values)
+    character(len=5), {attribute}, intent(in) :: values(:)
+  end subroutine inspect
+end module fixed_array_descriptor
+""",
+        tmp_path,
+        module_name="fixed_array_descriptor",
+    )
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is False
+    assert any("no interoperable descriptor interface" in blocker for blocker in policy.blockers)
+
+
 def test_plain_fixed_length_string_update_keeps_copy_in_out_replacement(tmp_path: Path):
     """A dummy with no descriptor attribute keeps the caller-buffer replacement.
 

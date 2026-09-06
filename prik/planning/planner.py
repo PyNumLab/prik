@@ -2238,6 +2238,7 @@ class WrapperPlanner(ClassVisitor):
             raise ValueError(f"Native array handle {owner_path!r} is missing its array data facet")
         return NativeArrayHandlePlan(
             descriptor_kind=policy.descriptor_kind,
+            descriptor_attribute=policy.descriptor_attribute,
             handle_kind=policy.handle_kind,
             origin=policy.origin,
             owner=policy.owner,

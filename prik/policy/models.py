@@ -770,6 +770,14 @@ class NativeArrayDescriptorKind(str, Enum):
     POINTER = "pointer"
 
 
+class NativeArrayDescriptorAttribute(str, Enum):
+    """Attribute carried by the descriptor a handle backend supplies."""
+
+    ALLOCATABLE = "allocatable"
+    POINTER = "pointer"
+    OTHER = "other"
+
+
 class CharacterLocalRelease(str, Enum):
     """Completed release responsibility for one adapter-local character value.
 
@@ -1138,6 +1146,7 @@ class NativeArrayHandleWrapperPolicy:
     """Typed wrapper-facing projection of completed native handle policy."""
 
     descriptor_kind: NativeArrayDescriptorKind
+    descriptor_attribute: NativeArrayDescriptorAttribute
     handle_kind: NativeArrayHandleKind
     origin: NativeArrayHandleOrigin
     owner: OwnershipOwner

@@ -21,6 +21,7 @@ from prik.policy.ownership import (
     ObjectKind,
     SetterAction,
     default_ownership_policy,
+    declared_character_length,
     is_character_descriptor_update,
     ownership_context_for_argument,
 )
@@ -1374,6 +1375,15 @@ def _native_array_handle_policy(
     )
     handle_kind = _native_array_handle_kind(descriptor_kind, context, optional_absent=optional_absent)
     blocker = _native_array_handle_blocker(descriptor_kind, handle_kind, decision)
+    if (
+        blocker is None
+        and context.is_argument
+        and semantic_type.name == "String"
+        and declared_character_length(semantic_type.metadata) is not None
+    ):
+        blocker = (
+            "fixed-width character allocatable and pointer array arguments have no interoperable descriptor interface"
+        )
     descriptor_inquiries = _native_array_descriptor_inquiries(descriptor_kind, semantic_type)
     if not descriptor_inquiries and handle_kind not in {
         "borrowed_module_descriptor",
@@ -1392,6 +1402,11 @@ def _native_array_handle_policy(
     default_construction = _native_array_default_construction(handle_kind, context, semantic_type)
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
+        descriptor_attribute=_native_array_descriptor_attribute(
+            descriptor_kind,
+            handle_kind,
+            semantic_type,
+        ),
         handle_kind=handle_kind,
         origin=_native_array_handle_origin(context),
         owner=_native_array_handle_owner(handle_kind),
@@ -1725,6 +1740,25 @@ def _native_array_descriptor_interop_requirement(
     if descriptor_kind == "pointer" and handle_kind != "unsupported":
         return "pointer_c_descriptor"
     return "none"
+
+
+def _native_array_descriptor_attribute(
+    descriptor_kind: str,
+    handle_kind: str,
+    semantic_type: models.SemanticType,
+) -> str:
+    """Complete the attribute a handle's descriptor callback can supply.
+
+    A fixed-width character module variable or field cannot associate with an
+    interoperable allocatable or pointer character dummy, because those dummies
+    have to declare deferred length. Its callback therefore supplies an
+    ordinary assumed-shape descriptor. The native entity remains allocatable
+    or pointer; only the callback projection has the ``other`` attribute.
+    """
+    fixed_character = semantic_type.name == "String" and declared_character_length(semantic_type.metadata) is not None
+    if fixed_character and handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor"}:
+        return "other"
+    return descriptor_kind
 
 
 def _native_array_descriptor_inquiries(

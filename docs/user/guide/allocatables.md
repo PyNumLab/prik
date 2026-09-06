@@ -59,6 +59,12 @@ A plain NumPy array cannot satisfy an `Allocatable[T[...]]` parameter because
 it does not carry native allocation state. Use `to_numpy()` when Python needs
 the current array data held by an allocatable handle.
 
+PRIK does not wrap `Allocatable[String[N][...]]` parameters: a fixed-width
+character allocatable array has no interoperable allocatable descriptor
+interface that preserves its allocation semantics. A fixed-width character
+module or field handle can still be viewed with `to_numpy()` and passed to an
+ordinary `String[N][...]` array parameter.
+
 ---
 
 ## Allocatable Array Handle API

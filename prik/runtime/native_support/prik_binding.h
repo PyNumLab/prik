@@ -48,6 +48,9 @@
 #define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v1"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
+#define PRIK_NATIVE_ARRAY_ATTRIBUTE_ALLOCATABLE 1u
+#define PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER 2u
+#define PRIK_NATIVE_ARRAY_ATTRIBUTE_OTHER 3u
 
 #if defined(_MSC_VER)
 #define PRIK_NO_INLINE __declspec(noinline)
@@ -89,8 +92,9 @@ typedef void (*prik_native_array_descriptor_fn)(void *descriptor, void *context)
 
 /*
  * Enter the native entity and run `consumer` while its descriptor is live.
- * `context` is whatever that entity needs to be reached; see the backend
- * record below.
+ * An ordinary projection may return without calling `consumer` when its
+ * allocatable or pointer entity has no storage. `context` is whatever that
+ * entity needs to be reached; see the backend record below.
  */
 typedef void (*prik_native_array_with_descriptor_fn)(
     void *context,
@@ -120,26 +124,28 @@ typedef struct {
  * and is resolved once when the handle is built, so reaching the entity costs
  * one indirect call instead of a Python attribute lookup per operation.
  *
- * A borrowed backend enters Fortran, which builds the descriptor for the call
- * and copies back what the consumer wrote; the descriptor is gone when the
- * consumer returns and must never be retained. An owned backend hands over the
- * persistent storage it allocated, which stays valid for the handle's life.
- * Consumers cannot tell the two apart, and must not try to.
+ * A borrowed backend enters Fortran, which supplies the plan-selected
+ * descriptor for the call; the descriptor is gone when the consumer returns
+ * and must never be retained. An owned backend hands over the persistent
+ * storage it allocated, which stays valid for the handle's life. Consumers
+ * cannot tell the two ownership forms apart, and must not try to.
  *
  * The metadata refuses an incompatible producer before any descriptor is
  * interpreted. The record's own layout is attested by the capsule name, so
  * nothing here restates it; what remains is what the name cannot know:
  *  - descriptor_size attests the producer's CFI_CDESC_T(rank) layout, which
  *    neither this record nor the descriptor itself can be read to establish;
- *  - descriptor_kind, rank, cfi_type and element_size are what a reader
- *    compares against the dummy it is filling, and reporting them here means
- *    a mismatch is refused without entering Fortran at all.
+ *  - descriptor_kind identifies the native entity while descriptor_attribute
+ *    identifies what `with_descriptor` supplies. Together with rank, cfi_type
+ *    and element_size, they let a reader refuse a mismatch without entering
+ *    Fortran at all.
  * element_size is 0 when the element width is only known at run time, as for
  * a deferred-length character array; such a reader takes it from the live
  * descriptor's elem_len instead.
  */
 typedef struct {
     uint32_t descriptor_kind;
+    uint32_t descriptor_attribute;
     uint32_t rank;
     uint32_t descriptor_size;
     int32_t cfi_type;
@@ -177,6 +183,7 @@ static inline uint64_t prik_native_array_backend_layout_tag(void)
         size_t width;
     } layout[] = {
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_kind),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_attribute),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(rank),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_size),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(cfi_type),
@@ -296,6 +303,7 @@ static inline void prik_native_array_backend_capsule_destructor(PyObject *capsul
  */
 static inline PyObject *prik_native_array_backend_capsule_new(
     uint32_t descriptor_kind,
+    uint32_t descriptor_attribute,
     uint32_t rank,
     uint32_t descriptor_size,
     int cfi_type,
@@ -312,6 +320,12 @@ static inline PyObject *prik_native_array_backend_capsule_new(
         PyErr_SetString(PyExc_ValueError, "invalid prik native array descriptor kind");
         return NULL;
     }
+    if (descriptor_attribute != PRIK_NATIVE_ARRAY_ATTRIBUTE_ALLOCATABLE
+        && descriptor_attribute != PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER
+        && descriptor_attribute != PRIK_NATIVE_ARRAY_ATTRIBUTE_OTHER) {
+        PyErr_SetString(PyExc_ValueError, "invalid prik native array descriptor attribute");
+        return NULL;
+    }
     if (with_descriptor == NULL) {
         PyErr_SetString(PyExc_ValueError, "prik native array backend needs a descriptor entry point");
         return NULL;
@@ -326,6 +340,7 @@ static inline PyObject *prik_native_array_backend_capsule_new(
         return NULL;
     }
     backend->descriptor_kind = descriptor_kind;
+    backend->descriptor_attribute = descriptor_attribute;
     backend->rank = rank;
     backend->descriptor_size = descriptor_size;
     backend->cfi_type = (int32_t)cfi_type;
@@ -386,6 +401,7 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
     size_t expected_element_size)
 {
     prik_native_array_backend *backend;
+    uint32_t expected_descriptor_attribute;
 
     backend = prik_native_array_backend_from_capsule(capsule);
     if (backend == NULL) {
@@ -393,6 +409,15 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
     }
     if (backend->descriptor_size != expected_descriptor_size) {
         PyErr_SetString(PyExc_TypeError, "incompatible Fortran descriptor storage size");
+        return NULL;
+    }
+    expected_descriptor_attribute = expected_descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER
+        ? PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER
+        : PRIK_NATIVE_ARRAY_ATTRIBUTE_ALLOCATABLE;
+    if (backend->descriptor_attribute != expected_descriptor_attribute) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle does not expose the descriptor attribute required by the dummy argument");
         return NULL;
     }
     if (backend->descriptor_kind != expected_descriptor_kind || backend->rank != expected_rank
