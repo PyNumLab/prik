@@ -341,6 +341,7 @@ class CBindingGenerator(ClassVisitor):
                 # Every handle inquiry runs through these, so they precede the
                 # first handle operation that names one.
                 *self._numpy_descriptor_builder_function(plan),
+                *self._array_extents_reader_function(plan),
                 *self._native_array_projection_functions(plan),
                 *self._extent_expression_support_functions(plan),
                 *self._callback_runtime_functions(plan),
@@ -6722,9 +6723,29 @@ class CBindingGenerator(ClassVisitor):
         arrive at the same slot, and the callee cannot tell them apart.
         """
         prefix = names.value_name
+        declared = self._declared_character_width(plan)
+        width_guard: tuple = ()
+        if declared:
+            width_guard = (
+                CComment("A character dummy is matched on its declared width."),
+                CIf(
+                    CodeExpression(f"PyArray_ITEMSIZE((PyArrayObject *){names.object_name}) != {declared}"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(
+                                "PyErr_Format(PyExc_TypeError, "
+                                f"\"{plan.binding.python_name} does not match expected dtype dtype('S%d')\", "
+                                f"{declared})"
+                            )
+                        ),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+            )
         describe: tuple = (
             CComment("No descriptor of its own, so one is made over the array as it is."),
             self._array_validation_statement(plan, names, object_kind_checked=True),
+            *width_guard,
             CIf(
                 CodeExpression(
                     f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
@@ -6734,6 +6755,12 @@ class CBindingGenerator(ClassVisitor):
                 body=(CReturn(CodeExpression("NULL")),),
             ),
             CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{prefix}_section")),
+            *(
+                CExpressionStatement(
+                    CodeExpression(f"{name} = (int64_t)PyArray_DIM((PyArrayObject *){names.object_name}, {axis})")
+                )
+                for axis, name in enumerate(names.extent_names)
+            ),
         )
         if not self._takes_array_handle(plan):
             return describe
@@ -6759,6 +6786,36 @@ class CBindingGenerator(ClassVisitor):
                     ),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
                     CIf(CodeExpression(f"{backend} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CComment("Its state and extents are read while its own descriptor is live."),
+                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.rank = {plan.array.rank}")),
+                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.present = 0")),
+                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.elem_len = 0")),
+                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.extents = {prefix}_extents")),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{backend}->with_descriptor({backend}->context, "
+                            f"{self.ARRAY_EXTENTS_READER}, &{prefix}_extents_out)"
+                        )
+                    ),
+                    *self._descriptor_character_width_guard(plan, prefix),
+                    CIf(
+                        CodeExpression(f"!{prefix}_extents_out.present"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "PyErr_SetString(PyExc_ValueError, "
+                                    f"{backend}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
+                                    '? "pointer handle is unassociated and cannot be passed as an array actual" '
+                                    ': "allocatable handle is unallocated and cannot be passed as an array actual")'
+                                )
+                            ),
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                    *(
+                        CExpressionStatement(CodeExpression(f"{name} = {prefix}_extents[{axis}]"))
+                        for axis, name in enumerate(names.extent_names)
+                    ),
                 ),
                 else_body=(
                     CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
@@ -6792,6 +6849,9 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(f"{names.value_name}_capsule", "PyObject *", CodeExpression("NULL")),
                 CDeclaration(f"{names.value_name}_parent", f"CFI_CDESC_T({array.rank})"),
                 CDeclaration(f"{names.value_name}_section", f"CFI_CDESC_T({array.rank})"),
+                CDeclaration(f"{names.value_name}_extents[{array.rank}]", "int64_t"),
+                CDeclaration(f"{names.value_name}_extents_out", self.ARRAY_EXTENTS_RECORD),
+                *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
             )
         declarations = [
             CDeclaration(names.object_name, "PyObject *"),
@@ -9399,9 +9459,8 @@ class CBindingGenerator(ClassVisitor):
         record = self._inverted_context_name(plan)
         chain = self._inverted_chain_fields(plan, context)
         fields = self._inverted_context_fields(plan, context)
-        result = self._direct_result(plan)
         values = [value for _declaration, value in chain + fields]
-        if result is not None:
+        if self._inverted_carries_result(plan):
             values.append("0")
         return (
             CComment("Everything the call needs apart from the descriptors themselves is"),
@@ -9419,7 +9478,7 @@ class CBindingGenerator(ClassVisitor):
             ),
             *(
                 (CExpressionStatement(CodeExpression(f"{context.result_name} = call_context.result")),)
-                if result is not None and context.result_name is not None
+                if self._inverted_carries_result(plan) and context.result_name is not None
                 else ()
             ),
         )
@@ -9810,6 +9869,70 @@ class CBindingGenerator(ClassVisitor):
     # leaves. Nothing copies a descriptor out, and no operation needs a Fortran
     # procedure of its own to report what the descriptor already says.
     NUMPY_DESCRIPTOR_BUILDER = "prik_describe_numpy_array"
+    ARRAY_EXTENTS_READER = "prik_read_array_extents"
+    ARRAY_EXTENTS_RECORD = "prik_array_extents_out"
+
+    def _array_extents_reader_function(self, plan: ModulePlan) -> tuple:
+        """Emit the consumer that reads a descriptor's extents into the frame.
+
+        A declaration elsewhere may be written in terms of this array's shape --
+        a result declared ``dimension(size(values))`` is -- and a borrowed
+        descriptor is gone once its consumer returns.  So the extents are taken
+        while it is live and kept in the caller's own storage, which is what
+        every later use reads.
+        """
+        if not self._module_describes_numpy_arrays(plan):
+            return ()
+        return (
+            CStructDefinition(
+                self.ARRAY_EXTENTS_RECORD,
+                (
+                    CParameter("rank", "int"),
+                    CParameter("present", "int"),
+                    CParameter("elem_len", "int64_t"),
+                    CParameter("extents", "int64_t *"),
+                ),
+            ),
+            CFunction(
+                self.ARRAY_EXTENTS_READER,
+                "void",
+                parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+                storage="static",
+                doc=(
+                    "Copy one descriptor's extents out while it is live, and say"
+                    " whether there is any storage behind it.",
+                    "A descriptor with no address describes an allocatable that was never"
+                    " allocated, or a pointer that points at nothing. Neither may be handed"
+                    " to a dummy that expects data.",
+                ),
+                body=(
+                    CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
+                    CDeclaration(
+                        "out",
+                        f"{self.ARRAY_EXTENTS_RECORD} *",
+                        CodeExpression(f"({self.ARRAY_EXTENTS_RECORD} *)context"),
+                    ),
+                    CDeclaration("axis", "int", CodeExpression("0")),
+                    CExpressionStatement(CodeExpression("out->present = source->base_addr != NULL")),
+                    CExpressionStatement(CodeExpression("out->elem_len = (int64_t)source->elem_len")),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < out->rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CComment("A compiler may report an empty dimension as extent -1."),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "out->extents[axis] = (int64_t)(source->dim[axis].extent == -1 "
+                                    "? 0 : source->dim[axis].extent)"
+                                )
+                            ),
+                        ),
+                    ),
+                    CReturn(),
+                ),
+            ),
+        )
 
     def _numpy_descriptor_builder_function(self, plan: ModulePlan) -> tuple:
         """Emit the one constructor every NumPy array reaching a descriptor uses."""
@@ -9973,6 +10096,32 @@ class CBindingGenerator(ClassVisitor):
                         ),
                     ),
                     CReturn(CodeExpression("0")),
+                ),
+            ),
+        )
+
+    def _descriptor_character_width_guard(self, plan: ArgumentTransferPlan, prefix: str) -> tuple:
+        """Decline storage whose element width is not the one the dummy declares.
+
+        A character dummy is matched on its width as well as its kind, and the
+        descriptor states the width the storage actually has.
+        """
+        declared = self._declared_character_width(plan)
+        if not declared:
+            return ()
+        return (
+            CComment("A character dummy is matched on its declared width."),
+            CIf(
+                CodeExpression(f"{prefix}_extents_out.elem_len != {declared}"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            "PyErr_Format(PyExc_TypeError, "
+                            f"\"{plan.binding.python_name} does not match expected dtype dtype('S%d')\", "
+                            f"{declared})"
+                        )
+                    ),
+                    CReturn(CodeExpression("NULL")),
                 ),
             ),
         )
@@ -10398,7 +10547,11 @@ class CBindingGenerator(ClassVisitor):
         chain = self._inverted_chain_fields(plan, context)
         fields = self._inverted_context_fields(plan, context)
         result = self._direct_result(plan)
-        result_field = (CParameter("result", self._inverted_result_type(plan, result)),) if result is not None else ()
+        result_field = (
+            (CParameter("result", self._inverted_result_type(plan, result)),)
+            if self._inverted_carries_result(plan)
+            else ()
+        )
         return CStructDefinition(
             self._inverted_context_name(plan),
             tuple(declaration for declaration, _value in chain + fields) + result_field,
@@ -10469,12 +10622,23 @@ class CBindingGenerator(ClassVisitor):
         # A link may only be named once the one it enters has been defined.
         return tuple(reversed(functions))
 
+    def _inverted_carries_result(self, plan: FunctionPlan) -> bool:
+        """Report whether the entrypoint returns a value the chain must carry out.
+
+        A result the entrypoint writes through a parameter is already reaching
+        this frame by address; only a returned value has to be brought back.
+        """
+        return self._direct_result(plan) is not None and self._entrypoint_return_type(plan) != "void"
+
     def _inverted_result_type(self, plan: FunctionPlan, result) -> str:
-        """Return the C storage a carried direct result is written into."""
-        direct_c_abi = plan.entrypoint.direct_c_abi
-        if direct_c_abi is not None and direct_c_abi.result is not None:
-            return direct_c_abi.result.c_spelling
-        return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
+        """Return the C storage a carried direct result is written into.
+
+        It is whatever the entrypoint returns, which is not always the scalar
+        the semantic type names: a function whose result is an array returns
+        the address of its storage.
+        """
+        del result
+        return self._entrypoint_return_type(plan)
 
     def _inverted_consumer_call(
         self,
@@ -10500,7 +10664,7 @@ class CBindingGenerator(ClassVisitor):
                 continue
             arguments.extend(carried[value] for value in values)
         call = f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
-        return f"call->result = {call}" if self._direct_result(plan) is not None else call
+        return f"call->result = {call}" if self._inverted_carries_result(plan) else call
 
     def _inverted_context_name(self, plan: FunctionPlan) -> str:
         """Return the record carrying one inverted call's other values."""

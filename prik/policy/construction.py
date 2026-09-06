@@ -7487,7 +7487,7 @@ def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> 
 # not finished is everything that referenced the extent parameters this route
 # removes: a result declared dimension(size(x)) reads them, and they have to be
 # carried out of the descriptor instead.
-_ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = False
+_ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = True
 
 
 def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
@@ -7495,14 +7495,15 @@ def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
 
     A ``bind(C)`` procedure with no bridge receives the address of the first
     element and nothing more for an explicit-shape or assumed-size dummy, and
-    for a raw C pointer: the declaration already says what the layout is, so
-    there is nothing to convey.  Every other form -- assumed-shape,
+    for a raw C pointer, whose rank the contract may leave to run time but
+    which is still only ever an address: the declaration already says how to
+    read what is there, so nothing is conveyed beside it.  Every other form -- assumed-shape,
     deferred-shape, assumed-rank, and a contract that names no Fortran category
     because a bridge dummy will be generated for it -- is reached through a
     ``CFI_cdesc_t *``, which carries an extent and a signed byte stride per
     axis.
     """
-    if category in {"explicit_shape", "assumed_size", "raw_address", SCALAR_STORAGE_CATEGORY}:
+    if category in {"explicit_shape", "assumed_size", "raw_address", "runtime_rank", SCALAR_STORAGE_CATEGORY}:
         return ArrayEntrypointABI.RAW_ADDRESS
     return ArrayEntrypointABI.C_DESCRIPTOR
 

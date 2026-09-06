@@ -165,23 +165,32 @@ def test_rank2_assumed_shape_accepts_fortran_ordered_strided_views(compiled_mult
         compiled_multid_array_module.scale2_strided(contiguous_source, c_order_out)
 
 
-def test_rank2_assumed_shape_rejects_non_positive_strides(compiled_multid_array_module):
-    """Each refusal names the restriction it comes from, not one shared phrase.
+def test_rank2_assumed_shape_accepts_reversed_axes_and_refuses_what_is_not_a_section(
+    compiled_multid_array_module,
+):
+    """A reversed axis is described; a broadcast one has nothing to describe.
 
-    A reversed axis and a broadcast axis fail for different reasons: the first
-    is a perfectly good array section this entrypoint has no way to describe,
-    because it receives an address; the second is not a section at all, since
-    Fortran has no form for an element repeated by a zero step.
+    The dummy is reached through a descriptor, which records a signed step per
+    axis, so an axis that runs backwards is passed on as it stands and the
+    callee reads the same elements the caller sees. A zero step is not a
+    direction, it is a repetition, and Fortran has no array section for it --
+    so that one is still refused, and says so in its own terms.
     """
-    source = _matrix()
-    out = np.zeros_like(source, order="F")
+    reversed_source = _reversed_fortran_matrix()
+    out = np.zeros_like(reversed_source, order="F")
     checksum = np.zeros(1, dtype=np.float64)
 
-    reversed_source = _reversed_fortran_matrix()
-    with pytest.raises(TypeError, match=r"runs backwards along axis \d+"):
-        compiled_multid_array_module.scale2_strided(reversed_source, out)
-    with pytest.raises(TypeError, match=r"cannot record a direction"):
-        compiled_multid_array_module.checksum2_strided(reversed_source, checksum)
+    compiled_multid_array_module.scale2_strided(reversed_source, out)
+    np.testing.assert_allclose(out, 3.0 * reversed_source)
+
+    compiled_multid_array_module.checksum2_strided(reversed_source, checksum)
+    np.testing.assert_allclose(checksum[0], _checksum2(reversed_source))
+
+    # Writing through a reversed view reaches the caller's own elements.
+    reversed_out = _reversed_fortran_matrix()
+    before = np.array(reversed_out, copy=True)
+    compiled_multid_array_module.scale2_strided(reversed_out, reversed_out)
+    np.testing.assert_allclose(reversed_out, 3.0 * before)
 
     broadcast_source = _broadcast_fortran_like_matrix()
     assert broadcast_source.strides[0] == 0
@@ -189,10 +198,6 @@ def test_rank2_assumed_shape_rejects_non_positive_strides(compiled_multid_array_
         compiled_multid_array_module.scale2_strided(broadcast_source, out)
     with pytest.raises(TypeError, match=r"not a Fortran array section"):
         compiled_multid_array_module.checksum2_strided(broadcast_source, checksum)
-
-    reversed_out = _reversed_fortran_matrix()
-    with pytest.raises(TypeError, match=r"runs backwards along axis \d+"):
-        compiled_multid_array_module.scale2_strided(source, reversed_out)
 
 
 def test_rank2_explicit_shape_requires_fortran_contiguous(compiled_multid_array_module):

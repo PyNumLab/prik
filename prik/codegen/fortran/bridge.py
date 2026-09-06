@@ -3425,18 +3425,17 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
+        element_type = self._array_element_fortran_type(plan)
+        if plan.datatype_family is DatatypeFamily.STRING and array.itemsize is None:
+            # The width travels in the descriptor, and a bind(C) character dummy
+            # may not name a variable for it, so it is assumed here.
+            element_type = "character(kind=c_char, len=*)"
         attributes = [self._array_dimension_attribute(array.rank)]
         if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
             # C omits it by passing no descriptor, which is what optional means
             # for an interoperable dummy.
             attributes.append("optional")
-        return (
-            FortranParameter(
-                plan.entrypoint.parameter_name,
-                self._array_element_fortran_type(plan),
-                tuple(attributes),
-            ),
-        )
+        return (FortranParameter(plan.entrypoint.parameter_name, element_type, tuple(attributes)),)
 
     # Ordinary-array argument lowering.
     def _lower_argument_array_buffer(
@@ -4652,24 +4651,7 @@ class FortranBridgeGenerator(ClassVisitor):
         argument: ArgumentTransferPlan,
     ) -> tuple[FortranCall | FortranIf, ...]:
         """Associate base storage and select the planned dense or strided view."""
-        association = self._array_pointer_initializer(argument)
-        array = argument.array
-        if array is None or array.dense_actual_role is None:
-            return (association,)
-        name = argument.entrypoint.parameter_name
-        return (
-            association,
-            FortranIf(
-                CodeExpression(f"{name}_dense_actual /= 0_c_int"),
-                body=(FortranPointerAssignment(name, CodeExpression(f"{name}_base")),),
-                else_body=(
-                    FortranPointerAssignment(
-                        name,
-                        CodeExpression(self._strided_array_section_expression(argument)),
-                    ),
-                ),
-            ),
-        )
+        return (self._array_pointer_initializer(argument),)
 
     def _assumed_rank_array_declarations(
         self,
@@ -4728,22 +4710,9 @@ class FortranBridgeGenerator(ClassVisitor):
         if self._array_crosses_as_descriptor(argument):
             # The dummy carries the caller's own bounds and directions.
             return name
-        pointer_name = self._array_pointer_name(argument)
-        if array.contiguous is not False:
-            return pointer_name
-        if array.dense_actual_role is not None:
-            return name
-        return self._strided_array_section_expression(argument)
-
-    def _strided_array_section_expression(self, argument: ArgumentTransferPlan) -> str:
-        """Render one positive-stride section from completed layout roles."""
-        array = argument.array
-        if array is None or array.rank is None:
-            raise ValueError(f"Strided array argument {argument.owner_path!r} requires a concrete rank")
-        name = argument.entrypoint.parameter_name
-        pointer_name = self._array_pointer_name(argument)
-        slices = (f"1:{name}_upper_bound_{axis} + 1:{name}_stride_{axis}" for axis in range(array.rank))
-        return f"{pointer_name}({', '.join(slices)})"
+        # Every other array reaches its dummy as an address, which the
+        # declaration already says how to read.
+        return self._array_pointer_name(argument)
 
     def _array_element_fortran_type(self, argument: ArgumentTransferPlan) -> str:
         """Return the completed primitive or fixed-width character element type."""

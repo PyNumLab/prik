@@ -1,4 +1,4 @@
-"""Positive-strided ordinary array view lowering."""
+"""Signed-stride ordinary array view lowering."""
 
 from __future__ import annotations
 
@@ -43,51 +43,42 @@ def test_strided_array_plan_names_bounds_and_element_strides_explicitly():
     assert array.dense_actual_role == f"{argument.owner_path}:dense-actual"
 
 
-def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice():
+def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
+    """A strided dummy is reached by a descriptor, whoever supplied the array.
+
+    This is the direct-entrypoint answer for an assumed-shape dummy: a bind(C)
+    procedure with no bridge receives a ``CFI_cdesc_t *``, and the extents and
+    signed strides travel inside it. So the generated C describes a NumPy array
+    into one and enters a handle's own, and the bridge dummy is the array
+    itself -- there is nothing left to reconstruct on the Fortran side.
+    """
     artifacts = WrapperGenerator().generate(_strided_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
+    # A handle is entered through its own descriptor entry point.
     assert (
-        "prik_native_array_backend_for_actual(bound_values_backend_capsule, 2, 2, "
+        "prik_native_array_backend_for_actual(bound_values_capsule, 2, 2, "
         'CFI_type_double, sizeof(double), "float64", "values")'
     ) in c_source
-    assert (
-        "bound_values_native_backend->with_descriptor(bound_values_native_backend->context, "
-        "prik_fill_array_actual_strided_arrays_strided_values, &bound_values_backend_result)"
-    ) in c_source
-    assert "relative_stride = (int64_t)(source->dim[0].sm / base_bytes)" in c_source
-    assert "out->upper_bounds[1] = upper_bound" in c_source
-    assert "NPY_FLOAT64, 2, 2, PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F, 0, 1" in c_source
-    assert "bound_values_upper_bound_0 = bound_values_actual.upper_bounds[0]" in c_source
-    assert "bound_values_stride_1 = bound_values_actual.strides[1]" in c_source
-    assert "bound_values_upper_bound_0" in c_source
-    assert "bound_values_stride_1" in c_source
-    assert "int bound_values_dense_actual = 0;" in c_source
-    assert "bound_values_dense_actual = PyArray_IS_F_CONTIGUOUS" in c_source
-    assert "if (!bound_values_dense_actual) {" in c_source
-    assert (
-        "bind_c_strided(bound_values, bound_values_dense_actual, bound_values_extent_0, bound_values_extent_1,"
-        in c_source
+    # A NumPy array has none, so one is built over its storage as it stands.
+    assert "prik_describe_numpy_array((CFI_cdesc_t *)&bound_values_parent" in c_source
+    assert "CFI_section(section, parent, lower, upper, step)" in c_source
+    # Signed strides are what this layout accepts now.
+    assert "NPY_FLOAT64, 2, 2, PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F, 0, 1" in c_source
+    # One descriptor crosses, not an address with extents beside it.
+    assert "double bind_c_strided(CFI_cdesc_t * values)" in c_source or (
+        "void bind_c_strided(CFI_cdesc_t * values)" in c_source
     )
-    assert "integer(c_int), value :: values_dense_actual" in bridge_source
-    assert "real(c_double), pointer, dimension(:, :) :: values_base" in bridge_source
-    assert "real(c_double), pointer, dimension(:, :) :: values" in bridge_source
-    assert "if (values_dense_actual /= 0_c_int) then" in bridge_source
-    assert "values => values_base" in bridge_source
-    assert (
-        "values => values_base(1:values_upper_bound_0 + 1:values_stride_0, 1:values_upper_bound_1 + 1:values_stride_1)"
-    ) in bridge_source
+    assert "bound_values_dense_actual" not in c_source
+    assert "bound_values_upper_bound_0" not in c_source
+
+    assert "real(c_double), dimension(:, :) :: values" in bridge_source
     assert "call native_strided(values)" in bridge_source
-    assert max(map(len, bridge_source.splitlines())) <= 132
-
-
-def test_rank3_strided_array_pointer_sections_respect_free_form_line_limit():
-    artifacts = WrapperGenerator().generate(_strided_plan(rank=3))
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    assert "values => values_base(&" in bridge_source
-    assert "& 1:values_upper_bound_2 + 1:values_stride_2)" in bridge_source
+    # Nothing is rebuilt from an address any more.
+    assert "call c_f_pointer(" not in bridge_source
+    assert "values_base" not in bridge_source
+    assert "values_dense_actual" not in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 

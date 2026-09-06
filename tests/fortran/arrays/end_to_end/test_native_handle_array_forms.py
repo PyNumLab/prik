@@ -391,9 +391,11 @@ def test_each_element_type_reaches_a_matching_ordinary_dummy(descriptor_matrix):
 def test_pointer_targets_report_their_shape_and_reach_an_ordinary_dummy(descriptor_matrix):
     """A pointer's storage satisfies an array dummy however its target is laid out.
 
-    Both targets report their real shape. A positive stride reaches the dummy;
-    a reversed one is refused by completed layout policy rather than silently
-    taking another route. Extraction itself stays gated behind PointerPolicy.
+    The dummy is reached through a descriptor, which carries a signed stride per
+    axis, so the direction an axis runs is something the callee is told rather
+    than something the caller has to undo. A reversed target and a strided one
+    both arrive, and both sum to what their own elements sum to. Extraction
+    itself stays gated behind PointerPolicy.
     """
     reversed_handle = descriptor_matrix.reversed
     strided_handle = descriptor_matrix.strided
@@ -404,8 +406,8 @@ def test_pointer_targets_report_their_shape_and_reach_an_ordinary_dummy(descript
     assert strided_handle.shape == (4,)
 
     assert descriptor_matrix.assumed_total(strided_handle) == np.float64(16.0)
-    with pytest.raises(ValueError, match="noncontiguous"):
-        descriptor_matrix.assumed_total(reversed_handle)
+    # store is 1..8, so the reversed view holds the same elements either way.
+    assert descriptor_matrix.assumed_total(reversed_handle) == np.float64(36.0)
 
     for handle in (reversed_handle, strided_handle):
         with pytest.raises(NotImplementedError, match="unsupported by completed policy"):
