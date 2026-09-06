@@ -7412,7 +7412,11 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
     order = _array_handoff_order(array.order, array.category)
     contiguous = _array_handoff_contiguous(array.contiguous, array.category)
     entrypoint_abi = _array_entrypoint_abi(array.category)
-    signed_strides = _array_handoff_signed_strides(entrypoint_abi, contiguous)
+    signed_strides = _array_handoff_signed_strides(
+        entrypoint_abi,
+        contiguous,
+        character=semantic_type.name == "String",
+    )
     return ArrayHandoffPolicy(
         rank=rank,
         shape=shape,
@@ -7511,6 +7515,7 @@ def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
 def _array_handoff_signed_strides(
     entrypoint_abi: ArrayEntrypointABI,
     contiguous: bool | None,
+    character: bool = False,
 ) -> bool:
     """Complete whether an axis of the actual may run backwards.
 
@@ -7521,6 +7526,13 @@ def _array_handoff_signed_strides(
     carries.
     """
     if entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or contiguous is True:
+        return False
+    if character:
+        # GNU Fortran's CFI_section resets a character descriptor's elem_len to
+        # 1, so the callee reads len(a) == 1 and every element is truncated to
+        # its first character. Intel's is correct. A silently wrong width is
+        # worse than a refusal, so a character array is not sectioned at all
+        # until that is fixed or detected.
         return False
     return _ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS
 
