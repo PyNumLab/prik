@@ -340,7 +340,8 @@ class CBindingGenerator(ClassVisitor):
                 *self._module_allocator_functions(needs_free),
                 # Every handle inquiry runs through these, so they precede the
                 # first handle operation that names one.
-                *self._native_array_projection_functions(plan),
+                *self._numpy_descriptor_builder_function(plan),
+            *self._native_array_projection_functions(plan),
                 *self._extent_expression_support_functions(plan),
                 *self._callback_runtime_functions(plan),
                 *self._derived_call_runtime_functions(plan),
@@ -6700,8 +6701,31 @@ class CBindingGenerator(ClassVisitor):
             self._array_validation_statement(plan, names),
             *self._array_shape_checks(plan, context, array),
         ]
+        if self._array_crosses_as_descriptor(plan):
+            nodes.extend(self._numpy_descriptor_nodes(plan, names, array))
+            return tuple(nodes)
         nodes.extend(self._array_extraction_nodes(plan, names, array))
         return tuple(nodes)
+
+    def _numpy_descriptor_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        array: ArrayHandoffPlan,
+    ) -> tuple[CExpressionStatement | CIf, ...]:
+        """Describe the caller's NumPy storage to Fortran without copying it."""
+        prefix = names.value_name
+        return (
+            CComment("The dummy takes a descriptor, so one is made over the array as it is."),
+            CIf(
+                CodeExpression(
+                    f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
+                    f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
+                    f"{self._native_array_cfi_type(plan)}, \"{plan.binding.python_name}\") < 0"
+                ),
+                body=(CReturn(CodeExpression("NULL")),),
+            ),
+        )
 
     def _ordinary_array_argument_declarations(
         self,
@@ -6712,6 +6736,16 @@ class CBindingGenerator(ClassVisitor):
         array = plan.array
         if array is None:
             raise ValueError(f"Array argument {plan.owner_path!r} is missing its handoff")
+        if self._array_crosses_as_descriptor(plan):
+            if array.rank is None:
+                raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
+            # Both live for the whole call: the section describes the caller's
+            # storage, and it is a section of the parent, which must outlive it.
+            return (
+                CDeclaration(names.object_name, "PyObject *"),
+                CDeclaration(f"{names.value_name}_parent", f"CFI_CDESC_T({array.rank})"),
+                CDeclaration(f"{names.value_name}_section", f"CFI_CDESC_T({array.rank})"),
+            )
         declarations = [
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
@@ -9333,6 +9367,12 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    @staticmethod
+    def _array_crosses_as_descriptor(argument: ArgumentTransferPlan) -> bool:
+        """Report whether completed policy hands this array over as a descriptor."""
+        array = argument.array
+        return array is not None and array.signed_strides
+
     def _array_actual_reader_name(self, function: FunctionPlan, argument: ArgumentTransferPlan) -> str:
         """Return the reader that copies one handle's storage out of its descriptor."""
         owner = re.sub(r"\W", "_", argument.owner_path).casefold()
@@ -9712,6 +9752,184 @@ class CBindingGenerator(ClassVisitor):
     # descriptor is read where it is valid and only the finished Python object
     # leaves. Nothing copies a descriptor out, and no operation needs a Fortran
     # procedure of its own to report what the descriptor already says.
+    NUMPY_DESCRIPTOR_BUILDER = "prik_describe_numpy_array"
+
+    def _numpy_descriptor_builder_function(self, plan: ModulePlan) -> tuple:
+        """Emit the one constructor every NumPy array reaching a descriptor uses."""
+        if not self._module_describes_numpy_arrays(plan):
+            return ()
+        return (
+            CFunction(
+                self.NUMPY_DESCRIPTOR_BUILDER,
+                "int",
+                parameters=(
+                    CParameter("parent", "CFI_cdesc_t *"),
+                    CParameter("section", "CFI_cdesc_t *"),
+                    CParameter("array", "PyArrayObject *"),
+                    CParameter("cfi_type", "CFI_type_t"),
+                    CParameter("argument_name", "const char *"),
+                ),
+                storage="static",
+                doc=(
+                    "Describe borrowed NumPy storage to Fortran, without copying it.",
+                    "CFI_establish only makes contiguous descriptors, so a strided view has"
+                    " to be a section of one: the parent established here is the smallest"
+                    " contiguous array the view is a section of, and CFI_section cuts the"
+                    " view back out of it. That is the only construction the standard"
+                    " offers, and it is what carries a signed stride.",
+                    "The parent's own steps are chosen to divide the view's, so each axis"
+                    " needs a whole-number step; an axis that runs backwards starts at its"
+                    " far end and walks down. Validation has already refused anything these"
+                    " rules cannot describe, so a failure here is the Fortran runtime's.",
+                    "Both descriptors belong to the caller's frame and last exactly as long"
+                    " as the call, which is as long as the array is borrowed.",
+                ),
+                body=(
+                    CDeclaration("rank", "int", CodeExpression("PyArray_NDIM(array)")),
+                    CDeclaration("elem_len", "CFI_index_t", CodeExpression("(CFI_index_t)PyArray_ITEMSIZE(array)")),
+                    CDeclaration("extents[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("parent_extents[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("lower[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("upper[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("step[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("unit[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("element_stride[PRIK_MAX_ARRAY_RANK]", "CFI_index_t"),
+                    CDeclaration("offset", "CFI_index_t", CodeExpression("0")),
+                    CDeclaration("empty", "int", CodeExpression("0")),
+                    CDeclaration("axis", "int", CodeExpression("0")),
+                    CDeclaration("status", "int", CodeExpression("CFI_SUCCESS")),
+                    CIf(
+                        CodeExpression("elem_len <= 0"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    'PyErr_Format(PyExc_TypeError, "Argument %s has no element width", '
+                                    "argument_name)"
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression("extents[axis] = (CFI_index_t)PyArray_DIM(array, axis)")
+                            ),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "element_stride[axis] = (CFI_index_t)PyArray_STRIDE(array, axis) / elem_len"
+                                )
+                            ),
+                            CIf(CodeExpression("extents[axis] == 0"), body=(
+                                CExpressionStatement(CodeExpression("empty = 1")),
+                            )),
+                        ),
+                    ),
+                    CComment("Nothing steps anywhere in an empty array, so it needs no section."),
+                    CIf(
+                        CodeExpression("empty"),
+                        body=(
+                            CReturn(
+                                CodeExpression(
+                                    "CFI_establish(section, PyArray_DATA(array), CFI_attribute_other, cfi_type, "
+                                    "(size_t)elem_len, rank, extents) == CFI_SUCCESS ? 0 : -1"
+                                )
+                            ),
+                        ),
+                    ),
+                    CComment("The parent's step along each axis, chosen to divide the view's."),
+                    CExpressionStatement(CodeExpression("unit[0] = 1")),
+                    CFor(
+                        "axis = 1",
+                        CodeExpression("axis < rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "unit[axis] = element_stride[axis] < 0 ? -element_stride[axis] "
+                                    ": element_stride[axis]"
+                                )
+                            ),
+                        ),
+                    ),
+                    CFor(
+                        "axis = 0",
+                        CodeExpression("axis < rank"),
+                        CodeExpression("++axis"),
+                        body=(
+                            CExpressionStatement(CodeExpression("step[axis] = element_stride[axis] / unit[axis]")),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "parent_extents[axis] = axis + 1 < rank ? (element_stride[axis + 1] < 0 "
+                                    "? -element_stride[axis + 1] : element_stride[axis + 1]) / unit[axis] "
+                                    ": extents[axis]"
+                                )
+                            ),
+                            CComment("A backward axis starts at its far end and walks down."),
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "lower[axis] = step[axis] > 0 ? 0 : (extents[axis] - 1) * (-step[axis])"
+                                )
+                            ),
+                            CExpressionStatement(
+                                CodeExpression("upper[axis] = lower[axis] + (extents[axis] - 1) * step[axis]")
+                            ),
+                            CExpressionStatement(CodeExpression("offset += lower[axis] * unit[axis]")),
+                        ),
+                    ),
+                    CExpressionStatement(
+                        CodeExpression(
+                            "status = CFI_establish(parent, (char *)PyArray_DATA(array) - offset * elem_len, "
+                            "CFI_attribute_other, cfi_type, (size_t)elem_len, rank, parent_extents)"
+                        )
+                    ),
+                    CIf(
+                        CodeExpression("status == CFI_SUCCESS"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    "status = CFI_establish(section, NULL, CFI_attribute_other, cfi_type, "
+                                    "(size_t)elem_len, rank, NULL)"
+                                )
+                            ),
+                        ),
+                    ),
+                    CIf(
+                        CodeExpression("status == CFI_SUCCESS"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression("status = CFI_section(section, parent, lower, upper, step)")
+                            ),
+                        ),
+                    ),
+                    CIf(
+                        CodeExpression("status != CFI_SUCCESS"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    'PyErr_Format(PyExc_TypeError, "Argument %s could not be described to Fortran '
+                                    'as an array section: %d", argument_name, status)'
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CReturn(CodeExpression("0")),
+                ),
+            ),
+        )
+
+    def _module_describes_numpy_arrays(self, plan: ModulePlan) -> bool:
+        """Report whether any argument in this module takes the descriptor route."""
+        return any(
+            self._array_crosses_as_descriptor(argument)
+            for function in self._functions(plan)
+            for argument in function.arguments
+        )
+
     NATIVE_ARRAY_PROJECTION_RECORD = "prik_native_array_projection"
 
     def _native_array_projection_record(self) -> CStructDefinition:
@@ -12213,6 +12431,8 @@ class CBindingGenerator(ClassVisitor):
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
             return self._string_entrypoint_argument_values(plan, names, passing=passing)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+            if self._array_crosses_as_descriptor(plan):
+                return (f"(CFI_cdesc_t *)&{names.value_name}_section",)
             return self._array_entrypoint_argument_values(plan, names)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             return (names.value_name,)
@@ -12509,6 +12729,10 @@ class CBindingGenerator(ClassVisitor):
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
             return self._string_entrypoint_argument_parameters(argument, name, passing=passing)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+            if self._array_crosses_as_descriptor(argument):
+                # Extents and strides travel inside the descriptor, so the
+                # address and the fields beside it are not needed.
+                return (CParameter(name, "CFI_cdesc_t *"),)
             return self._array_entrypoint_argument_parameters(argument, name)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             parameters = [CParameter(name, "CFI_cdesc_t *")]

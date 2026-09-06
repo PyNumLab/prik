@@ -34,6 +34,7 @@ from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayLogicalABI,
+    ArrayEntrypointABI,
     ArrayPythonLayout,
     ArrayWritebackABI,
     BridgeDataAction,
@@ -479,6 +480,10 @@ class ArrayHandoffPlan(StageRecord):
     native_order: str | None
     contiguous: bool | None
     python_layout: ArrayPythonLayout
+    # How the dummy is reached, and whether an axis may run backwards. Both are
+    # completed in policy; a backend implements the mechanism they name.
+    entrypoint_abi: ArrayEntrypointABI
+    signed_strides: bool
     minimum_rank: int
     maximum_rank: int
     flatten_python_storage: bool

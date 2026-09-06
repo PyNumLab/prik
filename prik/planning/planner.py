@@ -2360,6 +2360,8 @@ class WrapperPlanner(ClassVisitor):
             native_order=policy.native_order,
             contiguous=policy.contiguous,
             python_layout=policy.python_layout,
+            entrypoint_abi=policy.entrypoint_abi,
+            signed_strides=policy.signed_strides,
             minimum_rank=policy.minimum_rank,
             maximum_rank=policy.maximum_rank,
             flatten_python_storage=policy.flatten_python_storage,

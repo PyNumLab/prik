@@ -3405,6 +3405,34 @@ class FortranBridgeGenerator(ClassVisitor):
             FortranParameter(f"{name}_length", "integer(c_int64_t)", ("value",)),
         )
 
+    @staticmethod
+    def _array_crosses_as_descriptor(plan: ArgumentTransferPlan) -> bool:
+        """Report whether completed policy hands this array over as a descriptor."""
+        array = plan.array
+        return array is not None and array.signed_strides
+
+    def _lower_argument_array_descriptor(
+        self,
+        plan: ArgumentTransferPlan,
+    ) -> tuple[FortranParameter, ...]:
+        """Receive one ordinary array as the descriptor its direct route uses.
+
+        An assumed-shape dummy is interoperable, so C passes a ``CFI_cdesc_t *``
+        and the extents and strides arrive inside it.  Nothing is reconstructed
+        here: the dummy is the array, with the bounds and directions the caller
+        described, and it is handed to the native procedure as it stands.
+        """
+        array = plan.array
+        if array is None or array.rank is None:
+            raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
+        return (
+            FortranParameter(
+                plan.entrypoint.parameter_name,
+                self._array_element_fortran_type(plan),
+                (self._array_dimension_attribute(array.rank),),
+            ),
+        )
+
     # Ordinary-array argument lowering.
     def _lower_argument_array_buffer(
         self,
@@ -3414,6 +3442,8 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None:
             raise ValueError(f"Array argument {plan.owner_path!r} has no handoff spec")
+        if self._array_crosses_as_descriptor(plan):
+            return self._lower_argument_array_descriptor(plan)
         name = plan.entrypoint.parameter_name
         return (
             FortranParameter(f"bound_{name}", "type(c_ptr)", ("value",)),
@@ -4044,6 +4074,9 @@ class FortranBridgeGenerator(ClassVisitor):
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             return ()
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+            if self._array_crosses_as_descriptor(plan):
+                # The dummy already is the array the caller described.
+                return ()
             return self._array_pointer_initializer_nodes(plan)
         if plan.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE:
             return (
@@ -4305,6 +4338,9 @@ class FortranBridgeGenerator(ClassVisitor):
         for argument in plan.arguments:
             if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER:
                 continue
+            if self._array_crosses_as_descriptor(argument):
+                # The dummy is the view; there is no address to make one from.
+                continue
             array = argument.array
             if array is None:
                 raise ValueError(f"Array argument {argument.owner_path!r} is missing its handoff")
@@ -4528,6 +4564,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 continue
             if argument.array is not None and argument.array.rank is None:
                 continue
+            if self._array_crosses_as_descriptor(argument):
+                continue
             initializers.extend(self._array_pointer_initializer_nodes(argument))
         return tuple(initializers)
 
@@ -4677,6 +4715,9 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Array argument {argument.owner_path!r} has no handoff spec")
         name = argument.entrypoint.parameter_name
         if array.rank is None:
+            return name
+        if self._array_crosses_as_descriptor(argument):
+            # The dummy carries the caller's own bounds and directions.
             return name
         pointer_name = self._array_pointer_name(argument)
         if array.contiguous is not False:

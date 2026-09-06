@@ -7482,9 +7482,10 @@ def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> 
     return None
 
 
-# Ordinary arrays are still handed over as an address plus extents. The
-# descriptor-carrying mechanism they are entitled to by ABI is being built; this
-# names the one fact that gates it, so the two land together.
+# A NumPy actual can be described to a descriptor dummy today; a native handle
+# reaching the same dummy has to be entered through its own descriptor entry
+# point, and that integration is not finished. Until it is, ordinary arrays keep
+# the address-and-extents handoff, which both sources share.
 _ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = False
 
 
@@ -7511,13 +7512,11 @@ def _array_handoff_signed_strides(
 ) -> bool:
     """Complete whether an axis of the actual may run backwards.
 
-    Three things have to hold.  The entrypoint must carry a descriptor, because
-    a bare address says nothing about which way an axis runs.  The dummy must
+    Two things have to hold.  The entrypoint must carry a descriptor, because a
+    bare address says nothing about which way an axis runs.  And the dummy must
     not require contiguous storage, which a reversed axis is not -- a
     ``CONTIGUOUS`` dummy keeps its requirement whatever its calling convention
-    carries.  And the actual must reach it as a descriptor: an ordinary array
-    is still carried to its dummy as an address with extents beside it, and
-    that carries no direction however the dummy is declared.
+    carries.
     """
     if entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or contiguous is True:
         return False
