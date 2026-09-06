@@ -2743,12 +2743,18 @@ class FortranBridgeGenerator(ClassVisitor):
         renumber the bounds from zero, losing a declared lower bound, and GCC
         rejects an assumed-shape character one outright.
 
-        Argument association requires the actual to declare deferred length
-        exactly when the dummy does, so a character array that declares its own
-        width takes assumed length rather than deferred. The runtime never
-        reaches this operation while the array is unallocated:
-        ``AllocatableArray.to_numpy`` and ``shape`` both return early on
-        ``allocated``.
+        A character array that declares its own width is the exception, and has
+        to be. An interoperable allocatable or pointer character dummy must
+        declare deferred length, and argument association requires the actual to
+        declare deferred length exactly when the dummy does -- so for an actual
+        whose width is fixed, no allocatable dummy exists that it may be
+        associated with. Such an array is therefore taken by an assumed-shape
+        assumed-length dummy, which costs it the declared lower bound and leaves
+        allocation state out of reach, and is the only form that can receive it.
+
+        The runtime never reaches this operation while the array is
+        unallocated: ``AllocatableArray.to_numpy`` and ``shape`` both return
+        early on ``allocated``.
         """
         dimension = self._array_dimension_attribute(rank)
         handle = plan.native_array_handle
@@ -2758,7 +2764,7 @@ class FortranBridgeGenerator(ClassVisitor):
             else "allocatable"
         )
         if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
-            return "character(kind=c_char, len=*)", (attribute, dimension, "intent(inout)")
+            return "character(kind=c_char, len=*)", (dimension, "intent(inout)")
         return self._module_native_array_element_type(plan), (attribute, dimension, "intent(inout)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
