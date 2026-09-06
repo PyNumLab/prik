@@ -50,20 +50,15 @@ Use ordinary `T[...]` when the callable needs only array data:
 def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
-An allocated handle may be passed to that ordinary Fortran array argument;
-PRIK reads the live storage from its descriptor and applies the ordinary array
-contract. This also works for optional, strided, flattened, and assumed-rank
-ordinary arguments when their declared constraints match the handle.
+An allocated handle may satisfy a matching ordinary array parameter.
 
 A plain NumPy array cannot satisfy an `Allocatable[T[...]]` parameter because
 it does not carry native allocation state. Use `to_numpy()` when Python needs
 the current array data held by an allocatable handle.
 
-PRIK does not wrap `Allocatable[String[N][...]]` parameters: a fixed-width
-character allocatable array has no interoperable allocatable descriptor
-interface that preserves its allocation semantics. A fixed-width character
-module or field handle can still be viewed with `to_numpy()` and passed to an
-ordinary `String[N][...]` array parameter.
+Fixed-width character allocatable parameters
+(`Allocatable[String[N][...]]`) are unsupported. Module and field handles of
+that type still support `to_numpy()` and ordinary `String[N][...]` parameters.
 
 ---
 

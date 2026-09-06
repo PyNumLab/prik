@@ -97,6 +97,12 @@ shared entrypoint records.
 holders, or module proxies. `CBindingNames` keeps its private C symbols aligned
 with the binding helpers. Public names still come from the plan.
 
+Array lowering follows the ABI completed by policy and carried by the plan.
+Numeric assumed-shape and assumed-rank arguments use descriptors;
+explicit-shape, assumed-size, raw C-pointer, and character arguments use the
+address ABI. A bridge adapts non-`bind(C)` procedures to the same entrypoint
+contract used by direct calls.
+
 ## Run A Minimal Manual Plan
 
 This is the smallest complete plan: a public Python `ping()` that calls the

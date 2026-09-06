@@ -27,11 +27,9 @@ release tags add a leading `v` to the package version.
   versions or record layouts before reading the backend. Rebuild generated
   extensions together after upgrading PRIK.
 
-- Fixed-width character module and field handles expose their storage through
-  an ordinary descriptor. They support inquiries, NumPy views, and ordinary
-  array arguments. Fixed-width character allocatable and pointer array
-  arguments are rejected because no interoperable descriptor interface carries
-  their allocation or association semantics.
+- Fixed-width character module and field handles support inquiries, NumPy
+  views, and ordinary array arguments. Fixed-width character allocatable and
+  pointer array arguments are rejected.
 
 - Generated Fortran allocatable and pointer handles can be passed directly to
   matching ordinary array arguments. Numeric assumed-shape and assumed-rank

@@ -39,7 +39,7 @@ operation.
 ### The Backend Capsule
 
 Every generated handle publishes one versioned capsule,
-`prik.native_array_backend.v1`, on `_native_backend`. It is the whole
+`prik.native_array_backend.v1.<tag>`, on `_native_backend`. It is the whole
 cross-extension ABI for an array handle:
 
 ```c
@@ -62,9 +62,7 @@ descriptor and runs the consumer on it:
 - **Borrowed** — a module variable or a derived-type field. The entry point
   enters Fortran and supplies the plan-selected descriptor for that call. The
   descriptor is gone when the consumer returns and must never be retained,
-  copied, or serialized. An ordinary projection does not invoke the consumer
-  while its allocatable or pointer entity has no storage; inquiries return the
-  corresponding absent value.
+  copied, or serialized.
 - **Owned** — a native result, or a contract handle that has been given
   storage. The binding allocated a descriptor and keeps it for the handle's
   life, so the entry point hands that storage straight to the consumer.
@@ -74,63 +72,28 @@ address for a field, descriptor storage for an owned handle, and `NULL` for a
 module variable. `release` is non-`NULL` when the extension owns `context`.
 Clearing `context` after release makes `close()` and finalization idempotent.
 
-The capsule name is `prik.native_array_backend.v1.<tag>`. The version identifies
-the callback contract and field meanings. Change it when either changes without
-changing the C record layout. The tag folds the record size and each field's
-name, offset, and width, so a layout mismatch also changes the name.
-`PyCapsule_GetPointer` compares that name before returning the record pointer;
-an incompatible producer is therefore refused before its fields are read.
-
-`descriptor_size` stays in the record because it attests the producer's
-`CFI_CDESC_T(rank)` layout, which is the compiler's, not this header's, and so
-is not folded into the tag. `descriptor_kind` identifies the native entity;
-`descriptor_attribute` identifies the descriptor supplied to a consumer. A
-descriptor-dummy call requires both to match, while ordinary-array consumers
-can use a descriptor with the `other` attribute. Readers also validate `rank`,
-`cfi_type` and `element_size`. `element_size` is `0` for widths determined at
-run time, such as deferred-length character arrays.
+The capsule name combines a semantic version with a tag for the record layout,
+so incompatible extensions are rejected before reading the record. Readers
+validate the descriptor metadata against the planned argument. The kind names
+the native entity; the attribute names the descriptor supplied to a consumer.
 
 ### Inquiries Read The Descriptor
 
-`shape`, `allocated`, `associated`, `contiguous`, `element_length` and
-`to_numpy` are all answered by small shared C consumers run through
-`with_descriptor`, for borrowed and owned handles alike. Each consumer returns
-the completed Python value. The bridge provides the descriptor entry point and
-the mutations that act on the entity itself: `allocate`, `resize`,
-`deallocate`, `nullify`, `associate`, and `destroy`.
+State inquiries and `to_numpy()` use shared C consumers through
+`with_descriptor` for both borrowed and owned handles. Mutations that act on
+the native entity remain generated bridge operations.
 
-A pointer additionally reports `descriptor` as a flat fact tuple: base address,
-element width, rank, then a lower bound, extent, and byte stride per axis. A
-pointer assignment uses this snapshot. A handle created from a `.pyi` contract
-retains the snapshot until a call attaches native storage and replays the
-association.
-
-A call with more than one allocatable or pointer dummy enters each argument's
-backend in turn. Each consumer records its descriptor and enters the next, and
-the call runs inside the last consumer while every descriptor is live. Borrowed
-and owned handles use the same placement; an owned backend hands the consumer
-its persistent storage. An absent optional argument contributes an unallocated
-placeholder to the chain. Each descriptor remains scoped to the consumer that
-supplied it.
-
-Ordinary numeric assumed-shape and assumed-rank arguments use the same C
-descriptor entrypoint for both direct and adapted calls. The binding describes
-a NumPy array with call-local descriptor storage, or enters a handle's live
-descriptor through the consumer chain. A direct `bind(C)` procedure receives
-that descriptor itself; a non-`bind(C)` procedure has an interoperable bridge
-dummy that passes the array through unchanged. Explicit-shape, assumed-size,
-raw C-pointer, and character-array entrypoints keep their planned address ABI.
+A call with more than one allocatable or pointer dummy nests the consumers, one
+per argument, and runs the call inside the innermost one so every descriptor is
+live; an absent optional argument contributes an unallocated placeholder. Each
+descriptor stays scoped to the consumer that supplied it.
 
 ### Views And Ownership
 
-`to_numpy()` builds the view in C while the descriptor is live, over the
-storage the descriptor names, with the descriptor's own byte strides — so
-negative strides, non-contiguous pointer targets and zero-sized dimensions all
-come through unchanged. The view's base is what keeps that storage valid: the
-parent object for a derived-type field, the backend capsule for an owned
-handle, and nothing for a module variable, whose storage outlives every view of
-it. An owned handle's view additionally retains the handle, because closing the
-handle is what releases the storage.
+`to_numpy()` builds a view over the storage described by the live descriptor.
+The view retains the parent object for a field or the backend capsule for owned
+storage; module storage needs no additional owner. An owned view also retains
+its handle because closing the handle releases the storage.
 
 ## Local Structure
 
@@ -147,21 +110,16 @@ prik/runtime/
   completed capabilities.
   `AllocatableArray` adds allocation state, resize, and deallocation;
   `PointerArray` adds association, nullification, allocation, resize, and
-  deallocation when supplied. A handle created from a `.pyi` contract answers
-  from a fact tuple of its own until a call attaches generated storage; every
-  other handle answers from its descriptor.
+  deallocation when supplied.
 - `native_support/prik_binding.h` contains header-only CPython/NumPy
   conversion, descriptor, validation, capsule, and release support. Change it
   only with its generated C users and `prik/compiler/native_support.py`.
 - `native_support/LICENSE` is distributed with the native payload.
 
-`to_numpy()` returns `None` for an absent allocatable or pointer and otherwise
-validates the completed view policy, dtype, rank, and any required contiguity.
-Native argument handoff is performed in the binding, against the live
-descriptor, and refuses a mismatched dtype, rank, fixed shape, character width,
-layout, byte order, alignment, writeability, or contiguity there. A returned
-NumPy array is a view of native storage; a caller that needs independent
-storage must copy it.
+`to_numpy()` returns `None` for absent storage and otherwise applies the
+completed view policy. Native argument handoff is performed in the binding
+against the planned array contract. A returned NumPy array is a view of native
+storage; a caller that needs independent storage must copy it.
 
 ## Run The Handle Demonstration
 
@@ -188,6 +146,9 @@ generated `binding_support/` directory.
   `handles.py`.
 - Change the native payload together with its generated users and
   `prik/compiler/native_support.py`.
+- Change the capsule version when the callback contract or a field's meaning
+  changes without changing the C record layout; a layout change is already
+  caught by the name's tag.
 - Complete new ownership, lifecycle, operation, or view policy before planning
   rather than selecting it in runtime code.
 

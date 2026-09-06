@@ -49,14 +49,10 @@ Use ordinary `T[...]` when the callable needs only array data:
 def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
-An associated pointer handle may satisfy an ordinary Fortran array parameter
-when its dtype, rank, shape, layout, contiguity, and writeability meet that
-parameter's contract. Forward- and reverse-strided numeric targets are
-accepted by matching assumed-shape and assumed-rank arguments; address-only
-and contiguous arguments retain their declared layout requirements. Optional
-and flattened ordinary arguments use the same rules. A plain NumPy array
-cannot satisfy a `Pointer[T[...]]` parameter because it does not carry a native
-pointer descriptor.
+An associated pointer handle may satisfy an ordinary array parameter when its
+dtype, rank, shape, layout, contiguity, and writeability meet that parameter's
+contract. A plain NumPy array cannot satisfy a `Pointer[T[...]]` parameter
+because it does not carry a native pointer descriptor.
 
 ---
 
@@ -101,16 +97,10 @@ boundary as values rather than array handles.
 support allocation, target deallocation, resizing, and NumPy extraction.
 An unavailable operation raises `NotImplementedError`.
 
-A deferred-length character pointer array can report `associated`, `shape`,
-and its current element width, and can be nullified or deallocated. It cannot
-be passed as a pointer-descriptor argument or exposed with `to_numpy()`, because
-Fortran does not permit its descriptor form in a `bind(C)` interface.
-
-PRIK does not wrap `Pointer[String[N][...]]` parameters: a fixed-width
-character pointer array has no interoperable pointer descriptor interface that
-preserves its association semantics. A fixed-width character module or field
-pointer can still expose a NumPy view and satisfy an ordinary
-`String[N][...]` array parameter.
+Character pointer-array parameters are unsupported. A deferred-length
+character pointer handle reports `associated`, `shape`, and `dtype`, and can be
+nullified or deallocated, but does not support `to_numpy()`. Fixed-width module
+and field pointer handles can satisfy ordinary `String[N][...]` parameters.
 
 ---
 
