@@ -481,7 +481,7 @@ This checks the final Python axis and flattens the leading axes.
 ## Strided Views
 
 Use `::` for an assumed-shape axis that accepts F-contiguous arrays and
-positive-stride views without copying:
+Fortran-ordered strided views without copying:
 
 ```python
 from prik.contracts import Float64
@@ -511,9 +511,16 @@ print(out)
 #  [21. 45. 69.]]
 ```
 
-PRIK passes the base address, extents, and positive element strides. Reversed
-slices, broadcasted views, and C-order strided matrices are rejected for this
-Fortran-oriented contract. Strides are not an order workaround.
+Numeric assumed-shape and assumed-rank arguments receive a Fortran descriptor,
+so an axis may run forward or backward. For example,
+`scale_visible_rows(visible_rows[::-1, :], out[::-1, :])` updates the same
+selected rows in reverse order.
+
+The view must still be a non-overlapping Fortran-ordered array section.
+Broadcasted views, overlapping views, and C-order strided matrices are
+rejected. Strides are not an order workaround. Explicit-shape, assumed-size,
+and character arrays use an address-based entrypoint and therefore require a
+forward layout that their contract can express.
 
 ---
 
@@ -548,16 +555,18 @@ Use this list when reading or editing a generated `.pyi` contract:
 - `T[rows, Flat]`: Fortran-contiguous; checked prefix, remaining axes flattened
 - `Annotated[T[Flat, columns], ORDER_C]`: C-contiguous; checked suffix,
   leading axes flattened
-- `T[...]`: assumed-rank, currently rank 1-15
+- `T[...]`: assumed-rank, currently rank 1-15, including supported reversed
+  sections
 
 An allocated `Allocatable[T[...]]` handle or associated `Pointer[T[...]]`
 handle can also satisfy a matching ordinary Fortran array argument. The same
 element type, rank, shape, layout, contiguity, and writeability requirements
 apply as for a NumPy array. This includes explicit-shape, assumed-shape,
-positive-strided, assumed-size/`Flat`, and assumed-rank arguments, plus
-fixed-width and assumed-width character arrays. An absent handle is rejected;
-pass `None` only when the ordinary argument itself is optional. C array
-arguments accept NumPy arrays, not Fortran descriptor handles.
+signed-strided, assumed-size/`Flat`, and assumed-rank arguments, plus
+fixed-width and assumed-width character arrays. Reversed targets are accepted
+by matching numeric assumed-shape and assumed-rank arguments. An absent handle
+is rejected; pass `None` only when the ordinary argument itself is optional.
+C array arguments accept NumPy arrays, not Fortran descriptor handles.
 
 Generated contracts may describe a shape with visible arguments, such as
 `T[rows, columns]`. Most users should keep those generated relationships

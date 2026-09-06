@@ -352,7 +352,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert artifacts.required_headers == ("ISO_Fortran_binding.h",)
-    assert "prik_bind_array(" in c_source
+    assert "prik_describe_numpy_array(" in c_source
     assert '"_native_array_backend_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_dispatch"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source

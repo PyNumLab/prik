@@ -28,10 +28,16 @@ release tags add a leading `v` to the package version.
   extensions together after upgrading PRIK.
 
 - Generated Fortran allocatable and pointer handles can be passed directly to
-  matching ordinary array arguments. Supported forms include explicit and
-  assumed shape, positive strides, assumed size, assumed rank 1 through 15,
-  optional arrays, and fixed- or assumed-width character arrays. C array
+  matching ordinary array arguments. Numeric assumed-shape and assumed-rank
+  arguments accept representable forward or reversed Fortran sections from
+  either handles or NumPy arrays, including direct `bind(C)` procedures.
+  Optional arrays apply the same layout rules when present and accept omission
+  or `None` as absence. Explicit-shape, assumed-size, and fixed- or
+  assumed-width character arrays retain their declared layout. C array
   arguments accept NumPy arrays.
+
+- Array-valued functions whose result extents depend on descriptor arguments
+  return initialized NumPy arrays on Intel ifx and GNU Fortran.
 
 - Descriptor-backed NumPy views preserve native byte strides, including
   negative strides, non-contiguous pointer targets, and zero-sized dimensions.

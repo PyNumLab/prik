@@ -18,6 +18,9 @@ from prik.planning import WrapperPlanner
 OPTIONAL_FIXED_CONTRACT = (
     Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts" / "foptional_fixed" / "__init__.pyi"
 )
+OPTIONAL_MIXED_CONTRACT = (
+    Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts" / "foptional_f90" / "foptional_f90.pyi"
+)
 
 
 def _artifacts(module):
@@ -103,6 +106,22 @@ def optional_literal(value: Annotated[Float64, Immutable] | None = ...) -> Float
     assert "bind_c_optional_literal(1, bound_value_nullable);" in c_source
     assert "function bind_c_optional_literal(literal_0, bound_value)" in fortran_source
     assert "native_optional_literal(literal_0, value=value)" in fortran_source
+
+
+def test_optional_descriptor_is_passed_into_contained_derived_dispatch():
+    """A contained procedure receives, rather than host-associates, the descriptor."""
+    module = pyi_file_to_semantic_module(OPTIONAL_MIXED_CONTRACT, module_name="foptional_f90")
+    fortran_source = _source(_artifacts(module), ".f90")
+    summarize = fortran_source.split("function bind_c_summarize", maxsplit=1)[1].split(
+        "end function bind_c_summarize", maxsplit=1
+    )[0]
+    contained = summarize.split("  contains", maxsplit=1)[1]
+
+    assert "if (present(values)) then" in fortran_source
+    assert "call prik_derived_optional_step_0(prik_optional_values=values)" in fortran_source
+    assert "real(c_double), dimension(:), optional :: prik_optional_values" in contained
+    assert "if (present(prik_optional_values)) then" in contained
+    assert "present(values)" not in contained
 
 
 def test_required_descriptor_keeps_python_presence_separate_from_native_state_and_copyout():

@@ -1983,7 +1983,12 @@ def _complete_entrypoint_argument_route(
                 )
             )
         ),
-        entrypoint_pass_array_metadata=(uses_adapter and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER),
+        entrypoint_pass_array_metadata=(
+            uses_adapter
+            and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+            and argument.array is not None
+            and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+        ),
         entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
         entrypoint_pass_derived_transaction=(uses_adapter and argument.derived_call is not None),
         entrypoint_pass_callback_parameter=(
@@ -2065,6 +2070,7 @@ def _argument_entrypoint_passing(
     function: models.SemanticFunction,
     argument: models.SemanticArgument,
     boundary: _ArgumentBoundaryPolicy,
+    array: ArrayHandoffPolicy | None,
     slot: NativeCallSlotPolicy | None,
     callback: CallbackHandoffPolicy | None,
 ) -> EntrypointPassingConvention:
@@ -2080,6 +2086,12 @@ def _argument_entrypoint_passing(
         function.origin.source_language == "c"
     )
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+    if (
+        boundary.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+        and array is not None
+        and array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    ):
         return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     if argument.optional:
         return EntrypointPassingConvention.NULLABLE_POINTER
@@ -2103,12 +2115,19 @@ def _argument_entrypoint_optionality(
     function: models.SemanticFunction,
     argument: models.SemanticArgument,
     boundary: _ArgumentBoundaryPolicy,
+    array: ArrayHandoffPolicy | None,
     slot: NativeCallSlotPolicy | None,
 ) -> EntrypointOptionalityAction:
     """Complete original native presence independently from the Python surface."""
     if not argument.optional:
         return EntrypointOptionalityAction.REQUIRED
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
+    if (
+        boundary.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+        and array is not None
+        and array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    ):
         return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
     if _argument_passes_by_value(argument, slot):
         return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
@@ -2525,8 +2544,9 @@ def _completed_direct_c_abi_policy(
         semantic_argument = semantic_arguments_by_name.get(slot.python_name)
         return semantic_argument.semantic_type if semantic_argument is not None else None
 
-    parameters = tuple(
-        _direct_c_abi_type_policy(
+    def parameter_policy(slot: NativeCallSlotPolicy) -> DirectCABITypePolicy:
+        """Keep a descriptor array's standardized C declaration explicit."""
+        policy = _direct_c_abi_type_policy(
             parameter_source[slot.native_position]
             if slot.native_position < len(parameter_source) and isinstance(parameter_source[slot.native_position], dict)
             else None,
@@ -2544,8 +2564,16 @@ def _completed_direct_c_abi_policy(
                 )
             ),
         )
-        for slot in sorted(slots, key=lambda item: item.native_position)
-    )
+        argument = argument_policies_by_name.get(slot.python_name or "")
+        if (
+            argument is not None
+            and argument.array is not None
+            and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        ):
+            return replace(policy, source_spelling="CFI_cdesc_t *", pointer_depth=1)
+        return policy
+
+    parameters = tuple(parameter_policy(slot) for slot in sorted(slots, key=lambda item: item.native_position))
     direct_result = next((result for result in results if result.source_kind == "direct_return"), None)
     result_source = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else None
     result = (
@@ -2748,16 +2776,26 @@ def _direct_scalar_supported(argument: ArgumentPolicy) -> bool:
 
 
 def _direct_array_supported(argument: ArgumentPolicy) -> bool:
-    """Return whether one explicit or assumed-size array can use its C pointer."""
+    """Return whether one ordinary array has the direct ABI its declaration names."""
+    array = argument.array
     return bool(
-        argument.rank > 0
-        and (
+        (
             argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
             or (argument.semantic_type_name == "String" and argument.character_length == 1)
         )
         and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-        and argument.array is not None
-        and argument.array.category in {"explicit_shape", "assumed_size"}
+        and array is not None
+        and (
+            (
+                array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+                and array.category in {"explicit_shape", "assumed_size"}
+                and argument.entrypoint_passing is EntrypointPassingConvention.POINTER_REFERENCE
+            )
+            or (
+                array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+                and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+            )
+        )
     )
 
 
@@ -2998,7 +3036,10 @@ def _argument_policy(
     )
     optional_mode = _optional_mode(argument, decision)
     callback = _callback_handoff_policy(argument)
-    array_policy = _array_handoff_policy(argument.semantic_type)
+    array_policy = _array_handoff_policy(
+        argument.semantic_type,
+        source_language=function.origin.source_language,
+    )
     transformations, transformation_blockers = _argument_transformation_policies(
         argument,
         decision,
@@ -3034,6 +3075,7 @@ def _argument_policy(
         function,
         argument,
         boundary,
+        array_policy,
         native_slot,
         callback,
     )
@@ -3041,6 +3083,7 @@ def _argument_policy(
         function,
         argument,
         boundary,
+        array_policy,
         native_slot,
     )
     blockers = _completed_argument_blockers(
@@ -3407,7 +3450,10 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             character_length=_character_length(return_type),
-            array=_array_handoff_policy(return_type),
+            array=_array_handoff_policy(
+                return_type,
+                source_language=context.function.origin.source_language,
+            ),
             native_array_handle=direct_handle,
             scalar_descriptor=scalar_descriptor,
             derived=derived,
@@ -3629,7 +3675,10 @@ def _hidden_result_candidate(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=context.function.origin.source_language,
+            ),
             source_kind="hidden_output",
             python_returned=not argument.metadata.get(models.HIDDEN_NATIVE_OUTPUT_METADATA),
             native_name=mapping.native_name or argument.name,
@@ -3753,6 +3802,7 @@ def _projected_native_call_slot_policy(
         python_position,
         visible_arguments,
         derived_types,
+        source_language=function.origin.source_language,
     )
 
 
@@ -3843,6 +3893,8 @@ def _projected_argument_native_call_slot_policy(
     python_position: int | None,
     visible_arguments: tuple[models.SemanticArgument, ...],
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
+    *,
+    source_language: str | None,
 ) -> tuple[NativeCallSlotPolicy | None, int | None, tuple[str, ...]]:
     """Complete one Python argument projection after checking its position."""
     if python_position is None:
@@ -3864,6 +3916,7 @@ def _projected_argument_native_call_slot_policy(
         native_position,
         python_position,
         derived_types,
+        source_language=source_language,
     )
     return slot, python_position, blockers
 
@@ -3876,6 +3929,8 @@ def _projected_argument_slot(
     native_position: int,
     python_position: int,
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
+    *,
+    source_language: str | None,
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
     """Construct one completed native slot for a visible projected argument."""
     argument_path = f"{owner_path}.{argument.name}"
@@ -3924,7 +3979,10 @@ def _projected_argument_slot(
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4027,7 +4085,10 @@ def _hidden_result_native_call_slot_policy(
                 result_position=mapping.result_position,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
-                array=_array_handoff_policy(argument.semantic_type),
+                array=_array_handoff_policy(
+                    argument.semantic_type,
+                    source_language=function.origin.source_language,
+                ),
                 native_array_handle=_native_array_handle_wrapper_policy(
                     argument.semantic_type,
                     argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4080,7 +4141,10 @@ def _hidden_result_native_call_slot_policy(
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=function.origin.source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4261,7 +4325,10 @@ def _implicit_native_call_slot_policies(
                 array_copy_out=array_copy_out,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
-                array=_array_handoff_policy(argument.semantic_type),
+                array=_array_handoff_policy(
+                    argument.semantic_type,
+                    source_language=function.origin.source_language,
+                ),
                 native_array_handle=_native_array_handle_wrapper_policy(
                     argument.semantic_type,
                     argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -7391,7 +7458,11 @@ def _array_writeback_abi(
     return ArrayWritebackABI.NATIVE_ARRAY
 
 
-def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPolicy | None:
+def _array_handoff_policy(
+    semantic_type: models.SemanticType,
+    *,
+    source_language: str | None = None,
+) -> ArrayHandoffPolicy | None:
     """Copy structured buffer or raw-pointee facts into completed wrapper policy."""
     if _is_raw_array_address_type(semantic_type):
         return _raw_array_handoff_policy(semantic_type)
@@ -7411,12 +7482,12 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
     order = _array_handoff_order(array.order, array.category)
     contiguous = _array_handoff_contiguous(array.contiguous, array.category)
-    entrypoint_abi = _array_entrypoint_abi(array.category)
-    signed_strides = _array_handoff_signed_strides(
-        entrypoint_abi,
-        contiguous,
+    entrypoint_abi = _array_entrypoint_abi(
+        array.category,
         character=semantic_type.name == "String",
+        source_language=source_language,
     )
+    signed_strides = _array_handoff_signed_strides(entrypoint_abi, contiguous)
     return ArrayHandoffPolicy(
         rank=rank,
         shape=shape,
@@ -7472,29 +7543,29 @@ def _array_handoff_native_order(
 
 
 def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> bool | None:
-    """Complete the contiguity a contract asserts, leaving C runtime rank open.
+    """Complete the contiguity and section layout a contract asserts.
 
     ``None`` states that the contract asserts nothing about layout: the caller's
-    own strides reach the native call. Fortran assumed rank keeps its contiguous
-    descriptor default, and every C ``T[...]`` that did not spell ``Contiguous``
-    stays stride-agnostic.
+    own strides reach the native call. A Fortran assumed-rank dummy receives a
+    descriptor, but a NumPy actual still has to be representable as a Fortran
+    array section, so it uses the same stride-aware layout as assumed shape.
+    Every C ``T[...]`` that did not spell ``Contiguous`` stays stride-agnostic.
     """
     if contiguous is not None:
         return contiguous
-    if category in {SCALAR_STORAGE_CATEGORY, "assumed_rank"}:
+    if category == SCALAR_STORAGE_CATEGORY:
         return True
+    if category == "assumed_rank":
+        return False
     return None
 
 
-# Both sources reach a descriptor dummy correctly now -- a NumPy array through a
-# section built over its storage, a handle through its own entry point. What is
-# not finished is everything that referenced the extent parameters this route
-# removes: a result declared dimension(size(x)) reads them, and they have to be
-# carried out of the descriptor instead.
-_ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = True
-
-
-def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
+def _array_entrypoint_abi(
+    category: str | None,
+    *,
+    character: bool,
+    source_language: str | None,
+) -> ArrayEntrypointABI:
     """Complete how one array dummy is reached, by asking the direct question.
 
     A ``bind(C)`` procedure with no bridge receives the address of the first
@@ -7507,6 +7578,13 @@ def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
     ``CFI_cdesc_t *``, which carries an extent and a signed byte stride per
     axis.
     """
+    if source_language == "c":
+        return ArrayEntrypointABI.RAW_ADDRESS
+    if character:
+        # GNU Fortran currently loses elem_len when CFI_section constructs a
+        # character view. Keep character arrays on the address-and-width ABI so
+        # every supported compiler observes the correct element length.
+        return ArrayEntrypointABI.RAW_ADDRESS
     if category in {"explicit_shape", "assumed_size", "raw_address", "runtime_rank", SCALAR_STORAGE_CATEGORY}:
         return ArrayEntrypointABI.RAW_ADDRESS
     return ArrayEntrypointABI.C_DESCRIPTOR
@@ -7515,7 +7593,6 @@ def _array_entrypoint_abi(category: str | None) -> ArrayEntrypointABI:
 def _array_handoff_signed_strides(
     entrypoint_abi: ArrayEntrypointABI,
     contiguous: bool | None,
-    character: bool = False,
 ) -> bool:
     """Complete whether an axis of the actual may run backwards.
 
@@ -7525,16 +7602,7 @@ def _array_handoff_signed_strides(
     ``CONTIGUOUS`` dummy keeps its requirement whatever its calling convention
     carries.
     """
-    if entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or contiguous is True:
-        return False
-    if character:
-        # GNU Fortran's CFI_section resets a character descriptor's elem_len to
-        # 1, so the callee reads len(a) == 1 and every element is truncated to
-        # its first character. Intel's is correct. A silently wrong width is
-        # worse than a refusal, so a character array is not sectioned at all
-        # until that is fixed or detected.
-        return False
-    return _ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS
+    return entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR and contiguous is not True
 
 
 def _array_handoff_python_layout(

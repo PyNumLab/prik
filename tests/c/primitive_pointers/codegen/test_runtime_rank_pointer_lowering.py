@@ -4,7 +4,7 @@ from prik.parsers.c import parse_c_file
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 from prik.policy.completion import complete_semantic_policies
-from prik.policy.models import ArrayPythonLayout, NativeArraySourceKind
+from prik.policy.models import ArrayEntrypointABI, ArrayPythonLayout, NativeArraySourceKind
 from prik.semantics.c2ir import c_file_to_semantic_module
 
 
@@ -24,6 +24,7 @@ def test_direct_c_binding_keeps_pointer_abi_and_uses_completed_runtime_rank_boun
     assert plan.entrypoint.native_languages == ("c",)
     assert array.rank is None
     assert (array.minimum_rank, array.maximum_rank) == (0, 15)
+    assert array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
     assert actual.accepted_sources == (NativeArraySourceKind.NDARRAY,)
     assert "double native_read(const double * input);" in binding
     assert array.python_layout is ArrayPythonLayout.ANY_STRIDED

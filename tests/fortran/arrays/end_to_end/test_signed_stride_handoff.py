@@ -76,6 +76,13 @@ contains
     end do
   end function checksum2
 
+  function total3(a) result(t)
+    real(8), intent(in) :: a(:, :, :)
+    real(8) :: t
+
+    t = sum(a)
+  end function total3
+
   subroutine negate1(a)
     real(8), intent(inout) :: a(:)
 
@@ -219,6 +226,14 @@ def test_rank_two_numpy_views_keep_their_axis_order(signed, view):
     assert signed.checksum2(array) == pytest.approx(_checksum2(array))
 
 
+def test_a_singleton_axis_preserves_padding_between_later_sections(signed):
+    """An unobservable singleton stride does not collapse a later padded axis."""
+    storage = np.arange(5.0)
+    view = np.ndarray((2, 1, 2), dtype=np.float64, buffer=storage, strides=(8, 0, 24))
+
+    assert signed.total3(view) == pytest.approx(float(view.sum()))
+
+
 def test_a_reversed_view_is_written_through_to_the_callers_storage(signed):
     """intent(inout) reaches the caller's own elements, in their own order."""
     array = _base()
@@ -295,29 +310,16 @@ def test_an_optional_descriptor_dummy_accepts_omitted_none_and_reversed(signed):
 
 
 def test_assumed_rank_dummies_read_rank_and_size_from_the_descriptor(signed):
-    """An assumed-rank dummy takes its rank and size from what it is handed.
-
-    Its contract asserts contiguous storage, which a reversed axis is not, so
-    completed policy keeps that requirement here as it would for any other
-    dummy that asks for it. The rank still comes from the descriptor rather
-    than from anything the caller states.
-    """
+    """An assumed-rank dummy accepts every supported rank and section direction."""
     assert signed.rank_and_size(_base()) == np.int32(108)
     assert signed.rank_and_size(_matrix()) == np.int32(212)
-
-    with pytest.raises(TypeError, match=r"contiguous|expected ordering"):
-        signed.rank_and_size(_base()[::-1])
+    assert signed.rank_and_size(_base()[::-1]) == np.int32(108)
+    assert signed.rank_and_size(_matrix()[::-1, ::-1]) == np.int32(212)
+    assert signed.rank_and_size(signed.reversed_ptr) == np.int32(108)
 
 
 def test_a_character_dummy_reports_its_own_width_from_either_source(signed):
-    """Character arrays keep the address handoff, and keep their width with it.
-
-    GNU Fortran's CFI_section resets a character descriptor's elem_len to 1, so
-    a sectioned character array would reach the callee with every element
-    truncated to one character. Intel's is correct. Completed policy therefore
-    does not section a character array at all, and a reversed one is refused
-    rather than silently mis-sized.
-    """
+    """Character arrays keep their runtime element width on the portable path."""
     assert signed.word_width(signed.words) == np.int32(4)
     assert signed.word_width(np.array([b"abcd", b"efgh"], dtype="S4")) == np.int32(4)
 
@@ -379,6 +381,10 @@ def test_layouts_that_are_not_array_sections_stay_refused(signed):
     overlapping = np.lib.stride_tricks.as_strided(_base(), shape=(4, 3), strides=(8, 8))
     with pytest.raises(TypeError, match=r"expected ordering|not a Fortran array section"):
         signed.checksum2(overlapping)
+
+    indivisible = np.ndarray((2, 2), dtype=np.float64, buffer=np.arange(8.0), strides=(16, 40))
+    with pytest.raises(TypeError, match=r"not a Fortran array section"):
+        signed.checksum2(indivisible)
 
 
 def test_absent_and_mismatched_storage_stay_refused(signed):

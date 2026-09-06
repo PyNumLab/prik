@@ -109,6 +109,14 @@ its persistent storage. An absent optional argument contributes an unallocated
 placeholder to the chain. Each descriptor remains scoped to the consumer that
 supplied it.
 
+Ordinary numeric assumed-shape and assumed-rank arguments use the same C
+descriptor entrypoint for both direct and adapted calls. The binding describes
+a NumPy array with call-local descriptor storage, or enters a handle's live
+descriptor through the consumer chain. A direct `bind(C)` procedure receives
+that descriptor itself; a non-`bind(C)` procedure has an interoperable bridge
+dummy that passes the array through unchanged. Explicit-shape, assumed-size,
+raw C-pointer, and character-array entrypoints keep their planned address ABI.
+
 ### Views And Ownership
 
 `to_numpy()` builds the view in C while the descriptor is live, over the

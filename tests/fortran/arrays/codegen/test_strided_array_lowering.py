@@ -6,6 +6,7 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ArrayEntrypointABI, EntrypointPassingConvention
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
@@ -24,7 +25,7 @@ def strided(values: Float64[{dimensions}]) -> None: ...
     return WrapperPlanner().build(module)
 
 
-def test_strided_array_plan_names_bounds_and_element_strides_explicitly():
+def test_strided_array_plan_selects_one_descriptor_without_parallel_stride_roles():
     argument = _strided_plan().namespaces[0].functions[0].arguments[0]
     array = argument.array
 
@@ -32,15 +33,13 @@ def test_strided_array_plan_names_bounds_and_element_strides_explicitly():
     assert array.rank == 2
     assert array.axes == ("strided", "strided")
     assert array.contiguous is False
-    assert array.upper_bound_roles == (
-        f"{argument.owner_path}:upper-bound:0",
-        f"{argument.owner_path}:upper-bound:1",
-    )
-    assert array.stride_roles == (
-        f"{argument.owner_path}:stride:0",
-        f"{argument.owner_path}:stride:1",
-    )
-    assert array.dense_actual_role == f"{argument.owner_path}:dense-actual"
+    assert array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    assert array.signed_strides is True
+    assert argument.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+    assert argument.entrypoint.pass_array_metadata is False
+    assert array.upper_bound_roles == ()
+    assert array.stride_roles == ()
+    assert array.dense_actual_role is None
 
 
 def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
@@ -82,21 +81,21 @@ def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
-def test_strided_role_edit_fails_before_backend_lowering():
+def test_descriptor_array_stride_role_edit_fails_before_backend_lowering():
     plan = _strided_plan()
     array = plan.namespaces[0].functions[0].arguments[0].array
     assert array is not None
-    array.stride_roles = array.stride_roles[:1]
+    array.stride_roles = (f"{array.data_role}:stride:0",)
 
-    with pytest.raises(ValueError, match="invalid-array-stride-roles"):
+    with pytest.raises(ValueError, match="unexpected-array-descriptor-roles"):
         WrapperGenerator().generate(plan)
 
 
-def test_strided_dense_actual_role_edit_fails_before_backend_lowering():
+def test_descriptor_array_dense_actual_role_edit_fails_before_backend_lowering():
     plan = _strided_plan()
     array = plan.namespaces[0].functions[0].arguments[0].array
     assert array is not None
-    array.dense_actual_role = None
+    array.dense_actual_role = f"{array.data_role}:dense-actual"
 
-    with pytest.raises(ValueError, match="invalid-array-dense-actual-role"):
+    with pytest.raises(ValueError, match="unexpected-array-descriptor-roles"):
         WrapperGenerator().generate(plan)

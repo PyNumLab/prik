@@ -36,6 +36,7 @@ from prik.policy.ownership import (
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
+    ArrayEntrypointABI,
     ArrayLogicalABI,
     ArrayPythonLayout,
     ArrayWritebackABI,
@@ -62,6 +63,7 @@ from prik.policy.models import (
     DerivedWriteback,
     DeclarationCallableAction,
     DirectResultABI,
+    EntrypointPassingConvention,
     LifecycleOperation,
     FIXED_STRING_RESULT_COPY_REASON,
     OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON,
@@ -521,16 +523,20 @@ class WrapperGenerator:
             if handle is not None
         )
         expected_headers = list(self._native_array_required_headers(handles))
-        if any(
-            field.access
-            in {
-                DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
-                DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
-            }
-            for namespace in plan.namespaces
-            for derived in namespace.derived_types
-            for field in derived.fields
-        ) or self._accepts_array_handle_actual(plan):
+        if (
+            any(
+                field.access
+                in {
+                    DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
+                    DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
+                }
+                for namespace in plan.namespaces
+                for derived in namespace.derived_types
+                for field in derived.fields
+            )
+            or self._accepts_array_handle_actual(plan)
+            or self._uses_array_descriptor_abi(plan)
+        ):
             expected_headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         expected = tuple(dict.fromkeys(expected_headers))
         if plan.required_headers == expected:
@@ -550,6 +556,16 @@ class WrapperGenerator:
         return any(
             argument.native_array_actual is not None
             and accepts.intersection(argument.native_array_actual.accepted_sources)
+            for namespace in plan.namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
+
+    @staticmethod
+    def _uses_array_descriptor_abi(plan: ModulePlan) -> bool:
+        """Return whether an ordinary argument uses the standard descriptor ABI."""
+        return any(
+            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
             for namespace in plan.namespaces
             for function in namespace.functions
             for argument in function.arguments
@@ -3861,11 +3877,38 @@ class WrapperGenerator:
         if array is None:
             return ()
         return (
+            *self._array_entrypoint_abi_diagnostics(plan),
             *self._array_order_diagnostics(plan),
             *self._array_axis_mode_diagnostics(plan),
             *self._array_stride_role_diagnostics(plan),
             *self._array_dense_actual_role_diagnostics(plan),
         )
+
+    def _array_entrypoint_abi_diagnostics(
+        self,
+        plan: ArgumentTransferPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require the transport fields selected by completed array ABI policy."""
+        array = plan.array
+        if array is None:
+            return ()
+        diagnostics = []
+        if array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR:
+            if plan.entrypoint.passing is not EntrypointPassingConvention.C_DESCRIPTOR_POINTER:
+                diagnostics.append(
+                    self._diagnostic(plan.owner_path, "invalid-array-descriptor-passing", plan.entrypoint.passing.value)
+                )
+            if plan.entrypoint.pass_array_metadata:
+                diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-metadata", None))
+            if array.upper_bound_roles or array.stride_roles or array.dense_actual_role is not None:
+                diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-roles", None))
+        elif array.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS:
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-entrypoint-abi", array.entrypoint_abi))
+        if array.signed_strides and (
+            array.entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or array.contiguous is True
+        ):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-signed-strides", None))
+        return tuple(diagnostics)
 
     def _array_dense_actual_role_diagnostics(
         self,
@@ -3875,7 +3918,13 @@ class WrapperGenerator:
         array = plan.array
         if array is None:
             return ()
-        expected = f"{plan.owner_path}:dense-actual" if array.contiguous is False and array.rank is not None else None
+        expected = (
+            f"{plan.owner_path}:dense-actual"
+            if array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+            and array.contiguous is False
+            and array.rank is not None
+            else None
+        )
         if array.dense_actual_role != expected:
             return (self._diagnostic(plan.owner_path, "invalid-array-dense-actual-role", array.dense_actual_role),)
         return ()
@@ -3906,7 +3955,7 @@ class WrapperGenerator:
             return ()
         if array.contiguous is True and any(axis != "dense" for axis in array.axes):
             return (self._diagnostic(plan.owner_path, "invalid-array-axis-modes", array.axes),)
-        if array.contiguous is False and "strided" not in array.axes:
+        if array.contiguous is False and array.rank is not None and "strided" not in array.axes:
             return (self._diagnostic(plan.owner_path, "invalid-array-axis-modes", array.axes),)
         return ()
 
@@ -3915,7 +3964,7 @@ class WrapperGenerator:
         array = plan.array
         if array is None:
             return ()
-        if array.contiguous is False:
+        if array.contiguous is False and array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS:
             return (
                 *self._required_array_stride_role_diagnostics(plan),
                 *self._array_stride_role_count_diagnostics(plan),

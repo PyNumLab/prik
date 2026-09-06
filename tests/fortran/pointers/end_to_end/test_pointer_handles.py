@@ -480,7 +480,7 @@ def test_module_native_array_handles_use_canonical_plan(tmp_path: Path):
     contract = tmp_path / "pointer_handles" / "fpointer_handles_f90.pyi"
     contract.parent.mkdir()
     contract.write_text(
-        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
+        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, bind
 
 module_values: Annotated[
     Pointer[Float64[:]],
@@ -504,6 +504,8 @@ def associate_module_slice() -> None: ...
 def associate_module_contiguous() -> None: ...
 def allocate_module_values() -> None: ...
 def sum_values(values: Float64[:]) -> Float64: ...
+@bind("sum_values")
+def sum_four(values: Float64[4]) -> Float64: ...
 def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
 def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
 """,
@@ -543,6 +545,8 @@ def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
     assert allocatable_handle.allocated is True
     np.testing.assert_allclose(allocatable_handle.to_numpy(), np.array([10.0, 20.0, 30.0]))
     assert module.sum_allocatable_descriptor(allocatable_handle) == np.float64(60.0)
+    with pytest.raises(TypeError, match="incompatible shape at axis 0"):
+        module.sum_four(allocatable_handle)
     allocatable_handle.deallocate()
     assert allocatable_handle.allocated is False
 

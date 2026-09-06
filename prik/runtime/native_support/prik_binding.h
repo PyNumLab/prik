@@ -553,9 +553,10 @@ static inline int prik_array_validate_strided_axis(
     int signed_strides,
     const char *argument_name)
 {
+    int previous_axis;
     npy_intp stride = PyArray_STRIDE(array, axis);
     npy_intp itemsize = PyArray_ITEMSIZE(array);
-    npy_intp span;
+    npy_intp previous_extent;
     npy_intp previous;
 
     if (itemsize <= 0 || (stride % itemsize) != 0) {
@@ -570,6 +571,10 @@ static inline int prik_array_validate_strided_axis(
         /* A repeated element: NumPy broadcasting, which Fortran has no form for. */
         return prik_array_refuse_section(argument_name, axis, signed_strides);
     }
+    if (stride == NPY_MIN_INTP) {
+        /* Its magnitude is not representable by the signed descriptor index type. */
+        return prik_array_refuse_section(argument_name, axis, signed_strides);
+    }
     if (!signed_strides && stride < 0) {
         PyErr_Format(
             PyExc_TypeError,
@@ -579,11 +584,19 @@ static inline int prik_array_validate_strided_axis(
             axis);
         return -1;
     }
-    if (axis > 0 && PyArray_DIM(array, axis - 1) > 0) {
-        previous = PyArray_STRIDE(array, axis - 1);
+    previous_axis = axis - 1;
+    while (previous_axis >= 0 && PyArray_DIM(array, previous_axis) <= 1) {
+        previous_axis -= 1;
+    }
+    if (previous_axis >= 0) {
+        npy_intp current = stride < 0 ? -stride : stride;
+        previous = PyArray_STRIDE(array, previous_axis);
+        if (previous == NPY_MIN_INTP) {
+            return prik_array_refuse_section(argument_name, previous_axis, signed_strides);
+        }
         previous = previous < 0 ? -previous : previous;
-        span = previous * PyArray_DIM(array, axis - 1);
-        if ((stride < 0 ? -stride : stride) < span) {
+        previous_extent = PyArray_DIM(array, previous_axis);
+        if (previous != 0 && previous > current / previous_extent) {
             /*
              * This axis steps less far than the one before it covers, so the
              * axes are either in the wrong order for Fortran or they overlap.
@@ -595,6 +608,10 @@ static inline int prik_array_validate_strided_axis(
                 "Argument %s has incompatible layout; expected ordering (F)",
                 argument_name);
             return -1;
+        }
+        if (previous == 0 || (current % previous) != 0) {
+            /* CFI_section needs an integral step relative to its contiguous parent. */
+            return prik_array_refuse_section(argument_name, axis, signed_strides);
         }
     }
     return 0;

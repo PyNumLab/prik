@@ -110,14 +110,13 @@ def test_mutable_bool_array_writeback_needs_no_normalization():
 def test_high_rank_bool_array_bridge_stays_inside_the_fortran_line_limit():
     """Free-form Fortran caps a line at 132 columns, whatever the rank.
 
-    A rank-15 array names one extent per axis, so its generated declarations and
-    calls are the longest prik emits and are where continuation would first be
-    missed.
+    A rank-15 descriptor dummy is the longest ordinary array declaration PRIK
+    emits and is where continuation would first be missed.
     """
     artifacts = WrapperGenerator().generate(_high_rank_logical_output_plan())
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "values_extent_14" in bridge_source
+    assert "dimension(:, :, :, :, :, :, :, :, :, :, :, :, :, :, :) :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 

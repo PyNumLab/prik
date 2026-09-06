@@ -1004,6 +1004,10 @@ class WrapperDocstringBuilder:
         """Render the layout every accepted actual must already have, if any."""
         if array.python_layout is ArrayPythonLayout.ANY_STRIDED:
             return "Any strides"
+        if array.python_layout is ArrayPythonLayout.SIGNED_STRIDED_F:
+            return "Fortran-ordered strides, including reversed axes"
+        if array.python_layout is ArrayPythonLayout.POSITIVE_STRIDED_F:
+            return "Fortran-ordered positive strides"
         if (array.rank is None or array.rank > 1) and array.order in {"ORDER_C", "ORDER_F"}:
             return "C-contiguous" if array.order == "ORDER_C" else "F-contiguous"
         return None

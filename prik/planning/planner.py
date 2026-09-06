@@ -21,6 +21,7 @@ from prik.policy.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_H
 from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
+    ArrayEntrypointABI,
     ArrayHandoffPolicy,
     CallbackHandoffPolicy,
     CallbackResultPolicy,
@@ -2375,8 +2376,8 @@ class WrapperPlanner(ClassVisitor):
             extent_callable_tokens=policy.extent_callable_references,
             extent_callable_roles=policy.extent_callable_roles,
             extent_evaluation=policy.extent_evaluation,
-            upper_bound_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "upper-bound"),
-            stride_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "stride"),
+            upper_bound_roles=self._array_layout_roles(policy, owner_path, abi_rank, "upper-bound"),
+            stride_roles=self._array_layout_roles(policy, owner_path, abi_rank, "stride"),
             dense_actual_role=self._array_dense_actual_role(
                 policy,
                 owner_path,
@@ -2414,7 +2415,12 @@ class WrapperPlanner(ClassVisitor):
         enabled: bool,
     ) -> str | None:
         """Name the dense-view selector only for concrete strided inputs."""
-        if not enabled or policy.rank is None or policy.contiguous is not False:
+        if (
+            not enabled
+            or policy.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS
+            or policy.rank is None
+            or policy.contiguous is not False
+        ):
             return None
         return f"{owner_path}:dense-actual"
 
@@ -2451,13 +2457,13 @@ class WrapperPlanner(ClassVisitor):
 
     def _array_layout_roles(
         self,
+        policy: ArrayHandoffPolicy,
         owner_path: str,
         rank: int,
-        contiguous: bool | None,
         label: str,
     ) -> tuple[str, ...]:
-        """Name one ABI role per axis only for stride-aware layouts."""
-        if contiguous is not False:
+        """Name per-axis metadata only when the raw ABI has to carry it."""
+        if policy.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS or policy.contiguous is not False:
             return ()
         return tuple(f"{owner_path}:{label}:{axis}" for axis in range(rank))
 
@@ -2565,9 +2571,23 @@ class WrapperPlanner(ClassVisitor):
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
-        if self._requires_derived_descriptor_header(namespaces) or self._accepts_array_handle_actual(namespaces):
+        if (
+            self._requires_derived_descriptor_header(namespaces)
+            or self._accepts_array_handle_actual(namespaces)
+            or self._uses_array_descriptor_abi(namespaces)
+        ):
             headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         return tuple(dict.fromkeys(headers))
+
+    @staticmethod
+    def _uses_array_descriptor_abi(namespaces: tuple[NamespacePlan, ...]) -> bool:
+        """Return whether an ordinary argument uses the standard descriptor ABI."""
+        return any(
+            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+            for namespace in namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
 
     @staticmethod
     def _accepts_array_handle_actual(namespaces: tuple[NamespacePlan, ...]) -> bool:

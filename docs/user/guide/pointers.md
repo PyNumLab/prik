@@ -51,10 +51,12 @@ def sum_values(values: Float64[:]) -> Float64: ...
 
 An associated pointer handle may satisfy an ordinary Fortran array parameter
 when its dtype, rank, shape, layout, contiguity, and writeability meet that
-parameter's contract. Positive-strided targets are accepted by matching
-strided arguments; optional, flattened, and assumed-rank ordinary arguments
-use the same rules. A plain NumPy array cannot satisfy a `Pointer[T[...]]`
-parameter because it does not carry a native pointer descriptor.
+parameter's contract. Forward- and reverse-strided numeric targets are
+accepted by matching assumed-shape and assumed-rank arguments; address-only
+and contiguous arguments retain their declared layout requirements. Optional
+and flattened ordinary arguments use the same rules. A plain NumPy array
+cannot satisfy a `Pointer[T[...]]` parameter because it does not carry a native
+pointer descriptor.
 
 ---
 

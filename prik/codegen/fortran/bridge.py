@@ -25,6 +25,7 @@ from prik.policy.ownership import (
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
+    ArrayEntrypointABI,
     ArrayLogicalABI,
     ArrayWritebackABI,
     BridgeDataAction,
@@ -3409,7 +3410,11 @@ class FortranBridgeGenerator(ClassVisitor):
     def _array_crosses_as_descriptor(plan: ArgumentTransferPlan) -> bool:
         """Report whether completed policy hands this array over as a descriptor."""
         array = plan.array
-        return array is not None and array.signed_strides
+        return (
+            plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+            and array is not None
+            and array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        )
 
     def _lower_argument_array_descriptor(
         self,
@@ -3422,20 +3427,36 @@ class FortranBridgeGenerator(ClassVisitor):
         here: the dummy is the array, with the bounds and directions the caller
         described, and it is handed to the native procedure as it stands.
         """
+        return (
+            self._array_descriptor_parameter(
+                plan,
+                plan.entrypoint.parameter_name,
+                optional=plan.entrypoint.optional_mode is not OptionalMode.REQUIRED,
+            ),
+        )
+
+    def _array_descriptor_parameter(
+        self,
+        plan: ArgumentTransferPlan,
+        name: str,
+        *,
+        optional: bool,
+    ) -> FortranParameter:
+        """Declare one interoperable ordinary-array descriptor dummy."""
         array = plan.array
-        if array is None or array.rank is None:
-            raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
+        if array is None:
+            raise ValueError(f"Descriptor array argument {plan.owner_path!r} has no handoff")
         element_type = self._array_element_fortran_type(plan)
         if plan.datatype_family is DatatypeFamily.STRING and array.itemsize is None:
             # The width travels in the descriptor, and a bind(C) character dummy
             # may not name a variable for it, so it is assumed here.
             element_type = "character(kind=c_char, len=*)"
-        attributes = [self._array_dimension_attribute(array.rank)]
-        if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
+        attributes = ["dimension(..)" if array.rank is None else self._array_dimension_attribute(array.rank)]
+        if optional:
             # C omits it by passing no descriptor, which is what optional means
             # for an interoperable dummy.
             attributes.append("optional")
-        return (FortranParameter(plan.entrypoint.parameter_name, element_type, tuple(attributes)),)
+        return FortranParameter(name, element_type, tuple(attributes))
 
     # Ordinary-array argument lowering.
     def _lower_argument_array_buffer(
@@ -3515,8 +3536,14 @@ class FortranBridgeGenerator(ClassVisitor):
             and argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
         )
         if derived_optional:
-            procedures = self._derived_optional_dispatch_procedures(plan, derived_optional, result_name)
-            return (FortranCall(self._derived_optional_step_name(0), ()),), procedures
+            forwarded = self._contained_optional_descriptor_arguments(plan)
+            procedures = self._derived_optional_dispatch_procedures(
+                plan,
+                derived_optional,
+                result_name,
+                forwarded,
+            )
+            return (self._contained_optional_descriptor_call_tree(forwarded, 0, ()),), procedures
         return self._ordinary_function_body(plan, result_name), ()
 
     def _ordinary_function_body(
@@ -3569,21 +3596,63 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @staticmethod
     def _assumed_rank_arguments(plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Return assumed-rank arrays in original-Fortran call order."""
+        """Return raw-address runtime-rank arrays requiring bridge dispatch."""
         return tuple(
             argument
             for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
-            if argument.array is not None and argument.array.rank is None
+            if argument.array is not None
+            and argument.array.rank is None
+            and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
         )
 
     @staticmethod
-    def _non_derived_optional_arguments(plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
+    def _non_derived_optional_arguments(
+        plan: FunctionPlan,
+    ) -> tuple[ArgumentTransferPlan, ...]:
         """Return optional arguments handled by the ordinary presence tree."""
         return tuple(
             argument
             for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
             if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
             and argument.derived_call is None
+        )
+
+    def _contained_optional_descriptor_arguments(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[ArgumentTransferPlan, ...]:
+        """Return descriptor optionals that must not be host-associated on ifx."""
+        return tuple(
+            argument
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
+            if argument.derived_call is None
+            and argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
+            and argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+            and self._array_crosses_as_descriptor(argument)
+        )
+
+    def _contained_optional_descriptor_call_tree(
+        self,
+        arguments: tuple[ArgumentTransferPlan, ...],
+        index: int,
+        passed: tuple[CodeExpression, ...],
+    ) -> FortranCall | FortranIf:
+        """Enter the contained chain without forwarding an absent descriptor."""
+        if index == len(arguments):
+            return FortranCall(self._derived_optional_step_name(0), passed)
+        argument = arguments[index]
+        local_name = self._forwarded_optional_descriptor_parameter_name(argument)
+        actual_name = argument.entrypoint.parameter_name
+        return FortranIf(
+            CodeExpression(f"present({actual_name})"),
+            body=(
+                self._contained_optional_descriptor_call_tree(
+                    arguments,
+                    index + 1,
+                    (*passed, CodeExpression(f"{local_name}={actual_name}")),
+                ),
+            ),
+            else_body=(self._contained_optional_descriptor_call_tree(arguments, index + 1, passed),),
         )
 
     def _polymorphic_call_tree(
@@ -3632,13 +3701,21 @@ class FortranBridgeGenerator(ClassVisitor):
         plan: FunctionPlan,
         optional: tuple[ArgumentTransferPlan, ...],
         result_name: str | None,
+        forwarded: tuple[ArgumentTransferPlan, ...],
     ) -> tuple[FortranFunction, ...]:
         """Propagate N optional derived dummies with O(N) adapter procedures."""
         procedures = []
+        forwarded_parameters = tuple(self._forwarded_optional_descriptor_parameter(item) for item in forwarded)
+        forwarded_passed = tuple(
+            CodeExpression(self._forwarded_optional_descriptor_parameter_name(item)) for item in forwarded
+        )
         for index, argument in enumerate(optional):
             carried = optional[:index]
-            parameters = tuple(self._derived_optional_parameter(item) for item in carried)
-            passed = tuple(CodeExpression(self._derived_optional_parameter_name(item)) for item in carried)
+            parameters = (*forwarded_parameters, *(self._derived_optional_parameter(item) for item in carried))
+            passed = (
+                *forwarded_passed,
+                *(CodeExpression(self._derived_optional_parameter_name(item)) for item in carried),
+            )
             expression = CodeExpression(self._native_argument_expression(argument))
             procedures.append(
                 FortranFunction(
@@ -3659,12 +3736,18 @@ class FortranBridgeGenerator(ClassVisitor):
                     is_subroutine=True,
                 )
             )
-        replacements = {argument.owner_path: self._derived_optional_parameter_name(argument) for argument in optional}
+        replacements = {
+            **{argument.owner_path: self._derived_optional_parameter_name(argument) for argument in optional},
+            **{
+                argument.owner_path: self._forwarded_optional_descriptor_parameter_name(argument)
+                for argument in forwarded
+            },
+        }
         present = frozenset(argument.owner_path for argument in optional)
         procedures.append(
             FortranFunction(
                 name=self._derived_optional_step_name(len(optional)),
-                parameters=tuple(self._derived_optional_parameter(item) for item in optional),
+                parameters=(*forwarded_parameters, *(self._derived_optional_parameter(item) for item in optional)),
                 body=self._ordinary_function_body(
                     plan,
                     result_name,
@@ -3675,6 +3758,22 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         )
         return tuple(procedures)
+
+    def _forwarded_optional_descriptor_parameter(
+        self,
+        argument: ArgumentTransferPlan,
+    ) -> FortranParameter:
+        """Declare one optional descriptor passed into every contained step."""
+        return self._array_descriptor_parameter(
+            argument,
+            self._forwarded_optional_descriptor_parameter_name(argument),
+            optional=True,
+        )
+
+    @staticmethod
+    def _forwarded_optional_descriptor_parameter_name(argument: ArgumentTransferPlan) -> str:
+        """Name an optional descriptor local to the contained dispatch chain."""
+        return f"prik_optional_{argument.entrypoint.parameter_name}"
 
     def _derived_optional_parameter(self, argument: ArgumentTransferPlan) -> FortranParameter:
         """Mirror the completed native dummy category and add OPTIONAL."""
@@ -3735,7 +3834,11 @@ class FortranBridgeGenerator(ClassVisitor):
         argument = optional[index]
         present_roles = present | {argument.owner_path}
         return FortranIf(
-            condition=CodeExpression(self._presence_condition(argument)),
+            condition=CodeExpression(
+                f"present({replacements[argument.owner_path]})"
+                if self._array_crosses_as_descriptor(argument) and argument.owner_path in replacements
+                else self._presence_condition(argument)
+            ),
             body=(
                 *self._present_preparation(argument),
                 self._optional_call_tree(plan, optional, index + 1, present_roles, result_name, replacements),
@@ -5500,7 +5603,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranDeclaration("result_copy", element_type, ("pointer",)),
             )
         copy_type = "character(kind=c_char)" if result.datatype_family is DatatypeFamily.STRING else element_type
-        if "bridge" in result.array.extent_evaluation:
+        if "bridge" in result.array.extent_evaluation or self._array_result_depends_on_descriptor(plan, result):
             return (
                 FortranDeclaration(
                     "result_value",
@@ -5524,8 +5627,11 @@ class FortranBridgeGenerator(ClassVisitor):
             result is None
             or result.object_kind is not ObjectKind.NUMPY_ARRAY
             or result.array is None
-            or "bridge" not in result.array.extent_evaluation
             or self._is_scalar_storage_array(result.array)
+            or (
+                "bridge" not in result.array.extent_evaluation
+                and not self._array_result_depends_on_descriptor(plan, result)
+            )
         ):
             return ()
         shape = list(self._array_result_shape(plan, result))
@@ -5533,6 +5639,28 @@ class FortranBridgeGenerator(ClassVisitor):
             if evaluation == "bridge":
                 shape[axis] = self._declaration_extent_result_name(result, axis)
         return (FortranAllocate(f"result_value({', '.join(shape)})"),)
+
+    def _array_result_depends_on_descriptor(
+        self,
+        plan: FunctionPlan,
+        result: ResultPlan,
+    ) -> bool:
+        """Use portable allocatable storage for descriptor-derived result extents.
+
+        ifx can leave an automatic local undefined when it is assigned an
+        array-valued function result and its bounds refer to an assumed-shape
+        dummy. Allocatable call-local storage has the same ownership and copy
+        semantics without relying on that compiler path.
+        """
+        descriptor_extent_roles = {
+            role
+            for argument in plan.arguments
+            if self._array_crosses_as_descriptor(argument)
+            for role in argument.array.extent_roles
+        }
+        return any(
+            role in descriptor_extent_roles for axis_roles in result.array.extent_reference_roles for role in axis_roles
+        )
 
     def _direct_result_finalizers(
         self,
