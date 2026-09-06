@@ -7482,10 +7482,11 @@ def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> 
     return None
 
 
-# A NumPy actual can be described to a descriptor dummy today; a native handle
-# reaching the same dummy has to be entered through its own descriptor entry
-# point, and that integration is not finished. Until it is, ordinary arrays keep
-# the address-and-extents handoff, which both sources share.
+# Both sources reach a descriptor dummy correctly now -- a NumPy array through a
+# section built over its storage, a handle through its own entry point. What is
+# not finished is everything that referenced the extent parameters this route
+# removes: a result declared dimension(size(x)) reads them, and they have to be
+# carried out of the descriptor instead.
 _ORDINARY_ARRAYS_CROSS_AS_DESCRIPTORS = False
 
 

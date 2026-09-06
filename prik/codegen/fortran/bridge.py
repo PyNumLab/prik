@@ -3425,11 +3425,16 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
+        attributes = [self._array_dimension_attribute(array.rank)]
+        if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
+            # C omits it by passing no descriptor, which is what optional means
+            # for an interoperable dummy.
+            attributes.append("optional")
         return (
             FortranParameter(
                 plan.entrypoint.parameter_name,
                 self._array_element_fortran_type(plan),
-                (self._array_dimension_attribute(array.rank),),
+                tuple(attributes),
             ),
         )
 
@@ -4018,6 +4023,10 @@ class FortranBridgeGenerator(ClassVisitor):
         name = plan.entrypoint.parameter_name
         if plan.derived_call is not None:
             return f"bound_{name}_access /= 0_c_int"
+        if self._array_crosses_as_descriptor(plan):
+            # The dummy is the array itself, and C omits it by passing no
+            # descriptor at all, so Fortran's own inquiry is the condition.
+            return f"present({name})"
         suffix = "_present" if plan.entrypoint.optional_mode is OptionalMode.DESCRIPTOR else ""
         return f"c_associated(bound_{name}{suffix})"
 
@@ -8611,15 +8620,20 @@ class FortranBridgeGenerator(ClassVisitor):
             for axis, expression in enumerate(array.shape)
         )
 
-    @staticmethod
-    def _array_shape_role_names(plan: FunctionPlan) -> dict[str, str]:
+    def _array_shape_role_names(self, plan: FunctionPlan) -> dict[str, str]:
         """Map planned scalar, extent, and callable roles to bridge spellings."""
         role_names = {
             argument.entrypoint.handoff_role: argument.entrypoint.parameter_name for argument in plan.arguments
         }
         role_names.update(
             {
-                role: f"{argument.entrypoint.parameter_name}_extent_{axis}"
+                role: (
+                    # A descriptor argument brought its extents with it, so
+                    # Fortran asks the array rather than a parameter beside it.
+                    f"size({argument.entrypoint.parameter_name}, {axis + 1})"
+                    if self._array_crosses_as_descriptor(argument)
+                    else f"{argument.entrypoint.parameter_name}_extent_{axis}"
+                )
                 for argument in plan.arguments
                 if argument.array is not None
                 for axis, role in enumerate(argument.array.extent_roles)

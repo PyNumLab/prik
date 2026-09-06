@@ -6712,11 +6712,19 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
         array: ArrayHandoffPlan,
-    ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Describe the caller's NumPy storage to Fortran without copying it."""
+    ) -> tuple[CComment | CExpressionStatement | CIf, ...]:
+        """Reach one descriptor dummy from whichever source the caller supplied.
+
+        A handle already has a descriptor, and it is valid only inside its own
+        entry point, so what is recorded here is the backend and the chain
+        enters it.  A NumPy array has no descriptor, so one is made over its
+        storage as it stands, in this frame, which outlives the call.  Both
+        arrive at the same slot, and the callee cannot tell them apart.
+        """
         prefix = names.value_name
-        return (
-            CComment("The dummy takes a descriptor, so one is made over the array as it is."),
+        describe: tuple = (
+            CComment("No descriptor of its own, so one is made over the array as it is."),
+            self._array_validation_statement(plan, names, object_kind_checked=True),
             CIf(
                 CodeExpression(
                     f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
@@ -6724,6 +6732,38 @@ class CBindingGenerator(ClassVisitor):
                     f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
                 ),
                 body=(CReturn(CodeExpression("NULL")),),
+            ),
+            CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{prefix}_section")),
+        )
+        if not self._takes_array_handle(plan):
+            return describe
+        capsule = f"{prefix}_capsule"
+        backend = self._descriptor_backend_local(names)
+        return (
+            CExpressionStatement(
+                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_backend")')
+            ),
+            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
+            CIf(
+                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
+                body=(
+                    CComment("A handle's descriptor is the runtime's; the chain enters it."),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{backend} = prik_native_array_backend_for_actual({capsule}, "
+                            f"{plan.array.minimum_rank}, {plan.array.maximum_rank}, "
+                            f"{self._native_array_cfi_type(plan)}, "
+                            f"{self._native_array_expected_element_size(plan)}, "
+                            f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
+                    CIf(CodeExpression(f"{backend} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                ),
+                else_body=(
+                    CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
+                    *describe,
+                ),
             ),
         )
 
@@ -6739,10 +6779,17 @@ class CBindingGenerator(ClassVisitor):
         if self._array_crosses_as_descriptor(plan):
             if array.rank is None:
                 raise ValueError(f"Descriptor array argument {plan.owner_path!r} requires a concrete rank")
-            # Both live for the whole call: the section describes the caller's
-            # storage, and it is a section of the parent, which must outlive it.
+            # A handle is entered through its backend; a NumPy array is
+            # described into the storage below, which lives as long as the call.
             return (
                 CDeclaration(names.object_name, "PyObject *"),
+                CDeclaration(names.value_name, "CFI_cdesc_t *", CodeExpression("NULL")),
+                CDeclaration(
+                    self._descriptor_backend_local(names),
+                    "prik_native_array_backend *",
+                    CodeExpression("NULL"),
+                ),
+                CDeclaration(f"{names.value_name}_capsule", "PyObject *", CodeExpression("NULL")),
                 CDeclaration(f"{names.value_name}_parent", f"CFI_CDESC_T({array.rank})"),
                 CDeclaration(f"{names.value_name}_section", f"CFI_CDESC_T({array.rank})"),
             )
@@ -6794,6 +6841,13 @@ class CBindingGenerator(ClassVisitor):
         names = context.arguments[plan.owner_path]
         prefix = names.value_name
         array_object = f"(PyArrayObject *){names.object_name}"
+        if self._array_crosses_as_descriptor(plan):
+            # One dummy, one descriptor; the source only decides where it comes
+            # from, and the shape checks apply to whichever supplied it.
+            return (
+                *self._ordinary_array_argument_declarations(plan, names),
+                *self._numpy_descriptor_nodes(plan, names, array),
+            )
         if not self._takes_array_handle(plan):
             outlined = self._outlined_array_bind_nodes(plan, context, names)
             if outlined is not None:
@@ -9329,9 +9383,12 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             argument
             for argument in plan.arguments
-            if argument.native_array_handle is not None
-            and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-            and argument.native_array_handle.array.rank is not None
+            if self._array_crosses_as_descriptor(argument)
+            or (
+                argument.native_array_handle is not None
+                and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+                and argument.native_array_handle.array.rank is not None
+            )
         )
 
     def _lower_entrypoint_call(self, plan: FunctionPlan, context: _CFunctionContext) -> tuple:
@@ -12430,7 +12487,7 @@ class CBindingGenerator(ClassVisitor):
             return self._string_entrypoint_argument_values(plan, names, passing=passing)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
             if self._array_crosses_as_descriptor(plan):
-                return (f"(CFI_cdesc_t *)&{names.value_name}_section",)
+                return (names.value_name,)
             return self._array_entrypoint_argument_values(plan, names)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             return (names.value_name,)
