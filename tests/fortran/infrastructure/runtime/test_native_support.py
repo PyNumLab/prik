@@ -73,27 +73,11 @@ def _layout_tag_members(header: str) -> tuple[str, ...]:
     return tuple(re.findall(r"PRIK_NATIVE_ARRAY_BACKEND_FIELD\((\w+)\)", body.group(1)))
 
 
-def test_the_capsule_name_is_derived_from_the_whole_record():
-    """Two extensions agree on the name exactly when they agree on the record.
-
-    A capsule carries an address and C has no runtime types, so a reader
-    interprets it with offsets its own compiler baked in.  Comparing a version
-    field cannot settle a disagreement -- reading the field already assumes the
-    layout in question -- and it fails worst on `context`, `with_descriptor`
-    and `release`, which are opaque addresses nothing can sanity-check before
-    one of them is called.
-
-    So the record names its own capsule, and there is no version number beside
-    the tag because nothing is left for one to distinguish: each field folds in
-    its name as well as its offset and width, so a field that keeps its shape
-    and takes on a new meaning is caught too, as long as it is renamed to say
-    so.  Every field must contribute, or a change to the one it forgot would
-    keep the old name -- so the record and the tag must list the same fields in
-    the same order.
-    """
+def test_the_capsule_name_covers_semantic_version_and_the_whole_record():
+    """The name protects the callback contract and the compiled record layout."""
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
 
-    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend"' in header
+    assert '#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v1"' in header
     assert _backend_record_fields(header) == BACKEND_RECORD
     assert _layout_tag_members(header) == tuple(name for _spelling, name in BACKEND_RECORD)
     # Name, offset and width all come from the one token naming the field.

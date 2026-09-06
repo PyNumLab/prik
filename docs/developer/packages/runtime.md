@@ -72,24 +72,12 @@ address for a field, descriptor storage for an owned handle, and `NULL` for a
 module variable. `release` is non-`NULL` when the extension owns `context`.
 Clearing `context` after release makes `close()` and finalization idempotent.
 
-The capsule name carries the layout, and nothing else does. It is
-`prik.native_array_backend.<tag>`, where the tag folds `sizeof` for the record
-and then, for every field in order, its name, its offset and its width. Two
-extensions therefore agree on the name exactly when they agree on the record,
-and `PyCapsule_GetPointer` compares names *before* returning the pointer — so a
-producer built from a different header is refused without a byte being read
-through it. That matters most for `context`, `with_descriptor` and `release`:
-they are bare addresses, nothing can sanity-check them after the fact, and
-calling one from a mismatched record is a crash. A version field could not have
-done this job, because reading it already assumes the layout in question.
-
-There is no version number beside the tag, because nothing is left for one to
-distinguish. Reordering, widening, inserting and removing all move the offsets;
-folding each field's name in reaches the last case offsets cannot show — a
-field that keeps its shape and takes on a new meaning — provided it is renamed
-to say so, which is what you would do anyway. A hand-kept version covers that
-case only when someone remembers, which is the property this design set out to
-remove.
+The capsule name is `prik.native_array_backend.v1.<tag>`. The version identifies
+the callback contract and field meanings. Change it when either changes without
+changing the C record layout. The tag folds the record size and each field's
+name, offset, and width, so a layout mismatch also changes the name.
+`PyCapsule_GetPointer` compares that name before returning the record pointer;
+an incompatible producer is therefore refused before its fields are read.
 
 `descriptor_size` stays in the record because it attests the producer's
 `CFI_CDESC_T(rank)` layout, which is the compiler's, not this header's, and so
@@ -97,10 +85,6 @@ is not folded into the tag. A reader still validates `descriptor_kind`, `rank`,
 `cfi_type` and `element_size` against the dummy it is filling. `element_size`
 is `0` for widths determined at run time, such as deferred-length character
 arrays.
-
-The record and the tag's field list are pinned together in
-`tests/fortran/infrastructure/runtime/test_native_support.py`, so a field added
-to one and not the other fails there rather than silently keeping the old name.
 
 ### Inquiries Read The Descriptor
 

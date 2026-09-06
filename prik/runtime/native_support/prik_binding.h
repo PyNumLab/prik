@@ -39,17 +39,13 @@
  * `context`, `with_descriptor` and `release`, which are opaque addresses no
  * reader can sanity-check before calling one.
  *
- * So the layout is folded into the capsule name. PyCapsule_GetPointer compares
- * names before it hands back the pointer, so a producer whose record differs in
- * size, in field order, or in any field's width is refused without a single
- * byte being dereferenced. Nothing has to be remembered for that to hold: the
- * tag is computed from the record itself, so it moves when the record does.
- * There is no version number beside it, because there is nothing left for one
- * to distinguish: a field's name is folded in along with its offset and width,
- * so even a field that keeps its shape and takes on a new meaning is caught,
- * as long as it is renamed to say so.
+ * The capsule name carries both a semantic ABI version and a layout tag.
+ * PyCapsule_GetPointer compares names before it returns the pointer, so a
+ * producer with a different callback contract or record layout is refused
+ * before any field is read. Bump the version when field meanings or callback
+ * behavior change without changing the record layout.
  */
-#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend"
+#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v1"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
 
@@ -169,10 +165,9 @@ typedef struct {
  * because the mixing has to be order-dependent -- XOR-ing the offsets would
  * give the same tag for two fields exchanged.
  *
- * Names are folded so that the one drift offsets cannot show -- a field that
- * keeps its shape and takes on a new meaning -- is reachable too: rename it,
- * which is what you would do anyway, and every reader built against the old
- * meaning stops recognizing this record.
+ * Field names are folded too, so renaming a field changes the tag even when its
+ * offset and width stay the same. The semantic version covers contract changes
+ * that do not alter or rename a field.
  */
 static inline uint64_t prik_native_array_backend_layout_tag(void)
 {

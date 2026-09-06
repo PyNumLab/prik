@@ -111,15 +111,7 @@ def test_caller_created_allocatable_crosses_separately_built_extensions(tmp_path
 
 
 def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_path: Path):
-    """The capsule name is the ABI version, and it is what refuses a stranger.
-
-    Nothing in the record says which layout wrote it, so the name has to:
-    ``PyCapsule_GetPointer`` matches names exactly, and a reader asks for the
-    one version it understands. An extension built against any other layout --
-    an older PRIK, a future one -- is therefore refused before a single field
-    is read, which is the whole reason the version is spelled in the name
-    rather than compared out of a header field.
-    """
+    """A reader refuses a capsule with another ABI name before reading it."""
     module = _build_text_and_import(
         ALLOCATABLE_CROSS_A_SOURCE,
         "fallocatable_cross_a.f90",
@@ -145,17 +137,14 @@ def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_
     capsule_name.argtypes = (ctypes.py_object,)
 
     published = capsule_name(values._native_backend)
-    # The layout is folded into the name, so this is what an extension built
-    # from any other record would publish instead.
-    assert published.startswith(b"prik.native_array_backend.")
+    assert published.startswith(b"prik.native_array_backend.v1.")
     address = capsule_get(values._native_backend, published)
     assert address
     stranger = published[: published.rindex(b".")] + b".0000000000000000"
     values._native_backend = capsule_new(address, stranger, None)
 
-    # The address is this handle's own live backend, so only the name differs
-    # and only the name can do the refusing -- before anything is read through
-    # it, which is the point for the three fields that are bare addresses.
+    # Only the capsule name differs; the reader must reject it before using the
+    # live backend address.
     with pytest.raises(ValueError, match="PyCapsule_GetPointer called with incorrect name"):
         module.total_a(values)
 
