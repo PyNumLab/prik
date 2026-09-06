@@ -341,7 +341,7 @@ class CBindingGenerator(ClassVisitor):
                 # Every handle inquiry runs through these, so they precede the
                 # first handle operation that names one.
                 *self._numpy_descriptor_builder_function(plan),
-            *self._native_array_projection_functions(plan),
+                *self._native_array_projection_functions(plan),
                 *self._extent_expression_support_functions(plan),
                 *self._callback_runtime_functions(plan),
                 *self._derived_call_runtime_functions(plan),
@@ -6721,7 +6721,7 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(
                     f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
                     f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
-                    f"{self._native_array_cfi_type(plan)}, \"{plan.binding.python_name}\") < 0"
+                    f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
                 ),
                 body=(CReturn(CodeExpression("NULL")),),
             ),
@@ -9803,8 +9803,7 @@ class CBindingGenerator(ClassVisitor):
                         body=(
                             CExpressionStatement(
                                 CodeExpression(
-                                    'PyErr_Format(PyExc_TypeError, "Argument %s has no element width", '
-                                    "argument_name)"
+                                    'PyErr_Format(PyExc_TypeError, "Argument %s has no element width", argument_name)'
                                 )
                             ),
                             CReturn(CodeExpression("-1")),
@@ -9823,9 +9822,10 @@ class CBindingGenerator(ClassVisitor):
                                     "element_stride[axis] = (CFI_index_t)PyArray_STRIDE(array, axis) / elem_len"
                                 )
                             ),
-                            CIf(CodeExpression("extents[axis] == 0"), body=(
-                                CExpressionStatement(CodeExpression("empty = 1")),
-                            )),
+                            CIf(
+                                CodeExpression("extents[axis] == 0"),
+                                body=(CExpressionStatement(CodeExpression("empty = 1")),),
+                            ),
                         ),
                     ),
                     CComment("Nothing steps anywhere in an empty array, so it needs no section."),
@@ -9870,9 +9870,7 @@ class CBindingGenerator(ClassVisitor):
                             ),
                             CComment("A backward axis starts at its far end and walks down."),
                             CExpressionStatement(
-                                CodeExpression(
-                                    "lower[axis] = step[axis] > 0 ? 0 : (extents[axis] - 1) * (-step[axis])"
-                                )
+                                CodeExpression("lower[axis] = step[axis] > 0 ? 0 : (extents[axis] - 1) * (-step[axis])")
                             ),
                             CExpressionStatement(
                                 CodeExpression("upper[axis] = lower[axis] + (extents[axis] - 1) * step[axis]")
