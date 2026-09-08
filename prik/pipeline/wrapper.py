@@ -3320,9 +3320,9 @@ class WrapperGenerator:
         array = handle.array
         packed_roles = (
             *array.extent_roles,
+            *array.lower_bound_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
-            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -3693,9 +3693,9 @@ class WrapperGenerator:
             return ()
         buffer_roles = (
             *array.extent_roles,
+            *array.lower_bound_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
-            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -3896,7 +3896,6 @@ class WrapperGenerator:
             *self._array_order_diagnostics(plan),
             *self._array_axis_mode_diagnostics(plan),
             *self._array_stride_role_diagnostics(plan),
-            *self._array_dense_actual_role_diagnostics(plan),
         )
 
     def _array_entrypoint_abi_diagnostics(
@@ -3915,34 +3914,27 @@ class WrapperGenerator:
                 )
             if plan.entrypoint.pass_array_metadata:
                 diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-metadata", None))
-            if array.upper_bound_roles or array.stride_roles or array.dense_actual_role is not None:
+            if array.lower_bound_roles or array.upper_bound_roles or array.stride_roles:
                 diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-roles", None))
         elif array.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-entrypoint-abi", array.entrypoint_abi))
-        if array.signed_strides and (
-            array.entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR or array.contiguous is True
-        ):
+        if array.signed_strides and not self._array_records_a_direction(array):
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-signed-strides", None))
         return tuple(diagnostics)
 
-    def _array_dense_actual_role_diagnostics(
-        self,
-        plan: ArgumentTransferPlan,
-    ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require the planned runtime selector exactly on concrete strided inputs."""
-        array = plan.array
-        if array is None:
-            return ()
-        expected = (
-            f"{plan.owner_path}:dense-actual"
-            if array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
-            and array.contiguous is False
-            and array.rank is not None
-            else None
-        )
-        if array.dense_actual_role != expected:
-            return (self._diagnostic(plan.owner_path, "invalid-array-dense-actual-role", array.dense_actual_role),)
-        return ()
+    @staticmethod
+    def _array_records_a_direction(array: ArrayHandoffPlan) -> bool:
+        """Report whether a backward axis has somewhere to be recorded.
+
+        A descriptor records one itself. An address does not, but a sectioned
+        dummy is reached with a signed stride per axis beside it. A contiguous
+        dummy has no backward axis to record whatever it is reached by.
+        """
+        if array.contiguous is True:
+            return False
+        if array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR:
+            return True
+        return bool(array.stride_roles)
 
     def _array_order_diagnostics(self, plan: ArgumentTransferPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate the completed ordinary-array order marker."""
@@ -4164,10 +4156,17 @@ class WrapperGenerator:
         """Require a plan length and prohibit a runtime length ABI role.
 
         Assumed-capacity rank-zero storage states no width, so the plan instead
-        records that the caller's itemsize travels beside the address.
+        records that the caller's itemsize travels beside the address. A raw
+        address has no Python object to measure, so it states a width or it has
+        none at all -- the width travelling beside it does not excuse its
+        absence from the plan.
         """
         diagnostics = []
-        assumed_capacity = plan.character_length is None and plan.entrypoint.pass_character_length
+        assumed_capacity = (
+            plan.character_length is None
+            and plan.entrypoint.pass_character_length
+            and plan.binding.python_action is not PythonBarrierAction.RAW_ADDRESS
+        )
         if not assumed_capacity and (plan.character_length is None or plan.character_length <= 0):
             diagnostics.append(
                 self._diagnostic(plan.owner_path, f"invalid-string-{label}-length", plan.character_length)

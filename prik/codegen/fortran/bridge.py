@@ -3899,13 +3899,12 @@ class FortranBridgeGenerator(ClassVisitor):
                 else ()
             ),
             *(
-                (FortranParameter(f"{name}_dense_actual", "integer(c_int)", ("value",)),)
-                if array.dense_actual_role is not None
-                else ()
-            ),
-            *(
                 FortranParameter(f"{name}_extent_{axis}", "integer(c_int64_t)", ("value",))
                 for axis in range(len(array.extent_roles))
+            ),
+            *(
+                FortranParameter(f"{name}_lower_bound_{axis}", "integer(c_int64_t)", ("value",))
+                for axis in range(len(array.lower_bound_roles))
             ),
             *(
                 FortranParameter(f"{name}_upper_bound_{axis}", "integer(c_int64_t)", ("value",))
@@ -4905,7 +4904,7 @@ class FortranBridgeGenerator(ClassVisitor):
                         tuple(attributes),
                     )
                 )
-                if array.dense_actual_role is not None:
+                if array.contiguous is False:
                     declarations.append(
                         FortranDeclaration(
                             argument.entrypoint.parameter_name,
@@ -5188,9 +5187,30 @@ class FortranBridgeGenerator(ClassVisitor):
     def _array_pointer_initializer_nodes(
         self,
         argument: ArgumentTransferPlan,
-    ) -> tuple[FortranCall | FortranIf, ...]:
-        """Associate base storage and select the planned dense or strided view."""
-        return (self._array_pointer_initializer(argument),)
+    ) -> tuple[FortranCall | FortranPointerAssignment, ...]:
+        """Associate base storage and cut the planned section out of it.
+
+        The binding described the actual as a section of one dense array, so
+        the buffer is read back as that array and the section taken from it.
+        A contiguous plan carries no bounds and needs no section: the buffer is
+        the array.
+        """
+        array = argument.array
+        if array is None:
+            raise ValueError(f"Array argument {argument.owner_path!r} has no handoff spec")
+        associate = self._array_pointer_initializer(argument)
+        if array.contiguous is not False:
+            return (associate,)
+        name = argument.entrypoint.parameter_name
+        if array.rank is None:
+            raise ValueError(f"Sectioned array argument {argument.owner_path!r} requires a concrete rank")
+        axes = ", ".join(
+            f"{name}_lower_bound_{axis}:{name}_upper_bound_{axis}:{name}_stride_{axis}" for axis in range(array.rank)
+        )
+        return (
+            associate,
+            FortranPointerAssignment(name, CodeExpression(f"{self._array_pointer_name(argument)}({axes})")),
+        )
 
     def _assumed_rank_array_declarations(
         self,
@@ -5228,7 +5248,7 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     def _array_pointer_name(self, argument: ArgumentTransferPlan) -> str:
-        """Name the bridge pointer, separating strided base storage visibly."""
+        """Name the bridge pointer, separating the buffer a section is cut from."""
         name = argument.entrypoint.parameter_name
         return f"{name}_base" if argument.array is not None and argument.array.contiguous is False else name
 
@@ -5239,7 +5259,7 @@ class FortranBridgeGenerator(ClassVisitor):
         return self._array_boundary_argument_expression(argument)
 
     def _array_boundary_argument_expression(self, argument: ArgumentTransferPlan) -> str:
-        """Return the dense pointer or planned positive-stride boundary view."""
+        """Return the array the native call receives: a buffer or a section of one."""
         array = argument.array
         if array is None:
             raise ValueError(f"Array argument {argument.owner_path!r} has no handoff spec")
@@ -5250,8 +5270,9 @@ class FortranBridgeGenerator(ClassVisitor):
             # The dummy carries the caller's own bounds and directions.
             return name
         # Every other array reaches its dummy as an address, which the
-        # declaration already says how to read.
-        return self._array_pointer_name(argument)
+        # declaration already says how to read, and a section of it when the
+        # plan says one may arrive.
+        return name
 
     def _array_element_fortran_type(self, argument: ArgumentTransferPlan) -> str:
         """Return the completed primitive or fixed-width character element type."""
@@ -5274,62 +5295,44 @@ class FortranBridgeGenerator(ClassVisitor):
 
     # String address bridge storage.
     def _string_address_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
-        """Declare fixed helper-local character storage for address boundaries."""
-        declarations = []
-        for argument in self._string_address_arguments(plan):
-            name = argument.entrypoint.parameter_name
-            length = self._string_address_length(argument)
-            declarations.extend(
-                (
-                    FortranDeclaration(
-                        f"{name}_bytes",
-                        "character(kind=c_char)",
-                        ("pointer", "dimension(:)"),
-                    ),
-                    FortranDeclaration(name, f"character(kind=c_char, len={length})"),
-                )
+        """Declare the local that names caller storage at an address boundary.
+
+        The caller owns the storage and the width cannot change under a
+        fixed-length dummy, so the local is a pointer to it rather than a copy
+        of it -- the same shape a rank-zero numeric argument already uses.
+        """
+        return tuple(
+            FortranDeclaration(
+                argument.entrypoint.parameter_name,
+                f"character(kind=c_char, len={self._string_address_length(argument)})",
+                ("pointer",),
             )
-        return tuple(declarations)
+            for argument in self._string_address_arguments(plan)
+        )
 
     def _string_address_initializers(
         self,
         plan: FunctionPlan,
     ) -> tuple[FortranCall | FortranAssignment, ...]:
         """Associate fixed-width bytes and materialize native character locals."""
-        nodes = []
-        for argument in self._string_address_arguments(plan):
-            name = argument.entrypoint.parameter_name
-            length = self._string_address_length(argument)
-            nodes.extend(
+        return tuple(
+            FortranCall(
+                "c_f_pointer",
                 (
-                    FortranCall(
-                        "c_f_pointer",
-                        (
-                            CodeExpression(f"bound_{name}"),
-                            CodeExpression(f"{name}_bytes"),
-                            CodeExpression(f"[{length}]"),
-                        ),
-                    ),
-                    FortranAssignment(name, CodeExpression(f"transfer({name}_bytes, {name})")),
-                )
+                    CodeExpression(f"bound_{argument.entrypoint.parameter_name}"),
+                    CodeExpression(argument.entrypoint.parameter_name),
+                ),
             )
-        return tuple(nodes)
+            for argument in self._string_address_arguments(plan)
+        )
 
     def _string_address_finalizers(self, plan: FunctionPlan) -> tuple[FortranAssignment, ...]:
-        """Copy every mutated fixed character byte back to caller storage."""
-        nodes = []
-        for argument in self._string_address_arguments(plan):
-            if not argument.mutates_native:
-                continue
-            name = argument.entrypoint.parameter_name
-            length = self._string_address_length(argument)
-            nodes.append(
-                FortranAssignment(
-                    f"{name}_bytes(1:{length})",
-                    CodeExpression(f"transfer({name}, {name}_bytes(1:{length}))"),
-                )
-            )
-        return tuple(nodes)
+        """Return no writeback: the native call already wrote caller storage.
+
+        The local names the caller's bytes rather than a copy of them, so a
+        mutating callee has already updated the address the caller supplied.
+        """
+        return ()
 
     def _string_address_arguments(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
         """Return address-shaped strings selected by completed plan facts."""
@@ -5365,6 +5368,9 @@ class FortranBridgeGenerator(ClassVisitor):
             if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
                 continue
             name = argument.entrypoint.parameter_name
+            if self._string_value_aliases_caller_storage(argument):
+                declarations.append(self._string_value_declaration(argument, name))
+                continue
             declarations.extend(
                 (
                     FortranDeclaration(
@@ -5398,6 +5404,19 @@ class FortranBridgeGenerator(ClassVisitor):
         return cls._character_local(plan).release is CharacterLocalRelease.DEALLOCATE_IF_RETAINED
 
     @classmethod
+    def _string_value_aliases_caller_storage(cls, plan: ArgumentTransferPlan) -> bool:
+        """Report whether one string-value local can name the caller's buffer.
+
+        A plain fixed-length local can: the binding already owns mutable
+        storage of exactly that width, and the dummy cannot reallocate itself,
+        so pointing at it is what a rank-zero numeric argument already does.
+        An allocatable, pointer or deferred-length local cannot -- it has to be
+        an object of its own for the callee to allocate or resize.
+        """
+        local = cls._character_local(plan)
+        return local.descriptor_kind is None and not local.deferred_length
+
+    @classmethod
     def _string_value_declaration(cls, plan: ArgumentTransferPlan, name: str) -> FortranDeclaration:
         """Declare the native character local selected by completed bridge policy.
 
@@ -5420,6 +5439,8 @@ class FortranBridgeGenerator(ClassVisitor):
             length = f"{plan.entrypoint.parameter_name}_length"
         spelling = f"character(kind=c_char, len={length})"
         if local.descriptor_kind is None:
+            if cls._string_value_aliases_caller_storage(plan):
+                return FortranDeclaration(name, spelling, ("pointer",))
             return FortranDeclaration(name, spelling)
         return FortranDeclaration(name, spelling, (local.descriptor_kind.value,))
 
@@ -5455,6 +5476,8 @@ class FortranBridgeGenerator(ClassVisitor):
         # A deferred-length local has no length until it is allocated, so its
         # mold spells the width instead of naming storage that does not exist.
         mold = f"repeat(' ', {name}_length)" if local.deferred_length else name
+        if self._string_value_aliases_caller_storage(plan):
+            return (FortranCall("c_f_pointer", (CodeExpression(f"bound_{name}"), CodeExpression(name))),)
         return (
             FortranCall(
                 "c_f_pointer",
@@ -5574,8 +5597,15 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         plan: ArgumentTransferPlan,
     ) -> tuple[FortranAssignment, ...]:
-        """Copy one complete native character value back to binding storage."""
+        """Copy one complete native character value back to binding storage.
+
+        A local that names the caller's buffer has nothing to copy back, and
+        the terminator the binding wrote past the declared width is untouched:
+        a fixed-length dummy cannot reach it.
+        """
         name = plan.entrypoint.parameter_name
+        if self._string_value_aliases_caller_storage(plan):
+            return ()
         return (
             FortranAssignment(
                 f"{name}_bytes(1:{name}_length)",
@@ -6069,7 +6099,9 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranDeclaration("result_value", element_type),
                 FortranDeclaration("result_copy", element_type, ("pointer",)),
             )
-        copy_type = "character(kind=c_char)" if result.datatype_family is DatatypeFamily.STRING else element_type
+        # The destination carries the entity's own width, so the copy is an
+        # ordinary array assignment rather than a byte reinterpretation.
+        copy_type = element_type
         if "bridge" in result.array.extent_evaluation or self._array_result_depends_on_descriptor(plan, result):
             return (
                 FortranDeclaration(
@@ -6433,7 +6465,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranDeclaration(f"{name}_value", element_type),
                 FortranDeclaration(f"{name}_copy", element_type, ("pointer",)),
             )
-        copy_type = "character(kind=c_char)" if slot.datatype_family is DatatypeFamily.STRING else element_type
+        copy_type = element_type
         name = slot.native_name.lower()
         return (
             FortranDeclaration(f"{name}_value", element_type, (f"dimension({', '.join(shape)})",)),
@@ -6737,10 +6769,17 @@ class FortranBridgeGenerator(ClassVisitor):
         value_name: str,
         copy_name: str,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
-        """Allocate and copy one fixed-width character array as raw bytes."""
+        """Allocate one fixed-width character array and copy the value into it.
+
+        The copy itself is unavoidable: the value lives in a local the adapter
+        loses at return, and a non-allocatable result has no ownership to move.
+        What the width does not force is a byte view -- the destination is
+        described at the entity's own width, so the copy is the ordinary array
+        assignment a numeric result already uses rather than a reinterpretation
+        through single characters.
+        """
         if itemsize <= 0:
             raise ValueError(f"Character array copy {value_name!r} requires a fixed positive itemsize")
-        byte_count = f"{itemsize} * size({value_name})"
         return (
             FortranAssignment(
                 target_name,
@@ -6754,12 +6793,12 @@ class FortranBridgeGenerator(ClassVisitor):
                         (
                             CodeExpression(target_name),
                             CodeExpression(copy_name),
-                            CodeExpression(f"[{byte_count}]"),
+                            CodeExpression(f"[size({value_name})]"),
                         ),
                     ),
                     FortranAssignment(
                         copy_name,
-                        CodeExpression(f"transfer({value_name}, {copy_name}, {byte_count})"),
+                        CodeExpression(f"reshape({value_name}, [size({value_name})])"),
                     ),
                 ),
             ),

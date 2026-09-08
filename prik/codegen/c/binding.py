@@ -146,9 +146,9 @@ class _CArgumentNames:
     nullable_name: str
     present_name: str
     extent_names: tuple[str, ...]
+    lower_bound_names: tuple[str, ...]
     upper_bound_names: tuple[str, ...]
     stride_names: tuple[str, ...]
-    dense_actual_name: str
     runtime_rank_name: str
     itemsize_name: str
     polymorphic_name: str
@@ -7520,12 +7520,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression("NULL"),
                 )
             )
-        declarations.extend(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names)
-        if array.upper_bound_roles:
-            declarations.extend(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.upper_bound_names)
-        if array.stride_roles:
-            declarations.extend(CDeclaration(name, "int64_t", CodeExpression("1")) for name in names.stride_names)
-        declarations.extend(self._array_dense_actual_declarations(array, names))
+        declarations.extend(self._raw_array_metadata_declarations(array, names))
         if array.runtime_rank_role is not None:
             declarations.append(CDeclaration(names.runtime_rank_name, "int64_t", CodeExpression("0")))
         if array.itemsize_role is not None:
@@ -7538,6 +7533,24 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression("NULL"),
                 )
             )
+        return tuple(declarations)
+
+    @staticmethod
+    def _raw_array_metadata_declarations(
+        array: ArrayHandoffPlan,
+        names: _CArgumentNames,
+    ) -> tuple[CDeclaration, ...]:
+        """Declare the extent, bound, and stride roles selected by a raw plan."""
+        declarations = [
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
+        ]
+        for roles, role_names, initial in (
+            (array.lower_bound_roles, names.lower_bound_names, "1"),
+            (array.upper_bound_roles, names.upper_bound_names, "0"),
+            (array.stride_roles, names.stride_names, "1"),
+        ):
+            if roles:
+                declarations.extend(CDeclaration(name, "int64_t", CodeExpression(initial)) for name in role_names)
         return tuple(declarations)
 
     def _descriptor_array_argument_declarations(
@@ -7574,16 +7587,6 @@ class CBindingGenerator(ClassVisitor):
         if array.runtime_rank_role is not None:
             declarations.append(CDeclaration(names.runtime_rank_name, "int64_t", CodeExpression("0")))
         return tuple(declarations)
-
-    @staticmethod
-    def _array_dense_actual_declarations(
-        array: ArrayHandoffPlan,
-        names: _CArgumentNames,
-    ) -> tuple[CDeclaration, ...]:
-        """Declare the planned dense-actual selector when its role exists."""
-        if array.dense_actual_role is None:
-            return ()
-        return (CDeclaration(names.dense_actual_name, "int", CodeExpression("0")),)
 
     # Native-handle actuals reuse the ordinary array-buffer ABI.
     def _lower_argument_required_array_actual(
@@ -7972,7 +7975,6 @@ class CBindingGenerator(ClassVisitor):
             (
                 array.contiguous is False,
                 array.runtime_rank_role is not None,
-                array.dense_actual_role is not None,
                 bool(array.stride_roles),
                 bool(array.upper_bound_roles),
                 actual.rank != rank,
@@ -8238,6 +8240,10 @@ class CBindingGenerator(ClassVisitor):
             for axis, field_name in enumerate(names.extent_names)
         )
         nodes.extend(
+            CExpressionStatement(CodeExpression(f"{field_name} = {prefix}_actual.lower_bounds[{axis}]"))
+            for axis, field_name in enumerate(names.lower_bound_names[: len(array.lower_bound_roles)])
+        )
+        nodes.extend(
             CExpressionStatement(CodeExpression(f"{field_name} = {prefix}_actual.upper_bounds[{axis}]"))
             for axis, field_name in enumerate(names.upper_bound_names[: len(array.upper_bound_roles)])
         )
@@ -8305,7 +8311,6 @@ class CBindingGenerator(ClassVisitor):
         ArrayPythonLayout.ANY_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS",
         ArrayPythonLayout.C_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS",
         ArrayPythonLayout.F_CONTIGUOUS: "PRIK_ARRAY_LAYOUT_F_CONTIGUOUS",
-        ArrayPythonLayout.POSITIVE_STRIDED_F: "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F",
         ArrayPythonLayout.SIGNED_STRIDED_F: "PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F",
         ArrayPythonLayout.ANY_STRIDED: "PRIK_ARRAY_LAYOUT_ANY_STRIDED",
     }
@@ -8438,7 +8443,6 @@ class CBindingGenerator(ClassVisitor):
         if handoff.flatten_python_storage:
             nodes.extend(self._flat_array_extraction_nodes(handoff, names, array))
             return tuple(nodes)
-        nodes.extend(self._array_dense_actual_extraction_nodes(handoff, names, array))
         active_rank = 15 if handoff.rank is None else handoff.rank
         for axis in range(active_rank):
             guard = f"if (PyArray_NDIM({array}) > {axis}) " if handoff.rank is None else ""
@@ -8450,30 +8454,16 @@ class CBindingGenerator(ClassVisitor):
         nodes.extend(self._array_strided_extraction_dispatch_nodes(handoff, names, array))
         return tuple(nodes)
 
-    @staticmethod
-    def _array_dense_actual_extraction_nodes(
-        handoff: ArrayHandoffPlan,
-        names: _CArgumentNames,
-        array: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Extract the runtime dense-actual selector named by the plan."""
-        if handoff.dense_actual_role is None:
-            return ()
-        return (CExpressionStatement(CodeExpression(f"{names.dense_actual_name} = PyArray_IS_F_CONTIGUOUS({array})")),)
-
     def _array_strided_extraction_dispatch_nodes(
         self,
         handoff: ArrayHandoffPlan,
         names: _CArgumentNames,
         array: str,
-    ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Dispatch general stride extraction only when the selected actual needs it."""
+    ) -> tuple[CExpressionStatement, ...]:
+        """Describe a sectioned actual only where the plan says one may arrive."""
         if handoff.contiguous is not False:
             return ()
-        strided_nodes = self._strided_array_extraction_nodes(handoff.rank, names, array)
-        if handoff.dense_actual_role is None:
-            return strided_nodes
-        return (CIf(CodeExpression(f"!{names.dense_actual_name}"), body=strided_nodes),)
+        return self._strided_array_extraction_nodes(handoff.rank, names, array)
 
     def _flat_array_extraction_nodes(
         self,
@@ -8555,46 +8545,66 @@ class CBindingGenerator(ClassVisitor):
         names: _CArgumentNames,
         array: str,
     ) -> tuple[CExpressionStatement, ...]:
-        """Compute bridge base extents, slice bounds, and relative strides."""
+        """Describe one NumPy view to the bridge as a Fortran array section.
+
+        The bridge reads the buffer back as one dense array and cuts the
+        section out of it, so what crosses is what ``CFI_section`` is given: a
+        lower bound, an upper bound and a signed step per axis, over base
+        extents that span the storage those bounds index.  The base of an axis
+        that runs backwards lies below the view's own first element, so the
+        address is walked back to it here, where the strides are in hand.
+        """
         if rank is None:
             raise ValueError("Assumed-rank strided arrays require a separate completed lane")
         nodes = []
-        base_product = "1"
+        unit = "1"
+        units = []
         for axis in range(rank):
-            absolute_stride = f"(PyArray_STRIDE({array}, {axis}) / PyArray_ITEMSIZE({array}))"
+            units.append(unit)
+            extent = names.extent_names[axis]
+            lower = names.lower_bound_names[axis]
+            upper = names.upper_bound_names[axis]
+            stride = names.stride_names[axis]
+            element_stride = f"(PyArray_STRIDE({array}, {axis}) / PyArray_ITEMSIZE({array}))"
             nodes.append(
                 CExpressionStatement(
-                    CodeExpression(
-                        f"{names.stride_names[axis]} = PyArray_SIZE({array}) == 0 ? 1 : "
-                        f"{absolute_stride} / ({base_product})"
-                    )
+                    CodeExpression(f"{stride} = PyArray_SIZE({array}) == 0 ? 1 : {element_stride} / ({unit})")
                 )
             )
+            # How far the axis reaches, in units of the extents below it. An
+            # empty array steps by one, so this is zero and the section is
+            # 1:0:1, which indexes nothing.
             nodes.append(
                 CExpressionStatement(
-                    CodeExpression(
-                        f"{names.upper_bound_names[axis]} = {names.extent_names[axis]} == 0 ? -1 : "
-                        f"({names.extent_names[axis]} - 1) * {names.stride_names[axis]}"
-                    )
+                    CodeExpression(f"{upper} = ({extent} - 1) * ({stride} < 0 ? -{stride} : {stride}) + 1")
                 )
             )
+            nodes.append(CExpressionStatement(CodeExpression(f"{lower} = {stride} > 0 ? 1 : {upper}")))
             if axis + 1 < rank:
                 next_stride = f"(PyArray_STRIDE({array}, {axis + 1}) / PyArray_ITEMSIZE({array}))"
                 nodes.append(
                     CExpressionStatement(
                         CodeExpression(
-                            f"{names.extent_names[axis]} = {next_stride} / ({base_product}); "
-                            f"if ({names.extent_names[axis]} < 1) {names.extent_names[axis]} = 1"
+                            f"{extent} = ({next_stride} < 0 ? -{next_stride} : {next_stride}) / ({unit}); "
+                            f"if ({extent} < 1) {extent} = 1"
                         )
                     )
                 )
-                base_product = f"({base_product}) * {names.extent_names[axis]}"
+                unit = f"({unit}) * {extent}"
             else:
-                nodes.append(
-                    CExpressionStatement(
-                        CodeExpression(f"{names.extent_names[axis]} = {names.upper_bound_names[axis]} + 1")
-                    )
+                nodes.append(CExpressionStatement(CodeExpression(f"{extent} = {upper}")))
+            nodes.append(CExpressionStatement(CodeExpression(f"{upper} = {stride} > 0 ? {upper} : 1")))
+        offset = " + ".join(
+            f"({names.stride_names[axis]} > 0 ? 0 : {names.lower_bound_names[axis]} - 1) * ({units[axis]})"
+            for axis in range(rank)
+        )
+        nodes.append(
+            CExpressionStatement(
+                CodeExpression(
+                    f"{names.value_name} = (char *)PyArray_DATA({array}) - ({offset}) * PyArray_ITEMSIZE({array})"
                 )
+            )
+        )
         return tuple(nodes)
 
     # Scalar storage and address lowering.
@@ -10557,7 +10567,8 @@ class CBindingGenerator(ClassVisitor):
                         body=(
                             CExpressionStatement(CodeExpression("wrap->logical_extents[axis] = 0")),
                             CExpressionStatement(CodeExpression("out->extents[axis] = 0")),
-                            CExpressionStatement(CodeExpression("out->upper_bounds[axis] = -1")),
+                            CExpressionStatement(CodeExpression("out->lower_bounds[axis] = 1")),
+                            CExpressionStatement(CodeExpression("out->upper_bounds[axis] = 0")),
                             CExpressionStatement(CodeExpression("out->strides[axis] = 1")),
                         ),
                     ),
@@ -10599,12 +10610,8 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression("++axis"),
                     body=(
                         CExpressionStatement(CodeExpression("out->extents[axis] = wrap->logical_extents[axis]")),
-                        CExpressionStatement(
-                            CodeExpression(
-                                "out->upper_bounds[axis] = wrap->logical_extents[axis] == 0 "
-                                "? -1 : wrap->logical_extents[axis] - 1"
-                            )
-                        ),
+                        CExpressionStatement(CodeExpression("out->lower_bounds[axis] = 1")),
+                        CExpressionStatement(CodeExpression("out->upper_bounds[axis] = wrap->logical_extents[axis]")),
                         CExpressionStatement(CodeExpression("out->strides[axis] = 1")),
                     ),
                 )
@@ -10614,11 +10621,9 @@ class CBindingGenerator(ClassVisitor):
                 empty_body.extend(
                     (
                         CExpressionStatement(CodeExpression(f"out->extents[{axis}] = wrap->logical_extents[{axis}]")),
+                        CExpressionStatement(CodeExpression(f"out->lower_bounds[{axis}] = 1")),
                         CExpressionStatement(
-                            CodeExpression(
-                                f"out->upper_bounds[{axis}] = wrap->logical_extents[{axis}] == 0 "
-                                f"? -1 : wrap->logical_extents[{axis}] - 1"
-                            )
+                            CodeExpression(f"out->upper_bounds[{axis}] = wrap->logical_extents[{axis}]")
                         ),
                         CExpressionStatement(CodeExpression(f"out->strides[{axis}] = 1")),
                     )
@@ -10646,8 +10651,9 @@ class CBindingGenerator(ClassVisitor):
                         body=(
                             CIf(CodeExpression("source->dim[axis].sm != packed"), body=(CReturn(),)),
                             CExpressionStatement(CodeExpression("out->extents[axis] = wrap->logical_extents[axis]")),
+                            CExpressionStatement(CodeExpression("out->lower_bounds[axis] = 1")),
                             CExpressionStatement(
-                                CodeExpression("out->upper_bounds[axis] = wrap->logical_extents[axis] - 1")
+                                CodeExpression("out->upper_bounds[axis] = wrap->logical_extents[axis]")
                             ),
                             CExpressionStatement(CodeExpression("out->strides[axis] = 1")),
                             CExpressionStatement(CodeExpression("packed *= (CFI_index_t)wrap->logical_extents[axis]")),
@@ -10662,19 +10668,17 @@ class CBindingGenerator(ClassVisitor):
                     (
                         CIf(CodeExpression(f"source->dim[{axis}].sm != packed"), body=(CReturn(),)),
                         CExpressionStatement(CodeExpression(f"out->extents[{axis}] = wrap->logical_extents[{axis}]")),
+                        CExpressionStatement(CodeExpression(f"out->lower_bounds[{axis}] = 1")),
                         CExpressionStatement(
-                            CodeExpression(f"out->upper_bounds[{axis}] = wrap->logical_extents[{axis}] - 1")
+                            CodeExpression(f"out->upper_bounds[{axis}] = wrap->logical_extents[{axis}]")
                         ),
                         CExpressionStatement(CodeExpression(f"out->strides[{axis}] = 1")),
                         CExpressionStatement(CodeExpression(f"packed *= (CFI_index_t)wrap->logical_extents[{axis}]")),
                     )
                 )
-        body.extend(
-            (
-                CExpressionStatement(CodeExpression("wrap->refused = 0")),
-                CExpressionStatement(CodeExpression("out->data = source->base_addr")),
-            )
-        )
+        body.append(CExpressionStatement(CodeExpression("wrap->refused = 0")))
+        if not argument.array.stride_roles:
+            body.append(CExpressionStatement(CodeExpression("out->data = source->base_addr")))
         return CFunction(
             self._array_actual_struct_reader_name(argument),
             "void",
@@ -10686,50 +10690,80 @@ class CBindingGenerator(ClassVisitor):
 
     @staticmethod
     def _strided_native_array_actual_reader_nodes(argument: ArgumentTransferPlan) -> tuple:
-        """Preserve one positive-strided Fortran descriptor in bridge slice roles."""
+        """Describe one sectioned Fortran descriptor in the bridge's section roles.
+
+        A descriptor's base address is its lowest subscript, which for a
+        backward axis is the highest address it reaches.  The bridge reads its
+        buffer from the bottom, so the address is walked back by what each
+        backward axis spans, exactly as a NumPy view's is.
+        """
         rank = argument.array.rank
         if rank is None:
             raise ValueError(f"Strided native array actual {argument.owner_path!r} requires a fixed rank")
         nodes: list = [
             CDeclaration("base_bytes", "CFI_index_t", CodeExpression("(CFI_index_t)source->elem_len")),
+            CDeclaration("step_bytes", "CFI_index_t", CodeExpression("0")),
             CDeclaration("relative_stride", "int64_t", CodeExpression("0")),
-            CDeclaration("upper_bound", "int64_t", CodeExpression("0")),
+            CDeclaration("span", "int64_t", CodeExpression("0")),
+            CDeclaration("offset_bytes", "CFI_index_t", CodeExpression("0")),
         ]
         for axis in range(rank):
             nodes.extend(
                 (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"step_bytes = source->dim[{axis}].sm < 0 ? -source->dim[{axis}].sm "
+                            f": source->dim[{axis}].sm"
+                        )
+                    ),
                     CIf(
-                        CodeExpression(f"source->dim[{axis}].sm <= 0 || source->dim[{axis}].sm % base_bytes != 0"),
+                        CodeExpression("step_bytes == 0 || step_bytes % base_bytes != 0"),
                         body=(CReturn(),),
                     ),
                     CExpressionStatement(
                         CodeExpression(f"relative_stride = (int64_t)(source->dim[{axis}].sm / base_bytes)")
                     ),
                     CExpressionStatement(
-                        CodeExpression(f"upper_bound = (wrap->logical_extents[{axis}] - 1) * relative_stride")
+                        CodeExpression(
+                            f"span = (wrap->logical_extents[{axis}] - 1) * (int64_t)(step_bytes / base_bytes) + 1"
+                        )
                     ),
                     CExpressionStatement(CodeExpression(f"out->strides[{axis}] = relative_stride")),
-                    CExpressionStatement(CodeExpression(f"out->upper_bounds[{axis}] = upper_bound")),
+                    CExpressionStatement(CodeExpression(f"out->lower_bounds[{axis}] = relative_stride > 0 ? 1 : span")),
+                    CExpressionStatement(CodeExpression(f"out->upper_bounds[{axis}] = relative_stride > 0 ? span : 1")),
+                    CIf(
+                        CodeExpression("relative_stride < 0"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression("offset_bytes += (CFI_index_t)(span - 1) * base_bytes")
+                            ),
+                        ),
+                    ),
                 )
             )
             if axis + 1 < rank:
                 nodes.extend(
                     (
-                        CIf(
+                        CExpressionStatement(
                             CodeExpression(
-                                f"source->dim[{axis + 1}].sm <= 0 || source->dim[{axis + 1}].sm % base_bytes != 0"
-                            ),
+                                f"step_bytes = source->dim[{axis + 1}].sm < 0 ? -source->dim[{axis + 1}].sm "
+                                f": source->dim[{axis + 1}].sm"
+                            )
+                        ),
+                        CIf(
+                            CodeExpression("step_bytes == 0 || step_bytes % base_bytes != 0"),
                             body=(CReturn(),),
                         ),
                         CExpressionStatement(
-                            CodeExpression(f"out->extents[{axis}] = (int64_t)(source->dim[{axis + 1}].sm / base_bytes)")
+                            CodeExpression(f"out->extents[{axis}] = (int64_t)(step_bytes / base_bytes)")
                         ),
-                        CIf(CodeExpression(f"out->extents[{axis}] <= upper_bound"), body=(CReturn(),)),
+                        CIf(CodeExpression(f"out->extents[{axis}] < span"), body=(CReturn(),)),
                     )
                 )
             else:
-                nodes.append(CExpressionStatement(CodeExpression(f"out->extents[{axis}] = upper_bound + 1")))
+                nodes.append(CExpressionStatement(CodeExpression(f"out->extents[{axis}] = span")))
             nodes.append(CExpressionStatement(CodeExpression(f"base_bytes *= (CFI_index_t)out->extents[{axis}]")))
+        nodes.append(CExpressionStatement(CodeExpression("out->data = (char *)source->base_addr - offset_bytes")))
         return tuple(nodes)
 
     # One live descriptor answers every handle inquiry.
@@ -12875,9 +12909,9 @@ class CBindingGenerator(ClassVisitor):
             f"{local}_nullable",
             f"{local}_present",
             tuple(f"{local}_extent_{axis}" for axis in range(rank)),
+            tuple(f"{local}_lower_bound_{axis}" for axis in range(rank)),
             tuple(f"{local}_upper_bound_{axis}" for axis in range(rank)),
             tuple(f"{local}_stride_{axis}" for axis in range(rank)),
-            f"{local}_dense_actual",
             f"{local}_rank",
             f"{local}_itemsize",
             f"{local}_polymorphic",
@@ -13663,11 +13697,7 @@ class CBindingGenerator(ClassVisitor):
             return (names.nullable_name,)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
             if plan.entrypoint.pass_character_length:
-                # Assumed-capacity storage reports the caller's own itemsize.
-                return (
-                    names.value_name,
-                    f"(int64_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name})",
-                )
+                return (names.value_name, self._opaque_address_character_width(plan, names))
             return (names.value_name,)
         if passing is EntrypointPassingConvention.C_VALUE:
             return (names.value_name,)
@@ -13680,6 +13710,22 @@ class CBindingGenerator(ClassVisitor):
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
             return (f"&{names.value_name}",)
         return (names.value_name,)
+
+    @staticmethod
+    def _opaque_address_character_width(plan: ArgumentTransferPlan, names: _CArgumentNames) -> str:
+        """Return the width one address-shaped string reports beside its address.
+
+        NumPy-backed storage carries its own itemsize, which is the caller's
+        and may be any width the contract accepts. A raw address is a bare
+        integer with nothing to measure, so the declared width is the only one
+        there is, and the binding states it rather than leaving the adapter to
+        assume it.
+        """
+        if plan.binding.python_action is not PythonBarrierAction.RAW_ADDRESS:
+            return f"(int64_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name})"
+        if plan.character_length is None or plan.character_length <= 0:
+            raise ValueError(f"String address {plan.owner_path!r} is missing a fixed character length")
+        return f"(int64_t){plan.character_length}"
 
     # String entrypoint call arguments.
     def _string_entrypoint_argument_values(
@@ -13716,9 +13762,8 @@ class CBindingGenerator(ClassVisitor):
             arguments.append(names.runtime_rank_name)
         if handoff.itemsize_role is not None:
             arguments.append(names.itemsize_name)
-        if handoff.dense_actual_role is not None:
-            arguments.append(names.dense_actual_name)
         arguments.extend(names.extent_names)
+        arguments.extend(self._selected_array_axis_names(names.lower_bound_names, handoff.lower_bound_roles))
         arguments.extend(self._selected_array_axis_names(names.upper_bound_names, handoff.upper_bound_roles))
         arguments.extend(self._selected_array_axis_names(names.stride_names, handoff.stride_roles))
         return tuple(arguments)
@@ -14025,9 +14070,8 @@ class CBindingGenerator(ClassVisitor):
             parameters.append(CParameter(f"{name}_rank", "int64_t"))
         if handoff.itemsize_role is not None:
             parameters.append(CParameter(f"{name}_itemsize", "int64_t"))
-        if handoff.dense_actual_role is not None:
-            parameters.append(CParameter(f"{name}_dense_actual", "int"))
         parameters.extend(self._array_entrypoint_axis_parameters(name, "extent", len(handoff.extent_roles)))
+        parameters.extend(self._array_entrypoint_axis_parameters(name, "lower_bound", len(handoff.lower_bound_roles)))
         parameters.extend(self._array_entrypoint_axis_parameters(name, "upper_bound", len(handoff.upper_bound_roles)))
         parameters.extend(self._array_entrypoint_axis_parameters(name, "stride", len(handoff.stride_roles)))
         return tuple(parameters)

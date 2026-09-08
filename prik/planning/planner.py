@@ -1520,7 +1520,6 @@ class WrapperPlanner(ClassVisitor):
                 slot_policy.array,
                 slot_policy.owner_path,
                 include_buffer_roles=include_buffer_roles,
-                include_dense_actual_role=include_buffer_roles and slot_policy.python_position is not None,
             )
             native_array_handle = self._native_array_handle_plan(
                 slot_policy.native_array_handle,
@@ -2355,11 +2354,10 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
         *,
         include_buffer_roles: bool = True,
-        include_dense_actual_role: bool = False,
     ) -> ArrayHandoffPlan | None:
         """Project one completed ordinary-array transport policy.
 
-        The result carries shape references and only the buffer, dense-view,
+        The result carries shape references and only the buffer, section,
         runtime-rank, and itemsize roles requested by the caller's completed
         transport.  ``None`` is preserved for non-array transfers; this helper
         does not validate or alter shape semantics.
@@ -2394,13 +2392,9 @@ class WrapperPlanner(ClassVisitor):
             extent_callable_tokens=policy.extent_callable_references,
             extent_callable_roles=policy.extent_callable_roles,
             extent_evaluation=policy.extent_evaluation,
+            lower_bound_roles=self._array_layout_roles(policy, owner_path, abi_rank, "lower-bound"),
             upper_bound_roles=self._array_layout_roles(policy, owner_path, abi_rank, "upper-bound"),
             stride_roles=self._array_layout_roles(policy, owner_path, abi_rank, "stride"),
-            dense_actual_role=self._array_dense_actual_role(
-                policy,
-                owner_path,
-                include_dense_actual_role,
-            ),
             runtime_rank_role=runtime_rank_role,
             itemsize_role=itemsize_role,
             display_shape=policy.display_shape or policy.shape,
@@ -2425,22 +2419,6 @@ class WrapperPlanner(ClassVisitor):
             action=policy.action,
             prototype=(self._procedure_prototype_plan(policy.prototype) if policy.prototype is not None else None),
         )
-
-    @staticmethod
-    def _array_dense_actual_role(
-        policy: ArrayHandoffPolicy,
-        owner_path: str,
-        enabled: bool,
-    ) -> str | None:
-        """Name the dense-view selector only for concrete strided inputs."""
-        if (
-            not enabled
-            or policy.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS
-            or policy.rank is None
-            or policy.contiguous is not False
-        ):
-            return None
-        return f"{owner_path}:dense-actual"
 
     def _array_transport_roles(
         self,

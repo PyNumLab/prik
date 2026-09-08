@@ -36,9 +36,13 @@ release tags add a leading `v` to the package version.
   arguments accept representable forward or reversed Fortran sections from
   either handles or NumPy arrays, including direct `bind(C)` procedures.
   Optional arrays apply the same layout rules when present and accept omission
-  or `None` as absence. Explicit-shape, assumed-size, and fixed- or
-  assumed-width character arrays retain their declared layout. C array
-  arguments accept NumPy arrays.
+  or `None` as absence. Explicit-shape and assumed-size arrays retain their
+  declared layout. C array arguments accept NumPy arrays.
+
+- Fixed- and assumed-width character array arguments accept strided views,
+  forward or reversed, from NumPy arrays and from generated handles, and write
+  back through them. Previously a strided character view reached native code as
+  the whole buffer it was cut from, and a reversed one was refused.
 
 - Array-valued functions whose result extents depend on descriptor arguments
   return initialized NumPy arrays on Intel ifx and GNU Fortran.

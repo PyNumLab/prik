@@ -71,9 +71,9 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
     assert argument.array.flat_axis is None
     assert argument.array.data_role == argument.entrypoint.handoff_role
     assert argument.array.extent_roles == (f"{argument.owner_path}:extent:0",)
+    assert argument.array.lower_bound_roles == ()
     assert argument.array.upper_bound_roles == ()
     assert argument.array.stride_roles == ()
-    assert argument.array.dense_actual_role is None
 
 
 def test_required_array_buffer_dispatches_through_named_binding_and_bridge_methods():

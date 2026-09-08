@@ -57,7 +57,9 @@ def test_assumed_width_scalar_storage_accepts_any_caller_itemsize(tmp_path: Path
     )
     module = result.import_module()
 
-    assert "character(kind=c_char, len=text_length) :: text" in adapter
+    # The local names the caller's storage rather than copying it, so it is a
+    # pointer -- the same shape a rank-zero numeric argument already uses.
+    assert "character(kind=c_char, len=text_length), pointer :: text" in adapter
     for width, expected in (("S8", b"abc     "), ("S32", b"abc" + b" " * 29)):
         buffer = np.array(b"Z", dtype=width)
         assert module.stamp(buffer) is None

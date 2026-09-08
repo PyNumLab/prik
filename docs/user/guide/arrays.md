@@ -511,9 +511,9 @@ print(out)
 #  [21. 45. 69.]]
 ```
 
-Numeric `::` axes may run forward or backward. The view must remain a
-non-overlapping, Fortran-ordered array section; broadcasted, overlapping, and
-C-order strided views are rejected. Character arrays require forward strides.
+A `::` axis may run forward or backward, for numeric and character arrays
+alike. The view must remain a non-overlapping, Fortran-ordered array section;
+broadcasted, overlapping, and C-order strided views are rejected.
 
 ---
 

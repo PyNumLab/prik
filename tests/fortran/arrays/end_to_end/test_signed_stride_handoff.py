@@ -28,7 +28,8 @@ module fsigned_strides_f90
   real(8), pointer :: strided_ptr(:) => null()
   real(8), pointer :: unassociated_ptr(:) => null()
   type(holder) :: parent
-  character(len=4), allocatable :: words(:)
+  character(len=4), allocatable, target :: words(:)
+  character(len=4), pointer :: reversed_words(:) => null()
 
 contains
 
@@ -42,8 +43,9 @@ contains
     strided_ptr => store(1:8:2)
     parent%field_ptr => store(6:1:-1)
     if (allocated(words)) deallocate(words)
-    allocate(words(2))
-    words = ['abcd', 'efgh']
+    allocate(words(4))
+    words = ['abcd', 'efgh', 'ijkl', 'mnop']
+    reversed_words => words(4:1:-1)
   end subroutine setup
 
   ! Bridged assumed-shape: not bind(C), so a bridge exists.
@@ -153,6 +155,27 @@ contains
 
     w = int(len(a), 4)
   end function word_width
+
+  ! Reads every element the section names, in the section's own order.
+  function word_join(a) result(joined)
+    character(len=*), intent(in) :: a(:)
+    character(len=64) :: joined
+    integer :: i
+
+    joined = ''
+    do i = 1, size(a)
+      joined = trim(joined) // a(i)
+    end do
+  end function word_join
+
+  subroutine word_stamp(a)
+    character(len=*), intent(inout) :: a(:)
+    integer :: i
+
+    do i = 1, size(a)
+      a(i)(1:1) = achar(iachar('0') + i)
+    end do
+  end subroutine word_stamp
 end module fsigned_strides_f90
 """
 
@@ -323,8 +346,42 @@ def test_a_character_dummy_reports_its_own_width_from_either_source(signed):
     assert signed.word_width(signed.words) == np.int32(4)
     assert signed.word_width(np.array([b"abcd", b"efgh"], dtype="S4")) == np.int32(4)
 
-    with pytest.raises(TypeError, match=r"runs backwards|cannot record a direction|expected ordering"):
-        signed.word_width(np.array([b"abcd", b"efgh"], dtype="S4")[::-1])
+
+def test_a_character_dummy_accepts_a_reversed_section_from_either_source(signed):
+    """A character array is reached by address, and a signed stride travels beside it.
+
+    This is the direct-entrypoint answer for a character dummy. It cannot be
+    ``bind(C)`` above length one, so a bridge is generated for it, and the
+    bridge is handed the buffer with a bound and a signed step per axis -- the
+    same triple a descriptor carries, in the form this ABI already had.
+    """
+    words = np.array([b"abcd", b"efgh", b"ijkl", b"mnop"], dtype="S4")
+
+    assert signed.word_width(words[::-1]) == np.int32(4)
+    assert signed.word_join(words[::-1]).strip() == "mnopijklefghabcd"
+    assert signed.word_join(words[::2]).strip() == "abcdijkl"
+    assert signed.word_join(words[::-2]).strip() == "mnopefgh"
+    assert signed.word_join(words[1::2]).strip() == "efghmnop"
+    assert signed.word_join(words[:0]).strip() == ""
+
+
+def test_a_character_dummy_writes_back_through_a_reversed_section(signed):
+    """Only the elements the section names are written, in the caller's own storage."""
+    words = np.array([b"aaaa", b"bbbb", b"cccc", b"dddd", b"eeee"], dtype="S4")
+
+    signed.word_stamp(words[::-2])
+
+    assert list(words) == [b"3aaa", b"bbbb", b"2ccc", b"dddd", b"1eee"]
+
+
+def test_a_character_dummy_accepts_a_reversed_handle(signed):
+    """A reversed handle reaches the same sectioned dummy a reversed view does.
+
+    The handle's own descriptor is read into the same bounds and signed step,
+    so both sources arrive at the bridge in one shape.
+    """
+    assert signed.word_join(signed.words).strip() == "abcdefghijklmnop"
+    assert signed.word_join(signed.reversed_words).strip() == "mnopijklefghabcd"
 
 
 def test_a_bound_handle_reaches_a_signed_stride_call_without_running_python(signed):

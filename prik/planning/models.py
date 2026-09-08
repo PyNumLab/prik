@@ -499,9 +499,9 @@ class ArrayHandoffPlan(StageRecord):
     extent_callable_tokens: tuple[tuple[str, ...], ...] = ()
     extent_callable_roles: tuple[tuple[str, ...], ...] = ()
     extent_evaluation: tuple[str, ...] = ()
+    lower_bound_roles: tuple[str, ...] = ()
     upper_bound_roles: tuple[str, ...] = ()
     stride_roles: tuple[str, ...] = ()
-    dense_actual_role: str | None = None
     runtime_rank_role: str | None = None
     itemsize_role: str | None = None
     display_shape: tuple[str, ...] = ()

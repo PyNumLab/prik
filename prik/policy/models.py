@@ -138,18 +138,17 @@ class ArrayPythonLayout(str, Enum):
     states that the contract constrains neither ordering nor contiguity, so the
     caller's own strides reach the native call unchanged.
 
-    ``SIGNED_STRIDED_F`` is ``POSITIVE_STRIDED_F`` with the sign requirement
-    lifted: the axes must still be a Fortran array section -- ordered by
-    magnitude of stride, each a whole number of elements, none overlapping
-    another -- because that is what can be described to Fortran, but an axis
-    may run backwards. It is selected only where the entrypoint carries a
-    descriptor, since an address alone cannot say which way an axis runs.
+    ``SIGNED_STRIDED_F`` requires the axes to be a Fortran array section --
+    ordered by magnitude of stride, each a whole number of elements, none
+    overlapping another -- because that is what can be described to Fortran.
+    An axis may run backwards: a descriptor records the direction itself, and
+    a sectioned dummy reached by an address is given a signed stride and
+    bounds beside it.
     """
 
     ANY_CONTIGUOUS = "any_contiguous"
     C_CONTIGUOUS = "c_contiguous"
     F_CONTIGUOUS = "f_contiguous"
-    POSITIVE_STRIDED_F = "positive_strided_f"
     SIGNED_STRIDED_F = "signed_strided_f"
     ANY_STRIDED = "any_strided"
 

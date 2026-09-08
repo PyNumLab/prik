@@ -1973,15 +1973,14 @@ def _complete_entrypoint_argument_route(
             uses_adapter
             and (
                 argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
-                # Rank-zero NumPy string storage always reports the caller's
-                # itemsize beside the address, declared width or not, so the
-                # adapter has one shape to receive. A raw string address is the
-                # exception: the caller hands over a bare integer with no Python
-                # object to measure, so its width can only be the declared one.
+                # Every scalar string reports a width beside its address, so the
+                # adapter has one shape to receive whatever the contract spells.
+                # NumPy-backed storage measures the caller's own itemsize; a raw
+                # address has no object to measure, so the binding supplies the
+                # declared width instead of the adapter assuming it.
                 or (
                     argument.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
                     and argument.semantic_type_name == "String"
-                    and argument.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
                 )
             )
         ),
@@ -7505,12 +7504,12 @@ def _array_handoff_policy(
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
     order = _array_handoff_order(array.order, array.category)
-    contiguous = _array_handoff_contiguous(array.contiguous, array.category)
     entrypoint_abi = _array_entrypoint_abi(
         array.category,
         character=semantic_type.name == "String",
         source_language=source_language,
     )
+    contiguous = _array_handoff_contiguous(array.contiguous, array.category, entrypoint_abi)
     signed_strides = _array_handoff_signed_strides(entrypoint_abi, contiguous)
     return ArrayHandoffPolicy(
         rank=rank,
@@ -7519,7 +7518,7 @@ def _array_handoff_policy(
         order=order,
         native_order=_array_handoff_native_order(array.order, array.copy_order, array.category),
         contiguous=contiguous,
-        python_layout=_array_handoff_python_layout(order, contiguous, rank, signed_strides),
+        python_layout=_array_handoff_python_layout(order, contiguous, rank),
         entrypoint_abi=entrypoint_abi,
         signed_strides=signed_strides,
         minimum_rank=minimum_rank,
@@ -7566,7 +7565,11 @@ def _array_handoff_native_order(
     return copy_order if copy_order is not None else order
 
 
-def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> bool | None:
+def _array_handoff_contiguous(
+    contiguous: bool | None,
+    category: str | None,
+    entrypoint_abi: ArrayEntrypointABI,
+) -> bool | None:
     """Complete the contiguity and section layout a contract asserts.
 
     ``None`` states that the contract asserts nothing about layout: the caller's
@@ -7574,13 +7577,18 @@ def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> 
     descriptor, but a NumPy actual still has to be representable as a Fortran
     array section, so it uses the same stride-aware layout as assumed shape.
     Every C ``T[...]`` that did not spell ``Contiguous`` stays stride-agnostic.
+
+    A section is described one axis at a time, so describing one needs a rank.
+    An assumed-rank dummy reached by a descriptor gets the caller's own rank
+    inside it, but one reached by an address is read back through a fixed-rank
+    pointer chosen at run time, and those describe contiguous storage only.
     """
     if contiguous is not None:
         return contiguous
     if category == SCALAR_STORAGE_CATEGORY:
         return True
     if category == "assumed_rank":
-        return False
+        return entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
     return None
 
 
@@ -7605,9 +7613,10 @@ def _array_entrypoint_abi(
     if source_language == "c":
         return ArrayEntrypointABI.RAW_ADDRESS
     if character:
-        # GNU Fortran currently loses elem_len when CFI_section constructs a
-        # character view. Keep character arrays on the address-and-width ABI so
-        # every supported compiler observes the correct element length.
+        # GNU Fortran reports len 1 for a bind(C) character(len=*) dummy
+        # whatever elem_len the descriptor carries, so the callee cannot read
+        # the width it was given. Keep character arrays on the address-and-width
+        # ABI, which states the width beside the buffer, until that is fixed.
         return ArrayEntrypointABI.RAW_ADDRESS
     if category in {"explicit_shape", "assumed_size", "raw_address", "runtime_rank", SCALAR_STORAGE_CATEGORY}:
         return ArrayEntrypointABI.RAW_ADDRESS
@@ -7620,27 +7629,32 @@ def _array_handoff_signed_strides(
 ) -> bool:
     """Complete whether an axis of the actual may run backwards.
 
-    Two things have to hold.  The entrypoint must carry a descriptor, because a
-    bare address says nothing about which way an axis runs.  And the dummy must
-    not require contiguous storage, which a reversed axis is not -- a
-    ``CONTIGUOUS`` dummy keeps its requirement whatever its calling convention
-    carries.
+    Two things have to hold.  The direction has to have somewhere to travel,
+    and the dummy must not require contiguous storage, which a reversed axis is
+    not -- a ``CONTIGUOUS`` dummy keeps its requirement whatever its calling
+    convention carries.
+
+    A descriptor records a direction itself.  An address does not, but a
+    sectioned dummy is reached with a signed stride and bounds beside it, one
+    per axis, which is the same information in the form the ABI already
+    carries.  What cannot record a direction is an address with nothing beside
+    it, which is every layout this does not select.
     """
-    return entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR and contiguous is not True
+    if contiguous is True:
+        return False
+    return entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR or contiguous is False
 
 
 def _array_handoff_python_layout(
     order: str | None,
     contiguous: bool | None,
     rank: int | None,
-    signed_strides: bool = False,
 ) -> ArrayPythonLayout:
     """Select the layout every accepted Python array actual must already have."""
     if contiguous is None:
         return ArrayPythonLayout.ANY_STRIDED
     if contiguous is False:
-        # The section rules are the same either way; only the sign is at stake.
-        return ArrayPythonLayout.SIGNED_STRIDED_F if signed_strides else ArrayPythonLayout.POSITIVE_STRIDED_F
+        return ArrayPythonLayout.SIGNED_STRIDED_F
     if order == "ORDER_C":
         return ArrayPythonLayout.C_CONTIGUOUS
     if order == "ORDER_F" or (rank is not None and rank > 1):

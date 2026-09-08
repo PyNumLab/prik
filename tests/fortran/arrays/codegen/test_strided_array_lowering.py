@@ -37,9 +37,9 @@ def test_strided_array_plan_selects_one_descriptor_without_parallel_stride_roles
     assert array.signed_strides is True
     assert argument.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     assert argument.entrypoint.pass_array_metadata is False
+    assert array.lower_bound_roles == ()
     assert array.upper_bound_roles == ()
     assert array.stride_roles == ()
-    assert array.dense_actual_role is None
 
 
 def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
@@ -69,7 +69,6 @@ def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
     assert "double bind_c_strided(CFI_cdesc_t * values)" in c_source or (
         "void bind_c_strided(CFI_cdesc_t * values)" in c_source
     )
-    assert "bound_values_dense_actual" not in c_source
     assert "bound_values_upper_bound_0" not in c_source
 
     assert "real(c_double), dimension(:, :) :: values" in bridge_source
@@ -77,7 +76,6 @@ def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
     # Nothing is rebuilt from an address any more.
     assert "call c_f_pointer(" not in bridge_source
     assert "values_base" not in bridge_source
-    assert "values_dense_actual" not in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
@@ -91,11 +89,11 @@ def test_descriptor_array_stride_role_edit_fails_before_backend_lowering():
         WrapperGenerator().generate(plan)
 
 
-def test_descriptor_array_dense_actual_role_edit_fails_before_backend_lowering():
+def test_descriptor_array_lower_bound_role_edit_fails_before_backend_lowering():
     plan = _strided_plan()
     array = plan.namespaces[0].functions[0].arguments[0].array
     assert array is not None
-    array.dense_actual_role = f"{array.data_role}:dense-actual"
+    array.lower_bound_roles = (f"{array.data_role}:lower-bound:0",)
 
     with pytest.raises(ValueError, match="unexpected-array-descriptor-roles"):
         WrapperGenerator().generate(plan)

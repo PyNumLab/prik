@@ -85,12 +85,17 @@ def test_fixed_width_character_array_results_lower_itemsize_into_both_backends()
     )
     assert "PyCapsule_New(result, NULL, prik_release_owned_memory)" in c_source
     assert "PyCapsule_New(labels, NULL, prik_release_owned_memory)" in c_source
+    # The destination carries the entity's own width, so the value crosses by
+    # ordinary array assignment -- the shape a numeric array result uses --
+    # rather than being reinterpreted through single characters.
     assert "character(kind=c_char, len=5), dimension(3) :: result_value" in bridge_source
-    assert "character(kind=c_char), pointer, dimension(:) :: result_copy" in bridge_source
+    assert "character(kind=c_char, len=5), pointer, dimension(:) :: result_copy" in bridge_source
     assert "5_c_size_t * size(result_value, kind=c_size_t)" in bridge_source
-    assert "result_copy = transfer(result_value, result_copy, 5 * size(result_value))" in bridge_source
+    assert "result_copy = reshape(result_value, [size(result_value)])" in bridge_source
     assert "character(kind=c_char, len=4), dimension(2) :: labels_value" in bridge_source
-    assert "labels_copy = transfer(labels_value, labels_copy, 4 * size(labels_value))" in bridge_source
+    assert "character(kind=c_char, len=4), pointer, dimension(:) :: labels_copy" in bridge_source
+    assert "labels_copy = reshape(labels_value, [size(labels_value)])" in bridge_source
+    assert "transfer(" not in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
@@ -101,3 +106,31 @@ def test_fixed_width_character_array_result_itemsize_edit_fails_before_lowering(
 
     with pytest.raises(ValueError, match="invalid-array-result-itemsize"):
         WrapperGenerator().generate(plan)
+
+
+def test_multidimensional_character_array_results_flatten_into_the_copy():
+    """A rank-2 result reaches a rank-1 buffer, so the copy reshapes it.
+
+    The destination is one contiguous run of elements whatever the result's
+    rank, so the value is flattened on the way in exactly as a numeric array
+    result is. Assigning it unreshaped is a rank mismatch the compiler rejects.
+    """
+    module = parse_pyi_text(
+        """
+from prik.contracts import Int32, String
+
+def grid(n: Int32) -> String[4][2, 3]: ...
+""",
+        module_name="character_grid_results",
+    )
+    complete_semantic_policies(module)
+
+    bridge_source = next(
+        source.text
+        for source in WrapperGenerator().generate(WrapperPlanner().build(module)).sources
+        if source.path.suffix == ".f90"
+    )
+
+    assert "character(kind=c_char, len=4), dimension(2, 3) :: result_value" in bridge_source
+    assert "character(kind=c_char, len=4), pointer, dimension(:) :: result_copy" in bridge_source
+    assert "result_copy = reshape(result_value, [size(result_value)])" in bridge_source

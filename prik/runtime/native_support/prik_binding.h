@@ -739,6 +739,7 @@ typedef struct {
     int64_t rank;
     int64_t itemsize;
     int64_t extents[PRIK_MAX_ARRAY_RANK];
+    int64_t lower_bounds[PRIK_MAX_ARRAY_RANK];
     int64_t upper_bounds[PRIK_MAX_ARRAY_RANK];
     int64_t strides[PRIK_MAX_ARRAY_RANK];
 } prik_array_actual;
@@ -768,9 +769,8 @@ static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t c
 #define PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS 0
 #define PRIK_ARRAY_LAYOUT_C_CONTIGUOUS 1
 #define PRIK_ARRAY_LAYOUT_F_CONTIGUOUS 2
-#define PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F 3
-#define PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F 4
-#define PRIK_ARRAY_LAYOUT_ANY_STRIDED 5
+#define PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F 3
+#define PRIK_ARRAY_LAYOUT_ANY_STRIDED 4
 
 /*
  * Report why one strided array cannot be described to Fortran.
@@ -781,35 +781,26 @@ static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t c
  * NumPy made by broadcasting, or by overlapping itself -- has no parent to be a
  * section of, whatever its strides say, so it cannot be handed over without
  * copying. An axis that merely runs backwards breaks none of them, and is
- * refused only where the entrypoint takes an address and so has nowhere to say
- * so.
+ * accepted: the direction travels either inside a descriptor or as a signed
+ * stride beside an address.
  */
 static inline int prik_array_refuse_section(
     const char *argument_name,
-    int axis,
-    int signed_strides)
+    int axis)
 {
     PyErr_Format(
         PyExc_TypeError,
         "Argument %s has a layout at axis %d that is not a Fortran array section: "
-        "each axis must step a whole number of elements%s, in increasing order of step, without overlapping",
+        "each axis must step a whole number of elements, in increasing order of step, without overlapping",
         argument_name,
-        axis,
-        signed_strides ? "" : " forward");
+        axis);
     return -1;
 }
 
-/*
- * Validate one axis of an F-ordered strided array.
- *
- * ``signed_strides`` says whether an axis may run backwards, which is exactly
- * whether the entrypoint carries a descriptor to record it in. Everything else
- * is required either way, because it is what makes the view a section at all.
- */
+/* Validate one axis of an F-ordered strided array. */
 static inline int prik_array_validate_strided_axis(
     PyArrayObject *array,
     int axis,
-    int signed_strides,
     const char *argument_name)
 {
     int previous_axis;
@@ -820,7 +811,7 @@ static inline int prik_array_validate_strided_axis(
 
     if (itemsize <= 0 || (stride % itemsize) != 0) {
         /* A step that is not a whole element has no Fortran spelling at all. */
-        return prik_array_refuse_section(argument_name, axis, signed_strides);
+        return prik_array_refuse_section(argument_name, axis);
     }
     if (PyArray_SIZE(array) == 0 || PyArray_DIM(array, axis) <= 1) {
         /* One element cannot step anywhere, and no element cannot either. */
@@ -828,20 +819,11 @@ static inline int prik_array_validate_strided_axis(
     }
     if (stride == 0) {
         /* A repeated element: NumPy broadcasting, which Fortran has no form for. */
-        return prik_array_refuse_section(argument_name, axis, signed_strides);
+        return prik_array_refuse_section(argument_name, axis);
     }
     if (stride == NPY_MIN_INTP) {
         /* Its magnitude is not representable by the signed descriptor index type. */
-        return prik_array_refuse_section(argument_name, axis, signed_strides);
-    }
-    if (!signed_strides && stride < 0) {
-        PyErr_Format(
-            PyExc_TypeError,
-            "Argument %s runs backwards along axis %d, and this entrypoint receives only an address, "
-            "which cannot record a direction",
-            argument_name,
-            axis);
-        return -1;
+        return prik_array_refuse_section(argument_name, axis);
     }
     previous_axis = axis - 1;
     while (previous_axis >= 0 && PyArray_DIM(array, previous_axis) <= 1) {
@@ -851,7 +833,7 @@ static inline int prik_array_validate_strided_axis(
         npy_intp current = stride < 0 ? -stride : stride;
         previous = PyArray_STRIDE(array, previous_axis);
         if (previous == NPY_MIN_INTP) {
-            return prik_array_refuse_section(argument_name, previous_axis, signed_strides);
+            return prik_array_refuse_section(argument_name, previous_axis);
         }
         previous = previous < 0 ? -previous : previous;
         previous_extent = PyArray_DIM(array, previous_axis);
@@ -870,7 +852,7 @@ static inline int prik_array_validate_strided_axis(
         }
         if (previous == 0 || (current % previous) != 0) {
             /* CFI_section needs an integral step relative to its contiguous parent. */
-            return prik_array_refuse_section(argument_name, axis, signed_strides);
+            return prik_array_refuse_section(argument_name, axis);
         }
     }
     return 0;
@@ -916,10 +898,9 @@ static inline int prik_array_validate_ndarray(
     }
     if (layout == PRIK_ARRAY_LAYOUT_ANY_STRIDED) {
         /* The plan accepts whatever strides the caller's array already has. */
-    } else if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F || layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F) {
-        int signed_strides = layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F;
+    } else if (layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F) {
         for (axis = 0; axis < rank; axis++) {
-            if (prik_array_validate_strided_axis(array, axis, signed_strides, argument_name) < 0) {
+            if (prik_array_validate_strided_axis(array, axis, argument_name) < 0) {
                 return -1;
             }
         }

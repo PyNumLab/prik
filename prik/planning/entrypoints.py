@@ -847,7 +847,36 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             and argument.native_array_handle.default_handle.construction
             is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
         )
-        # A returned owner needs the same operations a caller-created one has:
+        operations.extend(self._fortran_owner_operations())
+        for transfer in transfers:
+            handle = transfer.native_array_handle
+            if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+                continue
+            selected = handle.operations if isinstance(transfer, ResultPlan) else handle.default_handle.operations
+            for operation in selected:
+                if operation not in _OWNED_HANDLE_ENTRYPOINT_OPERATIONS:
+                    continue
+                signature = self._owned_native_array_signature(transfer, handle, operation)
+                preferred = transfer.entrypoint.parameter_name or "result"
+                owner = NativeSymbolNames.compact(transfer.owner_path, preferred, limit=38)
+                operations.append(
+                    self._operation(
+                        transfer.owner_path,
+                        f"native_array:owned:{operation.value}",
+                        f"bind_c_owned_{owner}_{operation.value}",
+                        signature.parameters,
+                        signature.result,
+                    )
+                )
+        return tuple(operations)
+
+    def _fortran_owner_operations(self) -> list[GeneratedSupportProcedureEntrypointPlan]:
+        """Plan the entry points published over each generated Fortran owner.
+
+        A returned owner needs the same operations a caller-created one has:
+        the handle Python receives is the same kind of object either way.
+        """
+        operations: list[GeneratedSupportProcedureEntrypointPlan] = []
         # the handle Python receives is the same kind of object either way.
         owner_transfers = [
             argument
@@ -931,27 +960,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                         signature.result,
                     )
                 )
-        for transfer in transfers:
-            handle = transfer.native_array_handle
-            if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
-                continue
-            selected = handle.operations if isinstance(transfer, ResultPlan) else handle.default_handle.operations
-            for operation in selected:
-                if operation not in _OWNED_HANDLE_ENTRYPOINT_OPERATIONS:
-                    continue
-                signature = self._owned_native_array_signature(transfer, handle, operation)
-                preferred = transfer.entrypoint.parameter_name or "result"
-                owner = NativeSymbolNames.compact(transfer.owner_path, preferred, limit=38)
-                operations.append(
-                    self._operation(
-                        transfer.owner_path,
-                        f"native_array:owned:{operation.value}",
-                        f"bind_c_owned_{owner}_{operation.value}",
-                        signature.parameters,
-                        signature.result,
-                    )
-                )
-        return tuple(operations)
+        return operations
 
     def _fortran_owner_signature(self, handle: NativeArrayHandlePlan, operation: NativeArrayOperation):
         """Return one operation ABI over an opaque bridge-owned entity."""

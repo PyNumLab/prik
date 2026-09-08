@@ -30,6 +30,14 @@ def _import_extension(module_name: str, build_dir: Path):
         sys.path.remove(str(build_dir))
 
 
+def _remove_imported_module_tree(module_name: str):
+    """Remove one temporary extension and any native child modules it loaded."""
+    prefix = f"{module_name}."
+    for name in tuple(sys.modules):
+        if name == module_name or name.startswith(prefix):
+            sys.modules.pop(name, None)
+
+
 @pytest.fixture
 def compiled_contract_rebuild(tmp_path: Path):
     native_dir = tmp_path / "native"
@@ -74,7 +82,10 @@ def compiled_contract_rebuild(tmp_path: Path):
         output_dir=build_dir,
     )
     module = _import_extension(result.module_name, build_dir)
-    return module, result
+    try:
+        yield module, result
+    finally:
+        _remove_imported_module_tree(result.module_name)
 
 
 def test_generated_contract_rebuilds_without_native_source_fallback(compiled_contract_rebuild):
