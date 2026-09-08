@@ -198,3 +198,75 @@ def test_nogil_releases_only_while_the_descriptor_consumer_calls_fortran():
     call = consumer.index("bind_c_total(")
     finish = consumer.index("Py_END_ALLOW_THREADS")
     assert begin < call < finish
+
+
+def test_deferred_length_character_allocation_names_its_width_in_a_type_spec():
+    """The generated allocation spells the width the plan carried to it.
+
+    ``allocate(entity(n))`` is rejected outright for a deferred length type
+    parameter, so the bridge has to name the width in a type-spec. It takes it
+    from the planned ``element_length`` argument rather than choosing one.
+    """
+    module = parse_pyi_text(
+        """
+deferred: Allocatable[String[:][:]]
+numeric: Allocatable[Float64[:]]
+""",
+        module_name="deferred_character_allocation_lowering",
+    )
+    complete_semantic_policies(module)
+
+    bridge_source = next(
+        source.text
+        for source in WrapperGenerator().generate(WrapperPlanner().build(module)).sources
+        if source.path.suffix == ".f90"
+    )
+
+    assert "subroutine bind_c_deferred_resize(extent_0, element_length)" in bridge_source
+    assert "integer(c_int64_t), value :: element_length" in bridge_source
+    assert "allocate(character(kind=c_char, len=element_length) :: native_deferred(extent_0))" in bridge_source
+    # A width is planned only where the standard requires one.
+    assert "subroutine bind_c_numeric_resize(extent_0)" in bridge_source
+    assert "allocate(native_numeric(extent_0))" in bridge_source
+
+
+def test_fixed_character_argument_uses_a_leased_fortran_owner():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Allocatable, Returns, String, nogil
+
+@nogil
+def rewrite(
+    values: Allocatable[String[4][:]],
+) -> Returns["values", Allocatable[String[4][:]]]: ...
+""",
+        module_name="fixed_character_owner",
+    )
+    complete_semantic_policies(module)
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "sequence" in bridge_source
+    assert "character(kind=c_char, len=4), allocatable, dimension(:) :: data" in bridge_source
+    assert "type(c_ptr), value :: values" in bridge_source
+    assert "call c_f_pointer(values, values_owner)" in bridge_source
+    assert "call native_rewrite(values_owner%data)" in bridge_source
+    assert "void bind_c_rewrite(void * values);" in c_source
+    assert "prik_native_array_forward_descriptor" in c_source
+    assert "&forwarded" in c_source
+    assert "(void *)consumer" not in c_source
+    assert "PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER, PRIK_FORTRAN_OWNER_ABI" in c_source
+    assert "function bind_c_owner_" in bridge_source
+    assert "deallocate(owner%data, stat=status)" in bridge_source
+    assert "allocate(owner%data(extent_0), stat=status)" in bridge_source
+    assert "failed to resize Fortran array owner" in c_source
+    assert "failed to deallocate Fortran array owner" in c_source
+
+    wrapper = c_source[c_source.index("static PyObject * wrap_rewrite") :]
+    acquire = wrapper.index("prik_native_array_backend_acquire_call")
+    begin = wrapper.index("Py_BEGIN_ALLOW_THREADS")
+    call = wrapper.index("bind_c_rewrite(")
+    finish = wrapper.index("Py_END_ALLOW_THREADS")
+    release = wrapper.index("prik_native_array_backend_release_call")
+    assert acquire < begin < call < finish < release

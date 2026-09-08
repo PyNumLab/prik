@@ -196,3 +196,54 @@ def test_close_is_a_noop_for_a_borrowed_allocatable_handle():
     assert handle.closed is False
     assert handle.owner is owner
     assert handle.allocated is False
+
+
+def test_deferred_length_character_allocation_requires_an_element_length():
+    """The width is asked for exactly where the entity cannot supply one.
+
+    A handle with no static dtype reads its width from the descriptor, which is
+    the same condition under which the standard refuses to allocate from a
+    shape alone. Passing a width anywhere else would be a second, conflicting
+    source for a width the entity already has.
+    """
+    calls: list[tuple[str, tuple]] = []
+
+    def invoke(name, args):
+        calls.append((name, args))
+        return 6 if name == "element_length" else None
+
+    deferred = AllocatableArray(
+        invoke=invoke,
+        capabilities=("allocated", "deallocate", "element_length", "resize", "shape", "to_numpy"),
+        dtype=None,
+        rank=1,
+        to_numpy_policy="descriptor_view",
+        element_length_argument=True,
+    )
+
+    deferred.resize(3, element_length=4)
+    assert calls[-1][0] == "resize"
+    assert [int(value) for value in calls[-1][1]] == [3, 4]
+
+    with pytest.raises(TypeError, match="needs an element_length"):
+        deferred.resize(3)
+
+    with pytest.raises(ValueError, match="must not be negative"):
+        deferred.resize(3, element_length=-1)
+
+    with pytest.raises(TypeError, match="must be an integer"):
+        deferred.resize(3, element_length=1.5)
+
+
+def test_a_fixed_width_handle_refuses_an_element_length():
+    """A handle that knows its width will not take a second one."""
+    fixed = AllocatableArray(
+        invoke=lambda name, args: None,
+        capabilities=("allocated", "resize", "shape", "to_numpy"),
+        dtype="S8",
+        rank=1,
+        to_numpy_policy="descriptor_view",
+    )
+
+    with pytest.raises(TypeError, match="fixed element width"):
+        fixed.resize(4, element_length=8)

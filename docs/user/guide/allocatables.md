@@ -25,7 +25,7 @@ and a PRIK handle gives Python access to that descriptor.
 - Reallocation or deallocation invalidates existing views.
 - Module and derived-field handles expose storage that belongs to their module
   or parent object. Returned and caller-created handles have their own
-  descriptor storage.
+  native handle storage.
 - When available, `deallocate()` releases the current allocation but keeps the
   handle open. `close()` permanently ends a returned or caller-created handle.
 
@@ -56,9 +56,10 @@ A plain NumPy array cannot satisfy an `Allocatable[T[...]]` parameter because
 it does not carry native allocation state. Use `to_numpy()` when Python needs
 the current array data held by an allocatable handle.
 
-Fixed-width character allocatable parameters
-(`Allocatable[String[N][...]]`) are unsupported. Module and field handles of
-that type still support `to_numpy()` and ordinary `String[N][...]` parameters.
+Character allocatable parameters use the same handle form. A fixed-width
+contract includes the width, for example `Allocatable[String[8][:]]`. A
+deferred-width contract uses `Allocatable[String[:][:]]`; its `resize()` call
+must supply `element_length`.
 
 ---
 
@@ -79,8 +80,8 @@ assert values.allocated is True
 ```
 
 The annotation supplies the element dtype and rank. The handle creates its
-native descriptor storage when first passed to a matching writable argument.
-It stays the same Python object after the call.
+native storage when first passed to a matching writable argument. It stays the
+same Python object after the call.
 `Allocatable[Float64]()` is not supported because scalar allocatables cross the
 Python boundary as values rather than array handles.
 
@@ -108,8 +109,8 @@ else:
 | `rank` | `int` | Declared number of dimensions. |
 | `to_numpy()` | `numpy.ndarray \| None` | A live view of current storage, or `None` when unallocated. It never creates an automatic detached snapshot. |
 | `deallocate()` | `() -> None` | Deallocates current storage when this operation is available for the handle. |
-| `resize(shape)` | `(int \| Sequence[int]) -> None` | Allocates or resizes storage to `shape` when this operation is available for the handle. |
-| `close()` | `() -> None` | Permanently releases a returned or caller-created descriptor and any remaining allocation. It does nothing on a module or field handle. |
+| `resize(shape, *, element_length=None)` | `(...) -> None` | Allocates or resizes storage to `shape` when available. Pass `element_length` only for deferred-length character arrays. |
+| `close()` | `() -> None` | Permanently releases a returned or caller-created handle and any remaining allocation. It does nothing on a module or field handle. |
 | `closed` | `bool` | Whether a closable handle has been closed. |
 
 Calling `deallocate()` or `resize(shape)` when the operation is unavailable
@@ -157,8 +158,8 @@ assert h.shape == (5,)
 
 ### Function Results
 
-An allocatable-array function result becomes an `AllocatableArray` with its own
-descriptor storage, which PRIK releases automatically:
+An allocatable-array function result becomes an `AllocatableArray` that owns
+the returned allocation, which PRIK releases automatically:
 
 ```python
 values = api.make_values(3)

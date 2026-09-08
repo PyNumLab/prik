@@ -16,6 +16,7 @@ from prik.policy.models import (
     NativeArrayDestroyBehavior,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArrayResultAllocation,
     NativeArraySourceKind,
@@ -259,13 +260,22 @@ def test_native_handle_plans_keep_datatype_specific_state():
     assert names.native_array_handle is not None
     assert names.datatype_family.value == "string"
     assert names.array.itemsize is None
+    assert names.native_array_handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
+    assert names.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER
     assert NativeArrayOperation.ELEMENT_LENGTH in names.native_array_handle.operations
-    assert NativeArrayOperation.RESIZE not in names.native_array_handle.operations
+    # A deferred length can be resized because the plan carries the width the
+    # allocation needs; the width is what the entity cannot supply itself.
+    assert NativeArrayOperation.RESIZE in names.native_array_handle.operations
+    assert names.native_array_handle.element_length_argument is True
 
     replacement_names = functions["replace_names"].arguments[0]
     assert replacement_names.native_array_handle is not None
     assert replacement_names.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    assert replacement_names.native_array_handle.default_handle.construction is NativeArrayDefaultConstruction.NONE
+    assert (
+        replacement_names.native_array_handle.default_handle.construction
+        is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
+    )
+    assert replacement_names.native_array_handle.default_handle.owner_storage_role is not None
     assert NativeArrayOperation.ELEMENT_LENGTH in replacement_names.native_array_handle.operations
     assert plan.required_headers == ("ISO_Fortran_binding.h",)
 
@@ -323,7 +333,10 @@ def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
     assert NativeArrayOperation.CONTIGUOUS in pointer.operations
     assert NativeArrayOperation.DESTROY not in allocatable.operations
     assert NativeArrayOperation.ELEMENT_LENGTH in names.operations
-    assert NativeArrayOperation.RESIZE not in names.operations
+    assert NativeArrayOperation.RESIZE in names.operations
+    assert names.element_length_argument is True
+    # Every other entity allocates from its shape alone.
+    assert allocatable.element_length_argument is False
     assert NativeArrayOperation.DESTROY not in pointer.operations
     # A module allocatable reads its own descriptor whether or not it is a
     # target, so `Aliased` selects the same interop and headers as a plain one.
@@ -395,14 +408,15 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "_destroy(owner_descriptor);" in c_source
     assert "owner_backend->with_descriptor(owner_backend->context, prik_native_array_read_shape" in c_source
     assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
-    assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
     assert "result_owner_status = CFI_establish(result, NULL, CFI_attribute_pointer" in c_source
+    # An owned result publishes descriptor storage, and says so: v2 discriminates
+    # the context rather than letting ownership imply what it points at.
     assert (
         "PRIK_NATIVE_ARRAY_KIND_POINTER, PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER, 1, "
         "(uint32_t)sizeof(CFI_CDESC_T(1)), CFI_type_double, "
-        "sizeof(double), result" in c_source
+        "sizeof(double), PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR, 0, 0, result" in c_source
     )
 
 
@@ -429,7 +443,6 @@ def test_owned_descriptor_handles_publish_one_dispatcher_and_capability_tuple():
         ("required_presence", "inconsistent-native-descriptor-presence"),
         ("owned_storage", "invalid-owned-native-descriptor-roles"),
         ("default_storage", "inconsistent-default-handle-owner-storage-role"),
-        ("disabled_default", "invalid-disabled-default-handle-policy"),
         ("default_ownership", "invalid-default-handle-descriptor-ownership"),
         ("default_lifecycle", "invalid-default-handle-lifecycle"),
         ("default_operation", "incomplete-default-handle-operations"),
@@ -448,10 +461,6 @@ def test_native_handle_plan_edits_fail_central_validation(edit: str, diagnostic:
         functions["make"].results[0].native_array_handle.handoff.owner_storage_role = None
     elif edit == "default_storage":
         functions["replace"].arguments[0].native_array_handle.default_handle.owner_storage_role = None
-    elif edit == "disabled_default":
-        functions["replace_names"].arguments[
-            0
-        ].native_array_handle.default_handle.release = NativeArrayRelease.WRAPPER_DEALLOC
     elif edit == "default_ownership":
         functions["replace"].arguments[
             0

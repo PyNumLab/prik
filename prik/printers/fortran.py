@@ -321,6 +321,8 @@ class FortranSourcePrinter(ClassVisitor):
     def _visit_FortranTypeDefinition(self, node: FortranTypeDefinition) -> str:
         """Render one derived-type definition and preserve component order."""
         lines = [f"type :: {node.name}"]
+        if node.sequence:
+            lines.append("  sequence")
         lines.extend(self._indented(self.visit(component)) for component in node.components)
         lines.append(f"end type {node.name}")
         return "\n".join(lines)
@@ -357,11 +359,13 @@ class FortranSourcePrinter(ClassVisitor):
         """Render one allocation with optional extents and status destination."""
         shape = f"({', '.join(item.text for item in node.extents)})" if node.extents else ""
         status = f", stat={node.status}" if node.status is not None else ""
-        return f"allocate({node.target}{shape}{status})"
+        spec = f"{node.type_spec} :: " if node.type_spec is not None else ""
+        return f"allocate({spec}{node.target}{shape}{status})"
 
     def _visit_FortranDeallocate(self, node: FortranDeallocate) -> str:
         """Render one explicit deallocation for the node target."""
-        return f"deallocate({node.target})"
+        status = f", stat={node.status}" if node.status is not None else ""
+        return f"deallocate({node.target}{status})"
 
     def _visit_FortranCall(self, node: FortranCall) -> str:
         """Render one Fortran call and wrap its already-rendered arguments."""

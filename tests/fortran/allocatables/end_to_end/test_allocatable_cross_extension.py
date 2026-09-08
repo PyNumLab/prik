@@ -14,7 +14,7 @@ from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
 )
-from prik.contracts import Allocatable, Float64
+from prik.contracts import Allocatable, Float64, Pointer, String
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
@@ -64,6 +64,82 @@ contains
 end module fallocatable_cross_b
 """
 
+CHARACTER_CROSS_A_SOURCE = """\
+module fcharacter_cross_a
+  use iso_c_binding, only: c_char
+  character(kind=c_char, len=4), target, save :: pointer_target(3) = &
+    [character(kind=c_char, len=4) :: 'one ', 'two ', 'tri ']
+contains
+  subroutine select_a(values)
+    character(kind=c_char, len=4), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(2))
+    values = [character(kind=c_char, len=4) :: 'one ', 'two ']
+  end subroutine select_a
+
+  integer(4) function state_a(values) result(state)
+    character(kind=c_char, len=4), allocatable, intent(in) :: values(:)
+    state = 0
+    if (allocated(values)) state = size(values) * 100 + len(values)
+  end function state_a
+
+  subroutine select_pointer_a(values)
+    character(kind=c_char, len=4), pointer, intent(out) :: values(:)
+    values => pointer_target
+  end subroutine select_pointer_a
+
+  integer(4) function pointer_state_a(values) result(state)
+    character(kind=c_char, len=4), pointer, intent(in) :: values(:)
+    state = 0
+    if (associated(values)) state = size(values) * 100 + len(values)
+  end function pointer_state_a
+end module fcharacter_cross_a
+"""
+
+CHARACTER_CROSS_B_SOURCE = """\
+module fcharacter_cross_b
+  use iso_c_binding, only: c_char
+  character(kind=c_char, len=4), target, save :: pointer_target(2) = &
+    [character(kind=c_char, len=4) :: 'red ', 'blue']
+contains
+  subroutine select_b(values)
+    character(kind=c_char, len=4), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = [character(kind=c_char, len=4) :: 'red ', 'blue', 'sky ']
+  end subroutine select_b
+
+  integer(4) function state_b(values) result(state)
+    character(kind=c_char, len=4), allocatable, intent(in) :: values(:)
+    state = 0
+    if (allocated(values)) state = size(values) * 100 + len(values)
+  end function state_b
+
+  subroutine select_pointer_b(values)
+    character(kind=c_char, len=4), pointer, intent(out) :: values(:)
+    values => pointer_target
+  end subroutine select_pointer_b
+
+  integer(4) function pointer_state_b(values) result(state)
+    character(kind=c_char, len=4), pointer, intent(in) :: values(:)
+    state = 0
+    if (associated(values)) state = size(values) * 100 + len(values)
+  end function pointer_state_b
+end module fcharacter_cross_b
+"""
+
+CHARACTER_CROSS_WRONG_WIDTH_SOURCE = """\
+module fcharacter_cross_wrong_width
+  use iso_c_binding, only: c_char
+contains
+  integer(4) function state(values) result(value)
+    character(kind=c_char, len=5), allocatable, intent(in) :: values(:)
+    value = 0
+    if (allocated(values)) value = size(values) * 100 + len(values)
+  end function state
+end module fcharacter_cross_wrong_width
+"""
+
 
 def _source_build_dir(tmp_path: Path, build_mode: str) -> Path:
     if build_mode == "source":
@@ -110,6 +186,154 @@ def test_caller_created_allocatable_crosses_separately_built_extensions(tmp_path
     assert values.closed is True
 
 
+def test_fortran_owned_character_handle_crosses_matching_extensions(tmp_path: Path):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = _build_text_and_import(
+        CHARACTER_CROSS_A_SOURCE,
+        "fcharacter_cross_a.f90",
+        first_dir,
+        {
+            "bind_c_fcharacter_cross_a_wrapper.f90",
+            "fcharacter_cross_a_wrapper.c",
+            "fcharacter_cross_a_wrapper.h",
+        },
+    )
+    second = _build_text_and_import(
+        CHARACTER_CROSS_B_SOURCE,
+        "fcharacter_cross_b.f90",
+        second_dir,
+        {
+            "bind_c_fcharacter_cross_b_wrapper.f90",
+            "fcharacter_cross_b_wrapper.c",
+            "fcharacter_cross_b_wrapper.h",
+        },
+    )
+    values = Allocatable[String[4][:]]()
+
+    assert first.select_a(values) is values
+    assert second.state_b(values) == np.int32(204)
+    assert second.select_b(values) is values
+    assert first.state_a(values) == np.int32(304)
+    assert values.to_numpy().tolist() == [b"red ", b"blue", b"sky "]
+
+    values.close()
+
+    # A caller-created pointer handle is an ordinary argument: it crosses as
+    # itself, and an unassociated one reads as such in either extension.
+    source = Pointer[String[4][:]]()
+    alias = Pointer[String[4][:]]()
+    assert first.pointer_state_a(source) == np.int32(0)
+    assert second.pointer_state_b(alias) == np.int32(0)
+    source.close()
+
+    # `intent(out)` is a hidden argument projected as a result, exactly as it
+    # is for a numeric pointer, so the association returns as its own handle.
+    selected = first.select_pointer_a()
+    assert selected is not None
+    assert first.pointer_state_a(selected) == np.int32(304)
+    # The target is borrowed rather than copied, so the other extension sees
+    # the same one through the same handle.
+    assert second.pointer_state_b(selected) == np.int32(304)
+
+    alias.close()
+
+    # Association happens between two owner-backed handles, so the target of
+    # the assignment is one the second extension attached.
+    alias = second.select_pointer_b()
+    assert alias is not None
+    alias.associate(selected)
+    assert second.pointer_state_b(alias) == np.int32(304)
+    assert first.pointer_state_a(alias) == np.int32(304)
+
+    # Nullifying one handle leaves another association to the same target.
+    selected.nullify()
+    assert first.pointer_state_a(selected) == np.int32(0)
+    assert second.pointer_state_b(alias) == np.int32(304)
+    selected.close()
+    alias.close()
+
+
+def test_fortran_owned_character_handle_refuses_a_different_owner_layout(tmp_path: Path):
+    producer_dir = tmp_path / "producer"
+    consumer_dir = tmp_path / "consumer"
+    producer_dir.mkdir()
+    consumer_dir.mkdir()
+    producer = _build_text_and_import(
+        CHARACTER_CROSS_A_SOURCE,
+        "fcharacter_cross_a.f90",
+        producer_dir,
+        {
+            "bind_c_fcharacter_cross_a_wrapper.f90",
+            "fcharacter_cross_a_wrapper.c",
+            "fcharacter_cross_a_wrapper.h",
+        },
+    )
+    consumer = _build_text_and_import(
+        CHARACTER_CROSS_WRONG_WIDTH_SOURCE,
+        "fcharacter_cross_wrong_width.f90",
+        consumer_dir,
+        {
+            "bind_c_fcharacter_cross_wrong_width_wrapper.f90",
+            "fcharacter_cross_wrong_width_wrapper.c",
+            "fcharacter_cross_wrong_width_wrapper.h",
+        },
+    )
+    values = Allocatable[String[4][:]]()
+    producer.select_a(values)
+
+    with pytest.raises(TypeError, match="owner does not match"):
+        consumer.state(values)
+
+    values.close()
+
+
+def test_fortran_owned_character_handle_refuses_a_different_compiler_abi(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    gfortran = shutil.which("gfortran")
+    ifx = shutil.which("ifx")
+    if gfortran is None or ifx is None:
+        pytest.skip("gfortran and ifx are both required for the cross-compiler owner check")
+
+    first_dir = tmp_path / "gfortran"
+    second_dir = tmp_path / "ifx"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    monkeypatch.setenv("PRIK_TEST_FORTRAN_COMPILER", gfortran)
+    first = _build_text_and_import(
+        CHARACTER_CROSS_A_SOURCE,
+        "fcharacter_cross_a.f90",
+        first_dir,
+        {
+            "bind_c_fcharacter_cross_a_wrapper.f90",
+            "fcharacter_cross_a_wrapper.c",
+            "fcharacter_cross_a_wrapper.h",
+        },
+    )
+    monkeypatch.setenv("PRIK_TEST_FORTRAN_COMPILER", ifx)
+    second = _build_text_and_import(
+        CHARACTER_CROSS_B_SOURCE,
+        "fcharacter_cross_b.f90",
+        second_dir,
+        {
+            "bind_c_fcharacter_cross_b_wrapper.f90",
+            "fcharacter_cross_b_wrapper.c",
+            "fcharacter_cross_b_wrapper.h",
+        },
+    )
+    values = Allocatable[String[4][:]]()
+    first.select_a(values)
+
+    with pytest.raises(TypeError, match="different Fortran compiler ABI"):
+        second.state_b(values)
+
+    values.close()
+
+
 def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_path: Path):
     """A reader refuses a capsule with another ABI name before reading it."""
     module = _build_text_and_import(
@@ -137,7 +361,7 @@ def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_
     capsule_name.argtypes = (ctypes.py_object,)
 
     published = capsule_name(values._native_backend)
-    assert published.startswith(b"prik.native_array_backend.v1.")
+    assert published.startswith(b"prik.native_array_backend.v2.")
     address = capsule_get(values._native_backend, published)
     assert address
     stranger = published[: published.rindex(b".")] + b".0000000000000000"

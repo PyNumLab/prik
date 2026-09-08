@@ -44,13 +44,69 @@
  * producer with a different callback contract or record layout is refused
  * before any field is read. Bump the version when field meanings or callback
  * behavior change without changing the record layout.
+ *
+ * `owner_abi` and `owner_signature` identify a Fortran-owned context and are
+ * zero for every other kind. A generated owner type is an ordinary Fortran
+ * derived type: its layout is its compiler's, not this header's, so a reader
+ * that dereferences one built by a different compiler reinterprets memory.
+ * Two extensions built by the same compiler from the same owner signature
+ * agree; gfortran and ifx do not, and the mismatch surfaces as a fault inside
+ * the callee with nothing to attribute it to. The capsule name settles that
+ * both sides share this record; it cannot settle a type this header does not
+ * define, so these two values carry that and are compared before any
+ * dereference.
  */
-#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v1"
+#define PRIK_NATIVE_ARRAY_BACKEND_CAPSULE_PREFIX "prik.native_array_backend.v2"
 #define PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_KIND_POINTER 2u
 #define PRIK_NATIVE_ARRAY_ATTRIBUTE_ALLOCATABLE 1u
 #define PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER 2u
 #define PRIK_NATIVE_ARRAY_ATTRIBUTE_OTHER 3u
+
+/*
+ * What `context` points at.
+ *
+ * NONE is a borrowed backend: a module variable's, whose entity needs no
+ * address at all.
+ */
+#define PRIK_NATIVE_ARRAY_CONTEXT_NONE 0u
+#define PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR 1u
+#define PRIK_NATIVE_ARRAY_CONTEXT_PARENT 2u
+#define PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER 3u
+
+/*
+ * A generated owner may cross between extensions only when their paired C
+ * drivers identify the same Fortran compiler ABI family and release. Build
+ * integration always pairs these drivers; the value is intentionally
+ * conservative so an uncertain pair is refused rather than dereferenced.
+ */
+#ifndef PRIK_FORTRAN_OWNER_ABI
+#if defined(__INTEL_LLVM_COMPILER)
+#define PRIK_FORTRAN_OWNER_ABI \
+    (UINT64_C(0x4946580000000000) | (uint64_t)(__INTEL_LLVM_COMPILER))
+#elif defined(__GNUC__)
+#define PRIK_FORTRAN_OWNER_ABI \
+    (UINT64_C(0x474E550000000000) | ((uint64_t)(__GNUC__) << 16) \
+     | ((uint64_t)(__GNUC_MINOR__) << 8) | (uint64_t)(__GNUC_PATCHLEVEL__))
+#else
+#define PRIK_FORTRAN_OWNER_ABI UINT64_C(0)
+#endif
+#endif
+
+/*
+ * GNU Fortran releases before 14 lose the length when a deferred-length
+ * character array pointer is reassociated (GCC PR 89352/106317).  Letting an
+ * owner through on those releases would expose a corrupt element width.
+ */
+#ifndef PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED
+#if defined(__INTEL_LLVM_COMPILER)
+#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 1
+#elif defined(__GNUC__) && __GNUC__ >= 14
+#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 1
+#else
+#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 0
+#endif
+#endif
 
 #if defined(_MSC_VER)
 #define PRIK_NO_INLINE __declspec(noinline)
@@ -112,6 +168,7 @@ typedef void (*prik_native_array_release_fn)(void *context);
 typedef struct {
     prik_native_array_descriptor_fn consumer;
     void *context;
+    int invoked;
 } prik_native_array_descriptor_forward;
 
 /*
@@ -150,9 +207,15 @@ typedef struct {
     uint32_t descriptor_size;
     int32_t cfi_type;
     size_t element_size;
+    uint32_t context_kind;
+    uint64_t owner_abi;
+    uint64_t owner_signature;
     void *context;
     prik_native_array_with_descriptor_fn with_descriptor;
     prik_native_array_release_fn release;
+    uint32_t active_calls;
+    uint32_t release_pending;
+    uint32_t capsule_released;
 } prik_native_array_backend;
 
 /*
@@ -188,9 +251,15 @@ static inline uint64_t prik_native_array_backend_layout_tag(void)
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(descriptor_size),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(cfi_type),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(element_size),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(context_kind),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(owner_abi),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(owner_signature),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(context),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(with_descriptor),
         PRIK_NATIVE_ARRAY_BACKEND_FIELD(release),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(active_calls),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(release_pending),
+        PRIK_NATIVE_ARRAY_BACKEND_FIELD(capsule_released),
     };
     uint64_t tag = UINT64_C(14695981039346656037);
     size_t index;
@@ -257,17 +326,69 @@ static inline void prik_native_array_owned_with_descriptor(
  * own. Clearing `context` makes the release idempotent, so an explicit
  * close() and finalization can both run.
  */
-static inline void prik_native_array_backend_release(prik_native_array_backend *backend)
+static inline void prik_native_array_backend_release_now(prik_native_array_backend *backend)
 {
     void *context;
+    uint32_t context_kind;
 
     if (backend == NULL || backend->release == NULL || backend->context == NULL) {
         return;
     }
     context = backend->context;
+    context_kind = backend->context_kind;
     backend->context = NULL;
     backend->release(context);
-    free(context);
+    /*
+     * Only C storage is freed here. A Fortran owner was allocated by the
+     * Fortran runtime, so its `release` is the generated destruction entry
+     * point and freeing it here as well would be undefined.
+     */
+    if (context_kind == PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR) {
+        free(context);
+    }
+}
+
+/* Request idempotent release, deferring it while a native call holds a lease. */
+static inline void prik_native_array_backend_release(prik_native_array_backend *backend)
+{
+    if (backend == NULL || backend->release == NULL || backend->context == NULL) {
+        return;
+    }
+    if (backend->active_calls != 0) {
+        backend->release_pending = 1u;
+        return;
+    }
+    prik_native_array_backend_release_now(backend);
+}
+
+/* Hold a backend across a native call that may run without the GIL. */
+static inline int prik_native_array_backend_acquire_call(prik_native_array_backend *backend)
+{
+    if (backend == NULL) {
+        return 0;
+    }
+    if (backend->release_pending || (backend->release != NULL && backend->context == NULL)) {
+        PyErr_SetString(PyExc_ReferenceError, "prik native array handle is closed");
+        return -1;
+    }
+    backend->active_calls += 1u;
+    return 0;
+}
+
+/* End a call lease and complete any release requested while it was active. */
+static inline void prik_native_array_backend_release_call(prik_native_array_backend *backend)
+{
+    if (backend == NULL || backend->active_calls == 0) {
+        return;
+    }
+    backend->active_calls -= 1u;
+    if (backend->active_calls == 0 && backend->release_pending) {
+        backend->release_pending = 0u;
+        prik_native_array_backend_release_now(backend);
+    }
+    if (backend->active_calls == 0 && backend->capsule_released) {
+        free(backend);
+    }
 }
 
 /* Finalize one backend record owned by a Python capsule. */
@@ -284,8 +405,11 @@ static inline void prik_native_array_backend_capsule_destructor(PyObject *capsul
     if (backend == NULL) {
         PyErr_Clear();
     } else {
+        backend->capsule_released = 1u;
         prik_native_array_backend_release(backend);
-        free(backend);
+        if (backend->active_calls == 0) {
+            free(backend);
+        }
     }
     PyErr_Restore(error_type, error_value, error_traceback);
 }
@@ -308,6 +432,9 @@ static inline PyObject *prik_native_array_backend_capsule_new(
     uint32_t descriptor_size,
     int cfi_type,
     size_t element_size,
+    uint32_t context_kind,
+    uint64_t owner_abi,
+    uint64_t owner_signature,
     void *context,
     prik_native_array_with_descriptor_fn with_descriptor,
     prik_native_array_release_fn release)
@@ -326,12 +453,49 @@ static inline PyObject *prik_native_array_backend_capsule_new(
         PyErr_SetString(PyExc_ValueError, "invalid prik native array descriptor attribute");
         return NULL;
     }
-    if (with_descriptor == NULL) {
+    if (with_descriptor == NULL && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER) {
         PyErr_SetString(PyExc_ValueError, "prik native array backend needs a descriptor entry point");
         return NULL;
     }
     if (release != NULL && context == NULL) {
         PyErr_SetString(PyExc_ValueError, "prik native array backend has no storage to release");
+        return NULL;
+    }
+    if (context_kind > PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER) {
+        PyErr_SetString(PyExc_ValueError, "invalid prik native array context kind");
+        return NULL;
+    }
+    if (context != NULL && context_kind == PRIK_NATIVE_ARRAY_CONTEXT_NONE) {
+        PyErr_SetString(PyExc_ValueError, "prik native array backend context has no declared kind");
+        return NULL;
+    }
+    if (context == NULL && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_NONE) {
+        PyErr_SetString(PyExc_ValueError, "prik native array backend context kind requires storage");
+        return NULL;
+    }
+    if (release != NULL
+        && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR
+        && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER) {
+        PyErr_SetString(PyExc_ValueError, "prik native array backend cannot release borrowed context storage");
+        return NULL;
+    }
+    if (release == NULL
+        && (context_kind == PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR
+            || context_kind == PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER)) {
+        PyErr_SetString(PyExc_ValueError, "prik native array owned context needs a release entry point");
+        return NULL;
+    }
+    /*
+     * An owner is the one context a reader cannot sanity-check by looking at
+     * it, so it may not be published without the identity that decides whether
+     * dereferencing it is safe.
+     */
+    if (context_kind == PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER && (owner_abi == 0 || owner_signature == 0)) {
+        PyErr_SetString(PyExc_ValueError, "prik native array Fortran owner needs an owner ABI identity");
+        return NULL;
+    }
+    if (context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER && (owner_abi != 0 || owner_signature != 0)) {
+        PyErr_SetString(PyExc_ValueError, "prik native array owner identity is only carried by a Fortran owner");
         return NULL;
     }
     backend = (prik_native_array_backend *)calloc(1, sizeof(*backend));
@@ -345,6 +509,9 @@ static inline PyObject *prik_native_array_backend_capsule_new(
     backend->descriptor_size = descriptor_size;
     backend->cfi_type = (int32_t)cfi_type;
     backend->element_size = element_size;
+    backend->context_kind = context_kind;
+    backend->owner_abi = owner_abi;
+    backend->owner_signature = owner_signature;
     backend->context = context;
     backend->with_descriptor = with_descriptor;
     backend->release = release;
@@ -373,12 +540,64 @@ static inline prik_native_array_backend *prik_native_array_backend_from_capsule(
     if (backend == NULL) {
         return NULL;
     }
-    if (backend->with_descriptor == NULL) {
+    if (backend->with_descriptor == NULL
+        && backend->context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER) {
         PyErr_SetString(PyExc_TypeError, "incompatible prik native array backend record");
         return NULL;
     }
     if (backend->release != NULL && backend->context == NULL) {
         PyErr_SetString(PyExc_ReferenceError, "prik native array handle is closed");
+        return NULL;
+    }
+    if (backend->context_kind == PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER
+        && backend->owner_abi != PRIK_FORTRAN_OWNER_ABI) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle was produced by a different Fortran compiler ABI and cannot be used here");
+        return NULL;
+    }
+    return backend;
+}
+
+/*
+ * Read a backend whose context is a Fortran owner this reader may dereference.
+ *
+ * This is the one gate before `c_f_pointer`. An owner is an ordinary Fortran
+ * derived type, so nothing about the address says whether the bytes behind it
+ * were laid out by this reader's compiler from this reader's owner signature.
+ * Same compiler and same signature agree; anything else reinterprets memory,
+ * which shows up as a fault inside the callee with nothing to attribute it to.
+ *
+ * The capsule name has already settled that both sides share this record. What
+ * it cannot settle is the owner type, which this header does not define -- so
+ * the comparison happens here, on values the producer wrote and the consumer
+ * computes for itself.
+ */
+static inline prik_native_array_backend *prik_native_array_backend_for_owner(
+    PyObject *capsule,
+    uint64_t expected_owner_abi,
+    uint64_t expected_owner_signature)
+{
+    prik_native_array_backend *backend;
+
+    backend = prik_native_array_backend_from_capsule(capsule);
+    if (backend == NULL) {
+        return NULL;
+    }
+    if (backend->context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not carry a Fortran owner");
+        return NULL;
+    }
+    if (backend->owner_abi != expected_owner_abi) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle was produced by a different Fortran compiler ABI and cannot be used here");
+        return NULL;
+    }
+    if (backend->owner_signature != expected_owner_signature) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle owner does not match the entity this argument declares");
         return NULL;
     }
     return backend;
@@ -411,6 +630,10 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
         PyErr_SetString(PyExc_TypeError, "incompatible Fortran descriptor storage size");
         return NULL;
     }
+    if (backend->with_descriptor == NULL) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not expose a usable descriptor");
+        return NULL;
+    }
     expected_descriptor_attribute = expected_descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER
         ? PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER
         : PRIK_NATIVE_ARRAY_ATTRIBUTE_ALLOCATABLE;
@@ -433,16 +656,12 @@ static inline prik_native_array_backend *prik_native_array_backend_for_descripto
  * Take the descriptor a backend owns.
  *
  * `prik_native_array_owned_with_descriptor` hands its consumer the context
- * itself, so an owned backend's context *is* persistent descriptor storage and
- * may be held for as long as the handle lives.  Only the operations published
- * on an owned handle -- allocate, resize, deallocate, destroy -- ask for it,
+ * itself, so this accessor accepts only persistent descriptor storage. Only
+ * the operations published on an owned handle -- allocate, resize, deallocate,
+ * destroy -- ask for it,
  * and only ever about their own handle's storage; a borrowed backend has
  * nothing of the kind, and saying so here keeps a mis-wired one an error
  * instead of a null descriptor handed to CFI_allocate.
- *
- * `release` is non-NULL exactly for storage this extension owns, which is the
- * same fact and the one that survives being read from another extension, where
- * the inline entry point above is a different function.
  */
 static inline void *prik_native_array_backend_owned_descriptor(prik_native_array_backend *backend)
 {
@@ -450,6 +669,17 @@ static inline void *prik_native_array_backend_owned_descriptor(prik_native_array
         PyErr_SetString(
             PyExc_TypeError,
             "native array handle operation needs storage the handle owns; this one borrows its descriptor");
+        return NULL;
+    }
+    /*
+     * Owning storage is no longer the same fact as owning a descriptor: a
+     * Fortran-owned handle owns an entity, which is not a CFI descriptor and
+     * must never be handed to one of the operations that reads through this.
+     */
+    if (backend->context_kind != PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR) {
+        PyErr_SetString(
+            PyExc_TypeError,
+            "native array handle operation needs descriptor storage; this handle owns a Fortran entity");
         return NULL;
     }
     return backend->context;
@@ -477,6 +707,10 @@ static inline prik_native_array_backend *prik_native_array_backend_for_actual(
 
     backend = prik_native_array_backend_from_capsule(capsule);
     if (backend == NULL) {
+        return NULL;
+    }
+    if (backend->with_descriptor == NULL) {
+        PyErr_SetString(PyExc_TypeError, "native array handle does not expose a usable descriptor");
         return NULL;
     }
     if (backend->rank < minimum_rank || backend->rank > maximum_rank
@@ -769,6 +1003,8 @@ static inline int prik_array_validate(
  *
  *   object              the Python argument to bind
  *   numpy_type          NPY_* element selector the plan chose for this array
+ *   expected_itemsize   required byte width for fixed character elements, or
+ *                       zero when the NumPy type selector is sufficient
  *   rank                number of contract axes, and the length of `fixed`
  *                       and `extents`
  *   minimum_rank        smallest accepted runtime rank; equals `rank` unless
@@ -786,6 +1022,7 @@ static inline int prik_array_validate(
  *                       -1 when the axis is free
  *   data                receives the pointer passed to the native entrypoint
  *   extents             receives one extent per contract axis
+ *   itemsize            optionally receives the element width in bytes
  *
  * Returns 0 on success, or -1 with a Python exception set.
  */
@@ -793,6 +1030,7 @@ static inline int prik_array_validate(
 PRIK_NO_INLINE static int prik_bind_array(
     PyObject *object,
     int numpy_type,
+    size_t expected_itemsize,
     int rank,
     int minimum_rank,
     int maximum_rank,
@@ -804,7 +1042,8 @@ PRIK_NO_INLINE static int prik_bind_array(
     int flatten_axis,
     const long long *fixed,
     void **data,
-    int64_t *extents)
+    int64_t *extents,
+    int64_t *itemsize)
 {
     int axis;
     if (PyArray_Check(object)) {
@@ -812,6 +1051,14 @@ PRIK_NO_INLINE static int prik_bind_array(
         if (prik_array_validate_ndarray(
                 array, numpy_type, minimum_rank, maximum_rank, layout,
                 require_contiguous, require_writeable, python_type, argument_name) < 0) {
+            return -1;
+        }
+        if (expected_itemsize != 0 && (size_t)PyArray_ITEMSIZE(array) != expected_itemsize) {
+            PyErr_Format(
+                PyExc_TypeError,
+                "Argument %s must have NumPy bytes dtype itemsize %zu",
+                argument_name,
+                expected_itemsize);
             return -1;
         }
         for (axis = 0; axis < rank; ++axis) {
@@ -825,6 +1072,9 @@ PRIK_NO_INLINE static int prik_bind_array(
             }
         }
         *data = PyArray_DATA(array);
+        if (itemsize != NULL) {
+            *itemsize = (int64_t)PyArray_ITEMSIZE(array);
+        }
         for (axis = 0; axis < flatten_axis; ++axis) {
             extents[axis] = (int64_t)PyArray_DIM(array, axis);
         }

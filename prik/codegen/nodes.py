@@ -356,6 +356,7 @@ class FortranTypeDefinition(StageRecord):
 
     name: str
     components: tuple[FortranDeclaration, ...] = ()
+    sequence: bool = False
 
 
 @dataclass
@@ -388,6 +389,9 @@ class FortranAllocate(StageRecord):
     target: str
     extents: tuple[CodeExpression, ...] = ()
     status: str | None = None
+    # An allocate-object with a deferred length type parameter is rejected
+    # without a type-spec, SOURCE or MOLD, so policy plans the spec text.
+    type_spec: str | None = None
 
 
 @dataclass
@@ -395,6 +399,7 @@ class FortranDeallocate(StageRecord):
     """One explicit native deallocation selected by completed handle policy."""
 
     target: str
+    status: str | None = None
 
 
 @dataclass

@@ -102,8 +102,10 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
     ) in c_source
     assert "NPY_FLOAT64, 1, 15, PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F" in c_source
     assert "bound_values_rank = (int64_t)PyArray_NDIM" in c_source
-    assert "NPY_STRING, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS" in c_source
-    assert "bound_values_itemsize != 8" in c_source
+    # The shared binder takes the declared character width alongside the rank
+    # bounds, so a fixed-width character array is checked there rather than by
+    # a separate itemsize comparison.
+    assert "NPY_STRING, 8, 1, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS" in c_source
     assert "real(c_double), dimension(..) :: values" in bridge_source
     assert "select case (values_rank)" not in bridge_source
     assert "character(kind=c_char, len=8), pointer, contiguous, dimension(:) :: values" in bridge_source

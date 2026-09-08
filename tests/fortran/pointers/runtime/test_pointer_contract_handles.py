@@ -205,3 +205,27 @@ def test_non_array_descriptor_and_ordinary_array_annotations_are_not_factories()
         contracts.Pointer[contracts.Float64[...]]()
     with pytest.raises(TypeError, match="explicit native length and encoding"):
         contracts.String()
+
+
+def test_character_array_contracts_create_fixed_and_deferred_handle_types():
+    fixed = contracts.Pointer[contracts.String[4][:, :]]()
+    deferred_pointer = contracts.Pointer[contracts.String[:][:]]()
+    deferred_allocatable = contracts.Allocatable[contracts.String[:][:]]()
+
+    assert fixed.dtype == np.dtype("S4")
+    assert fixed.rank == 2
+    assert deferred_pointer.dtype == np.dtype("S0")
+    assert deferred_pointer.to_numpy_policy == "unsupported"
+    assert deferred_allocatable.dtype == np.dtype("S0")
+
+    for width in (True, 0, -1):
+        with pytest.raises(TypeError, match="positive integer width or ':'"):
+            contracts.Pointer[contracts.String[width][:]]()
+
+
+def test_unattached_character_pointer_association_is_refused_instead_of_deferred():
+    source = contracts.Pointer[contracts.String[4][:]]()
+    target = contracts.Pointer[contracts.String[4][:]]()
+
+    with pytest.raises(TypeError, match="target handle to be attached"):
+        target.associate(source)

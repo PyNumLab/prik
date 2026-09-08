@@ -83,6 +83,7 @@ from prik.policy.models import (
     NativeArrayOperation,
     NativeArrayOutputProjection,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
@@ -2856,11 +2857,7 @@ class WrapperGenerator:
     def _expected_native_descriptor_data_action(self, plan: ArgumentTransferPlan) -> BridgeDataAction:
         """Distinguish call-local facts from persistent projected descriptors."""
         handle = plan.native_array_handle
-        if (
-            handle is not None
-            and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-            and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-        ):
+        if handle is not None and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
             return BridgeDataAction.DIRECT_TRANSFER
         return BridgeDataAction.ASSOCIATE_VIEW
 
@@ -2968,10 +2965,7 @@ class WrapperGenerator:
             for name, actual, required in expected
             if actual is not required
         )
-        projected = (
-            handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-            and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-        )
+        projected = handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
         expected_codegen = CodegenAction.IN_PLACE_ARGUMENT if projected else CodegenAction.CALL_LOCAL_INPUT
         if plan.binding.codegen_action is not expected_codegen:
             diagnostics.append(
@@ -2994,10 +2988,7 @@ class WrapperGenerator:
             )
         expected_destruction = (
             DestructionPolicy.CALLER
-            if (
-                handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-                and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-            )
+            if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
             else DestructionPolicy.NONE
         )
         if plan.destruction_policy is not expected_destruction:
@@ -3088,7 +3079,9 @@ class WrapperGenerator:
             NativeArrayOperation.DESTROY,
         }
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            required.update({NativeArrayOperation.ASSOCIATE, NativeArrayOperation.DESCRIPTOR})
+            required.add(NativeArrayOperation.ASSOCIATE)
+            if handle.descriptor_inquiries:
+                required.add(NativeArrayOperation.DESCRIPTOR)
         diagnostics = []
         complete = len(set(operations)) == len(operations) and required.issubset(operations)
         if not complete:
@@ -3108,6 +3101,7 @@ class WrapperGenerator:
         default = handle.default_handle
         expected_owner_role = {
             NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: True,
+            NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER: True,
         }[default.construction]
         owner_role = True if default.owner_storage_role is not None else None
         diagnostics = []
@@ -3126,6 +3120,13 @@ class WrapperGenerator:
         ):
             diagnostics.append(
                 self._diagnostic(owner_path, "inconsistent-default-handle-descriptor-abi", handle.handoff.abi)
+            )
+        if (
+            default.construction is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
+            and handle.owner_storage is not NativeArrayOwnerStorage.FORTRAN_OWNER
+        ):
+            diagnostics.append(
+                self._diagnostic(owner_path, "inconsistent-default-handle-owner-storage", handle.owner_storage)
             )
         return tuple(diagnostics)
 
@@ -3369,6 +3370,7 @@ class WrapperGenerator:
         """Dispatch exact role validation by typed descriptor ABI."""
         handlers = {
             NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR: self._direct_descriptor_diagnostics,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER: self._fortran_owner_diagnostics,
             NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE: self._owned_descriptor_diagnostics,
         }
         try:
@@ -3401,6 +3403,19 @@ class WrapperGenerator:
         handoff = handle.handoff
         if handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None:
             return (self._diagnostic(owner_path, "invalid-owned-native-descriptor-roles", None),)
+        return ()
+
+    def _fortran_owner_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate an opaque owner without treating it as descriptor storage."""
+        handoff = handle.handoff
+        if handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None:
+            return (self._diagnostic(owner_path, "invalid-fortran-owner-roles", None),)
+        if handle.owner_type_name is None or handle.owner_signature == 0 or not handle.call_lease:
+            return (self._diagnostic(owner_path, "incomplete-fortran-owner-identity", None),)
         return ()
 
     def _native_descriptor_presence_diagnostics(

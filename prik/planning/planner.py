@@ -2213,6 +2213,7 @@ class WrapperPlanner(ClassVisitor):
             require_native_byte_order=policy.require_native_byte_order,
             require_aligned=policy.require_aligned,
             require_contiguous=policy.require_contiguous,
+            call_lease=policy.call_lease,
             flatten_storage=policy.flatten_storage,
             flat_axis=policy.flat_axis,
         )
@@ -2244,6 +2245,7 @@ class WrapperPlanner(ClassVisitor):
             owner=policy.owner,
             owner_retention=policy.owner_retention,
             descriptor_ownership=policy.descriptor_ownership,
+            owner_storage=policy.owner_storage,
             borrowed=policy.borrowed,
             getter_behavior=policy.getter_behavior,
             setter_action=policy.setter_action,
@@ -2259,6 +2261,11 @@ class WrapperPlanner(ClassVisitor):
             nullable=policy.nullable,
             optional_absent=policy.optional_absent,
             storage_mode=policy.storage_mode,
+            element_length_argument=policy.element_length_argument,
+            owner_type_name=policy.owner_type_name,
+            owner_signature=policy.owner_signature,
+            requires_deferred_character_pointer_support=policy.requires_deferred_character_pointer_support,
+            call_lease=policy.call_lease,
             operations=policy.operations,
             required_headers=policy.required_headers,
             array=array_plan,
@@ -2274,7 +2281,11 @@ class WrapperPlanner(ClassVisitor):
         """Name completed caller-construction storage and operation roles."""
         owner_storage_role = (
             f"{owner_path}:default-owner-storage"
-            if policy.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            if policy.construction
+            in {
+                NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR,
+                NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER,
+            }
             else None
         )
         return NativeArrayDefaultHandlePlan(
@@ -2310,7 +2321,10 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
     ) -> str | None:
         """Name call-local or direct descriptor storage when one crosses the ABI."""
-        if policy.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE:
+        if policy.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }:
             return None
         return f"{owner_path}:descriptor"
 
@@ -2328,7 +2342,10 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
     ) -> str | None:
         """Name persistent wrapper-owned descriptor storage."""
-        if policy.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE:
+        if policy.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }:
             return f"{owner_path}:owner-storage"
         return None
 

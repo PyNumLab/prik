@@ -84,6 +84,7 @@ from prik.policy.models import (
     NativeArrayOutputProjection,
     NativeArrayResultAllocation,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
@@ -523,6 +524,7 @@ class NativeArrayActualPlan(StageRecord):
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    call_lease: bool
     flatten_storage: bool = False
     flat_axis: int | None = None
 
@@ -576,6 +578,7 @@ class NativeArrayHandlePlan(StageRecord):
     owner: OwnershipOwner
     owner_retention: NativeArrayOwnerRetention
     descriptor_ownership: NativeArrayDescriptorOwnership
+    owner_storage: NativeArrayOwnerStorage
     borrowed: bool
     getter_behavior: NativeArrayGetterBehavior
     setter_action: SetterAction
@@ -587,17 +590,20 @@ class NativeArrayHandlePlan(StageRecord):
     destroy_behavior: NativeArrayDestroyBehavior
     extraction_action: NativeArrayExtractionAction
     descriptor_interop: NativeArrayDescriptorInterop
-    # A handle answers its inquiries -- shape, state, element width,
-    # contiguity, the NumPy view -- from the live descriptor its entry point
-    # supplies, unless its declaration cannot cross a bind(C) descriptor
-    # interface at all. A deferred-length character pointer is that case: the
-    # standard does not allow such a dummy in a bind(C) interface, and GNU
-    # Fortran mistranslates the descriptor rather than rejecting it, so those
-    # inquiries stay on generated Fortran procedures of their own.
+    # Most inquiries use a live descriptor supplied to a shared consumer.
+    # Declarations without a reliable descriptor projection instead use
+    # planned Fortran inquiry procedures.
     descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: StorageMode
+    # Allocation of a deferred-length character entity carries a runtime width
+    # beside its extents; every other entity allocates from the shape alone.
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    requires_deferred_character_pointer_support: bool
+    call_lease: bool
     operations: tuple[NativeArrayOperation, ...]
     required_headers: tuple[str, ...]
     array: ArrayHandoffPlan

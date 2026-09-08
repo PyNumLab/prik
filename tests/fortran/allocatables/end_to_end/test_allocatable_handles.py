@@ -447,9 +447,21 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
     # comes from the array rather than from a width the binding assumed.
     for name, width in (("fixed_words", 5), ("deferred_words", 6)):
         assert getattr(module, name).dtype == np.dtype(f"S{width}"), name
+
+    fixed = module.fixed_words
+    fixed.resize(2)
+    assert fixed.dtype == np.dtype("S5")
+    with pytest.raises(TypeError, match="fixed element width"):
+        fixed.resize(2, element_length=4)
+
+    deferred = module.deferred_words
+    deferred.resize(3, element_length=4)
+    assert deferred.shape == (3,)
+    assert deferred.dtype == np.dtype("S4")
+    deferred.resize(4, element_length=6)
     # A deferred-length actual reaches an allocatable dummy carrying both, so
     # the bound and the width are read back out of the array itself.
-    assert module.deferred_word_bound_and_width(module.deferred_words) == np.int32(506)
+    assert module.deferred_word_bound_and_width(deferred) == np.int32(106)
 
 
 def test_fixed_character_projection_reports_absence(tmp_path: Path):

@@ -73,7 +73,7 @@ def _empty_descriptor_facts(dtype: Any, rank: int) -> tuple[int, ...]:
     Every axis is empty, so the bounds describe nothing and no claim is made
     about an array that does not exist.
     """
-    itemsize = np.dtype(dtype).itemsize
+    itemsize = 0 if dtype is None else np.dtype(dtype).itemsize
     return (0, itemsize, int(rank), *((0, 0, itemsize) * int(rank)))
 
 
@@ -110,6 +110,8 @@ def _native_array_handle_from_generated_dispatch(
     to_numpy_policy: str = "borrowed_view",
     native_backend: Any = None,
     generation: int | None = None,
+    element_length_argument: bool = False,
+    owner_association: bool = False,
 ) -> NativeArrayHandleBase:
     """Build a runtime handle from one generated operation dispatcher.
 
@@ -136,6 +138,8 @@ def _native_array_handle_from_generated_dispatch(
             descriptor_ownership=descriptor_ownership,
             to_numpy_policy=to_numpy_policy,
             generation=generation,
+            element_length_argument=element_length_argument,
+            owner_association=owner_association,
         )
         handle._native_backend = native_backend
         return handle
@@ -150,6 +154,8 @@ def _native_array_handle_from_contract(
     descriptor_kind: str,
     dtype: Any,
     rank: int,
+    *,
+    owner_association: bool = False,
 ) -> NativeArrayHandleBase:
     """Create one owned, initially empty descriptor handle from a contract.
 
@@ -173,6 +179,8 @@ def _native_array_handle_from_contract(
         return state["facts"][0] != 0
 
     def current_view() -> np.ndarray | None:
+        if dtype is None:
+            return None
         return _numpy_view_from_descriptor_facts(state["facts"], dtype)
 
     def clear() -> None:
@@ -195,6 +203,7 @@ def _native_array_handle_from_contract(
         "associated": present,
         "nullify": clear,
         "_associate_facts": associate_facts,
+        "element_length": lambda: state["facts"][1],
     }
 
     def dispatch(operation: str, args: tuple[Any, ...]) -> Any:
@@ -202,10 +211,22 @@ def _native_array_handle_from_contract(
 
     try:
         handle_cls, capabilities = {
-            "allocatable": (AllocatableArray, {"allocated", "shape", "descriptor", "to_numpy", "destroy"}),
+            "allocatable": (
+                AllocatableArray,
+                {"allocated", "shape", "descriptor", "to_numpy", "destroy", "element_length"},
+            ),
             "pointer": (
                 PointerArray,
-                {"associated", "shape", "descriptor", "to_numpy", "destroy", "nullify", "_associate_facts"},
+                {
+                    "associated",
+                    "shape",
+                    "descriptor",
+                    "to_numpy",
+                    "destroy",
+                    "nullify",
+                    "_associate_facts",
+                    "element_length",
+                },
             ),
         }[descriptor_kind]
     except KeyError:
@@ -216,7 +237,8 @@ def _native_array_handle_from_contract(
         invoke=dispatch,
         capabilities=capabilities,
         descriptor_ownership="owned",
-        to_numpy_policy="borrowed_view",
+        to_numpy_policy="unsupported" if owner_association and dtype is None else "borrowed_view",
+        owner_association=owner_association,
     )
     handle._contract_default = True
     return handle
@@ -234,6 +256,8 @@ def _bind_contract_native_array_handle(
     to_numpy_policy: str | None,
     generation: int | None = None,
     native_backend: Any = None,
+    element_length_argument: bool = False,
+    owner_association: bool = False,
 ) -> None:
     """Attach generated persistent descriptor storage to a contract handle.
 
@@ -253,11 +277,19 @@ def _bind_contract_native_array_handle(
         raise TypeError(f"cannot attach {descriptor_kind} descriptor storage to {handle.descriptor_kind} handle")
     if handle.rank != int(rank):
         raise ValueError(f"{descriptor_kind} handle rank {handle.rank} does not match generated rank {int(rank)}")
-    if not handle._dtype_matches(dtype):
+    if dtype is None and handle._dtype is not None:
+        raise TypeError(
+            f"{descriptor_kind} handle dtype {handle.dtype!r} does not match a deferred-length character array"
+        )
+    if dtype is not None and not handle._dtype_matches(dtype):
         raise TypeError(f"{descriptor_kind} handle dtype {handle.dtype!r} does not match generated dtype {dtype!r}")
     # An association taken before there was anywhere native to record it is
     # replayed onto the storage that just arrived.
-    pending = handle._call_operation("descriptor") if isinstance(handle, PointerArray) and handle.associated else None
+    pending = (
+        handle._call_operation("descriptor")
+        if isinstance(handle, PointerArray) and not handle._owner_association and handle.associated
+        else None
+    )
     generated = _native_array_handle_from_generated_dispatch(
         descriptor_kind,
         dtype,
@@ -269,6 +301,8 @@ def _bind_contract_native_array_handle(
         to_numpy_policy=handle._to_numpy_policy if to_numpy_policy is None else to_numpy_policy,
         native_backend=native_backend,
         generation=generation,
+        element_length_argument=element_length_argument,
+        owner_association=owner_association,
     )
     handle._invoke = generated._invoke
     handle._capabilities = generated._capabilities
@@ -276,6 +310,8 @@ def _bind_contract_native_array_handle(
     handle._descriptor_ownership = generated._descriptor_ownership
     handle._to_numpy_policy = generated._to_numpy_policy
     handle._generation = generated._generation
+    handle._element_length_argument = generated._element_length_argument
+    handle._owner_association = generated._owner_association
     # The storage just attached is the wrapper's own and lives as long as the
     # handle, so the handle can publish it the way a module array publishes
     # its entity.  Later calls then reach it from C without coming back here.
@@ -328,6 +364,8 @@ class NativeArrayHandleBase:
         descriptor_ownership: str,
         to_numpy_policy: str = "borrowed_view",
         generation: int | None = None,
+        element_length_argument: bool = False,
+        owner_association: bool = False,
     ) -> None:
         self._closed = True
         if rank < 0:
@@ -351,6 +389,8 @@ class NativeArrayHandleBase:
         self._descriptor_ownership = descriptor_ownership
         self._to_numpy_policy = to_numpy_policy
         self._generation = generation
+        self._element_length_argument = bool(element_length_argument)
+        self._owner_association = bool(owner_association)
         # Optional capsule publishing this entity's native descriptor backend.
         self._native_backend: Any = None
         self._contract_default = False
@@ -362,6 +402,41 @@ class NativeArrayHandleBase:
         if self._dtype is not None:
             return self._dtype
         return self._deferred_character_dtype()
+
+    def _allocation_arguments(
+        self,
+        shape: Sequence[int] | int,
+        element_length: int | None,
+    ) -> tuple[tuple[int, ...], int | None]:
+        """Normalize one allocation request against the completed contract.
+
+        A deferred-length character entity has no width to fall back on, so the
+        caller supplies it; every other entity already knows its element width
+        and must not be given a second, conflicting one.
+        """
+        extents = self._normalize_shape(shape)
+        if not self._element_length_argument:
+            if element_length is not None:
+                raise TypeError(
+                    f"{self.descriptor_kind} handle element_length is only accepted by a deferred-length "
+                    f"character array; this handle has a fixed element width"
+                )
+            return extents, None
+        if element_length is None:
+            raise TypeError(
+                f"{self.descriptor_kind} handle is a deferred-length character array, so allocation needs an "
+                f"element_length; pass element_length=<width>"
+            )
+        try:
+            width = operator.index(element_length)
+        except TypeError:
+            raise TypeError(
+                f"{self.descriptor_kind} handle element_length must be an integer; "
+                f"received {type(element_length).__name__}"
+            ) from None
+        if width < 0:
+            raise ValueError(f"{self.descriptor_kind} handle element_length must not be negative; received {width}")
+        return extents, width
 
     def _deferred_character_dtype(self) -> np.dtype:
         """Resolve one deferred character width from generated native state."""
@@ -482,7 +557,10 @@ class NativeArrayHandleBase:
         if invoke is None:
             raise ReferenceError(f"{self.descriptor_kind} handle is closed")
         if name in {"allocate", "resize"}:
-            args = tuple(np.int64(extent) for extent in args[0])
+            extents, element_length = args
+            args = tuple(np.int64(extent) for extent in extents)
+            if element_length is not None:
+                args = (*args, np.int64(element_length))
         if self.owned and self._owner is not None:
             args = (self._owner, *args)
         return invoke(name, args)
@@ -568,6 +646,8 @@ class AllocatableArray(NativeArrayHandleBase):
         descriptor_ownership: str = "borrowed",
         to_numpy_policy: str = "borrowed_view",
         generation: int | None = None,
+        element_length_argument: bool = False,
+        owner_association: bool = False,
     ) -> None:
         super().__init__(
             dtype=dtype,
@@ -579,6 +659,8 @@ class AllocatableArray(NativeArrayHandleBase):
             descriptor_ownership=descriptor_ownership,
             to_numpy_policy=to_numpy_policy,
             generation=generation,
+            element_length_argument=element_length_argument,
+            owner_association=owner_association,
         )
 
     @property
@@ -591,8 +673,8 @@ class AllocatableArray(NativeArrayHandleBase):
     def deallocate(self) -> Any:
         return self._call_operation("deallocate")
 
-    def resize(self, shape: Sequence[int] | int) -> Any:
-        return self._call_operation("resize", self._normalize_shape(shape))
+    def resize(self, shape: Sequence[int] | int, *, element_length: int | None = None) -> Any:
+        return self._call_operation("resize", *self._allocation_arguments(shape, element_length))
 
 
 class PointerArray(NativeArrayHandleBase):
@@ -611,6 +693,8 @@ class PointerArray(NativeArrayHandleBase):
         descriptor_ownership: str = "borrowed",
         to_numpy_policy: str = "borrowed_view",
         generation: int | None = None,
+        element_length_argument: bool = False,
+        owner_association: bool = False,
     ) -> None:
         super().__init__(
             dtype=dtype,
@@ -622,6 +706,8 @@ class PointerArray(NativeArrayHandleBase):
             descriptor_ownership=descriptor_ownership,
             to_numpy_policy=to_numpy_policy,
             generation=generation,
+            element_length_argument=element_length_argument,
+            owner_association=owner_association,
         )
 
     @property
@@ -654,6 +740,19 @@ class PointerArray(NativeArrayHandleBase):
             raise ReferenceError("source pointer handle is closed")
         if self.rank != other.rank:
             raise ValueError(f"pointer handle rank {self.rank} does not match source rank {other.rank}")
+        if self._owner_association:
+            if not other._owner_association:
+                raise TypeError("Fortran-owned pointer association requires another compatible owner handle")
+            if self._dtype is not None and self._dtype != other._dtype:
+                raise TypeError(f"pointer handle dtype {self.dtype!r} does not match source dtype {other.dtype!r}")
+            if self._contract_default:
+                raise TypeError(
+                    "Fortran-owned pointer association requires the target handle to be attached to a native "
+                    "argument before associate() is called"
+                )
+            if other._native_backend is None:
+                raise TypeError("pointer association source has no generated Fortran owner")
+            return self._call_operation("associate", other._native_backend)
         if not self._dtype_matches(other.dtype):
             raise TypeError(f"pointer handle dtype {self.dtype!r} does not match source dtype {other.dtype!r}")
         facts = other._association_facts()
@@ -666,14 +765,14 @@ class PointerArray(NativeArrayHandleBase):
     def nullify(self) -> Any:
         return self._call_operation("nullify")
 
-    def allocate(self, shape: Sequence[int] | int) -> Any:
-        return self._call_operation("allocate", self._normalize_shape(shape))
+    def allocate(self, shape: Sequence[int] | int, *, element_length: int | None = None) -> Any:
+        return self._call_operation("allocate", *self._allocation_arguments(shape, element_length))
 
     def deallocate(self) -> Any:
         return self._call_operation("deallocate")
 
-    def resize(self, shape: Sequence[int] | int) -> Any:
-        return self._call_operation("resize", self._normalize_shape(shape))
+    def resize(self, shape: Sequence[int] | int, *, element_length: int | None = None) -> Any:
+        return self._call_operation("resize", *self._allocation_arguments(shape, element_length))
 
 
 def _native_array_backend_for_binding(

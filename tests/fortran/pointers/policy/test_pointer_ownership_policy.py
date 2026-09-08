@@ -389,7 +389,7 @@ class box:
     assert set(field_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
-def test_deferred_character_pointer_arrays_require_a_legal_descriptor_interface():
+def test_deferred_character_pointer_arguments_select_an_opaque_fortran_owner():
     module = parse_pyi_text(
         """
 deferred_ptr: Pointer[String[:][:]]
@@ -408,10 +408,15 @@ def inspect(values: Pointer[String[:][:]]) -> None: ...
     assert module_policy.descriptor_inquiries is False
     assert module_policy.descriptor_interop == "none"
     assert set(module_policy.operations) == {"associated", "deallocate", "nullify"}
-    assert argument_policy.is_blocked is True
+    assert argument_policy.is_blocked is False
     assert argument_policy.descriptor_inquiries is False
     assert argument_policy.descriptor_interop == "none"
-    assert "cannot cross a bind(C) descriptor interface" in argument_policy.blocker
+    assert argument_policy.owner_storage == "fortran_owner"
+    assert argument_policy.default_construction == "lazy_fortran_owner"
+    assert argument_policy.owner_type_name
+    assert argument_policy.owner_signature
+    assert argument_policy.requires_deferred_character_pointer_support is True
+    assert set(argument_policy.operations) == {"associate", "associated", "nullify"}
 
 
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():

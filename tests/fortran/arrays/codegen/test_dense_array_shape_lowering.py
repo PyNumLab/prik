@@ -176,18 +176,18 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
 
     assert "bound_values_bind_fixed[0] = (long long)(bound_rows);" in c_source
     assert "bound_values_bind_fixed[1] = (long long)(bound_cols);" in c_source
-    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 2, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
-    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 2, PRIK_ARRAY_LAYOUT_C_CONTIGUOUS" in c_source
+    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 0, 2, 2, 2, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
+    assert "prik_bind_array(bound_values_obj, NPY_FLOAT64, 0, 2, 2, 2, PRIK_ARRAY_LAYOUT_C_CONTIGUOUS" in c_source
     assert "bound_values_bind_fixed[0] = -1;" in c_source
     assert (
-        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 1, 1, 15, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
+        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 0, 1, 1, 15, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, "
         '1, 1, "numpy.float64", "values", 0, '
-        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
+        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents, NULL)"
     ) in c_source
     assert (
-        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 2, 2, 15, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS, "
+        "prik_bind_array(bound_values_obj, NPY_FLOAT64, 0, 2, 2, 15, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS, "
         '1, 1, "numpy.float64", "values", 1, '
-        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents)"
+        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents, NULL)"
     ) in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
     assert "call c_f_pointer(bound_values, values, [values_extent_1, values_extent_0])" in bridge_source

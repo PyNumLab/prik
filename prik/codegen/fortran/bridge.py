@@ -51,6 +51,7 @@ from prik.policy.models import (
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
     NativeArrayOperation,
+    NativeArrayOwnerStorage,
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
@@ -339,13 +340,17 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranUse("iso_c_binding", self._iso_c_symbols(plan)),
                 *self._native_module_uses(plan),
             ),
-            type_definitions=self._derived_holder_definitions(plan),
+            type_definitions=(
+                *self._derived_holder_definitions(plan),
+                *self._native_array_owner_definitions(plan),
+            ),
             interfaces=(
                 *self._derived_call_interfaces(plan),
                 *self._prototype_interfaces(plan),
                 *self._external_interfaces(plan),
                 *self._module_descriptor_callback_interfaces(plan),
                 *self._derived_array_callback_interfaces(plan),
+                *self._native_array_owner_callback_interfaces(plan),
                 *self._module_array_capture_interfaces(plan),
                 *self._allocator_interfaces(plan),
             ),
@@ -527,6 +532,50 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return (*allocatable, *pointers)
 
+    def _native_array_owner_arguments(self, plan: ModulePlan) -> tuple[ArgumentTransferPlan, ...]:
+        """Return every transfer whose native entity lives in a generated owner.
+
+        A result counts as much as an argument: the entity it returns has the
+        same representation, so a module that only returns one still has to
+        define the layout that holds it.
+        """
+        return tuple(
+            transfer
+            for function in self._functions(plan)
+            for transfer in (*function.arguments, *function.results)
+            if transfer.native_array_handle is not None
+            and transfer.native_array_handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
+        )
+
+    def _native_array_owner_definitions(self, plan: ModulePlan) -> tuple[FortranTypeDefinition, ...]:
+        """Define each planned Fortran owner layout once per canonical signature."""
+        definitions: dict[str, FortranTypeDefinition] = {}
+        for argument in self._native_array_owner_arguments(plan):
+            handle = argument.native_array_handle
+            if handle is None or handle.owner_type_name is None or handle.array.rank is None:
+                raise ValueError(f"Fortran owner {argument.owner_path!r} has no completed layout")
+            # A result has no call slot to read the width from; the completed
+            # array facts carry the same declared width, and None means the
+            # length is deferred in both.
+            slot = getattr(argument, "projected_call_slot", None)
+            length = slot.character_length if slot is not None else handle.array.itemsize
+            element_type = f"character(kind=c_char, len={':' if length is None else length})"
+            definition = FortranTypeDefinition(
+                handle.owner_type_name,
+                (
+                    FortranDeclaration(
+                        "data",
+                        element_type,
+                        (handle.descriptor_kind.value, self._array_dimension_attribute(handle.array.rank)),
+                    ),
+                ),
+                sequence=True,
+            )
+            prior = definitions.setdefault(handle.owner_type_name, definition)
+            if prior != definition:
+                raise ValueError(f"Fortran owner type {handle.owner_type_name!r} has conflicting layouts")
+        return tuple(definitions.values())
+
     def _visit_NamespacePlan(
         self,
         plan: NamespacePlan,
@@ -618,6 +667,7 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
             body=(
                 *self._character_local_initializers(plan),
+                *self._native_array_owner_initializers(plan),
                 *self._descriptor_initializers(plan),
                 *self._required_descriptor_initializers(plan),
                 *self._logical_scalar_argument_initializers(plan),
@@ -1764,6 +1814,12 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._lower_result_none(plan)
         if result.scalar_descriptor is not None:
             return self._lower_result_scalar_descriptor(plan, result)
+        handle = result.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            # The owner address is the entrypoint's value: an opaque pointer
+            # the binding receives as a return rather than through storage it
+            # had to allocate first.
+            return "result", "type(c_ptr)"
         if self._is_owned_native_array_result(result):
             return self._lower_result_none(plan)
         action = result.bridge.codegen_action
@@ -1845,12 +1901,6 @@ class FortranBridgeGenerator(ClassVisitor):
             return ()
         if handle.array.rank is None:
             raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
-        if self._is_owned_deferred_character_result(result):
-            return (
-                FortranParameter("result", "type(c_ptr)"),
-                FortranParameter("result_itemsize", "integer(c_int64_t)"),
-                *(FortranParameter(f"result_extent_{axis}", "integer(c_int64_t)") for axis in range(handle.array.rank)),
-            )
         dimension = self._array_dimension_attribute(handle.array.rank)
         return (
             FortranParameter(
@@ -1892,14 +1942,22 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         function: FunctionPlan,
     ) -> tuple[FortranFunction, ...]:
-        """Lower typed operations used after lazy caller-handle attachment."""
+        """Lower operations used after lazy caller-handle attachment."""
         procedures = []
+        # A returned owner publishes the same operations a caller-created one
+        # does, so results are lowered alongside arguments here.
+        for result in function.results:
+            handle = result.native_array_handle
+            if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+                procedures.extend(self._fortran_owner_argument_operations(result))
         for argument in function.arguments:
             handle = argument.native_array_handle
-            if (
-                handle is None
-                or handle.default_handle.construction is not NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
-            ):
+            if handle is None:
+                continue
+            if handle.default_handle.construction is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER:
+                procedures.extend(self._fortran_owner_argument_operations(argument))
+                continue
+            if handle.default_handle.construction is not NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR:
                 continue
             for entrypoint in self._generated_support_procedure_entrypoints_for(
                 argument.owner_path, "native_array:owned:"
@@ -1910,9 +1968,338 @@ class FortranBridgeGenerator(ClassVisitor):
                     procedures.append(procedure)
         return tuple(procedures)
 
+    def _fortran_owner_argument_operations(self, argument: ArgumentTransferPlan) -> tuple[FortranFunction, ...]:
+        """Lower creation, access, mutation, and destruction for one owner type."""
+        procedures = []
+        for entrypoint in self._generated_support_procedure_entrypoints_for(argument.owner_path, "native_array:owner:"):
+            operation = entrypoint.role.rsplit(":", 1)[-1]
+            procedures.append(self._fortran_owner_argument_operation(argument, operation))
+        return tuple(procedures)
+
+    def _fortran_owner_argument_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        operation: str,
+    ) -> FortranFunction:
+        """Dispatch one planned operation over a generated owner component."""
+        handle = argument.native_array_handle
+        if handle is None or handle.owner_type_name is None or handle.array.rank is None:
+            raise ValueError(f"Fortran owner {argument.owner_path!r} has no completed plan")
+        if operation in {"allocated", "associated", "contiguous"}:
+            return self._fortran_owner_state_operation(argument, handle, operation)
+        handlers = {
+            "create": self._fortran_owner_create_operation,
+            "descriptor": self._fortran_owner_descriptor_operation,
+            "adopt": self._fortran_owner_adopt_operation,
+            "destroy": self._fortran_owner_destroy_operation,
+            "element_length": self._fortran_owner_element_length_operation,
+            "shape": self._fortran_owner_shape_operation,
+            "associate": self._fortran_owner_associate_operation,
+            "allocate": self._fortran_owner_allocation_operation,
+            "resize": self._fortran_owner_allocation_operation,
+            "deallocate": self._fortran_owner_deallocate_operation,
+            "nullify": self._fortran_owner_nullify_operation,
+        }
+        try:
+            handler = handlers[operation]
+        except KeyError:
+            raise ValueError(f"Unsupported Fortran-owner operation {operation!r}") from None
+        return handler(argument, handle, operation)
+
+    def _fortran_owner_operation_parts(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> tuple[str, tuple[FortranDeclaration, ...], tuple[FortranCall, ...], str]:
+        """Return the names shared by one generated owner operation."""
+        name = self._fortran_owner_operation_name(argument, operation)
+        owner_declarations = (FortranDeclaration("owner", f"type({handle.owner_type_name})", ("pointer",)),)
+        owner_initializers = (FortranCall("c_f_pointer", (CodeExpression("owner_address"), CodeExpression("owner"))),)
+        presence = "associated" if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER else "allocated"
+        present = f"{presence}(owner%data)"
+        return name, owner_declarations, owner_initializers, present
+
+    def _fortran_owner_create_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, _initializers, _present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        created = []
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+            created.append(FortranNullify("owner%data"))
+        created.append(FortranAssignment("result", CodeExpression("c_loc(owner)")))
+        return FortranFunction(
+            name=name,
+            result_name="result",
+            result_type="type(c_ptr)",
+            declarations=(*owner_declarations, FortranDeclaration("allocation_status", "integer(c_int)")),
+            body=(
+                FortranAssignment("result", CodeExpression("c_null_ptr")),
+                FortranAllocate("owner", status="allocation_status"),
+                FortranIf(CodeExpression("allocation_status == 0_c_int"), body=tuple(created)),
+            ),
+        )
+
+    def _fortran_owner_descriptor_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        callback_name = self._fortran_owner_callback_interface_name(argument)
+        callback = FortranCall("callback", (CodeExpression("owner%data"), CodeExpression("context")))
+        invocation = FortranIf(CodeExpression(present), body=(callback,))
+        return FortranFunction(
+            name=name,
+            declarations=(
+                *owner_declarations,
+                FortranDeclaration("callback", f"procedure({callback_name})", ("pointer",)),
+            ),
+            body=(
+                *owner_initializers,
+                FortranCall(
+                    "c_f_procpointer",
+                    (CodeExpression("callback_address"), CodeExpression("callback")),
+                ),
+                invocation,
+            ),
+            is_subroutine=True,
+        )
+
+    def _fortran_owner_adopt_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        """Move a call-created allocation from its C descriptor into the owner."""
+        name, declarations, initializers, _present = self._fortran_owner_operation_parts(argument, handle, operation)
+        return FortranFunction(
+            name=name,
+            declarations=declarations,
+            body=(*initializers, FortranCall("move_alloc", (CodeExpression("source"), CodeExpression("owner%data")))),
+            is_subroutine=True,
+        )
+
+    def _fortran_owner_destroy_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, _present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        return FortranFunction(
+            name=name,
+            declarations=owner_declarations,
+            body=(*owner_initializers, FortranDeallocate("owner")),
+            is_subroutine=True,
+        )
+
+    def _fortran_owner_state_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        expression = present if operation != "contiguous" else f".not. ({present}) .or. is_contiguous(owner%data)"
+        return FortranFunction(
+            name=name,
+            result_name="result",
+            result_type="logical(c_bool)",
+            declarations=owner_declarations,
+            body=(*owner_initializers, FortranAssignment("result", CodeExpression(expression))),
+        )
+
+    def _fortran_owner_element_length_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        return FortranFunction(
+            name=name,
+            result_name="result",
+            result_type="integer(c_int64_t)",
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                FortranIf(
+                    CodeExpression(present),
+                    body=(FortranAssignment("result", CodeExpression("len(owner%data, kind=c_int64_t)")),),
+                    else_body=(FortranAssignment("result", CodeExpression("0_c_int64_t")),),
+                ),
+            ),
+        )
+
+    def _fortran_owner_shape_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        present_body = tuple(
+            FortranAssignment(
+                f"extent_{axis}",
+                CodeExpression(f"size(owner%data, {axis + 1}, kind=c_int64_t)"),
+            )
+            for axis in range(handle.array.rank)
+        )
+        absent_body = tuple(
+            FortranAssignment(f"extent_{axis}", CodeExpression("0_c_int64_t")) for axis in range(handle.array.rank)
+        )
+        return FortranFunction(
+            name=name,
+            result_name="result",
+            result_type="logical(c_bool)",
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                FortranAssignment("result", CodeExpression(present)),
+                FortranIf(CodeExpression(present), body=present_body, else_body=absent_body),
+            ),
+        )
+
+    def _fortran_owner_associate_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, _present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        return FortranFunction(
+            name=name,
+            declarations=(
+                *owner_declarations,
+                FortranDeclaration("source", f"type({handle.owner_type_name})", ("pointer",)),
+            ),
+            body=(
+                *owner_initializers,
+                FortranCall("c_f_pointer", (CodeExpression("source_address"), CodeExpression("source"))),
+                FortranPointerAssignment("owner%data", CodeExpression("source%data")),
+            ),
+            is_subroutine=True,
+        )
+
+    def _fortran_owner_allocation_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        extents = tuple(CodeExpression(f"extent_{axis}") for axis in range(handle.array.rank))
+        prepare = (
+            FortranIf(CodeExpression(present), body=(FortranDeallocate("owner%data", status="status"),))
+            if operation == "resize"
+            else FortranIf(
+                CodeExpression(present),
+                body=(FortranAssignment("status", CodeExpression("1_c_int")),),
+            )
+        )
+        return FortranFunction(
+            name=name,
+            result_name="status",
+            result_type="integer(c_int)",
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                FortranAssignment("status", CodeExpression("0_c_int")),
+                prepare,
+                FortranIf(
+                    CodeExpression("status == 0_c_int"),
+                    body=(
+                        FortranAllocate(
+                            "owner%data",
+                            extents,
+                            status="status",
+                            type_spec=self._planned_allocation_type_spec(handle),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    def _fortran_owner_deallocate_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        return FortranFunction(
+            name=name,
+            result_name="status",
+            result_type="integer(c_int)",
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                FortranAssignment("status", CodeExpression("0_c_int")),
+                FortranIf(CodeExpression(present), body=(FortranDeallocate("owner%data", status="status"),)),
+            ),
+        )
+
+    def _fortran_owner_nullify_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        return FortranFunction(
+            name=name,
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                FortranIf(CodeExpression(present), body=(FortranNullify("owner%data"),)),
+            ),
+            is_subroutine=True,
+        )
+
+    def _fortran_owner_operation_name(self, argument: ArgumentTransferPlan, operation: str) -> str:
+        return self._generated_support_procedure_entrypoint(
+            argument.owner_path, f"native_array:owner:{operation}"
+        ).symbol_name
+
+    @staticmethod
+    def _fortran_owner_callback_interface_name(argument: ArgumentTransferPlan) -> str:
+        handle = argument.native_array_handle
+        if handle is None or handle.owner_type_name is None:
+            raise ValueError(f"Fortran owner {argument.owner_path!r} has no callback type")
+        return f"{handle.owner_type_name}_consumer"
+
     def _supports_owned_native_array_result_operations(self, result: ResultPlan) -> bool:
         """Return whether typed helper operations use a Fortran descriptor dummy."""
-        return self._is_owned_native_array_result(result) and not self._is_owned_deferred_character_result(result)
+        return (
+            result.native_array_handle is not None
+            and result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+        )
 
     def _owned_native_array_result_operation(
         self,
@@ -2637,14 +3024,33 @@ class FortranBridgeGenerator(ClassVisitor):
             is_subroutine=True,
         )
 
+    @staticmethod
+    def _planned_allocation_parameters(handle) -> tuple[FortranParameter, ...]:
+        """Return the allocation parameters the plan already named."""
+        parameters = tuple(
+            FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("value",)) for axis in range(handle.array.rank)
+        )
+        if not handle.element_length_argument:
+            return parameters
+        return (*parameters, FortranParameter("element_length", "integer(c_int64_t)", ("value",)))
+
+    @staticmethod
+    def _planned_allocation_type_spec(handle) -> str | None:
+        """Return the type-spec a deferred-length character allocation requires.
+
+        The width is the planned ``element_length`` argument; the bridge does
+        not choose it and has nowhere else to read it from.
+        """
+        if not handle.element_length_argument:
+            return None
+        return "character(kind=c_char, len=element_length)"
+
     def _module_native_array_shape_mutation_operation(self, plan: ModuleVariablePlan, operation) -> FortranFunction:
         """Allocate or resize one module descriptor through completed permissions."""
         handle = plan.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {plan.owner_path!r} has no mutation rank")
-        parameters = tuple(
-            FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("value",)) for axis in range(handle.array.rank)
-        )
+        parameters = self._planned_allocation_parameters(handle)
         extents = tuple(CodeExpression(f"extent_{axis}") for axis in range(handle.array.rank))
         native = self._native_variable_name(plan)
         body = (
@@ -2652,7 +3058,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 CodeExpression(self._module_native_array_presence_expression(plan)),
                 body=(FortranDeallocate(native),),
             ),
-            FortranAllocate(native, extents),
+            FortranAllocate(native, extents, type_spec=self._planned_allocation_type_spec(handle)),
         )
         name = self._module_native_array_operation_name(plan, operation)
         return FortranFunction(
@@ -3336,6 +3742,11 @@ class FortranBridgeGenerator(ClassVisitor):
         """Receive one standard descriptor as a typed allocatable/pointer dummy."""
         handle = plan.native_array_handle
         name = plan.entrypoint.parameter_name
+        if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            parameters = [FortranParameter(name, "type(c_ptr)", ("value",))]
+            if plan.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
+                parameters.append(FortranParameter(f"bound_{name}_present", "type(c_ptr)", ("value",)))
+            return tuple(parameters)
         attribute = "allocatable" if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
         parameters = [
             FortranParameter(
@@ -3924,9 +4335,14 @@ class FortranBridgeGenerator(ClassVisitor):
         """Store one completed native result expression through its handoff leaf."""
         direct_result = self._direct_result(plan)
         if self._uses_owned_direct_array_result_collector(plan):
+            target = (
+                "result_value"
+                if direct_result.native_array_handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
+                else "result"
+            )
             return FortranCall(
                 self._owned_direct_array_result_collector_name(),
-                (CodeExpression(expression), CodeExpression("result")),
+                (CodeExpression(expression), CodeExpression(target)),
             )
         if self._uses_allocatable_character_result_collector(direct_result):
             return FortranCall(
@@ -4118,6 +4534,9 @@ class FortranBridgeGenerator(ClassVisitor):
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
             return self._array_native_argument_expression(plan)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+            handle = plan.native_array_handle
+            if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+                return f"{name}_owner%data"
             return name
         if plan.entrypoint.optional_mode in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}:
             return f"{name}_descriptor"
@@ -4130,6 +4549,9 @@ class FortranBridgeGenerator(ClassVisitor):
         name = plan.entrypoint.parameter_name
         if plan.derived_call is not None:
             return f"bound_{name}_access /= 0_c_int"
+        handle = plan.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            return f"c_associated(bound_{name}_present)"
         if self._array_crosses_as_descriptor(plan):
             # The dummy is the array itself, and C omits it by passing no
             # descriptor at all, so Fortran's own inquiry is the condition.
@@ -4273,6 +4695,15 @@ class FortranBridgeGenerator(ClassVisitor):
         argument: ArgumentTransferPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Return optional helper declarations for one completed handoff."""
+        handle = argument.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            if handle.owner_type_name is None:
+                raise ValueError(f"Fortran owner {argument.owner_path!r} has no planned type")
+            return (
+                FortranDeclaration(
+                    f"{argument.entrypoint.parameter_name}_owner", f"type({handle.owner_type_name})", ("pointer",)
+                ),
+            )
         if argument.derived_call is not None:
             return ()
         mode = argument.entrypoint.optional_mode
@@ -5169,6 +5600,27 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         )
 
+    def _native_array_owner_initializers(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[FortranCall | FortranIf, ...]:
+        """Associate planned opaque owner addresses with their generated types."""
+        nodes: list[FortranCall | FortranIf] = []
+        for argument in plan.arguments:
+            handle = argument.native_array_handle
+            if handle is None or handle.handoff.abi is not NativeDescriptorHandoffABI.FORTRAN_OWNER:
+                continue
+            name = argument.entrypoint.parameter_name
+            associate = FortranCall(
+                "c_f_pointer",
+                (CodeExpression(name), CodeExpression(f"{name}_owner")),
+            )
+            if argument.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
+                nodes.append(FortranIf(CodeExpression(f"c_associated(bound_{name}_present)"), body=(associate,)))
+            else:
+                nodes.append(associate)
+        return tuple(nodes)
+
     def _required_descriptor_initializers(
         self,
         plan: FunctionPlan,
@@ -5262,12 +5714,8 @@ class FortranBridgeGenerator(ClassVisitor):
         name = result.parameter_name
         if name is None:
             raise ValueError(f"Owned output {result.owner_path!r} has no entrypoint parameter name")
-        if self._is_owned_deferred_character_result(result):
-            return (
-                FortranParameter(name, "type(c_ptr)"),
-                FortranParameter(f"{name}_itemsize", "integer(c_int64_t)"),
-                *(FortranParameter(f"{name}_extent_{axis}", "integer(c_int64_t)") for axis in range(handle.array.rank)),
-            )
+        if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            return (FortranParameter(name, "type(c_ptr)"),)
         return (
             FortranParameter(
                 name,
@@ -5303,14 +5751,15 @@ class FortranBridgeGenerator(ClassVisitor):
                         ),
                     )
                 )
-                if self._is_owned_deferred_character_slot(slot):
+                if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
                     declarations.append(
                         FortranDeclaration(
-                            f"{slot.native_name.lower()}_copy",
-                            "character(kind=c_char)",
-                            ("pointer", "dimension(:)"),
+                            f"{slot.native_name.lower()}_owner",
+                            f"type({handle.owner_type_name})",
+                            ("pointer",),
                         )
                     )
+                    continue
                 continue
             if slot.adapter.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER:
                 continue
@@ -5380,7 +5829,10 @@ class FortranBridgeGenerator(ClassVisitor):
         result: ResultPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare storage for one completed owned direct-result plan."""
-        if self._uses_owned_direct_array_result_collector(plan):
+        if (
+            self._uses_owned_direct_array_result_collector(plan)
+            and result.native_array_handle.owner_storage is not NativeArrayOwnerStorage.FORTRAN_OWNER
+        ):
             return ()
         return self._owned_array_result_declarations(result)
 
@@ -5440,14 +5892,10 @@ class FortranBridgeGenerator(ClassVisitor):
                 ),
             ),
         ]
-        if self._is_owned_deferred_character_result(result):
-            declarations.append(
-                FortranDeclaration(
-                    "result_copy",
-                    "character(kind=c_char)",
-                    ("pointer", "dimension(:)"),
-                )
-            )
+        if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            # The owner is the only extra local: storage moves into it rather
+            # than being copied through a byte buffer.
+            declarations.append(FortranDeclaration("result_owner", f"type({handle.owner_type_name})", ("pointer",)))
         return tuple(declarations)
 
     def _derived_result_declarations(self, result: ResultPlan) -> tuple[FortranDeclaration, ...]:
@@ -5602,6 +6050,20 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare typed native and contiguous-copy storage for one array result."""
         shape = self._array_result_shape(plan, result)
         element_type = self._array_result_element_type(result)
+        handle = result.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            # The local carries the entity's own attribute, and the owner is
+            # the box its storage moves into. No copy buffer is declared,
+            # because nothing is copied.
+            attribute = "pointer" if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER else "allocatable"
+            return (
+                FortranDeclaration(
+                    "result_value",
+                    element_type,
+                    (attribute, self._array_dimension_attribute(result.array.rank)),
+                ),
+                FortranDeclaration("result_owner", f"type({handle.owner_type_name})", ("pointer",)),
+            )
         if self._is_scalar_storage_array(result.array):
             return (
                 FortranDeclaration("result_value", element_type),
@@ -5751,11 +6213,11 @@ class FortranBridgeGenerator(ClassVisitor):
         result: ResultPlan,
     ) -> tuple[FortranAssignment | FortranCall | FortranIf | FortranPointerAssignment, ...]:
         """Finalize one owned result through its completed descriptor kind."""
+        handle = result.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            return self._fortran_owner_result_nodes(result, "result", "result_value")
         if self._uses_owned_direct_array_result_collector(plan):
             return ()
-        if self._is_owned_deferred_character_result(result):
-            return self._owned_deferred_character_copy_nodes(result, "result", "result_value", "result_copy")
-        handle = result.native_array_handle
         if handle is None:
             raise ValueError(f"Owned result {result.owner_path!r} has no descriptor policy")
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
@@ -5992,15 +6454,11 @@ class FortranBridgeGenerator(ClassVisitor):
                 continue
             if self._is_owned_native_array_slot(slot):
                 name = slot.native_name.lower()
-                if self._is_owned_deferred_character_slot(slot):
-                    nodes.extend(
-                        self._owned_deferred_character_copy_nodes(
-                            slot,
-                            name,
-                            f"{name}_value",
-                            f"{name}_copy",
-                        )
-                    )
+                if (
+                    slot.native_array_handle is not None
+                    and slot.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER
+                ):
+                    nodes.extend(self._fortran_owner_result_nodes(slot, name, f"{name}_value"))
                     continue
                 if slot.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
                     nodes.append(FortranPointerAssignment(name, CodeExpression(f"{name}_value")))
@@ -6112,63 +6570,41 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return tuple(initializers)
 
-    # Deferred-character native-array-handle result copying.
-    def _owned_deferred_character_copy_nodes(
+    # Fortran-owned native-array results.
+    def _fortran_owner_result_nodes(
         self,
         result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         target_name: str,
         value_name: str,
-        copy_name: str,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
-        """Copy a runtime-width character array before persistent CFI materialization."""
+        """Hand a result over inside a Fortran owner, without copying it.
+
+        An allocatable moves its storage into the owner's component, so the
+        array itself never moves and the dying local gives up ownership rather
+        than being copied out of. A pointer assigns its association instead,
+        leaving the target where it is. Either way the address of the owner is
+        the whole output: width and extents are read from the entity when they
+        are wanted, not snapshotted here.
+        """
         handle = result.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Deferred character result {result.owner_path!r} has no descriptor rank")
-        rank = handle.array.rank
-        itemsize = f"{target_name}_itemsize"
-        extents = tuple(f"{target_name}_extent_{axis}" for axis in range(rank))
-        byte_count = " * ".join((itemsize, *extents))
-        present_body: list[FortranAssignment | FortranCall | FortranIf] = [
-            FortranAssignment(itemsize, CodeExpression(f"len({value_name}, kind=c_int64_t)")),
-            *(
-                FortranAssignment(
-                    extent,
-                    CodeExpression(f"size({value_name}, {axis + 1}, kind=c_int64_t)"),
-                )
-                for axis, extent in enumerate(extents)
-            ),
-            FortranAssignment(
-                target_name,
-                CodeExpression(f"c_malloc(max(1_c_size_t, int({byte_count}, c_size_t)))"),
-            ),
+        if handle is None or handle.owner_type_name is None:
+            raise ValueError(f"Owner result {result.owner_path!r} has no owner type")
+        owner = f"{target_name}_owner"
+        pointer = handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+        attach = (
+            FortranPointerAssignment(f"{owner}%data", CodeExpression(value_name))
+            if pointer
+            else FortranCall("move_alloc", (CodeExpression(value_name), CodeExpression(f"{owner}%data")))
+        )
+        return (
+            FortranAssignment(target_name, CodeExpression(f"{self._fortran_owner_operation_name(result, 'create')}()")),
             FortranIf(
                 CodeExpression(f"c_associated({target_name})"),
                 body=(
-                    FortranCall(
-                        "c_f_pointer",
-                        (
-                            CodeExpression(target_name),
-                            CodeExpression(copy_name),
-                            CodeExpression(f"[{byte_count}]"),
-                        ),
-                    ),
-                    FortranIf(
-                        CodeExpression(f"{byte_count} > 0_c_int64_t"),
-                        body=(
-                            FortranAssignment(
-                                copy_name,
-                                CodeExpression(f"transfer({value_name}, {copy_name}, {byte_count})"),
-                            ),
-                        ),
-                    ),
+                    FortranCall("c_f_pointer", (CodeExpression(target_name), CodeExpression(owner))),
+                    attach,
                 ),
             ),
-        ]
-        return (
-            FortranAssignment(target_name, CodeExpression("c_null_ptr")),
-            FortranAssignment(itemsize, CodeExpression("0_c_int64_t")),
-            *(FortranAssignment(extent, CodeExpression("0_c_int64_t")) for extent in extents),
-            FortranIf(CodeExpression(f"allocated({value_name})"), body=tuple(present_body)),
         )
 
     def _lower_native_output_representation_copy(
@@ -6486,17 +6922,26 @@ class FortranBridgeGenerator(ClassVisitor):
         return next((result for result in plan.results if result.source_kind == "direct_return"), None)
 
     def _owned_direct_result(self, plan: FunctionPlan) -> ResultPlan | None:
-        """Return the direct result that uses persistent descriptor output storage."""
+        """Return the direct result written through an output dummy.
+
+        Only a wrapper-owned descriptor is: the binding allocates it first and
+        the adapter fills it, which makes the adapter a subroutine. An owner is
+        built inside the adapter and handed back as its value instead.
+        """
         result = self._direct_result(plan)
-        return result if result is not None and self._is_owned_native_array_result(result) else None
+        if result is None or not self._is_owned_native_array_result(result):
+            return None
+        handle = result.native_array_handle
+        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+            return None
+        return result
 
     def _uses_owned_direct_array_result_collector(self, plan: FunctionPlan) -> bool:
-        """Return whether a direct function result may be returned unallocated."""
+        """Collect results whose allocation state must be inspected before use."""
         result = self._direct_result(plan)
         return bool(
             result is not None
             and self._is_owned_native_array_result(result)
-            and not self._is_owned_deferred_character_result(result)
             and result.native_array_handle is not None
             and result.native_array_handle.result_allocation is NativeArrayResultAllocation.MAYBE_UNALLOCATED
         )
@@ -6508,25 +6953,30 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @staticmethod
     def _is_owned_native_array_result(result: ResultPlan | NativeEntrypointResultPlan) -> bool:
-        """Return whether one result owns persistent standard-descriptor storage."""
+        """Return whether one result carries persistent storage of its own.
+
+        Both representations do -- a wrapper-owned descriptor, and a Fortran
+        owner holding an entity that cannot be one -- and neither is produced
+        through the direct result path; each is finalized after the call.
+        """
         handle = result.native_array_handle
-        return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+        return handle is not None and handle.handoff.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }
 
     @staticmethod
     def _is_owned_native_array_slot(slot: NativeEntrypointProjectedSlotPlan) -> bool:
-        """Return whether one hidden slot shares persistent descriptor storage."""
+        """Return whether one hidden slot carries persistent storage of its own.
+
+        Both representations do: a wrapper-owned descriptor, and a Fortran
+        owner holding an entity that cannot be one.
+        """
         handle = slot.native_array_handle
-        return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-
-    @classmethod
-    def _is_owned_deferred_character_result(cls, result: ResultPlan | NativeEntrypointResultPlan) -> bool:
-        """Return whether owner storage needs a runtime-width copy ABI."""
-        return cls._is_owned_native_array_result(result) and result.datatype_family is DatatypeFamily.STRING
-
-    @classmethod
-    def _is_owned_deferred_character_slot(cls, slot: NativeEntrypointProjectedSlotPlan) -> bool:
-        """Return whether a hidden owner slot needs a runtime-width copy ABI."""
-        return cls._is_owned_native_array_slot(slot) and slot.datatype_family is DatatypeFamily.STRING
+        return handle is not None and handle.handoff.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }
 
     def _native_module_uses(self, plan: ModulePlan) -> tuple[FortranUse, ...]:
         """Collect exact native imports without mixing class invocation policy."""
@@ -7164,9 +7614,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Native handle field {field.owner_path!r} has no mutation rank")
         expression = self._native_handle_field_expression(owner, field)
-        extents = tuple(
-            FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("value",)) for axis in range(handle.array.rank)
-        )
+        extents = self._planned_allocation_parameters(handle)
         name = self._native_handle_field_bridge_name(owner, field, operation)
         return FortranFunction(
             name=name,
@@ -7182,6 +7630,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 FortranAllocate(
                     expression,
                     tuple(CodeExpression(f"extent_{axis}") for axis in range(handle.array.rank)),
+                    type_spec=self._planned_allocation_type_spec(handle),
                 ),
             ),
             is_subroutine=True,
@@ -8239,6 +8688,38 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return (FortranInterface(procedures),) if procedures else ()
 
+    def _native_array_owner_callback_interfaces(self, plan: ModulePlan) -> tuple[FortranInterface, ...]:
+        """Declare the C consumers used by descriptor-capable owner components."""
+        procedures: dict[str, FortranInterfaceProcedure] = {}
+        for argument in self._native_array_owner_arguments(plan):
+            handle = argument.native_array_handle
+            if handle is None or not handle.descriptor_inquiries or handle.array.rank is None:
+                continue
+            name = self._fortran_owner_callback_interface_name(argument)
+            attributes = (self._array_dimension_attribute(handle.array.rank), "intent(inout)")
+            length = "*"
+            if handle.descriptor_attribute is not NativeArrayDescriptorAttribute.OTHER:
+                attributes = (handle.descriptor_attribute.value, *attributes)
+                length = ":"
+            procedure = FortranInterfaceProcedure(
+                name=name,
+                imports=("c_char", "c_ptr"),
+                parameters=(
+                    FortranParameter(
+                        "value",
+                        f"character(kind=c_char, len={length})",
+                        attributes,
+                    ),
+                    FortranParameter("context", "type(c_ptr)", ("value",)),
+                ),
+                is_subroutine=True,
+                bind_name=name,
+            )
+            prior = procedures.setdefault(name, procedure)
+            if prior != procedure:
+                raise ValueError(f"Fortran owner callback {name!r} has conflicting declarations")
+        return (FortranInterface(tuple(procedures.values())),) if procedures else ()
+
     def _direct_handle_callback_interfaces(self, plan: ModulePlan) -> tuple:
         """Return callback interfaces required by direct native-array-handle field procedures."""
         return tuple(
@@ -8927,6 +9408,11 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _uses_c_function_pointer_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed module or field descriptor actions require C procedure-pointer support."""
+        support_callbacks = any(
+            parameter.kind is NativeEntrypointABIValueKind.CALLBACK
+            for operation in plan.entrypoint.support_procedures
+            for parameter in operation.signature.parameters
+        )
         module_descriptors = any(self._uses_module_descriptor_backend(variable) for variable in self._variables(plan))
         field_descriptors = any(
             field.access
@@ -8937,7 +9423,7 @@ class FortranBridgeGenerator(ClassVisitor):
             for derived in self._derived_types(plan)
             for field in derived.fields
         )
-        return module_descriptors or field_descriptors
+        return support_callbacks or module_descriptors or field_descriptors
 
     def _uses_derived_interop_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed derived call or module-variable actions require derived interop support."""

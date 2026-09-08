@@ -58,6 +58,12 @@ class NativeArrayHandlePolicy:
     nullable: bool
     optional_absent: bool
     storage_mode: str
+    owner_storage: str
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    requires_deferred_character_pointer_support: bool
+    call_lease: bool
     operations: tuple[str, ...] = ()
     blocker: str | None = None
     default_construction: str = "none"
@@ -410,6 +416,12 @@ if __name__ == "__main__":
         nullable=True,
         optional_absent=False,
         storage_mode="alias",
+        owner_storage="borrowed_entity",
+        element_length_argument=False,
+        owner_type_name=None,
+        owner_signature=0,
+        requires_deferred_character_pointer_support=False,
+        call_lease=False,
         operations=("to_numpy", "nullify"),
     )
     example_variable = SemanticVariable(

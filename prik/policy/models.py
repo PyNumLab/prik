@@ -805,6 +805,7 @@ class NativeDescriptorHandoffABI(str, Enum):
     """Binding-to-bridge descriptor representation."""
 
     DIRECT_STANDARD_DESCRIPTOR = "direct_standard_descriptor"
+    FORTRAN_OWNER = "fortran_owner"
     OWNED_RESULT_STORAGE = "owned_result_storage"
 
 
@@ -813,6 +814,15 @@ class NativeArrayDefaultConstruction(str, Enum):
 
     NONE = "none"
     LAZY_OWNED_DESCRIPTOR = "lazy_owned_descriptor"
+    LAZY_FORTRAN_OWNER = "lazy_fortran_owner"
+
+
+class NativeArrayOwnerStorage(str, Enum):
+    """Storage that keeps a native handle entity alive."""
+
+    BORROWED_ENTITY = "borrowed_entity"
+    C_DESCRIPTOR = "c_descriptor"
+    FORTRAN_OWNER = "fortran_owner"
 
 
 class NativeArraySourceKind(str, Enum):
@@ -1117,6 +1127,7 @@ class NativeArrayActualPolicy:
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    call_lease: bool
     flatten_storage: bool = False
     flat_axis: int | None = None
 
@@ -1152,6 +1163,7 @@ class NativeArrayHandleWrapperPolicy:
     owner: OwnershipOwner
     owner_retention: NativeArrayOwnerRetention
     descriptor_ownership: NativeArrayDescriptorOwnership
+    owner_storage: NativeArrayOwnerStorage
     borrowed: bool
     getter_behavior: NativeArrayGetterBehavior
     setter_action: SetterAction
@@ -1163,17 +1175,21 @@ class NativeArrayHandleWrapperPolicy:
     destroy_behavior: NativeArrayDestroyBehavior
     extraction_action: NativeArrayExtractionAction
     descriptor_interop: NativeArrayDescriptorInterop
-    # A handle answers its inquiries -- shape, state, element width,
-    # contiguity, the NumPy view -- from the live descriptor its entry point
-    # supplies, unless its declaration cannot cross a bind(C) descriptor
-    # interface at all. A deferred-length character pointer is that case: the
-    # standard does not allow such a dummy in a bind(C) interface, and GNU
-    # Fortran mistranslates the descriptor rather than rejecting it, so those
-    # inquiries stay on generated Fortran procedures of their own.
+    # Most inquiries use a live descriptor supplied to a shared consumer.
+    # Declarations without a reliable descriptor projection instead use
+    # planned Fortran inquiry procedures.
     descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: StorageMode
+    # A deferred-length character entity cannot be allocated from a shape
+    # alone; the standard requires a type-spec, so the width is planned as an
+    # argument that travels with the extents.
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    requires_deferred_character_pointer_support: bool
+    call_lease: bool
     operations: tuple[NativeArrayOperation, ...]
     required_headers: tuple[str, ...]
     array: ArrayHandoffPolicy

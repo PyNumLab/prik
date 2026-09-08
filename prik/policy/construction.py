@@ -138,6 +138,7 @@ from prik.policy.models import (
     NativeArraySourceKind,
     NativeArrayHandleOrigin,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayDescriptorOwnership,
     NativeArrayGetterBehavior,
     NativeArrayOutputProjection,
@@ -2886,7 +2887,7 @@ def _direct_descriptor_supported(argument: ArgumentPolicy) -> bool:
         and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
         and argument.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
         and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
-        and argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and argument.semantic_type_name in {*_PLAN_PRIMITIVE_SCALAR_TYPES, "String"}
         and argument.rank > 0
         and argument.derived is None
         and not argument.transformations
@@ -6266,7 +6267,7 @@ def _native_array_handle_wrapper_policy(
     )
     handle_kind = _native_array_enum(NativeArrayHandleKind, completed.handle_kind, owner_path, "handle kind")
     handoff = NativeDescriptorHandoffPolicy(
-        abi=_native_descriptor_handoff_abi(handle_kind),
+        abi=_native_descriptor_handoff_abi(handle_kind, completed),
         rank=int(semantic_type.rank or 0),
         optional_presence=completed.optional_absent,
     )
@@ -6322,6 +6323,12 @@ def _native_array_handle_wrapper_policy(
             owner_path,
             "descriptor ownership",
         ),
+        owner_storage=_native_array_enum(
+            NativeArrayOwnerStorage,
+            completed.owner_storage,
+            owner_path,
+            "owner storage",
+        ),
         borrowed=completed.borrowed,
         getter_behavior=_native_array_enum(
             NativeArrayGetterBehavior,
@@ -6357,6 +6364,11 @@ def _native_array_handle_wrapper_policy(
         nullable=completed.nullable,
         optional_absent=completed.optional_absent,
         storage_mode=_native_array_enum(StorageMode, completed.storage_mode, owner_path, "storage mode"),
+        element_length_argument=completed.element_length_argument,
+        owner_type_name=completed.owner_type_name,
+        owner_signature=completed.owner_signature,
+        requires_deferred_character_pointer_support=completed.requires_deferred_character_pointer_support,
+        call_lease=completed.call_lease,
         operations=tuple(sorted(operations, key=lambda item: item.value)),
         required_headers=(
             (NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,)
@@ -6433,17 +6445,21 @@ def _native_array_default_handle_policy(
     )
 
 
-def _native_descriptor_handoff_abi(handle_kind: NativeArrayHandleKind) -> NativeDescriptorHandoffABI:
-    """Select one descriptor ABI from completed handle/result policy.
+def _native_descriptor_handoff_abi(
+    handle_kind: NativeArrayHandleKind,
+    completed: CompletedNativeArrayHandlePolicy,
+) -> NativeDescriptorHandoffABI:
+    """Choose argument transport independently of owned storage.
 
-    Every descriptor a call receives is the Fortran runtime's to build: the
-    binding is handed one rather than establishing or filling a record of its
-    own.  That holds for a pointer as much as an allocatable, and for an
-    optional argument as much as a required one, and it is what lets a callee
-    change an allocation or an association and have the caller's entity see it.
-    A result is the one exception, because there is no caller entity yet: the
-    wrapper owns storage the callee allocates into.
+    Deferred-length character allocatables retain their interoperable
+    descriptor ABI even when stored in a Fortran owner. Other owner-backed
+    character arguments require the owner address, as do owner results.
     """
+    if completed.owner_storage == NativeArrayOwnerStorage.FORTRAN_OWNER.value and (
+        handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR
+        or completed.descriptor_attribute != NativeArrayDescriptorAttribute.ALLOCATABLE.value
+    ):
+        return NativeDescriptorHandoffABI.FORTRAN_OWNER
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
@@ -6645,6 +6661,7 @@ def _native_array_actual_policy(
         require_native_byte_order=True,
         require_aligned=True,
         require_contiguous=array.contiguous is True,
+        call_lease=bool(handle_sources),
         flatten_storage=array.flatten_python_storage,
         flat_axis=array.flat_axis,
     )

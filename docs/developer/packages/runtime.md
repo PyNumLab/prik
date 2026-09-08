@@ -39,22 +39,10 @@ operation.
 ### The Backend Capsule
 
 Every generated handle publishes one versioned capsule,
-`prik.native_array_backend.v1.<tag>`, on `_native_backend`. It is the whole
-cross-extension ABI for an array handle:
-
-```c
-typedef struct {
-    uint32_t descriptor_kind;
-    uint32_t descriptor_attribute;
-    uint32_t rank;
-    uint32_t descriptor_size;
-    int32_t  cfi_type;
-    size_t   element_size;
-    void    *context;
-    prik_native_array_with_descriptor_fn with_descriptor;
-    prik_native_array_release_fn release;
-} prik_native_array_backend;
-```
+`prik.native_array_backend.v2.<tag>`, on `_native_backend`. The capsule is the
+cross-extension ABI for an array handle. Its record carries the declared array
+metadata, a typed descriptor callback when one is available, the context kind
+and release function, and identity for a generated Fortran owner.
 
 `with_descriptor(context, consumer, consumer_context)` supplies a live
 descriptor and runs the consumer on it:
@@ -63,14 +51,22 @@ descriptor and runs the consumer on it:
   enters Fortran and supplies the plan-selected descriptor for that call. The
   descriptor is gone when the consumer returns and must never be retained,
   copied, or serialized.
-- **Owned** — a native result, or a contract handle that has been given
-  storage. The binding allocated a descriptor and keeps it for the handle's
-  life, so the entry point hands that storage straight to the consumer.
+- **Owned descriptor** — a native result or a contract handle whose storage is
+  a persistent C descriptor.
+- **Fortran owner** — a returned or caller-created character-array handle.
+  The bridge owns its allocatable or pointer component and supplies a
+  descriptor projection when the declaration supports one.
 
-Consumers use the same contract for both forms. `context` is the parent's
-address for a field, descriptor storage for an owned handle, and `NULL` for a
-module variable. `release` is non-`NULL` when the extension owns `context`.
-Clearing `context` after release makes `close()` and finalization idempotent.
+Descriptor consumers use the same callback contract regardless of storage.
+The planned procedure ABI determines whether an argument receives a descriptor
+or a Fortran owner address. Release follows the context kind: C descriptor
+storage is freed in C, while a Fortran owner is destroyed by its bridge. Calls
+acquire a lease before releasing the GIL, so `close()` cannot destroy owned
+storage while native code is using it.
+
+Cross-extension Fortran owners are accepted only when their compiler ABI and
+canonical owner signature match. Other mismatches are rejected before the
+owner address is dereferenced.
 
 The capsule name combines a semantic version with a tag for the record layout,
 so incompatible extensions are rejected before reading the record. Readers
@@ -79,9 +75,10 @@ the native entity; the attribute names the descriptor supplied to a consumer.
 
 ### Inquiries Read The Descriptor
 
-State inquiries and `to_numpy()` use shared C consumers through
-`with_descriptor` for both borrowed and owned handles. Mutations that act on
-the native entity remain generated bridge operations.
+When a descriptor projection is available, state inquiries and `to_numpy()`
+use shared C consumers through `with_descriptor`. A declaration without that
+projection uses planned bridge inquiries and does not expose `to_numpy()`.
+Mutations that act on the native entity remain generated bridge operations.
 
 A call with more than one allocatable or pointer dummy nests the consumers, one
 per argument, and runs the call inside the innermost one so every descriptor is

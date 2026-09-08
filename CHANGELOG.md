@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- **Breaking (native ABI):** the native array handle capsule is now
+  `prik.native_array_backend.v2`. Extensions built with an earlier PRIK publish
+  an incompatible capsule, so rebuild extensions that exchange handles.
+
+- Allocatable and pointer character-array arguments now accept matching
+  caller-created handles. Deferred-length allocation and resizing use
+  `element_length=...`; deferred-length pointer handles require ifx or GNU
+  Fortran 14 or newer and do not expose `to_numpy()`.
+
+- Returned character-array handles use Fortran-owned storage, including
+  deferred-length allocatables, and can be reused in matching calls. Output
+  arguments transfer their allocation directly; function results use normal
+  Fortran assignment semantics without an additional C-side data copy.
+
 - Fixed Fortran allocatable and pointer descriptor arguments to use the
   compiler's live descriptor. This works on Intel ifx as well as GNU Fortran,
   preserves lower bounds, allocation and association changes, and covers
@@ -16,20 +30,6 @@ release tags add a leading `v` to the package version.
 
 - Descriptor-backed native calls honor `@nogil` while the native procedure is
   running, including calls with multiple allocatable or pointer arguments.
-
-- Deferred-length character pointer-array arguments are rejected before code
-  generation; module and field handles expose only operations that do not
-  require an unsupported `bind(C)` descriptor interface.
-
-- Generated array handles share descriptors between extensions through the
-  versioned `prik.native_array_backend.v1.<layout tag>` capsule. It runs a
-  consumer while the handle's descriptor is live and refuses incompatible ABI
-  versions or record layouts before reading the backend. Rebuild generated
-  extensions together after upgrading PRIK.
-
-- Fixed-width character module and field handles support inquiries, NumPy
-  views, and ordinary array arguments. Fixed-width character allocatable and
-  pointer array arguments are rejected.
 
 - Generated Fortran allocatable and pointer handles can be passed directly to
   matching ordinary array arguments. Numeric assumed-shape and assumed-rank
