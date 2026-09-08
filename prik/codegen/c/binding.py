@@ -42,6 +42,7 @@ from prik.policy.models import (
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
+    NativeArrayExtractionAction,
     NativeArrayHandleKind,
     NativeArrayOperation,
     NativeArrayOutputProjection,
@@ -5039,7 +5040,11 @@ class CBindingGenerator(ClassVisitor):
         exposure = (
             f'"{handle.extraction_action.value}"'
             if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-            else "NULL"
+            else (
+                f'"{handle.extraction_action.value}"'
+                if handle.extraction_action is not NativeArrayExtractionAction.UNSUPPORTED
+                else "NULL"
+            )
         )
         cleanup_context = CExpressionStatement(
             CodeExpression(f"{self._fortran_owner_bridge_name(argument, 'destroy')}(owner_context)")
@@ -5246,6 +5251,8 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Fortran owner {argument.owner_path!r} has no completed plan")
         if operation in _DESCRIPTOR_ANSWERED_OPERATIONS and handle.descriptor_inquiries:
             return self._fortran_owner_descriptor_inquiry_body(argument, handle, operation)
+        if operation is NativeArrayOperation.TO_NUMPY:
+            return self._fortran_owner_numpy_body(argument, handle)
         if operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
             return self._fortran_owner_bridge_inquiry_body(argument, handle, operation)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
@@ -5261,6 +5268,61 @@ class CBindingGenerator(ClassVisitor):
         except KeyError:
             raise ValueError(f"Unsupported Fortran-owner operation {operation.value!r}") from None
         return handler(argument, handle, operation)
+
+    def _fortran_owner_numpy_body(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Build a view from contiguous owner facts without a CFI descriptor."""
+        bridge = self._fortran_owner_bridge_name(argument, "to_numpy")
+        extents = tuple(f"extent_{axis}" for axis in range(handle.array.rank))
+        return (
+            *self._fortran_owner_backend_nodes(argument),
+            CDeclaration("base_address", "void *", CodeExpression("NULL")),
+            CDeclaration("element_length", "int64_t", CodeExpression("0")),
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in extents),
+            CDeclaration("dimensions[PRIK_MAX_ARRAY_RANK]", "npy_intp"),
+            CDeclaration("strides[PRIK_MAX_ARRAY_RANK]", "npy_intp"),
+            CDeclaration("view", "PyObject *", CodeExpression("NULL")),
+            CExpressionStatement(
+                CodeExpression(
+                    f"{bridge}(owner_backend->context, &base_address, &element_length, "
+                    f"{', '.join(f'&{name}' for name in extents)})"
+                )
+            ),
+            CIf(
+                CodeExpression("base_address == NULL"),
+                body=(CReturn(CodeExpression("Py_NewRef(Py_None)")),),
+            ),
+            *(
+                CExpressionStatement(CodeExpression(f"dimensions[{axis}] = (npy_intp){name}"))
+                for axis, name in enumerate(extents)
+            ),
+            CExpressionStatement(CodeExpression("strides[0] = (npy_intp)element_length")),
+            *(
+                CExpressionStatement(CodeExpression(f"strides[{axis}] = strides[{axis - 1}] * dimensions[{axis - 1}]"))
+                for axis in range(1, handle.array.rank)
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    "view = PyArray_New(&PyArray_Type, "
+                    f"{handle.array.rank}, dimensions, NPY_STRING, strides, base_address, "
+                    "(int)element_length, NPY_ARRAY_WRITEABLE, NULL)"
+                )
+            ),
+            CIf(CodeExpression("view == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+            CExpressionStatement(CodeExpression("Py_INCREF(owner_obj)")),
+            CIf(
+                CodeExpression("PyArray_SetBaseObject((PyArrayObject *)view, owner_obj) < 0"),
+                body=(
+                    CExpressionStatement(CodeExpression("Py_DECREF(owner_obj)")),
+                    CExpressionStatement(CodeExpression("Py_DECREF(view)")),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CReturn(CodeExpression("view")),
+        )
 
     def _fortran_owner_descriptor_inquiry_body(
         self,

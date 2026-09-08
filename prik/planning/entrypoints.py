@@ -946,7 +946,9 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                     )
                 )
             for operation in selected:
-                if operation in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}:
+                if operation is NativeArrayOperation.DESCRIPTOR:
+                    continue
+                if operation is NativeArrayOperation.TO_NUMPY and handle.descriptor_inquiries:
                     continue
                 if handle.descriptor_inquiries and operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
                     continue
@@ -978,6 +980,16 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 self._int64_parameter(f"extent_{axis}", reference=True) for axis in range(handle.array.rank)
             )
             return NativeEntrypointSignaturePlan((owner, *extents), self._bool_result())
+        if operation is NativeArrayOperation.TO_NUMPY:
+            outputs = (
+                self._opaque_parameter("base", fortran_name="base_address", output=True, intent="out"),
+                self._int64_parameter("element_length", reference=True, intent="out"),
+                *(
+                    self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
+                    for axis in range(handle.array.rank)
+                ),
+            )
+            return NativeEntrypointSignaturePlan((owner, *outputs), self._void_result())
         if operation is NativeArrayOperation.ASSOCIATE:
             return NativeEntrypointSignaturePlan(
                 (owner, self._opaque_parameter("source", fortran_name="source_address")),

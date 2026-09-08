@@ -419,6 +419,41 @@ def inspect(values: Pointer[String[:][:]]) -> None: ...
     assert set(argument_policy.operations) == {"associate", "associated", "nullify"}
 
 
+def test_contiguous_deferred_character_pointer_selects_zero_copy_view_policy():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Annotated, Pointer, PointerAssociation, PointerPolicy, String
+
+def inspect(values: Annotated[
+    Pointer[String[:][:]],
+    PointerAssociation("runtime"),
+    PointerPolicy(
+        nullable=True,
+        transfer="call_local",
+        target_owner="wrapper",
+        lifetime="wrapper",
+        deallocation="deallocate_resize",
+        shape_source="pointer_bounds",
+        contiguity="contiguous",
+        reassociation="allocate_resize",
+        aliasing="descriptor",
+        mutability="mutable",
+    ),
+]) -> None: ...
+""",
+        module_name="deferred_character_pointer_view_policy",
+    )
+
+    complete_semantic_policies(module)
+    policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert policy.descriptor_inquiries is False
+    assert policy.owner_storage == "fortran_owner"
+    assert policy.to_numpy == "contiguous_view"
+    assert "to_numpy" in policy.operations
+    assert policy.requires_deferred_character_pointer_support is True
+
+
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
     module = parse_pyi_text(
         """

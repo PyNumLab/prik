@@ -218,7 +218,9 @@ contains
   integer(4) function deferred_state(values) result(state)
     character(kind=c_char, len=:), pointer, intent(in) :: values(:)
     state = 0
-    if (associated(values)) state = size(values) * 100 + len(values)
+    if (associated(values)) then
+      state = size(values) * 100 + len(values) + iachar(values(1)(1:1))
+    end if
   end function deferred_state
 end module fcharacter_owner_pointer
 """
@@ -257,7 +259,7 @@ def fixed_state(values: Pointer[String[4][:]]) -> Int32: ...
 @bind("fixed_state")
 def managed_state(values: {fixed}) -> Int32: ...
 def repoint_deferred(values: {deferred}) -> Returns["values", {deferred}]: ...
-def deferred_state(values: Pointer[String[:][:]]) -> Int32: ...
+def deferred_state(values: {deferred}) -> Int32: ...
 """,
         encoding="utf-8",
     )
@@ -324,20 +326,20 @@ def test_fixed_character_pointer_owner_supports_association_and_target_mutation(
 def test_deferred_character_pointer_owner_is_supported_or_refused_cleanly(tmp_path: Path):
     module = _build_pointer_owner_module(tmp_path)
     values = Pointer[String[:][:]]()
-    gnu_major = _gnu_fortran_major()
-
-    if gnu_major is not None and gnu_major < 14:
-        with pytest.raises(NotImplementedError, match="GNU Fortran 14 or newer"):
+    if (gnu_major := _gnu_fortran_major()) is not None and gnu_major < 14:
+        with pytest.raises(NotImplementedError, match="ifx or GNU Fortran 14"):
             module.deferred_state(values)
         return
-
     assert module.deferred_state(values) == np.int32(0)
     assert module.repoint_deferred(values) is values
     assert values.dtype == np.dtype("S6")
     assert values.shape == (2,)
-    assert module.deferred_state(values) == np.int32(206)
-    with pytest.raises(NotImplementedError, match="to_numpy extraction is unsupported"):
-        values.to_numpy()
+    assert module.deferred_state(values) == np.int32(303)
+    view = values.to_numpy()
+    assert view.tolist() == [b"alpha ", b"beta  "]
+    assert view.ctypes.data != 0
+    view[:] = [b"changed", b"values"]
+    assert module.deferred_state(values) == np.int32(305)
 
 
 NOGIL_SOURCE = """\

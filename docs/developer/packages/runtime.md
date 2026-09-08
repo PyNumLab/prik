@@ -54,8 +54,9 @@ descriptor and runs the consumer on it:
 - **Owned descriptor** — a native result or a contract handle whose storage is
   a persistent C descriptor.
 - **Fortran owner** — a returned or caller-created character-array handle.
-  The bridge owns its allocatable or pointer component and supplies a
-  descriptor projection when the declaration supports one.
+  The bridge owns its allocatable or pointer component and supplies either a
+  descriptor projection or, for contiguous deferred-length pointer views, the
+  address and runtime width directly.
 
 Descriptor consumers use the same callback contract regardless of storage.
 The planned procedure ABI determines whether an argument receives a descriptor
@@ -77,7 +78,8 @@ the native entity; the attribute names the descriptor supplied to a consumer.
 
 When a descriptor projection is available, state inquiries and `to_numpy()`
 use shared C consumers through `with_descriptor`. A declaration without that
-projection uses planned bridge inquiries and does not expose `to_numpy()`.
+projection uses planned bridge inquiries; contiguous deferred-length character
+pointers build their zero-copy view from bridge-provided address facts.
 Mutations that act on the native entity remain generated bridge operations.
 
 A call with more than one allocatable or pointer dummy nests the consumers, one

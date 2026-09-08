@@ -1385,10 +1385,13 @@ def _native_array_handle_policy(
         fortran_owner=fortran_owner,
     )
     descriptor_ownership = _native_array_descriptor_ownership(handle_kind)
-    to_numpy = (
-        _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
-        if descriptor_inquiries
-        else "unsupported"
+    to_numpy = _native_array_handle_to_numpy_policy(
+        descriptor_kind,
+        handle_kind,
+        decision,
+        semantic_type,
+        descriptor_inquiries=descriptor_inquiries,
+        fortran_owner=fortran_owner,
     )
     operations = _native_array_available_operations(
         descriptor_kind,
@@ -1448,7 +1451,9 @@ def _native_array_handle_policy(
         owner_type_name=(f"prik_array_owner_{owner_signature:016x}" if owner_signature else None),
         owner_signature=owner_signature,
         requires_deferred_character_pointer_support=(
-            fortran_owner and descriptor_kind == "pointer" and _is_deferred_character_array(semantic_type)
+            descriptor_kind == "pointer"
+            and _is_deferred_character_array(semantic_type)
+            and (fortran_owner or context.is_argument)
         ),
         call_lease=context.is_argument or fortran_owner,
         nullable=bool(decision.nullable or optional_absent),
@@ -1541,14 +1546,18 @@ def _native_array_available_operations(
     Without a legal descriptor interface an entity cannot be described to C at
     all, so nothing that reads or replaces its storage survives. A Fortran
     owner keeps those operations, because they run inside the bridge on the
-    entity itself -- all except the NumPy view, which still needs a descriptor
-    to build over.
+    entity itself. A contiguous deferred-length character pointer can also
+    expose a view from bridge-provided address facts.
     """
     operations = set(_native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type))
     if descriptor_inquiries:
         return operations
     if fortran_owner:
-        operations.discard("to_numpy")
+        # A contiguous owner can expose a view without exporting a CFI
+        # descriptor: the bridge supplies its base address, extents, and
+        # runtime character width directly.
+        if _native_array_pointer_to_numpy_policy(semantic_type) != "contiguous_view":
+            operations.discard("to_numpy")
         return operations
     operations.difference_update({"allocate", "associate", "resize", "to_numpy"})
     return operations
@@ -1759,6 +1768,27 @@ def _native_array_pointer_to_numpy_policy(semantic_type: models.SemanticType) ->
     if _pointer_policy_value(pointer_policy, "contiguity") == "contiguous":
         return "contiguous_view"
     return "descriptor_view"
+
+
+def _native_array_handle_to_numpy_policy(
+    descriptor_kind: str,
+    handle_kind: str,
+    decision: OwnershipDecision,
+    semantic_type: models.SemanticType,
+    *,
+    descriptor_inquiries: bool,
+    fortran_owner: bool,
+) -> str:
+    """Select the view policy from the completed descriptor route."""
+    if descriptor_inquiries:
+        return _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
+    if fortran_owner:
+        return (
+            "contiguous_view"
+            if _native_array_pointer_to_numpy_policy(semantic_type) == "contiguous_view"
+            else "unsupported"
+        )
+    return "unsupported"
 
 
 def _native_array_handle_operations(

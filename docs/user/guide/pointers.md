@@ -98,9 +98,11 @@ support allocation, target deallocation, resizing, and NumPy extraction.
 An unavailable operation raises `NotImplementedError`.
 
 Fixed-width character pointer parameters use `Pointer[String[N][...]]`.
-Deferred-length character pointer parameters use `Pointer[String[:][...]]` and
-require ifx or GNU Fortran 14 or newer. Those deferred-length handles support
-state, shape, association, allocation, and deallocation, but not `to_numpy()`.
+Deferred-width character pointers use `Pointer[String[:][...]]`; contiguous
+targets support zero-copy `to_numpy()` views and report their runtime width
+when compiled with ifx or GNU Fortran 14 or newer. Older GNU Fortran versions
+reject deferred-length pointer handles rather than expose an unreliable width.
+Non-contiguous targets do not support `to_numpy()`.
 
 ---
 

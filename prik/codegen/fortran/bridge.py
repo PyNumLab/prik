@@ -1994,6 +1994,7 @@ class FortranBridgeGenerator(ClassVisitor):
             "destroy": self._fortran_owner_destroy_operation,
             "element_length": self._fortran_owner_element_length_operation,
             "shape": self._fortran_owner_shape_operation,
+            "to_numpy": self._fortran_owner_numpy_operation,
             "associate": self._fortran_owner_associate_operation,
             "allocate": self._fortran_owner_allocation_operation,
             "resize": self._fortran_owner_allocation_operation,
@@ -2005,6 +2006,46 @@ class FortranBridgeGenerator(ClassVisitor):
         except KeyError:
             raise ValueError(f"Unsupported Fortran-owner operation {operation!r}") from None
         return handler(argument, handle, operation)
+
+    def _fortran_owner_numpy_operation(
+        self,
+        argument: ArgumentTransferPlan,
+        handle: NativeArrayHandlePlan,
+        operation: str,
+    ) -> FortranFunction:
+        """Expose a contiguous pointer owner without exporting a CFI descriptor."""
+        if handle.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
+            raise ValueError(f"Owner {argument.owner_path!r} has no raw NumPy projection")
+        name, owner_declarations, owner_initializers, present = self._fortran_owner_operation_parts(
+            argument, handle, operation
+        )
+        extents = tuple(
+            FortranAssignment(
+                f"extent_{axis}",
+                CodeExpression(f"size(owner%data, {axis + 1}, kind=c_int64_t)"),
+            )
+            for axis in range(handle.array.rank)
+        )
+        absent = (
+            FortranAssignment("base_address", CodeExpression("c_null_ptr")),
+            FortranAssignment("element_length", CodeExpression("0_c_int64_t")),
+            *(FortranAssignment(f"extent_{axis}", CodeExpression("0_c_int64_t")) for axis in range(handle.array.rank)),
+        )
+        present_body = (
+            FortranAssignment("base_address", CodeExpression("c_loc(owner%data)")),
+            FortranAssignment("element_length", CodeExpression("len(owner%data, kind=c_int64_t)")),
+            *extents,
+        )
+        return FortranFunction(
+            name=name,
+            declarations=owner_declarations,
+            body=(
+                *owner_initializers,
+                *absent,
+                FortranIf(CodeExpression(present), body=present_body),
+            ),
+            is_subroutine=True,
+        )
 
     def _fortran_owner_operation_parts(
         self,
