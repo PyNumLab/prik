@@ -60,7 +60,6 @@ pretty = [
 ]
 docs = [
     "mkdocs==1.6.1",
-    "mkdocs-material==9.7.6",
     "pyperf==2.10.0",
 ]
 qa = [
