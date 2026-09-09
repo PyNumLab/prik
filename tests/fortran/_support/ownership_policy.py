@@ -158,7 +158,6 @@ def _native_array_policy(
         element_length_argument=False,
         owner_type_name=None,
         owner_signature=0,
-        requires_deferred_character_pointer_support=False,
         call_lease=False,
         operations=operations,
     )

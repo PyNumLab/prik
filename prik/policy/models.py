@@ -1187,7 +1187,6 @@ class NativeArrayHandleWrapperPolicy:
     element_length_argument: bool
     owner_type_name: str | None
     owner_signature: int
-    requires_deferred_character_pointer_support: bool
     call_lease: bool
     operations: tuple[NativeArrayOperation, ...]
     required_headers: tuple[str, ...]

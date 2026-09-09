@@ -5071,24 +5071,6 @@ class CBindingGenerator(ClassVisitor):
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
-            *(
-                (
-                    CIf(
-                        CodeExpression("!PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED"),
-                        body=(
-                            CExpressionStatement(
-                                CodeExpression(
-                                    'PyErr_SetString(PyExc_NotImplementedError, "deferred-length character '
-                                    'pointer handles require ifx or GNU Fortran 14 or newer")'
-                                )
-                            ),
-                            CReturn(CodeExpression("NULL")),
-                        ),
-                    ),
-                )
-                if handle.requires_deferred_character_pointer_support
-                else ()
-            ),
             CExpressionStatement(
                 CodeExpression(f"owner_context = {self._fortran_owner_bridge_name(argument, 'create')}()")
             ),

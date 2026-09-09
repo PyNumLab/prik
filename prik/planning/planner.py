@@ -2263,7 +2263,6 @@ class WrapperPlanner(ClassVisitor):
             element_length_argument=policy.element_length_argument,
             owner_type_name=policy.owner_type_name,
             owner_signature=policy.owner_signature,
-            requires_deferred_character_pointer_support=policy.requires_deferred_character_pointer_support,
             call_lease=policy.call_lease,
             operations=policy.operations,
             required_headers=policy.required_headers,

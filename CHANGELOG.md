@@ -14,7 +14,7 @@ release tags add a leading `v` to the package version.
 - Allocatable and pointer character-array arguments now accept matching
   caller-created handles. Deferred-length allocation and resizing use
   `element_length=...`; contiguous deferred-length pointer targets also expose
-  zero-copy `to_numpy()` views when compiled with ifx or GNU Fortran 14 or
+  zero-copy `to_numpy()` views when compiled with ifx or GNU Fortran 13.3 or
   newer.
 
 - Returned character-array handles use Fortran-owned storage, including

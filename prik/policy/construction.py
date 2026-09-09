@@ -6366,7 +6366,6 @@ def _native_array_handle_wrapper_policy(
         element_length_argument=completed.element_length_argument,
         owner_type_name=completed.owner_type_name,
         owner_signature=completed.owner_signature,
-        requires_deferred_character_pointer_support=completed.requires_deferred_character_pointer_support,
         call_lease=completed.call_lease,
         operations=tuple(sorted(operations, key=lambda item: item.value)),
         required_headers=(

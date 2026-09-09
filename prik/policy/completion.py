@@ -1450,11 +1450,6 @@ def _native_array_handle_policy(
         element_length_argument=element_length_argument,
         owner_type_name=(f"prik_array_owner_{owner_signature:016x}" if owner_signature else None),
         owner_signature=owner_signature,
-        requires_deferred_character_pointer_support=(
-            descriptor_kind == "pointer"
-            and _is_deferred_character_array(semantic_type)
-            and (fortran_owner or context.is_argument)
-        ),
         call_lease=context.is_argument or fortran_owner,
         nullable=bool(decision.nullable or optional_absent),
         optional_absent=optional_absent,

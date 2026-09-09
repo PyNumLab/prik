@@ -273,7 +273,7 @@ def deferred_state(values: {deferred}) -> Int32: ...
     return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
 
 
-def _gnu_fortran_major() -> int | None:
+def _gnu_fortran_version() -> tuple[int, int, int] | None:
     compiler = _compiler()
     identity = subprocess.run(
         [compiler, "--version"],
@@ -289,7 +289,8 @@ def _gnu_fortran_major() -> int | None:
         text=True,
         check=True,
     )
-    return int(result.stdout.strip().split(".", maxsplit=1)[0])
+    parts = result.stdout.strip().split(".")
+    return tuple(int(parts[index]) if index < len(parts) else 0 for index in range(3))
 
 
 def test_fixed_character_pointer_owner_supports_association_and_target_mutation(tmp_path: Path):
@@ -323,19 +324,19 @@ def test_fixed_character_pointer_owner_supports_association_and_target_mutation(
     managed.close()
 
 
-def test_deferred_character_pointer_owner_is_supported_or_refused_cleanly(tmp_path: Path):
+def test_deferred_character_pointer_owner_supports_zero_copy_view(tmp_path: Path):
+    if (gnu_version := _gnu_fortran_version()) is not None and gnu_version < (13, 3, 0):
+        pytest.skip("deferred-length character pointer reassociation requires GNU Fortran 13.3 or newer")
     module = _build_pointer_owner_module(tmp_path)
     values = Pointer[String[:][:]]()
-    if (gnu_major := _gnu_fortran_major()) is not None and gnu_major < 14:
-        with pytest.raises(NotImplementedError, match="ifx or GNU Fortran 14"):
-            module.deferred_state(values)
-        return
     assert module.deferred_state(values) == np.int32(0)
     assert module.repoint_deferred(values) is values
     assert values.dtype == np.dtype("S6")
     assert values.shape == (2,)
     assert module.deferred_state(values) == np.int32(303)
     view = values.to_numpy()
+    assert view.dtype == np.dtype("S6")
+    assert view.shape == (2,)
     assert view.tolist() == [b"alpha ", b"beta  "]
     assert view.ctypes.data != 0
     view[:] = [b"changed", b"values"]

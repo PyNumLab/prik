@@ -415,7 +415,6 @@ def inspect(values: Pointer[String[:][:]]) -> None: ...
     assert argument_policy.default_construction == "lazy_fortran_owner"
     assert argument_policy.owner_type_name
     assert argument_policy.owner_signature
-    assert argument_policy.requires_deferred_character_pointer_support is True
     assert set(argument_policy.operations) == {"associate", "associated", "nullify"}
 
 
@@ -451,7 +450,6 @@ def inspect(values: Annotated[
     assert policy.owner_storage == "fortran_owner"
     assert policy.to_numpy == "contiguous_view"
     assert "to_numpy" in policy.operations
-    assert policy.requires_deferred_character_pointer_support is True
 
 
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():

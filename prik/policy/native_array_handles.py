@@ -62,7 +62,6 @@ class NativeArrayHandlePolicy:
     element_length_argument: bool
     owner_type_name: str | None
     owner_signature: int
-    requires_deferred_character_pointer_support: bool
     call_lease: bool
     operations: tuple[str, ...] = ()
     blocker: str | None = None
@@ -420,7 +419,6 @@ if __name__ == "__main__":
         element_length_argument=False,
         owner_type_name=None,
         owner_signature=0,
-        requires_deferred_character_pointer_support=False,
         call_lease=False,
         operations=("to_numpy", "nullify"),
     )

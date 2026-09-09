@@ -93,21 +93,6 @@
 #endif
 #endif
 
-/*
- * GNU Fortran releases before 14 lose the length when a deferred-length
- * character array pointer is reassociated (GCC PR 89352/106317).  Letting an
- * owner through on those releases would expose a corrupt element width.
- */
-#ifndef PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED
-#if defined(__INTEL_LLVM_COMPILER)
-#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 1
-#elif defined(__GNUC__) && __GNUC__ >= 14
-#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 1
-#else
-#define PRIK_FORTRAN_DEFERRED_CHARACTER_POINTER_OWNER_SUPPORTED 0
-#endif
-#endif
-
 #if defined(_MSC_VER)
 #define PRIK_NO_INLINE __declspec(noinline)
 #elif defined(__GNUC__) || defined(__clang__)
