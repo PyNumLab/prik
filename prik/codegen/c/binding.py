@@ -7408,7 +7408,7 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 ),
             )
-        descriptor_setup = (
+        establish = (
             (
                 *tuple(
                     CExpressionStatement(
@@ -7438,21 +7438,34 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 ),
             )
-            if array.contiguous is True and array.rank is not None
-            else (
+            if array.rank is not None
+            else ()
+        )
+        describe_strided = (
+            CIf(
+                CodeExpression(
+                    f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
+                    f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
+                    f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
+                ),
+                body=(CReturn(CodeExpression("NULL")),),
+            ),
+        )
+        if array.rank is None:
+            descriptor_setup = describe_strided
+        elif array.contiguous is True:
+            descriptor_setup = establish
+        else:
+            descriptor_setup = (
                 CIf(
-                    CodeExpression(
-                        f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
-                        f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
-                        f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
-                    ),
-                    body=(CReturn(CodeExpression("NULL")),),
+                    CodeExpression(f"PyArray_IS_F_CONTIGUOUS((PyArrayObject *){names.object_name})"),
+                    body=establish,
+                    else_body=describe_strided,
                 ),
             )
-        )
         describe: tuple = (
             CComment("No descriptor of its own, so one is made over the array as it is."),
-            *(() if numpy_validated else (self._array_validation_statement(plan, names),)),
+            *(() if numpy_validated else (self._array_validation_statement(plan, names, object_kind_checked=True),)),
             *width_guard,
             *descriptor_setup,
             CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{prefix}_section")),
@@ -7557,7 +7570,7 @@ class CBindingGenerator(ClassVisitor):
             ),
             else_body=(
                 CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
-                *describe,
+                self._native_array_actual_type_refusal(plan, names),
             ),
         )
         return (

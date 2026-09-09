@@ -73,7 +73,10 @@ def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
         "prik_native_array_backend_for_actual(bound_values_capsule, 2, 2, "
         'CFI_type_double, sizeof(double), "float64", "values")'
     ) in c_source
-    # A NumPy array has none, so one is built over its storage as it stands.
+    # A contiguous NumPy array needs only CFI_establish; genuinely strided
+    # storage retains the CFI_section construction.
+    assert "PyArray_IS_F_CONTIGUOUS((PyArrayObject *)bound_values_obj)" in c_source
+    assert "CFI_establish((CFI_cdesc_t *)&bound_values_section" in c_source
     assert "prik_describe_numpy_array((CFI_cdesc_t *)&bound_values_parent" in c_source
     assert "CFI_section(section, parent, lower, upper, step)" in c_source
     # Signed strides are what this layout accepts now.

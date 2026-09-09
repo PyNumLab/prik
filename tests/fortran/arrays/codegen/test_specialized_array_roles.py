@@ -95,7 +95,10 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
 
     assert "PyObject * bound_values_obj = Py_None;" in c_source
     assert "if (bound_values_obj != Py_None)" in c_source
-    assert ("prik_array_validate(bound_values_obj, NPY_FLOAT64, 1, 15, PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F") in c_source
+    assert (
+        "prik_array_validate_ndarray((PyArrayObject *)bound_values_obj, NPY_FLOAT64, 1, 15, "
+        "PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F"
+    ) in c_source
     assert (
         "prik_native_array_backend_for_actual(bound_values_capsule, 1, 15, "
         'CFI_type_double, sizeof(double), "float64", "values")'

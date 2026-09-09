@@ -9,7 +9,8 @@ release tags add a leading `v` to the package version.
 
 - Generated array wrappers now share fixed-rank dispatch and preserve
   contiguity in bridge descriptors, reducing large-module build time and
-  avoiding compiler-created temporaries for contiguous calls.
+  avoiding general descriptor construction and compiler-created temporaries
+  for contiguous calls.
 
 - Raw-address character array calls retain their runtime element width from
   NumPy arrays and native handles.
