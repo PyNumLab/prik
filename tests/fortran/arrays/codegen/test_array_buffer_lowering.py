@@ -82,11 +82,12 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "double bind_c_sum_values(CFI_cdesc_t * values);" in c_source
-    assert "prik_describe_numpy_array((CFI_cdesc_t *)&bound_values_parent" in c_source
+    assert "CFI_establish((CFI_cdesc_t *)&bound_values_section" in c_source
+    assert "prik_describe_numpy_array((CFI_cdesc_t *)&bound_values_parent" not in c_source
     assert "call->result = bind_c_sum_values(call->descriptor_0);" in c_source
     assert "bound_values_bind_fixed" not in c_source
 
-    assert "real(c_double), dimension(:) :: values" in bridge_source
+    assert "real(c_double), dimension(:), contiguous :: values" in bridge_source
     assert "call c_f_pointer(bound_values" not in bridge_source
     assert "result = native_sum_values(values)" in bridge_source
 

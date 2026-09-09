@@ -7408,18 +7408,53 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 ),
             )
+        descriptor_setup = (
+            (
+                *tuple(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{prefix}_extents[{axis}] = (CFI_index_t)PyArray_DIM("
+                            f"(PyArrayObject *){names.object_name}, {axis})"
+                        )
+                    )
+                    for axis in range(array.rank)
+                ),
+                CIf(
+                    CodeExpression(
+                        f"CFI_establish((CFI_cdesc_t *)&{prefix}_section, "
+                        f"PyArray_DATA((PyArrayObject *){names.object_name}), CFI_attribute_other, "
+                        f"{self._native_array_cfi_type(plan)}, "
+                        f"(size_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name}), "
+                        f"{array.rank}, {prefix}_extents) != CFI_SUCCESS"
+                    ),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(
+                                f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} '
+                                'could not be described to Fortran")'
+                            )
+                        ),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+            )
+            if array.contiguous is True and array.rank is not None
+            else (
+                CIf(
+                    CodeExpression(
+                        f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
+                        f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
+                        f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
+                    ),
+                    body=(CReturn(CodeExpression("NULL")),),
+                ),
+            )
+        )
         describe: tuple = (
             CComment("No descriptor of its own, so one is made over the array as it is."),
             *(() if numpy_validated else (self._array_validation_statement(plan, names),)),
             *width_guard,
-            CIf(
-                CodeExpression(
-                    f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{prefix}_parent, "
-                    f"(CFI_cdesc_t *)&{prefix}_section, (PyArrayObject *){names.object_name}, "
-                    f'{self._native_array_cfi_type(plan)}, "{plan.binding.python_name}") < 0'
-                ),
-                body=(CReturn(CodeExpression("NULL")),),
-            ),
+            *descriptor_setup,
             CExpressionStatement(CodeExpression(f"{prefix} = (CFI_cdesc_t *)&{prefix}_section")),
             *(
                 (
@@ -7450,84 +7485,91 @@ class CBindingGenerator(ClassVisitor):
             return describe
         capsule = f"{prefix}_capsule"
         backend = self._descriptor_backend_local(names)
-        return (
-            CExpressionStatement(
-                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_backend")')
-            ),
-            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
-            CIf(
-                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
-                body=(
-                    CComment("A handle's descriptor is the runtime's; the chain enters it."),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{backend} = prik_native_array_backend_for_actual({capsule}, "
-                            f"{plan.array.minimum_rank}, {plan.array.maximum_rank}, "
-                            f"{self._native_array_cfi_type(plan)}, "
-                            f"{self._native_array_expected_element_size(plan)}, "
-                            f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
-                        )
-                    ),
-                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
-                    CIf(CodeExpression(f"{backend} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                    CComment("Its state and extents are read while its own descriptor is live."),
-                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.rank = (int){backend}->rank")),
-                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.present = 0")),
-                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.contiguous = 0")),
-                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.elem_len = 0")),
-                    CExpressionStatement(CodeExpression(f"{prefix}_extents_out.extents = {prefix}_extents")),
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{backend}->with_descriptor({backend}->context, "
-                            f"{self.ARRAY_EXTENTS_READER}, &{prefix}_extents_out)"
-                        )
-                    ),
-                    *self._descriptor_character_width_guard(plan, prefix),
-                    CIf(
-                        CodeExpression(f"!{prefix}_extents_out.present"),
-                        body=(
-                            CExpressionStatement(
-                                CodeExpression(
-                                    "PyErr_SetString(PyExc_ValueError, "
-                                    f"{backend}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
-                                    '? "pointer handle is unassociated and cannot be passed as an array actual" '
-                                    ': "allocatable handle is unallocated and cannot be passed as an array actual")'
-                                )
-                            ),
-                            CReturn(CodeExpression("NULL")),
+        handle = CIf(
+            CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
+            body=(
+                CComment("A handle's descriptor is the runtime's; the chain enters it."),
+                CExpressionStatement(
+                    CodeExpression(
+                        f"{backend} = prik_native_array_backend_for_actual({capsule}, "
+                        f"{plan.array.minimum_rank}, {plan.array.maximum_rank}, "
+                        f"{self._native_array_cfi_type(plan)}, "
+                        f"{self._native_array_expected_element_size(plan)}, "
+                        f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
+                    )
+                ),
+                CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
+                CIf(CodeExpression(f"{backend} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                CComment("Its state and extents are read while its own descriptor is live."),
+                CExpressionStatement(CodeExpression(f"{prefix}_extents_out.rank = (int){backend}->rank")),
+                CExpressionStatement(CodeExpression(f"{prefix}_extents_out.present = 0")),
+                CExpressionStatement(CodeExpression(f"{prefix}_extents_out.contiguous = 0")),
+                CExpressionStatement(CodeExpression(f"{prefix}_extents_out.elem_len = 0")),
+                CExpressionStatement(CodeExpression(f"{prefix}_extents_out.extents = {prefix}_extents")),
+                CExpressionStatement(
+                    CodeExpression(
+                        f"{backend}->with_descriptor({backend}->context, "
+                        f"{self.ARRAY_EXTENTS_READER}, &{prefix}_extents_out)"
+                    )
+                ),
+                *self._descriptor_character_width_guard(plan, prefix),
+                CIf(
+                    CodeExpression(f"!{prefix}_extents_out.present"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(
+                                "PyErr_SetString(PyExc_ValueError, "
+                                f"{backend}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
+                                '? "pointer handle is unassociated and cannot be passed as an array actual" '
+                                ': "allocatable handle is unallocated and cannot be passed as an array actual")'
+                            )
                         ),
-                    ),
-                    *(
-                        (
-                            CIf(
-                                CodeExpression(f"!{prefix}_extents_out.contiguous"),
-                                body=(
-                                    CExpressionStatement(
-                                        CodeExpression(
-                                            'PyErr_SetString(PyExc_ValueError, "pointer handle target is '
-                                            f'noncontiguous and cannot be passed to argument {plan.binding.python_name}")'
-                                        )
-                                    ),
-                                    CReturn(CodeExpression("NULL")),
-                                ),
-                            ),
-                        )
-                        if array.contiguous is True
-                        else ()
-                    ),
-                    *(
-                        (CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = (int64_t){backend}->rank")),)
-                        if plan.array.runtime_rank_role is not None
-                        else ()
-                    ),
-                    *(
-                        CExpressionStatement(CodeExpression(f"{name} = {prefix}_extents[{axis}]"))
-                        for axis, name in enumerate(names.extent_names)
+                        CReturn(CodeExpression("NULL")),
                     ),
                 ),
+                *(
+                    (
+                        CIf(
+                            CodeExpression(f"!{prefix}_extents_out.contiguous"),
+                            body=(
+                                CExpressionStatement(
+                                    CodeExpression(
+                                        'PyErr_SetString(PyExc_ValueError, "pointer handle target is '
+                                        f'noncontiguous and cannot be passed to argument {plan.binding.python_name}")'
+                                    )
+                                ),
+                                CReturn(CodeExpression("NULL")),
+                            ),
+                        ),
+                    )
+                    if array.contiguous is True
+                    else ()
+                ),
+                *(
+                    (CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = (int64_t){backend}->rank")),)
+                    if plan.array.runtime_rank_role is not None
+                    else ()
+                ),
+                *(
+                    CExpressionStatement(CodeExpression(f"{name} = {prefix}_extents[{axis}]"))
+                    for axis, name in enumerate(names.extent_names)
+                ),
+            ),
+            else_body=(
+                CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
+                *describe,
+            ),
+        )
+        return (
+            CIf(
+                CodeExpression(f"PyArray_Check({names.object_name})"),
+                body=describe,
                 else_body=(
-                    CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
-                    *describe,
+                    CExpressionStatement(
+                        CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_backend")')
+                    ),
+                    CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
+                    handle,
                 ),
             ),
         )
@@ -7616,7 +7658,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{names.value_name}_capsule", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{names.value_name}_parent", f"CFI_CDESC_T({descriptor_rank})"),
             CDeclaration(f"{names.value_name}_section", f"CFI_CDESC_T({descriptor_rank})"),
-            CDeclaration(f"{names.value_name}_extents[{descriptor_rank}]", "int64_t", CodeExpression("{0}")),
+            CDeclaration(f"{names.value_name}_extents[{descriptor_rank}]", "CFI_index_t", CodeExpression("{0}")),
             CDeclaration(f"{names.value_name}_extents_out", self.ARRAY_EXTENTS_RECORD),
             *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
         ]
@@ -7778,145 +7820,46 @@ class CBindingGenerator(ClassVisitor):
         rank = plan.array.rank
         record = self._array_actual_reader_record_name(function, plan)
         reader = self._array_actual_reader_name(function, plan)
-        capsule = f"{prefix}_actual_capsule"
+        array = plan.array
         actual = plan.native_array_actual
-        backend = (
-            self._descriptor_backend_local(names)
-            if actual is not None and actual.call_lease
-            else f"{prefix}_actual_backend"
-        )
-        found = f"{prefix}_actual_found"
-        actual = plan.native_array_actual
-        contiguous_check: tuple = ()
-        if actual is not None and (actual.require_contiguous or plan.array.contiguous is True):
-            contiguous_check = (
-                CIf(
-                    CodeExpression(f"!{found}.contiguous"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                'PyErr_SetString(PyExc_ValueError, "pointer handle target is noncontiguous '
-                                'and cannot use the pointer/shape array-actual handoff")'
-                            )
-                        ),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                ),
-            )
-        checks: list = [
-            CComment("Each condition is reported the way the runtime reports it,"),
-            CComment("so a handle reads alike whether or not it publishes a backend."),
-        ]
-        declared_width = self._declared_character_width(plan)
-        if declared_width is not None:
-            checks.append(
-                CIf(
-                    CodeExpression(f"{found}.refused == 2"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                f"PyErr_Format(PyExc_TypeError, \"%s handle dtype dtype('S%zu') does not "
-                                f"match expected dtype dtype('S%d')\", "
-                                f"{backend}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
-                                f'? "pointer" : "allocatable", {found}.width, {declared_width})'
-                            )
-                        ),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                )
-            )
-        checks.extend(
-            (
-                CIf(
-                    CodeExpression(f"!{found}.present"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                f"PyErr_SetString(PyExc_ValueError, "
-                                f"{backend}->descriptor_kind == PRIK_NATIVE_ARRAY_KIND_POINTER "
-                                f'? "pointer handle is unassociated and cannot be passed as an array actual" '
-                                f': "allocatable handle is unallocated and cannot be passed as an array actual")'
-                            )
-                        ),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                ),
-                *contiguous_check,
-            )
-        )
-        for axis in range(rank):
-            checks.append(
-                CIf(
-                    CodeExpression(
-                        f"{prefix}_bind_fixed[{axis}] >= 0 && {found}.extents[{axis}] "
-                        f"!= (int64_t){prefix}_bind_fixed[{axis}]"
-                    ),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                f'PyErr_Format(PyExc_TypeError, "Argument {plan.binding.python_name} '
-                                f'has incompatible shape at axis %d", {axis})'
-                            )
-                        ),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                )
-            )
-        checks.extend(
-            (
-                CExpressionStatement(CodeExpression(f"{names.value_name} = {found}.data")),
-                *(
-                    (CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t){found}.width")),)
-                    if plan.array.itemsize_role is not None
-                    else ()
-                ),
-                *(
-                    CExpressionStatement(CodeExpression(f"{prefix}_bind_extents[{axis}] = {found}.extents[{axis}]"))
-                    for axis in range(rank)
-                ),
-            )
-        )
-        declarations = [CDeclaration(capsule, "PyObject *", CodeExpression("NULL"))]
-        if actual is None or not actual.call_lease:
+        if array is None or actual is None or rank is None:
+            raise ValueError(f"Array actual {plan.owner_path!r} is missing its fixed-rank handoff")
+        numpy_type, python_type = self._array_dtype_selectors(plan, array)
+        minimum_rank, maximum_rank = self._array_rank_bounds(array)
+        backend = self._descriptor_backend_local(names) if actual.call_lease else f"{prefix}_actual_backend"
+        declarations: list[CDeclaration] = [CDeclaration(f"{prefix}_actual_found", record)]
+        if not actual.call_lease:
             declarations.append(CDeclaration(backend, "prik_native_array_backend *", CodeExpression("NULL")))
+        selectors = ", ".join(
+            str(value)
+            for value in (
+                numpy_type,
+                self._declared_character_width(plan) or 0,
+                self._native_array_expected_element_size(plan),
+                self._declared_character_width(plan) or 0,
+                rank,
+                minimum_rank,
+                maximum_rank,
+                self._array_layout_selector(array),
+                int(actual.require_contiguous or array.contiguous is True),
+                int(plan.binding.writable),
+                f'"{python_type}"',
+                f'"{plan.binding.python_name}"',
+                actual.flat_axis if actual.flatten_storage else rank - 1,
+                self._flattened_reader_axis(plan) if self._flattened_reader_axis(plan) is not None else -1,
+                f"{prefix}_bind_fixed",
+                f"&{names.value_name}",
+                f"{prefix}_bind_extents",
+                f"&{backend}",
+                self._native_array_cfi_type(plan),
+                reader,
+                f"&{prefix}_actual_found",
+            )
+        )
         return (
             *declarations,
-            CDeclaration(found, record),
-            CExpressionStatement(CodeExpression(f"{found}.present = 0")),
-            CExpressionStatement(CodeExpression(f"{found}.contiguous = 0")),
-            CExpressionStatement(CodeExpression(f"{found}.refused = 1")),
-            CExpressionStatement(CodeExpression(f"{found}.width = 0")),
             CExpressionStatement(
-                CodeExpression(f'{capsule} = PyObject_GetAttrString({names.object_name}, "_native_backend")')
-            ),
-            CExpressionStatement(CodeExpression(f"if ({capsule} == NULL) {{ PyErr_Clear(); }}")),
-            CIf(
-                CodeExpression(f"{capsule} != NULL && {capsule} != Py_None"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{backend} = prik_native_array_backend_for_actual({capsule}, "
-                            f"{plan.array.minimum_rank}, {plan.array.maximum_rank}, "
-                            f"{self._native_array_cfi_type(plan)}, "
-                            f"{self._native_array_expected_element_size(plan)}, "
-                            f'"{plan.native_array_actual.dtype}", "{plan.binding.python_name}")'
-                        )
-                    ),
-                    CExpressionStatement(CodeExpression(f"Py_DECREF({capsule})")),
-                    CIf(CodeExpression(f"{backend} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                    CExpressionStatement(
-                        CodeExpression(f"{backend}->with_descriptor({backend}->context, {reader}, &{found})")
-                    ),
-                    *checks,
-                ),
-                else_body=(
-                    CExpressionStatement(CodeExpression(f"Py_XDECREF({capsule})")),
-                    CIf(
-                        CodeExpression(f"!PyArray_Check({names.object_name})"),
-                        body=(self._native_array_actual_type_refusal(plan, names),),
-                    ),
-                    fallback,
-                ),
+                CodeExpression(f"if ({self.ARRAY_ACTUAL_BINDER}({names.object_name}, {selectors}) < 0) return NULL")
             ),
         )
 
@@ -10421,12 +10364,11 @@ class CBindingGenerator(ClassVisitor):
 
     def _array_actual_reader_name(self, function: FunctionPlan, argument: ArgumentTransferPlan) -> str:
         """Return the reader that copies one handle's storage out of its descriptor."""
-        owner = re.sub(r"\W", "_", argument.owner_path).casefold()
-        return f"prik_read_array_actual_{owner}"
+        return self.ARRAY_ACTUAL_READER
 
     def _array_actual_reader_record_name(self, function: FunctionPlan, argument: ArgumentTransferPlan) -> str:
         """Return the record one array-actual reader fills."""
-        return f"{self._array_actual_reader_name(function, argument)}_result"
+        return self.ARRAY_ACTUAL_READER_RECORD
 
     def _array_actual_handle_arguments(self, plan: ModulePlan):
         """Return ordinary array arguments an array handle may be passed to."""
@@ -10825,6 +10767,9 @@ class CBindingGenerator(ClassVisitor):
     NUMPY_DESCRIPTOR_BUILDER = "prik_describe_numpy_array"
     ARRAY_EXTENTS_READER = "prik_read_array_extents"
     ARRAY_EXTENTS_RECORD = "prik_array_extents_out"
+    ARRAY_ACTUAL_READER = "prik_read_array_actual"
+    ARRAY_ACTUAL_READER_RECORD = "prik_array_actual_reader_result"
+    ARRAY_ACTUAL_BINDER = "prik_bind_array_or_handle"
 
     def _array_extents_reader_function(self, plan: ModulePlan) -> tuple:
         """Emit the consumer that reads a descriptor's extents into the frame.
@@ -11652,78 +11597,325 @@ class CBindingGenerator(ClassVisitor):
             seen.add(name)
             nodes.append(self._array_actual_struct_reader_record(argument))
             nodes.append(self._array_actual_struct_reader_function(argument))
-        for function, argument in self._array_actual_handle_arguments(plan):
-            record = self._array_actual_reader_record_name(function, argument)
-            if record in seen:
-                continue
-            seen.add(record)
-            rank = argument.array.rank
-            flat_axis = self._flattened_reader_axis(argument)
+        outlined = tuple(self._array_actual_handle_arguments(plan))
+        if outlined:
+            record = self.ARRAY_ACTUAL_READER_RECORD
             nodes.append(
                 CStructDefinition(
                     record,
                     (
                         CParameter("data", "void *"),
-                        CParameter(f"extents[{rank}]", "int64_t"),
+                        CParameter("extents[PRIK_MAX_ARRAY_RANK]", "int64_t"),
                         CParameter("contiguous", "int"),
                         CParameter("present", "int"),
-                        # 0 accepted, 1 no storage, 2 element width
+                        # 0 accepted, 1 no storage, 2 element width, 3 layout, 4 rank.
                         CParameter("refused", "int"),
                         CParameter("width", "size_t"),
+                        CParameter("rank", "int"),
+                        CParameter("minimum_rank", "int"),
+                        CParameter("maximum_rank", "int"),
+                        CParameter("target_rank", "int"),
+                        CParameter("flat_axis", "int"),
+                        CParameter("declared_width", "size_t"),
                     ),
                 )
             )
-            if flat_axis is not None:
-                nodes.append(self._flattened_array_actual_reader(function, argument, record, rank, flat_axis))
-                continue
-            body: list = [
+            body = [
                 CDeclaration("source", "CFI_cdesc_t *", CodeExpression("(CFI_cdesc_t *)descriptor")),
                 CDeclaration("out", f"{record} *", CodeExpression(f"({record} *)context")),
                 CDeclaration("expected", "CFI_index_t", CodeExpression("0")),
+                CDeclaration("extent", "int64_t", CodeExpression("0")),
+                CDeclaration("collapsed", "int64_t", CodeExpression("1")),
+                CDeclaration("axis", "int", CodeExpression("0")),
+                CExpressionStatement(CodeExpression("out->data = NULL")),
                 CExpressionStatement(CodeExpression("out->present = 0")),
                 CExpressionStatement(CodeExpression("out->contiguous = 1")),
                 CExpressionStatement(CodeExpression("out->refused = 1")),
+                CExpressionStatement(CodeExpression("out->rank = 0")),
+                CExpressionStatement(CodeExpression("out->width = 0")),
                 CComment("Unallocated or disassociated storage has no address to pass."),
                 CIf(CodeExpression("source->base_addr == NULL"), body=(CReturn(),)),
+                CExpressionStatement(CodeExpression("out->rank = (int)source->rank")),
+                CIf(
+                    CodeExpression("source->rank < out->minimum_rank || source->rank > out->maximum_rank"),
+                    body=(CExpressionStatement(CodeExpression("out->refused = 4")), CReturn()),
+                ),
                 CExpressionStatement(CodeExpression("out->refused = 2")),
                 CExpressionStatement(CodeExpression("out->width = source->elem_len")),
-                CExpressionStatement(CodeExpression("expected = (CFI_index_t)source->elem_len")),
-                *self._declared_character_width_guard(argument),
+                CIf(
+                    CodeExpression("out->declared_width != 0 && source->elem_len != out->declared_width"),
+                    body=(CReturn(),),
+                ),
                 CExpressionStatement(CodeExpression("out->refused = 0")),
-            ]
-            for axis in range(rank):
-                body.extend(
-                    (
-                        # A compiler may report an empty dimension as extent -1.
+                CExpressionStatement(CodeExpression("expected = (CFI_index_t)source->elem_len")),
+                CIf(
+                    CodeExpression("out->flat_axis >= 0"),
+                    body=(
+                        CFor(
+                            "axis = 0",
+                            CodeExpression("axis < (int)source->rank"),
+                            CodeExpression("++axis"),
+                            body=(
+                                CExpressionStatement(
+                                    CodeExpression(
+                                        "extent = (int64_t)(source->dim[axis].extent == -1 ? 0 : "
+                                        "source->dim[axis].extent)"
+                                    )
+                                ),
+                                CIf(
+                                    CodeExpression("source->dim[axis].sm != expected"),
+                                    body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
+                                ),
+                                CExpressionStatement(CodeExpression("expected *= (CFI_index_t)extent")),
+                                CIf(
+                                    CodeExpression(
+                                        "out->flat_axis == out->target_rank - 1 ? "
+                                        "axis < out->target_rank - 1 : "
+                                        "axis >= (int)source->rank - (out->target_rank - 1)"
+                                    ),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                "out->extents[out->flat_axis == out->target_rank - 1 ? "
+                                                "axis : axis - ((int)source->rank - "
+                                                "(out->target_rank - 1)) + 1] = extent"
+                                            )
+                                        ),
+                                    ),
+                                    else_body=(CExpressionStatement(CodeExpression("collapsed *= extent")),),
+                                ),
+                            ),
+                        ),
                         CExpressionStatement(
                             CodeExpression(
-                                f"out->extents[{axis}] = (int64_t)(source->dim[{axis}].extent == -1 "
-                                f"? 0 : source->dim[{axis}].extent)"
+                                "out->extents[out->flat_axis == out->target_rank - 1 ? "
+                                "out->target_rank - 1 : 0] = collapsed"
                             )
                         ),
-                        CIf(
-                            CodeExpression(f"source->dim[{axis}].sm != expected"),
-                            body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
+                    ),
+                    else_body=(
+                        CFor(
+                            "axis = 0",
+                            CodeExpression("axis < (int)source->rank"),
+                            CodeExpression("++axis"),
+                            body=(
+                                CExpressionStatement(
+                                    CodeExpression(
+                                        "extent = (int64_t)(source->dim[axis].extent == -1 ? 0 : "
+                                        "source->dim[axis].extent)"
+                                    )
+                                ),
+                                CExpressionStatement(CodeExpression("out->extents[axis] = extent")),
+                                CIf(
+                                    CodeExpression("source->dim[axis].sm != expected"),
+                                    body=(CExpressionStatement(CodeExpression("out->contiguous = 0")),),
+                                ),
+                                CExpressionStatement(CodeExpression("expected *= (CFI_index_t)extent")),
+                            ),
                         ),
-                        CExpressionStatement(CodeExpression(f"expected *= (CFI_index_t)out->extents[{axis}]")),
-                    )
-                )
-            body.extend(
-                (
-                    CExpressionStatement(CodeExpression("out->data = source->base_addr")),
-                    CExpressionStatement(CodeExpression("out->present = 1")),
-                )
-            )
+                    ),
+                ),
+                CExpressionStatement(CodeExpression("out->data = source->base_addr")),
+                CExpressionStatement(CodeExpression("out->present = 1")),
+            ]
             nodes.append(
                 CFunction(
-                    self._array_actual_reader_name(function, argument),
+                    self.ARRAY_ACTUAL_READER,
                     "void",
                     parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
                     storage="static",
                     body=tuple(body),
                     doc=(
                         "Copy one handle's storage out of the descriptor the runtime opened.",
-                        "An ordinary array dummy receives that address and its extents.",
+                        "The call supplies the completed rank and flattening policy in its result record.",
+                    ),
+                )
+            )
+            nodes.append(
+                CFunction(
+                    self.ARRAY_ACTUAL_BINDER,
+                    "int",
+                    parameters=(
+                        CParameter("object", "PyObject *"),
+                        CParameter("numpy_type", "int"),
+                        CParameter("numpy_itemsize", "size_t"),
+                        CParameter("native_element_size", "size_t"),
+                        CParameter("reader_itemsize", "size_t"),
+                        CParameter("rank", "int"),
+                        CParameter("minimum_rank", "int"),
+                        CParameter("maximum_rank", "int"),
+                        CParameter("layout", "int"),
+                        CParameter("require_contiguous", "int"),
+                        CParameter("require_writeable", "int"),
+                        CParameter("python_type", "const char *"),
+                        CParameter("argument_name", "const char *"),
+                        CParameter("flatten_axis", "int"),
+                        CParameter("reader_flat_axis", "int"),
+                        CParameter("fixed", "const long long *"),
+                        CParameter("data", "void **"),
+                        CParameter("extents", "int64_t *"),
+                        CParameter("backend_out", "prik_native_array_backend **"),
+                        CParameter("cfi_type", "CFI_type_t"),
+                        CParameter("reader", "prik_native_array_descriptor_fn"),
+                        CParameter("reader_context", f"{record} *"),
+                    ),
+                    storage="static",
+                    body=(
+                        CDeclaration("capsule", "PyObject *", CodeExpression("NULL")),
+                        CDeclaration("backend", "prik_native_array_backend *", CodeExpression("NULL")),
+                        CDeclaration("axis", "int", CodeExpression("0")),
+                        CExpressionStatement(CodeExpression("*backend_out = NULL")),
+                        CExpressionStatement(CodeExpression("*data = NULL")),
+                        CIf(
+                            CodeExpression("PyArray_Check(object)"),
+                            body=(
+                                CReturn(
+                                    CodeExpression(
+                                        "prik_bind_array(object, numpy_type, numpy_itemsize, rank, minimum_rank, "
+                                        "maximum_rank, layout, require_contiguous, require_writeable, python_type, "
+                                        "argument_name, flatten_axis, fixed, data, extents, NULL)"
+                                    )
+                                ),
+                            ),
+                        ),
+                        CExpressionStatement(
+                            CodeExpression('capsule = PyObject_GetAttrString(object, "_native_backend")')
+                        ),
+                        CExpressionStatement(CodeExpression("if (capsule == NULL) { PyErr_Clear(); }")),
+                        CIf(
+                            CodeExpression("capsule != NULL && capsule != Py_None"),
+                            body=(
+                                CExpressionStatement(
+                                    CodeExpression(
+                                        "backend = prik_native_array_backend_for_actual(capsule, minimum_rank, "
+                                        "maximum_rank, cfi_type, native_element_size, python_type, argument_name)"
+                                    )
+                                ),
+                                CExpressionStatement(CodeExpression("Py_DECREF(capsule)")),
+                                CIf(CodeExpression("backend == NULL"), body=(CReturn(CodeExpression("-1")),)),
+                                CExpressionStatement(CodeExpression("reader_context->minimum_rank = minimum_rank")),
+                                CExpressionStatement(CodeExpression("reader_context->maximum_rank = maximum_rank")),
+                                CExpressionStatement(CodeExpression("reader_context->target_rank = rank")),
+                                CExpressionStatement(CodeExpression("reader_context->flat_axis = reader_flat_axis")),
+                                CExpressionStatement(
+                                    CodeExpression("reader_context->declared_width = reader_itemsize")
+                                ),
+                                CExpressionStatement(CodeExpression("reader_context->present = 0")),
+                                CExpressionStatement(CodeExpression("reader_context->contiguous = 0")),
+                                CExpressionStatement(CodeExpression("reader_context->refused = 1")),
+                                CExpressionStatement(CodeExpression("reader_context->width = 0")),
+                                CExpressionStatement(
+                                    CodeExpression("backend->with_descriptor(backend->context, reader, reader_context)")
+                                ),
+                                CIf(
+                                    CodeExpression("reader_context->refused == 2"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                'PyErr_Format(PyExc_TypeError, "handle with %zu-byte elements does not '
+                                                'match expected dtype %s for argument %s", reader_context->width, '
+                                                "python_type, argument_name)"
+                                            )
+                                        ),
+                                        CReturn(CodeExpression("-1")),
+                                    ),
+                                ),
+                                CIf(
+                                    CodeExpression("reader_context->refused == 4"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                'PyErr_Format(PyExc_TypeError, "native array handle descriptor rank %d '
+                                                'is outside the supported range %d..%d", reader_context->rank, '
+                                                "minimum_rank, maximum_rank)"
+                                            )
+                                        ),
+                                        CReturn(CodeExpression("-1")),
+                                    ),
+                                ),
+                                CIf(
+                                    CodeExpression("!reader_context->present"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                "PyErr_SetString(PyExc_ValueError, backend->descriptor_kind == "
+                                                'PRIK_NATIVE_ARRAY_KIND_POINTER ? "pointer handle is unassociated '
+                                                'and cannot be passed as an array actual" : "allocatable handle is '
+                                                'unallocated and cannot be passed as an array actual")'
+                                            )
+                                        ),
+                                        CReturn(CodeExpression("-1")),
+                                    ),
+                                ),
+                                CIf(
+                                    CodeExpression("require_contiguous && !reader_context->contiguous"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                'PyErr_SetString(PyExc_ValueError, "pointer handle target is '
+                                                'noncontiguous and cannot use the pointer/shape array-actual handoff")'
+                                            )
+                                        ),
+                                        CReturn(CodeExpression("-1")),
+                                    ),
+                                ),
+                                CFor(
+                                    "axis = 0",
+                                    CodeExpression("axis < rank"),
+                                    CodeExpression("++axis"),
+                                    body=(
+                                        CIf(
+                                            CodeExpression(
+                                                "fixed[axis] >= 0 && reader_context->extents[axis] != fixed[axis]"
+                                            ),
+                                            body=(
+                                                CExpressionStatement(
+                                                    CodeExpression(
+                                                        'PyErr_Format(PyExc_TypeError, "Argument %s has incompatible '
+                                                        'shape at axis %d", argument_name, axis)'
+                                                    )
+                                                ),
+                                                CReturn(CodeExpression("-1")),
+                                            ),
+                                        ),
+                                        CExpressionStatement(
+                                            CodeExpression("extents[axis] = reader_context->extents[axis]")
+                                        ),
+                                    ),
+                                ),
+                                CExpressionStatement(CodeExpression("*data = reader_context->data")),
+                                CExpressionStatement(CodeExpression("*backend_out = backend")),
+                                CReturn(CodeExpression("0")),
+                            ),
+                            else_body=(
+                                CExpressionStatement(CodeExpression("Py_XDECREF(capsule)")),
+                                CIf(
+                                    CodeExpression("!PyArray_Check(object)"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression(
+                                                'PyErr_Format(PyExc_TypeError, "Expected a compatible %s array or native '
+                                                'array handle for argument %s. Received %s", python_type, argument_name, '
+                                                "Py_TYPE(object)->tp_name)"
+                                            )
+                                        ),
+                                        CReturn(CodeExpression("-1")),
+                                    ),
+                                ),
+                                CReturn(
+                                    CodeExpression(
+                                        "prik_bind_array(object, numpy_type, numpy_itemsize, rank, minimum_rank, "
+                                        "maximum_rank, layout, require_contiguous, require_writeable, python_type, "
+                                        "argument_name, flatten_axis, fixed, data, extents, NULL)"
+                                    )
+                                ),
+                            ),
+                        ),
+                    ),
+                    doc=(
+                        "Bind one fixed-rank ordinary array from a NumPy object or a native handle.",
+                        "The generated wrapper supplies policy metadata; this shared path keeps the per-argument "
+                        "dispatch small in large modules.",
                     ),
                 )
             )

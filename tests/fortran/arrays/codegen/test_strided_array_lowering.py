@@ -25,6 +25,19 @@ def strided(values: Float64[{dimensions}]) -> None: ...
     return WrapperPlanner().build(module)
 
 
+def _contiguous_plan():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Float64
+
+def contiguous(values: Float64[:]) -> None: ...
+""",
+        module_name="contiguous_arrays",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def test_strided_array_plan_selects_one_descriptor_without_parallel_stride_roles():
     argument = _strided_plan().namespaces[0].functions[0].arguments[0]
     array = argument.array
@@ -77,6 +90,14 @@ def test_strided_array_lowering_hands_over_one_descriptor_from_either_source():
     assert "call c_f_pointer(" not in bridge_source
     assert "values_base" not in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
+
+
+def test_contiguous_descriptor_dummy_preserves_contiguity_for_native_call():
+    """A contiguous descriptor dummy must not make a compiler temporary."""
+    artifacts = WrapperGenerator().generate(_contiguous_plan())
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "real(c_double), dimension(:), contiguous :: values" in bridge_source
 
 
 def test_descriptor_array_stride_role_edit_fails_before_backend_lowering():

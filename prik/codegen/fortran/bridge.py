@@ -3909,6 +3909,8 @@ class FortranBridgeGenerator(ClassVisitor):
             # may not name a variable for it, so it is assumed here.
             element_type = "character(kind=c_char, len=*)"
         attributes = ["dimension(..)" if array.rank is None else self._array_dimension_attribute(array.rank)]
+        if array.contiguous is True:
+            attributes.append("contiguous")
         if optional:
             # C omits it by passing no descriptor, which is what optional means
             # for an interoperable dummy.

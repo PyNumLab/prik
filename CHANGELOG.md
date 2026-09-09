@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated array wrappers now share fixed-rank dispatch and preserve
+  contiguity in bridge descriptors, reducing large-module build time and
+  avoiding compiler-created temporaries for contiguous calls.
+
 - Native array handles now preserve `longdouble`, `clongdouble`, and `uintp`
   element dtypes for allocatable, pointer, module, and derived-field storage.
 

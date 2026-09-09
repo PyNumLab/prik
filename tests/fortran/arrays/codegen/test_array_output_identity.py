@@ -116,7 +116,7 @@ def test_high_rank_bool_array_bridge_stays_inside_the_fortran_line_limit():
     artifacts = WrapperGenerator().generate(_high_rank_logical_output_plan())
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "dimension(:, :, :, :, :, :, :, :, :, :, :, :, :, :, :) :: values" in bridge_source
+    assert "dimension(:, :, :, :, :, :, :, :, :, :, :, :, :, :, :), contiguous :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
