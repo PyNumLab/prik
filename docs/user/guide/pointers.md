@@ -99,10 +99,9 @@ An unavailable operation raises `NotImplementedError`.
 
 Fixed-width character pointer parameters use `Pointer[String[N][...]]`.
 Deferred-width character pointers use `Pointer[String[:][...]]`; contiguous
-targets support zero-copy `to_numpy()` views and report their runtime width
-when compiled with ifx or GNU Fortran 13.3 or newer. Older GNU Fortran
-versions are not supported for deferred-length pointer reassociation.
-Non-contiguous targets do not support `to_numpy()`.
+targets support zero-copy `to_numpy()` views with ifx or GNU Fortran 13.3 or
+newer. Other deferred-width pointer forms can still be passed to native calls,
+but do not expose `to_numpy()`.
 
 ---
 

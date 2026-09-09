@@ -7,78 +7,22 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- Generated array wrappers now share fixed-rank dispatch and preserve
-  contiguity in bridge descriptors, reducing large-module build time and
-  avoiding general descriptor construction and compiler-created temporaries
-  for contiguous calls.
+- Array handles support allocatable and pointer arguments, results, module
+  variables, derived fields, optional arguments, and matching ordinary-array
+  parameters. Numeric and character arrays accept supported forward and
+  reversed Fortran sections without copying.
 
-- Raw-address character array calls retain their runtime element width from
-  NumPy arrays and native handles.
+- Character array handles support caller-created and returned storage.
+  Deferred-length allocation and resizing use `element_length=...`.
 
-- Native array handles now preserve `longdouble`, `clongdouble`, and `uintp`
-  element dtypes for allocatable, pointer, module, and derived-field storage.
+- Wider Fortran logical arrays use the matching-width NumPy integer dtype;
+  `logical(c_bool)` arrays use `numpy.bool_`. Handle storage also supports
+  `longdouble`, `clongdouble`, and `uintp` where the target exposes them.
 
-- **Breaking (native ABI):** the native array handle capsule is now
-  `prik.native_array_backend.v2`. Extensions built with an earlier PRIK publish
-  an incompatible capsule, so rebuild extensions that exchange handles.
+- Improved generated-wrapper build time and contiguous-array call overhead.
 
-- Allocatable and pointer character-array arguments now accept matching
-  caller-created handles. Deferred-length allocation and resizing use
-  `element_length=...`; contiguous deferred-length pointer targets also expose
-  zero-copy `to_numpy()` views when compiled with ifx or GNU Fortran 13.3 or
-  newer.
-
-- Returned character-array handles use Fortran-owned storage, including
-  deferred-length allocatables, and can be reused in matching calls. Output
-  arguments transfer their allocation directly; function results use normal
-  Fortran assignment semantics without an additional C-side data copy.
-
-- Fixed Fortran allocatable and pointer descriptor arguments to use the
-  compiler's live descriptor. This works on Intel ifx as well as GNU Fortran,
-  preserves lower bounds, allocation and association changes, and covers
-  required and optional dummies, multiple descriptor dummies per call,
-  `intent(out)` and status-bearing calls, and handles from module variables,
-  fields, results, and caller-created storage.
-
-- Descriptor-backed native calls honor `@nogil` while the native procedure is
-  running, including calls with multiple allocatable or pointer arguments.
-
-- Generated Fortran allocatable and pointer handles can be passed directly to
-  matching ordinary array arguments. Numeric assumed-shape and assumed-rank
-  arguments accept representable forward or reversed Fortran sections from
-  either handles or NumPy arrays, including direct `bind(C)` procedures.
-  Optional arrays apply the same layout rules when present and accept omission
-  or `None` as absence. Explicit-shape and assumed-size arrays retain their
-  declared layout. C array arguments accept NumPy arrays.
-
-- Fixed- and assumed-width character array arguments accept strided views,
-  forward or reversed, from NumPy arrays and from generated handles, and write
-  back through them. Previously a strided character view reached native code as
-  the whole buffer it was cut from, and a reversed one was refused.
-
-- Array-valued functions whose result extents depend on descriptor arguments
-  return initialized NumPy arrays on Intel ifx and GNU Fortran.
-
-- Descriptor-backed NumPy views preserve native byte strides, including
-  negative strides, non-contiguous pointer targets, and zero-sized dimensions.
-
-- Writable module and derived-field allocatable arrays support allocation and
-  reassignment. PRIK rejects `protected` module arrays when the generated API
-  would require writable access.
-
-- Module array views cover fixed, target, allocatable, pointer, shifted-bound,
-  character, and logical storage. Ordinary fixed-shape module arrays expose
-  live NumPy views with or without `target`.
-
-- PRIK now selects interoperable Fortran logical storage on Intel and
-  PGI/NVIDIA compilers. Use `--no-standard-logicals` or
-  `standard_logicals=False` only when linking Intel objects compiled without
-  that option. Wider logical arrays are exposed with their matching integer
-  dtype, including caller-created allocatable and pointer handles;
-  `logical(c_bool)` remains `numpy.bool_`. A wider logical array argument is
-  now aliased rather than converted, so it takes that integer dtype where a
-  one-byte `numpy.bool_` buffer was previously copied in and out. Logical
-  scalars are unaffected and stay Python `bool` in every kind.
+- **Breaking (native ABI):** native array handles use
+  `prik.native_array_backend.v2`. Rebuild extensions that exchange handles.
 
 ## 0.4.3 — 2026-08-31
 

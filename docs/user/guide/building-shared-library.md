@@ -59,13 +59,6 @@ GNU, IFX, and Flang are tested on Linux. See
 [Compiler Toolchains](../getting-started/installation.md#compiler-toolchains)
 for versions and other recognized options.
 
-On Intel PRIK adds `-standard-semantics` (and `-Munixlogical` on PGI/NVIDIA) so
-a Fortran `logical` has the representation C expects. Pass
-`--no-standard-logicals` to leave it out — needed only when you link prebuilt
-Intel objects that were themselves compiled without it, since the option also
-changes module symbol mangling. See
-[Compiler options for interoperable logicals](data-types.md#compiler-options-for-interoperable-logicals).
-
 ## Build a primitive C API directly
 
 PRIK supports C source as well. Start with the [C User Guide](c/index.md) for

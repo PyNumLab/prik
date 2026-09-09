@@ -114,9 +114,8 @@ print(mod.nmax)         # 12 (read-only parameter)
 
 ## Module Arrays & Saved State
 
-A fixed-shape module array is exposed as a live NumPy view over the real
-Fortran storage. Reads see whatever the native code last wrote, and writes
-through the view are visible to Fortran:
+A fixed-shape module array is a live NumPy view. Reads reflect native changes,
+and writes through the view are visible to Fortran:
 
 ```fortran
 module state
@@ -127,32 +126,19 @@ end module state
 ```
 
 ```python
-grid = mod.grid          # a view, not a copy
-grid[0, 0] = 10.0        # Fortran sees this
-mod.bump()               # and this is visible through `grid`
+grid = mod.grid
+grid[0, 0] = 10.0
 ```
 
-The whole variable cannot be reassigned (`mod.grid = ...` raises
-`AttributeError`); its shape belongs to the Fortran declaration. Write into the
-view instead, with `mod.grid[:] = ...`.
-
-- Fixed-shape module arrays and derived-type array fields expose live views
-  whether or not their declarations include `target`.
-- A `logical(c_bool)` array uses `numpy.bool_`; wider logical kinds use the
-  matching NumPy integer dtype. See the
-  [logical type mapping](data-types.md#scalar-type-mapping) for reading and
-  writing those values.
+Assign elements or slices, rather than rebinding the module variable.
+Fixed-shape module arrays and derived-type array fields expose live views
+whether or not their declarations include `target`. Logical array dtypes follow
+the [data-type mapping](data-types.md#scalar-type-mapping).
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.
 - `save` attributes (including procedure-local `save` variables) persist across calls.
 - Multiple Python imports of the same extension share the same native module state.
-
-!!! warning "A borrowed view assumes module storage stays put"
-
-    A module view borrows the variable's current address. Copy it with
-    `np.array(mod.grid)` before native work that may relocate that storage.
-    Declaring the variable `target` gives its address Fortran-defined stability.
 
 ---
 

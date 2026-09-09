@@ -226,7 +226,7 @@ integer dtype of matching width and can be read as Boolean values with
 
 ```python
 flags = mod.flags            # dtype bool for logical(c_bool)
-wide = mod.wide              # dtype int32 for a default `logical`
+wide = mod.wide              # dtype int32 for a 32-bit logical
 wide.astype(bool)            # array([True, False, True])
 wide[0] = 0                  # visible to Fortran
 ```
@@ -236,45 +236,15 @@ are not portable Fortran logical representations.
 
 ### Compiler options for interoperable logicals
 
-PRIK requests each compiler's interoperable representation for Fortran
-`logical` values:
-
-| Compiler | Option PRIK passes |
-| --- | --- |
-| gfortran, Cray, IBM XL | none needed |
-| Intel `ifx` / `ifort` | `-standard-semantics` |
-| PGI / NVIDIA | `-Munixlogical` |
-
-Keep the listed option when overriding PRIK's compiler flags.
-
-#### Turning it off for prebuilt Intel objects
-
-On Intel, `-standard-semantics` also changes how module symbols are mangled.
-A variable `flag` in module `logtest` is emitted as `logtest_MP_flag_` with the
-option and as `logtest_mp_flag_` without it. Objects compiled with the option
-and objects compiled without it therefore cannot be linked together, and mixing
-them fails with `undefined reference to lib_MP_name_` rather than with anything
-about logicals.
-
-So if you link PRIK against a **prebuilt** Intel library or object file that
-was compiled without `-standard-semantics`, either rebuild that library with
-the option — the better fix — or tell PRIK to leave the option out:
+PRIK selects interoperable logical storage for Intel and PGI/NVIDIA compilers.
+When linking prebuilt Intel objects compiled without that setting, pass
+`--no-standard-logicals` so their module symbols remain compatible:
 
 ```bash
 python3 -m prik lib.f90 --compiler ifx --no-standard-logicals
 ```
 
-```python
-build_fortran_extension(
-    "lib.f90",
-    preprocessing=PreprocessingConfig(compiler="ifx"),
-    standard_logicals=False,
-)
-```
-
-Disabling standard logicals also disables the interoperable representation
-guarantee. Prefer rebuilding the dependency with `-standard-semantics` when
-possible.
+The equivalent Python build option is `standard_logicals=False`.
 
 ---
 
