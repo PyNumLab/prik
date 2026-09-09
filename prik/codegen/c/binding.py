@@ -7413,7 +7413,7 @@ class CBindingGenerator(ClassVisitor):
                 *tuple(
                     CExpressionStatement(
                         CodeExpression(
-                            f"{prefix}_extents[{axis}] = (CFI_index_t)PyArray_DIM("
+                            f"{prefix}_cfi_extents[{axis}] = (CFI_index_t)PyArray_DIM("
                             f"(PyArrayObject *){names.object_name}, {axis})"
                         )
                     )
@@ -7425,7 +7425,7 @@ class CBindingGenerator(ClassVisitor):
                         f"PyArray_DATA((PyArrayObject *){names.object_name}), CFI_attribute_other, "
                         f"{self._native_array_cfi_type(plan)}, "
                         f"(size_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name}), "
-                        f"{array.rank}, {prefix}_extents) != CFI_SUCCESS"
+                        f"{array.rank}, {prefix}_cfi_extents) != CFI_SUCCESS"
                     ),
                     body=(
                         CExpressionStatement(
@@ -7658,7 +7658,8 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{names.value_name}_capsule", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{names.value_name}_parent", f"CFI_CDESC_T({descriptor_rank})"),
             CDeclaration(f"{names.value_name}_section", f"CFI_CDESC_T({descriptor_rank})"),
-            CDeclaration(f"{names.value_name}_extents[{descriptor_rank}]", "CFI_index_t", CodeExpression("{0}")),
+            CDeclaration(f"{names.value_name}_cfi_extents[{descriptor_rank}]", "CFI_index_t", CodeExpression("{0}")),
+            CDeclaration(f"{names.value_name}_extents[{descriptor_rank}]", "int64_t", CodeExpression("{0}")),
             CDeclaration(f"{names.value_name}_extents_out", self.ARRAY_EXTENTS_RECORD),
             *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
         ]
