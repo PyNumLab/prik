@@ -389,6 +389,69 @@ class box:
     assert set(field_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
+def test_deferred_character_pointer_arguments_select_an_opaque_fortran_owner():
+    module = parse_pyi_text(
+        """
+deferred_ptr: Pointer[String[:][:]]
+
+def inspect(values: Pointer[String[:][:]]) -> None: ...
+""",
+        module_name="deferred_character_pointer_arrays",
+    )
+
+    complete_semantic_policies(module)
+
+    module_policy = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+    argument_policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert module_policy.is_blocked is False
+    assert module_policy.descriptor_inquiries is False
+    assert module_policy.descriptor_interop == "none"
+    assert set(module_policy.operations) == {"associated", "deallocate", "nullify"}
+    assert argument_policy.is_blocked is False
+    assert argument_policy.descriptor_inquiries is False
+    assert argument_policy.descriptor_interop == "none"
+    assert argument_policy.owner_storage == "fortran_owner"
+    assert argument_policy.default_construction == "lazy_fortran_owner"
+    assert argument_policy.owner_type_name
+    assert argument_policy.owner_signature
+    assert set(argument_policy.operations) == {"associate", "associated", "nullify"}
+
+
+def test_contiguous_deferred_character_pointer_selects_zero_copy_view_policy():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Annotated, Pointer, PointerAssociation, PointerPolicy, String
+
+def inspect(values: Annotated[
+    Pointer[String[:][:]],
+    PointerAssociation("runtime"),
+    PointerPolicy(
+        nullable=True,
+        transfer="call_local",
+        target_owner="wrapper",
+        lifetime="wrapper",
+        deallocation="deallocate_resize",
+        shape_source="pointer_bounds",
+        contiguity="contiguous",
+        reassociation="allocate_resize",
+        aliasing="descriptor",
+        mutability="mutable",
+    ),
+]) -> None: ...
+""",
+        module_name="deferred_character_pointer_view_policy",
+    )
+
+    complete_semantic_policies(module)
+    policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert policy.descriptor_inquiries is False
+    assert policy.owner_storage == "fortran_owner"
+    assert policy.to_numpy == "contiguous_view"
+    assert "to_numpy" in policy.operations
+
+
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
     module = parse_pyi_text(
         """
@@ -600,8 +663,11 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert target_values.handle_kind == "borrowed_module_descriptor"
     assert target_values.owner_retention == "native_module"
     assert target_values.target_lifetime == "module"
-    assert target_values.to_numpy == "borrowed_view"
-    assert target_values.descriptor_interop == "none"
+    # A module allocatable reports its own descriptor whether or not it is a
+    # target, so `Aliased` selects neither a different NumPy exposure nor a
+    # different interop mechanism.
+    assert target_values.to_numpy == "descriptor_view"
+    assert target_values.descriptor_interop == "module_allocatable_c_descriptor"
     assert target_values.requires_pointer_c_descriptor_interop is False
 
     assert field_values.handle_kind == "borrowed_field_descriptor"
@@ -632,7 +698,9 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert argument_values.descriptor_interop == "none"
     assert argument_values.requires_pointer_c_descriptor_interop is False
     assert set(argument_values.operations) == {"allocated", "to_numpy"}
-    assert argument_values.default_construction == "fact_packed_empty"
+    # A non-optional descriptor argument is handed a descriptor the Fortran
+    # runtime built, so a caller-created handle needs storage of its own.
+    assert argument_values.default_construction == "lazy_owned_descriptor"
     assert argument_values.default_descriptor_ownership == "owned"
     assert argument_values.default_release == "wrapper_dealloc"
     assert argument_values.default_destroy_behavior == "handle_finalizer"
@@ -649,7 +717,9 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert optional_target.descriptor_interop == "pointer_c_descriptor"
     assert optional_target.requires_pointer_c_descriptor_interop is True
     assert set(optional_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
-    assert optional_target.default_construction == "fact_packed_empty"
+    # An optional argument is a descriptor argument like any other when it is
+    # present, so a caller-created handle needs storage of its own to hand over.
+    assert optional_target.default_construction == "lazy_owned_descriptor"
     assert "destroy" in optional_target.default_operations
     assert "allocate" not in optional_target.operations
     assert "deallocate" not in optional_target.operations

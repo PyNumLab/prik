@@ -25,6 +25,9 @@ from prik.policy.models import (
     ArgumentConversionPhase,
     CharacterLocalRelease,
     NativeArrayDescriptorKind,
+    NativeArrayDefaultConstruction,
+    NativeArrayOwnerStorage,
+    NativeDescriptorHandoffABI,
     ArgumentHandoffMode,
     BridgeDataAction,
     OptionalMode,
@@ -323,6 +326,34 @@ end module fixed_update
     assert argument.character_local.deferred_length is False
     assert policy.writeback_actions == ()
     assert policy.results[0].updates_argument is True
+
+
+@pytest.mark.parametrize("attribute", ["allocatable", "pointer"])
+def test_fixed_length_character_array_arguments_select_a_fortran_owner(tmp_path: Path, attribute: str):
+    module = _semantic_module_from_text(
+        f"""
+module fixed_array_descriptor
+  implicit none
+contains
+  subroutine inspect(values)
+    character(len=5), {attribute}, intent(in) :: values(:)
+  end subroutine inspect
+end module fixed_array_descriptor
+""",
+        tmp_path,
+        module_name="fixed_array_descriptor",
+    )
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is True
+    handle = policy.arguments[0].native_array_handle
+    assert handle is not None
+    assert handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
+    assert handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER
+    assert handle.default_handle.construction is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
+    assert handle.owner_type_name
+    assert handle.owner_signature
+    assert handle.call_lease is True
 
 
 def test_plain_fixed_length_string_update_keeps_copy_in_out_replacement(tmp_path: Path):

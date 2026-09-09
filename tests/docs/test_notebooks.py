@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import socket
 import shutil
 from pathlib import Path
 
@@ -74,10 +75,24 @@ def _magic_body(source: str) -> str:
     return body
 
 
+def _local_kernel_socket_error() -> OSError | None:
+    """Return the local socket error that would prevent a Jupyter kernel."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+    except OSError as error:
+        return error
+    return None
+
+
 @pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
 @pytest.mark.parametrize("notebook_path", _notebooks(), ids=lambda path: path.stem)
 def test_notebook_executes_and_publishes_its_documented_results(notebook_path: Path, tmp_path: Path):
+    socket_error = _local_kernel_socket_error()
+    if socket_error is not None:
+        pytest.skip(f"local Jupyter kernel sockets are unavailable: {socket_error}")
+
     notebook = nbformat.read(notebook_path, as_version=4)
     notebook.cells = [cell for cell in notebook.cells if SETUP_TAG not in cell.get("metadata", {}).get("tags", [])]
 

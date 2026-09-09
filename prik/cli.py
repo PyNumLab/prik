@@ -1468,6 +1468,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             jobs=getattr(args, "jobs", None),
+            standard_logicals=getattr(args, "standard_logicals", True),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
             wrapper_fortran_flags=_with_link_time_optimization(
@@ -1517,6 +1518,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             wrapper_c_flags=_with_link_time_optimization(
                 _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
             ),
+            standard_logicals=getattr(args, "standard_logicals", True),
             _on_total_build_time=total_build_time_reporter,
         )
         return _copy_wrapper_shared_library_alias(args, result)
@@ -1532,6 +1534,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         positional_only=getattr(args, "positional_only", False),
         assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
+        standard_logicals=getattr(args, "standard_logicals", True),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
         native_fortran_flags=_with_link_time_optimization(
             _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
@@ -2224,6 +2227,16 @@ def _add_native_compilation_options(group: argparse._ArgumentGroup) -> None:
         "--no-compile-input-sources",
         action="store_true",
         help="Read positional sources without compiling them; require an explicit native implementation",
+    )
+    group.add_argument(
+        "--no-standard-logicals",
+        dest="standard_logicals",
+        action="store_false",
+        help=(
+            "Omit the compiler option that makes a Fortran logical interoperable with C "
+            "(-standard-semantics on Intel, -Munixlogical on PGI/NVIDIA); use only to match "
+            "prebuilt objects already compiled without it"
+        ),
     )
     group.add_argument(
         "--native-fortran-sources",

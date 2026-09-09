@@ -23,16 +23,17 @@ select a different view behavior from local descriptor facts.
 ## A Native Array Handle At Runtime
 
 ```text
-generated operation dictionary + dtype, rank, ownership, and view policy
+generated dispatcher + completed capabilities + native backend
+  + dtype, rank, ownership, and view policy
   -> NativeArrayHandleBase validation and owner retention
   -> AllocatableArray or PointerArray
   -> state, lifecycle, association, and to_numpy() operations
 ```
 
-The operation dictionary is the boundary between generated extension code and
-the stable Python handle API. An operation exists only when the completed plan
-allows the generator to expose it. Missing operations fail explicitly rather
-than being inferred from `allocatable` or `pointer` alone.
+The dispatcher and capabilities come from the completed wrapper plan. The
+runtime validates them, retains the owners required for a live NumPy view, and
+uses the generated native backend for descriptor and lifecycle work. It never
+infers an operation or ownership rule from the declaration alone.
 
 ## Local Structure
 
@@ -45,21 +46,19 @@ prik/runtime/
 ```
 
 - [`handles.py`](../../../prik/runtime/handles.py) contains the Python runtime.
-  `NativeArrayHandleBase` validates common metadata and operations.
+  `NativeArrayHandleBase` validates common metadata and completed capabilities.
   `AllocatableArray` adds allocation state, resize, and deallocation;
   `PointerArray` adds association, nullification, allocation, resize, and
-  deallocation when supplied. Internal adapters translate generated call
-  signatures and descriptor handoffs.
+  deallocation when supplied.
 - `native_support/prik_binding.h` contains header-only CPython/NumPy
   conversion, descriptor, validation, capsule, and release support. Change it
   only with its generated C users and `prik/compiler/native_support.py`.
 - `native_support/LICENSE` is distributed with the native payload.
 
-`to_numpy()` returns `None` for an absent allocatable or pointer and otherwise
-validates the completed view policy, dtype, rank, and any required contiguity.
-Native argument handoff performs the additional expected shape, layout,
-alignment, byte-order, and writeability checks. A returned NumPy array is a
-view of native storage; a caller that needs independent storage must copy it.
+`to_numpy()` returns `None` for absent storage and otherwise applies the
+completed view policy. Native argument handoff is performed in the binding
+against the planned array contract. A returned NumPy array is a view of native
+storage; a caller that needs independent storage must copy it.
 
 ## Run The Handle Demonstration
 
@@ -75,10 +74,9 @@ Resized shape: (4,)
 Generated resize received NumPy extents: True
 ```
 
-The example supplies the same operation-dictionary shape as generated code.
-It creates an allocatable handle, reads its live NumPy view, and routes a
-resize through the adapter. The native header has no standalone Python route;
-the compiler installs it into a generated `binding_support/` directory.
+The example creates an allocatable handle, reads its live NumPy view, and
+resizes it. The compiler installs the native header into a generated
+`binding_support/` directory.
 
 ## Change Routes And Evidence
 
@@ -86,6 +84,8 @@ the compiler installs it into a generated `binding_support/` directory.
   `handles.py`.
 - Change the native payload together with its generated users and
   `prik/compiler/native_support.py`.
+- Update the native backend ABI version when its callback contract or record
+  meaning changes.
 - Complete new ownership, lifecycle, operation, or view policy before planning
   rather than selecting it in runtime code.
 

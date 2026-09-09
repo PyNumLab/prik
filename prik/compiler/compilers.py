@@ -60,12 +60,17 @@ class Compiler:
         debug: bool = False,
         execute_commands: bool = True,
         search_path: str | None = None,
+        standard_logicals: bool = True,
     ) -> Compiler:
         """Create a mixed toolchain whose final link uses one Fortran driver.
 
         When ``c_executable`` is omitted, the Fortran driver's matching C
         compiler is selected. An explicit C executable keeps C probing and C
         compilation on the same driver while Fortran still owns the link.
+
+        ``standard_logicals`` requests the option that makes a Fortran
+        ``logical`` interoperable with C. Decline it only to match objects
+        already built without it, whose stored values C cannot read.
         """
         resolved_fortran = shutil.which(executable, path=search_path)
         if resolved_fortran is None:
@@ -105,6 +110,7 @@ class Compiler:
             execute_commands=execute_commands,
             search_path=search_path,
             executables={"fortran": resolved_fortran, "c": resolved_c},
+            standard_logicals=standard_logicals,
         )
 
     @classmethod
@@ -172,9 +178,11 @@ class Compiler:
         execute_commands: bool = True,
         search_path: str | None = None,
         executables: Mapping[str, str] | None = None,
+        standard_logicals: bool = True,
     ) -> None:
         self._toolchain = self._load_toolchain(vendor)
         self._debug = debug
+        self._standard_logicals = standard_logicals
         self._execute_commands = execute_commands
         self._search_path = search_path
         self._executables = {str(language): str(command) for language, command in (executables or {}).items()}
@@ -352,6 +360,12 @@ class Compiler:
         profile = "debug_flags" if self._debug else "release_flags"
         values = [*self._strings(language.get(profile, ())), *self._strings(language.get("general_flags", ()))]
         values.extend(self._supported_optional_flags(executable, language.get("optional_general_flags", ())))
+        # A Fortran `logical` has no fixed representation, and some compilers
+        # default to one their own C compiler cannot read. The profile names the
+        # option selecting the interoperable form; a caller can decline it when
+        # linking objects already built the other way.
+        if self._standard_logicals:
+            values.extend(self._strings(language.get("logical_interop_flags", ())))
         for tool in sorted(set(tools)):
             if tool != "python":
                 values.extend(self._strings(self._tool_mapping(language, tool).get("flags", ())))

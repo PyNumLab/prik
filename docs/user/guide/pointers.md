@@ -50,9 +50,9 @@ def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
 An associated pointer handle may satisfy an ordinary array parameter when its
-dtype, rank, shape, layout, and contiguity meet that parameter's contract. A
-plain NumPy array cannot satisfy a `Pointer[T[...]]` parameter because it does
-not carry a native pointer descriptor.
+dtype, rank, shape, layout, contiguity, and writeability meet that parameter's
+contract. A plain NumPy array cannot satisfy a `Pointer[T[...]]` parameter
+because it does not carry a native pointer descriptor.
 
 ---
 
@@ -73,8 +73,8 @@ assert target.associated is True
 ```
 
 The annotation supplies the element dtype and rank. The handle creates its
-native descriptor storage when first passed to a matching writable argument.
-It stays the same Python object after the call.
+native storage when first passed to a matching writable argument. It stays the
+same Python object after the call.
 `Pointer[Float64]()` is not supported because scalar pointers cross the Python
 boundary as values rather than array handles.
 
@@ -87,15 +87,21 @@ boundary as values rather than array handles.
 | `to_numpy()` | `numpy.ndarray \| None` | A live target view, or `None` when unassociated. |
 | `associate(other)` | `(PointerArray) -> None` | Makes this pointer's association match `other` without copying data. |
 | `nullify()` | `() -> None` | Removes the association without destroying the target. |
-| `allocate(shape)` | `(int \| Sequence[int]) -> None` | Creates and associates a target for an unassociated pointer. |
+| `allocate(shape, *, element_length=None)` | `(...) -> None` | Creates and associates a target. Pass `element_length` only for deferred-length character arrays. |
 | `deallocate()` | `() -> None` | Destroys the current target if this pointer was used to allocate it. |
-| `resize(shape)` | `(int \| Sequence[int]) -> None` | Replaces the current target when `deallocate()` is valid. |
-| `close()` | `() -> None` | Permanently releases returned or caller-created descriptor storage; it does not deallocate the target. It does nothing on a module or field handle. |
+| `resize(shape, *, element_length=None)` | `(...) -> None` | Replaces the current target when available. Pass `element_length` only for deferred-length character arrays. |
+| `close()` | `() -> None` | Permanently releases returned or caller-created handle storage; it does not deallocate the target. It does nothing on a module or field handle. |
 | `closed` | `bool` | Whether a closable handle has been closed. |
 
 `associate()` and `nullify()` are available by default. A handle may also
 support allocation, target deallocation, resizing, and NumPy extraction.
 An unavailable operation raises `NotImplementedError`.
+
+Fixed-width character pointer parameters use `Pointer[String[N][...]]`.
+Deferred-width character pointers use `Pointer[String[:][...]]`; contiguous
+targets support zero-copy `to_numpy()` views with ifx or GNU Fortran 13.3 or
+newer. Other deferred-width pointer forms can still be passed to native calls,
+but do not expose `to_numpy()`.
 
 ---
 
@@ -123,10 +129,10 @@ without a pointer that can release it.
 | --- | --- | --- |
 | `nullify()` | This descriptor's association. It does not destroy the target. | Open and usable, with `associated == False`. |
 | `deallocate()` | A target this pointer was used to allocate. | Open and usable, with `associated == False`. |
-| `close()` | This handle's descriptor storage. It does not destroy the target. | Permanently closed and unusable. |
+| `close()` | This handle's native storage. It does not destroy the target. | Permanently closed and unusable. |
 
-Returned and caller-created descriptors close automatically when Python no
-longer uses them. Call `close()` explicitly only when immediate descriptor
+Returned and caller-created handles close automatically when Python no
+longer uses them. Call `close()` explicitly only when immediate native-storage
 release matters. It never destroys the pointer target because the descriptor
 and target have separate lifetimes.
 
@@ -157,8 +163,7 @@ print(p.shape)  # reflects the new target
 ### Function Results
 
 A pointer-array function result becomes a returned `PointerArray`. The handle
-has persistent descriptor storage, but the target can belong to another
-object:
+preserves the pointer association, but the target can belong to another object:
 
 ```python
 p = api.selected_values(True)

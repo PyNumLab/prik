@@ -75,10 +75,11 @@ def test_required_string_values_dispatch_to_named_binding_and_bridge_lowering():
 
     assert "type(c_ptr), value :: bound_text" in bridge_source
     assert "integer(c_int64_t), value :: text_length" in bridge_source
-    assert "character(kind=c_char), pointer, dimension(:) :: text_bytes" in bridge_source
-    assert "character(kind=c_char, len=text_length) :: text" in bridge_source
-    assert "call c_f_pointer(bound_text, text_bytes, [text_length])" in bridge_source
-    assert "text = transfer(text_bytes, text)" in bridge_source
+    # The local names the binding's buffer rather than copying it through a
+    # byte array, as a rank-zero numeric argument already does.
+    assert "character(kind=c_char, len=text_length), pointer :: text" in bridge_source
+    assert "call c_f_pointer(bound_text, text)" in bridge_source
+    assert "text_bytes" not in bridge_source
     assert "native_fixed(text)" in bridge_source
     assert "native_assumed(text)" in bridge_source
 

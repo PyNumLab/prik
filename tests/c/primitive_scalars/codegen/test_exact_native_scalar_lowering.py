@@ -123,4 +123,4 @@ def update(values: {annotation}[:]) -> None: ...
     assert f"void update({c_type} * values);" in binding
     assert f"prik_bind_array(bound_values_obj, {numpy_macro}," in binding
     assert f'"{numpy_name}", ' in binding
-    assert '"values", NULL,' in binding
+    assert '"values", ' in binding

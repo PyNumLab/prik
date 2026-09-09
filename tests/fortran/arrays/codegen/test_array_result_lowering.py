@@ -113,9 +113,10 @@ def test_array_property_results_reuse_input_array_extent_roles_in_both_backends(
 
     assert "npy_intp result_obj_dims[] = {bound_values_extent_0};" in c_source
     assert "npy_intp result_obj_dims[] = {bound_values_extent_0 * bound_values_extent_1};" in c_source
-    assert "real(c_double), dimension(values_extent_0) :: result_value" in bridge_source
-    assert "dimension(values_extent_0 * values_extent_1) :: result_value" in bridge_source
-    assert "real(c_double), dimension(values_extent_1) :: result_value" in bridge_source
+    assert bridge_source.count("real(c_double), allocatable, dimension(:) :: result_value") == 3
+    assert "allocate(result_value(size(values, 1)))" in bridge_source
+    assert "allocate(result_value(size(values, 1) * size(values, 2)))" in bridge_source
+    assert "allocate(result_value(size(values, 2)))" in bridge_source
 
 
 @pytest.mark.parametrize(

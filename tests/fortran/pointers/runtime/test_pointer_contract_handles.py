@@ -8,24 +8,14 @@ from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _bind_contract_native_array_handle,
-    _native_array_actual_for_binding,
+    _numpy_view_from_descriptor_facts,
 )
-
-
-def _pointer_descriptor(value):
-    return {
-        "base_addr": int(value.ctypes.data),
-        "elem_len": int(value.dtype.itemsize),
-        "rank": value.ndim,
-        "dim": [
-            {
-                "lower_bound": 1,
-                "extent": int(extent),
-                "sm": int(stride),
-            }
-            for extent, stride in zip(value.shape, value.strides, strict=True)
-        ],
-    }
+from tests.fortran._support.native_array_handles import (
+    _absent_descriptor_facts,
+    _descriptor_facts_for_array,
+    _generated_handle_dispatch,
+    _handle_dispatch,
+)
 
 
 def test_contract_default_handle_constructors_preserve_dtype_rank_and_empty_state():
@@ -51,28 +41,24 @@ def test_contract_default_handle_constructors_preserve_dtype_rank_and_empty_stat
 
 def test_fresh_pointer_associate_copies_association_without_following_source_descriptor():
     value = np.arange(6, dtype=np.float64)[::2]
-    source_state = {"descriptor": _pointer_descriptor(value)}
+    source_state = {"facts": _descriptor_facts_for_array(value)}
 
     def source_nullify(_handle):
-        source_state["descriptor"] = {
-            "base_addr": 0,
-            "elem_len": 8,
-            "rank": 1,
-            "dim": [{"lower_bound": 0, "extent": 0, "sm": 8}],
-        }
+        source_state["facts"] = _absent_descriptor_facts("float64", 1)
 
     source = PointerArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: value.shape,
-            "array_actual": lambda _handle: int(value.ctypes.data),
-            "descriptor": lambda _handle: source_state["descriptor"],
-            "to_numpy": lambda _handle: source_state["descriptor"],
-            "associated": lambda _handle: source_state["descriptor"]["base_addr"] != 0,
-            "associate": lambda _handle, descriptor: source_state.update(descriptor=descriptor),
-            "nullify": source_nullify,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: value.shape if source_state["facts"][0] else None,
+                "descriptor": lambda _handle: source_state["facts"],
+                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(source_state["facts"], "float64"),
+                "associated": lambda _handle: source_state["facts"][0] != 0,
+                "associate": lambda _handle, facts: source_state.update(facts=facts),
+                "nullify": source_nullify,
+            }
+        ),
         to_numpy_policy="descriptor_view",
     )
     target = contracts.Pointer[contracts.Float64[:]]()
@@ -81,7 +67,6 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
     assert target.associated is True
     assert target.shape == (3,)
     np.testing.assert_array_equal(target.to_numpy(), value)
-    assert _native_array_actual_for_binding(target).address == value.ctypes.data
 
     source.nullify()
     assert source.associated is False
@@ -95,19 +80,20 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
 
 def test_fresh_pointer_pending_association_is_applied_when_native_storage_attaches():
     value = np.arange(4, dtype=np.float64)
-    descriptor = _pointer_descriptor(value)
+    facts = _descriptor_facts_for_array(value)
     source = PointerArray(
         dtype="float64",
         rank=1,
-        ops={
-            "shape": lambda _handle: value.shape,
-            "array_actual": lambda _handle: int(value.ctypes.data),
-            "descriptor": lambda _handle: descriptor,
-            "to_numpy": lambda _handle: descriptor,
-            "associated": lambda _handle: True,
-            "associate": lambda _handle, _descriptor: None,
-            "nullify": lambda _handle: None,
-        },
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: value.shape,
+                "descriptor": lambda _handle: facts,
+                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(facts, "float64"),
+                "associated": lambda _handle: True,
+                "associate": lambda _handle, _facts: None,
+                "nullify": lambda _handle: None,
+            }
+        ),
         to_numpy_policy="descriptor_view",
     )
     target = contracts.Pointer[contracts.Float64[:]]()
@@ -120,20 +106,21 @@ def test_fresh_pointer_pending_association_is_applied_when_native_storage_attach
         received.append((received_owner, facts))
         state["associated"] = True
 
+    operations = {
+        "shape": lambda _owner: value.shape if state["associated"] else None,
+        "descriptor": lambda _owner: facts,
+        "associated": lambda _owner: state["associated"],
+        "associate": associate,
+        "nullify": lambda _owner: state.update(associated=False),
+        "destroy": lambda _owner: None,
+    }
     _bind_contract_native_array_handle(
         target,
         "pointer",
         "float64",
         1,
-        {
-            "shape": lambda _owner: value.shape if state["associated"] else None,
-            "array_actual": lambda _owner: int(value.ctypes.data),
-            "descriptor": lambda received_owner: received_owner,
-            "associated": lambda _owner: state["associated"],
-            "associate": associate,
-            "nullify": lambda _owner: state.update(associated=False),
-            "destroy": lambda _owner: None,
-        },
+        _generated_handle_dispatch(operations),
+        operations,
         owner,
         "owned",
         "unsupported",
@@ -179,12 +166,14 @@ def test_generated_storage_rejects_incompatible_contract_handles(
     handle = prepare()
 
     with pytest.raises(error, match=message):
+        operations = {}
         _bind_contract_native_array_handle(
             handle,
             descriptor_kind,
             dtype,
             rank,
-            {},
+            _generated_handle_dispatch(operations),
+            operations,
             object(),
             "owned",
             "unsupported",
@@ -216,3 +205,27 @@ def test_non_array_descriptor_and_ordinary_array_annotations_are_not_factories()
         contracts.Pointer[contracts.Float64[...]]()
     with pytest.raises(TypeError, match="explicit native length and encoding"):
         contracts.String()
+
+
+def test_character_array_contracts_create_fixed_and_deferred_handle_types():
+    fixed = contracts.Pointer[contracts.String[4][:, :]]()
+    deferred_pointer = contracts.Pointer[contracts.String[:][:]]()
+    deferred_allocatable = contracts.Allocatable[contracts.String[:][:]]()
+
+    assert fixed.dtype == np.dtype("S4")
+    assert fixed.rank == 2
+    assert deferred_pointer.dtype == np.dtype("S0")
+    assert deferred_pointer.to_numpy_policy == "unsupported"
+    assert deferred_allocatable.dtype == np.dtype("S0")
+
+    for width in (True, 0, -1):
+        with pytest.raises(TypeError, match="positive integer width or ':'"):
+            contracts.Pointer[contracts.String[width][:]]()
+
+
+def test_unattached_character_pointer_association_is_refused_instead_of_deferred():
+    source = contracts.Pointer[contracts.String[4][:]]()
+    target = contracts.Pointer[contracts.String[4][:]]()
+
+    with pytest.raises(TypeError, match="target handle to be attached"):
+        target.associate(source)

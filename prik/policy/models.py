@@ -137,13 +137,39 @@ class ArrayPythonLayout(str, Enum):
     Policy selects the constraint; a backend only enforces it. ``ANY_STRIDED``
     states that the contract constrains neither ordering nor contiguity, so the
     caller's own strides reach the native call unchanged.
+
+    ``SIGNED_STRIDED_F`` requires the axes to be a Fortran array section --
+    ordered by magnitude of stride, each a whole number of elements, none
+    overlapping another -- because that is what can be described to Fortran.
+    An axis may run backwards: a descriptor records the direction itself, and
+    a sectioned dummy reached by an address is given a signed stride and
+    bounds beside it.
     """
 
     ANY_CONTIGUOUS = "any_contiguous"
     C_CONTIGUOUS = "c_contiguous"
     F_CONTIGUOUS = "f_contiguous"
-    POSITIVE_STRIDED_F = "positive_strided_f"
+    SIGNED_STRIDED_F = "signed_strided_f"
     ANY_STRIDED = "any_strided"
+
+
+class ArrayEntrypointABI(str, Enum):
+    """Completed shape in which one array actual reaches its native dummy.
+
+    This is the answer to the project's direct-entrypoint question for arrays:
+    what would a ``bind(C)`` procedure with no bridge receive? An
+    ``assumed_shape`` or ``assumed_rank`` dummy is interoperable and receives a
+    ``CFI_cdesc_t *``, which carries a signed byte stride per axis. An
+    ``explicit_shape`` or ``assumed_size`` dummy receives the address of its
+    first element and nothing else, so nothing about its layout can be
+    conveyed, and only the layout the dummy already assumes is acceptable.
+
+    A bridge implements whichever of these the direct route would have used;
+    it does not get to pick.
+    """
+
+    RAW_ADDRESS = "raw_address"
+    C_DESCRIPTOR = "c_descriptor"
 
 
 class ArgumentHandoffMode(str, Enum):
@@ -309,6 +335,24 @@ class ModuleGetterAction(str, Enum):
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
     NATIVE_ARRAY_HANDLE = "native_array_handle"
     DERIVED_OBJECT = "derived_object"
+
+
+class ModuleArrayAddressMechanism(str, Enum):
+    """Completed native mechanism that yields a fixed module array's base address.
+
+    ``TARGET_ADDRESS`` applies to storage the declaration made addressable, where
+    ``c_loc`` names the array directly.  ``CAPTURED_ADDRESS`` applies to an
+    ordinary array without that attribute: ``c_loc`` cannot name it, so the whole
+    array is handed to ``prik_capture_address``, a ``bind(C)`` primitive whose
+    assumed-type assumed-size dummy receives the bare base address.  The
+    Fortran side forms no pointer and claims no target.  The captured address is
+    valid for as long as the module variable keeps its storage, which the Fortran
+    standard does not guarantee across the program's lifetime; see the module
+    variable guide for the responsibility that carries.
+    """
+
+    TARGET_ADDRESS = "target_address"
+    CAPTURED_ADDRESS = "captured_address"
 
 
 class ModuleObjectAccessMechanism(str, Enum):
@@ -725,6 +769,14 @@ class NativeArrayDescriptorKind(str, Enum):
     POINTER = "pointer"
 
 
+class NativeArrayDescriptorAttribute(str, Enum):
+    """Attribute carried by the descriptor a handle backend supplies."""
+
+    ALLOCATABLE = "allocatable"
+    POINTER = "pointer"
+    OTHER = "other"
+
+
 class CharacterLocalRelease(str, Enum):
     """Completed release responsibility for one adapter-local character value.
 
@@ -751,8 +803,8 @@ class NativeArrayHandleKind(str, Enum):
 class NativeDescriptorHandoffABI(str, Enum):
     """Binding-to-bridge descriptor representation."""
 
-    FACT_PACKED_CALL_LOCAL = "fact_packed_call_local"
     DIRECT_STANDARD_DESCRIPTOR = "direct_standard_descriptor"
+    FORTRAN_OWNER = "fortran_owner"
     OWNED_RESULT_STORAGE = "owned_result_storage"
 
 
@@ -760,8 +812,16 @@ class NativeArrayDefaultConstruction(str, Enum):
     """Completed storage path for a runtime-constructed empty descriptor."""
 
     NONE = "none"
-    FACT_PACKED_EMPTY = "fact_packed_empty"
     LAZY_OWNED_DESCRIPTOR = "lazy_owned_descriptor"
+    LAZY_FORTRAN_OWNER = "lazy_fortran_owner"
+
+
+class NativeArrayOwnerStorage(str, Enum):
+    """Storage that keeps a native handle entity alive."""
+
+    BORROWED_ENTITY = "borrowed_entity"
+    C_DESCRIPTOR = "c_descriptor"
+    FORTRAN_OWNER = "fortran_owner"
 
 
 class NativeArraySourceKind(str, Enum):
@@ -864,13 +924,8 @@ class NativeArrayOperation(str, Enum):
     ASSOCIATED = "associated"
     SHAPE = "shape"
     ELEMENT_LENGTH = "element_length"
-    ARRAY_ACTUAL = "array_actual"
     DESCRIPTOR = "descriptor"
     TO_NUMPY = "to_numpy"
-    NATIVE_BYTE_ORDER = "native_byte_order"
-    ALIGNED = "aligned"
-    WRITEABLE = "writeable"
-    LAYOUT = "layout"
     CONTIGUOUS = "contiguous"
     ALLOCATE = "allocate"
     DEALLOCATE = "deallocate"
@@ -936,6 +991,7 @@ class ModuleVariablePolicy:
     blockers: tuple[str, ...] = ()
     character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
+    array_address: ModuleArrayAddressMechanism | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None
 
@@ -965,6 +1021,12 @@ class ArrayHandoffPolicy:
     native_order: str | None
     contiguous: bool | None
     python_layout: ArrayPythonLayout
+    # How this dummy is reached, and therefore what can be said about layout.
+    entrypoint_abi: ArrayEntrypointABI
+    # Whether an axis of the actual may run backwards. Only a descriptor can
+    # carry that, and only a dummy that does not require contiguous storage can
+    # accept it.
+    signed_strides: bool
     minimum_rank: int
     maximum_rank: int
     flatten_python_storage: bool = False
@@ -1057,13 +1119,14 @@ class NativeArrayActualPolicy:
 
     accepted_sources: tuple[NativeArraySourceKind, ...]
     dtype: str
-    rank: int
+    rank: int | None
     shape: tuple[str, ...]
     order: str | None
     writable: bool
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    call_lease: bool
     flatten_storage: bool = False
     flat_axis: int | None = None
 
@@ -1093,11 +1156,13 @@ class NativeArrayHandleWrapperPolicy:
     """Typed wrapper-facing projection of completed native handle policy."""
 
     descriptor_kind: NativeArrayDescriptorKind
+    descriptor_attribute: NativeArrayDescriptorAttribute
     handle_kind: NativeArrayHandleKind
     origin: NativeArrayHandleOrigin
     owner: OwnershipOwner
     owner_retention: NativeArrayOwnerRetention
     descriptor_ownership: NativeArrayDescriptorOwnership
+    owner_storage: NativeArrayOwnerStorage
     borrowed: bool
     getter_behavior: NativeArrayGetterBehavior
     setter_action: SetterAction
@@ -1109,9 +1174,20 @@ class NativeArrayHandleWrapperPolicy:
     destroy_behavior: NativeArrayDestroyBehavior
     extraction_action: NativeArrayExtractionAction
     descriptor_interop: NativeArrayDescriptorInterop
+    # Most inquiries use a live descriptor supplied to a shared consumer.
+    # Declarations without a reliable descriptor projection instead use
+    # planned Fortran inquiry procedures.
+    descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: StorageMode
+    # A deferred-length character entity cannot be allocated from a shape
+    # alone; the standard requires a type-spec, so the width is planned as an
+    # argument that travels with the extents.
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    call_lease: bool
     operations: tuple[NativeArrayOperation, ...]
     required_headers: tuple[str, ...]
     array: ArrayHandoffPolicy
@@ -1411,6 +1487,8 @@ if __name__ == "__main__":
         native_order="F",
         contiguous=True,
         python_layout=ArrayPythonLayout.F_CONTIGUOUS,
+        entrypoint_abi=ArrayEntrypointABI.RAW_ADDRESS,
+        signed_strides=False,
         minimum_rank=2,
         maximum_rank=2,
     )

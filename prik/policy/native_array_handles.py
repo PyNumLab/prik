@@ -37,6 +37,7 @@ class NativeArrayHandlePolicy:
     """Completed post-IR policy for a native allocatable or pointer array handle."""
 
     descriptor_kind: str
+    descriptor_attribute: str
     handle_kind: str
     origin: str
     owner: str
@@ -53,9 +54,15 @@ class NativeArrayHandlePolicy:
     destroy_behavior: str
     to_numpy: str
     descriptor_interop: str
+    descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: str
+    owner_storage: str
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    call_lease: bool
     operations: tuple[str, ...] = ()
     blocker: str | None = None
     default_construction: str = "none"
@@ -387,6 +394,7 @@ if __name__ == "__main__":
     mark_native_array_handle(example_type, "pointer")
     example_policy = NativeArrayHandlePolicy(
         descriptor_kind="pointer",
+        descriptor_attribute="pointer",
         handle_kind="pointer",
         origin="module",
         owner="native",
@@ -403,9 +411,15 @@ if __name__ == "__main__":
         destroy_behavior="nullify",
         to_numpy="borrowed_view",
         descriptor_interop="pointer_c_descriptor",
+        descriptor_inquiries=True,
         nullable=True,
         optional_absent=False,
         storage_mode="alias",
+        owner_storage="borrowed_entity",
+        element_length_argument=False,
+        owner_type_name=None,
+        owner_signature=0,
+        call_lease=False,
         operations=("to_numpy", "nullify"),
     )
     example_variable = SemanticVariable(

@@ -5,6 +5,7 @@ from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import NativeGeneratedCodeGroupKind, WrapperPlanner
 from prik.policy import complete_semantic_policies
 from prik.policy.models import (
+    ArrayEntrypointABI,
     EntrypointPassingConvention,
     EntrypointProjectionAction,
     NativeEntrypointAction,
@@ -46,6 +47,40 @@ end module direct_projection
     assert slot.adapter is None
     assert slot.projection_action is EntrypointProjectionAction.ARGUMENT_DEFAULT
     assert slot.passing is EntrypointPassingConvention.C_VALUE
+
+
+def test_bind_c_descriptor_arrays_call_the_user_symbol_without_an_adapter():
+    plan = _plan(
+        """
+module direct_descriptor_arrays
+  use iso_c_binding
+contains
+  integer(c_int) function fixed_rank(values) bind(C, name="direct_fixed_rank") result(output)
+    real(c_double), intent(in) :: values(:)
+    output = int(size(values), c_int)
+  end function fixed_rank
+
+  integer(c_int) function any_rank(values) bind(C, name="direct_any_rank") result(output)
+    real(c_double), intent(in) :: values(..)
+    output = int(rank(values), c_int)
+  end function any_rank
+end module direct_descriptor_arrays
+"""
+    )
+
+    assert plan.bridge is None
+    for function in plan.namespaces[0].functions:
+        argument = function.arguments[0]
+        assert function.entrypoint.action is NativeEntrypointAction.DIRECT_C_ABI
+        assert function.bridge is None
+        assert argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        assert argument.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+
+    generated = WrapperGenerator().generate(plan)
+    binding = next(source.text for source in generated.sources if source.path.suffix == ".c")
+    assert generated.required_headers == ("ISO_Fortran_binding.h",)
+    assert "int32_t direct_fixed_rank(CFI_cdesc_t * values);" in binding
+    assert "int32_t direct_any_rank(CFI_cdesc_t * values);" in binding
 
 
 def test_adapted_plan_attaches_one_narrow_adapter_to_the_shared_projection():

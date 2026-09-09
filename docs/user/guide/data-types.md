@@ -206,19 +206,45 @@ double` is IEEE quad, `real(16)` maps to it instead. PRIK decides from the
 mantissa width the compiler reports, never from storage size — see
 [Unsupported Widths And Forms](#unsupported-widths-and-forms).
 
-Boolean contract names describe native storage, not different Python dtypes:
+Boolean contract names describe native storage. Scalars cross as Python
+`bool`. Arrays are aliased element by element: one-byte logical arrays use
+`numpy.bool_`, and wider kinds use the integer dtype of matching width.
 
 | Semantic Contract | Native Logical Storage Represented | Scalar Input | Direct Result | Array Storage |
 | --- | --- | --- | --- | --- |
 | `Bool` | 8 bits; portable default, equivalent to `Bool8` | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
 | `Bool8` | 8 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
-| `Bool16` | 16 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
-| `Bool32` | 32 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
-| `Bool64` | 64 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool16` | 16 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int16` |
+| `Bool32` | 32 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int32` |
+| `Bool64` | 64 bits | `bool` or `np.bool_` | `bool` | `dtype=np.int64` |
 
 Generated contracts select a numbered name after probing the chosen compiler.
-Callers never pass integer arrays for wider logical storage: the wrapper adapts
-the one-byte NumPy Boolean representation at the native boundary.
+
+A `logical(c_bool)` array uses `numpy.bool_`. Wider logical kinds use the
+integer dtype of matching width and can be read as Boolean values with
+`.astype(bool)`:
+
+```python
+flags = mod.flags            # dtype bool for logical(c_bool)
+wide = mod.wide              # dtype int32 for a 32-bit logical
+wide.astype(bool)            # array([True, False, True])
+wide[0] = 0                  # visible to Fortran
+```
+
+Write only `0` or `1` into an integer-typed logical array. Other integer values
+are not portable Fortran logical representations.
+
+### Compiler options for interoperable logicals
+
+PRIK selects interoperable logical storage for Intel and PGI/NVIDIA compilers.
+When linking prebuilt Intel objects compiled without that setting, pass
+`--no-standard-logicals` so their module symbols remain compatible:
+
+```bash
+python3 -m prik lib.f90 --compiler ifx --no-standard-logicals
+```
+
+The equivalent Python build option is `standard_logicals=False`.
 
 ---
 

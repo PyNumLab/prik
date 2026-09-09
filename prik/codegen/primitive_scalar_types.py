@@ -142,11 +142,72 @@ _BOOL_BACKEND_TYPE = BackendScalarType(
 )
 
 
+# A Fortran logical array is aliased element for element, so its NumPy dtype has
+# to occupy the same width. `logical(c_bool)` is one byte holding zero or one --
+# the compiler profiles request the flag that guarantees it -- which is exactly
+# what `numpy.bool_` describes, so it is exposed as one. No wider kind can be:
+# NumPy has no Boolean larger than a byte, and a one-byte dtype cannot describe
+# four-byte elements, so those report the integer of matching width instead and
+# are read back with `.astype(bool)`.
+# Only an array element takes the declared width. A logical value crosses the C
+# boundary as one byte whatever its Fortran kind, and the bridge converts it,
+# so the scalar spelling stays `logical(c_bool)` for every name.
+_BOOLEAN_FORTRAN_SPELLINGS = {
+    "Bool": "logical(c_bool)",
+    "Bool8": "logical(c_bool)",
+    "Bool16": "logical(2)",
+    "Bool32": "logical(4)",
+    "Bool64": "logical(8)",
+}
+_BOOLEAN_ARRAY_NUMPY_MACROS = {
+    "Bool": "NPY_BOOL",
+    "Bool8": "NPY_BOOL",
+    "Bool16": "NPY_INT16",
+    "Bool32": "NPY_INT32",
+    "Bool64": "NPY_INT64",
+}
+_BOOLEAN_ARRAY_C_SPELLINGS = {
+    "Bool": "bool",
+    "Bool8": "bool",
+    "Bool16": "int16_t",
+    "Bool32": "int32_t",
+    "Bool64": "int64_t",
+}
+_BOOLEAN_ARRAY_DTYPE_NAMES = {
+    "Bool": "numpy.bool_",
+    "Bool8": "numpy.bool_",
+    "Bool16": "numpy.int16",
+    "Bool32": "numpy.int32",
+    "Bool64": "numpy.int64",
+}
+_BOOLEAN_ARRAY_CFI_TYPES = {
+    "Bool": "CFI_type_Bool",
+    "Bool8": "CFI_type_Bool",
+    # No C-interoperable Boolean type is wider than C_BOOL. The portable
+    # descriptor spelling for the wider Fortran logical kinds is therefore
+    # CFI_type_other, with elem_len carrying their exact storage width.
+    "Bool16": "CFI_type_other",
+    "Bool32": "CFI_type_other",
+    "Bool64": "CFI_type_other",
+}
+
+
 class PrimitiveScalarTypeRegistry:
     """Return first-lane scalar facts without coupling binding and bridge emitters."""
 
     TYPES: ClassVar[dict[str, BackendScalarType]] = {
-        **{name: replace(_BOOL_BACKEND_TYPE, semantic_name=name) for name in BOOLEAN_SEMANTIC_TYPE_NAMES},
+        **{
+            name: replace(
+                _BOOL_BACKEND_TYPE,
+                semantic_name=name,
+                array_fortran_spelling=_BOOLEAN_FORTRAN_SPELLINGS[name],
+                array_numpy_type_macro=_BOOLEAN_ARRAY_NUMPY_MACROS[name],
+                array_element_c_spelling=_BOOLEAN_ARRAY_C_SPELLINGS[name],
+                array_python_type_name=_BOOLEAN_ARRAY_DTYPE_NAMES[name],
+                array_cfi_type_spelling=_BOOLEAN_ARRAY_CFI_TYPES[name],
+            )
+            for name in BOOLEAN_SEMANTIC_TYPE_NAMES
+        },
         "Int8": BackendScalarType(
             semantic_name="Int8",
             c_spelling="int8_t",

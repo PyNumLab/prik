@@ -175,7 +175,8 @@ or hide native arguments, and return native outputs as Python results.
 PRIK treats [NumPy arrays](guide/arrays.md) as complete API contracts: dtype,
 rank, shape, memory layout, contiguity, strides, mutation, and copy behavior are
 all explicit. This includes
-[supported positive-stride views](guide/arrays.md#strided-views) without copying.
+[supported strided views](guide/arrays.md#strided-views), forward or reversed,
+without copying.
 
 PRIK also covers important Fortran features: supported
 [derived types](guide/wrapping-derived-types.md) as Python classes,

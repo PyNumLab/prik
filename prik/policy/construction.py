@@ -93,6 +93,7 @@ from prik.policy.models import (
     CallbackThreadAction,
     CallbackGILAction,
     CallbackFatalAction,
+    ModuleArrayAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     DerivedFieldAccessMechanism,
@@ -129,6 +130,7 @@ from prik.policy.models import (
     ClassSurfacePolicy,
     CharacterLocalPolicy,
     CharacterLocalRelease,
+    NativeArrayDescriptorAttribute,
     NativeArrayDescriptorKind,
     NativeArrayHandleKind,
     NativeDescriptorHandoffABI,
@@ -136,6 +138,7 @@ from prik.policy.models import (
     NativeArraySourceKind,
     NativeArrayHandleOrigin,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayDescriptorOwnership,
     NativeArrayGetterBehavior,
     NativeArrayOutputProjection,
@@ -148,6 +151,7 @@ from prik.policy.models import (
     NativeStatusErrorPolicy,
     ModuleVariablePolicy,
     LifecyclePolicy,
+    ArrayEntrypointABI,
     ArrayHandoffPolicy,
     ProcedurePrototypeArgumentPolicy,
     ProcedurePrototypeResultPolicy,
@@ -1134,6 +1138,7 @@ def _ordinary_array_module_variable_policy(
     array: ArrayHandoffPolicy,
 ) -> ModuleVariablePolicy:
     """Build one borrowed ordinary module-array view policy."""
+    address = _ordinary_array_module_address_mechanism(variable)
     blockers = _ordinary_array_module_variable_blockers(variable, getter, setter, array)
     return ModuleVariablePolicy(
         **_module_variable_policy_base(variable, module_name, owner_path),
@@ -1148,7 +1153,23 @@ def _ordinary_array_module_variable_policy(
         supported=not blockers,
         blockers=tuple(blockers),
         array=array,
+        array_address=address,
     )
+
+
+def _ordinary_array_module_address_mechanism(
+    variable: models.SemanticVariable,
+) -> ModuleArrayAddressMechanism:
+    """Select how the bridge obtains one fixed module array's base address.
+
+    Addressable storage names itself directly.  An ordinary declaration cannot,
+    so its whole array is handed to C through an assumed-size dummy, which
+    receives the bare base address.  Both mechanisms borrow the same live
+    storage; only the route to its address differs.
+    """
+    if variable.semantic_type.metadata.get("aliased"):
+        return ModuleArrayAddressMechanism.TARGET_ADDRESS
+    return ModuleArrayAddressMechanism.CAPTURED_ADDRESS
 
 
 def _constant_array_module_variable_policy(
@@ -1265,8 +1286,6 @@ def _ordinary_array_module_variable_blockers(
         blockers.append("ordinary module array requires one concrete fixed rank")
     if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("ordinary module array requires a primitive numeric element type")
-    if not variable.semantic_type.metadata.get("aliased"):
-        blockers.append("ordinary module array requires addressable Aliased target storage")
     expected_getter = (
         ("owner", getter.owner, OwnershipOwner.NATIVE),
         ("transfer", getter.transfer, TransferMode.BORROWED_VIEW),
@@ -1954,19 +1973,23 @@ def _complete_entrypoint_argument_route(
             uses_adapter
             and (
                 argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
-                # Rank-zero NumPy string storage always reports the caller's
-                # itemsize beside the address, declared width or not, so the
-                # adapter has one shape to receive. A raw string address is the
-                # exception: the caller hands over a bare integer with no Python
-                # object to measure, so its width can only be the declared one.
+                # Every scalar string reports a width beside its address, so the
+                # adapter has one shape to receive whatever the contract spells.
+                # NumPy-backed storage measures the caller's own itemsize; a raw
+                # address has no object to measure, so the binding supplies the
+                # declared width instead of the adapter assuming it.
                 or (
                     argument.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
                     and argument.semantic_type_name == "String"
-                    and argument.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
                 )
             )
         ),
-        entrypoint_pass_array_metadata=(uses_adapter and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER),
+        entrypoint_pass_array_metadata=(
+            uses_adapter
+            and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+            and argument.array is not None
+            and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+        ),
         entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
         entrypoint_pass_derived_transaction=(uses_adapter and argument.derived_call is not None),
         entrypoint_pass_callback_parameter=(
@@ -2048,6 +2071,7 @@ def _argument_entrypoint_passing(
     function: models.SemanticFunction,
     argument: models.SemanticArgument,
     boundary: _ArgumentBoundaryPolicy,
+    array: ArrayHandoffPolicy | None,
     slot: NativeCallSlotPolicy | None,
     callback: CallbackHandoffPolicy | None,
 ) -> EntrypointPassingConvention:
@@ -2063,6 +2087,12 @@ def _argument_entrypoint_passing(
         function.origin.source_language == "c"
     )
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+    if (
+        boundary.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+        and array is not None
+        and array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    ):
         return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     if argument.optional:
         return EntrypointPassingConvention.NULLABLE_POINTER
@@ -2086,12 +2116,19 @@ def _argument_entrypoint_optionality(
     function: models.SemanticFunction,
     argument: models.SemanticArgument,
     boundary: _ArgumentBoundaryPolicy,
+    array: ArrayHandoffPolicy | None,
     slot: NativeCallSlotPolicy | None,
 ) -> EntrypointOptionalityAction:
     """Complete original native presence independently from the Python surface."""
     if not argument.optional:
         return EntrypointOptionalityAction.REQUIRED
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
+    if (
+        boundary.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+        and array is not None
+        and array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    ):
         return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
     if _argument_passes_by_value(argument, slot):
         return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
@@ -2508,8 +2545,9 @@ def _completed_direct_c_abi_policy(
         semantic_argument = semantic_arguments_by_name.get(slot.python_name)
         return semantic_argument.semantic_type if semantic_argument is not None else None
 
-    parameters = tuple(
-        _direct_c_abi_type_policy(
+    def parameter_policy(slot: NativeCallSlotPolicy) -> DirectCABITypePolicy:
+        """Keep a descriptor array's standardized C declaration explicit."""
+        policy = _direct_c_abi_type_policy(
             parameter_source[slot.native_position]
             if slot.native_position < len(parameter_source) and isinstance(parameter_source[slot.native_position], dict)
             else None,
@@ -2527,8 +2565,16 @@ def _completed_direct_c_abi_policy(
                 )
             ),
         )
-        for slot in sorted(slots, key=lambda item: item.native_position)
-    )
+        argument = argument_policies_by_name.get(slot.python_name or "")
+        if (
+            argument is not None
+            and argument.array is not None
+            and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        ):
+            return replace(policy, source_spelling="CFI_cdesc_t *", pointer_depth=1)
+        return policy
+
+    parameters = tuple(parameter_policy(slot) for slot in sorted(slots, key=lambda item: item.native_position))
     direct_result = next((result for result in results if result.source_kind == "direct_return"), None)
     result_source = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else None
     result = (
@@ -2731,16 +2777,26 @@ def _direct_scalar_supported(argument: ArgumentPolicy) -> bool:
 
 
 def _direct_array_supported(argument: ArgumentPolicy) -> bool:
-    """Return whether one explicit or assumed-size array can use its C pointer."""
+    """Return whether one ordinary array has the direct ABI its declaration names."""
+    array = argument.array
     return bool(
-        argument.rank > 0
-        and (
+        (
             argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
             or (argument.semantic_type_name == "String" and argument.character_length == 1)
         )
         and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-        and argument.array is not None
-        and argument.array.category in {"explicit_shape", "assumed_size"}
+        and array is not None
+        and (
+            (
+                array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+                and array.category in {"explicit_shape", "assumed_size"}
+                and argument.entrypoint_passing is EntrypointPassingConvention.POINTER_REFERENCE
+            )
+            or (
+                array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+                and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+            )
+        )
     )
 
 
@@ -2830,7 +2886,7 @@ def _direct_descriptor_supported(argument: ArgumentPolicy) -> bool:
         and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
         and argument.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
         and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
-        and argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and argument.semantic_type_name in {*_PLAN_PRIMITIVE_SCALAR_TYPES, "String"}
         and argument.rank > 0
         and argument.derived is None
         and not argument.transformations
@@ -2981,7 +3037,10 @@ def _argument_policy(
     )
     optional_mode = _optional_mode(argument, decision)
     callback = _callback_handoff_policy(argument)
-    array_policy = _array_handoff_policy(argument.semantic_type)
+    array_policy = _array_handoff_policy(
+        argument.semantic_type,
+        source_language=function.origin.source_language,
+    )
     transformations, transformation_blockers = _argument_transformation_policies(
         argument,
         decision,
@@ -3017,6 +3076,7 @@ def _argument_policy(
         function,
         argument,
         boundary,
+        array_policy,
         native_slot,
         callback,
     )
@@ -3024,6 +3084,7 @@ def _argument_policy(
         function,
         argument,
         boundary,
+        array_policy,
         native_slot,
     )
     blockers = _completed_argument_blockers(
@@ -3082,7 +3143,12 @@ def _argument_policy(
             character_length=_character_length(argument.semantic_type),
             character_local=_character_local_policy(argument.semantic_type, decision),
             array=array_policy,
-            native_array_actual=_native_array_actual_policy(argument, decision, array_policy),
+            native_array_actual=_native_array_actual_policy(
+                argument,
+                decision,
+                array_policy,
+                function.origin.source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -3385,7 +3451,10 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             character_length=_character_length(return_type),
-            array=_array_handoff_policy(return_type),
+            array=_array_handoff_policy(
+                return_type,
+                source_language=context.function.origin.source_language,
+            ),
             native_array_handle=direct_handle,
             scalar_descriptor=scalar_descriptor,
             derived=derived,
@@ -3607,7 +3676,10 @@ def _hidden_result_candidate(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=context.function.origin.source_language,
+            ),
             source_kind="hidden_output",
             python_returned=not argument.metadata.get(models.HIDDEN_NATIVE_OUTPUT_METADATA),
             native_name=mapping.native_name or argument.name,
@@ -3731,6 +3803,7 @@ def _projected_native_call_slot_policy(
         python_position,
         visible_arguments,
         derived_types,
+        source_language=function.origin.source_language,
     )
 
 
@@ -3821,6 +3894,8 @@ def _projected_argument_native_call_slot_policy(
     python_position: int | None,
     visible_arguments: tuple[models.SemanticArgument, ...],
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
+    *,
+    source_language: str | None,
 ) -> tuple[NativeCallSlotPolicy | None, int | None, tuple[str, ...]]:
     """Complete one Python argument projection after checking its position."""
     if python_position is None:
@@ -3842,6 +3917,7 @@ def _projected_argument_native_call_slot_policy(
         native_position,
         python_position,
         derived_types,
+        source_language=source_language,
     )
     return slot, python_position, blockers
 
@@ -3854,6 +3930,8 @@ def _projected_argument_slot(
     native_position: int,
     python_position: int,
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
+    *,
+    source_language: str | None,
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
     """Construct one completed native slot for a visible projected argument."""
     argument_path = f"{owner_path}.{argument.name}"
@@ -3902,7 +3980,10 @@ def _projected_argument_slot(
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4005,7 +4086,10 @@ def _hidden_result_native_call_slot_policy(
                 result_position=mapping.result_position,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
-                array=_array_handoff_policy(argument.semantic_type),
+                array=_array_handoff_policy(
+                    argument.semantic_type,
+                    source_language=function.origin.source_language,
+                ),
                 native_array_handle=_native_array_handle_wrapper_policy(
                     argument.semantic_type,
                     argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4058,7 +4142,10 @@ def _hidden_result_native_call_slot_policy(
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
-            array=_array_handoff_policy(argument.semantic_type),
+            array=_array_handoff_policy(
+                argument.semantic_type,
+                source_language=function.origin.source_language,
+            ),
             native_array_handle=_native_array_handle_wrapper_policy(
                 argument.semantic_type,
                 argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -4239,7 +4326,10 @@ def _implicit_native_call_slot_policies(
                 array_copy_out=array_copy_out,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
-                array=_array_handoff_policy(argument.semantic_type),
+                array=_array_handoff_policy(
+                    argument.semantic_type,
+                    source_language=function.origin.source_language,
+                ),
                 native_array_handle=_native_array_handle_wrapper_policy(
                     argument.semantic_type,
                     argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
@@ -5364,6 +5454,13 @@ def _runtime_semantic_validation_blockers(
         blockers.append(f"{label} has no runtime validators for semantic constraints {constraints}")
     if coercions:
         blockers.append(f"{label} has no wrapper conversion actions for semantic coercions {coercions}")
+    if semantic_type.metadata.get("fortran_protected"):
+        # Every generated accessor for a module array either allocates,
+        # deallocates or passes the variable to a dummy the callee may define.
+        # PROTECTED forbids all three outside the declaring module, so the
+        # bridge is refused here rather than emitted and left to fail in the
+        # Fortran compiler.
+        blockers.append(f"{label} is PROTECTED, so a generated accessor cannot define it outside its module")
     return tuple(blockers)
 
 
@@ -6169,7 +6266,7 @@ def _native_array_handle_wrapper_policy(
     )
     handle_kind = _native_array_enum(NativeArrayHandleKind, completed.handle_kind, owner_path, "handle kind")
     handoff = NativeDescriptorHandoffPolicy(
-        abi=_native_descriptor_handoff_abi(handle_kind, output_projection),
+        abi=_native_descriptor_handoff_abi(handle_kind, completed),
         rank=int(semantic_type.rank or 0),
         optional_presence=completed.optional_absent,
     )
@@ -6179,26 +6276,19 @@ def _native_array_handle_wrapper_policy(
         owner_path,
         "descriptor interop",
     )
+    descriptor_inquiries = completed.descriptor_inquiries
     operations = {
         _native_array_enum(NativeArrayOperation, item, owner_path, "operation") for item in completed.operations
     }
-    operations.update(
-        {
-            NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
-            NativeArrayOperation.DESCRIPTOR,
-            NativeArrayOperation.NATIVE_BYTE_ORDER,
-            NativeArrayOperation.ALIGNED,
-            NativeArrayOperation.WRITEABLE,
-            NativeArrayOperation.LAYOUT,
-        }
-    )
+    # Shape is what every handle is asked for.  Everything an argument needs
+    # is read from the live descriptor in the binding, so no operation
+    # reports it; only a pointer still reports one, because a pointer that has
+    # no storage of its own has nowhere else to record what it was pointed at.
+    operations.add(NativeArrayOperation.SHAPE)
+    if descriptor == "pointer" and descriptor_inquiries:
+        operations.update({NativeArrayOperation.CONTIGUOUS, NativeArrayOperation.DESCRIPTOR})
     if semantic_type.name == "String":
         operations.add(NativeArrayOperation.ELEMENT_LENGTH)
-        if semantic_type.metadata.get("fortran_character_length") == ":":
-            operations.difference_update({NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE})
-    if descriptor == "pointer":
-        operations.add(NativeArrayOperation.CONTIGUOUS)
     if completed.destroy_behavior == NativeArrayDestroyBehavior.HANDLE_FINALIZER.value:
         operations.add(NativeArrayOperation.DESTROY)
     array = _array_handoff_policy(semantic_type)
@@ -6210,6 +6300,12 @@ def _native_array_handle_wrapper_policy(
             completed.descriptor_kind,
             owner_path,
             "descriptor kind",
+        ),
+        descriptor_attribute=_native_array_enum(
+            NativeArrayDescriptorAttribute,
+            completed.descriptor_attribute,
+            owner_path,
+            "descriptor attribute",
         ),
         handle_kind=handle_kind,
         origin=_native_array_enum(NativeArrayHandleOrigin, completed.origin, owner_path, "origin"),
@@ -6225,6 +6321,12 @@ def _native_array_handle_wrapper_policy(
             completed.descriptor_ownership,
             owner_path,
             "descriptor ownership",
+        ),
+        owner_storage=_native_array_enum(
+            NativeArrayOwnerStorage,
+            completed.owner_storage,
+            owner_path,
+            "owner storage",
         ),
         borrowed=completed.borrowed,
         getter_behavior=_native_array_enum(
@@ -6257,9 +6359,14 @@ def _native_array_handle_wrapper_policy(
             "extraction action",
         ),
         descriptor_interop=interop,
+        descriptor_inquiries=descriptor_inquiries,
         nullable=completed.nullable,
         optional_absent=completed.optional_absent,
         storage_mode=_native_array_enum(StorageMode, completed.storage_mode, owner_path, "storage mode"),
+        element_length_argument=completed.element_length_argument,
+        owner_type_name=completed.owner_type_name,
+        owner_signature=completed.owner_signature,
+        call_lease=completed.call_lease,
         operations=tuple(sorted(operations, key=lambda item: item.value)),
         required_headers=(
             (NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,)
@@ -6312,13 +6419,9 @@ def _native_array_default_handle_policy(
             if operation
             in {
                 NativeArrayOperation.SHAPE,
-                NativeArrayOperation.ARRAY_ACTUAL,
                 NativeArrayOperation.DESCRIPTOR,
-                NativeArrayOperation.NATIVE_BYTE_ORDER,
-                NativeArrayOperation.ALIGNED,
-                NativeArrayOperation.WRITEABLE,
-                NativeArrayOperation.LAYOUT,
                 NativeArrayOperation.CONTIGUOUS,
+                NativeArrayOperation.ELEMENT_LENGTH,
             }
         )
     return NativeArrayDefaultHandlePolicy(
@@ -6342,14 +6445,22 @@ def _native_array_default_handle_policy(
 
 def _native_descriptor_handoff_abi(
     handle_kind: NativeArrayHandleKind,
-    output_projection: NativeArrayOutputProjection,
+    completed: CompletedNativeArrayHandlePolicy,
 ) -> NativeDescriptorHandoffABI:
-    """Select one descriptor ABI from completed handle/result policy."""
+    """Choose argument transport independently of owned storage.
+
+    Deferred-length character allocatables retain their interoperable
+    descriptor ABI even when stored in a Fortran owner. Other owner-backed
+    character arguments require the owner address, as do owner results.
+    """
+    if completed.owner_storage == NativeArrayOwnerStorage.FORTRAN_OWNER.value and (
+        handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR
+        or completed.descriptor_attribute != NativeArrayDescriptorAttribute.ALLOCATABLE.value
+    ):
+        return NativeDescriptorHandoffABI.FORTRAN_OWNER
     if handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR:
         return NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    if output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
-        return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    return NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
+    return NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
 
 
 def _native_array_enum(enum_type, value: object, owner_path: str, label: str):
@@ -6495,35 +6606,51 @@ def _native_array_assignment(value: str, owner_path: str) -> AssignmentMode:
     return _native_array_enum(AssignmentMode, value, owner_path, "native setter")
 
 
+def _native_array_actual_dtype(argument: models.SemanticArgument) -> str | None:
+    """Return the NumPy dtype a handle must carry to stand in for this actual.
+
+    A character actual is matched on its declared width as well as its kind,
+    because a handle whose elements are a different length describes different
+    storage. An assumed width is read from the live descriptor.
+    """
+    if argument.semantic_type.name == "String":
+        length = _character_length(argument.semantic_type)
+        return "S" if length is None else f"S{length}"
+    return _NUMPY_DTYPE_NAMES.get(argument.semantic_type.name)
+
+
 def _native_array_actual_policy(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
     array: ArrayHandoffPolicy | None,
+    source_language: str | None = None,
 ) -> NativeArrayActualPolicy | None:
-    """Complete handle-as-array-actual acceptance for the Phase 6 buffer ABI."""
+    """Complete handle-as-array-actual acceptance for the Phase 6 buffer ABI.
+
+    A handle stands for storage a Fortran runtime owns, so a C dummy does not
+    accept one: there it is an object of the wrong type, like any other value
+    that is not an array.
+    """
     if native_array_descriptor_kind(argument.semantic_type) is not None:
         return None
     if (
         array is None
         or array.native_order != array.order
-        or array.rank is None
-        or argument.optional
-        or argument.semantic_type.name == "String"
         or decision.transfer is TransferMode.COPY_RETURN
         or decision.python_barrier_action is not PythonBarrierAction.ARRAY_STORAGE
         or decision.native_barrier_action is not NativeBarrierAction.PASS_ARRAY_BUFFER
     ):
         return None
-    try:
-        dtype = _NUMPY_DTYPE_NAMES[argument.semantic_type.name]
-    except KeyError:
+    dtype = _native_array_actual_dtype(argument)
+    if dtype is None:
         return None
+    handle_sources = (
+        ()
+        if source_language == "c"
+        else (NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE)
+    )
     return NativeArrayActualPolicy(
-        accepted_sources=(
-            NativeArraySourceKind.NDARRAY,
-            NativeArraySourceKind.ALLOCATABLE_HANDLE,
-            NativeArraySourceKind.POINTER_HANDLE,
-        ),
+        accepted_sources=(NativeArraySourceKind.NDARRAY, *handle_sources),
         dtype=dtype,
         rank=array.rank,
         shape=array.shape,
@@ -6532,6 +6659,7 @@ def _native_array_actual_policy(
         require_native_byte_order=True,
         require_aligned=True,
         require_contiguous=array.contiguous is True,
+        call_lease=bool(handle_sources),
         flatten_storage=array.flatten_python_storage,
         flat_axis=array.flat_axis,
     )
@@ -6547,6 +6675,8 @@ def _native_array_module_variable_blockers(
     blockers = []
     if variable.visibility != "public":
         blockers.append("native array module variable is not public")
+    # A descriptor handle hands out the same element-for-element view a fixed
+    # array does, so it carries the same width requirement.
     if handle.handle_kind is not NativeArrayHandleKind.BORROWED_MODULE_DESCRIPTOR:
         blockers.append(f"native array module handle kind {handle.handle_kind.value!r} is unsupported")
     if getter is None or getter.is_blocked or getter.kind is not ObjectKind.NUMPY_ARRAY:
@@ -7162,17 +7292,12 @@ def _array_logical_argument_abi(
     semantic_type = argument.semantic_type
     if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) <= 0:
         return ArrayLogicalABI.NOT_APPLICABLE, None, False, False
-    source_type = _fortran_logical_native_type(argument)
-    if source_type is None:
-        if semantic_type.name in {"Bool", "Bool8"}:
-            return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
-        copy_in = bool(getattr(argument, "_source_reads_argument", True))
-        return ArrayLogicalABI.NATIVE_KIND_COPY, None, copy_in, decision.mutates_native
-    if "".join(source_type.casefold().split()) == "logical(kind=c_bool)":
-        return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
-    copy_in = bool(getattr(argument, "_source_reads_argument", True))
-    copy_out = decision.mutates_native
-    return ArrayLogicalABI.NATIVE_KIND_COPY, source_type, copy_in, copy_out
+    # The buffer is a NumPy integer of the element's own width, so the native
+    # pointer describes the caller's storage exactly and no directional copy is
+    # required for any logical kind.
+    # A spelling the source did not record is left unset; backend lowering then
+    # resolves the width from the semantic type itself.
+    return ArrayLogicalABI.C_BOOL_VIEW, _fortran_logical_native_type(argument), False, False
 
 
 def _logical_argument_bridge_action(
@@ -7342,21 +7467,24 @@ def _array_writeback_abi(
 ) -> ArrayWritebackABI:
     """Complete mutable ordinary-array byte normalization before planning.
 
-    Exact-kind logical copies canonicalize bytes while copying out, so only a
-    direct ``c_bool`` view needs the separate low-bit normalization pass.
+    A Boolean array needs no more than any other kind.  Its elements already
+    hold the zero or one a C ``_Bool`` is defined to hold, because the compiler
+    profiles request the option that guarantees it, so there is nothing left to
+    reduce.  Reducing anyway could not help a translation unit built without
+    that option either: such a compiler represents false as the complement of
+    true, which no test applied here could tell from a true value.
     """
+    del logical_abi
     if array is None or handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or not decision.mutates_native:
         return ArrayWritebackABI.NOT_APPLICABLE
-    if is_boolean_semantic_type_name(semantic_type.name):
-        return (
-            ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-            if logical_abi is ArrayLogicalABI.C_BOOL_VIEW
-            else ArrayWritebackABI.NOT_APPLICABLE
-        )
     return ArrayWritebackABI.NATIVE_ARRAY
 
 
-def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPolicy | None:
+def _array_handoff_policy(
+    semantic_type: models.SemanticType,
+    *,
+    source_language: str | None = None,
+) -> ArrayHandoffPolicy | None:
     """Copy structured buffer or raw-pointee facts into completed wrapper policy."""
     if _is_raw_array_address_type(semantic_type):
         return _raw_array_handoff_policy(semantic_type)
@@ -7375,7 +7503,13 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
     order = _array_handoff_order(array.order, array.category)
-    contiguous = _array_handoff_contiguous(array.contiguous, array.category)
+    entrypoint_abi = _array_entrypoint_abi(
+        array.category,
+        character=semantic_type.name == "String",
+        source_language=source_language,
+    )
+    contiguous = _array_handoff_contiguous(array.contiguous, array.category, entrypoint_abi)
+    signed_strides = _array_handoff_signed_strides(entrypoint_abi, contiguous)
     return ArrayHandoffPolicy(
         rank=rank,
         shape=shape,
@@ -7384,6 +7518,8 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         native_order=_array_handoff_native_order(array.order, array.copy_order, array.category),
         contiguous=contiguous,
         python_layout=_array_handoff_python_layout(order, contiguous, rank),
+        entrypoint_abi=entrypoint_abi,
+        signed_strides=signed_strides,
         minimum_rank=minimum_rank,
         maximum_rank=maximum_rank,
         flatten_python_storage=flatten_python_storage,
@@ -7428,19 +7564,84 @@ def _array_handoff_native_order(
     return copy_order if copy_order is not None else order
 
 
-def _array_handoff_contiguous(contiguous: bool | None, category: str | None) -> bool | None:
-    """Complete the contiguity a contract asserts, leaving C runtime rank open.
+def _array_handoff_contiguous(
+    contiguous: bool | None,
+    category: str | None,
+    entrypoint_abi: ArrayEntrypointABI,
+) -> bool | None:
+    """Complete the contiguity and section layout a contract asserts.
 
     ``None`` states that the contract asserts nothing about layout: the caller's
-    own strides reach the native call. Fortran assumed rank keeps its contiguous
-    descriptor default, and every C ``T[...]`` that did not spell ``Contiguous``
-    stays stride-agnostic.
+    own strides reach the native call. A Fortran assumed-rank dummy receives a
+    descriptor, but a NumPy actual still has to be representable as a Fortran
+    array section, so it uses the same stride-aware layout as assumed shape.
+    Every C ``T[...]`` that did not spell ``Contiguous`` stays stride-agnostic.
+
+    A section is described one axis at a time, so describing one needs a rank.
+    An assumed-rank dummy reached by a descriptor gets the caller's own rank
+    inside it, but one reached by an address is read back through a fixed-rank
+    pointer chosen at run time, and those describe contiguous storage only.
     """
     if contiguous is not None:
         return contiguous
-    if category in {SCALAR_STORAGE_CATEGORY, "assumed_rank"}:
+    if category == SCALAR_STORAGE_CATEGORY:
         return True
+    if category == "assumed_rank":
+        return entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
     return None
+
+
+def _array_entrypoint_abi(
+    category: str | None,
+    *,
+    character: bool,
+    source_language: str | None,
+) -> ArrayEntrypointABI:
+    """Complete how one array dummy is reached, by asking the direct question.
+
+    A ``bind(C)`` procedure with no bridge receives the address of the first
+    element and nothing more for an explicit-shape or assumed-size dummy, and
+    for a raw C pointer, whose rank the contract may leave to run time but
+    which is still only ever an address: the declaration already says how to
+    read what is there, so nothing is conveyed beside it.  Every other form -- assumed-shape,
+    deferred-shape, assumed-rank, and a contract that names no Fortran category
+    because a bridge dummy will be generated for it -- is reached through a
+    ``CFI_cdesc_t *``, which carries an extent and a signed byte stride per
+    axis.
+    """
+    if source_language == "c":
+        return ArrayEntrypointABI.RAW_ADDRESS
+    if character:
+        # GNU Fortran reports len 1 for a bind(C) character(len=*) dummy
+        # whatever elem_len the descriptor carries, so the callee cannot read
+        # the width it was given. Keep character arrays on the address-and-width
+        # ABI, which states the width beside the buffer, until that is fixed.
+        return ArrayEntrypointABI.RAW_ADDRESS
+    if category in {"explicit_shape", "assumed_size", "raw_address", "runtime_rank", SCALAR_STORAGE_CATEGORY}:
+        return ArrayEntrypointABI.RAW_ADDRESS
+    return ArrayEntrypointABI.C_DESCRIPTOR
+
+
+def _array_handoff_signed_strides(
+    entrypoint_abi: ArrayEntrypointABI,
+    contiguous: bool | None,
+) -> bool:
+    """Complete whether an axis of the actual may run backwards.
+
+    Two things have to hold.  The direction has to have somewhere to travel,
+    and the dummy must not require contiguous storage, which a reversed axis is
+    not -- a ``CONTIGUOUS`` dummy keeps its requirement whatever its calling
+    convention carries.
+
+    A descriptor records a direction itself.  An address does not, but a
+    sectioned dummy is reached with a signed stride and bounds beside it, one
+    per axis, which is the same information in the form the ABI already
+    carries.  What cannot record a direction is an address with nothing beside
+    it, which is every layout this does not select.
+    """
+    if contiguous is True:
+        return False
+    return entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR or contiguous is False
 
 
 def _array_handoff_python_layout(
@@ -7452,7 +7653,7 @@ def _array_handoff_python_layout(
     if contiguous is None:
         return ArrayPythonLayout.ANY_STRIDED
     if contiguous is False:
-        return ArrayPythonLayout.POSITIVE_STRIDED_F
+        return ArrayPythonLayout.SIGNED_STRIDED_F
     if order == "ORDER_C":
         return ArrayPythonLayout.C_CONTIGUOUS
     if order == "ORDER_F" or (rank is not None and rank > 1):
@@ -7573,6 +7774,9 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         native_order=order,
         contiguous=True,
         python_layout=_array_handoff_python_layout(order, True, rank),
+        # A raw C address is the whole ABI here: nothing conveys a stride.
+        entrypoint_abi=ArrayEntrypointABI.RAW_ADDRESS,
+        signed_strides=False,
         minimum_rank=rank,
         maximum_rank=rank,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,

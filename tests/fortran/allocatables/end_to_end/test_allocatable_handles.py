@@ -11,6 +11,7 @@ import pytest
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
+    _compiler,
     _compile_native_object,
     _import_from_build_dir,
     _require_maybe_unallocated_function_result_support,
@@ -24,6 +25,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
+
+
 PLAIN_ALLOCATABLE_MODULE_SOURCE = """\
 module fallocatable_plain_f90
   implicit none
@@ -91,6 +94,7 @@ def _plain_allocatable_module(build_mode: str, tmp_path: Path):
     native_object = _compile_native_object(source, tmp_path / "native")
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",
@@ -318,7 +322,7 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
     module, wrapper_source_text = _plain_allocatable_module(pyi_parity_build_mode, tmp_path)
 
     assert "void (*callback)(CFI_cdesc_t *, void *)" in wrapper_source_text
-    assert "descriptor->base_addr" in wrapper_source_text
+    assert "source->base_addr" in wrapper_source_text
 
     handle = module.values
     assert isinstance(handle, AllocatableArray)
@@ -359,3 +363,321 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
     assert handle.allocated is False
     assert handle.shape is None
     assert handle.to_numpy() is None
+
+
+LOWER_BOUND_SOURCE = """
+module falloc_lower_bounds_f90
+  use iso_fortran_env, only: int32, real64
+  implicit none
+  real(real64), allocatable :: plain_a(:)
+  real(real64), allocatable, target :: tgt_a(:)
+  real(real64), allocatable, target :: defaulted(:)
+  character(len=5), allocatable, target :: fixed_words(:)
+  character(len=5), allocatable :: missing_words(:)
+  character(len=5), pointer :: missing_pointer(:) => null()
+  character(len=:), allocatable, target :: deferred_words(:)
+contains
+  function lower_bound_of(x) result(bound)
+    real(real64), allocatable, intent(in) :: x(:)
+    integer(int32) :: bound
+    bound = lbound(x, 1)
+  end function lower_bound_of
+
+  function element_at(x, index) result(value)
+    real(real64), allocatable, intent(in) :: x(:)
+    integer(int32), intent(in) :: index
+    real(real64) :: value
+    value = x(index)
+  end function element_at
+
+  function deferred_word_bound_and_width(x) result(packed)
+    character(len=:), allocatable, intent(in) :: x(:)
+    integer(int32) :: packed
+    packed = 100 * lbound(x, 1) + len(x)
+  end function deferred_word_bound_and_width
+
+  subroutine setup()
+    allocate(plain_a(5:8))
+    plain_a = 1.0d0
+    allocate(tgt_a(5:8))
+    tgt_a = 2.0d0
+    allocate(defaulted(4))
+    defaulted = 3.0d0
+    allocate(character(len=5) :: fixed_words(5:8))
+    fixed_words = 'aaaaa'
+    allocate(character(len=6) :: deferred_words(5:8))
+    deferred_words = 'bbbbbb'
+  end subroutine setup
+end module falloc_lower_bounds_f90
+"""
+
+
+def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(tmp_path: Path):
+    """A module allocatable reports the bounds it actually has, either way.
+
+    `target` allows `c_loc` on the variable, but that yields only a base address:
+    the bounds, strides and element length then have to come from somewhere else.
+    Reconstructing them hardcoded a lower bound of zero, which is wrong for every
+    Fortran array — the default is one — and further wrong for a declared `(5:8)`.
+    Both declarations read the descriptor, so both report 5.
+    """
+    module = _build_text_and_import(
+        LOWER_BOUND_SOURCE,
+        "falloc_lower_bounds_f90.f90",
+        tmp_path,
+        {
+            "bind_c_falloc_lower_bounds_f90_wrapper.f90",
+            "falloc_lower_bounds_f90_wrapper.c",
+            "falloc_lower_bounds_f90_wrapper.h",
+        },
+    )
+    module.setup()
+
+    # The bound is not a reported fact but part of the value: an allocatable
+    # dummy adopts the bounds of the descriptor it is given, so a wrong one
+    # makes the callee index the wrong elements.
+    for name, bound in (("plain_a", 5), ("tgt_a", 5), ("defaulted", 1)):
+        handle = getattr(module, name)
+        assert module.lower_bound_of(handle) == np.int32(bound), name
+        assert module.element_at(handle, np.int32(bound)) == handle.to_numpy()[0], name
+        # The Python view is unaffected: NumPy indexing stays zero-based.
+        assert handle.to_numpy().shape == (4,)
+
+    # A character allocatable carries the same bounds, and its element length
+    # comes from the array rather than from a width the binding assumed.
+    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
+        assert getattr(module, name).dtype == np.dtype(f"S{width}"), name
+
+    fixed = module.fixed_words
+    fixed.resize(2)
+    assert fixed.dtype == np.dtype("S5")
+    with pytest.raises(TypeError, match="fixed element width"):
+        fixed.resize(2, element_length=4)
+
+    deferred = module.deferred_words
+    deferred.resize(3, element_length=4)
+    assert deferred.shape == (3,)
+    assert deferred.dtype == np.dtype("S4")
+    deferred.resize(4, element_length=6)
+    # A deferred-length actual reaches an allocatable dummy carrying both, so
+    # the bound and the width are read back out of the array itself.
+    assert module.deferred_word_bound_and_width(deferred) == np.int32(106)
+
+
+def test_fixed_character_projection_reports_absence(tmp_path: Path):
+    module = _build_text_and_import(
+        LOWER_BOUND_SOURCE,
+        "falloc_lower_bounds_f90.f90",
+        tmp_path,
+        {
+            "bind_c_falloc_lower_bounds_f90_wrapper.f90",
+            "falloc_lower_bounds_f90_wrapper.c",
+            "falloc_lower_bounds_f90_wrapper.h",
+        },
+    )
+    module.setup()
+
+    missing = module.missing_words
+    assert missing.allocated is False
+    assert missing.shape is None
+    assert missing.to_numpy() is None
+    assert missing.dtype == np.dtype("S5")
+
+    missing_pointer = module.missing_pointer
+    assert missing_pointer.associated is False
+    assert missing_pointer.shape is None
+    missing_pointer.associate(missing_pointer)
+    assert missing_pointer.associated is False
+
+    fixed = module.fixed_words
+    assert fixed.allocated is True
+    assert fixed.to_numpy().tolist() == [b"aaaaa"] * 4
+    with pytest.raises(TypeError, match="descriptor attribute required by the dummy"):
+        module.deferred_word_bound_and_width(fixed)
+
+
+BORROWED_DESCRIPTOR_SOURCE = """\
+module fallocatable_borrowed_f90
+  implicit none
+  type :: box
+    real(8), allocatable :: field(:)
+  end type box
+  real(8), allocatable :: modvar(:)
+  type(box) :: thebox
+contains
+  subroutine grow(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(6))
+    values = 9.0_8
+  end subroutine grow
+
+  function total(values) result(sum_out)
+    real(8), allocatable, intent(in) :: values(:)
+    real(8) :: sum_out
+
+    sum_out = sum(values)
+  end function total
+
+  function make(n) result(values)
+    integer(4), intent(in) :: n
+    real(8), allocatable :: values(:)
+    integer(4) :: i
+
+    allocate(values(n))
+    values = [(1.0_8 * i, i = 1, n)]
+  end function make
+end module fallocatable_borrowed_f90
+"""
+
+
+def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp_path: Path):
+    """An allocatable actual borrows the descriptor the Fortran runtime built.
+
+    A read-only allocatable dummy requires an allocatable actual, and C may not
+    establish one: F2018 18.5.5.6 reserves that descriptor for the runtime.  The
+    binding therefore copies the descriptor handed to its callback rather than
+    rebuilding one from facts, so module, derived-field and result handles all
+    reach the dummy on every compiler instead of only where an invalid
+    descriptor happens to be tolerated.
+    """
+    workdir = tmp_path / "borrowed"
+    workdir.mkdir(parents=True)
+    module = _build_text_and_import(
+        BORROWED_DESCRIPTOR_SOURCE,
+        "fallocatable_borrowed_f90.f90",
+        workdir,
+        {
+            "bind_c_fallocatable_borrowed_f90_wrapper.f90",
+            "fallocatable_borrowed_f90_wrapper.c",
+            "fallocatable_borrowed_f90_wrapper.h",
+        },
+    )
+    namespace = _sole_native_module(module)
+
+    namespace.modvar.resize(4)
+    namespace.modvar.to_numpy()[:] = [1.0, 2.0, 3.0, 4.0]
+    namespace.thebox.field.resize(4)
+    namespace.thebox.field.to_numpy()[:] = [1.0, 2.0, 3.0, 4.0]
+
+    assert namespace.total(namespace.modvar) == np.float64(10.0)
+    assert namespace.total(namespace.thebox.field) == np.float64(10.0)
+    assert namespace.total(namespace.make(np.int32(4))) == np.float64(10.0)
+
+    # The copy is remade per call, so reallocating the native entity between
+    # calls cannot leave the previous descriptor behind.
+    namespace.modvar.resize(3)
+    namespace.modvar.to_numpy()[:] = [100.0, 200.0, 300.0]
+    assert namespace.total(namespace.modvar) == np.float64(600.0)
+
+
+def test_a_writable_allocatable_dummy_reaches_the_callers_entity(tmp_path: Path):
+    """A callee that reallocates an ``intent(inout)`` dummy updates the caller.
+
+    The descriptor a module array or field hands out exists only while the
+    consumer holding it runs, so a callee handed a copy would reallocate the
+    copy and leave the caller's entity naming released storage.  The call is
+    made inside that consumer instead, which is what lets the new allocation
+    reach the entity.  A handle owning its descriptor hands that over directly
+    and needs no such arrangement.
+    """
+    workdir = tmp_path / "writable"
+    workdir.mkdir(parents=True)
+    module = _build_text_and_import(
+        BORROWED_DESCRIPTOR_SOURCE,
+        "fallocatable_borrowed_f90.f90",
+        workdir,
+        {
+            "bind_c_fallocatable_borrowed_f90_wrapper.f90",
+            "fallocatable_borrowed_f90_wrapper.c",
+            "fallocatable_borrowed_f90_wrapper.h",
+        },
+    )
+    namespace = _sole_native_module(module)
+
+    # A module array: the callee replaces the allocation, and the module
+    # variable names the new one afterwards.
+    namespace.modvar.resize(2)
+    namespace.modvar.to_numpy()[:] = [1.0, 2.0]
+    namespace.grow(namespace.modvar)
+    assert namespace.modvar.shape == (6,)
+    assert namespace.modvar.to_numpy().tolist() == [9.0] * 6
+
+    # A derived-type field reaches its entity the same way, through its parent.
+    namespace.thebox.field.resize(2)
+    namespace.thebox.field.to_numpy()[:] = [1.0, 2.0]
+    namespace.grow(namespace.thebox.field)
+    assert namespace.thebox.field.shape == (6,)
+    assert namespace.thebox.field.to_numpy().tolist() == [9.0] * 6
+
+    # A handle owning its descriptor hands that over directly.
+    owned = namespace.make(np.int32(2))
+    namespace.grow(owned)
+    assert owned.shape == (6,)
+    assert owned.to_numpy().tolist() == [9.0] * 6
+
+
+EMPTY_ACTUAL_SOURCE = """\
+module fallocatable_empty_actual_f90
+  implicit none
+
+contains
+
+  subroutine fill_empty(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(0))
+  end subroutine fill_empty
+
+  subroutine fill_three(values)
+    real(8), allocatable, intent(inout) :: values(:)
+
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = [1.0_8, 2.0_8, 3.0_8]
+  end subroutine fill_three
+
+  ! An ordinary explicit-shape dummy: it receives an address and an extent.
+  function total(values, n) result(sum_values)
+    integer, intent(in) :: n
+    real(8), intent(in) :: values(n)
+    real(8) :: sum_values
+
+    sum_values = sum(values)
+  end function total
+
+end module fallocatable_empty_actual_f90
+"""
+
+
+def test_zero_sized_allocatable_handle_reaches_an_ordinary_array_dummy(tmp_path: Path):
+    """An allocated but empty array is present, and its extent is zero.
+
+    A compiler may describe an empty dimension with an extent of -1, so the
+    extent an ordinary dummy receives has to be normalised.  Passing the raw
+    value makes a zero-sized actual look like a shape mismatch.
+    """
+    build_dir = tmp_path / "build"
+    build_dir.mkdir(parents=True)
+    module = _build_text_and_import(
+        EMPTY_ACTUAL_SOURCE,
+        "fallocatable_empty_actual_f90.f90",
+        build_dir,
+        {
+            "bind_c_fallocatable_empty_actual_f90_wrapper.f90",
+            "fallocatable_empty_actual_f90_wrapper.c",
+            "fallocatable_empty_actual_f90_wrapper.h",
+        },
+    )
+
+    handle = Allocatable[Float64[:]]()
+    module.fill_empty(handle)
+    assert handle.allocated is True
+    assert handle.shape == (0,)
+    assert module.total(handle, np.int32(0)) == np.float64(0.0)
+
+    module.fill_three(handle)
+    assert handle.shape == (3,)
+    assert module.total(handle, np.int32(3)) == np.float64(6.0)

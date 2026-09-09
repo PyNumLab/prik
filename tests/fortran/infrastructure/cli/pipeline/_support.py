@@ -1,3 +1,4 @@
+import sys
 import types
 
 import prik.cli as prik_cli
@@ -81,6 +82,9 @@ def _install_main_parser(monkeypatch, args):
 
     parser = FakeParser()
     monkeypatch.setattr(prik_cli, "_parser_for_argv", lambda argv: (parser, argv))
+    # main() falls back to sys.argv when called without an argv, and an empty
+    # command line prints help instead of dispatching.
+    monkeypatch.setattr(sys, "argv", ["prik", "input.f90"])
     return parser
 
 

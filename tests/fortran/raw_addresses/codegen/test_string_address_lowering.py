@@ -93,25 +93,27 @@ def test_string_addresses_dispatch_to_named_binding_and_bridge_lowering():
     assert "PyArray_ISALIGNED((PyArrayObject *)bound_label_obj)" in c_source
     assert "PyArray_ISWRITEABLE((PyArrayObject *)bound_label_obj)" in c_source
     assert "bound_label = PyArray_DATA((PyArrayObject *)bound_label_obj);" in c_source
-    assert "void bind_c_raw(void * label);" in c_source
+    # Every scalar string reports a width beside its address, so the adapter
+    # has one shape; a raw address states the contract's width.
+    assert "void bind_c_raw(void * label, int64_t label_length);" in c_source
     assert "if (!PyLong_Check(bound_label_obj))" in c_source
     assert "bound_label = PyLong_AsVoidPtr(bound_label_obj);" in c_source
     assert "prik_malloc" not in c_source
 
     assert 'subroutine bind_c_storage(bound_label, label_length) bind(c, name="bind_c_storage")' in bridge_source
-    assert 'subroutine bind_c_raw(bound_label) bind(c, name="bind_c_raw")' in bridge_source
+    assert 'subroutine bind_c_raw(bound_label, label_length) bind(c, name="bind_c_raw")' in bridge_source
     assert bridge_source.count("type(c_ptr), value :: bound_label") == 2
-    assert "integer(c_int64_t), value :: label_length" in bridge_source
-    assert "character(kind=c_char, len=label_length) :: label" in bridge_source
-    assert "call c_f_pointer(bound_label, label_bytes, [label_length])" in bridge_source
-    assert "label_bytes(1:label_length) = transfer(label, label_bytes(1:label_length))" in bridge_source
-    assert bridge_source.count("character(kind=c_char, len=8) :: label") == 1
-    assert bridge_source.count("call c_f_pointer(bound_label, label_bytes, [8])") == 1
-    assert bridge_source.count("label = transfer(label_bytes, label)") == 2
+    # Every scalar string reports a width beside its address, so both shapes
+    # receive the same two parameters and name the caller's storage directly.
+    # The binding decides where the width comes from; the callee writes the
+    # caller's bytes, so nothing is copied back.
+    assert bridge_source.count("integer(c_int64_t), value :: label_length") == 2
+    assert bridge_source.count("character(kind=c_char, len=label_length), pointer :: label") == 2
+    assert bridge_source.count("call c_f_pointer(bound_label, label)") == 2
     assert "call native_storage(label)" in bridge_source
     assert "call native_raw(label)" in bridge_source
-    assert bridge_source.count("label_bytes(1:8) = transfer(label, label_bytes(1:8))") == 1
-    assert "c_null_char" not in "\n".join(line for line in bridge_source.splitlines() if "label_bytes" in line)
+    assert "label_bytes" not in bridge_source
+    assert "transfer(" not in bridge_source
 
 
 @pytest.mark.parametrize(

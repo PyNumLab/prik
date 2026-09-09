@@ -6,7 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from prik.runtime.handles import AllocatableArray
-from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
+from tests.fortran._support.wrapper_build import (
+    _build_source_or_generated_pyi_and_import,
+    _build_text_and_import,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DERIVED_ALIAS_F90_SOURCE = FIXTURES / "native" / "fmodule_derived_alias_f90.f90"
@@ -76,3 +79,68 @@ def test_aliased_derived_module_object_borrows_native_state(
     assert isinstance(current_values, AllocatableArray)
     assert current_values.allocated is False
     assert current_values.to_numpy() is None
+
+
+PLAIN_DERIVED_ARRAY_FIELD_SOURCE = """
+module fplain_derived_fields_f90
+  use iso_fortran_env, only: int32, real64
+  implicit none
+
+  type :: box
+    real(real64) :: grid(2, 3)
+    integer(int32) :: n
+  end type box
+
+  type(box) :: plain_box
+  type(box), target :: tgt_box
+
+contains
+  function make_box(seed) result(value)
+    real(real64), intent(in) :: seed
+    type(box) :: value
+    value%grid = seed
+    value%n = 3
+  end function make_box
+
+  subroutine touch_plain()
+    plain_box%grid(1, 1) = plain_box%grid(1, 1) + 1.0d0
+  end subroutine touch_plain
+end module fplain_derived_fields_f90
+"""
+
+
+def test_derived_array_fields_are_live_views_without_a_target_declaration(tmp_path: Path):
+    """An ordinary array component is borrowed live wherever its owner comes from.
+
+    A derived field's address never comes from `c_loc` on the field, so `target`
+    on the component, the type, or the containing module variable changes
+    nothing. The owner is reached as a Fortran pointer and its component is
+    handed to a C consumer during the call, which is what makes the borrow work
+    for a wrapper-owned instance and for a plain module object alike.
+    """
+    module = _build_text_and_import(
+        PLAIN_DERIVED_ARRAY_FIELD_SOURCE,
+        "fplain_derived_fields_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fplain_derived_fields_f90_wrapper.f90",
+            "fplain_derived_fields_f90_wrapper.c",
+            "fplain_derived_fields_f90_wrapper.h",
+        },
+    )
+
+    # A wrapper-owned instance borrows its own component storage.
+    instance = module.make_box(np.float64(2.0))
+    assert instance.grid.shape == (2, 3)
+    assert instance.grid.flags["F_CONTIGUOUS"] is True
+    instance.grid[0, 0] = np.float64(9.0)
+    assert instance.grid[0, 0] == np.float64(9.0)
+
+    # A module object without `target` borrows the same way, in both directions.
+    module.plain_box.grid[0, 0] = np.float64(5.0)
+    module.touch_plain()
+    assert module.plain_box.grid[0, 0] == np.float64(6.0)
+
+    # The addressable module object is no different.
+    module.tgt_box.grid[1, 2] = np.float64(4.5)
+    assert module.tgt_box.grid[1, 2] == np.float64(4.5)

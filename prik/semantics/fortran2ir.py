@@ -468,6 +468,8 @@ class FortranToIRConverter(ClassVisitor):
         if getattr(var, "target", False):
             metadata["aliased"] = True
             metadata["fortran_target"] = True
+        if getattr(var, "_fortran_protected", False):
+            metadata["fortran_protected"] = True
         if getattr(var, "pointer", False):
             metadata["fortran_pointer"] = True
             metadata["fortran_pointer_association"] = "runtime"

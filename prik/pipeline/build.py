@@ -619,6 +619,7 @@ def _new_compiler(
     input_compiler: str | None = None,
     input_c_compiler: str | None = None,
     requires_fortran: bool = True,
+    standard_logicals: bool = True,
 ) -> Compiler:
     """Create the compiler configured for generated wrapper code.
 
@@ -626,6 +627,10 @@ def _new_compiler(
     paired C compiler. A C-only plan uses ``input_c_compiler`` directly, so it
     neither discovers nor requires a Fortran compiler. The choice comes from
     explicit build-language records, never source suffixes.
+
+    ``standard_logicals`` requests the option that makes a Fortran ``logical``
+    interoperable with C, which some compilers do not select by default. Decline
+    it only to match objects already built the other way.
     """
     search_path = get_condaless_search_path("verbose")
     if requires_fortran:
@@ -635,6 +640,7 @@ def _new_compiler(
             debug=debug,
             execute_commands=execute_commands,
             search_path=search_path,
+            standard_logicals=standard_logicals,
         )
     return Compiler.from_c_executable(
         input_c_compiler or "cc",
@@ -652,6 +658,7 @@ def _c_build_compiler_and_preprocessing(
     requires_fortran: bool,
     execute_commands: bool,
     debug: bool,
+    standard_logicals: bool,
 ) -> tuple[Compiler | None, PreprocessingConfig]:
     """Select coherent C preprocessing and an optional early mixed compiler.
 
@@ -666,6 +673,7 @@ def _c_build_compiler_and_preprocessing(
         compiler = _new_compiler(
             execute_commands=execute_commands,
             debug=debug,
+            standard_logicals=standard_logicals,
             input_compiler=input_compiler,
             requires_fortran=True,
         )
@@ -3284,6 +3292,7 @@ def build_fortran_extension(
     wrapper_compiler_debug: bool = False,
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
+    standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
 ) -> WrapperBuildResult:
     """Build a Python extension from one or more Fortran source files.
@@ -3351,6 +3360,15 @@ def build_fortran_extension(
     verbose, wrapper_compiler_debug, wrapper_fortran_flags, wrapper_c_flags
         Build progress output, generated-wrapper debug mode, and additional
         flags for generated bridge and binding compilation.
+    standard_logicals
+        Pass the compiler option that gives a Fortran ``logical`` the
+        representation C expects: ``-standard-semantics`` on Intel and
+        ``-Munixlogical`` on PGI/NVIDIA.  On by default, because without it
+        those compilers store all bits set for ``.true.`` and a
+        ``logical(c_bool)`` reaching C holds ``255`` where ``_Bool`` is defined
+        to hold ``1``.  Set false only to link prebuilt Intel objects compiled
+        without the option, which is also required for link compatibility
+        because it changes Intel module symbol mangling.
 
     Returns
     -------
@@ -3427,6 +3445,7 @@ def build_fortran_extension(
     compiler = _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
+        standard_logicals=standard_logicals,
         input_compiler=preprocessing.compiler if preprocessing.uses_compiler else None,
     )
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
@@ -3496,6 +3515,7 @@ def build_c_extension(
     wrapper_compiler_debug: bool = False,
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
+    standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
 ) -> WrapperBuildResult:
     """Build a direct-only C extension from explicit C implementation sources.
@@ -3512,6 +3532,11 @@ def build_c_extension(
     C functions and can explicitly select declarations from included headers.
     ``native_c_sources`` adds separately compiled C inputs, while explicit
     Fortran inputs are supported only as ordinary link dependencies.
+    ``standard_logicals`` controls whether those Fortran inputs are compiled
+    with the option that gives a ``logical`` the representation C expects
+    (``-standard-semantics`` on Intel, ``-Munixlogical`` on PGI/NVIDIA); it is
+    on by default and should be turned off only to link prebuilt Intel objects
+    compiled without it.
 
     ``preprocessing`` supplies the C preprocessing configuration used to expand
     ``sources`` before parsing; the default runs the selected C compiler.
@@ -3549,6 +3574,7 @@ def build_c_extension(
         requires_fortran=requires_fortran,
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
+        standard_logicals=standard_logicals,
     )
     parsed_sources = tuple(_parse_c_wrapper_source(path, preprocessing) for path in source_paths)
     # Fail forms that are intrinsically outside the primitive lane before the
@@ -3564,6 +3590,7 @@ def build_c_extension(
     compiler = compiler or _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
+        standard_logicals=standard_logicals,
         input_compiler=input_compiler,
         input_c_compiler=input_c_compiler,
         requires_fortran=requires_fortran,
@@ -3662,6 +3689,7 @@ def build_pyi_extension(
     wrapper_compiler_debug: bool = False,
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
+    standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
 ) -> WrapperBuildResult:
     """Build a Python extension from an editable semantic ``.pyi`` contract.
@@ -3713,6 +3741,11 @@ def build_pyi_extension(
     verbose, wrapper_compiler_debug, wrapper_fortran_flags, wrapper_c_flags
         Progress, generated-wrapper debug mode, and generated bridge/binding
         compiler flags.
+    standard_logicals
+        Pass the compiler option that gives a Fortran ``logical`` the
+        representation C expects (``-standard-semantics`` on Intel,
+        ``-Munixlogical`` on PGI/NVIDIA).  On by default; set false only to
+        link prebuilt Intel objects compiled without it.
 
     Returns
     -------
@@ -3797,6 +3830,7 @@ def build_pyi_extension(
     compiler = _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
+        standard_logicals=standard_logicals,
         input_compiler=input_compiler,
         input_c_compiler=selected_input_c_compiler,
         requires_fortran=_native_inputs_require_fortran(native_inputs) or native_language == "fortran",

@@ -101,13 +101,15 @@ def test_fixed_string_writeback_dispatches_to_named_binding_and_bridge_lowering(
     assert "void bind_c_discard_name(const char * name, int64_t name_length);" in c_source
     assert "bind_c_discard_name(bound_name, (int64_t)bound_name_length);" in c_source
 
-    assert "call c_f_pointer(bound_name, name_bytes, [name_length + 1])" in bridge_source
-    assert "name = transfer(name_bytes(1:name_length), name)" in bridge_source
+    # The local names the binding's buffer instead of copying it in and back
+    # out, so a mutating callee has already written the storage the binding
+    # will read, and the terminator it wrote past the width is out of reach.
+    assert "character(kind=c_char, len=name_length), pointer :: name" in bridge_source
+    assert "call c_f_pointer(bound_name, name)" in bridge_source
     assert "call native_replace_name(name)" in bridge_source
-    assert "name_bytes(1:name_length) = transfer(name, name_bytes(1:name_length))" in bridge_source
-    assert "name_bytes(name_length + 1) = c_null_char" in bridge_source
-    assert "call c_f_pointer(bound_name, name_bytes, [name_length])" in bridge_source
     assert "call native_discard_name(name)" in bridge_source
+    assert "name_bytes" not in bridge_source
+    assert "transfer(" not in bridge_source
 
 
 def test_fixed_string_replacements_validate_first_and_cleanup_every_live_buffer():
@@ -203,12 +205,17 @@ def optional_identity(label: String = ...) -> None: ...
     assert 'result_obj = Py_BuildValue("s", (const char *)bound_label);' in c_source
     assert "void bind_c_optional_identity(const char * label, int64_t label_length);" in c_source
 
-    assert "character(kind=c_char, len=name_length) :: name" in bridge_source
+    # Required and optional locals both name the binding's buffer; presence
+    # only decides whether the argument is passed, not how it is reached.
+    assert "character(kind=c_char, len=name_length), pointer :: name" in bridge_source
+    assert "character(kind=c_char, len=label_length), pointer :: label" in bridge_source
     assert "if (c_associated(bound_label)) then" in bridge_source
+    assert "call c_f_pointer(bound_label, label)" in bridge_source
     assert "call native_optional(label=label)" in bridge_source
     assert "call native_optional()" in bridge_source
-    assert "label_bytes(1:label_length) = transfer(label, label_bytes(1:label_length))" in bridge_source
-    assert "label_bytes(label_length + 1) = c_null_char" in bridge_source
+    # A mutating callee wrote the binding's bytes, so nothing is copied back.
+    assert "label_bytes" not in bridge_source
+    assert "transfer(" not in bridge_source
 
 
 @pytest.mark.parametrize(

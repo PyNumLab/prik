@@ -14,6 +14,7 @@ from tests.fortran._support.wrapper_build import (
     _build_text_and_import,
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
+    _compiler,
     _import_from_build_dir,
     _sole_native_module,
 )
@@ -91,6 +92,10 @@ contains
   subroutine associate_module_contiguous()
     module_values => module_storage(2:4)
   end subroutine associate_module_contiguous
+
+  subroutine associate_module_reversed()
+    module_values => module_storage(5:2:-1)
+  end subroutine associate_module_reversed
 
   subroutine select_module_values(values)
     real(8), pointer, intent(out) :: values(:)
@@ -193,6 +198,7 @@ def {total_name}(values: Pointer[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=workdir / "build",
@@ -231,6 +237,7 @@ def _pointer_handle_module(build_mode: str, tmp_path: Path):
     native_object = _compile_native_object(source, tmp_path / "native")
     result = build_pyi_extension(
         contract_dir / "__init__.pyi",
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",
@@ -247,6 +254,7 @@ def _pointer_descriptor_view_module(tmp_path: Path):
     contract = CONTRACT_FIXTURES / "fpointer_handles_policy" / "__init__.pyi"
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "pyi_build",
@@ -271,8 +279,7 @@ def test_module_and_derived_pointer_handles_track_native_association(
     assert module.module_values is module_handle
     assert module_handle.associated is True
     assert module_handle.shape == (2,)
-    with pytest.raises(ValueError, match="target is noncontiguous"):
-        module.sum_values(module_handle)
+    assert module.sum_values(module_handle) == np.float64(6.0)
     with pytest.raises(NotImplementedError, match="to_numpy extraction is unsupported"):
         module_handle.to_numpy()
 
@@ -390,6 +397,33 @@ def test_caller_created_pointer_crosses_separately_built_extensions(tmp_path: Pa
     assert values.closed is True
 
 
+def test_a_reversed_pointer_target_keeps_its_data_pointer_strides_and_span(tmp_path: Path):
+    """A negative stride reaches the view exactly as the descriptor records it.
+
+    The descriptor's base address is the first element in Fortran order and its
+    stride multiplier is signed, which is also what NumPy indexes with, so the
+    view is built from them directly rather than from a window computed around
+    them.
+    """
+    module = _pointer_descriptor_view_module(tmp_path)
+    handle = module.module_values
+    module.associate_module_reversed()
+
+    view = handle.to_numpy()
+
+    assert view.shape == (4,)
+    assert view.strides == (-8,)
+    np.testing.assert_allclose(view, np.array([5.0, 4.0, 3.0, 2.0], dtype=np.float64))
+
+    # The view spans the same storage as the forward slice of the same target.
+    view[0] = np.float64(50.0)
+    module.associate_module_contiguous()
+    np.testing.assert_allclose(module_handle_view := handle.to_numpy(), np.array([2.0, 3.0, 4.0]))
+    assert module_handle_view.strides == (8,)
+    module.associate_module_reversed()
+    np.testing.assert_allclose(handle.to_numpy(), np.array([50.0, 4.0, 3.0, 2.0]))
+
+
 def test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime(tmp_path: Path):
     module = _pointer_descriptor_view_module(tmp_path)
 
@@ -446,7 +480,7 @@ def test_module_native_array_handles_use_canonical_plan(tmp_path: Path):
     contract = tmp_path / "pointer_handles" / "fpointer_handles_f90.pyi"
     contract.parent.mkdir()
     contract.write_text(
-        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
+        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, bind
 
 module_values: Annotated[
     Pointer[Float64[:]],
@@ -470,6 +504,8 @@ def associate_module_slice() -> None: ...
 def associate_module_contiguous() -> None: ...
 def allocate_module_values() -> None: ...
 def sum_values(values: Float64[:]) -> Float64: ...
+@bind("sum_values")
+def sum_four(values: Float64[4]) -> Float64: ...
 def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
 def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
 """,
@@ -477,6 +513,7 @@ def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
@@ -508,6 +545,8 @@ def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
     assert allocatable_handle.allocated is True
     np.testing.assert_allclose(allocatable_handle.to_numpy(), np.array([10.0, 20.0, 30.0]))
     assert module.sum_allocatable_descriptor(allocatable_handle) == np.float64(60.0)
+    with pytest.raises(TypeError, match="incompatible shape at axis 0"):
+        module.sum_four(allocatable_handle)
     allocatable_handle.deallocate()
     assert allocatable_handle.allocated is False
 
@@ -548,6 +587,7 @@ def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
     )
     result = build_pyi_extension(
         contract,
+        input_compiler=_compiler(),
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
@@ -680,3 +720,87 @@ def test_pointer_handle_releases_native_storage_when_the_caller_asks(tmp_path: P
     # A borrowed target is module storage the library keeps; releasing is the
     # caller's decision there too, so only the untouched path is asserted.
     assert module.borrow(np.int32(4)).associated is True
+
+
+POINTER_REASSOCIATION_SOURCE = """\
+module fpointer_reassociate_f90
+  implicit none
+
+  real(8), target :: small_target(3) = [1.0_8, 2.0_8, 3.0_8]
+  real(8), target :: large_target(5) = [10.0_8, 20.0_8, 30.0_8, 40.0_8, 50.0_8]
+
+contains
+
+  subroutine repoint(values)
+    real(8), pointer, intent(inout) :: values(:)
+    values => large_target
+  end subroutine repoint
+
+  function total(values) result(sum_values)
+    real(8), pointer, intent(in) :: values(:)
+    real(8) :: sum_values
+    sum_values = 0.0_8
+    if (associated(values)) sum_values = sum(values)
+  end function total
+
+end module fpointer_reassociate_f90
+"""
+
+
+def test_callee_reassociation_of_an_inout_pointer_dummy_reaches_the_caller_handle(tmp_path: Path):
+    """A callee's ``values => target`` must reach the handle that was passed in.
+
+    ``intent(inout)`` carries no output projection, so nothing re-reads the
+    descriptor after the call.  The descriptor the callee re-points therefore
+    has to be the caller's own, not one the wrapper rebuilt for the call.
+    """
+    source = tmp_path / "native" / "fpointer_reassociate_f90.f90"
+    source.parent.mkdir()
+    source.write_text(POINTER_REASSOCIATION_SOURCE, encoding="utf-8")
+    native_object = _compile_native_object(source, tmp_path / "native_build")
+    contract = tmp_path / "contracts" / "fpointer_reassociate_f90.pyi"
+    contract.parent.mkdir()
+    contract.write_text(
+        """from prik.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
+
+def repoint(
+    values: Annotated[
+        Pointer[Float64[:]],
+        PointerAssociation("runtime"),
+        PointerPolicy(
+            nullable=True,
+            transfer="call_local",
+            target_owner="module",
+            lifetime="module",
+            deallocation="never",
+            shape_source="pointer_bounds",
+            contiguity="contiguous",
+            reassociation="native",
+            aliasing="borrowed",
+            mutability="view",
+        ),
+    ],
+) -> None: ...
+
+def total(values: Pointer[Float64[:]]) -> Float64: ...
+""",
+        encoding="utf-8",
+    )
+    result = build_pyi_extension(
+        contract,
+        input_compiler=_compiler(),
+        native_objects=[native_object],
+        native_include_dirs=[native_object.parent],
+        output_dir=tmp_path / "build",
+    )
+    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
+
+    handle = Pointer[Float64[:]]()
+    assert handle.associated is False
+    assert module.total(handle) == np.float64(0.0)
+
+    module.repoint(handle)
+
+    assert handle.associated is True
+    assert handle.shape == (5,)
+    assert module.total(handle) == np.float64(150.0)

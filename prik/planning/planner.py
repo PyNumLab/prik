@@ -21,6 +21,7 @@ from prik.policy.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_H
 from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
+    ArrayEntrypointABI,
     ArrayHandoffPolicy,
     CallbackHandoffPolicy,
     CallbackResultPolicy,
@@ -37,6 +38,7 @@ from prik.policy.models import (
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     ModuleVariablePolicy,
+    NativeArraySourceKind,
     OverloadPolicy,
     OptionalMode,
     ArgumentPolicy,
@@ -1153,6 +1155,7 @@ class WrapperPlanner(ClassVisitor):
                 native_assignment=policy.native_assignment,
             ),
             character_length=policy.character_length,
+            array_address=policy.array_address,
             array=self._array_plan(policy.array, policy.owner_path),
             native_array_handle=self._native_array_handle_plan(policy.native_array_handle, policy.owner_path),
             derived=(
@@ -1517,7 +1520,6 @@ class WrapperPlanner(ClassVisitor):
                 slot_policy.array,
                 slot_policy.owner_path,
                 include_buffer_roles=include_buffer_roles,
-                include_dense_actual_role=include_buffer_roles and slot_policy.python_position is not None,
             )
             native_array_handle = self._native_array_handle_plan(
                 slot_policy.native_array_handle,
@@ -2210,6 +2212,7 @@ class WrapperPlanner(ClassVisitor):
             require_native_byte_order=policy.require_native_byte_order,
             require_aligned=policy.require_aligned,
             require_contiguous=policy.require_contiguous,
+            call_lease=policy.call_lease,
             flatten_storage=policy.flatten_storage,
             flat_axis=policy.flat_axis,
         )
@@ -2235,11 +2238,13 @@ class WrapperPlanner(ClassVisitor):
             raise ValueError(f"Native array handle {owner_path!r} is missing its array data facet")
         return NativeArrayHandlePlan(
             descriptor_kind=policy.descriptor_kind,
+            descriptor_attribute=policy.descriptor_attribute,
             handle_kind=policy.handle_kind,
             origin=policy.origin,
             owner=policy.owner,
             owner_retention=policy.owner_retention,
             descriptor_ownership=policy.descriptor_ownership,
+            owner_storage=policy.owner_storage,
             borrowed=policy.borrowed,
             getter_behavior=policy.getter_behavior,
             setter_action=policy.setter_action,
@@ -2251,9 +2256,14 @@ class WrapperPlanner(ClassVisitor):
             destroy_behavior=policy.destroy_behavior,
             extraction_action=policy.extraction_action,
             descriptor_interop=policy.descriptor_interop,
+            descriptor_inquiries=policy.descriptor_inquiries,
             nullable=policy.nullable,
             optional_absent=policy.optional_absent,
             storage_mode=policy.storage_mode,
+            element_length_argument=policy.element_length_argument,
+            owner_type_name=policy.owner_type_name,
+            owner_signature=policy.owner_signature,
+            call_lease=policy.call_lease,
             operations=policy.operations,
             required_headers=policy.required_headers,
             array=array_plan,
@@ -2269,7 +2279,11 @@ class WrapperPlanner(ClassVisitor):
         """Name completed caller-construction storage and operation roles."""
         owner_storage_role = (
             f"{owner_path}:default-owner-storage"
-            if policy.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            if policy.construction
+            in {
+                NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR,
+                NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER,
+            }
             else None
         )
         return NativeArrayDefaultHandlePlan(
@@ -2291,18 +2305,9 @@ class WrapperPlanner(ClassVisitor):
         operations,
     ) -> NativeDescriptorHandoffPlan:
         """Name descriptor facts once for binding, bridge, and lifecycle consumers."""
-        fact_packed = policy.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
         return NativeDescriptorHandoffPlan(
             abi=policy.abi,
             descriptor_pointer_role=self._native_descriptor_pointer_role(policy, owner_path),
-            base_addr_role=self._native_descriptor_fact_role(owner_path, "base-addr", fact_packed),
-            elem_len_role=self._native_descriptor_fact_role(owner_path, "elem-len", fact_packed),
-            rank_role=self._native_descriptor_fact_role(owner_path, "descriptor-rank", fact_packed),
-            lower_bound_roles=self._native_descriptor_axis_roles(owner_path, policy.rank, "lower-bound", fact_packed),
-            extent_roles=self._native_descriptor_axis_roles(owner_path, policy.rank, "descriptor-extent", fact_packed),
-            stride_multiplier_roles=self._native_descriptor_axis_roles(
-                owner_path, policy.rank, "stride-multiplier", fact_packed
-            ),
             presence_role=self._native_descriptor_presence_role(policy, owner_path),
             owner_storage_role=self._native_descriptor_owner_role(policy, owner_path),
             operation_roles=tuple((operation, f"{owner_path}:operation:{operation.value}") for operation in operations),
@@ -2314,13 +2319,12 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
     ) -> str | None:
         """Name call-local or direct descriptor storage when one crosses the ABI."""
-        if policy.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE:
+        if policy.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }:
             return None
         return f"{owner_path}:descriptor"
-
-    def _native_descriptor_fact_role(self, owner_path: str, label: str, enabled: bool) -> str | None:
-        """Name one fact-packed scalar descriptor field."""
-        return f"{owner_path}:{label}" if enabled else None
 
     def _native_descriptor_presence_role(
         self,
@@ -2336,34 +2340,23 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
     ) -> str | None:
         """Name persistent wrapper-owned descriptor storage."""
-        if policy.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE:
+        if policy.abi in {
+            NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER,
+        }:
             return f"{owner_path}:owner-storage"
         return None
 
-    def _native_descriptor_axis_roles(
-        self,
-        owner_path: str,
-        rank: int,
-        label: str,
-        enabled: bool,
-    ) -> tuple[str, ...]:
-        """Name one standard-descriptor field role per declared axis."""
-        if not enabled:
-            return ()
-        return tuple(f"{owner_path}:{label}:{axis}" for axis in range(rank))
-
-    # Ordinary-array buffer and raw-address planning.
     def _array_plan(
         self,
         policy: ArrayHandoffPolicy | None,
         owner_path: str,
         *,
         include_buffer_roles: bool = True,
-        include_dense_actual_role: bool = False,
     ) -> ArrayHandoffPlan | None:
         """Project one completed ordinary-array transport policy.
 
-        The result carries shape references and only the buffer, dense-view,
+        The result carries shape references and only the buffer, section,
         runtime-rank, and itemsize roles requested by the caller's completed
         transport.  ``None`` is preserved for non-array transfers; this helper
         does not validate or alter shape semantics.
@@ -2383,6 +2376,8 @@ class WrapperPlanner(ClassVisitor):
             native_order=policy.native_order,
             contiguous=policy.contiguous,
             python_layout=policy.python_layout,
+            entrypoint_abi=policy.entrypoint_abi,
+            signed_strides=policy.signed_strides,
             minimum_rank=policy.minimum_rank,
             maximum_rank=policy.maximum_rank,
             flatten_python_storage=policy.flatten_python_storage,
@@ -2396,13 +2391,9 @@ class WrapperPlanner(ClassVisitor):
             extent_callable_tokens=policy.extent_callable_references,
             extent_callable_roles=policy.extent_callable_roles,
             extent_evaluation=policy.extent_evaluation,
-            upper_bound_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "upper-bound"),
-            stride_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "stride"),
-            dense_actual_role=self._array_dense_actual_role(
-                policy,
-                owner_path,
-                include_dense_actual_role,
-            ),
+            lower_bound_roles=self._array_layout_roles(policy, owner_path, abi_rank, "lower-bound"),
+            upper_bound_roles=self._array_layout_roles(policy, owner_path, abi_rank, "upper-bound"),
+            stride_roles=self._array_layout_roles(policy, owner_path, abi_rank, "stride"),
             runtime_rank_role=runtime_rank_role,
             itemsize_role=itemsize_role,
             display_shape=policy.display_shape or policy.shape,
@@ -2427,17 +2418,6 @@ class WrapperPlanner(ClassVisitor):
             action=policy.action,
             prototype=(self._procedure_prototype_plan(policy.prototype) if policy.prototype is not None else None),
         )
-
-    @staticmethod
-    def _array_dense_actual_role(
-        policy: ArrayHandoffPolicy,
-        owner_path: str,
-        enabled: bool,
-    ) -> str | None:
-        """Name the dense-view selector only for concrete strided inputs."""
-        if not enabled or policy.rank is None or policy.contiguous is not False:
-            return None
-        return f"{owner_path}:dense-actual"
 
     def _array_transport_roles(
         self,
@@ -2472,13 +2452,13 @@ class WrapperPlanner(ClassVisitor):
 
     def _array_layout_roles(
         self,
+        policy: ArrayHandoffPolicy,
         owner_path: str,
         rank: int,
-        contiguous: bool | None,
         label: str,
     ) -> tuple[str, ...]:
-        """Name one ABI role per axis only for stride-aware layouts."""
-        if contiguous is not False:
+        """Name per-axis metadata only when the raw ABI has to carry it."""
+        if policy.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS or policy.contiguous is not False:
             return ()
         return tuple(f"{owner_path}:{label}:{axis}" for axis in range(rank))
 
@@ -2586,9 +2566,41 @@ class WrapperPlanner(ClassVisitor):
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
-        if self._requires_derived_descriptor_header(namespaces):
+        if (
+            self._requires_derived_descriptor_header(namespaces)
+            or self._accepts_array_handle_actual(namespaces)
+            or self._uses_array_descriptor_abi(namespaces)
+        ):
             headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         return tuple(dict.fromkeys(headers))
+
+    @staticmethod
+    def _uses_array_descriptor_abi(namespaces: tuple[NamespacePlan, ...]) -> bool:
+        """Return whether an ordinary argument uses the standard descriptor ABI."""
+        return any(
+            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+            for namespace in namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
+
+    @staticmethod
+    def _accepts_array_handle_actual(namespaces: tuple[NamespacePlan, ...]) -> bool:
+        """Return whether an ordinary array argument accepts an array handle.
+
+        The storage such a handle names is reached through its descriptor, so a
+        module whose ordinary array dummies accept one needs the interop header
+        even when nothing else about the module does.  Only a Fortran argument
+        accepts one, so no separate language test is needed here.
+        """
+        accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
+        return any(
+            argument.native_array_actual is not None
+            and accepts.intersection(argument.native_array_actual.accepted_sources)
+            for namespace in namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
 
     @staticmethod
     def _requires_derived_descriptor_header(namespaces: tuple[NamespacePlan, ...]) -> bool:

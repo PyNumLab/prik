@@ -122,15 +122,18 @@ def _hidden_output_context(**kwargs) -> OwnershipContext:
 def _native_array_policy(
     *,
     descriptor_kind: str = "allocatable",
+    descriptor_attribute: str | None = None,
     handle_kind: str = "borrowed_module_descriptor",
     to_numpy: str = "borrowed_view",
     descriptor_interop: str = "none",
+    descriptor_inquiries: bool = True,
     nullable: bool = False,
     optional_absent: bool = False,
     operations: tuple[str, ...] = ("allocated", "to_numpy"),
 ) -> NativeArrayHandlePolicy:
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
+        descriptor_attribute=descriptor_attribute or descriptor_kind,
         handle_kind=handle_kind,
         origin="module_variable",
         owner="native",
@@ -147,8 +150,14 @@ def _native_array_policy(
         destroy_behavior="none",
         to_numpy=to_numpy,
         descriptor_interop=descriptor_interop,
+        descriptor_inquiries=descriptor_inquiries,
         nullable=nullable,
         optional_absent=optional_absent,
         storage_mode="alias",
+        owner_storage="borrowed_entity",
+        element_length_argument=False,
+        owner_type_name=None,
+        owner_signature=0,
+        call_lease=False,
         operations=operations,
     )

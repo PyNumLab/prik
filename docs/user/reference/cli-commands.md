@@ -90,6 +90,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--strict-wrapper-names` | Rejects Python names that would need escaping or a collision suffix. |
 | `--assume-intent-in-scalars` | Treats a primitive or non-descriptor character scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and descriptor character scalars are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
 | `--no-compile-input-sources` | Treats positional sources as semantic inputs only. Requires an explicit native input. |
+| `--no-standard-logicals` | Preserves compatibility with prebuilt Intel objects compiled without PRIK's default logical-storage setting. |
 | `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
 | `--native-c-sources PATH ...` | Compiles extra C sources without exposing them as public API. |
 | `--native-compile-flags FLAG ...` | Flags for native implementation compilation. |

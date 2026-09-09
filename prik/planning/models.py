@@ -34,6 +34,7 @@ from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayLogicalABI,
+    ArrayEntrypointABI,
     ArrayPythonLayout,
     ArrayWritebackABI,
     BridgeDataAction,
@@ -65,9 +66,11 @@ from prik.policy.models import (
     DirectResultABI,
     DeclarationCallableAction,
     ExternalDeclarationMode,
+    ModuleArrayAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorInterop,
+    NativeArrayDescriptorAttribute,
     CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
@@ -81,6 +84,7 @@ from prik.policy.models import (
     NativeArrayOutputProjection,
     NativeArrayResultAllocation,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
@@ -478,6 +482,10 @@ class ArrayHandoffPlan(StageRecord):
     native_order: str | None
     contiguous: bool | None
     python_layout: ArrayPythonLayout
+    # How the dummy is reached, and whether an axis may run backwards. Both are
+    # completed in policy; a backend implements the mechanism they name.
+    entrypoint_abi: ArrayEntrypointABI
+    signed_strides: bool
     minimum_rank: int
     maximum_rank: int
     flatten_python_storage: bool
@@ -491,9 +499,9 @@ class ArrayHandoffPlan(StageRecord):
     extent_callable_tokens: tuple[tuple[str, ...], ...] = ()
     extent_callable_roles: tuple[tuple[str, ...], ...] = ()
     extent_evaluation: tuple[str, ...] = ()
+    lower_bound_roles: tuple[str, ...] = ()
     upper_bound_roles: tuple[str, ...] = ()
     stride_roles: tuple[str, ...] = ()
-    dense_actual_role: str | None = None
     runtime_rank_role: str | None = None
     itemsize_role: str | None = None
     display_shape: tuple[str, ...] = ()
@@ -509,13 +517,14 @@ class NativeArrayActualPlan(StageRecord):
 
     accepted_sources: tuple[NativeArraySourceKind, ...]
     dtype: str
-    rank: int
+    rank: int | None
     shape: tuple[str, ...]
     order: str | None
     writable: bool
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    call_lease: bool
     flatten_storage: bool = False
     flat_axis: int | None = None
 
@@ -530,12 +539,6 @@ class NativeDescriptorHandoffPlan(StageRecord):
 
     abi: NativeDescriptorHandoffABI
     descriptor_pointer_role: str | None
-    base_addr_role: str | None
-    elem_len_role: str | None
-    rank_role: str | None
-    lower_bound_roles: tuple[str, ...]
-    extent_roles: tuple[str, ...]
-    stride_multiplier_roles: tuple[str, ...]
     presence_role: str | None
     owner_storage_role: str | None
     operation_roles: tuple[tuple[NativeArrayOperation, str], ...]
@@ -569,11 +572,13 @@ class NativeArrayHandlePlan(StageRecord):
     """
 
     descriptor_kind: NativeArrayDescriptorKind
+    descriptor_attribute: NativeArrayDescriptorAttribute
     handle_kind: NativeArrayHandleKind
     origin: NativeArrayHandleOrigin
     owner: OwnershipOwner
     owner_retention: NativeArrayOwnerRetention
     descriptor_ownership: NativeArrayDescriptorOwnership
+    owner_storage: NativeArrayOwnerStorage
     borrowed: bool
     getter_behavior: NativeArrayGetterBehavior
     setter_action: SetterAction
@@ -585,9 +590,19 @@ class NativeArrayHandlePlan(StageRecord):
     destroy_behavior: NativeArrayDestroyBehavior
     extraction_action: NativeArrayExtractionAction
     descriptor_interop: NativeArrayDescriptorInterop
+    # Most inquiries use a live descriptor supplied to a shared consumer.
+    # Declarations without a reliable descriptor projection instead use
+    # planned Fortran inquiry procedures.
+    descriptor_inquiries: bool
     nullable: bool
     optional_absent: bool
     storage_mode: StorageMode
+    # Allocation of a deferred-length character entity carries a runtime width
+    # beside its extents; every other entity allocates from the shape alone.
+    element_length_argument: bool
+    owner_type_name: str | None
+    owner_signature: int
+    call_lease: bool
     operations: tuple[NativeArrayOperation, ...]
     required_headers: tuple[str, ...]
     array: ArrayHandoffPlan
@@ -783,6 +798,10 @@ class ModuleVariablePlan(StageRecord):
     derived: DerivedModuleObjectPlan | None = None
     character_length: int | None = None
     docstring: str | None = None
+    # Present only for a borrowed fixed-array view. Both backends read it: the
+    # bridge to reach the address, the binding to define the C helper that one
+    # of the two mechanisms calls. It is therefore a shared fact, not a facet.
+    array_address: ModuleArrayAddressMechanism | None = None
 
 
 @dataclass

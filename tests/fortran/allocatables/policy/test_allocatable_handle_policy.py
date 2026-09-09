@@ -19,6 +19,10 @@ from prik.policy.ownership import (
     default_ownership_policy,
 )
 from prik.policy.completion import complete_semantic_policies
+from prik.parsers.fortran import parse_fortran_file
+from prik.planning import WrapperPlanner
+from prik.policy.models import NativeArrayOwnerStorage, NativeDescriptorHandoffABI, NativeEntrypointAction
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from tests.fortran._support.ownership_policy import (
     _array_type,
     parse_pyi_text,
@@ -86,7 +90,56 @@ def replace_values(
     assert "destroy" in policy.default_operations
 
 
+def test_deferred_character_writeback_uses_fortran_owner_storage():
+    module = parse_pyi_text(
+        """
+def replace_names(
+    values: Allocatable[String[:][:]],
+) -> Returns["values", Allocatable[String[:][:]]]: ...
+""",
+        module_name="caller_created_deferred_character_handle",
+    )
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert policy.default_construction == "lazy_fortran_owner"
+    assert policy.owner_storage == "fortran_owner"
+    assert policy.element_length_argument is True
+    assert "destroy" in policy.default_operations
+
+
+def test_deferred_character_owner_storage_keeps_the_direct_descriptor_abi():
+    """Storage ownership does not replace a bind(C) procedure's declared ABI."""
+    parsed = parse_fortran_file(
+        """
+module direct_character_owner
+  use iso_c_binding
+contains
+  subroutine rewrite(values) bind(c)
+    character(kind=c_char, len=:), allocatable, intent(inout) :: values(:, :)
+  end subroutine
+end module
+"""
+    )
+    module = fortran_module_to_semantic_module(parsed.modules[0])
+    complete_semantic_policies(module)
+    function = WrapperPlanner().build(module).namespaces[0].functions[0]
+    handle = function.arguments[0].native_array_handle
+    assert handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
+    assert handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+    assert function.entrypoint.action is NativeEntrypointAction.DIRECT_C_ABI
+    assert function.entrypoint.symbol_name == "rewrite"
+
+
 def test_aliased_does_not_change_allocatable_live_view_semantics():
+    """A module allocatable is reached through its descriptor either way.
+
+    `Aliased` would allow `c_loc` on the variable, but that yields only a base
+    address: lower bounds, strides and element length would then have to be
+    assumed rather than read, and a non-default lower bound makes the assumption
+    wrong. Both declarations therefore complete to the same descriptor policy.
+    """
     module = parse_pyi_text(
         """
 values: Allocatable[Float64[:]]
@@ -100,12 +153,10 @@ shared_values: Annotated[Allocatable[Float64[:]], Aliased]
     values = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
     shared_values = module.variables[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
 
-    assert values.to_numpy == "descriptor_view"
-    assert shared_values.to_numpy == "borrowed_view"
+    assert values.to_numpy == shared_values.to_numpy == "descriptor_view"
+    assert values.descriptor_interop == shared_values.descriptor_interop == "module_allocatable_c_descriptor"
     assert values.owner == shared_values.owner == "native"
     assert values.borrowed is shared_values.borrowed is True
-    assert values.descriptor_interop == "module_allocatable_c_descriptor"
-    assert shared_values.descriptor_interop == "none"
 
 
 def test_owned_allocatable_result_records_local_standard_c_descriptor_build_requirement():
@@ -132,3 +183,51 @@ def make_values() -> Allocatable[Float64[:]]: ...
             headers=("ISO_Fortran_binding.h",),
         ),
     )
+
+
+def test_deferred_length_character_allocation_plans_an_explicit_element_length():
+    """A deferred length has no width to reuse, so allocation must be given one.
+
+    The standard rejects an allocate-object with a deferred length type
+    parameter unless a type-spec, SOURCE or MOLD supplies the width, so policy
+    completes the width as a planned argument instead of leaving the bridge to
+    invent one. Every other entity already knows its element width.
+    """
+    module = parse_pyi_text(
+        """
+deferred: Allocatable[String[:][:]]
+fixed: Allocatable[String[8][:]]
+numeric: Allocatable[Float64[:]]
+""",
+        module_name="deferred_character_allocation",
+    )
+
+    complete_semantic_policies(module)
+
+    deferred, fixed, numeric = (
+        variable.metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA] for variable in module.variables
+    )
+
+    assert deferred.element_length_argument is True
+    assert fixed.element_length_argument is False
+    assert numeric.element_length_argument is False
+
+
+def test_a_deferred_length_character_array_can_be_resized():
+    """Shape mutation is available once the width travels with the extents.
+
+    Resize was previously withheld from these arrays because the generated
+    allocation had no width to name. That reason is gone, so withholding the
+    operation would only remove a capability the entity supports.
+    """
+    module = parse_pyi_text(
+        "deferred: Allocatable[String[:][:]]",
+        module_name="deferred_character_resize",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert policy.allows("resize")
+    assert policy.allows("deallocate")

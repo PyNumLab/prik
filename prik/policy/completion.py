@@ -9,6 +9,7 @@ may dispatch from its completed policies but must not infer replacements.
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import keyword
 import re
 from collections.abc import Iterable
@@ -21,6 +22,7 @@ from prik.policy.ownership import (
     ObjectKind,
     SetterAction,
     default_ownership_policy,
+    declared_character_length,
     is_character_descriptor_update,
     ownership_context_for_argument,
 )
@@ -1374,22 +1376,66 @@ def _native_array_handle_policy(
     )
     handle_kind = _native_array_handle_kind(descriptor_kind, context, optional_absent=optional_absent)
     blocker = _native_array_handle_blocker(descriptor_kind, handle_kind, decision)
+    fortran_owner = blocker is None and _requires_fortran_array_owner(semantic_type, context)
+    descriptor_inquiries = _native_array_descriptor_inquiries(descriptor_kind, semantic_type)
+    blocker = _native_array_projection_blocker(
+        blocker,
+        handle_kind,
+        descriptor_inquiries=descriptor_inquiries,
+        fortran_owner=fortran_owner,
+    )
     descriptor_ownership = _native_array_descriptor_ownership(handle_kind)
-    to_numpy = _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
-    operations = _native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type)
-    default_construction = _native_array_default_construction(handle_kind, context, semantic_type)
+    to_numpy = _native_array_handle_to_numpy_policy(
+        descriptor_kind,
+        handle_kind,
+        decision,
+        semantic_type,
+        descriptor_inquiries=descriptor_inquiries,
+        fortran_owner=fortran_owner,
+    )
+    operations = _native_array_available_operations(
+        descriptor_kind,
+        handle_kind,
+        context,
+        semantic_type,
+        descriptor_inquiries=descriptor_inquiries,
+        fortran_owner=fortran_owner,
+    )
+    element_length_argument = _is_deferred_character_array(semantic_type) and bool(operations & {"allocate", "resize"})
+    default_construction = _native_array_default_construction(
+        handle_kind,
+        context,
+        semantic_type,
+        fortran_owner=fortran_owner,
+    )
+    owner_signature = _native_array_owner_signature(descriptor_kind, semantic_type) if fortran_owner else 0
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
+        descriptor_attribute=_native_array_descriptor_attribute(
+            descriptor_kind,
+            handle_kind,
+            semantic_type,
+            fortran_owner=fortran_owner,
+        ),
         handle_kind=handle_kind,
         origin=_native_array_handle_origin(context),
         owner=_native_array_handle_owner(handle_kind),
         owner_retention=_native_array_owner_retention(handle_kind),
         descriptor_ownership=descriptor_ownership,
+        owner_storage=(
+            "fortran_owner"
+            if fortran_owner
+            else ("c_descriptor" if handle_kind == "owned_result_descriptor" else "borrowed_entity")
+        ),
         borrowed=descriptor_ownership == "borrowed",
         getter_behavior=_native_array_getter_behavior(handle_kind, context, blocker),
         python_setter=_native_array_python_setter(variable),
         native_setter=_native_array_native_setter(variable),
-        output_projection=_native_array_output_projection(descriptor_kind, handle_kind, context),
+        output_projection=(
+            _native_array_output_projection(descriptor_kind, handle_kind, context)
+            if descriptor_inquiries or fortran_owner
+            else "none"
+        ),
         result_allocation=_native_array_result_allocation(descriptor_kind, handle_kind, context, semantic_type),
         release=_native_array_release_responsibility(handle_kind),
         target_lifetime=_native_array_target_lifetime(descriptor_kind, handle_kind, semantic_type, blocker),
@@ -1399,17 +1445,23 @@ def _native_array_handle_policy(
             descriptor_kind,
             handle_kind,
             semantic_type,
+            descriptor_inquiries=descriptor_inquiries,
         ),
+        element_length_argument=element_length_argument,
+        owner_type_name=(f"prik_array_owner_{owner_signature:016x}" if owner_signature else None),
+        owner_signature=owner_signature,
+        call_lease=context.is_argument or fortran_owner,
         nullable=bool(decision.nullable or optional_absent),
         optional_absent=optional_absent,
         storage_mode=decision.storage_mode.value,
-        operations=operations,
+        operations=tuple(sorted(operations)),
         blocker=blocker,
         default_construction=default_construction,
         default_descriptor_ownership="owned" if default_construction != "none" else "unknown",
         default_release="wrapper_dealloc" if default_construction != "none" else "none",
         default_destroy_behavior="handle_finalizer" if default_construction != "none" else "none",
         default_operations=(tuple(sorted({*operations, "destroy"})) if default_construction != "none" else ()),
+        descriptor_inquiries=descriptor_inquiries,
     )
 
 
@@ -1439,17 +1491,93 @@ def _native_array_default_construction(
     handle_kind: str,
     context: OwnershipContext,
     semantic_type: models.SemanticType,
+    *,
+    fortran_owner: bool,
 ) -> str:
-    """Complete how a runtime-constructed descriptor reaches one argument."""
-    if (
-        semantic_type.name == "String"
-        or handle_kind not in {"argument_descriptor", "optional_absent_handle"}
-        or not context.is_argument
-    ):
+    """Complete how a runtime-constructed descriptor reaches one argument.
+
+    This pairs with the handoff ABI: an argument whose descriptor crosses
+    directly is handed a descriptor the Fortran runtime built, so a caller who
+    supplies a contract-default handle needs storage of its own to hand over.
+    """
+    if handle_kind not in {"argument_descriptor", "optional_absent_handle"} or not context.is_argument:
         return "none"
-    if context.projects_result:
-        return "lazy_owned_descriptor"
-    return "fact_packed_empty"
+    if fortran_owner:
+        return "lazy_fortran_owner"
+    return "lazy_owned_descriptor"
+
+
+def _native_array_projection_blocker(
+    blocker: str | None,
+    handle_kind: str,
+    *,
+    descriptor_inquiries: bool,
+    fortran_owner: bool,
+) -> str | None:
+    """Refuse a declaration with no way to project its storage.
+
+    A module or field entity is reachable by use association, and an owner is
+    reachable through the bridge, so either can answer without a descriptor
+    interface. Anything else has neither, and there is nothing left to read.
+    """
+    if descriptor_inquiries or fortran_owner:
+        return blocker
+    if handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor"}:
+        return blocker
+    return "deferred-length character pointer arrays do not have a reliable descriptor projection"
+
+
+def _native_array_available_operations(
+    descriptor_kind: str,
+    handle_kind: str,
+    context: OwnershipContext,
+    semantic_type: models.SemanticType,
+    *,
+    descriptor_inquiries: bool,
+    fortran_owner: bool,
+) -> set[str]:
+    """Trim the declaration's operations to the ones its ABI can answer.
+
+    Without a legal descriptor interface an entity cannot be described to C at
+    all, so nothing that reads or replaces its storage survives. A Fortran
+    owner keeps those operations, because they run inside the bridge on the
+    entity itself. A contiguous deferred-length character pointer can also
+    expose a view from bridge-provided address facts.
+    """
+    operations = set(_native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type))
+    if descriptor_inquiries:
+        return operations
+    if fortran_owner:
+        # A contiguous owner can expose a view without exporting a CFI
+        # descriptor: the bridge supplies its base address, extents, and
+        # runtime character width directly.
+        if _native_array_pointer_to_numpy_policy(semantic_type) != "contiguous_view":
+            operations.discard("to_numpy")
+        return operations
+    operations.difference_update({"allocate", "associate", "resize", "to_numpy"})
+    return operations
+
+
+def _requires_fortran_array_owner(
+    semantic_type: models.SemanticType,
+    context: OwnershipContext,
+) -> bool:
+    """Keep owned character entities in Fortran, including deferred allocations.
+
+    Allocatable results move their storage into the owner; pointer results
+    retain their association. Argument handoff independently selects an
+    owner address or a live descriptor.
+    Module variables and fields retain their existing native entity.
+    """
+    return semantic_type.name == "String" and (context.is_argument or context.is_result)
+
+
+def _native_array_owner_signature(descriptor_kind: str, semantic_type: models.SemanticType) -> int:
+    """Hash the declaration facts that determine one generated owner layout."""
+    length = semantic_type.metadata.get("fortran_character_length")
+    canonical = f"v1|{descriptor_kind}|c_char|{length}|{int(semantic_type.rank or 0)}"
+    signature = int.from_bytes(hashlib.blake2b(canonical.encode("ascii"), digest_size=8).digest(), "big")
+    return signature or 1
 
 
 def _native_array_handle_origin(context: OwnershipContext) -> str:
@@ -1622,7 +1750,7 @@ def _native_array_to_numpy_policy(
         return _native_array_pointer_to_numpy_policy(semantic_type)
     if decision.is_blocked:
         return "unsupported"
-    if handle_kind == "borrowed_module_descriptor" and not semantic_type.metadata.get("aliased"):
+    if handle_kind == "borrowed_module_descriptor":
         return "descriptor_view"
     return "borrowed_view"
 
@@ -1635,6 +1763,27 @@ def _native_array_pointer_to_numpy_policy(semantic_type: models.SemanticType) ->
     if _pointer_policy_value(pointer_policy, "contiguity") == "contiguous":
         return "contiguous_view"
     return "descriptor_view"
+
+
+def _native_array_handle_to_numpy_policy(
+    descriptor_kind: str,
+    handle_kind: str,
+    decision: OwnershipDecision,
+    semantic_type: models.SemanticType,
+    *,
+    descriptor_inquiries: bool,
+    fortran_owner: bool,
+) -> str:
+    """Select the view policy from the completed descriptor route."""
+    if descriptor_inquiries:
+        return _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
+    if fortran_owner:
+        return (
+            "contiguous_view"
+            if _native_array_pointer_to_numpy_policy(semantic_type) == "contiguous_view"
+            else "unsupported"
+        )
+    return "unsupported"
 
 
 def _native_array_handle_operations(
@@ -1650,8 +1799,7 @@ def _native_array_handle_operations(
         operations = {"allocated", "to_numpy"}
         if _handle_releases_its_own_storage(handle_kind, context):
             operations.add("deallocate")
-            if not _is_deferred_character_array(semantic_type):
-                operations.add("resize")
+            operations.add("resize")
         return tuple(sorted(operations))
     operations = {"associate", "associated", "nullify", "to_numpy"}
     pointer_policy = _pointer_policy_metadata(semantic_type)
@@ -1693,19 +1841,50 @@ def _native_array_descriptor_interop_requirement(
     descriptor_kind: str,
     handle_kind: str,
     semantic_type: models.SemanticType,
+    *,
+    descriptor_inquiries: bool,
 ) -> str:
     """Return the C-descriptor interop mechanism required by a supported handle."""
+    if not descriptor_inquiries:
+        return "none"
     if descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
         return "owned_allocatable_c_descriptor"
-    if (
-        descriptor_kind == "allocatable"
-        and handle_kind == "borrowed_module_descriptor"
-        and not semantic_type.metadata.get("aliased")
-    ):
+    if descriptor_kind == "allocatable" and handle_kind == "borrowed_module_descriptor":
         return "module_allocatable_c_descriptor"
     if descriptor_kind == "pointer" and handle_kind != "unsupported":
         return "pointer_c_descriptor"
     return "none"
+
+
+def _native_array_descriptor_attribute(
+    descriptor_kind: str,
+    handle_kind: str,
+    semantic_type: models.SemanticType,
+    *,
+    fortran_owner: bool,
+) -> str:
+    """Complete the attribute a handle's descriptor callback can supply.
+
+    A fixed-width character module variable or field cannot associate with an
+    interoperable allocatable or pointer character dummy, because those dummies
+    have to declare deferred length. Its callback therefore supplies an
+    ordinary assumed-shape descriptor. The native entity remains allocatable
+    or pointer; only the callback projection has the ``other`` attribute.
+    """
+    fixed_character = semantic_type.name == "String" and declared_character_length(semantic_type.metadata) is not None
+    if fixed_character and (
+        fortran_owner or handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor"}
+    ):
+        return "other"
+    return descriptor_kind
+
+
+def _native_array_descriptor_inquiries(
+    descriptor_kind: str,
+    semantic_type: models.SemanticType,
+) -> bool:
+    """Return whether the declaration has a reliable descriptor inquiry path."""
+    return not (descriptor_kind == "pointer" and semantic_type.metadata.get("fortran_character_length") == ":")
 
 
 def _pointer_policy_metadata(semantic_type: models.SemanticType) -> dict[str, object]:

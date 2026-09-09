@@ -36,6 +36,7 @@ from prik.policy.ownership import (
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
+    ArrayEntrypointABI,
     ArrayLogicalABI,
     ArrayPythonLayout,
     ArrayWritebackABI,
@@ -62,6 +63,7 @@ from prik.policy.models import (
     DerivedWriteback,
     DeclarationCallableAction,
     DirectResultABI,
+    EntrypointPassingConvention,
     LifecycleOperation,
     FIXED_STRING_RESULT_COPY_REASON,
     OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON,
@@ -81,6 +83,7 @@ from prik.policy.models import (
     NativeArrayOperation,
     NativeArrayOutputProjection,
     NativeArrayOwnerRetention,
+    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
@@ -521,21 +524,53 @@ class WrapperGenerator:
             if handle is not None
         )
         expected_headers = list(self._native_array_required_headers(handles))
-        if any(
-            field.access
-            in {
-                DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
-                DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
-            }
-            for namespace in plan.namespaces
-            for derived in namespace.derived_types
-            for field in derived.fields
+        if (
+            any(
+                field.access
+                in {
+                    DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
+                    DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
+                }
+                for namespace in plan.namespaces
+                for derived in namespace.derived_types
+                for field in derived.fields
+            )
+            or self._accepts_array_handle_actual(plan)
+            or self._uses_array_descriptor_abi(plan)
         ):
             expected_headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         expected = tuple(dict.fromkeys(expected_headers))
         if plan.required_headers == expected:
             return ()
         return (self._diagnostic(plan.owner_path, "inconsistent-required-headers", plan.required_headers),)
+
+    @staticmethod
+    def _accepts_array_handle_actual(plan: ModulePlan) -> bool:
+        """Return whether an ordinary array argument accepts an array handle.
+
+        The storage such a handle names is reached through its descriptor, so
+        the module needs the interop header even when nothing else in it does.
+        Only a Fortran argument accepts a handle, so the accepted sources are
+        the whole test.
+        """
+        accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
+        return any(
+            argument.native_array_actual is not None
+            and accepts.intersection(argument.native_array_actual.accepted_sources)
+            for namespace in plan.namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
+
+    @staticmethod
+    def _uses_array_descriptor_abi(plan: ModulePlan) -> bool:
+        """Return whether an ordinary argument uses the standard descriptor ABI."""
+        return any(
+            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+            for namespace in plan.namespaces
+            for function in namespace.functions
+            for argument in function.arguments
+        )
 
     def _namespace_native_array_handles(
         self,
@@ -1257,6 +1292,10 @@ class WrapperGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "module-array-view-has-unrelated-facet", None))
         if plan.entrypoint.getter_role is None:
             diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-getter-role", None))
+        # The route to the array's base address is a policy decision. Bridge
+        # lowering reads it; it must never fall back to one when it is absent.
+        if plan.array_address is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-address-mechanism", None))
         if plan.bridge.native_assignment is not AssignmentMode.NONE:
             diagnostics.append(
                 self._diagnostic(
@@ -1948,12 +1987,9 @@ class WrapperGenerator:
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER and (
             plan.mutates_native or self._publishes_array_replacement(plan)
         ):
-            if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-                expected = ArrayWritebackABI.NOT_APPLICABLE
-            elif plan.datatype_family is DatatypeFamily.BOOL:
-                expected = ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-            else:
-                expected = ArrayWritebackABI.NATIVE_ARRAY
+            # Every element type is written back the same way: a Boolean one
+            # already holds the zero or one its interoperable form requires.
+            expected = ArrayWritebackABI.NATIVE_ARRAY
         if plan.array_writeback_abi is expected:
             return ()
         return (
@@ -2821,7 +2857,7 @@ class WrapperGenerator:
     def _expected_native_descriptor_data_action(self, plan: ArgumentTransferPlan) -> BridgeDataAction:
         """Distinguish call-local facts from persistent projected descriptors."""
         handle = plan.native_array_handle
-        if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR:
+        if handle is not None and handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE:
             return BridgeDataAction.DIRECT_TRANSFER
         return BridgeDataAction.ASSOCIATE_VIEW
 
@@ -2929,7 +2965,7 @@ class WrapperGenerator:
             for name, actual, required in expected
             if actual is not required
         )
-        projected = handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        projected = handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
         expected_codegen = CodegenAction.IN_PLACE_ARGUMENT if projected else CodegenAction.CALL_LOCAL_INPUT
         if plan.binding.codegen_action is not expected_codegen:
             diagnostics.append(
@@ -2952,7 +2988,7 @@ class WrapperGenerator:
             )
         expected_destruction = (
             DestructionPolicy.CALLER
-            if handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+            if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
             else DestructionPolicy.NONE
         )
         if plan.destruction_policy is not expected_destruction:
@@ -3040,12 +3076,12 @@ class WrapperGenerator:
         roles = handle.default_handle.operation_roles
         required = {
             NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
-            NativeArrayOperation.DESCRIPTOR,
             NativeArrayOperation.DESTROY,
         }
         if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
             required.add(NativeArrayOperation.ASSOCIATE)
+            if handle.descriptor_inquiries:
+                required.add(NativeArrayOperation.DESCRIPTOR)
         diagnostics = []
         complete = len(set(operations)) == len(operations) and required.issubset(operations)
         if not complete:
@@ -3064,8 +3100,8 @@ class WrapperGenerator:
         """Match persistent owner storage and descriptor ABI to construction."""
         default = handle.default_handle
         expected_owner_role = {
-            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: None,
             NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: True,
+            NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER: True,
         }[default.construction]
         owner_role = True if default.owner_storage_role is not None else None
         diagnostics = []
@@ -3075,13 +3111,22 @@ class WrapperGenerator:
                     owner_path, "inconsistent-default-handle-owner-storage-role", default.owner_storage_role
                 )
             )
-        expected_abi = {
-            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL,
-            NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR,
-        }[default.construction]
-        if handle.handoff.abi is not expected_abi:
+        # A default handle that owns a lazily created descriptor requires the
+        # direct handoff: the storage it attaches is what crosses.  A result
+        # keeps its own owned storage instead and never attaches one.
+        if (
+            default.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            and handle.handoff.abi is not NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        ):
             diagnostics.append(
                 self._diagnostic(owner_path, "inconsistent-default-handle-descriptor-abi", handle.handoff.abi)
+            )
+        if (
+            default.construction is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
+            and handle.owner_storage is not NativeArrayOwnerStorage.FORTRAN_OWNER
+        ):
+            diagnostics.append(
+                self._diagnostic(owner_path, "inconsistent-default-handle-owner-storage", handle.owner_storage)
             )
         return tuple(diagnostics)
 
@@ -3130,11 +3175,17 @@ class WrapperGenerator:
         if actual is None:
             return ()
         array = plan.array
-        expected_sources = (
-            NativeArraySourceKind.NDARRAY,
+        expected_sources = (NativeArraySourceKind.NDARRAY,)
+        handle_sources = {
             NativeArraySourceKind.ALLOCATABLE_HANDLE,
             NativeArraySourceKind.POINTER_HANDLE,
-        )
+        }
+        if handle_sources.intersection(actual.accepted_sources):
+            expected_sources = (
+                *expected_sources,
+                NativeArraySourceKind.ALLOCATABLE_HANDLE,
+                NativeArraySourceKind.POINTER_HANDLE,
+            )
         diagnostics = [
             *self._native_array_actual_source_diagnostics(plan, expected_sources),
             *self._native_array_actual_shape_diagnostics(plan),
@@ -3269,9 +3320,9 @@ class WrapperGenerator:
         array = handle.array
         packed_roles = (
             *array.extent_roles,
+            *array.lower_bound_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
-            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -3302,17 +3353,11 @@ class WrapperGenerator:
         argument: ArgumentTransferPlan | None,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate descriptor ABI roles without reconstructing its policy."""
-        handoff = handle.handoff
         rank = handle.array.rank
         diagnostics = []
         if rank is None:
             return (self._diagnostic(owner_path, "missing-native-descriptor-rank", None),)
-        expected_counts = (
-            len(handoff.lower_bound_roles),
-            len(handoff.extent_roles),
-            len(handoff.stride_multiplier_roles),
-        )
-        diagnostics.extend(self._native_descriptor_abi_diagnostics(owner_path, handle, expected_counts))
+        diagnostics.extend(self._native_descriptor_abi_diagnostics(owner_path, handle))
         diagnostics.extend(self._native_descriptor_presence_diagnostics(owner_path, handle, argument))
         diagnostics.extend(self._native_array_operation_diagnostics(owner_path, handle))
         return tuple(diagnostics)
@@ -3321,56 +3366,31 @@ class WrapperGenerator:
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch exact role validation by typed descriptor ABI."""
         handlers = {
-            NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL: self._fact_packed_descriptor_diagnostics,
             NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR: self._direct_descriptor_diagnostics,
+            NativeDescriptorHandoffABI.FORTRAN_OWNER: self._fortran_owner_diagnostics,
             NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE: self._owned_descriptor_diagnostics,
         }
         try:
             handler = handlers[handle.handoff.abi]
         except KeyError:
             return (self._diagnostic(owner_path, "unknown-native-descriptor-handoff", handle.handoff.abi),)
-        return handler(owner_path, handle, expected_counts)
-
-    def _fact_packed_descriptor_diagnostics(
-        self,
-        owner_path: str,
-        handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
-    ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate every call-local descriptor fact role."""
-        handoff = handle.handoff
-        diagnostics = []
-        expected_rank = handle.array.rank
-        if expected_counts != (expected_rank, expected_rank, expected_rank):
-            diagnostics.append(
-                self._diagnostic(owner_path, "inconsistent-native-descriptor-axis-roles", expected_counts)
-            )
-        if None in {
-            handoff.descriptor_pointer_role,
-            handoff.base_addr_role,
-            handoff.elem_len_role,
-            handoff.rank_role,
-        }:
-            diagnostics.append(self._diagnostic(owner_path, "missing-native-descriptor-fact-role", None))
-        if handoff.owner_storage_role is not None:
-            diagnostics.append(self._diagnostic(owner_path, "fact-packed-has-owner-storage", None))
-        return tuple(diagnostics)
+        return handler(owner_path, handle)
 
     def _direct_descriptor_diagnostics(
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one persistent projected standard-descriptor pointer."""
         diagnostics = []
-        if handle.handoff.descriptor_pointer_role is None or any(expected_counts):
+        if handle.handoff.descriptor_pointer_role is None:
             diagnostics.append(self._diagnostic(owner_path, "invalid-direct-native-descriptor-roles", None))
-        if handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE:
+        if handle.output_projection is not NativeArrayOutputProjection.PROJECTED_HANDLE and (
+            handle.descriptor_kind not in {NativeArrayDescriptorKind.ALLOCATABLE, NativeArrayDescriptorKind.POINTER}
+        ):
             diagnostics.append(self._diagnostic(owner_path, "direct-descriptor-without-projection", None))
         return tuple(diagnostics)
 
@@ -3378,13 +3398,24 @@ class WrapperGenerator:
         self,
         owner_path: str,
         handle: NativeArrayHandlePlan,
-        expected_counts: tuple[int, int, int],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate persistent wrapper-owned result descriptor storage roles."""
         handoff = handle.handoff
-        invalid = handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None
-        if invalid or any(expected_counts):
+        if handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None:
             return (self._diagnostic(owner_path, "invalid-owned-native-descriptor-roles", None),)
+        return ()
+
+    def _fortran_owner_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate an opaque owner without treating it as descriptor storage."""
+        handoff = handle.handoff
+        if handoff.owner_storage_role is None or handoff.descriptor_pointer_role is not None:
+            return (self._diagnostic(owner_path, "invalid-fortran-owner-roles", None),)
+        if handle.owner_type_name is None or handle.owner_signature == 0 or not handle.call_lease:
+            return (self._diagnostic(owner_path, "incomplete-fortran-owner-identity", None),)
         return ()
 
     def _native_descriptor_presence_diagnostics(
@@ -3430,14 +3461,16 @@ class WrapperGenerator:
     def _required_native_array_operations(
         handle: NativeArrayHandlePlan,
     ) -> set[NativeArrayOperation]:
-        """Return common operations required by the completed descriptor kind."""
-        required = {
-            NativeArrayOperation.SHAPE,
-            NativeArrayOperation.ARRAY_ACTUAL,
-            NativeArrayOperation.DESCRIPTOR,
-        }
-        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            required.add(NativeArrayOperation.ASSOCIATE)
+        """Return common operations required by the completed descriptor kind.
+
+        Every handle reports its shape.  A pointer additionally reports the
+        descriptor it is associated with and accepts a new association, because
+        a pointer that has no storage of its own has nowhere else to record
+        what another pointer was pointed at.
+        """
+        required = {NativeArrayOperation.SHAPE}
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER and handle.descriptor_inquiries:
+            required.update({NativeArrayOperation.ASSOCIATE, NativeArrayOperation.DESCRIPTOR})
         return required
 
     def _array_action_diagnostics(
@@ -3660,9 +3693,9 @@ class WrapperGenerator:
             return ()
         buffer_roles = (
             *array.extent_roles,
+            *array.lower_bound_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
-            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -3859,24 +3892,49 @@ class WrapperGenerator:
         if array is None:
             return ()
         return (
+            *self._array_entrypoint_abi_diagnostics(plan),
             *self._array_order_diagnostics(plan),
             *self._array_axis_mode_diagnostics(plan),
             *self._array_stride_role_diagnostics(plan),
-            *self._array_dense_actual_role_diagnostics(plan),
         )
 
-    def _array_dense_actual_role_diagnostics(
+    def _array_entrypoint_abi_diagnostics(
         self,
         plan: ArgumentTransferPlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require the planned runtime selector exactly on concrete strided inputs."""
+        """Require the transport fields selected by completed array ABI policy."""
         array = plan.array
         if array is None:
             return ()
-        expected = f"{plan.owner_path}:dense-actual" if array.contiguous is False and array.rank is not None else None
-        if array.dense_actual_role != expected:
-            return (self._diagnostic(plan.owner_path, "invalid-array-dense-actual-role", array.dense_actual_role),)
-        return ()
+        diagnostics = []
+        if array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR:
+            if plan.entrypoint.passing is not EntrypointPassingConvention.C_DESCRIPTOR_POINTER:
+                diagnostics.append(
+                    self._diagnostic(plan.owner_path, "invalid-array-descriptor-passing", plan.entrypoint.passing.value)
+                )
+            if plan.entrypoint.pass_array_metadata:
+                diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-metadata", None))
+            if array.lower_bound_roles or array.upper_bound_roles or array.stride_roles:
+                diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-array-descriptor-roles", None))
+        elif array.entrypoint_abi is not ArrayEntrypointABI.RAW_ADDRESS:
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-entrypoint-abi", array.entrypoint_abi))
+        if array.signed_strides and not self._array_records_a_direction(array):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-signed-strides", None))
+        return tuple(diagnostics)
+
+    @staticmethod
+    def _array_records_a_direction(array: ArrayHandoffPlan) -> bool:
+        """Report whether a backward axis has somewhere to be recorded.
+
+        A descriptor records one itself. An address does not, but a sectioned
+        dummy is reached with a signed stride per axis beside it. A contiguous
+        dummy has no backward axis to record whatever it is reached by.
+        """
+        if array.contiguous is True:
+            return False
+        if array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR:
+            return True
+        return bool(array.stride_roles)
 
     def _array_order_diagnostics(self, plan: ArgumentTransferPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate the completed ordinary-array order marker."""
@@ -3904,7 +3962,7 @@ class WrapperGenerator:
             return ()
         if array.contiguous is True and any(axis != "dense" for axis in array.axes):
             return (self._diagnostic(plan.owner_path, "invalid-array-axis-modes", array.axes),)
-        if array.contiguous is False and "strided" not in array.axes:
+        if array.contiguous is False and array.rank is not None and "strided" not in array.axes:
             return (self._diagnostic(plan.owner_path, "invalid-array-axis-modes", array.axes),)
         return ()
 
@@ -3913,7 +3971,7 @@ class WrapperGenerator:
         array = plan.array
         if array is None:
             return ()
-        if array.contiguous is False:
+        if array.contiguous is False and array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS:
             return (
                 *self._required_array_stride_role_diagnostics(plan),
                 *self._array_stride_role_count_diagnostics(plan),
@@ -4098,10 +4156,17 @@ class WrapperGenerator:
         """Require a plan length and prohibit a runtime length ABI role.
 
         Assumed-capacity rank-zero storage states no width, so the plan instead
-        records that the caller's itemsize travels beside the address.
+        records that the caller's itemsize travels beside the address. A raw
+        address has no Python object to measure, so it states a width or it has
+        none at all -- the width travelling beside it does not excuse its
+        absence from the plan.
         """
         diagnostics = []
-        assumed_capacity = plan.character_length is None and plan.entrypoint.pass_character_length
+        assumed_capacity = (
+            plan.character_length is None
+            and plan.entrypoint.pass_character_length
+            and plan.binding.python_action is not PythonBarrierAction.RAW_ADDRESS
+        )
         if not assumed_capacity and (plan.character_length is None or plan.character_length <= 0):
             diagnostics.append(
                 self._diagnostic(plan.owner_path, f"invalid-string-{label}-length", plan.character_length)

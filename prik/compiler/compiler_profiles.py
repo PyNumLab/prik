@@ -100,6 +100,7 @@ def _language(
     release_flags: tuple[str, ...],
     general_flags: tuple[str, ...],
     optional_general_flags: tuple[str, ...] = (),
+    logical_interop_flags: tuple[str, ...] = (),
     standard_flags: tuple[str, ...],
     module_output_flag: str | None = None,
     openmp: dict[str, tuple[str, ...]] | None = None,
@@ -113,6 +114,7 @@ def _language(
         "release_flags": release_flags,
         "general_flags": general_flags,
         "optional_general_flags": optional_general_flags,
+        "logical_interop_flags": logical_interop_flags,
         "standard_flags": standard_flags,
         "mpi": {},
         "openmp": openmp or {},
@@ -143,6 +145,12 @@ _GNU_CXX = _language(
     openmp={"flags": ("-fopenmp",), "libs": ("gomp",)},
     openacc={"flags": ("-ta=multicore", "-Minfo=accel")},
 )
+# A Fortran `logical` has no fixed representation, and several compilers default
+# to one their own C compiler cannot read: `logical(c_bool)` is interoperable
+# with `_Bool`, which holds zero or one, and Intel and PGI otherwise store all
+# bits set for `.true.`. Each offers a flag selecting the interoperable form, so
+# the profiles below request it wherever one is needed; gfortran, Cray and IBM XL
+# already use it. See https://www.fortran90.org/src/gotchas.html for the survey.
 _GNU_FORTRAN = _language(
     "gfortran",
     "mpif90",
@@ -182,6 +190,7 @@ _INTEL_FORTRAN = _language(
     debug_flags=("-check", "bounds", "-g", "-O0"),
     release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-fpp"),
+    logical_interop_flags=("-standard-semantics",),
     standard_flags=("-std=f2003",),
     module_output_flag="-module",
     openmp={"flags": ("-qopenmp", "-nostandard-realloc-lhs"), "libs": ("iomp5",)},
@@ -204,6 +213,7 @@ _PGI_FORTRAN = _language(
     debug_flags=("-Mbounds", "-g", "-O0"),
     release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-cpp"),
+    logical_interop_flags=("-Munixlogical",),
     standard_flags=("-Mstandard",),
     module_output_flag="-module",
     openmp={"flags": ("-mp",)},
@@ -236,6 +246,7 @@ _NVIDIA_FORTRAN = _language(
     debug_flags=("-Mbounds", "-g", "-O0"),
     release_flags=("-O3", "-DNDEBUG"),
     general_flags=("-fPIC", "-cpp"),
+    logical_interop_flags=("-Munixlogical",),
     standard_flags=("-Mstandard",),
     module_output_flag="-module",
     openmp={"flags": ("-mp",)},

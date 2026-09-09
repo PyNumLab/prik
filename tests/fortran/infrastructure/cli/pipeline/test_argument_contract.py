@@ -321,6 +321,29 @@ def test_source_build_routes_disabled_input_compilation_to_the_pipeline(monkeypa
     assert calls[0][1]["native_objects"] == ["libnative.so"]
 
 
+@pytest.mark.parametrize(
+    ("cli_arguments", "forwarded"),
+    [({}, True), ({"standard_logicals": False}, False)],
+)
+def test_source_build_routes_the_logical_interop_choice_to_the_pipeline(
+    monkeypatch, cli_arguments: dict[str, bool], forwarded: bool
+):
+    """--no-standard-logicals is the only opt-out, so it must reach the build unchanged."""
+    from prik.pipeline import build as pipeline_build
+
+    calls = []
+    result = types.SimpleNamespace(compiled=False)
+    monkeypatch.setattr(
+        pipeline_build,
+        "build_fortran_extension",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
+    )
+    args = _main_args(paths=[str(TEST_FILE)], **cli_arguments)
+
+    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
+    assert calls[0][1]["standard_logicals"] is forwarded
+
+
 def test_fortran_pyi_build_defers_c_driver_selection_to_the_compiler_pair(monkeypatch):
     from prik.pipeline import build as pipeline_build
 
@@ -340,6 +363,29 @@ def test_fortran_pyi_build_defers_c_driver_selection_to_the_compiler_pair(monkey
     assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="selected-ifx")) is result
     assert calls[0][1]["input_compiler"] == "selected-ifx"
     assert calls[0][1]["input_c_compiler"] is None
+
+
+@pytest.mark.parametrize(
+    ("cli_arguments", "forwarded"),
+    [({}, True), ({"standard_logicals": False}, False)],
+)
+def test_pyi_contract_build_routes_the_logical_interop_choice_to_the_pipeline(
+    monkeypatch, cli_arguments: dict[str, bool], forwarded: bool
+):
+    """A contract build compiles the same native Fortran, so it must carry the same choice."""
+    from prik.pipeline import build as pipeline_build
+
+    calls = []
+    result = types.SimpleNamespace(compiled=False)
+    monkeypatch.setattr(
+        pipeline_build,
+        "build_pyi_extension",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
+    )
+    args = _main_args(paths=["contract.pyi"], language="fortran", **cli_arguments)
+
+    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
+    assert calls[0][1]["standard_logicals"] is forwarded
 
 
 @pytest.mark.parametrize(

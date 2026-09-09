@@ -24,7 +24,7 @@ from prik.policy.models import (
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDefaultConstruction,
-    NativeArrayDescriptorInterop,
+    NativeArrayDescriptorAttribute,
     NativeArrayOperation,
     NativeDescriptorHandoffABI,
 )
@@ -50,31 +50,21 @@ from .models import (
 )
 
 
-_FIELD_HANDLE_LOCAL_OPERATIONS = frozenset(
+# Answered in the binding from the descriptor the handle's entry point
+# supplies, so no Fortran procedure is planned for them.
+_DESCRIPTOR_ANSWERED_OPERATIONS = frozenset(
     {
-        NativeArrayOperation.NATIVE_BYTE_ORDER,
-        NativeArrayOperation.ALIGNED,
-        NativeArrayOperation.WRITEABLE,
-        NativeArrayOperation.LAYOUT,
-        NativeArrayOperation.TO_NUMPY,
-        NativeArrayOperation.ARRAY_ACTUAL,
-    }
-)
-_MODULE_HANDLE_LOCAL_OPERATIONS = frozenset(
-    {
-        NativeArrayOperation.NATIVE_BYTE_ORDER,
-        NativeArrayOperation.ALIGNED,
-        NativeArrayOperation.WRITEABLE,
-        NativeArrayOperation.LAYOUT,
+        NativeArrayOperation.ALLOCATED,
+        NativeArrayOperation.ASSOCIATED,
+        NativeArrayOperation.CONTIGUOUS,
+        NativeArrayOperation.DESCRIPTOR,
+        NativeArrayOperation.ELEMENT_LENGTH,
+        NativeArrayOperation.SHAPE,
         NativeArrayOperation.TO_NUMPY,
     }
 )
 _OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
     {
-        NativeArrayOperation.ALLOCATED,
-        NativeArrayOperation.ASSOCIATED,
-        NativeArrayOperation.CONTIGUOUS,
-        NativeArrayOperation.SHAPE,
         NativeArrayOperation.ASSOCIATE,
         NativeArrayOperation.DEALLOCATE,
         NativeArrayOperation.NULLIFY,
@@ -236,6 +226,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             GeneratedSupportProcedureImplementationOwner.FORTRAN
         ),
     ) -> GeneratedSupportProcedureEntrypointPlan:
+        symbol_name = NativeSymbolNames.bounded(f"{owner_path}::{role}", symbol_name)
         return GeneratedSupportProcedureEntrypointPlan(
             key=f"{owner_path}::{role}",
             owner_path=owner_path,
@@ -700,17 +691,19 @@ class _GeneratedSupportProcedureEntrypointBuilder:
 
     def _ordinary_array_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        callback = self._descriptor_callback_parameter(
-            semantic_type_name=field.semantic_type_name,
-            rank=field.array.rank,
-            descriptor_kind=None,
+        # A fixed field reports its base address and extents, the same shape a
+        # fixed module array uses. Its rank is fixed and its storage contiguous,
+        # so a descriptor would carry nothing the extents do not already give.
+        extents = tuple(
+            self._int64_parameter(f"extent_{axis}", reference=True, intent="out") for axis in range(field.array.rank)
         )
         operations = [
             self._operation(
                 owner_path,
                 f"field:{route}:get",
                 self._field_symbol(owner, field, route, "get"),
-                (*owner_values, callback, self._opaque_parameter("context")),
+                (*owner_values, *extents),
+                self._opaque_result(),
             )
         ]
         if field.setter_action is SetterAction.WRITE_THROUGH:
@@ -730,9 +723,18 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             raise ValueError(f"Native handle field {field.owner_path!r} has no completed rank")
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
         operations = []
-        for operation in handle.operations:
-            if operation in _FIELD_HANDLE_LOCAL_OPERATIONS:
-                continue
+        # The descriptor entry point is what every inquiry runs through, so it
+        # is planned for the handle rather than for one of its capabilities.
+        planned = [NativeArrayOperation.DESCRIPTOR] if handle.descriptor_inquiries else []
+        planned.extend(
+            operation
+            for operation in handle.operations
+            # The descriptor entry point is already planned, and a NumPy view is
+            # a Python object, which only the binding can build.
+            if operation not in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}
+            and (not handle.descriptor_inquiries or operation not in _DESCRIPTOR_ANSWERED_OPERATIONS)
+        )
+        for operation in planned:
             signature = self._field_handle_signature(field, handle, operation, owner_values)
             operations.append(
                 self._operation(
@@ -758,7 +760,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             extents = tuple(
                 self._int64_parameter(f"extent_{axis}", reference=True) for axis in range(handle.array.rank)
             )
-            return NativeEntrypointSignaturePlan((*owner_values, *extents), self._void_result())
+            result = self._bool_result() if not handle.descriptor_inquiries else self._void_result()
+            return NativeEntrypointSignaturePlan((*owner_values, *extents), result)
         if operation is NativeArrayOperation.DESCRIPTOR:
             callback = self._descriptor_callback_parameter(
                 semantic_type_name=field.semantic_type_name,
@@ -772,11 +775,23 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             source = self._descriptor_parameter("source", handle, field.semantic_type_name, intent="in")
             return NativeEntrypointSignaturePlan((*owner_values, source), self._void_result())
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
-            extents = tuple(self._int64_parameter(f"extent_{axis}") for axis in range(handle.array.rank))
+            extents = self._allocation_parameters(handle)
             return NativeEntrypointSignaturePlan((*owner_values, *extents), self._void_result())
         if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY}:
             return NativeEntrypointSignaturePlan(owner_values, self._void_result())
         raise ValueError(f"Unsupported native field handle operation {operation.value!r}")
+
+    def _allocation_parameters(self, handle) -> tuple[NativeEntrypointABIValuePlan, ...]:
+        """Return the extents an allocation takes, plus a width when one is planned.
+
+        A deferred-length character entity cannot be allocated from extents
+        alone -- the standard requires a type-spec -- so completed policy adds
+        the runtime width here rather than letting the bridge invent one.
+        """
+        extents = tuple(self._int64_parameter(f"extent_{axis}") for axis in range(handle.array.rank))
+        if not handle.element_length_argument:
+            return extents
+        return (*extents, self._int64_parameter("element_length"))
 
     @staticmethod
     def _field_owner_path(owner, field: DerivedFieldPlan) -> str:
@@ -823,7 +838,6 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             for result in function.results
             if result.native_array_handle is not None
             and result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-            and result.datatype_family.value != "string"
         ]
         transfers.extend(
             argument
@@ -833,8 +847,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             and argument.native_array_handle.default_handle.construction
             is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
         )
+        operations.extend(self._fortran_owner_operations())
         for transfer in transfers:
             handle = transfer.native_array_handle
+            if handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
+                continue
             selected = handle.operations if isinstance(transfer, ResultPlan) else handle.default_handle.operations
             for operation in selected:
                 if operation not in _OWNED_HANDLE_ENTRYPOINT_OPERATIONS:
@@ -852,6 +869,145 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                     )
                 )
         return tuple(operations)
+
+    def _fortran_owner_operations(self) -> list[GeneratedSupportProcedureEntrypointPlan]:
+        """Plan the entry points published over each generated Fortran owner.
+
+        A returned owner needs the same operations a caller-created one has:
+        the handle Python receives is the same kind of object either way.
+        """
+        operations: list[GeneratedSupportProcedureEntrypointPlan] = []
+        # the handle Python receives is the same kind of object either way.
+        owner_transfers = [
+            argument
+            for function in self.functions
+            for argument in function.arguments
+            if argument.native_array_handle is not None
+            and argument.native_array_handle.default_handle.construction
+            is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
+        ]
+        owner_transfers.extend(
+            result
+            for function in self.functions
+            for result in function.results
+            if result.native_array_handle is not None
+            and result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER
+        )
+        for argument in owner_transfers:
+            handle = argument.native_array_handle
+            entrypoint = getattr(argument, "entrypoint", None)
+            preferred = getattr(entrypoint, "parameter_name", None) or "argument"
+            owner = NativeSymbolNames.compact(argument.owner_path, preferred, limit=38)
+            create = NativeEntrypointSignaturePlan((), self._opaque_result())
+            operations.append(
+                self._operation(
+                    argument.owner_path,
+                    "native_array:owner:create",
+                    f"bind_c_owner_{owner}_create",
+                    create.parameters,
+                    create.result,
+                )
+            )
+            if handle.descriptor_inquiries:
+                callback = self._descriptor_callback_parameter(
+                    semantic_type_name=argument.semantic_type_name,
+                    rank=handle.array.rank,
+                    descriptor_kind=handle.descriptor_kind,
+                )
+                descriptor = NativeEntrypointSignaturePlan(
+                    (
+                        self._opaque_parameter("owner", fortran_name="owner_address"),
+                        callback,
+                        self._opaque_parameter("context"),
+                    ),
+                    self._void_result(),
+                )
+                operations.append(
+                    self._operation(
+                        argument.owner_path,
+                        "native_array:owner:descriptor",
+                        f"bind_c_owner_{owner}_descriptor",
+                        descriptor.parameters,
+                        descriptor.result,
+                    )
+                )
+            selected = handle.default_handle.operations or handle.operations
+            if handle.descriptor_attribute is NativeArrayDescriptorAttribute.ALLOCATABLE:
+                operations.append(
+                    self._operation(
+                        argument.owner_path,
+                        "native_array:owner:adopt",
+                        f"bind_c_owner_{owner}_adopt",
+                        (
+                            self._opaque_parameter("owner", fortran_name="owner_address"),
+                            self._descriptor_parameter("source", handle, argument.semantic_type_name, intent="inout"),
+                        ),
+                        self._void_result(),
+                    )
+                )
+            for operation in selected:
+                if operation is NativeArrayOperation.DESCRIPTOR:
+                    continue
+                if operation is NativeArrayOperation.TO_NUMPY and handle.descriptor_inquiries:
+                    continue
+                if handle.descriptor_inquiries and operation in _DESCRIPTOR_ANSWERED_OPERATIONS:
+                    continue
+                signature = self._fortran_owner_signature(handle, operation)
+                operations.append(
+                    self._operation(
+                        argument.owner_path,
+                        f"native_array:owner:{operation.value}",
+                        f"bind_c_owner_{owner}_{operation.value}",
+                        signature.parameters,
+                        signature.result,
+                    )
+                )
+        return operations
+
+    def _fortran_owner_signature(self, handle: NativeArrayHandlePlan, operation: NativeArrayOperation):
+        """Return one operation ABI over an opaque bridge-owned entity."""
+        owner = self._opaque_parameter("owner", fortran_name="owner_address")
+        if operation in {
+            NativeArrayOperation.ALLOCATED,
+            NativeArrayOperation.ASSOCIATED,
+            NativeArrayOperation.CONTIGUOUS,
+        }:
+            return NativeEntrypointSignaturePlan((owner,), self._bool_result())
+        if operation is NativeArrayOperation.ELEMENT_LENGTH:
+            return NativeEntrypointSignaturePlan((owner,), self._int64_result())
+        if operation is NativeArrayOperation.SHAPE:
+            extents = tuple(
+                self._int64_parameter(f"extent_{axis}", reference=True) for axis in range(handle.array.rank)
+            )
+            return NativeEntrypointSignaturePlan((owner, *extents), self._bool_result())
+        if operation is NativeArrayOperation.TO_NUMPY:
+            outputs = (
+                self._opaque_parameter("base", fortran_name="base_address", output=True, intent="out"),
+                self._int64_parameter("element_length", reference=True, intent="out"),
+                *(
+                    self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
+                    for axis in range(handle.array.rank)
+                ),
+            )
+            return NativeEntrypointSignaturePlan((owner, *outputs), self._void_result())
+        if operation is NativeArrayOperation.ASSOCIATE:
+            return NativeEntrypointSignaturePlan(
+                (owner, self._opaque_parameter("source", fortran_name="source_address")),
+                self._void_result(),
+            )
+        if operation in {
+            NativeArrayOperation.ALLOCATE,
+            NativeArrayOperation.RESIZE,
+        }:
+            return NativeEntrypointSignaturePlan((owner, *self._allocation_parameters(handle)), self._int_result())
+        if operation is NativeArrayOperation.DEALLOCATE:
+            return NativeEntrypointSignaturePlan((owner,), self._int_result())
+        if operation in {
+            NativeArrayOperation.NULLIFY,
+            NativeArrayOperation.DESTROY,
+        }:
+            return NativeEntrypointSignaturePlan((owner,), self._void_result())
+        raise ValueError(f"Unsupported Fortran-owner operation {operation.value!r}")
 
     def _owned_native_array_signature(self, transfer, handle, operation):
         intent = (
@@ -992,9 +1148,18 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Module handle {variable.owner_path!r} has no completed operation plan")
         operations = []
-        for operation in handle.operations:
-            if operation in _MODULE_HANDLE_LOCAL_OPERATIONS:
-                continue
+        # The descriptor entry point is what every inquiry runs through, so it
+        # is planned for the handle rather than for one of its capabilities.
+        planned = [NativeArrayOperation.DESCRIPTOR] if handle.descriptor_inquiries else []
+        planned.extend(
+            operation
+            for operation in handle.operations
+            # The descriptor entry point is already planned, and a NumPy view is
+            # a Python object, which only the binding can build.
+            if operation not in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}
+            and (not handle.descriptor_inquiries or operation not in _DESCRIPTOR_ANSWERED_OPERATIONS)
+        )
+        for operation in planned:
             signature = self._module_native_array_signature(variable, handle, operation)
             if signature is None:
                 continue
@@ -1018,28 +1183,20 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             return NativeEntrypointSignaturePlan((), self._bool_result())
         if operation is NativeArrayOperation.ELEMENT_LENGTH:
             return NativeEntrypointSignaturePlan((), self._int64_result())
-        if operation is NativeArrayOperation.ARRAY_ACTUAL:
-            if self._uses_module_allocatable_descriptor(variable):
-                return self._module_descriptor_callback_signature(variable, handle)
-            return NativeEntrypointSignaturePlan((), self._opaque_result())
         if operation is NativeArrayOperation.SHAPE:
             extents = tuple(
                 self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
                 for axis in range(handle.array.rank)
             )
-            return NativeEntrypointSignaturePlan(extents, self._void_result())
+            result = self._bool_result() if not handle.descriptor_inquiries else self._void_result()
+            return NativeEntrypointSignaturePlan(extents, result)
         if operation is NativeArrayOperation.DESCRIPTOR:
-            if self._uses_module_allocatable_descriptor(variable):
-                return self._module_descriptor_callback_signature(variable, handle)
-            if handle.descriptor_kind.value != "pointer":
-                return None
-            descriptor = self._descriptor_parameter("descriptor", handle, variable.semantic_type_name, intent="out")
-            return NativeEntrypointSignaturePlan((descriptor,), self._void_result())
+            return self._module_descriptor_callback_signature(variable, handle)
         if operation is NativeArrayOperation.ASSOCIATE:
             source = self._descriptor_parameter("source", handle, variable.semantic_type_name, intent="in")
             return NativeEntrypointSignaturePlan((source,), self._void_result())
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
-            extents = tuple(self._int64_parameter(f"extent_{axis}") for axis in range(handle.array.rank))
+            extents = self._allocation_parameters(handle)
             return NativeEntrypointSignaturePlan(extents, self._void_result())
         if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY}:
             return NativeEntrypointSignaturePlan((), self._void_result())
@@ -1052,14 +1209,6 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             descriptor_kind=handle.descriptor_kind,
         )
         return NativeEntrypointSignaturePlan((callback, self._opaque_parameter("context")), self._void_result())
-
-    @staticmethod
-    def _uses_module_allocatable_descriptor(variable: ModuleVariablePlan) -> bool:
-        handle = variable.native_array_handle
-        return bool(
-            handle is not None
-            and handle.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
-        )
 
     @staticmethod
     def _nullable_derived_module_proxy(variable: ModuleVariablePlan) -> bool:

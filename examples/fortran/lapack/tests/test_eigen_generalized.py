@@ -51,7 +51,8 @@ def test_dgges_computes_generalized_real_schur_form(prik_lapack, scipy_lapack):
         np.int32(2),
         np.empty(64),
         np.int32(64),
-        np.zeros(2, dtype=np.bool_),
+        # BWORK is a default-kind LOGICAL array, four bytes to an element.
+        np.zeros(2, dtype=np.int32),
         np.int32(0),
     )
     scipy_a, scipy_b, scipy_sdim, scipy_ar, scipy_ai, scipy_beta, scipy_vsl, scipy_vsr, _work, scipy_info = (
@@ -342,8 +343,11 @@ def test_dtgexc_reorders_generalized_schur_blocks(prik_lapack, scipy_lapack, f2p
 def test_dtgsen_reorders_selected_generalized_eigenvalue(prik_lapack, scipy_lapack, f2py_lapack):
     a, b = _generalized_problem()
     identity = np.eye(2, dtype=np.float64, order="F")
+    # A default-kind Fortran LOGICAL is four bytes wide under gfortran, and an
+    # array of them is aliased element for element, so every binding here takes
+    # the matching integer dtype rather than a one-byte numpy.bool_ buffer.
     selection = np.array([False, True], dtype=np.bool_)
-    prik_selection = selection.copy()
+    prik_selection = selection.astype(np.int32)
     prik_a, f2py_a = a.copy(order="F"), a.copy(order="F")
     prik_b, f2py_b = b.copy(order="F"), b.copy(order="F")
     prik_q, f2py_q = identity.copy(order="F"), identity.copy(order="F")

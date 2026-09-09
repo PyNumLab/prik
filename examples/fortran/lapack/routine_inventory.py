@@ -443,10 +443,10 @@ F2PY_EXPORT_LIMITATIONS = {
     "dgges": "NumPy f2py 2.5.1 generates an incomplete selctg callback declaration from the unannotated source",
 }
 
-PRIK_ABI_ADAPTERS = {
-    "dtgsen": "GFortran default-LOGICAL selection storage is four bytes per element while PRIK accepts a NumPy bool buffer",
-    "dtrsen": "GFortran default-LOGICAL selection storage is four bytes per element while PRIK accepts a NumPy bool buffer",
-}
+# PRIK aliases every array argument at the width its elements really occupy, so
+# a default-LOGICAL selection or workspace array crosses as the matching integer
+# dtype and no routine here needs a generated representation adapter.
+PRIK_ABI_ADAPTERS: dict[str, str] = {}
 
 
 @dataclass(frozen=True)

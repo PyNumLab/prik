@@ -7,6 +7,23 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Array handles support allocatable and pointer arguments, results, module
+  variables, derived fields, optional arguments, and matching ordinary-array
+  parameters. Numeric and character arrays accept supported forward and
+  reversed Fortran sections without copying.
+
+- Character array handles support caller-created and returned storage.
+  Deferred-length allocation and resizing use `element_length=...`.
+
+- Wider Fortran logical arrays use the matching-width NumPy integer dtype;
+  `logical(c_bool)` arrays use `numpy.bool_`. Handle storage also supports
+  `longdouble`, `clongdouble`, and `uintp` where the target exposes them.
+
+- Improved generated-wrapper build time and contiguous-array call overhead.
+
+- **Breaking (native ABI):** native array handles use
+  `prik.native_array_backend.v2`. Rebuild extensions that exchange handles.
+
 ## 0.4.3 — 2026-08-31
 
 - Republishes 0.4.2. That tag carried the previous package version, so the

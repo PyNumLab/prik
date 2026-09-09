@@ -114,6 +114,26 @@ print(mod.nmax)         # 12 (read-only parameter)
 
 ## Module Arrays & Saved State
 
+A fixed-shape module array is a live NumPy view. Reads reflect native changes,
+and writes through the view are visible to Fortran:
+
+```fortran
+module state
+  use iso_fortran_env, only: real64
+  implicit none
+  real(real64) :: grid(2, 3)
+end module state
+```
+
+```python
+grid = mod.grid
+grid[0, 0] = 10.0
+```
+
+Assign elements or slices, rather than rebinding the module variable.
+Fixed-shape module arrays and derived-type array fields expose live views
+whether or not their declarations include `target`. Logical array dtypes follow
+the [data-type mapping](data-types.md#scalar-type-mapping).
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.
