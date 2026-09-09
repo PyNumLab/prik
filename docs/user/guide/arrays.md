@@ -263,12 +263,11 @@ Result:
 - Declared stride pattern for stride-aware contracts
 
 **PRIK does not silently cast, copy, transpose, or convert rejected caller
-layouts.** A mismatch raises `TypeError` before native code runs. A generated
-Boolean contract still accepts only `np.bool_` storage; when its numbered
-`Bool8`-`Bool64` element type records a different native logical width, the
-completed wrapper plan performs the required Boolean representation copy in
-the Fortran bridge. That internal ABI adaptation is not a caller-side dtype or
-layout coercion.
+layouts.** A mismatch raises `TypeError` before native code runs. `Bool` and
+`Bool8` arrays use `np.bool_`; `Bool16`, `Bool32`, and `Bool64` arrays use the
+matching-width NumPy integer dtype. Those buffers are passed directly to the
+native array, so the logical width does not introduce an implicit copy or
+conversion.
 
 Contiguous elements have no gaps between them in the required layout.
 Two arrays can print the same values but use different memory orders.

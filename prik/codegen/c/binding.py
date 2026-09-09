@@ -9255,6 +9255,9 @@ class CBindingGenerator(ClassVisitor):
             "NPY_FLOAT64": "float64",
             "NPY_COMPLEX64": "complex64",
             "NPY_COMPLEX128": "complex128",
+            "NPY_LONGDOUBLE": "longdouble",
+            "NPY_CLONGDOUBLE": "clongdouble",
+            "NPY_UINTP": "uintp",
         }[scalar_type.array_numpy_type]
 
     def _native_array_cfi_type(self, plan: ArgumentTransferPlan | ResultPlan) -> str | None:

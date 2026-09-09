@@ -7,6 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Native array handles now preserve `longdouble`, `clongdouble`, and `uintp`
+  element dtypes for allocatable, pointer, module, and derived-field storage.
+
 - **Breaking (native ABI):** the native array handle capsule is now
   `prik.native_array_backend.v2`. Extensions built with an earlier PRIK publish
   an incompatible capsule, so rebuild extensions that exchange handles.
