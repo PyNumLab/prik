@@ -27,7 +27,7 @@ ARRAY_SOURCE = """module {name}
 contains
   integer function stamp_all(text)
     character(len=*), intent(inout) :: text(:)
-    stamp_all = size(text)
+    stamp_all = size(text) * 100 + len(text)
     text(1)(1:1) = 'Z'
   end function
 end module
@@ -100,7 +100,7 @@ def test_assumed_width_character_array_accepts_any_caller_itemsize(tmp_path: Pat
     assert "character(kind=c_char, len=text_itemsize)" in adapter
     for width in ("S8", "S16", "S32"):
         values = np.array([b"alpha", b"beta"], dtype=width)
-        assert module.stamp_all(values) == np.int32(2)
+        assert module.stamp_all(values) == np.int32(200 + int(width[1:]))
         assert values[0] == b"Zlpha"
 
 
@@ -114,6 +114,6 @@ def test_declared_array_width_still_checks_the_caller_itemsize(tmp_path: Path):
     )
     module = result.import_module()
 
-    assert module.stamp_all(np.array([b"alpha"], dtype="S8")) == np.int32(1)
+    assert module.stamp_all(np.array([b"alpha"], dtype="S8")) == np.int32(108)
     with pytest.raises(TypeError, match="itemsize 8"):
         module.stamp_all(np.array([b"alpha"], dtype="S16"))

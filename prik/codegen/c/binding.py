@@ -7737,7 +7737,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement, ...] | None:
         """Return the shared binder call when the plan needs no extra ABI roles.
 
-        A plan that also carries runtime rank, itemsize, stride, upper-bound, or
+        A plan that also carries runtime rank, stride, upper-bound, or
         dense-actual roles still needs its own inline sequence; only the plain
         pointer-and-extents shape is routed through prik_bind_array.
         """
@@ -7851,6 +7851,7 @@ class CBindingGenerator(ClassVisitor):
                 f"&{names.value_name}",
                 f"{prefix}_bind_extents",
                 f"&{backend}",
+                f"&{names.itemsize_name}" if array.itemsize_role is not None else "NULL",
                 self._native_array_cfi_type(plan),
                 reader,
                 f"&{prefix}_actual_found",
@@ -11755,6 +11756,7 @@ class CBindingGenerator(ClassVisitor):
                         CParameter("data", "void **"),
                         CParameter("extents", "int64_t *"),
                         CParameter("backend_out", "prik_native_array_backend **"),
+                        CParameter("itemsize_out", "int64_t *"),
                         CParameter("cfi_type", "CFI_type_t"),
                         CParameter("reader", "prik_native_array_descriptor_fn"),
                         CParameter("reader_context", f"{record} *"),
@@ -11767,13 +11769,17 @@ class CBindingGenerator(ClassVisitor):
                         CExpressionStatement(CodeExpression("*backend_out = NULL")),
                         CExpressionStatement(CodeExpression("*data = NULL")),
                         CIf(
+                            CodeExpression("itemsize_out != NULL"),
+                            body=(CExpressionStatement(CodeExpression("*itemsize_out = 0")),),
+                        ),
+                        CIf(
                             CodeExpression("PyArray_Check(object)"),
                             body=(
                                 CReturn(
                                     CodeExpression(
                                         "prik_bind_array(object, numpy_type, numpy_itemsize, rank, minimum_rank, "
                                         "maximum_rank, layout, require_contiguous, require_writeable, python_type, "
-                                        "argument_name, flatten_axis, fixed, data, extents, NULL)"
+                                        "argument_name, flatten_axis, fixed, data, extents, itemsize_out)"
                                     )
                                 ),
                             ),
@@ -11885,30 +11891,26 @@ class CBindingGenerator(ClassVisitor):
                                 ),
                                 CExpressionStatement(CodeExpression("*data = reader_context->data")),
                                 CExpressionStatement(CodeExpression("*backend_out = backend")),
+                                CIf(
+                                    CodeExpression("itemsize_out != NULL"),
+                                    body=(
+                                        CExpressionStatement(
+                                            CodeExpression("*itemsize_out = (int64_t)reader_context->width")
+                                        ),
+                                    ),
+                                ),
                                 CReturn(CodeExpression("0")),
                             ),
                             else_body=(
                                 CExpressionStatement(CodeExpression("Py_XDECREF(capsule)")),
-                                CIf(
-                                    CodeExpression("!PyArray_Check(object)"),
-                                    body=(
-                                        CExpressionStatement(
-                                            CodeExpression(
-                                                'PyErr_Format(PyExc_TypeError, "Expected a compatible %s array or native '
-                                                'array handle for argument %s. Received %s", python_type, argument_name, '
-                                                "Py_TYPE(object)->tp_name)"
-                                            )
-                                        ),
-                                        CReturn(CodeExpression("-1")),
-                                    ),
-                                ),
-                                CReturn(
+                                CExpressionStatement(
                                     CodeExpression(
-                                        "prik_bind_array(object, numpy_type, numpy_itemsize, rank, minimum_rank, "
-                                        "maximum_rank, layout, require_contiguous, require_writeable, python_type, "
-                                        "argument_name, flatten_axis, fixed, data, extents, NULL)"
+                                        'PyErr_Format(PyExc_TypeError, "Expected a compatible %s array or native '
+                                        'array handle for argument %s. Received %s", python_type, argument_name, '
+                                        "Py_TYPE(object)->tp_name)"
                                     )
                                 ),
+                                CReturn(CodeExpression("-1")),
                             ),
                         ),
                     ),

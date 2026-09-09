@@ -206,6 +206,12 @@ contains
     if (associated(values)) state = size(values) * 100 + len(values)
   end function fixed_state
 
+  integer(4) function ordinary_width(values) result(width)
+    character(kind=c_char, len=*), intent(in) :: values(:)
+    width = 0
+    if (size(values) > 0) width = len(values)
+  end function ordinary_width
+
   subroutine repoint_deferred(values)
     character(kind=c_char, len=:), pointer, intent(out) :: values(:)
     if (.not. associated(deferred_target)) then
@@ -256,6 +262,7 @@ def _build_pointer_owner_module(tmp_path: Path):
 
 def repoint_fixed(values: {fixed}) -> Returns["values", {fixed}]: ...
 def fixed_state(values: Pointer[String[4][:]]) -> Int32: ...
+def ordinary_width(values: String[...][:]) -> Int32: ...
 @bind("fixed_state")
 def managed_state(values: {fixed}) -> Int32: ...
 def repoint_deferred(values: {deferred}) -> Returns["values", {deferred}]: ...
@@ -303,6 +310,7 @@ def test_fixed_character_pointer_owner_supports_association_and_target_mutation(
     assert module.repoint_fixed(source) is source
     assert source.shape == (3,)
     assert source.to_numpy().tolist() == [b"one ", b"two ", b"tri "]
+    assert module.ordinary_width(source) == np.int32(4)
 
     alias.associate(source)
     source.nullify()

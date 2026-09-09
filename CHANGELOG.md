@@ -11,6 +11,9 @@ release tags add a leading `v` to the package version.
   contiguity in bridge descriptors, reducing large-module build time and
   avoiding compiler-created temporaries for contiguous calls.
 
+- Raw-address character array calls retain their runtime element width from
+  NumPy arrays and native handles.
+
 - Native array handles now preserve `longdouble`, `clongdouble`, and `uintp`
   element dtypes for allocatable, pointer, module, and derived-field storage.
 
