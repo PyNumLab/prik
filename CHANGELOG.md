@@ -14,6 +14,10 @@ release tags add a leading `v` to the package version.
   compiler-required ABI options, preprocessing dependencies, and linker
   language from PRIK's completed build plan.
 
+- CMake contract modules now distinguish semantic `NATIVE_LANGUAGE` from the
+  final `LINKER_LANGUAGE`, keep native compilation flags target-local, and
+  report a clear error when CMake's C language is not enabled.
+
 - `prik-build.json` schema 5 records generated/native compilation-unit ABI
   flags and explicit native linker-language requirements.
 

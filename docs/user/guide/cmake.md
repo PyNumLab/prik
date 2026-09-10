@@ -64,8 +64,29 @@ cmake --build build
 
 `prik_add_module()` also accepts `SOURCES` for source-first input, `CONTRACT`
 with `FORTRAN_SOURCES` or `C_SOURCES` for an authored semantic `.pyi`,
-`INCLUDE_DIRS`, `MODULE_DIRS`, source-specific compile flags,
+`INCLUDE_DIRS`, `MODULE_DIRS`, native and generated-source compile flag groups,
 `LINK_LIBRARIES`, `LINK_OPTIONS`, and additional generation-only `PRIK_ARGS`.
+For a contract backed only by opaque native inputs, use `NATIVE_LANGUAGE` to
+state the contract ABI language and `LINKER_LANGUAGE` to state the final CMake
+linker driver independently:
+
+```cmake
+prik_add_module(
+    c_api
+    CONTRACT api.pyi
+    NATIVE_LANGUAGE C
+    LINKER_LANGUAGE Fortran
+    LINK_LIBRARIES native_fortran_archive
+)
+```
+
+When native source files use one language, PRIK infers `NATIVE_LANGUAGE` from
+`FORTRAN_SOURCES` or `C_SOURCES`. Set it explicitly when the contract ABI
+differs from the implementation source language or when both source languages
+are present. A source-free contract must state it explicitly. CMake's C
+language must be enabled because every PRIK extension contains generated C
+binding code.
+
 The flag groups remain separate:
 
 - `FORTRAN_FLAGS` and `C_FLAGS` apply only to user-owned native sources.
@@ -76,6 +97,8 @@ The flag groups remain separate:
 PRIK adds compiler-profile flags required by its ABI plan to the affected
 Fortran sources. `NO_STANDARD_LOGICALS` disables PRIK's Intel/NVIDIA logical
 interoperability option when compatibility with prebuilt objects requires it.
+Only mandatory ABI flags are exported from PRIK's plan; recommended compiler
+profile options remain the CMake toolchain's responsibility.
 CMake build type, debug, and interprocedural-optimization settings remain
 normal CMake target properties; `PRIK_ARGS` rejects compiler and compilation
 options that would bypass those target settings.
@@ -118,7 +141,8 @@ The same form accepts normal project targets such as `native_math` and
 Normal Fortran sources and targets carry their link-language requirements
 through CMake. For a raw archive or shared library whose language is otherwise
 opaque, add `LINKER_LANGUAGE Fortran`; PRIK records that requirement in its
-plan and the extension uses CMake's Fortran linker driver.
+plan and the extension uses CMake's Fortran linker driver. This is independent
+of `NATIVE_LANGUAGE`, which controls semantic-contract interpretation.
 
 ## Standalone generated project
 

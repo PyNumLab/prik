@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -14,7 +13,6 @@ import tempfile
 import venv
 
 import numpy as np
-from packaging.version import Version
 import pytest
 
 
@@ -34,7 +32,6 @@ BRIDGE_CONTRACT = (
 BRIDGE_NATIVE = (
     REPOSITORY_ROOT / "tests" / "fortran" / "functions" / "end_to_end" / "fixtures" / "native" / "free_external.f90"
 )
-SETUPTOOLS_SUPPORTS_PROJECT_DATA_FILES = Version(importlib.metadata.version("setuptools")) >= Version("77.0.3")
 
 
 def _environment() -> dict[str, str]:
@@ -214,6 +211,39 @@ prik_add_module(
     shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
     reason="CMake, gfortran, and gcc are required",
 )
+def test_use_prik_cmake_keeps_native_flags_target_local(tmp_path: Path):
+    project = tmp_path / "shared native source"
+    project.mkdir()
+    source = project / "common.f90"
+    source.write_text(
+        "real(8) function common_value(value) result(result)\n"
+        "  real(8), intent(in) :: value\n"
+        "  result = value\n"
+        "end function common_value\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+prik_add_module(first SOURCES common.f90 FORTRAN_FLAGS -DFIRST_MODULE)
+prik_add_module(second SOURCES common.f90 FORTRAN_FLAGS -DSECOND_MODULE)
+""",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+
+    commands = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+    native_commands = [record["command"] for record in commands if Path(record["file"]).resolve() == source.resolve()]
+    assert len(native_commands) == 2
+    assert any("-DFIRST_MODULE" in command and "-DSECOND_MODULE" not in command for command in native_commands)
+    assert any("-DSECOND_MODULE" in command and "-DFIRST_MODULE" not in command for command in native_commands)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
 def test_use_prik_cmake_maps_required_logical_abi_flags(tmp_path: Path):
     project = tmp_path / "logical abi flags"
     toolchain = project / "toolchain"
@@ -368,6 +398,69 @@ def test_generate_cmake_preserves_ordered_native_link_items(tmp_path: Path):
     )
     positions = tuple(cmake_lists.index(item) for item in ordered_items)
     assert positions == tuple(sorted(positions))
+
+
+@pytest.mark.fortran_end_to_end
+def test_generate_cmake_emits_contract_and_linker_languages_separately(tmp_path: Path):
+    contract = tmp_path / "api.pyi"
+    contract.write_text(
+        "from prik.contracts import Float64\ndef add(value: Float64) -> Float64: ...\n", encoding="utf-8"
+    )
+    archive = tmp_path / "libimplementation.a"
+    archive.touch()
+    project = tmp_path / "contract project"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            "--language",
+            "c",
+            str(contract),
+            "--native-objects",
+            str(archive),
+            "--native-linker-language",
+            "fortran",
+            "--out-dir",
+            str(project),
+        ]
+    )
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "CONTRACT" in cmake_lists
+    assert "NATIVE_LANGUAGE C" in cmake_lists
+    assert "LINKER_LANGUAGE Fortran" in cmake_lists
+
+
+@pytest.mark.fortran_end_to_end
+def test_generate_cmake_preserves_contract_language_with_different_source_language(tmp_path: Path):
+    contract = tmp_path / "api.pyi"
+    contract.write_text(
+        "from prik.contracts import Float64\ndef add(value: Float64) -> Float64: ...\n", encoding="utf-8"
+    )
+    implementation = tmp_path / "implementation.f90"
+    implementation.write_text("subroutine implementation()\nend subroutine implementation\n", encoding="utf-8")
+    project = tmp_path / "mixed language contract project"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            "--language",
+            "c",
+            str(contract),
+            "--native-fortran-sources",
+            str(implementation),
+            "--out-dir",
+            str(project),
+        ]
+    )
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "NATIVE_LANGUAGE C" in cmake_lists
+    assert "FORTRAN_SOURCES" in cmake_lists
 
 
 @pytest.mark.fortran_end_to_end
@@ -754,6 +847,43 @@ def test_use_prik_cmake_rejects_invalid_generation_ownership(
 
 @pytest.mark.fortran_end_to_end
 @pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None, reason="CMake and gfortran are required"
+)
+def test_use_prik_cmake_requires_the_c_language(tmp_path: Path):
+    project = tmp_path / "fortran-only project"
+    project.mkdir()
+    (project / "source.f90").write_text(
+        "real(8) function source(value) result(result)\n"
+        "  real(8), intent(in) :: value\n"
+        "  result = value\n"
+        "end function source\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """prik_add_module(source SOURCES source.f90)
+""",
+        languages="Fortran",
+    )
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(project),
+            "-B",
+            str(project / "build"),
+            f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}",
+        ],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "PRIK Python extensions require CMake's C language to be enabled" in result.stdout + result.stderr
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
     shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
     reason="CMake, gfortran, and gcc are required",
 )
@@ -879,6 +1009,89 @@ def test_use_prik_cmake_selects_fortran_linker_for_raw_archive(tmp_path: Path):
 
 @pytest.mark.fortran_end_to_end
 @pytest.mark.skipif(
+    shutil.which("cmake") is None
+    or shutil.which("gfortran") is None
+    or shutil.which("gcc") is None
+    or shutil.which("ar") is None,
+    reason="CMake, gfortran, gcc, and ar are required",
+)
+def test_use_prik_cmake_separates_c_contract_and_fortran_linker_languages(tmp_path: Path):
+    project = tmp_path / "c contract with fortran implementation"
+    project.mkdir()
+    (project / "api.pyi").write_text(
+        "from prik.contracts import Float64\n\ndef add_one(value: Float64) -> Float64: ...\n",
+        encoding="utf-8",
+    )
+    implementation = project / "implementation.f90"
+    implementation.write_text(
+        "real(c_double) function add_one(value) bind(C, name='add_one') result(result)\n"
+        "  use iso_c_binding, only: c_double\n"
+        "  real(c_double), value, intent(in) :: value\n"
+        "  result = value + 1.0_c_double\n"
+        "end function add_one\n",
+        encoding="utf-8",
+    )
+    native_object = project / "implementation.o"
+    archive = project / "libimplementation.a"
+    _run([shutil.which("gfortran"), "-fPIC", "-c", str(implementation), "-o", str(native_object)])
+    _run([shutil.which("ar"), "rcs", str(archive), str(native_object)])
+    _write_project(
+        project,
+        """prik_add_module(
+  c_contract
+  CONTRACT api.pyi
+  NATIVE_LANGUAGE C
+  LINKER_LANGUAGE Fortran
+  LINK_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/libimplementation.a"
+)
+""",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+
+    module = _import_extension("c_contract", build)
+    assert module.add_one(np.float64(5.0)) == np.float64(6.0)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_use_prik_cmake_allows_contract_language_to_differ_from_source_language(tmp_path: Path):
+    project = tmp_path / "c contract with fortran source"
+    project.mkdir()
+    (project / "api.pyi").write_text(
+        "from prik.contracts import Float64\n\ndef add_two(value: Float64) -> Float64: ...\n",
+        encoding="utf-8",
+    )
+    (project / "implementation.f90").write_text(
+        "real(c_double) function add_two(value) bind(C, name='add_two') result(result)\n"
+        "  use iso_c_binding, only: c_double\n"
+        "  real(c_double), value, intent(in) :: value\n"
+        "  result = value + 2.0_c_double\n"
+        "end function add_two\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """prik_add_module(
+  c_contract_source
+  CONTRACT api.pyi
+  NATIVE_LANGUAGE C
+  FORTRAN_SOURCES implementation.f90
+)
+""",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+
+    module = _import_extension("c_contract_source", build)
+    assert module.add_two(np.float64(5.0)) == np.float64(7.0)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
     shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
     reason="CMake, gfortran, and gcc are required",
 )
@@ -963,32 +1176,51 @@ prik_add_module(
 @pytest.mark.fortran_end_to_end
 @pytest.mark.slow
 @pytest.mark.skipif(
-    shutil.which("cmake") is None
-    or shutil.which("gfortran") is None
-    or shutil.which("gcc") is None
-    or not SETUPTOOLS_SUPPORTS_PROJECT_DATA_FILES,
-    reason="CMake, compilers, and setuptools 77 or newer are required",
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
 )
 def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
     distribution_dir = tmp_path / "dist"
-    _run(
+    clean_environment = os.environ.copy()
+    clean_environment.pop("PYTHONPATH", None)
+    wheel_build = subprocess.run(
         [
             sys.executable,
             "-m",
-            "build",
-            "--wheel",
-            "--no-isolation",
-            "--outdir",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--wheel-dir",
             str(distribution_dir),
+            ".",
         ],
         cwd=REPOSITORY_ROOT,
+        env=clean_environment,
+        capture_output=True,
+        text=True,
     )
-    wheel = next(distribution_dir.glob("prik-*.whl"))
+    if wheel_build.returncode != 0:
+        wheel_output = wheel_build.stderr.strip() or wheel_build.stdout.strip()
+        unavailable_markers = (
+            "No module named pip",
+            "No module named build",
+            "No matching distribution found",
+            "Could not find a version that satisfies",
+            "Could not fetch URL",
+            "Temporary failure in name resolution",
+            "Network is unreachable",
+            "Connection timed out",
+        )
+        if any(marker.lower() in wheel_output.lower() for marker in unavailable_markers):
+            pytest.skip(f"isolated wheel construction is unavailable: {wheel_output}")
+        pytest.fail(f"isolated wheel construction failed:\n{wheel_output}")
+    wheels = tuple(distribution_dir.glob("prik-*.whl"))
+    if not wheels:
+        pytest.skip("isolated wheel construction produced no wheel")
+    wheel = wheels[0]
     environment_dir = tmp_path / "installed"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_dir)
     installed_python = environment_dir / "bin" / "python"
-    clean_environment = os.environ.copy()
-    clean_environment.pop("PYTHONPATH", None)
     _run(
         [str(installed_python), "-m", "pip", "install", "--no-deps", str(wheel)],
         environment=clean_environment,

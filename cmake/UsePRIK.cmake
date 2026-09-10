@@ -116,16 +116,25 @@ function(_prik_apply_compilation_unit target json group index generated source_r
         )
         list(APPEND _prik_rebased_include_dirs "${_prik_rebased_include_dir}")
     endforeach()
-    if(_prik_unit_flags)
-        set_property(
-            SOURCE "${_prik_unit_source}"
-            APPEND PROPERTY COMPILE_OPTIONS ${_prik_unit_flags}
-        )
-    endif()
     if(_prik_unit_language STREQUAL "fortran")
         set(_prik_cmake_unit_language Fortran)
     else()
         set(_prik_cmake_unit_language C)
+    endif()
+    if(_prik_unit_flags)
+        if(generated)
+            set_property(
+                SOURCE "${_prik_unit_source}"
+                APPEND PROPERTY COMPILE_OPTIONS ${_prik_unit_flags}
+            )
+        else()
+            foreach(_prik_unit_flag IN LISTS _prik_unit_flags)
+                target_compile_options(
+                    "${target}" PRIVATE
+                    "$<$<COMPILE_LANGUAGE:${_prik_cmake_unit_language}>:${_prik_unit_flag}>"
+                )
+            endforeach()
+        endif()
     endif()
     foreach(_prik_abi_flag IN LISTS _prik_unit_abi_flags)
         set(_prik_abi_key "${_prik_cmake_unit_language}:${_prik_abi_flag}")
@@ -138,10 +147,14 @@ function(_prik_apply_compilation_unit target json group index generated source_r
         endif()
     endforeach()
     if(_prik_rebased_include_dirs)
-        set_property(
-            SOURCE "${_prik_unit_source}"
-            APPEND PROPERTY INCLUDE_DIRECTORIES ${_prik_rebased_include_dirs}
-        )
+        if(generated)
+            set_property(
+                SOURCE "${_prik_unit_source}"
+                APPEND PROPERTY INCLUDE_DIRECTORIES ${_prik_rebased_include_dirs}
+            )
+        else()
+            target_include_directories("${target}" PRIVATE ${_prik_rebased_include_dirs})
+        endif()
     endif()
 endfunction()
 
@@ -162,7 +175,7 @@ function(prik_add_module name)
     endif()
 
     set(_options NO_COMPILE_INPUT_SOURCES NO_STANDARD_LOGICALS)
-    set(_one_value_arguments CONTRACT LINKER_LANGUAGE)
+    set(_one_value_arguments CONTRACT NATIVE_LANGUAGE LINKER_LANGUAGE)
     set(_multi_value_arguments
         SOURCES
         FORTRAN_SOURCES
@@ -182,6 +195,14 @@ function(prik_add_module name)
         message(FATAL_ERROR "Unknown prik_add_module arguments: ${PRIK_UNPARSED_ARGUMENTS}")
     endif()
     _prik_validate_args(PRIK_PRIK_ARGS)
+
+    if(NOT CMAKE_C_COMPILER OR NOT CMAKE_C_COMPILER_ID)
+        message(
+            FATAL_ERROR
+            "PRIK Python extensions require CMake's C language to be enabled. "
+            "Use project(... LANGUAGES C Fortran) or enable_language(C)."
+        )
+    endif()
 
     if(PRIK_CONTRACT AND PRIK_SOURCES)
         message(FATAL_ERROR "prik_add_module(${name}) cannot combine CONTRACT and SOURCES")
@@ -209,19 +230,45 @@ function(prik_add_module name)
             message(FATAL_ERROR "prik_add_module(${name}) LINKER_LANGUAGE must be C or Fortran")
         endif()
     endif()
+    if(PRIK_NATIVE_LANGUAGE)
+        string(TOLOWER "${PRIK_NATIVE_LANGUAGE}" _prik_native_language)
+        if(NOT _prik_native_language STREQUAL "c" AND NOT _prik_native_language STREQUAL "fortran")
+            message(FATAL_ERROR "prik_add_module(${name}) NATIVE_LANGUAGE must be C or Fortran")
+        endif()
+        if(NOT _prik_contract)
+            message(FATAL_ERROR "prik_add_module(${name}) NATIVE_LANGUAGE is only valid with CONTRACT")
+        endif()
+    endif()
 
     if(_prik_contract)
         set(_prik_wrapper_sources)
         set(_prik_native_fortran_sources ${_prik_fortran_sources})
         set(_prik_native_c_sources ${_prik_c_sources})
-        if(_prik_native_fortran_sources)
+        if(_prik_native_language)
+            set(_prik_language "${_prik_native_language}")
+        elseif(_prik_native_fortran_sources AND _prik_native_c_sources)
+            message(
+                FATAL_ERROR
+                "prik_add_module(${name}) CONTRACT with mixed Fortran and C implementation "
+                "sources requires NATIVE_LANGUAGE"
+            )
+        elseif(_prik_native_fortran_sources)
             set(_prik_language fortran)
         elseif(_prik_native_c_sources)
             set(_prik_language c)
-        elseif(PRIK_LINK_LIBRARIES AND _prik_linker_language)
-            set(_prik_language "${_prik_linker_language}")
         else()
-            message(FATAL_ERROR "PRIK contract module ${name} requires native sources, or LINK_LIBRARIES with LINKER_LANGUAGE")
+            message(
+                FATAL_ERROR
+                "prik_add_module(${name}) source-free CONTRACT requires NATIVE_LANGUAGE "
+                "plus LINK_LIBRARIES"
+            )
+        endif()
+        if(NOT _prik_native_fortran_sources AND NOT _prik_native_c_sources AND NOT PRIK_LINK_LIBRARIES)
+            message(
+                FATAL_ERROR
+                "prik_add_module(${name}) source-free CONTRACT requires LINK_LIBRARIES "
+                "or native implementation sources"
+            )
         endif()
     else()
         if(_prik_sources)
@@ -253,6 +300,14 @@ function(prik_add_module name)
     _prik_validate_source_suffixes("${_prik_language}" _prik_wrapper_sources)
     _prik_validate_source_suffixes(fortran _prik_native_fortran_sources)
     _prik_validate_source_suffixes(c _prik_native_c_sources)
+
+    if(_prik_linker_language STREQUAL "fortran" AND NOT CMAKE_Fortran_COMPILER)
+        message(
+            FATAL_ERROR
+            "PRIK module ${name} requires CMake's Fortran language to be enabled for LINKER_LANGUAGE Fortran. "
+            "Use project(... LANGUAGES C Fortran) or enable_language(Fortran)."
+        )
+    endif()
 
     set(_prik_output_dir "${CMAKE_CURRENT_BINARY_DIR}/prik/${name}")
     file(MAKE_DIRECTORY "${_prik_output_dir}")
@@ -372,6 +427,21 @@ function(prik_add_module name)
         endforeach()
     endif()
 
+    set(_prik_native_target)
+    if(_prik_native_target_sources)
+        set(_prik_native_target "prik_${name}_native_objects")
+        if(TARGET "${_prik_native_target}")
+            message(FATAL_ERROR "PRIK internal target already exists: ${_prik_native_target}")
+        endif()
+        add_library("${_prik_native_target}" OBJECT ${_prik_native_target_sources})
+        set_target_properties("${_prik_native_target}" PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        if(_prik_required_linker_language STREQUAL "fortran")
+            set_target_properties(
+                "${_prik_native_target}" PROPERTIES Fortran_MODULE_DIRECTORY "${_prik_output_dir}"
+            )
+        endif()
+    endif()
+
     execute_process(
         COMMAND "${Python_EXECUTABLE}" -c "import numpy; print(numpy.get_include())"
         RESULT_VARIABLE _prik_numpy_result
@@ -422,8 +492,9 @@ function(prik_add_module name)
     if(_prik_additional_outputs)
         target_sources("${name}" PRIVATE ${_prik_additional_outputs})
     endif()
-    if(_prik_native_target_sources)
-        target_sources("${name}" PRIVATE ${_prik_native_target_sources})
+    if(_prik_native_target)
+        target_sources("${name}" PRIVATE "$<TARGET_OBJECTS:${_prik_native_target}>")
+        add_dependencies("${name}" "${_prik_native_target}")
     endif()
     if(_prik_generated_unit_count GREATER 0)
         math(EXPR _prik_last_generated_unit_index "${_prik_generated_unit_count} - 1")
@@ -438,7 +509,7 @@ function(prik_add_module name)
         math(EXPR _prik_last_native_unit_index "${_prik_native_unit_count} - 1")
         foreach(_prik_native_unit_index RANGE 0 ${_prik_last_native_unit_index})
             _prik_apply_compilation_unit(
-                "${name}" "${_prik_plan_json}" native ${_prik_native_unit_index} FALSE
+                "${_prik_native_target}" "${_prik_plan_json}" native ${_prik_native_unit_index} FALSE
                 "${_prik_plan_dir}" "${_prik_output_dir}"
             )
         endforeach()

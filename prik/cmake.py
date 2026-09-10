@@ -238,6 +238,7 @@ def _append_source_declarations(
         lines.append("    NO_COMPILE_INPUT_SOURCES")
     if inputs.contract is not None:
         lines.append(f"    CONTRACT {_cmake_string(_relative_path(inputs.contract, base))}")
+        lines.append(f"    NATIVE_LANGUAGE {language.capitalize()}")
     elif not no_compile_input_sources and not inputs.native_fortran and not inputs.native_c:
         keyword = "C_SOURCES" if language == "c" else "FORTRAN_SOURCES"
         _append_block(lines, keyword, inputs.semantic_sources, base=base)

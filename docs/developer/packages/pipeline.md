@@ -119,8 +119,11 @@ Build integrations consume the completed result rather than compiler command
 logs. Native and generated compilation units retain their own requested flags,
 required ABI flags, and include directories; the result also records every
 semantic/preprocessing dependency and the final linker language. This is the
-lossless boundary used by `UsePRIK.cmake` for source properties, regeneration,
-and linker-driver selection.
+lossless boundary used by `UsePRIK.cmake` for regeneration, linker-driver
+selection, and target-local compilation. CMake places native units in a
+private per-module object target so source properties cannot leak between
+PRIK extension targets; generated sources remain on the Python extension
+target.
 
 `WrapperBuildResult` and saved `.pyi` manifests report each generated native
 group's kind, language, member keys, and source paths, so zero-source,
