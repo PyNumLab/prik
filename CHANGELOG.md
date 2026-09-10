@@ -22,6 +22,19 @@ release tags add a leading `v` to the package version.
   requirements, and standalone `--cmake --lto` initializes IPO for native and
   generated targets.
 
+- CMake configuration no longer runs PRIK's semantic pipeline. It asks for a
+  structural plan -- deterministic generated filenames, the link driver, and
+  compiler-profile ABI flags -- and the full pipeline then runs once at build
+  time. Configuring a 300-procedure module's plan drops from about 2.5s to
+  0.4s, and the structural query no longer grows with source size.
+
+- Generated CMake targets have a fixed source list. The optional collision
+  adapter and Fortran bridge units are always written, holding a
+  symbol-free placeholder when unused, so a semantic edit changes file
+  contents instead of the build graph and never forces a CMake reconfigure.
+  Transitive semantic inputs now reach CMake through a generated dependency
+  file, which raises the CMake floor for the packaged helper to 3.21.
+
 - `prik generate --cmake` keeps each native link input in its own CMake
   category: prebuilt objects, archives, and shared libraries stay filesystem
   paths in `LINK_LIBRARIES` instead of becoming ambiguous relative tokens,

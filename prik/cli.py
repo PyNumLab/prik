@@ -1084,14 +1084,14 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
             parser.error("generate --cmake uses CMake's selected compiler; do not pass --compiler")
         if getattr(args, "wrapper_compiler_debug", False):
             parser.error("generate --cmake does not accept --wrapper-compiler-debug; use CMake build types")
-    if getattr(args, "plan_only", False) and not (args.command == "generate" and args.generate_sources):
-        parser.error("--plan requires generate --sources")
+    if getattr(args, "cmake_plan", False) and not (args.command == "generate" and args.generate_sources):
+        parser.error("--cmake-plan requires generate --sources")
     if args.command == "build":
         _validate_wrapper_out(args, parser)
 
     if _wrapper_build_uses_manifest(args):
-        if getattr(args, "cmake", False) or getattr(args, "plan_only", False):
-            parser.error("generate --cmake/--plan requires source or contract inputs, not --build-manifest")
+        if getattr(args, "cmake", False) or getattr(args, "cmake_plan", False):
+            parser.error("generate --cmake requires source or contract inputs, not --build-manifest")
         _validate_manifest_wrapper_options(args, parser)
         return
 
@@ -1360,6 +1360,44 @@ def _copy_wrapper_shared_library_alias(args: argparse.Namespace, result):
     return replace(result, shared_library=target, generated_files=generated_files)
 
 
+def _cli_structural_layout(args: argparse.Namespace):
+    """Return the deterministic generated-file graph for a CMake-declared build.
+
+    The configure-time query and the real generation step call this same
+    function, so the files CMake declares are exactly the files generation
+    fills in.
+    """
+    from prik.cmake import structural_layout
+
+    return structural_layout(
+        module_name=_wrapper_output_name(args) or Path(args.paths[0]).stem,
+        output_dir=getattr(args, "out_dir", None) or "__prik__",
+        language=args.language,
+        native_fortran_sources=getattr(args, "native_fortran_sources", None) or (),
+        linker_language=getattr(args, "native_linker_language", None),
+        fortran_compiler=_analysis_fortran_compiler(args),
+        standard_logicals=getattr(args, "standard_logicals", True),
+    )
+
+
+def _analysis_fortran_compiler(args: argparse.Namespace) -> str | None:
+    """Return the Fortran driver whose profile states PRIK's mandatory ABI flags."""
+    explicit = getattr(args, "analysis_fortran_compiler", None)
+    if explicit:
+        return str(explicit)
+    if args.language == "fortran":
+        compiler = getattr(args, "compiler", None)
+        return str(compiler) if compiler else None
+    return None
+
+
+def _cli_declared_generated_sources(args: argparse.Namespace):
+    """Return the generated sources a build system already declared, if any."""
+    if not getattr(args, "declared_layout", False):
+        return None
+    return _cli_structural_layout(args).generated_sources
+
+
 def _cli_native_libraries(raw_libraries: list[str] | None) -> tuple[str, ...]:
     if not raw_libraries:
         return ()
@@ -1432,6 +1470,12 @@ def _run_stage_reports_with_diagnostics(args: argparse.Namespace, preprocessing:
 
 
 def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig):
+    if getattr(args, "cmake_plan", False):
+        # Answer the build system's configure-time question from structure
+        # alone. Nothing below this point runs: no preprocessing, no parsing,
+        # no policy, no planning, and no code generation.
+        return _cli_structural_layout(args)
+
     if getattr(args, "cmake", False):
         from prik.cmake import write_cmake_project
 
@@ -1504,7 +1548,8 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
-            _plan_only=getattr(args, "plan_only", False),
+            _declared_generated_sources=_cli_declared_generated_sources(args),
+            _depfile=getattr(args, "depfile", None),
             _external_native_implementation=getattr(args, "external_native_implementation", False),
             jobs=getattr(args, "jobs", None),
             standard_logicals=getattr(args, "standard_logicals", True),
@@ -1550,7 +1595,8 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
-            _plan_only=getattr(args, "plan_only", False),
+            _declared_generated_sources=_cli_declared_generated_sources(args),
+            _depfile=getattr(args, "depfile", None),
             _external_native_implementation=getattr(args, "external_native_implementation", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
@@ -1594,7 +1640,8 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         native_linker_language=getattr(args, "native_linker_language", None),
         makefile=getattr(args, "makefile", False),
         generate_sources=getattr(args, "generate_sources", False),
-        _plan_only=getattr(args, "plan_only", False),
+        _declared_generated_sources=_cli_declared_generated_sources(args),
+        _depfile=getattr(args, "depfile", None),
         _external_native_implementation=getattr(args, "external_native_implementation", False),
         jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
@@ -1941,6 +1988,12 @@ def _print_wrap_build_output(args: argparse.Namespace, result) -> None:
     if args.json:
         print(json.dumps(payload, indent=2))
         _print_verbose_total_build_time(args)
+        return
+
+    if payload.get("structural_plan"):
+        print(f"Structural plan for {payload['module_name']}:")
+        for source in payload["generated_sources"]:
+            print(f"  {source}")
         return
 
     if payload.get("cmake_project"):
@@ -2425,7 +2478,9 @@ _PIPELINE_DEFAULTS = {
     "generate_sources": False,
     "makefile": False,
     "cmake": False,
-    "plan_only": False,
+    "cmake_plan": False,
+    "declared_layout": False,
+    "depfile": None,
     "show_vars": False,
     "print_limit": None,
     "vars_limit": None,
@@ -2844,7 +2899,12 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         metavar="NAME",
         help="Python module name for generated wrapper sources",
     )
-    output_group.add_argument("--plan", dest="plan_only", action="store_true", help=argparse.SUPPRESS)
+    # Internal build-integration options. A build system queries the
+    # structural layout at configure time, then declares it back during
+    # generation so the two agree by construction.
+    output_group.add_argument("--cmake-plan", dest="cmake_plan", action="store_true", help=argparse.SUPPRESS)
+    output_group.add_argument("--declared-layout", dest="declared_layout", action="store_true", help=argparse.SUPPRESS)
+    output_group.add_argument("--depfile", dest="depfile", metavar="PATH", help=argparse.SUPPRESS)
     output_group.add_argument(
         "--external-native-implementation",
         dest="external_native_implementation",

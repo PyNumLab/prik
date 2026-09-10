@@ -17,13 +17,37 @@ default, PRIK uses CMake's selected C or Fortran compiler for preprocessing,
 source analysis, and ABI probes. CMake mode does not accept a separate
 `--compiler` override because the analyzed and compiled toolchains must agree.
 
+The work splits across the two CMake phases:
+
+- **Configure** asks PRIK only for structure: the generated filenames, the link
+  driver, and any compiler ABI flags its profile requires. PRIK does not
+  preprocess, parse, complete policy, plan, or generate code here, so
+  configuring stays cheap however large the sources are.
+- **Build** runs the full PRIK pipeline exactly once, writing the wrapper, the
+  header, the binding-support headers, and a dependency file.
+
+Because configuration never reads a source, the generated file list cannot
+depend on what analysis finds. PRIK therefore names the optional compilation
+units up front and always writes them: a module that needs no collision-adapter
+unit still gets `<module>_adapters.c`, and a Fortran module that needs no bridge
+still gets `bind_c_<module>_wrapper.f90`. An unused unit holds a small
+placeholder that defines no symbol and compiles without warnings. A semantic
+edit then changes a file's *contents* rather than the set of files, so editing
+a source never requires re-running `cmake` to configure.
+
+Transitive semantic inputs -- a nested C header, a Fortran `INCLUDE` file, an
+imported contract -- reach CMake through the dependency file PRIK writes during
+generation, so changing one reruns generation on the next build. This uses
+`add_custom_command(DEPFILE)`, which is why the helper requires CMake 3.21 or
+newer.
+
 ## Existing CMake project
 
 Install PRIK, make its `cmake` directory available through
 `CMAKE_MODULE_PATH`, and include the packaged helper:
 
 ```cmake
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 
 project(MyPhysics LANGUAGES C Fortran)
 
@@ -130,8 +154,9 @@ prik_add_module(
 
 The generated wrapper sources are custom-command outputs. Changing a semantic
 source, contract, included C header, or Fortran `INCLUDE` file regenerates them
-before CMake compiles the target. CMake recompiles contract-first native
-implementations independently.
+before CMake compiles the target, without a configure step. CMake recompiles
+contract-first native implementations independently. A build with no changes
+reruns neither generation nor compilation.
 
 External dependencies remain CMake dependencies. For example, CMake can find
 BLAS and pass its target to the PRIK extension:

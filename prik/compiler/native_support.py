@@ -14,7 +14,8 @@ import numpy as np
 
 import prik.runtime.native_support as native_support_folder
 
-_NATIVE_SUPPORT_IMPORT = "binding_support"
+BINDING_SUPPORT_IMPORT = "binding_support"
+_NATIVE_SUPPORT_IMPORT = BINDING_SUPPORT_IMPORT
 _NATIVE_SUPPORT_SOURCE = Path(native_support_folder.__file__).parent
 
 

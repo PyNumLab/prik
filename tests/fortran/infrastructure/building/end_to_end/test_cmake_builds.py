@@ -90,6 +90,23 @@ def _import_extension(module_name: str, build: Path):
         sys.path.remove(str(artifacts[0].parent))
 
 
+def _call_extension(
+    module_name: str, build: Path, expression: str, *, environment: dict[str, str] | None = None
+) -> str:
+    """Import the built extension in a fresh interpreter and evaluate one call.
+
+    A rebuilt extension cannot be re-imported in this process: CPython caches
+    an extension module for the life of the interpreter, so a second import
+    returns the shared library the first one loaded.
+    """
+    artifacts = tuple(build.rglob(f"{module_name}*.so"))
+    assert artifacts, f"no CMake extension artifact in {build}"
+    environment = dict(environment or _environment())
+    environment["PYTHONPATH"] = str(artifacts[0].parent) + os.pathsep + environment["PYTHONPATH"]
+    program = f"import numpy, {module_name}\nprint({expression})\n"
+    return _run([sys.executable, "-c", program], environment=environment).stdout.strip()
+
+
 def _call_with_unassisted_loader(module_name: str, build: Path, expression: str, *, native_library: Path) -> str:
     """Import the built extension with no loader path able to find its native library.
 
@@ -97,23 +114,19 @@ def _call_with_unassisted_loader(module_name: str, build: Path, expression: str,
     a shared-libpython build needs it, but that environment is asserted not to
     resolve ``native_library``. Only the extension's own build rpath can.
     """
-    artifacts = tuple(build.rglob(f"{module_name}*.so"))
-    assert artifacts, f"no CMake extension artifact in {build}"
     environment = _environment()
     for variable in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
         searched = tuple(entry for entry in environment.get(variable, "").split(os.pathsep) if entry)
         assert not any((Path(entry) / native_library.name).exists() for entry in searched), (
             f"{variable} already resolves {native_library.name}, so the import would not prove a build rpath"
         )
-    environment["PYTHONPATH"] = str(artifacts[0].parent) + os.pathsep + environment["PYTHONPATH"]
-    program = f"import numpy, {module_name}\nprint({expression})\n"
-    return _run([sys.executable, "-c", program], environment=environment).stdout.strip()
+    return _call_extension(module_name, build, expression, environment=environment)
 
 
 def _write_project(project: Path, body: str, *, languages: str = "C Fortran") -> None:
     project.mkdir(parents=True, exist_ok=True)
     (project / "CMakeLists.txt").write_text(
-        f"""cmake_minimum_required(VERSION 3.20)
+        f"""cmake_minimum_required(VERSION 3.21)
 project(cmake_test LANGUAGES {languages})
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 list(APPEND CMAKE_MODULE_PATH "{USE_PRIK_DIR.as_posix()}")
@@ -891,7 +904,8 @@ def test_use_prik_cmake_compiles_generated_fortran_bridge_and_binding(tmp_path: 
     shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
     reason="CMake, gfortran, and gcc are required",
 )
-def test_use_prik_cmake_reconfigures_when_source_adds_a_fortran_bridge(tmp_path: Path):
+def test_use_prik_cmake_keeps_the_bridge_filename_fixed_across_semantic_edits(tmp_path: Path):
+    """A semantic edit changes the bridge file's contents, never the build graph."""
     project = tmp_path / "routing project"
     project.mkdir()
     source = project / "routing.f90"
@@ -915,11 +929,16 @@ end function standalone_direct
     )
     build = project / "build"
     _configure_and_build(project, build, language="fortran")
-    generated = build / "prik" / "routing"
-    assert not tuple(generated.glob("*.f90"))
+    bridge = build / "prik" / "routing" / "bind_c_routing_wrapper.f90"
+
+    # This module needs no bridge, but the declared source still exists so
+    # CMake's source list does not depend on semantic analysis.
+    assert bridge.is_file(), "the deterministic bridge source is missing"
+    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
     module = _import_extension("routing", build)
     assert module.standalone_direct(np.int32(4)) == np.int32(6)
 
+    # Adding a procedure that needs a bridge must not require a reconfigure.
     source.write_text(
         """integer(c_int) function standalone_direct(value) bind(C, name="standalone_mixed_direct") result(output)
   use iso_c_binding
@@ -938,7 +957,26 @@ end function standalone_adapted
         encoding="utf-8",
     )
     _run(["cmake", "--build", str(build), "-j2"])
-    assert tuple(generated.glob("*.f90")), "CMake did not reconfigure the generated bridge source set"
+
+    bridge_text = bridge.read_text(encoding="utf-8")
+    assert "prik_unused_bridge_stub" not in bridge_text, "the bridge stub was not replaced by real content"
+    assert "bind_c_routing_wrapper" in bridge_text
+    assert _call_extension("routing", build, "routing.standalone_adapted(numpy.int32(4))") == "7"
+
+    # ... and reverting is symmetric: real content becomes a stub again.
+    source.write_text(
+        """integer(c_int) function standalone_direct(value) bind(C, name="standalone_direct_symbol") result(output)
+  use iso_c_binding
+  integer(c_int), value, intent(in) :: value
+
+  output = value + 2_c_int
+end function standalone_direct
+""",
+        encoding="utf-8",
+    )
+    _run(["cmake", "--build", str(build), "-j2"])
+    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
+    assert _call_extension("routing", build, "routing.standalone_direct(numpy.int32(4))") == "6"
 
 
 @pytest.mark.fortran_end_to_end
@@ -1120,6 +1158,231 @@ def test_use_prik_cmake_requires_fortran_for_native_fortran_sources(tmp_path: Pa
 
     assert result.returncode != 0
     assert "native Fortran sources" in result.stderr
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_use_prik_cmake_configure_does_not_run_the_semantic_pipeline(tmp_path: Path):
+    """Configure plans structurally, so a source PRIK cannot parse still configures.
+
+    The failure surfaces at build time, where the semantic pipeline actually
+    runs. That is the whole point of the split: CMake learns its source graph
+    without parsing, completing policy, or generating code.
+    """
+    project = tmp_path / "unparsable project"
+    project.mkdir()
+    (project / "broken.f90").write_text(
+        "real(8) function broken(x) result(y)\n  this is not valid Fortran at all @@@\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """prik_add_module(
+  broken
+  SOURCES broken.f90
+)
+""",
+    )
+    build = project / "build"
+    configure = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(project),
+            "-B",
+            str(build),
+            f"-DCMAKE_C_COMPILER={shutil.which('gcc')}",
+            f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}",
+        ],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+    assert configure.returncode == 0, f"configure ran semantic analysis:\n{configure.stderr}"
+    assert not tuple((build / "prik" / "broken").glob("*.c")), "configure generated wrapper sources"
+
+    built = subprocess.run(["cmake", "--build", str(build), "-j2"], env=_environment(), capture_output=True, text=True)
+    assert built.returncode != 0, "the unparsable source should fail during build-time generation"
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
+def test_use_prik_cmake_keeps_the_adapter_filename_fixed(tmp_path: Path):
+    """The adapter unit is declared either way: a stub without adapters, real content with them."""
+    results = {}
+    for label, prik_args in (("plain", ""), ("adapted", "  PRIK_ARGS --collision-adapter-all\n")):
+        project = tmp_path / f"adapter {label}"
+        project.mkdir()
+        (project / "capi.c").write_text("double capi_add(double value) { return value + 1.0; }\n", encoding="utf-8")
+        _write_project(
+            project,
+            f"""prik_add_module(
+  adapter_{label}
+  C_SOURCES capi.c
+{prik_args})
+""",
+            languages="C",
+        )
+        build = project / "build"
+        _configure_and_build(project, build, language="c")
+        adapters = build / "prik" / f"adapter_{label}" / f"adapter_{label}_adapters.c"
+        assert adapters.is_file(), f"the deterministic adapter source is missing for {label}"
+        results[label] = adapters.read_text(encoding="utf-8")
+        assert _call_extension(f"adapter_{label}", build, f"adapter_{label}.capi_add(numpy.float64(2.0))") == "3.0"
+
+    assert "prik_unused_adapter_stub" in results["plain"]
+    assert "prik_unused_adapter_stub" not in results["adapted"]
+    assert "capi_add" in results["adapted"]
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_use_prik_cmake_does_not_regenerate_an_unchanged_build(tmp_path: Path):
+    project = tmp_path / "idempotent project"
+    project.mkdir()
+    (project / "steady.f90").write_text(
+        "real(8) function steady(x) result(y)\n  real(8), intent(in) :: x\n  y = x\nend function steady\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """prik_add_module(
+  steady
+  SOURCES steady.f90
+)
+""",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+    generation_comment = "Generate PRIK wrapper sources for steady"
+
+    rebuilt = _run(["cmake", "--build", str(build), "-j2"])
+    assert generation_comment not in rebuilt.stdout + rebuilt.stderr, "an unchanged build reran PRIK generation"
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("gfortran") is None or shutil.which("gcc") is None, reason="gfortran and gcc are required"
+)
+def test_generated_placeholder_units_compile_under_strict_flags(tmp_path: Path):
+    """Unused optional units must not cost the caller a warning."""
+    source = tmp_path / "strict.f90"
+    source.write_text(
+        'integer(c_int) function strict(value) bind(C, name="strict_symbol") result(output)\n'
+        "  use iso_c_binding\n"
+        "  integer(c_int), value, intent(in) :: value\n"
+        "  output = value\n"
+        "end function strict\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "generated"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--sources",
+            str(source),
+            "--module-name",
+            "strict",
+            "--declared-layout",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    adapter_stub = out_dir / "strict_adapters.c"
+    bridge_stub = out_dir / "bind_c_strict_wrapper.f90"
+    assert "prik_unused_adapter_stub" in adapter_stub.read_text(encoding="utf-8")
+    assert "prik_unused_bridge_stub" in bridge_stub.read_text(encoding="utf-8")
+
+    _run(
+        [
+            "gcc",
+            "-c",
+            "-Wall",
+            "-Wextra",
+            "-pedantic",
+            "-Werror",
+            "-std=c11",
+            "-fPIC",
+            str(adapter_stub),
+            "-o",
+            str(tmp_path / "adapter.o"),
+        ]
+    )
+    _run(
+        [
+            "gfortran",
+            "-c",
+            "-Wall",
+            "-Wextra",
+            "-pedantic",
+            "-Werror",
+            "-fPIC",
+            str(bridge_stub),
+            "-o",
+            str(tmp_path / "bridge.o"),
+        ],
+        cwd=tmp_path,
+    )
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_generate_cmake_lto_reaches_native_and_generated_compilation(tmp_path: Path):
+    """--lto must reach both target kinds, not only the CMakeLists initializer."""
+    (tmp_path / "solver.f90").write_text(
+        "real(8) function solve(x) result(y)\n  real(8), intent(in) :: x\n  y = x * 2.0d0\nend function solve\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "helper.c").write_text("double helper_value(void) { return 1.0; }\n", encoding="utf-8")
+    project = tmp_path / "lto project"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            str(tmp_path / "solver.f90"),
+            "--native-c-sources",
+            str(tmp_path / "helper.c"),
+            "--module-name",
+            "lto_module",
+            "--lto",
+            "--out-dir",
+            str(project),
+        ]
+    )
+
+    build = project / "build"
+    command = ["cmake", "-S", str(project), "-B", str(build), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"]
+    if shutil.which("ninja"):
+        command.extend(("-G", "Ninja"))
+    command.append(f"-DCMAKE_C_COMPILER={shutil.which('gcc')}")
+    command.append(f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}")
+    _run(command)
+    _run(["cmake", "--build", str(build), "-j2"])
+
+    entries = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+    compiled = {Path(entry["file"]).name: entry["command"] for entry in entries}
+    # The caller's native sources and every generated unit must all carry it.
+    for source in ("solver.f90", "helper.c", "lto_module_wrapper.c", "bind_c_lto_module_wrapper.f90"):
+        assert source in compiled, f"{source} was not compiled"
+        assert "flto" in compiled[source], f"link-time optimization missing from {source}"
+
+    assert _call_extension("lto_module", build, "lto_module.solve(numpy.float64(4.0))") == "8.0"
 
 
 @pytest.mark.fortran_end_to_end

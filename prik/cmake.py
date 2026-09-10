@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
 import shlex
 import sys
 import sysconfig
+
+from prik.naming.generated_files import (
+    adapter_source_name,
+    binding_source_name,
+    bridge_source_name,
+    wrapper_header_name,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +33,124 @@ class CMakeProjectResult:
             "module_name": self.module_name,
             "output_dir": str(self.output_dir),
         }
+
+
+@dataclass(frozen=True)
+class StructuralLayout:
+    """The generated-file graph one CMake module target declares.
+
+    Every field follows from the module name and the declared build structure,
+    so a build system can create its targets before any source is parsed. The
+    semantic pipeline never runs to produce this; it only fills the declared
+    files in later.
+    """
+
+    module_name: str
+    output_dir: Path
+    fortran: bool
+    linker_language: str
+    abi_flags: Mapping[str, tuple[str, ...]]
+
+    @property
+    def generated_sources(self) -> tuple[Path, ...]:
+        """Return every generated compilation unit, in compiler order.
+
+        The optional adapter and bridge units are listed whether or not the
+        wrapper turns out to need them; generation writes a harmless stub for
+        one it does not, which keeps this list stable across semantic edits.
+        """
+        bridge = (self.output_dir / bridge_source_name(self.module_name),) if self.fortran else ()
+        return (
+            *bridge,
+            self.output_dir / binding_source_name(self.module_name),
+            self.output_dir / adapter_source_name(self.module_name),
+        )
+
+    @property
+    def generated_files(self) -> tuple[Path, ...]:
+        """Return the compilation units plus every other deterministic output."""
+        # Imported here so a structural query does not pay for the support
+        # module's own NumPy dependency.
+        from prik.compiler.native_support import BINDING_SUPPORT_IMPORT, native_support_output_paths
+
+        return (
+            *self.generated_sources,
+            self.output_dir / wrapper_header_name(self.module_name),
+            *native_support_output_paths((BINDING_SUPPORT_IMPORT,), prik_dirpath=self.output_dir),
+        )
+
+    @property
+    def depfile(self) -> Path:
+        """Return the depfile generation writes for its semantic inputs."""
+        return self.output_dir / f"prik-{self.module_name}.d"
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the payload a build integration reads at configure time."""
+        return {
+            "structural_plan": True,
+            "module_name": self.module_name,
+            "generated_sources": [str(path) for path in self.generated_sources],
+            "generated_files": [str(path) for path in self.generated_files],
+            "depfile": str(self.depfile),
+            "linker_language": self.linker_language,
+            "required_abi_flags": {language: list(flags) for language, flags in self.abi_flags.items()},
+        }
+
+
+def structural_layout(
+    *,
+    module_name: str,
+    output_dir: str | Path,
+    language: str,
+    native_fortran_sources: Iterable[str | Path] = (),
+    linker_language: str | None = None,
+    fortran_compiler: str | None = None,
+    standard_logicals: bool = True,
+) -> StructuralLayout:
+    """Derive one module's generated-file graph from build structure alone.
+
+    A module is Fortran-capable when its own language is Fortran, when it
+    contributes native Fortran sources, or when the caller has already required
+    the Fortran link driver. That is the whole rule: nothing here reads a
+    source file, completes policy, or plans a wrapper.
+    """
+    if not module_name.isascii() or not module_name.isidentifier():
+        raise ValueError(f"CMake structural planning requires a valid ASCII Python/C module name: {module_name!r}")
+    requested_linker_language = (linker_language or "").lower() or None
+    if requested_linker_language not in (None, "c", "fortran"):
+        raise ValueError(f"Unsupported linker language: {linker_language!r}")
+    fortran = language == "fortran" or bool(tuple(native_fortran_sources)) or requested_linker_language == "fortran"
+    return StructuralLayout(
+        module_name=module_name,
+        output_dir=Path(output_dir).resolve(),
+        fortran=fortran,
+        linker_language=requested_linker_language or ("fortran" if fortran else "c"),
+        abi_flags=_structural_abi_flags(
+            fortran_compiler if fortran else None,
+            standard_logicals=standard_logicals,
+        ),
+    )
+
+
+def _structural_abi_flags(fortran_compiler: str | None, *, standard_logicals: bool) -> Mapping[str, tuple[str, ...]]:
+    """Return mandatory ABI flags from the compiler profile, not from semantics.
+
+    The profile follows from the driver's name, so this stays a table lookup.
+    An unrecognized driver contributes no mandatory flag rather than failing
+    configuration; the real generation step still validates the toolchain.
+    """
+    if fortran_compiler is None:
+        return {}
+    from prik.compiler.compiler_profiles import available_compilers, fortran_compiler_family
+
+    try:
+        _token, vendor, _default_c = fortran_compiler_family(fortran_compiler)
+    except ValueError:
+        return {}
+    if not standard_logicals:
+        return {}
+    flags = available_compilers[vendor].get("fortran", {}).get("logical_interop_flags", ())
+    return {"fortran": tuple(str(flag) for flag in flags)} if flags else {}
 
 
 @dataclass(frozen=True)
@@ -223,7 +348,7 @@ def _module_inputs(*, paths: Iterable[str | Path], args) -> _CMakeModuleInputs:
 
 def _project_preamble(*, module_name: str, languages: str, lto: bool = False) -> list[str]:
     lines = [
-        "cmake_minimum_required(VERSION 3.20)",
+        "cmake_minimum_required(VERSION 3.21)",
         "",
         f"project({module_name} LANGUAGES {languages})",
         "",
