@@ -27,6 +27,15 @@ release tags add a leading `v` to the package version.
   paths in `LINK_LIBRARIES` instead of becoming ambiguous relative tokens,
   while library names and linker arguments keep their meaning and order.
 
+- CMake native object targets receive `LINK_LIBRARIES` with the caller's link
+  syntax unchanged, so `debug`/`optimized` keywords and generator-expression
+  entries keep selecting usage requirements per configuration instead of being
+  flattened or dropped.
+
+- CMake mode rejects a `.C` source suffix, which CMake compiles as C++ while
+  PRIK plans the source as C, and reports a clear error when a module
+  contributes native Fortran sources without CMake's Fortran language enabled.
+
 - `prik_add_module()` accepts `LIBRARY_DIRS`, mapping it to
   `target_link_directories()` and the extension's `BUILD_RPATH`.
   `generate --cmake` translates `--native-library-dir` into `LIBRARY_DIRS`, so

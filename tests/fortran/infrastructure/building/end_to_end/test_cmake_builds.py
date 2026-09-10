@@ -972,6 +972,158 @@ def test_use_prik_cmake_builds_c_source_with_include_directory_and_flag(tmp_path
 
 @pytest.mark.fortran_end_to_end
 @pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
+@pytest.mark.parametrize(
+    ("build_type", "expected", "rejected"),
+    [("Debug", "PRIK_DEBUG_DEFINE", "PRIK_RELEASE_DEFINE"), ("Release", "PRIK_RELEASE_DEFINE", "PRIK_DEBUG_DEFINE")],
+)
+def test_use_prik_cmake_keeps_configuration_specific_link_usage_requirements(
+    tmp_path: Path, build_type: str, expected: str, rejected: str
+):
+    project = tmp_path / f"configuration usage {build_type}"
+    project.mkdir()
+    (project / "interface.c").write_text("double configured_add(double value);\n", encoding="utf-8")
+    (project / "implementation.c").write_text(
+        f"#ifndef {expected}\n"
+        f"#error missing {build_type} dependency compile definition\n"
+        "#endif\n"
+        f"#ifdef {rejected}\n"
+        f"#error unexpected {rejected} in a {build_type} build\n"
+        "#endif\n"
+        "double configured_add(double value) { return value + 1.0; }\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """add_library(debug_dependency INTERFACE)
+target_compile_definitions(debug_dependency INTERFACE PRIK_DEBUG_DEFINE)
+add_library(release_dependency INTERFACE)
+target_compile_definitions(release_dependency INTERFACE PRIK_RELEASE_DEFINE)
+prik_add_module(
+  configuration_usage
+  SOURCES interface.c
+  C_SOURCES implementation.c
+  LINK_LIBRARIES debug debug_dependency optimized release_dependency
+)
+""",
+        languages="C",
+    )
+    build = project / "build"
+    command = ["cmake", "-S", str(project), "-B", str(build), f"-DCMAKE_BUILD_TYPE={build_type}"]
+    if shutil.which("ninja"):
+        command.extend(("-G", "Ninja"))
+    command.append(f"-DCMAKE_C_COMPILER={shutil.which('gcc')}")
+    _run(command)
+    _run(["cmake", "--build", str(build), "-j2"])
+
+    module = _import_extension("configuration_usage", build)
+    assert module.configured_add(np.float64(2.0)) == np.float64(3.0)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
+def test_use_prik_cmake_rejects_an_uppercase_c_suffix(tmp_path: Path):
+    project = tmp_path / "uppercase c suffix"
+    project.mkdir()
+    (project / "interface.C").write_text("double uppercase_add(double value);\n", encoding="utf-8")
+    _write_project(
+        project,
+        """prik_add_module(
+  uppercase_suffix
+  C_SOURCES interface.C
+)
+""",
+        languages="C",
+    )
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(project),
+            "-B",
+            str(project / "build"),
+            f"-DCMAKE_C_COMPILER={shutil.which('gcc')}",
+        ],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "must use the .c suffix" in result.stderr
+
+
+@pytest.mark.fortran_end_to_end
+def test_generate_cmake_rejects_an_uppercase_c_suffix(tmp_path: Path):
+    source = tmp_path / "api.C"
+    source.write_text("double uppercase_add(double value) { return value + 1.0; }\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            "--language",
+            "c",
+            str(source),
+            "--module-name",
+            "uppercase_api",
+            "--out-dir",
+            str(tmp_path / "project"),
+        ],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "must use the .c suffix" in result.stderr
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
+def test_use_prik_cmake_requires_fortran_for_native_fortran_sources(tmp_path: Path):
+    project = tmp_path / "c only project with fortran sources"
+    project.mkdir()
+    (project / "interface.c").write_text("double native_add(double value);\n", encoding="utf-8")
+    (project / "implementation.f90").write_text(
+        "real(8) function native_add(value) result(output)\n"
+        "  real(8), intent(in) :: value\n"
+        "  output = value + 1.0d0\n"
+        "end function native_add\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """prik_add_module(
+  native_fortran_language
+  SOURCES interface.c
+  FORTRAN_SOURCES implementation.f90
+)
+""",
+        languages="C",
+    )
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(project),
+            "-B",
+            str(project / "build"),
+            f"-DCMAKE_C_COMPILER={shutil.which('gcc')}",
+        ],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "native Fortran sources" in result.stderr
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
 def test_use_prik_cmake_propagates_dependency_usage_to_native_objects(tmp_path: Path):
     project = tmp_path / "native dependency usage"
     project.mkdir()

@@ -31,13 +31,20 @@ endfunction()
 function(_prik_validate_source_suffixes language sources)
     foreach(_source IN LISTS ${sources})
         get_filename_component(_suffix "${_source}" LAST_EXT)
-        string(TOLOWER "${_suffix}" _suffix)
+        string(TOLOWER "${_suffix}" _lower_suffix)
         if(language STREQUAL "fortran")
-            if(NOT _suffix MATCHES "^\\.(f|f03|f08|f77|f90|f95|for|ftn)$")
+            if(NOT _lower_suffix MATCHES "^\\.(f|f03|f08|f77|f90|f95|for|ftn)$")
                 message(FATAL_ERROR "PRIK Fortran input is not a supported source: ${_source}")
             endif()
-        elseif(NOT _suffix STREQUAL ".c")
+        elseif(NOT _lower_suffix STREQUAL ".c")
             message(FATAL_ERROR "PRIK C input is not a supported source: ${_source}")
+        elseif(NOT _suffix STREQUAL ".c")
+            # PRIK plans the source as C, so CMake must compile it as C too.
+            message(
+                FATAL_ERROR
+                "PRIK C sources used through CMake must use the .c suffix; "
+                ".C is interpreted as C++ by CMake: ${_source}"
+            )
         endif()
     endforeach()
 endfunction()
@@ -315,6 +322,15 @@ function(prik_add_module name)
             )
         endif()
     endif()
+    if(_prik_native_fortran_sources)
+        if(_prik_fortran_language_index EQUAL -1 OR NOT CMAKE_Fortran_COMPILER)
+            message(
+                FATAL_ERROR
+                "PRIK module ${name} requires CMake's Fortran language to be enabled for its native Fortran sources. "
+                "Use project(... LANGUAGES C Fortran) or enable_language(Fortran)."
+            )
+        endif()
+    endif()
 
     set(_prik_output_dir "${CMAKE_CURRENT_BINARY_DIR}/prik/${name}")
     file(MAKE_DIRECTORY "${_prik_output_dir}")
@@ -442,11 +458,13 @@ function(prik_add_module name)
         endif()
         add_library("${_prik_native_target}" OBJECT ${_prik_native_target_sources})
         set_target_properties("${_prik_native_target}" PROPERTIES POSITION_INDEPENDENT_CODE ON)
-        foreach(_prik_library IN LISTS PRIK_LINK_LIBRARIES)
-            if(TARGET "${_prik_library}")
-                target_link_libraries("${_prik_native_target}" PRIVATE "${_prik_library}")
-            endif()
-        endforeach()
+        if(PRIK_LINK_LIBRARIES)
+            # Forward the caller's own link syntax so the native sources see the
+            # usage requirements CMake would give them: debug/optimized keywords
+            # and generator expressions still select per configuration, which a
+            # target-only filter would flatten or drop.
+            target_link_libraries("${_prik_native_target}" PRIVATE ${PRIK_LINK_LIBRARIES})
+        endif()
         if(_prik_required_linker_language STREQUAL "fortran")
             set_target_properties(
                 "${_prik_native_target}" PROPERTIES Fortran_MODULE_DIRECTORY "${_prik_output_dir}"

@@ -174,6 +174,19 @@ def _link_values(
     return tuple(libraries)
 
 
+def _validate_c_suffixes(paths: Iterable[Path]) -> None:
+    """Reject a ``.C`` suffix, which CMake compiles as C++ rather than C.
+
+    PRIK plans these sources as C, so letting CMake choose its own language for
+    them would compile the plan with the wrong compiler.
+    """
+    for path in paths:
+        if path.suffix != ".c" and path.suffix.lower() == ".c":
+            raise ValueError(
+                f"PRIK C sources used through CMake must use the .c suffix; .C is interpreted as C++ by CMake: {path}"
+            )
+
+
 def _module_inputs(*, paths: Iterable[str | Path], args) -> _CMakeModuleInputs:
     input_paths = _absolute_paths(paths)
     if not input_paths:
@@ -309,6 +322,9 @@ def write_cmake_project(
     project_dir = Path(output_dir).resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
     inputs = _module_inputs(paths=paths, args=args)
+    if language == "c" and inputs.contract is None:
+        _validate_c_suffixes(inputs.semantic_sources)
+    _validate_c_suffixes(inputs.native_c)
     cmake_module_dir()
     project_languages = (
         "C Fortran"

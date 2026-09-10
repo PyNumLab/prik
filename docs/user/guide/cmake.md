@@ -86,7 +86,13 @@ When native source files use one language, PRIK infers `NATIVE_LANGUAGE` from
 differs from the implementation source language or when both source languages
 are present. A source-free contract must state it explicitly. CMake's C
 language must be enabled because every PRIK extension contains generated C
-binding code.
+binding code, and Fortran must be enabled whenever the module contributes
+Fortran sources.
+
+C sources must use the lowercase `.c` suffix here. CMake compiles `.C` as C++,
+which would not match the C plan PRIK generates for the source, so
+`prik_add_module()` and `generate --cmake` reject that suffix instead of
+letting the two disagree.
 
 The flag groups remain separate:
 
@@ -142,9 +148,20 @@ prik_add_module(
 
 The same form accepts normal project targets such as `native_math` and
 `OpenMP::OpenMP_Fortran`; they remain target-oriented CMake link inputs.
-When a linked entry is a CMake target, its compile and include usage
-requirements also reach PRIK's private native object target. Raw library paths
-retain link behavior but do not provide CMake usage requirements.
+`LINK_LIBRARIES` reaches PRIK's private native object target with its own
+syntax intact, so a linked target's compile and include usage requirements
+apply to the native sources, and `debug`/`optimized` keywords and generator
+expressions still select per configuration. Raw library paths retain link
+behavior but do not provide CMake usage requirements.
+
+```cmake
+prik_add_module(
+    physics
+    SOURCES interface.c
+    C_SOURCES implementation.c
+    LINK_LIBRARIES debug native_math_debug optimized native_math_release
+)
+```
 
 `LINK_LIBRARIES` keeps each entry's own CMake meaning: a path to an object,
 archive, or shared library stays a file path, a plain name stays a library
