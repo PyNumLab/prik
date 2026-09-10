@@ -22,7 +22,7 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 | no subcommand | Builds one importable extension from Fortran source, a supported C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
 | `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
-| `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
+| `generate` | Writes `.pyi` contracts, wrapper sources, a Makefile, or a CMake project without compiling. |
 | `probe` | Prints compiler-target datatype and ABI facts. |
 
 ## Getting help
@@ -98,8 +98,9 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-objects PATH ...` | Links object files, static archives, or shared libraries. |
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
-| `--native-library-dir DIR ...` | Library search directories and runtime paths. |
-| `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
+| `--native-linker-language {c,fortran}` | Requires the named final linker language when prebuilt inputs do not carry it. |
+| `--native-library-dir DIR ...` | Library search directories and runtime paths. Direct builds add `-L` and `-rpath`; generated CMake projects emit `LIBRARY_DIRS`. |
+| `--lto` | Enables link-time optimization for generated and native compilation and the extension link. Direct builds add `-flto`; generated CMake projects initialize CMake IPO. |
 | `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
 | `--collision-adapter-all` | Applies `--collision-adapter` to every eligible C function in the build. |
 | `--positional-only` | For Fortran and C, exposes every wrapper whose arguments are all required as positional-only, renaming them `arg0`..`argN`. |
@@ -197,7 +198,7 @@ Support](../language-support/c-support.md) before building a C API.
 `generate` requires exactly one output mode:
 
 ```bash
-python3 -m prik generate (--pyi | --sources | --makefile) INPUT [INPUT ...] [OPTIONS]
+python3 -m prik generate (--pyi | --sources | --makefile | --cmake) INPUT [INPUT ...] [OPTIONS]
 python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRIDES]
 ```
 
@@ -206,11 +207,14 @@ python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRID
 | `--pyi` | Writes the editable semantic `.pyi` contract. |
 | `--sources` | Writes wrapper sources without compiling. |
 | `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik`. |
+| `--cmake` | Writes a standalone `CMakeLists.txt` that uses `UsePRIK.cmake`. |
+| `--module-name NAME` | Sets the Python module name used by generated wrapper sources; `--cmake` requires an ASCII C target name. |
 
 ```bash
 python3 -m prik generate --pyi points.f90 --out contracts/points
 python3 -m prik generate --sources points.f90 --out-dir build
 python3 -m prik generate --makefile points.f90 --out-dir build
+python3 -m prik generate --cmake points.f90 --out-dir build/points
 ```
 
 For a C source contract, `--language c` is valid with `--pyi`:
@@ -219,14 +223,28 @@ For a C source contract, `--language c` is valid with `--pyi`:
 python3 -m prik generate --pyi --language c path/to/api.c --out api.pyi
 ```
 
-`--sources` and `--makefile` still run preprocessing and semantic policy to
-produce a valid wrapper plan; they skip object compilation and linking, and
-use `--out-dir`. With no `--out`, `generate --pyi` prints every generated
+`--sources` and `--makefile` run preprocessing and semantic policy to produce
+a valid wrapper plan; they skip object compilation and linking, and use
+`--out-dir`. `--cmake` writes the CMake project; its CMake configuration later
+runs PRIK's wrapper-generation step, while CMake owns compilation and linking.
+In CMake mode, `--compiler` and `--wrapper-compiler-debug` are rejected:
+CMake's selected compiler and build configuration own those choices. Native
+and generated-wrapper flag options remain distinct in the generated helper
+call, `--no-standard-logicals` maps to PRIK's CMake compilation plan, and
+`--lto` initializes CMake interprocedural optimization before PRIK creates its
+native and extension targets. Native link inputs keep their category and
+order: `--native-objects` and path-valued `--native-link-item` kinds become
+`LINK_LIBRARIES` file paths, `--native-library` a library name,
+`--native-link-item arg:` a linker argument, and `--native-library-dir` a
+`LIBRARY_DIRS` entry that is both a link search directory and a build runtime
+path.
+With no `--out`, `generate --pyi` prints every generated
 contract. For Fortran, `--out PATH` names a package directory containing
 `__init__.pyi` and any module leaves. For C, it names the single output `.pyi`
 file. Bare `--out` writes beside the inputs. The [source-to-contract
 layouts](pyi-format.md#source-to-contract-layout) show both forms.
-`--compiler` and `-I` affect only preprocessing and datatype measurement.
+Outside CMake mode, `--compiler` and `-I` affect preprocessing and datatype
+measurement as documented by the selected command.
 
 In `.pyi` Makefile mode, PRIK writes `<out-dir>/prik-build.json` first, then
 generates `<out-dir>/Makefile.prik` from that manifest.

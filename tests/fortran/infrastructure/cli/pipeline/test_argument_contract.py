@@ -1,5 +1,6 @@
 """Tests split by stable CLI argument-contract ownership."""
 
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -137,7 +138,7 @@ File: empty.f90
         ),
         (
             {"out": "module", "makefile": True},
-            "generate --sources/--makefile uses --out-dir, not --out",
+            "generate --sources/--makefile/--cmake uses --out-dir, not --out",
         ),
         ({"parse": True, "print_limit": -1}, "--print-limit must be >= 0"),
         (
@@ -407,7 +408,7 @@ def test_manifest_compiler_override_targets_only_its_recorded_native_language(
     manifest.write_text(
         json.dumps(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "build_kind": "pyi-wrapper",
                 "extension": {"native_language": native_language},
             }
@@ -746,7 +747,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "preprocessing and datatype measurement" in normalized_semantics_help
     assert "native and bridge compilation" not in normalized_semantics_help
     assert "default: gfortran; cc with --language c" in normalized_semantics_help
-    assert "(--pyi | --sources | --makefile)" in generate_help
+    assert "(--pyi | --sources | --makefile | --cmake)" in generate_help
     assert "INPUT [INPUT ...] [OPTIONS]" in generate_help
     assert "--build-manifest PATH [OVERRIDES]" in generate_help
     for heading in (
@@ -777,6 +778,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "--pyi" in generate_help
     assert "--sources" in generate_help
     assert "--makefile" in generate_help
+    assert "--cmake" in generate_help
     assert "Read an existing prik-build.json and regenerate wrapper artifacts" in normalized_generate_help
     assert "Compiler used for source analysis and wrapper build files" in normalized_generate_help
     assert "default: gfortran; cc with --language c" in normalized_generate_help
@@ -917,7 +919,9 @@ def test_help_build_routes_to_the_full_default_build_help():
 def test_help_build_exposes_every_supported_build_option():
     parser = prik_cli._build_parser(["--help"])
     help_text = parser.format_help()
-    option_strings = {option for action in parser._actions for option in action.option_strings}
+    option_strings = {
+        option for action in parser._actions if action.help != argparse.SUPPRESS for option in action.option_strings
+    }
 
     assert option_strings
     assert all(option in help_text for option in option_strings)
@@ -935,7 +939,9 @@ def test_help_build_exposes_every_supported_build_option():
 def test_subcommand_help_exposes_every_supported_option(parser_factory):
     parser = parser_factory(["--help"])
     help_text = parser.format_help()
-    option_strings = {option for action in parser._actions for option in action.option_strings}
+    option_strings = {
+        option for action in parser._actions if action.help != argparse.SUPPRESS for option in action.option_strings
+    }
 
     assert option_strings
     assert all(option in help_text for option in option_strings)

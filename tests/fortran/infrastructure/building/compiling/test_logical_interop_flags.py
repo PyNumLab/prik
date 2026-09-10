@@ -43,3 +43,25 @@ def test_compilers_that_already_interoperate_add_no_logical_option(vendor: str, 
     command = _fortran_compile_command(vendor, standard_logicals=True, tmp_path=tmp_path)
     assert "-standard-semantics" not in command
     assert "-Munixlogical" not in command
+
+
+@pytest.mark.parametrize(
+    ("vendor", "expected"),
+    [
+        ("intel", ("-standard-semantics",)),
+        ("PGI", ("-Munixlogical",)),
+        ("nvidia", ("-Munixlogical",)),
+        ("GNU", ()),
+    ],
+)
+def test_compiler_exposes_required_logical_abi_flags_for_external_builds(vendor: str, expected: tuple[str, ...]):
+    compiler = Compiler(vendor, execute_commands=False)
+
+    assert compiler.required_abi_flags("fortran") == expected
+    assert compiler.required_abi_flags("c") == ()
+
+
+def test_external_build_can_disable_required_logical_abi_flags():
+    compiler = Compiler("intel", execute_commands=False, standard_logicals=False)
+
+    assert compiler.required_abi_flags("fortran") == ()

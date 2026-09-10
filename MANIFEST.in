@@ -1,3 +1,4 @@
 include CHANGELOG.md
 include CITATION.cff
 include .artifacts/.gitignore
+recursive-include cmake *.cmake

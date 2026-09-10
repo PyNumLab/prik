@@ -58,6 +58,7 @@ from prik.policy.models import (
     WritebackPhase,
 )
 from prik.codegen.c.naming import CBindingNames
+from prik.naming.generated_files import adapter_module_name, binding_module_name
 from prik.codegen.c.python_surface import PythonSurfaceContext, PythonSurfaceEmitter
 from prik.semantics.scalar_types import is_boolean_semantic_type_name
 from prik.codegen.nodes import (
@@ -337,7 +338,7 @@ class CBindingGenerator(ClassVisitor):
         needs_native_support = self.requires_native_support(plan)
         needs_free = self._module_needs_allocator(plan)
         return CModule(
-            name=f"{plan.binding.owner_path}_wrapper",
+            name=binding_module_name(plan.binding.owner_path),
             defines=self._module_defines(plan, needs_native_support),
             includes=self._module_includes(plan, needs_native_support, needs_free),
             declarations=self._module_declarations(plan),
@@ -463,7 +464,7 @@ class CBindingGenerator(ClassVisitor):
         if not adapted:
             return None
         return CModule(
-            name=f"{plan.binding.owner_path}_adapters",
+            name=adapter_module_name(plan.binding.owner_path),
             includes=(
                 CInclude("stdint.h"),
                 CInclude("stdbool.h"),
