@@ -936,6 +936,7 @@ def _native_link_options_used(args: argparse.Namespace) -> bool:
         or getattr(args, "native_libraries", None)
         or getattr(args, "native_link_items", None)
         or getattr(args, "native_library_dirs", None)
+        or getattr(args, "native_linker_language", None)
     )
 
 
@@ -985,7 +986,7 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
             "--export-symbols selects declarations while reading C source; a semantic .pyi contract "
             "already states its public functions"
         )
-    if not (
+    if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_c_sources", None)
         or getattr(args, "native_objects", None)
@@ -1048,7 +1049,7 @@ def _validate_source_wrapper_options(args: argparse.Namespace, parser: argparse.
         parser.error(f"A wrapper build found no recognized {label} sources under: {empty_directories[0]}")
     if not getattr(args, "no_compile_input_sources", False):
         return
-    if not (
+    if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_c_sources", None)
         or _prebuilt_native_link_input_used(args)
@@ -1078,6 +1079,11 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
         parser.error("generate --sources/--makefile/--cmake uses --out-dir, not --out")
     if args.command == "generate" and getattr(args, "module_name", None) is not None:
         _validate_wrapper_out(argparse.Namespace(out=args.module_name), parser)
+    if getattr(args, "cmake", False):
+        if getattr(args, "compiler", None):
+            parser.error("generate --cmake uses CMake's selected compiler; do not pass --compiler")
+        if getattr(args, "wrapper_compiler_debug", False):
+            parser.error("generate --cmake does not accept --wrapper-compiler-debug; use CMake build types")
     if getattr(args, "plan_only", False) and not (args.command == "generate" and args.generate_sources):
         parser.error("--plan requires generate --sources")
     if args.command == "build":
@@ -1469,7 +1475,11 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
     if _wrapper_build_uses_pyi_contract(args):
         result = build_pyi_extension(
             args.paths[0],
-            input_compiler=preprocessing.compiler or "gfortran",
+            input_compiler=(
+                getattr(args, "analysis_fortran_compiler", None)
+                or (preprocessing.compiler if args.language == "fortran" else None)
+                or "gfortran"
+            ),
             input_c_compiler=(preprocessing.compiler or "cc") if args.language == "c" else None,
             native_language=args.language,
             native_fortran_sources=getattr(args, "native_fortran_sources", None),
@@ -1485,6 +1495,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
             native_library_dirs=getattr(args, "native_library_dirs", None),
             native_include_dirs=_cli_build_include_dirs(args),
+            native_linker_language=getattr(args, "native_linker_language", None),
             output_name=_wrapper_output_name(args),
             output_dir=getattr(args, "out_dir", None),
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
@@ -1494,6 +1505,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             _plan_only=getattr(args, "plan_only", False),
+            _external_native_implementation=getattr(args, "external_native_implementation", False),
             jobs=getattr(args, "jobs", None),
             standard_logicals=getattr(args, "standard_logicals", True),
             verbose=1 if getattr(args, "verbose", False) else 0,
@@ -1516,7 +1528,8 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             input_c_compiler=getattr(args, "compiler", None),
             preprocessing=preprocessing,
             export_symbols=getattr(args, "_resolved_export_symbols", None),
-            input_compiler="gfortran",
+            input_compiler=getattr(args, "analysis_fortran_compiler", None) or "gfortran",
+            compile_input_sources=not getattr(args, "no_compile_input_sources", False),
             native_c_sources=getattr(args, "native_c_sources", None),
             native_c_flags=_with_link_time_optimization(
                 _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
@@ -1530,6 +1543,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
             native_library_dirs=getattr(args, "native_library_dirs", None),
             native_include_dirs=_cli_build_include_dirs(args),
+            native_linker_language=getattr(args, "native_linker_language", None),
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
             collision_adapters=getattr(args, "collision_adapters", None),
             collision_adapter_all=getattr(args, "collision_adapter_all", False),
@@ -1537,6 +1551,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             _plan_only=getattr(args, "plan_only", False),
+            _external_native_implementation=getattr(args, "external_native_implementation", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
@@ -1576,9 +1591,11 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
         native_library_dirs=getattr(args, "native_library_dirs", None),
         native_include_dirs=_cli_build_include_dirs(args),
+        native_linker_language=getattr(args, "native_linker_language", None),
         makefile=getattr(args, "makefile", False),
         generate_sources=getattr(args, "generate_sources", False),
         _plan_only=getattr(args, "plan_only", False),
+        _external_native_implementation=getattr(args, "external_native_implementation", False),
         jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
         wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
@@ -2307,6 +2324,11 @@ def _add_native_compilation_options(group: argparse._ArgumentGroup) -> None:
 
 def _add_extension_link_options(group: argparse._ArgumentGroup) -> None:
     group.add_argument(
+        "--native-linker-language",
+        choices=("c", "fortran"),
+        help="Required final linker language for opaque native inputs",
+    )
+    group.add_argument(
         "--native-objects",
         dest="native_objects",
         action="extend",
@@ -2418,6 +2440,9 @@ _PIPELINE_DEFAULTS = {
     "native_libraries": None,
     "native_link_items": None,
     "native_library_dirs": None,
+    "native_linker_language": None,
+    "external_native_implementation": False,
+    "analysis_fortran_compiler": None,
     "strict_wrapper_names": False,
     "lto": False,
     "collision_adapters": None,
@@ -2820,6 +2845,17 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         help="Python module name for generated wrapper sources",
     )
     output_group.add_argument("--plan", dest="plan_only", action="store_true", help=argparse.SUPPRESS)
+    output_group.add_argument(
+        "--external-native-implementation",
+        dest="external_native_implementation",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    output_group.add_argument(
+        "--analysis-fortran-compiler",
+        dest="analysis_fortran_compiler",
+        help=argparse.SUPPRESS,
+    )
     diagnostic_group = parser.add_argument_group("diagnostic options")
     _add_diagnostic_controls(diagnostic_group)
     return parser

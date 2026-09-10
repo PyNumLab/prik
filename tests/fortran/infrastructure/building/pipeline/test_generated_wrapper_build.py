@@ -39,6 +39,9 @@ class RecordingCompiler:
             module_file = object_file.object_path.parent / f"{object_file.source.stem}.mod"
             module_file.write_text("fortran module\n", encoding="utf-8")
 
+    def required_abi_flags(self, language):
+        return ("-frequired-abi",) if language == "fortran" else ()
+
     def link_extension(
         self,
         *,
@@ -176,6 +179,24 @@ def scale(x: Float64) -> Float64: ...
     assert result.build_makefile is None
     assert result.native_build_plan == native_plan
     assert result.generated_sources == (bridge_source, binding_source, header)
+    assert [unit.to_dict() for unit in result.generated_compilation_units] == [
+        {
+            "source": str(bridge_source),
+            "language": "fortran",
+            "include_dirs": [str(native_dir)],
+            "flags": ["-O2"],
+            "abi_flags": ["-frequired-abi"],
+        },
+        {
+            "source": str(binding_source),
+            "language": "c",
+            "include_dirs": [str(native_dir)],
+            "flags": ["-O3"],
+            "abi_flags": [],
+        },
+    ]
+    assert result.linker_language == "fortran"
+    assert result.extension_link_flags == ("-O3",)
     assert bridge_obj.object_path in result.generated_files
     assert binding_obj.object_path in result.generated_files
     assert native_support_header in result.generated_files

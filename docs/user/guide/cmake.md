@@ -13,7 +13,9 @@ publication: reviewed
 Use CMake when its toolchain, dependency targets, and build scheduling should
 own compilation and linking. PRIK still parses the native inputs, completes
 wrapper policy, and generates the wrapper and any Fortran bridge sources. By
-default, PRIK uses CMake's selected C or Fortran compiler for source analysis.
+default, PRIK uses CMake's selected C or Fortran compiler for preprocessing,
+source analysis, and ABI probes. CMake mode does not accept a separate
+`--compiler` override because the analyzed and compiled toolchains must agree.
 
 ## Existing CMake project
 
@@ -62,13 +64,41 @@ cmake --build build
 
 `prik_add_module()` also accepts `SOURCES` for source-first input, `CONTRACT`
 with `FORTRAN_SOURCES` or `C_SOURCES` for an authored semantic `.pyi`,
-`INCLUDE_DIRS`, `MODULE_DIRS`, language-specific compile flags,
-`LINK_LIBRARIES`, `LINK_OPTIONS`, and additional `PRIK_ARGS`. Use
-`NO_COMPILE_INPUT_SOURCES` when `SOURCES` supplies only the public interface
-and `FORTRAN_SOURCES` or `C_SOURCES` supplies its implementation. The
-generated wrapper sources are custom-command outputs. Changing a semantic
-source or contract regenerates them before CMake compiles the target; CMake
-recompiles contract-first native implementations independently.
+`INCLUDE_DIRS`, `MODULE_DIRS`, source-specific compile flags,
+`LINK_LIBRARIES`, `LINK_OPTIONS`, and additional generation-only `PRIK_ARGS`.
+The flag groups remain separate:
+
+- `FORTRAN_FLAGS` and `C_FLAGS` apply only to user-owned native sources.
+- `WRAPPER_FORTRAN_FLAGS` applies only to generated Fortran bridge sources.
+- `WRAPPER_C_FLAGS` applies to generated C sources and the extension link,
+  matching PRIK's normal build behavior.
+
+PRIK adds compiler-profile flags required by its ABI plan to the affected
+Fortran sources. `NO_STANDARD_LOGICALS` disables PRIK's Intel/NVIDIA logical
+interoperability option when compatibility with prebuilt objects requires it.
+CMake build type, debug, and interprocedural-optimization settings remain
+normal CMake target properties; `PRIK_ARGS` rejects compiler and compilation
+options that would bypass those target settings.
+
+Use `NO_COMPILE_INPUT_SOURCES` when `SOURCES` supplies only the public
+interface. Its implementation may come from `FORTRAN_SOURCES`, `C_SOURCES`, a
+prebuilt library, or a target in `LINK_LIBRARIES`:
+
+```cmake
+add_library(native_math STATIC implementation.f90)
+
+prik_add_module(
+    python_api
+    SOURCES interface.f90
+    NO_COMPILE_INPUT_SOURCES
+    LINK_LIBRARIES native_math
+)
+```
+
+The generated wrapper sources are custom-command outputs. Changing a semantic
+source, contract, included C header, or Fortran `INCLUDE` file regenerates them
+before CMake compiles the target. CMake recompiles contract-first native
+implementations independently.
 
 External dependencies remain CMake dependencies. For example, CMake can find
 BLAS and pass its target to the PRIK extension:
@@ -85,6 +115,10 @@ prik_add_module(
 
 The same form accepts normal project targets such as `native_math` and
 `OpenMP::OpenMP_Fortran`; they remain target-oriented CMake link inputs.
+Normal Fortran sources and targets carry their link-language requirements
+through CMake. For a raw archive or shared library whose language is otherwise
+opaque, add `LINKER_LANGUAGE Fortran`; PRIK records that requirement in its
+plan and the extension uses CMake's Fortran linker driver.
 
 ## Standalone generated project
 
@@ -107,4 +141,5 @@ python3 -m prik generate --cmake contracts/solver.pyi \
 The generated `CMakeLists.txt` loads `UsePRIK.cmake` and calls
 `prik_add_module()`. `UsePRIK.cmake` integrates PRIK into an existing CMake
 project; `prik generate --cmake` creates a standalone CMake project that uses
-that same helper.
+that same helper. `--native-linker-language fortran` emits the explicit raw
+library annotation when standalone input requires the Fortran linker.

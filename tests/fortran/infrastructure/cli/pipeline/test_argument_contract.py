@@ -408,7 +408,7 @@ def test_manifest_compiler_override_targets_only_its_recorded_native_language(
     manifest.write_text(
         json.dumps(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "build_kind": "pyi-wrapper",
                 "extension": {"native_language": native_language},
             }

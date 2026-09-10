@@ -10,7 +10,12 @@ release tags add a leading `v` to the package version.
 - Added CMake integration through the packaged `UsePRIK.cmake` helper and a
   `prik generate --cmake` standalone-project mode. CMake generates PRIK wrapper
   sources as build outputs and owns native compilation, linking, external
-  targets, and incremental rebuilds.
+  targets, and incremental rebuilds while preserving per-source flags,
+  compiler-required ABI options, preprocessing dependencies, and linker
+  language from PRIK's completed build plan.
+
+- `prik-build.json` schema 5 records generated/native compilation-unit ABI
+  flags and explicit native linker-language requirements.
 
 - Array handles support allocatable and pointer arguments, results, module
   variables, derived fields, optional arguments, and matching ordinary-array

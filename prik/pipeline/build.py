@@ -83,7 +83,7 @@ from prik.semantics.scalar_types import boolean_storage_bits, is_boolean_semanti
 
 _DEFAULT_BUILD_DIR_NAME = "__prik__"
 _BUILD_MANIFEST_NAME = "prik-build.json"
-_BUILD_MANIFEST_SCHEMA_VERSION = 4
+_BUILD_MANIFEST_SCHEMA_VERSION = 5
 _FORTRAN_SOURCE_SUFFIXES = {".f", ".f03", ".f08", ".f77", ".f90", ".f95", ".for", ".ftn"}
 _C_SOURCE_SUFFIXES = {".c"}
 _NATIVE_PATH_LINK_KINDS = frozenset({"object", "archive", "shared_library"})
@@ -200,9 +200,9 @@ class NativeCompilationUnit:
         Object path produced in the build directory.
     language
         Compiler language selected for ``source``.
-    module_dir, include_dirs, flags
+    module_dir, include_dirs, flags, abi_flags
         Module-output location, header/module search paths, and per-source
-        compiler flags recorded for reproducible builds.
+        caller flags plus compiler-policy flags required by PRIK's ABI.
     """
 
     source: Path
@@ -211,6 +211,7 @@ class NativeCompilationUnit:
     module_dir: Path | None = None
     include_dirs: tuple[Path, ...] = ()
     flags: tuple[str, ...] = ()
+    abi_flags: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Normalize path and flag fields after dataclass construction.
@@ -225,6 +226,7 @@ class NativeCompilationUnit:
             object.__setattr__(self, "module_dir", Path(self.module_dir))
         object.__setattr__(self, "include_dirs", tuple(Path(path) for path in self.include_dirs))
         object.__setattr__(self, "flags", tuple(str(flag) for flag in self.flags))
+        object.__setattr__(self, "abi_flags", tuple(str(flag) for flag in self.abi_flags))
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-ready representation of this compilation unit.
@@ -239,6 +241,38 @@ class NativeCompilationUnit:
             "module_dir": str(self.module_dir) if self.module_dir is not None else None,
             "include_dirs": [str(path) for path in self.include_dirs],
             "flags": list(self.flags),
+            "abi_flags": list(self.abi_flags),
+        }
+
+
+@dataclass(frozen=True)
+class GeneratedCompilationUnit:
+    """Describe one generated bridge or binding source compilation.
+
+    External build integrations consume this completed record instead of
+    reconstructing wrapper-language, flag, include, or ABI requirements.
+    """
+
+    source: Path
+    language: str
+    include_dirs: tuple[Path, ...] = ()
+    flags: tuple[str, ...] = ()
+    abi_flags: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source", Path(self.source))
+        object.__setattr__(self, "include_dirs", tuple(Path(path) for path in self.include_dirs))
+        object.__setattr__(self, "flags", tuple(str(flag) for flag in self.flags))
+        object.__setattr__(self, "abi_flags", tuple(str(flag) for flag in self.abi_flags))
+
+    def to_dict(self) -> dict[str, object]:
+        """Return this generated compilation unit in JSON-ready form."""
+        return {
+            "source": str(self.source),
+            "language": self.language,
+            "include_dirs": [str(path) for path in self.include_dirs],
+            "flags": list(self.flags),
+            "abi_flags": list(self.abi_flags),
         }
 
 
@@ -353,6 +387,7 @@ class NativeBuildPlan:
     include_dirs: tuple[Path, ...] = ()
     library_dirs: tuple[Path, ...] = ()
     link_items: tuple[NativeLinkItem, ...] = ()
+    linker_language: str | None = None
 
     def __post_init__(self) -> None:
         """Normalize every collection and filesystem field in this plan.
@@ -367,6 +402,8 @@ class NativeBuildPlan:
         object.__setattr__(self, "include_dirs", tuple(Path(path) for path in self.include_dirs))
         object.__setattr__(self, "library_dirs", tuple(Path(path) for path in self.library_dirs))
         object.__setattr__(self, "link_items", tuple(self.link_items))
+        if self.linker_language not in {None, "c", "fortran"}:
+            raise ValueError("Native build-plan linker language must be 'c', 'fortran', or None")
 
     def to_dict(self) -> dict[str, object]:
         """Return a complete JSON-ready snapshot of the native build plan."""
@@ -378,6 +415,7 @@ class NativeBuildPlan:
             "include_dirs": [str(path) for path in self.include_dirs],
             "library_dirs": [str(path) for path in self.library_dirs],
             "link_items": [item.to_dict() for item in self.link_items],
+            "linker_language": self.linker_language,
         }
 
 
@@ -406,6 +444,10 @@ class WrapperBuildResult:
     build_manifest: Path | None = None
     manifest: dict[str, object] | None = None
     native_generated_code_groups: tuple[NativeGeneratedCodeGroupPlan, ...] = ()
+    generated_compilation_units: tuple[GeneratedCompilationUnit, ...] = ()
+    semantic_dependencies: tuple[Path, ...] = ()
+    linker_language: str | None = None
+    extension_link_flags: tuple[str, ...] = ()
 
     def import_module(self) -> ModuleType:
         """Import and return this result's built extension module.
@@ -468,6 +510,10 @@ class WrapperBuildResult:
             "generated_sources": [str(path) for path in self.generated_sources],
             "generated_files": [str(path) for path in self.generated_files],
             "native_build_plan": self.native_build_plan.to_dict(),
+            "generated_compilation_units": [unit.to_dict() for unit in self.generated_compilation_units],
+            "semantic_dependencies": [str(path) for path in self.semantic_dependencies],
+            "linker_language": self.linker_language,
+            "extension_link_flags": list(self.extension_link_flags),
             "build_manifest": str(self.build_manifest) if self.build_manifest is not None else None,
             "manifest": self.manifest,
             "native_generated_code_groups": [
@@ -566,6 +612,34 @@ def _parse_c_wrapper_source(path: Path, preprocessing: PreprocessingConfig):
     return parsed
 
 
+def _semantic_dependency_paths(
+    root: Path,
+    included_files: Iterable[object],
+) -> tuple[Path, ...]:
+    """Return existing root and transitive preprocessing inputs in stable order."""
+    dependencies = [root.resolve(strict=False)]
+    for item in included_files:
+        raw_path = item.get("path") if isinstance(item, Mapping) else getattr(item, "path", None)
+        if not isinstance(raw_path, str | Path) or str(raw_path).startswith("<"):
+            continue
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = root.parent / path
+        path = path.resolve(strict=False)
+        if path.is_file():
+            dependencies.append(path)
+    return _unique_paths(dependencies)
+
+
+def _c_wrapper_semantic_dependencies(parsed_sources, source_paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Collect source and included-header dependencies recorded by C preprocessing."""
+    dependencies = []
+    for parsed, source_path in zip(parsed_sources, source_paths, strict=True):
+        recipe = parsed.preprocessing_recipe or {}
+        dependencies.extend(_semantic_dependency_paths(source_path, recipe.get("included_files") or ()))
+    return _unique_paths(dependencies)
+
+
 def _reject_unmodeled_c_declarations(parsed, path: Path) -> None:
     """Raise when the C parser could not model a declaration written in ``path``.
 
@@ -601,6 +675,17 @@ def _fortran_source_for_pipeline(path: Path, preprocessing: PreprocessingConfig)
     if preprocessing.uses_compiler:
         return preprocess_source(path, language="fortran", config=preprocessing).source
     return path.read_text(encoding="utf-8")
+
+
+def _fortran_source_and_dependencies(
+    path: Path,
+    preprocessing: PreprocessingConfig,
+) -> tuple[str, tuple[Path, ...]]:
+    """Preprocess one wrapper source and retain every interface dependency."""
+    if preprocessing.uses_compiler:
+        result = preprocess_source(path, language="fortran", config=preprocessing)
+        return result.source, _semantic_dependency_paths(path, result.included_files)
+    return path.read_text(encoding="utf-8"), _semantic_dependency_paths(path, ())
 
 
 def _compiler_flags(flags: Iterable[str] | None) -> tuple[str, ...]:
@@ -898,6 +983,24 @@ def _generated_wrapper_object_stages(
     return bridge_objects, binding_objects
 
 
+def _generated_compilation_units(
+    objects: Iterable[ObjectFile],
+    *,
+    compiler: Compiler,
+) -> tuple[GeneratedCompilationUnit, ...]:
+    """Expose completed generated-source compile requirements to build tools."""
+    return tuple(
+        GeneratedCompilationUnit(
+            source=object_file.source,
+            language=object_file.language,
+            include_dirs=tuple(object_file.include_dirs),
+            flags=tuple(object_file.flags),
+            abi_flags=compiler.required_abi_flags(object_file.language),
+        )
+        for object_file in objects
+    )
+
+
 def _generated_wrapper_link_language(
     bridge_objects: tuple[ObjectFile, ...],
     binding_objects: tuple[ObjectFile, ...],
@@ -924,6 +1027,7 @@ def _native_plan_link_languages(plan: NativeBuildPlan) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
             (
+                *((plan.linker_language,) if plan.linker_language is not None else ()),
                 *(unit.language for unit in plan.compilation_units),
                 *(artifact.language for artifact in plan.prebuilt_artifacts if artifact.language is not None),
                 *(item.language for item in plan.link_items if item.language is not None),
@@ -1084,6 +1188,7 @@ def _build_generated_wrapper_extension(
     output_dir: str | Path,
     shared_library_output_dir: str | Path | None = None,
     sources: Iterable[str | Path] = (),
+    semantic_dependencies: Iterable[str | Path] = (),
     native_build_plan: NativeBuildPlan | None = None,
     native_dependencies: Iterable[ObjectFile] = (),
     native_compile_batches: Iterable[Iterable[ObjectFile]] = (),
@@ -1107,6 +1212,34 @@ def _build_generated_wrapper_extension(
     output_path = Path(output_dir)
     shared_output_path = Path(shared_library_output_dir) if shared_library_output_dir is not None else output_path
     resolved_native_build_plan = native_build_plan or NativeBuildPlan()
+    native_dependencies = tuple(native_dependencies)
+    compiler = compiler or _new_compiler()
+    bridge_objects, binding_objects = _generated_wrapper_object_stages(
+        rendered,
+        output_path,
+        wrapper_fortran_flags=_compiler_flags(wrapper_fortran_flags),
+        wrapper_c_flags=_compiler_flags(wrapper_c_flags),
+        native_module_dirs=_unique_paths(
+            (
+                *resolved_native_build_plan.module_dirs,
+                *resolved_native_build_plan.include_dirs,
+            )
+        ),
+    )
+    generated_compilation_units = _generated_compilation_units(
+        (*bridge_objects, *binding_objects),
+        compiler=compiler,
+    )
+    linker_language = _generated_wrapper_link_language(
+        bridge_objects,
+        binding_objects,
+        native_objects=native_dependencies,
+        required_languages=(
+            *rendered.required_link_languages,
+            *_native_plan_link_languages(resolved_native_build_plan),
+        ),
+    )
+    extension_link_flags = _compiler_flags(wrapper_c_flags)
     if _plan_only:
         generated_sources = tuple(_generated_source_output_path(output_path, path) for path in rendered.generated_files)
         native_support_imports = _generated_wrapper_native_support_imports(rendered.native_support_keys)
@@ -1127,6 +1260,10 @@ def _build_generated_wrapper_extension(
             generated_files=(*generated_sources, *native_support_files),
             native_build_plan=resolved_native_build_plan,
             native_generated_code_groups=rendered.native_generated_code_groups,
+            generated_compilation_units=generated_compilation_units,
+            semantic_dependencies=tuple(Path(path) for path in semantic_dependencies),
+            linker_language=linker_language,
+            extension_link_flags=extension_link_flags,
         )
 
     output_path.mkdir(parents=True, exist_ok=True)
@@ -1134,19 +1271,6 @@ def _build_generated_wrapper_extension(
     _write_generated_wrapper_sources(rendered, output_path, verbose=verbose)
 
     # Prepare generated-object inputs and their native support files.
-    compiler = compiler or _new_compiler()
-    bridge_objects, binding_objects = _generated_wrapper_object_stages(
-        rendered,
-        output_path,
-        wrapper_fortran_flags=_compiler_flags(wrapper_fortran_flags),
-        wrapper_c_flags=_compiler_flags(wrapper_c_flags),
-        native_module_dirs=_unique_paths(
-            (
-                *resolved_native_build_plan.module_dirs,
-                *resolved_native_build_plan.include_dirs,
-            )
-        ),
-    )
     native_support_imports = _generated_wrapper_native_support_imports(rendered.native_support_keys)
     install_native_support(
         native_support_imports,
@@ -1169,19 +1293,11 @@ def _build_generated_wrapper_extension(
     shared_library = compiler.link_extension(
         module_name=rendered.module_name,
         output_dir=shared_output_path,
-        language=_generated_wrapper_link_language(
-            bridge_objects,
-            binding_objects,
-            native_objects=tuple(native_dependencies),
-            required_languages=(
-                *rendered.required_link_languages,
-                *_native_plan_link_languages(resolved_native_build_plan),
-            ),
-        ),
-        objects=(*tuple(native_dependencies), *bridge_objects, *binding_objects),
+        language=linker_language,
+        objects=(*native_dependencies, *bridge_objects, *binding_objects),
         link_args=tuple(native_link_args),
         library_dirs=resolved_native_build_plan.library_dirs,
-        flags=_compiler_flags(wrapper_c_flags),
+        flags=extension_link_flags,
         verbose=verbose,
     )
     _print_verbose_timing(verbose, time.perf_counter() - linking_started)
@@ -1198,13 +1314,17 @@ def _build_generated_wrapper_extension(
         compiled=True,
         generated_sources=generated_sources,
         generated_files=_expected_generated_files(
-            source_objects=tuple(native_dependencies),
+            source_objects=native_dependencies,
             output_dir=output_path,
             module_name=rendered.module_name,
             shared_library=shared_library,
         ),
         native_build_plan=resolved_native_build_plan,
         native_generated_code_groups=rendered.native_generated_code_groups,
+        generated_compilation_units=generated_compilation_units,
+        semantic_dependencies=tuple(Path(path) for path in semantic_dependencies),
+        linker_language=linker_language,
+        extension_link_flags=extension_link_flags,
     )
 
 
@@ -1647,6 +1767,7 @@ class _NativeBuildInputs:
     link_item_paths: tuple[Path, ...]
     library_dirs: tuple[Path, ...]
     explicit_include_dirs: tuple[Path, ...]
+    linker_language: str | None
 
 
 # Semantic `.pyi` contract loading and export projection
@@ -2105,6 +2226,8 @@ def _native_build_plan(
     explicit_include_dirs: tuple[Path, ...],
     include_dirs: tuple[Path, ...],
     module_dir: Path | None,
+    compiler: Compiler,
+    linker_language: str | None,
 ) -> NativeBuildPlan:
     """Assemble the ordered native compile and link plan for one extension.
 
@@ -2140,6 +2263,7 @@ def _native_build_plan(
                 module_dir=module_dir if source_object.language == "fortran" else None,
                 include_dirs=include_dirs,
                 flags=tuple(source_object.flags),
+                abi_flags=compiler.required_abi_flags(source_object.language),
             )
             for source_path, source_object in zip(source_paths, source_objects, strict=True)
         ),
@@ -2149,6 +2273,7 @@ def _native_build_plan(
         include_dirs=include_dirs,
         library_dirs=library_dirs,
         link_items=link_items,
+        linker_language=linker_language,
     )
 
 
@@ -2255,6 +2380,8 @@ def _native_build_inputs(
     complete_native_link_items: Iterable[NativeLinkItem | dict[str, object]] | None,
     native_library_dirs: Iterable[str | Path] | None,
     native_include_dirs: Iterable[str | Path] | None,
+    native_linker_language: str | None,
+    allow_empty_native: bool = False,
 ) -> _NativeBuildInputs:
     """Validate and normalize all caller-native inputs for a build request.
 
@@ -2288,9 +2415,10 @@ def _native_build_inputs(
         )
     )
     explicit_include_dirs = _existing_paths(native_include_dirs, kind="Native include", require_directory=True)
+    linker_language = _native_link_item_language(native_linker_language)
 
     # A wrapper has no native implementation without at least one link input.
-    if (
+    if not allow_empty_native and (
         not source_paths
         and not artifact_paths
         and not libraries
@@ -2313,6 +2441,7 @@ def _native_build_inputs(
         link_item_paths=link_item_paths,
         library_dirs=library_dirs,
         explicit_include_dirs=explicit_include_dirs,
+        linker_language=linker_language,
     )
 
 
@@ -2336,8 +2465,12 @@ def _native_include_dirs(inputs: _NativeBuildInputs, *, output_path: Path) -> tu
 
 def _native_inputs_require_fortran(inputs: _NativeBuildInputs) -> bool:
     """Return whether explicit native language records require a Fortran driver."""
-    return "fortran" in inputs.source_languages or any(
-        item.language == "fortran" for item in (*inputs.explicit_link_items, *(inputs.complete_link_items or ()))
+    return (
+        inputs.linker_language == "fortran"
+        or "fortran" in inputs.source_languages
+        or any(
+            item.language == "fortran" for item in (*inputs.explicit_link_items, *(inputs.complete_link_items or ()))
+        )
     )
 
 
@@ -2408,6 +2541,7 @@ def _prepare_native_build_plan(
     inputs: _NativeBuildInputs,
     *,
     output_path: Path,
+    compiler: Compiler,
 ) -> tuple[tuple[ObjectFile, ...], NativeBuildPlan]:
     """Create and validate compiler objects and link inputs for one build."""
     include_dirs = _native_include_dirs(inputs, output_path=output_path)
@@ -2427,6 +2561,8 @@ def _prepare_native_build_plan(
         explicit_include_dirs=inputs.explicit_include_dirs,
         include_dirs=include_dirs,
         module_dir=output_path if any(source.language == "fortran" for source in source_objects) else None,
+        compiler=compiler,
+        linker_language=inputs.linker_language,
     )
     _validate_native_link_paths(plan)
     return source_objects, plan
@@ -2499,6 +2635,7 @@ def _manifest_native_plan(plan: NativeBuildPlan, *, base: Path) -> dict[str, obj
                 "module_dir": _manifest_path(unit.module_dir, base=base) if unit.module_dir is not None else None,
                 "include_dirs": [_manifest_path(path, base=base) for path in unit.include_dirs],
                 "flags": list(unit.flags),
+                "abi_flags": list(unit.abi_flags),
             }
             for unit in plan.compilation_units
         ],
@@ -2517,6 +2654,7 @@ def _manifest_native_plan(plan: NativeBuildPlan, *, base: Path) -> dict[str, obj
         "include_dirs": [_manifest_path(path, base=base) for path in plan.include_dirs],
         "library_dirs": [_manifest_path(path, base=base) for path in plan.library_dirs],
         "link_items": [_manifest_link_item(item, base=base) for item in plan.link_items],
+        "linker_language": plan.linker_language,
     }
 
 
@@ -2543,6 +2681,16 @@ def _manifest_generated_wrapper(result: WrapperBuildResult, *, base: Path) -> di
     """Serialize physical sources and independently planned native membership."""
     return {
         "sources": [_manifest_path(path, base=base) for path in result.generated_sources],
+        "compilation_units": [
+            {
+                "source": _manifest_path(unit.source, base=base),
+                "language": unit.language,
+                "include_dirs": [_manifest_path(path, base=base) for path in unit.include_dirs],
+                "flags": list(unit.flags),
+                "abi_flags": list(unit.abi_flags),
+            }
+            for unit in result.generated_compilation_units
+        ],
         "native_code_groups": [
             {
                 "kind": group.kind.value,
@@ -3169,12 +3317,15 @@ def _fortran_wrapper_module(
     fortran_type_probe_cache_dir: str | Path | None,
     refresh_fortran_type_probe: bool,
     assume_intent_in_scalars: bool = False,
-) -> tuple[object, SemanticModule, tuple[SemanticModule, ...]]:
+) -> tuple[object, SemanticModule, tuple[SemanticModule, ...], tuple[Path, ...]]:
     """Parse Fortran sources, resolve type facts, and form one wrapper module."""
     # Preprocess and parse the complete source project.
-    preprocessed_sources = {
-        str(source_path): _fortran_source_for_pipeline(source_path, preprocessing) for source_path in source_paths
-    }
+    preprocessed_sources = {}
+    semantic_dependencies = []
+    for source_path in source_paths:
+        source, dependencies = _fortran_source_and_dependencies(source_path, preprocessing)
+        preprocessed_sources[str(source_path)] = source
+        semantic_dependencies.extend(dependencies)
     parsed = parse_fortran_project(preprocessed_sources)
 
     # Measure compiler-dependent values before building semantic IR.
@@ -3205,7 +3356,12 @@ def _fortran_wrapper_module(
     )
     _apply_source_python_exports(modules)
     module_name = _validated_wrapper_module_name(output_name, source_paths[0].stem)
-    return parsed, _merge_wrapper_modules(modules, name=module_name), tuple(modules)
+    return (
+        parsed,
+        _merge_wrapper_modules(modules, name=module_name),
+        tuple(modules),
+        _unique_paths(semantic_dependencies),
+    )
 
 
 def _complete_pyi_fortran_boolean_types(
@@ -3314,6 +3470,7 @@ def build_fortran_extension(
     native_link_items: Iterable[NativeLinkItem | dict[str, object]] | None = None,
     native_library_dirs: Iterable[str | Path] | None = None,
     native_include_dirs: Iterable[str | Path] | None = None,
+    native_linker_language: str | None = None,
     makefile: bool = False,
     generate_sources: bool = False,
     jobs: int | None = None,
@@ -3324,6 +3481,7 @@ def build_fortran_extension(
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
     _plan_only: bool = False,
+    _external_native_implementation: bool = False,
 ) -> WrapperBuildResult:
     """Build a Python extension from one or more Fortran source files.
 
@@ -3376,10 +3534,11 @@ def build_fortran_extension(
         Additional explicit Fortran or C implementation sources and their
         language-specific compiler flags.
     native_objects, native_libraries, native_link_items,
-    native_library_dirs, native_include_dirs
+    native_library_dirs, native_include_dirs, native_linker_language
         Existing artifacts, ``-l`` names, ordered linker records, and search
-        paths for the native implementation.  Use ``native_link_items`` when
-        linker order is significant.
+        paths for the native implementation. Use ``native_link_items`` when
+        linker order is significant, and state ``"fortran"`` or ``"c"`` when
+        opaque prebuilt inputs require a particular final linker language.
     makefile, generate_sources
         Choose a non-executing output mode.  ``makefile=True`` writes a
         replayable ``Makefile.prik``; ``generate_sources=True`` writes wrapper
@@ -3419,6 +3578,8 @@ def build_fortran_extension(
         jobs=jobs,
         verbose=verbose,
     )
+    if _external_native_implementation and not (generate_sources or _plan_only):
+        raise ValueError("An external native implementation is valid only for source generation or planning")
 
     build_started = time.perf_counter()
 
@@ -3442,11 +3603,13 @@ def build_fortran_extension(
         complete_native_link_items=None,
         native_library_dirs=native_library_dirs,
         native_include_dirs=native_include_dirs,
+        native_linker_language=native_linker_language,
+        allow_empty_native=_external_native_implementation,
     )
     type_probe_preprocessing = _type_probe_preprocessing(preprocessing, native_inputs.fortran_source_flags)
 
     # 2. Parse source, resolve target facts, and assemble semantic IR.
-    parsed, module, source_modules = _fortran_wrapper_module(
+    parsed, module, source_modules, semantic_dependencies = _fortran_wrapper_module(
         source_paths,
         preprocessing=preprocessing,
         type_probe_preprocessing=type_probe_preprocessing,
@@ -3479,7 +3642,11 @@ def build_fortran_extension(
         standard_logicals=standard_logicals,
         input_compiler=preprocessing.compiler if preprocessing.uses_compiler else None,
     )
-    native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
+    native_source_objects, native_build_plan = _prepare_native_build_plan(
+        native_inputs,
+        output_path=output_path,
+        compiler=compiler,
+    )
     native_compile_batches = _project_compile_batches(parsed, native_source_objects)
 
     # 5. Build the extension, or retain the generated source/Makefile plan.
@@ -3488,6 +3655,7 @@ def build_fortran_extension(
         output_dir=output_path,
         shared_library_output_dir=shared_library_output_path,
         sources=source_paths,
+        semantic_dependencies=semantic_dependencies,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
         native_compile_batches=native_compile_batches,
@@ -3526,6 +3694,7 @@ def build_c_extension(
     c_type_report=None,
     c_type_probe_runner: list[str] | None = None,
     export_symbols: Iterable[str] | None = None,
+    compile_input_sources: bool = True,
     native_c_sources: Iterable[str | Path] | None = None,
     native_c_flags: Iterable[str] | None = None,
     native_fortran_sources: Iterable[str | Path] | None = None,
@@ -3536,6 +3705,7 @@ def build_c_extension(
     native_link_items: Iterable[NativeLinkItem | dict[str, object]] | None = None,
     native_library_dirs: Iterable[str | Path] | None = None,
     native_include_dirs: Iterable[str | Path] | None = None,
+    native_linker_language: str | None = None,
     strict_wrapper_names: bool = False,
     collision_adapters: Iterable[str] | None = None,
     collision_adapter_all: bool = False,
@@ -3550,6 +3720,7 @@ def build_c_extension(
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
     _plan_only: bool = False,
+    _external_native_implementation: bool = False,
 ) -> WrapperBuildResult:
     """Build a direct-only C extension from explicit C implementation sources.
 
@@ -3563,7 +3734,8 @@ def build_c_extension(
     identifier collision may use a separate C forwarder translation unit.
     ``export_symbols`` restricts semantic conversion to those exact reachable
     C functions and can explicitly select declarations from included headers.
-    ``native_c_sources`` adds separately compiled C inputs, while explicit
+    ``compile_input_sources`` controls whether the parsed C sources are also
+    compiled. ``native_c_sources`` adds separately compiled C inputs, while explicit
     Fortran inputs are supported only as ordinary link dependencies.
     ``standard_logicals`` controls whether those Fortran inputs are compiled
     with the option that gives a ``logical`` the representation C expects
@@ -3582,6 +3754,8 @@ def build_c_extension(
         jobs=jobs,
         verbose=verbose,
     )
+    if _external_native_implementation and not (generate_sources or _plan_only):
+        raise ValueError("An external native implementation is valid only for source generation or planning")
     build_started = time.perf_counter()
     selected_exports = None if export_symbols is None else tuple(export_symbols)
     source_paths = _c_source_paths(sources)
@@ -3590,7 +3764,7 @@ def build_c_extension(
     native_inputs = _native_build_inputs(
         native_fortran_sources=native_fortran_sources,
         native_fortran_flags=native_fortran_flags,
-        native_c_sources=(*source_paths, *supplemental_c_paths),
+        native_c_sources=(*(source_paths if compile_input_sources else ()), *supplemental_c_paths),
         native_c_flags=native_c_flags,
         native_objects=native_objects,
         native_libraries=native_libraries,
@@ -3598,6 +3772,8 @@ def build_c_extension(
         complete_native_link_items=None,
         native_library_dirs=native_library_dirs,
         native_include_dirs=native_include_dirs,
+        native_linker_language=native_linker_language,
+        allow_empty_native=_external_native_implementation,
     )
     requires_fortran = _native_inputs_require_fortran(native_inputs)
     compiler, preprocessing = _c_build_compiler_and_preprocessing(
@@ -3610,6 +3786,7 @@ def build_c_extension(
         standard_logicals=standard_logicals,
     )
     parsed_sources = tuple(_parse_c_wrapper_source(path, preprocessing) for path in source_paths)
+    semantic_dependencies = _c_wrapper_semantic_dependencies(parsed_sources, source_paths)
     # Fail forms that are intrinsically outside the primitive lane before the
     # ABI probe, generated files, or native build commands. A supported source
     # may still need the probe to resolve target-sized arithmetic facts.
@@ -3660,7 +3837,11 @@ def build_c_extension(
             output_path,
             verbose=verbose,
         )
-    native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
+    native_source_objects, native_build_plan = _prepare_native_build_plan(
+        native_inputs,
+        output_path=output_path,
+        compiler=compiler,
+    )
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
     result = _build_generated_wrapper_extension(
@@ -3668,6 +3849,7 @@ def build_c_extension(
         output_dir=output_path,
         shared_library_output_dir=shared_library_output_path,
         sources=source_paths,
+        semantic_dependencies=semantic_dependencies,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
         native_compile_batches=_serial_compile_batches(native_source_objects),
@@ -3711,6 +3893,7 @@ def build_pyi_extension(
     native_link_items: Iterable[NativeLinkItem | dict[str, object]] | None = None,
     native_library_dirs: Iterable[str | Path] | None = None,
     native_include_dirs: Iterable[str | Path] | None = None,
+    native_linker_language: str | None = None,
     output_name: str | None = None,
     output_dir: str | Path | None = None,
     strict_wrapper_names: bool = False,
@@ -3728,6 +3911,7 @@ def build_pyi_extension(
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
     _plan_only: bool = False,
+    _external_native_implementation: bool = False,
 ) -> WrapperBuildResult:
     """Build a Python extension from an editable semantic ``.pyi`` contract.
 
@@ -3760,10 +3944,11 @@ def build_pyi_extension(
         Existing implementation source paths to compile and their
         language-specific compiler flags.
     native_objects, native_libraries, native_link_items,
-    native_library_dirs, native_include_dirs
+    native_library_dirs, native_include_dirs, native_linker_language
         Existing artifacts, ``-l`` names, ordered linker records, and search
         paths.  Use ``native_link_items`` to append ordered inputs, or
         ``complete_native_link_items`` to supply the full ordered link plan.
+        State a linker language when opaque prebuilt inputs require one.
     output_name, output_dir
         Optional Python extension name and build directory.  The default name
         comes from the contract file or package entry.
@@ -3804,6 +3989,8 @@ def build_pyi_extension(
         jobs=jobs,
         verbose=verbose,
     )
+    if _external_native_implementation and not (generate_sources or _plan_only):
+        raise ValueError("An external native implementation is valid only for source generation or planning")
 
     build_started = time.perf_counter()
 
@@ -3825,6 +4012,8 @@ def build_pyi_extension(
         complete_native_link_items=complete_native_link_items,
         native_library_dirs=native_library_dirs,
         native_include_dirs=native_include_dirs,
+        native_linker_language=native_linker_language,
+        allow_empty_native=_external_native_implementation,
     )
 
     output_path, shared_library_output_path = _wrapper_output_paths(output_dir)
@@ -3863,8 +4052,7 @@ def build_pyi_extension(
     if not _plan_only:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    # 3. Prepare native compilation and link inputs before selecting the compiler.
-    native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
+    # 3. Select the compiler profile and complete the native compilation plan.
     compiler = _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
@@ -3872,6 +4060,11 @@ def build_pyi_extension(
         input_compiler=input_compiler,
         input_c_compiler=selected_input_c_compiler,
         requires_fortran=_native_inputs_require_fortran(native_inputs) or native_language == "fortran",
+    )
+    native_source_objects, native_build_plan = _prepare_native_build_plan(
+        native_inputs,
+        output_path=output_path,
+        compiler=compiler,
     )
     resolved_input_c_compiler = compiler.resolved_executable("c")
     native_array_build_requirements = native_array_handle_build_requirements(module)
@@ -3882,6 +4075,7 @@ def build_pyi_extension(
         output_dir=output_path,
         shared_library_output_dir=shared_library_output_path,
         sources=bundle.paths,
+        semantic_dependencies=bundle.paths,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
         native_compile_batches=_serial_compile_batches(native_source_objects),
@@ -4010,6 +4204,7 @@ def build_pyi_extension_from_manifest(
     collision_adapters = _manifest_string_list(extension_section, "collision_adapters")
     collision_adapter_all = _manifest_bool(extension_section, "collision_adapter_all")
     positional_only = _manifest_bool(extension_section, "positional_only")
+    native_linker_language = _native_link_item_language(native_section.get("linker_language"))
 
     # 2. Restore native include paths and compiler selection from the manifest.
     manifest_module_dirs = _manifest_path_list(native_section, "module_dirs", base=base)
@@ -4052,6 +4247,7 @@ def build_pyi_extension_from_manifest(
         native_c_flags=_manifest_string_list(compiler_section, "c_flags"),
         native_include_dirs=native_include_dirs,
         native_library_dirs=_manifest_path_list(native_section, "library_dirs", base=base),
+        native_linker_language=native_linker_language,
         output_name=requested_name,
         output_dir=output_path,
         strict_wrapper_names=strict_wrapper_names,

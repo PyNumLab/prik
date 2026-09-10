@@ -103,8 +103,6 @@ def _prik_args(args) -> tuple[str, ...]:
         else:
             result.append(f"{option}={value}")
 
-    if args.compiler:
-        add_option("--compiler", args.compiler)
     for option, values in (
         ("--define", args.defines),
         ("--undef", args.undefs),
@@ -124,20 +122,14 @@ def _prik_args(args) -> tuple[str, ...]:
             add_option(option, value)
     if args.include_exposure != "reachable-project":
         add_option("--include-exposure", args.include_exposure)
-    for option, values in (
-        ("--wrapper-fortran-flags", args.wrapper_fortran_flags),
-        ("--wrapper-c-flags", args.wrapper_c_flags),
-        ("--collision-adapter", args.collision_adapters),
-    ):
+    for option, values in (("--collision-adapter", args.collision_adapters),):
         if values:
             result.extend(f"{option}={value}" for value in values)
     for option, enabled in (
         ("--strict-wrapper-names", args.strict_wrapper_names),
         ("--assume-intent-in-scalars", args.assume_intent_in_scalars),
-        ("--wrapper-compiler-debug", args.wrapper_compiler_debug),
         ("--collision-adapter-all", args.collision_adapter_all),
         ("--positional-only", args.positional_only),
-        ("--no-standard-logicals", not args.standard_logicals),
     ):
         if enabled:
             add_option(option)
@@ -190,8 +182,11 @@ def _module_inputs(*, paths: Iterable[str | Path], args) -> _CMakeModuleInputs:
 
     native_fortran = _absolute_paths(args.native_fortran_sources or ())
     native_c = _absolute_paths(args.native_c_sources or ())
-    if args.no_compile_input_sources and not native_fortran and not native_c:
-        raise ValueError("generate --cmake --no-compile-input-sources requires native implementation sources")
+    has_link_implementation = bool(args.native_objects or args.native_libraries or args.native_link_items)
+    if args.no_compile_input_sources and not native_fortran and not native_c and not has_link_implementation:
+        raise ValueError(
+            "generate --cmake --no-compile-input-sources requires native implementation sources or libraries"
+        )
     return _CMakeModuleInputs(
         module_name=module_name,
         semantic_sources=input_paths,
@@ -261,17 +256,21 @@ def _append_build_options(
     native_link_items: Iterable[dict[str, object]],
 ) -> None:
     _append_block(lines, "INCLUDE_DIRS", _absolute_paths(args.include_dirs or ()), base=project_dir)
-    fortran_flags = (*_flag_values(args.native_compile_flags), *_flag_values(args.wrapper_fortran_flags))
-    c_flags = (*_flag_values(args.native_c_compile_flags), *_flag_values(args.wrapper_c_flags))
+    fortran_flags = _flag_values(args.native_compile_flags)
+    c_flags = _flag_values(args.native_c_compile_flags)
+    wrapper_fortran_flags = _flag_values(args.wrapper_fortran_flags)
+    wrapper_c_flags = _flag_values(args.wrapper_c_flags)
     libraries, link_options = _link_values(args, base=project_dir, native_link_items=native_link_items)
-    if args.lto:
-        fortran_flags = (*fortran_flags, "-flto")
-        c_flags = (*c_flags, "-flto")
-        link_options = (*link_options, "-flto")
     _append_values(lines, "FORTRAN_FLAGS", fortran_flags)
     _append_values(lines, "C_FLAGS", c_flags)
+    _append_values(lines, "WRAPPER_FORTRAN_FLAGS", wrapper_fortran_flags)
+    _append_values(lines, "WRAPPER_C_FLAGS", wrapper_c_flags)
     _append_values(lines, "LINK_LIBRARIES", libraries)
     _append_values(lines, "LINK_OPTIONS", link_options)
+    if args.native_linker_language:
+        lines.append(f"    LINKER_LANGUAGE {args.native_linker_language.capitalize()}")
+    if not args.standard_logicals:
+        lines.append("    NO_STANDARD_LOGICALS")
     _append_values(lines, "PRIK_ARGS", _prik_args(args))
 
 
@@ -288,7 +287,11 @@ def write_cmake_project(
     project_dir.mkdir(parents=True, exist_ok=True)
     inputs = _module_inputs(paths=paths, args=args)
     cmake_module_dir()
-    project_languages = "C Fortran" if language == "fortran" or inputs.native_fortran else "C"
+    project_languages = (
+        "C Fortran"
+        if language == "fortran" or inputs.native_fortran or args.native_linker_language == "fortran"
+        else "C"
+    )
     lines = _project_preamble(module_name=inputs.module_name, languages=project_languages)
     _append_source_declarations(
         lines,
@@ -299,6 +302,8 @@ def write_cmake_project(
     )
     _append_build_options(lines, args=args, project_dir=project_dir, native_link_items=native_link_items)
     lines.append(")")
+    if args.lto:
+        lines.extend(("", f"set_property(TARGET {inputs.module_name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)"))
 
     cmake_lists = project_dir / "CMakeLists.txt"
     cmake_lists.write_text("\n".join(lines) + "\n", encoding="utf-8")

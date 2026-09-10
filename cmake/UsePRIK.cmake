@@ -50,21 +50,34 @@ function(_prik_append_cli_flags command option flags)
     set(${command} "${_command}" PARENT_SCOPE)
 endfunction()
 
-function(_prik_json_string_list output_variable json key)
-    string(JSON _prik_item_count ERROR_VARIABLE _prik_json_error LENGTH "${json}" "${key}")
+function(_prik_json_string_list output_variable json)
+    set(_prik_json_path ${ARGN})
+    string(JSON _prik_item_count ERROR_VARIABLE _prik_json_error LENGTH "${json}" ${_prik_json_path})
     if(_prik_json_error)
-        message(FATAL_ERROR "PRIK did not return ${key}: ${_prik_json_error}")
+        message(FATAL_ERROR "PRIK did not return ${_prik_json_path}: ${_prik_json_error}")
     endif()
 
     set(_prik_items)
     if(_prik_item_count GREATER 0)
         math(EXPR _prik_last_item_index "${_prik_item_count} - 1")
         foreach(_prik_item_index RANGE 0 ${_prik_last_item_index})
-            string(JSON _prik_item GET "${json}" "${key}" ${_prik_item_index})
+            string(JSON _prik_item GET "${json}" ${_prik_json_path} ${_prik_item_index})
             list(APPEND _prik_items "${_prik_item}")
         endforeach()
     endif()
     set(${output_variable} "${_prik_items}" PARENT_SCOPE)
+endfunction()
+
+function(_prik_rebase_plan_path output_variable path source_root output_root)
+    file(RELATIVE_PATH _prik_relative_path "${source_root}" "${path}")
+    if(_prik_relative_path STREQUAL "")
+        set(_prik_rebased_path "${output_root}")
+    elseif(NOT _prik_relative_path MATCHES "^\\.\\.")
+        set(_prik_rebased_path "${output_root}/${_prik_relative_path}")
+    else()
+        set(_prik_rebased_path "${path}")
+    endif()
+    set(${output_variable} "${_prik_rebased_path}" PARENT_SCOPE)
 endfunction()
 
 function(_prik_rebase_generated_paths output_variable paths source_root output_root)
@@ -79,9 +92,62 @@ function(_prik_rebase_generated_paths output_variable paths source_root output_r
     set(${output_variable} "${_prik_rebased_paths}" PARENT_SCOPE)
 endfunction()
 
+function(_prik_apply_compilation_unit target json group index generated source_root output_root)
+    if(group STREQUAL "native")
+        set(_prik_unit_path native_build_plan compilation_units)
+    else()
+        set(_prik_unit_path generated_compilation_units)
+    endif()
+    string(JSON _prik_unit_source GET "${json}" ${_prik_unit_path} ${index} source)
+    string(JSON _prik_unit_language GET "${json}" ${_prik_unit_path} ${index} language)
+    if(generated)
+        _prik_rebase_plan_path(
+            _prik_unit_source "${_prik_unit_source}" "${source_root}" "${output_root}"
+        )
+    endif()
+    _prik_json_string_list(_prik_unit_flags "${json}" ${_prik_unit_path} ${index} flags)
+    _prik_json_string_list(_prik_unit_abi_flags "${json}" ${_prik_unit_path} ${index} abi_flags)
+    _prik_json_string_list(_prik_unit_include_dirs "${json}" ${_prik_unit_path} ${index} include_dirs)
+
+    set(_prik_rebased_include_dirs)
+    foreach(_prik_include_dir IN LISTS _prik_unit_include_dirs)
+        _prik_rebase_plan_path(
+            _prik_rebased_include_dir "${_prik_include_dir}" "${source_root}" "${output_root}"
+        )
+        list(APPEND _prik_rebased_include_dirs "${_prik_rebased_include_dir}")
+    endforeach()
+    if(_prik_unit_flags)
+        set_property(
+            SOURCE "${_prik_unit_source}"
+            APPEND PROPERTY COMPILE_OPTIONS ${_prik_unit_flags}
+        )
+    endif()
+    if(_prik_unit_language STREQUAL "fortran")
+        set(_prik_cmake_unit_language Fortran)
+    else()
+        set(_prik_cmake_unit_language C)
+    endif()
+    foreach(_prik_abi_flag IN LISTS _prik_unit_abi_flags)
+        set(_prik_abi_key "${_prik_cmake_unit_language}:${_prik_abi_flag}")
+        get_property(_prik_applied_abi_flags TARGET "${target}" PROPERTY _PRIK_APPLIED_ABI_FLAGS)
+        if(NOT _prik_abi_key IN_LIST _prik_applied_abi_flags)
+            target_compile_options(
+                "${target}" PRIVATE "$<$<COMPILE_LANGUAGE:${_prik_cmake_unit_language}>:${_prik_abi_flag}>"
+            )
+            set_property(TARGET "${target}" APPEND PROPERTY _PRIK_APPLIED_ABI_FLAGS "${_prik_abi_key}")
+        endif()
+    endforeach()
+    if(_prik_rebased_include_dirs)
+        set_property(
+            SOURCE "${_prik_unit_source}"
+            APPEND PROPERTY INCLUDE_DIRECTORIES ${_prik_rebased_include_dirs}
+        )
+    endif()
+endfunction()
+
 function(_prik_validate_args args)
     foreach(_prik_arg IN LISTS ${args})
-        if(_prik_arg MATCHES "^--(build-manifest|cmake|json|language|makefile|module-name|native-c-sources|native-fortran-sources|no-compile-input-sources|out|out-dir|plan|pyi|sources)(=|$)")
+        if(_prik_arg MATCHES "^--(analysis-fortran-compiler|build-manifest|cmake|compiler|json|jobs|language|lto|makefile|module-name|native-c-compile-flags|native-c-sources|native-compile-flags|native-fortran-sources|native-library|native-library-dir|native-link-item|native-linker-language|native-objects|no-compile-input-sources|no-standard-logicals|out|out-dir|plan|pyi|sources|wrapper-c-flags|wrapper-compiler-debug|wrapper-fortran-flags)(=|$)")
             message(FATAL_ERROR "PRIK_ARGS cannot override prik_add_module build ownership: ${_prik_arg}")
         endif()
     endforeach()
@@ -95,8 +161,8 @@ function(prik_add_module name)
         message(FATAL_ERROR "PRIK module target already exists: ${name}")
     endif()
 
-    set(_options NO_COMPILE_INPUT_SOURCES)
-    set(_one_value_arguments CONTRACT)
+    set(_options NO_COMPILE_INPUT_SOURCES NO_STANDARD_LOGICALS)
+    set(_one_value_arguments CONTRACT LINKER_LANGUAGE)
     set(_multi_value_arguments
         SOURCES
         FORTRAN_SOURCES
@@ -105,6 +171,8 @@ function(prik_add_module name)
         MODULE_DIRS
         FORTRAN_FLAGS
         C_FLAGS
+        WRAPPER_FORTRAN_FLAGS
+        WRAPPER_C_FLAGS
         LINK_LIBRARIES
         LINK_OPTIONS
         PRIK_ARGS
@@ -121,8 +189,8 @@ function(prik_add_module name)
     if(PRIK_NO_COMPILE_INPUT_SOURCES AND NOT PRIK_SOURCES)
         message(FATAL_ERROR "prik_add_module(${name}) uses NO_COMPILE_INPUT_SOURCES only with SOURCES")
     endif()
-    if(PRIK_NO_COMPILE_INPUT_SOURCES AND NOT PRIK_FORTRAN_SOURCES AND NOT PRIK_C_SOURCES)
-        message(FATAL_ERROR "prik_add_module(${name}) requires native implementation sources")
+    if(PRIK_NO_COMPILE_INPUT_SOURCES AND NOT PRIK_FORTRAN_SOURCES AND NOT PRIK_C_SOURCES AND NOT PRIK_LINK_LIBRARIES)
+        message(FATAL_ERROR "prik_add_module(${name}) requires native implementation sources or LINK_LIBRARIES")
     endif()
     if(NOT PRIK_CONTRACT AND NOT PRIK_SOURCES AND NOT PRIK_FORTRAN_SOURCES AND NOT PRIK_C_SOURCES)
         message(FATAL_ERROR "prik_add_module(${name}) requires SOURCES, FORTRAN_SOURCES, C_SOURCES, or CONTRACT")
@@ -135,6 +203,13 @@ function(prik_add_module name)
     _prik_make_absolute_paths(_prik_include_dirs ${PRIK_INCLUDE_DIRS})
     _prik_make_absolute_paths(_prik_module_dirs ${PRIK_MODULE_DIRS})
 
+    if(PRIK_LINKER_LANGUAGE)
+        string(TOLOWER "${PRIK_LINKER_LANGUAGE}" _prik_linker_language)
+        if(NOT _prik_linker_language STREQUAL "c" AND NOT _prik_linker_language STREQUAL "fortran")
+            message(FATAL_ERROR "prik_add_module(${name}) LINKER_LANGUAGE must be C or Fortran")
+        endif()
+    endif()
+
     if(_prik_contract)
         set(_prik_wrapper_sources)
         set(_prik_native_fortran_sources ${_prik_fortran_sources})
@@ -143,8 +218,10 @@ function(prik_add_module name)
             set(_prik_language fortran)
         elseif(_prik_native_c_sources)
             set(_prik_language c)
+        elseif(PRIK_LINK_LIBRARIES AND _prik_linker_language)
+            set(_prik_language "${_prik_linker_language}")
         else()
-            message(FATAL_ERROR "PRIK contract module ${name} requires native FORTRAN_SOURCES or C_SOURCES")
+            message(FATAL_ERROR "PRIK contract module ${name} requires native sources, or LINK_LIBRARIES with LINKER_LANGUAGE")
         endif()
     else()
         if(_prik_sources)
@@ -198,13 +275,27 @@ function(prik_add_module name)
     if(PRIK_NO_COMPILE_INPUT_SOURCES)
         list(APPEND _prik_generate_command --no-compile-input-sources)
     endif()
+    if((PRIK_NO_COMPILE_INPUT_SOURCES OR _prik_contract) AND NOT _prik_native_fortran_sources AND NOT _prik_native_c_sources)
+        list(APPEND _prik_generate_command --external-native-implementation)
+    endif()
     list(APPEND _prik_generate_command --module-name "${name}")
     list(APPEND _prik_generate_command --language "${_prik_language}")
-    # Later PRIK_ARGS may override this when source analysis requires a
-    # distinct compiler, but CMake's selected toolchain is the default.
+    # PRIK analyzes and probes with CMake's selected compiler; CMake retains
+    # ownership of all actual compilation and linking.
     list(APPEND _prik_generate_command --compiler "${_prik_analysis_compiler}")
+    if(CMAKE_Fortran_COMPILER)
+        list(APPEND _prik_generate_command --analysis-fortran-compiler "${CMAKE_Fortran_COMPILER}")
+    endif()
     _prik_append_cli_flags(_prik_generate_command --native-compile-flags PRIK_FORTRAN_FLAGS)
     _prik_append_cli_flags(_prik_generate_command --native-c-compile-flags PRIK_C_FLAGS)
+    _prik_append_cli_flags(_prik_generate_command --wrapper-fortran-flags PRIK_WRAPPER_FORTRAN_FLAGS)
+    _prik_append_cli_flags(_prik_generate_command --wrapper-c-flags PRIK_WRAPPER_C_FLAGS)
+    if(PRIK_NO_STANDARD_LOGICALS)
+        list(APPEND _prik_generate_command --no-standard-logicals)
+    endif()
+    if(_prik_linker_language)
+        list(APPEND _prik_generate_command --native-linker-language "${_prik_linker_language}")
+    endif()
     foreach(_include_dir IN LISTS _prik_include_dirs _prik_module_dirs)
         list(APPEND _prik_generate_command -I "${_include_dir}")
     endforeach()
@@ -242,7 +333,24 @@ function(prik_add_module name)
     if(NOT _prik_planned_outputs)
         message(FATAL_ERROR "PRIK did not return generated outputs for ${name}")
     endif()
-    _prik_json_string_list(_prik_semantic_dependencies "${_prik_plan_json}" sources)
+    _prik_json_string_list(_prik_semantic_dependencies "${_prik_plan_json}" semantic_dependencies)
+    _prik_json_string_list(_prik_extension_link_flags "${_prik_plan_json}" extension_link_flags)
+
+    string(JSON _prik_linker_language_type TYPE "${_prik_plan_json}" linker_language)
+    if(_prik_linker_language_type STREQUAL "STRING")
+        string(JSON _prik_required_linker_language GET "${_prik_plan_json}" linker_language)
+    elseif(NOT _prik_linker_language_type STREQUAL "NULL")
+        message(FATAL_ERROR "PRIK returned an invalid linker_language for ${name}")
+    endif()
+
+    string(
+        JSON _prik_generated_unit_count
+        ERROR_VARIABLE _prik_generated_plan_error
+        LENGTH "${_prik_plan_json}" generated_compilation_units
+    )
+    if(_prik_generated_plan_error)
+        message(FATAL_ERROR "PRIK did not return generated compilation units: ${_prik_generated_plan_error}")
+    endif()
 
     string(
         JSON _prik_native_unit_count
@@ -317,8 +425,31 @@ function(prik_add_module name)
     if(_prik_native_target_sources)
         target_sources("${name}" PRIVATE ${_prik_native_target_sources})
     endif()
+    if(_prik_generated_unit_count GREATER 0)
+        math(EXPR _prik_last_generated_unit_index "${_prik_generated_unit_count} - 1")
+        foreach(_prik_generated_unit_index RANGE 0 ${_prik_last_generated_unit_index})
+            _prik_apply_compilation_unit(
+                "${name}" "${_prik_plan_json}" generated ${_prik_generated_unit_index} TRUE
+                "${_prik_plan_dir}" "${_prik_output_dir}"
+            )
+        endforeach()
+    endif()
+    if(_prik_native_unit_count GREATER 0)
+        math(EXPR _prik_last_native_unit_index "${_prik_native_unit_count} - 1")
+        foreach(_prik_native_unit_index RANGE 0 ${_prik_last_native_unit_index})
+            _prik_apply_compilation_unit(
+                "${name}" "${_prik_plan_json}" native ${_prik_native_unit_index} FALSE
+                "${_prik_plan_dir}" "${_prik_output_dir}"
+            )
+        endforeach()
+    endif()
     set_target_properties("${name}" PROPERTIES PREFIX "" OUTPUT_NAME "${name}")
-    if(_prik_language STREQUAL "fortran" OR _prik_native_fortran_sources)
+    if(_prik_required_linker_language STREQUAL "fortran")
+        set_property(TARGET "${name}" PROPERTY LINKER_LANGUAGE Fortran)
+    elseif(_prik_required_linker_language STREQUAL "c")
+        set_property(TARGET "${name}" PROPERTY LINKER_LANGUAGE C)
+    endif()
+    if(_prik_required_linker_language STREQUAL "fortran")
         set_target_properties("${name}" PROPERTIES Fortran_MODULE_DIRECTORY "${_prik_output_dir}")
     endif()
 
@@ -330,16 +461,10 @@ function(prik_add_module name)
             ${_prik_include_dirs}
             ${_prik_module_dirs}
     )
-    foreach(_flag IN LISTS PRIK_FORTRAN_FLAGS)
-        target_compile_options("${name}" PRIVATE "$<$<COMPILE_LANGUAGE:Fortran>:${_flag}>")
-    endforeach()
-    foreach(_flag IN LISTS PRIK_C_FLAGS)
-        target_compile_options("${name}" PRIVATE "$<$<COMPILE_LANGUAGE:C>:${_flag}>")
-    endforeach()
     if(PRIK_LINK_LIBRARIES)
         target_link_libraries("${name}" PRIVATE ${PRIK_LINK_LIBRARIES})
     endif()
-    if(PRIK_LINK_OPTIONS)
-        target_link_options("${name}" PRIVATE ${PRIK_LINK_OPTIONS})
+    if(_prik_extension_link_flags OR PRIK_LINK_OPTIONS)
+        target_link_options("${name}" PRIVATE ${_prik_extension_link_flags} ${PRIK_LINK_OPTIONS})
     endif()
 endfunction()

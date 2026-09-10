@@ -98,6 +98,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-objects PATH ...` | Links object files, static archives, or shared libraries. |
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
+| `--native-linker-language {c,fortran}` | Requires the named final linker language when prebuilt inputs do not carry it. |
 | `--native-library-dir DIR ...` | Library search directories and runtime paths. |
 | `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
 | `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
@@ -226,12 +227,18 @@ python3 -m prik generate --pyi --language c path/to/api.c --out api.pyi
 a valid wrapper plan; they skip object compilation and linking, and use
 `--out-dir`. `--cmake` writes the CMake project; its CMake configuration later
 runs PRIK's wrapper-generation step, while CMake owns compilation and linking.
+In CMake mode, `--compiler` and `--wrapper-compiler-debug` are rejected:
+CMake's selected compiler and build configuration own those choices. Native
+and generated-wrapper flag options remain distinct in the generated helper
+call, `--no-standard-logicals` maps to PRIK's CMake compilation plan, and
+`--lto` maps to CMake's interprocedural-optimization target property.
 With no `--out`, `generate --pyi` prints every generated
 contract. For Fortran, `--out PATH` names a package directory containing
 `__init__.pyi` and any module leaves. For C, it names the single output `.pyi`
 file. Bare `--out` writes beside the inputs. The [source-to-contract
 layouts](pyi-format.md#source-to-contract-layout) show both forms.
-`--compiler` and `-I` affect only preprocessing and datatype measurement.
+Outside CMake mode, `--compiler` and `-I` affect preprocessing and datatype
+measurement as documented by the selected command.
 
 In `.pyi` Makefile mode, PRIK writes `<out-dir>/prik-build.json` first, then
 generates `<out-dir>/Makefile.prik` from that manifest.
