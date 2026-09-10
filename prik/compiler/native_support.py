@@ -29,12 +29,21 @@ def _numpy_version_header() -> str:
     return header
 
 
+def native_support_output_paths(imports, *, prik_dirpath) -> tuple[Path, ...]:
+    """Return build-relevant files written for requested native support."""
+    if not any(name == _NATIVE_SUPPORT_IMPORT or name.startswith(f"{_NATIVE_SUPPORT_IMPORT}/") for name in imports):
+        return ()
+    destination = Path(prik_dirpath) / _NATIVE_SUPPORT_IMPORT
+    return destination / "prik_binding.h", destination / "numpy_version.h"
+
+
 def install_native_support(imports, *, prik_dirpath, verbose: bool | int = False) -> None:
     """Write header-only native binding support when a generated binding imports it."""
-    if not any(name == _NATIVE_SUPPORT_IMPORT or name.startswith(f"{_NATIVE_SUPPORT_IMPORT}/") for name in imports):
+    outputs = native_support_output_paths(imports, prik_dirpath=prik_dirpath)
+    if not outputs:
         return
 
-    destination = Path(prik_dirpath) / _NATIVE_SUPPORT_IMPORT
+    destination = outputs[0].parent
     if verbose:
         print(f">> Write native support: {destination}")
     with FileLock(str(destination.with_suffix(".lock"))):

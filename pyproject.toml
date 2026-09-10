@@ -87,6 +87,9 @@ include = ["prik*"]
 [tool.setuptools.package-data]
 "prik.runtime.native_support" = ["*.h", "LICENSE"]
 
+[tool.setuptools.data-files]
+"share/prik/cmake" = ["cmake/UsePRIK.cmake"]
+
 [project.scripts]
 prik = "prik.cli:main"
 

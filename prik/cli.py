@@ -62,7 +62,7 @@ _BUILD_USAGE = (
 _PARSE_USAGE = "%(prog)s INPUT [INPUT ...] [OPTIONS]"
 _SEMANTICS_USAGE = "%(prog)s INPUT [INPUT ...] [OPTIONS]"
 _GENERATE_USAGE = (
-    "%(prog)s (--pyi | --sources | --makefile)\n"
+    "%(prog)s (--pyi | --sources | --makefile | --cmake)\n"
     "                                INPUT [INPUT ...] [OPTIONS]\n"
     "       %(prog)s (--sources | --makefile)\n"
     "                                --build-manifest PATH [OVERRIDES]"
@@ -161,7 +161,10 @@ _GENERATE_HELP_EPILOG = (
     "    python3 -m prik generate --sources points.f90 --out-dir build\n"
     "\n"
     "  Reproducible Makefile build:\n"
-    "    python3 -m prik generate --makefile points.f90 --out-dir build\n\n"
+    "    python3 -m prik generate --makefile points.f90 --out-dir build\n"
+    "\n"
+    "  Standalone CMake project:\n"
+    "    python3 -m prik generate --cmake points.f90 --out-dir build/points\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
 )
 _PROBE_HELP_EPILOG = (
@@ -954,7 +957,9 @@ def _wrapper_compile_options_used(args: argparse.Namespace) -> bool:
 
 def _is_wrapper_build(args: argparse.Namespace) -> bool:
     """Return whether the command projects and renders a wrapper plan."""
-    return args.command == "build" or (args.command == "generate" and (args.generate_sources or args.makefile))
+    return args.command == "build" or (
+        args.command == "generate" and (args.generate_sources or args.makefile or getattr(args, "cmake", False))
+    )
 
 
 def _has_semantic_stage(args: argparse.Namespace) -> bool:
@@ -1070,11 +1075,17 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
     if not _is_wrapper_build(args):
         return
     if args.command == "generate" and args.out is not None:
-        parser.error("generate --sources/--makefile uses --out-dir, not --out")
+        parser.error("generate --sources/--makefile/--cmake uses --out-dir, not --out")
+    if args.command == "generate" and getattr(args, "module_name", None) is not None:
+        _validate_wrapper_out(argparse.Namespace(out=args.module_name), parser)
+    if getattr(args, "plan_only", False) and not (args.command == "generate" and args.generate_sources):
+        parser.error("--plan requires generate --sources")
     if args.command == "build":
         _validate_wrapper_out(args, parser)
 
     if _wrapper_build_uses_manifest(args):
+        if getattr(args, "cmake", False) or getattr(args, "plan_only", False):
+            parser.error("generate --cmake/--plan requires source or contract inputs, not --build-manifest")
         _validate_manifest_wrapper_options(args, parser)
         return
 
@@ -1153,6 +1164,8 @@ def _validate_pyi_generation_options(args: argparse.Namespace, parser: argparse.
         invalid.append("--out-dir")
     if args.build_manifest is not None:
         invalid.append("--build-manifest")
+    if getattr(args, "module_name", None) is not None:
+        invalid.append("--module-name")
     if _native_link_options_used(args):
         invalid.append("native link options")
     if _wrapper_compile_options_used(args) or args.strict_wrapper_names:
@@ -1319,6 +1332,8 @@ def _wrapper_shared_library_alias_path(result, raw_out: str | None) -> Path:
 
 
 def _wrapper_output_name(args: argparse.Namespace) -> str | None:
+    if getattr(args, "module_name", None) is not None:
+        return args.module_name
     if getattr(args, "out", None) is None:
         return None
     return Path(args.out).stem
@@ -1411,6 +1426,17 @@ def _run_stage_reports_with_diagnostics(args: argparse.Namespace, preprocessing:
 
 
 def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig):
+    if getattr(args, "cmake", False):
+        from prik.cmake import write_cmake_project
+
+        return write_cmake_project(
+            paths=args.paths,
+            output_dir=getattr(args, "out_dir", None) or "__prik__",
+            language=args.language,
+            args=args,
+            native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
+        )
+
     from prik.pipeline.build import (
         _build_manifest_native_language,
         build_c_extension,
@@ -1467,6 +1493,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
+            _plan_only=getattr(args, "plan_only", False),
             jobs=getattr(args, "jobs", None),
             standard_logicals=getattr(args, "standard_logicals", True),
             verbose=1 if getattr(args, "verbose", False) else 0,
@@ -1509,6 +1536,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
+            _plan_only=getattr(args, "plan_only", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
@@ -1550,6 +1578,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         native_include_dirs=_cli_build_include_dirs(args),
         makefile=getattr(args, "makefile", False),
         generate_sources=getattr(args, "generate_sources", False),
+        _plan_only=getattr(args, "plan_only", False),
         jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
         wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
@@ -1895,6 +1924,10 @@ def _print_wrap_build_output(args: argparse.Namespace, result) -> None:
     if args.json:
         print(json.dumps(payload, indent=2))
         _print_verbose_total_build_time(args)
+        return
+
+    if payload.get("cmake_project"):
+        print(f"Generated CMake project: {payload['cmake_project']}")
         return
 
     if payload.get("compiled", True):
@@ -2369,6 +2402,8 @@ _PIPELINE_DEFAULTS = {
     "pyi": False,
     "generate_sources": False,
     "makefile": False,
+    "cmake": False,
+    "plan_only": False,
     "show_vars": False,
     "print_limit": None,
     "vars_limit": None,
@@ -2393,6 +2428,7 @@ _PIPELINE_DEFAULTS = {
     "wrapper_fortran_flags": None,
     "wrapper_c_flags": None,
     "out": None,
+    "module_name": None,
     "out_dir": None,
     "verbose": False,
     "json": False,
@@ -2735,11 +2771,16 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         action="store_true",
         help="Generate wrapper sources and Makefile.prik without compiling",
     )
+    modes.add_argument(
+        "--cmake",
+        action="store_true",
+        help="Generate a standalone CMake project that uses UsePRIK.cmake",
+    )
     positional_group = parser.add_argument_group("positional arguments")
     _add_paths(
         positional_group,
         metavar="INPUT",
-        help_text="Source input(s), or one semantic .pyi contract for --sources/--makefile",
+        help_text="Source input(s), or one semantic .pyi contract for --sources/--makefile/--cmake",
     )
     input_group = parser.add_argument_group("input options")
     _add_language_option(
@@ -2771,8 +2812,14 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         json_help="Print generated artifact metadata as JSON",
         out_help="Contract package directory for --pyi; bare --out writes beside inputs",
         out_metavar="PATH",
-        out_dir_help="Artifact directory for --sources/--makefile",
+        out_dir_help="Artifact directory for --sources/--makefile/--cmake",
     )
+    output_group.add_argument(
+        "--module-name",
+        metavar="NAME",
+        help="Python module name for generated wrapper sources",
+    )
+    output_group.add_argument("--plan", dest="plan_only", action="store_true", help=argparse.SUPPRESS)
     diagnostic_group = parser.add_argument_group("diagnostic options")
     _add_diagnostic_controls(diagnostic_group)
     return parser

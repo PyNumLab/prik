@@ -71,6 +71,7 @@ nav:
               - Symbols, Headers, and Dependencies: user/guide/c/symbols-headers-and-dependencies.md
           - Build Workflows:
               - Building the Shared Library: user/guide/building-shared-library.md
+              - CMake Builds: user/guide/cmake.md
               - IPython and Jupyter Notebooks: user/guide/notebooks.md
       - Tutorials:
           - Run PRIK in a Notebook: user/tutorials/notebook-quickstart.md

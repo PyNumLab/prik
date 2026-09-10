@@ -21,6 +21,8 @@ you have not.
 - [Python API](python-api.md) — the build entrypoints and advanced package imports.
 - [Build manifests and Makefiles](configuration-files.md) — how both files are
   generated, what they contain, and how to build or replay them.
+- [CMake Builds](../guide/cmake.md) — the packaged CMake helper and standalone
+  CMake project generation.
 
 ## Contracts
 

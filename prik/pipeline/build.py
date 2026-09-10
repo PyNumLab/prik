@@ -34,7 +34,7 @@ from types import ModuleType
 
 from prik.compiler.objects import ObjectFile
 from prik.compiler.compilers import Compiler, get_condaless_search_path
-from prik.compiler.native_support import install_native_support
+from prik.compiler.native_support import install_native_support, native_support_output_paths
 from prik.parsers.c import parse_c_file
 from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.parsers.fortran.parser import parse_fortran_project
@@ -1093,19 +1093,48 @@ def _build_generated_wrapper_extension(
     compiler: Compiler | None = None,
     compile_jobs: int | None = None,
     verbose: bool | int = False,
+    _plan_only: bool = False,
 ) -> WrapperBuildResult:
-    """Write, compile, and link one complete generated wrapper."""
-    # Materialize the canonical wrapper output before creating compiler inputs.
+    """Write, compile, and link one complete generated wrapper.
+
+    ``_plan_only`` preserves the completed wrapper and native plans while
+    returning their deterministic generated-source paths without writing,
+    compiling, or linking. Build integrations use that narrow query to declare
+    their own dependency graph before requesting normal source generation.
+    """
+    # Freeze the canonical wrapper before selecting materialization or planning.
     rendered.freeze()
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
     shared_output_path = Path(shared_library_output_dir) if shared_library_output_dir is not None else output_path
+    resolved_native_build_plan = native_build_plan or NativeBuildPlan()
+    if _plan_only:
+        generated_sources = tuple(_generated_source_output_path(output_path, path) for path in rendered.generated_files)
+        native_support_imports = _generated_wrapper_native_support_imports(rendered.native_support_keys)
+        native_support_files = native_support_output_paths(
+            native_support_imports,
+            prik_dirpath=output_path,
+        )
+        return WrapperBuildResult(
+            sources=tuple(Path(source) for source in sources),
+            module_name=rendered.module_name,
+            output_dir=output_path,
+            # This path is informational in a plan-only result; CMake owns the
+            # real extension suffix and output location.
+            shared_library=shared_output_path / f"{rendered.module_name}.so",
+            build_makefile=None,
+            compiled=False,
+            generated_sources=generated_sources,
+            generated_files=(*generated_sources, *native_support_files),
+            native_build_plan=resolved_native_build_plan,
+            native_generated_code_groups=rendered.native_generated_code_groups,
+        )
+
+    output_path.mkdir(parents=True, exist_ok=True)
     shared_output_path.mkdir(parents=True, exist_ok=True)
     _write_generated_wrapper_sources(rendered, output_path, verbose=verbose)
 
     # Prepare generated-object inputs and their native support files.
     compiler = compiler or _new_compiler()
-    resolved_native_build_plan = native_build_plan or NativeBuildPlan()
     bridge_objects, binding_objects = _generated_wrapper_object_stages(
         rendered,
         output_path,
@@ -3294,6 +3323,7 @@ def build_fortran_extension(
     wrapper_c_flags: Iterable[str] | None = None,
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _plan_only: bool = False,
 ) -> WrapperBuildResult:
     """Build a Python extension from one or more Fortran source files.
 
@@ -3395,7 +3425,8 @@ def build_fortran_extension(
     # 1. Collect the source and native implementation inputs.
     source_paths = _source_paths(sources)
     output_path, shared_library_output_path = _wrapper_output_paths(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    if not _plan_only:
+        output_path.mkdir(parents=True, exist_ok=True)
     preprocessing = preprocessing or _default_preprocessing_config()
     supplemental_source_paths = tuple(Path(path) for path in (native_fortran_sources or ()))
     input_implementation_paths = source_paths if compile_input_sources else ()
@@ -3437,7 +3468,7 @@ def build_fortran_extension(
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
     )
-    contract_files = _write_build_contract_package(source_modules, output_path, verbose=verbose)
+    contract_files = () if _plan_only else _write_build_contract_package(source_modules, output_path, verbose=verbose)
 
     # 4. Prepare native compilation, dependency batches, and link inputs.
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
@@ -3466,6 +3497,7 @@ def build_fortran_extension(
         compiler=compiler,
         compile_jobs=1 if generation_only else compile_jobs,
         verbose=verbose,
+        _plan_only=_plan_only,
     )
     result = _finalize_build_mode(
         result,
@@ -3517,6 +3549,7 @@ def build_c_extension(
     wrapper_c_flags: Iterable[str] | None = None,
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _plan_only: bool = False,
 ) -> WrapperBuildResult:
     """Build a direct-only C extension from explicit C implementation sources.
 
@@ -3619,12 +3652,14 @@ def build_c_extension(
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
     )
-    output_path.mkdir(parents=True, exist_ok=True)
-    contract_files = _write_build_contract_package(
-        tuple(_wrapped_c_translation_unit(module) for module in source_modules),
-        output_path,
-        verbose=verbose,
-    )
+    contract_files = ()
+    if not _plan_only:
+        output_path.mkdir(parents=True, exist_ok=True)
+        contract_files = _write_build_contract_package(
+            tuple(_wrapped_c_translation_unit(module) for module in source_modules),
+            output_path,
+            verbose=verbose,
+        )
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
@@ -3642,6 +3677,7 @@ def build_c_extension(
         compiler=compiler,
         compile_jobs=1 if generation_only else compile_jobs,
         verbose=verbose,
+        _plan_only=_plan_only,
     )
     result = _finalize_build_mode(
         result,
@@ -3691,6 +3727,7 @@ def build_pyi_extension(
     wrapper_c_flags: Iterable[str] | None = None,
     standard_logicals: bool = True,
     _on_total_build_time: Callable[[float], None] | None = None,
+    _plan_only: bool = False,
 ) -> WrapperBuildResult:
     """Build a Python extension from an editable semantic ``.pyi`` contract.
 
@@ -3823,7 +3860,8 @@ def build_pyi_extension(
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
     )
-    output_path.mkdir(parents=True, exist_ok=True)
+    if not _plan_only:
+        output_path.mkdir(parents=True, exist_ok=True)
 
     # 3. Prepare native compilation and link inputs before selecting the compiler.
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
@@ -3853,6 +3891,7 @@ def build_pyi_extension(
         compiler=compiler,
         compile_jobs=1 if generation_only else compile_jobs,
         verbose=verbose,
+        _plan_only=_plan_only,
     )
     result = _with_pyi_manifest(
         result,

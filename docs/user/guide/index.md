@@ -45,7 +45,9 @@ workflow that matches how you run PRIK.
 ## Build Workflows
 
 - [Building the Shared Library](building-shared-library.md) — compilers,
-  source sets, output placement, and Makefiles
+  source sets, output placement, Makefiles, and CMake
+- [CMake Builds](cmake.md) — integrate PRIK into an existing CMake project or
+  generate a standalone one
 - [IPython and Jupyter Notebooks](notebooks.md) — compile Fortran and C cells
   and edit semantic contracts interactively
 

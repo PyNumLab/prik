@@ -22,7 +22,7 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 | no subcommand | Builds one importable extension from Fortran source, a supported C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
 | `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
-| `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
+| `generate` | Writes `.pyi` contracts, wrapper sources, a Makefile, or a CMake project without compiling. |
 | `probe` | Prints compiler-target datatype and ABI facts. |
 
 ## Getting help
@@ -197,7 +197,7 @@ Support](../language-support/c-support.md) before building a C API.
 `generate` requires exactly one output mode:
 
 ```bash
-python3 -m prik generate (--pyi | --sources | --makefile) INPUT [INPUT ...] [OPTIONS]
+python3 -m prik generate (--pyi | --sources | --makefile | --cmake) INPUT [INPUT ...] [OPTIONS]
 python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRIDES]
 ```
 
@@ -206,11 +206,14 @@ python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRID
 | `--pyi` | Writes the editable semantic `.pyi` contract. |
 | `--sources` | Writes wrapper sources without compiling. |
 | `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik`. |
+| `--cmake` | Writes a standalone `CMakeLists.txt` that uses `UsePRIK.cmake`. |
+| `--module-name NAME` | Sets the Python module name used by generated wrapper sources; `--cmake` requires an ASCII C target name. |
 
 ```bash
 python3 -m prik generate --pyi points.f90 --out contracts/points
 python3 -m prik generate --sources points.f90 --out-dir build
 python3 -m prik generate --makefile points.f90 --out-dir build
+python3 -m prik generate --cmake points.f90 --out-dir build/points
 ```
 
 For a C source contract, `--language c` is valid with `--pyi`:
@@ -219,9 +222,11 @@ For a C source contract, `--language c` is valid with `--pyi`:
 python3 -m prik generate --pyi --language c path/to/api.c --out api.pyi
 ```
 
-`--sources` and `--makefile` still run preprocessing and semantic policy to
-produce a valid wrapper plan; they skip object compilation and linking, and
-use `--out-dir`. With no `--out`, `generate --pyi` prints every generated
+`--sources` and `--makefile` run preprocessing and semantic policy to produce
+a valid wrapper plan; they skip object compilation and linking, and use
+`--out-dir`. `--cmake` writes the CMake project; its CMake configuration later
+runs PRIK's wrapper-generation step, while CMake owns compilation and linking.
+With no `--out`, `generate --pyi` prints every generated
 contract. For Fortran, `--out PATH` names a package directory containing
 `__init__.pyi` and any module leaves. For C, it names the single output `.pyi`
 file. Bare `--out` writes beside the inputs. The [source-to-contract
