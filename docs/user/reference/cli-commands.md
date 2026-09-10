@@ -100,7 +100,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
 | `--native-linker-language {c,fortran}` | Requires the named final linker language when prebuilt inputs do not carry it. |
 | `--native-library-dir DIR ...` | Library search directories and runtime paths. |
-| `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
+| `--lto` | Enables link-time optimization for generated and native compilation and the extension link. Direct builds add `-flto`; generated CMake projects initialize CMake IPO. |
 | `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
 | `--collision-adapter-all` | Applies `--collision-adapter` to every eligible C function in the build. |
 | `--positional-only` | For Fortran and C, exposes every wrapper whose arguments are all required as positional-only, renaming them `arg0`..`argN`. |
@@ -231,7 +231,8 @@ In CMake mode, `--compiler` and `--wrapper-compiler-debug` are rejected:
 CMake's selected compiler and build configuration own those choices. Native
 and generated-wrapper flag options remain distinct in the generated helper
 call, `--no-standard-logicals` maps to PRIK's CMake compilation plan, and
-`--lto` maps to CMake's interprocedural-optimization target property.
+`--lto` initializes CMake interprocedural optimization before PRIK creates its
+native and extension targets.
 With no `--out`, `generate --pyi` prints every generated
 contract. For Fortran, `--out PATH` names a package directory containing
 `__init__.pyi` and any module leaves. For C, it names the single output `.pyi`

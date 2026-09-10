@@ -908,6 +908,7 @@ def test_use_prik_cmake_requires_the_c_language(tmp_path: Path):
             str(project),
             "-B",
             str(project / "build"),
+            f"-DCMAKE_C_COMPILER={shutil.which('gcc')}",
             f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}",
         ],
         env=_environment(),

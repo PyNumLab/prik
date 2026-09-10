@@ -2363,7 +2363,7 @@ def _add_extension_link_options(group: argparse._ArgumentGroup) -> None:
     group.add_argument(
         "--lto",
         action="store_true",
-        help="Add -flto to generated and native compilation and to the extension link",
+        help="Enable link-time optimization for generated and native compilation and the extension link",
     )
     group.add_argument(
         "--collision-adapter",

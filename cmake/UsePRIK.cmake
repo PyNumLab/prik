@@ -196,7 +196,10 @@ function(prik_add_module name)
     endif()
     _prik_validate_args(PRIK_PRIK_ARGS)
 
-    if(NOT CMAKE_C_COMPILER OR NOT CMAKE_C_COMPILER_ID)
+    get_property(_prik_enabled_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+    list(FIND _prik_enabled_languages C _prik_c_language_index)
+    list(FIND _prik_enabled_languages Fortran _prik_fortran_language_index)
+    if(_prik_c_language_index EQUAL -1 OR NOT CMAKE_C_COMPILER)
         message(
             FATAL_ERROR
             "PRIK Python extensions require CMake's C language to be enabled. "
@@ -301,24 +304,26 @@ function(prik_add_module name)
     _prik_validate_source_suffixes(fortran _prik_native_fortran_sources)
     _prik_validate_source_suffixes(c _prik_native_c_sources)
 
-    if(_prik_linker_language STREQUAL "fortran" AND NOT CMAKE_Fortran_COMPILER)
-        message(
-            FATAL_ERROR
-            "PRIK module ${name} requires CMake's Fortran language to be enabled for LINKER_LANGUAGE Fortran. "
-            "Use project(... LANGUAGES C Fortran) or enable_language(Fortran)."
-        )
+    if(_prik_linker_language STREQUAL "fortran")
+        if(_prik_fortran_language_index EQUAL -1 OR NOT CMAKE_Fortran_COMPILER)
+            message(
+                FATAL_ERROR
+                "PRIK module ${name} requires CMake's Fortran language to be enabled for LINKER_LANGUAGE Fortran. "
+                "Use project(... LANGUAGES C Fortran) or enable_language(Fortran)."
+            )
+        endif()
     endif()
 
     set(_prik_output_dir "${CMAKE_CURRENT_BINARY_DIR}/prik/${name}")
     file(MAKE_DIRECTORY "${_prik_output_dir}")
 
     if(_prik_language STREQUAL "fortran")
+        if(_prik_fortran_language_index EQUAL -1 OR NOT CMAKE_Fortran_COMPILER)
+            message(FATAL_ERROR "PRIK module ${name} requires CMake to enable Fortran")
+        endif()
         set(_prik_analysis_compiler "${CMAKE_Fortran_COMPILER}")
     else()
         set(_prik_analysis_compiler "${CMAKE_C_COMPILER}")
-    endif()
-    if(NOT _prik_analysis_compiler)
-        message(FATAL_ERROR "PRIK module ${name} requires CMake to enable ${_prik_language}")
     endif()
 
     set(_prik_generate_command "${Python_EXECUTABLE}" -m prik generate --sources)
