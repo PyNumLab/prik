@@ -136,17 +136,32 @@ def _prik_args(args) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _link_item_path(path: Path, base: Path) -> str:
+    """Keep a prebuilt link input recognizable to CMake as a filesystem path.
+
+    ``target_link_libraries()`` distinguishes file paths from library names and
+    linker flags by the item's own text, so a bare relative path would leave
+    that category ambiguous. Rooting the path in ``CMAKE_CURRENT_LIST_DIR``
+    keeps the generated project relocatable alongside its inputs.
+    """
+    try:
+        relative = _relative_path(path, base)
+    except ValueError:  # pragma: no cover - only reachable across Windows drives
+        return path.as_posix()
+    return "${CMAKE_CURRENT_LIST_DIR}/" + relative
+
+
 def _link_values(
     args,
     *,
     base: Path,
     native_link_items: Iterable[dict[str, object]],
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    libraries = [str(Path(path).resolve()) for path in (args.native_objects or ())]
+) -> tuple[str, ...]:
+    libraries = [_link_item_path(Path(path).resolve(), base) for path in (args.native_objects or ())]
     for item in native_link_items:
         kind = item["kind"]
         if kind in {"object", "archive", "shared_library"}:
-            libraries.append(str(Path(str(item["path"])).resolve()))
+            libraries.append(_link_item_path(Path(str(item["path"])).resolve(), base))
         elif kind == "named_library":
             libraries.append(str(item["name"]))
         elif kind == "linker_argument":
@@ -156,10 +171,7 @@ def _link_values(
         else:  # pragma: no cover - the CLI normalizer rejects this first.
             raise ValueError(f"Unsupported native link item kind: {kind!r}")
     libraries.extend(_flag_values(args.native_libraries))
-    options: list[str] = [f"-L{Path(path).resolve()}" for path in (args.native_library_dirs or ())]
-    return tuple(
-        _relative_path(Path(value), base) if Path(value).is_absolute() else value for value in libraries
-    ), tuple(options)
+    return tuple(libraries)
 
 
 def _module_inputs(*, paths: Iterable[str | Path], args) -> _CMakeModuleInputs:
@@ -268,13 +280,16 @@ def _append_build_options(
     c_flags = _flag_values(args.native_c_compile_flags)
     wrapper_fortran_flags = _flag_values(args.wrapper_fortran_flags)
     wrapper_c_flags = _flag_values(args.wrapper_c_flags)
-    libraries, link_options = _link_values(args, base=project_dir, native_link_items=native_link_items)
+    libraries = _link_values(args, base=project_dir, native_link_items=native_link_items)
     _append_values(lines, "FORTRAN_FLAGS", fortran_flags)
     _append_values(lines, "C_FLAGS", c_flags)
     _append_values(lines, "WRAPPER_FORTRAN_FLAGS", wrapper_fortran_flags)
     _append_values(lines, "WRAPPER_C_FLAGS", wrapper_c_flags)
     _append_values(lines, "LINK_LIBRARIES", libraries)
-    _append_values(lines, "LINK_OPTIONS", link_options)
+    # A native library directory is both a link-time search path and a runtime
+    # search path, so it reaches CMake as a link directory rather than a raw
+    # -L flag that carries no runtime meaning.
+    _append_block(lines, "LIBRARY_DIRS", _absolute_paths(args.native_library_dirs or ()), base=project_dir)
     if args.native_linker_language:
         lines.append(f"    LINKER_LANGUAGE {args.native_linker_language.capitalize()}")
     if not args.standard_logicals:

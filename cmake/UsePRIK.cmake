@@ -187,6 +187,7 @@ function(prik_add_module name)
         WRAPPER_FORTRAN_FLAGS
         WRAPPER_C_FLAGS
         LINK_LIBRARIES
+        LIBRARY_DIRS
         LINK_OPTIONS
         PRIK_ARGS
     )
@@ -226,6 +227,7 @@ function(prik_add_module name)
     _prik_make_absolute_paths(_prik_c_sources ${PRIK_C_SOURCES})
     _prik_make_absolute_paths(_prik_include_dirs ${PRIK_INCLUDE_DIRS})
     _prik_make_absolute_paths(_prik_module_dirs ${PRIK_MODULE_DIRS})
+    _prik_make_absolute_paths(_prik_library_dirs ${PRIK_LIBRARY_DIRS})
 
     if(PRIK_LINKER_LANGUAGE)
         string(TOLOWER "${PRIK_LINKER_LANGUAGE}" _prik_linker_language)
@@ -544,6 +546,13 @@ function(prik_add_module name)
     )
     if(PRIK_LINK_LIBRARIES)
         target_link_libraries("${name}" PRIVATE ${PRIK_LINK_LIBRARIES})
+    endif()
+    if(_prik_library_dirs)
+        # A library directory is a link-time search path and, for a shared
+        # native library, the runtime search path the extension needs on
+        # import. INSTALL_RPATH stays under project control.
+        target_link_directories("${name}" PRIVATE ${_prik_library_dirs})
+        set_property(TARGET "${name}" APPEND PROPERTY BUILD_RPATH ${_prik_library_dirs})
     endif()
     if(_prik_extension_link_flags OR PRIK_LINK_OPTIONS)
         target_link_options("${name}" PRIVATE ${_prik_extension_link_flags} ${PRIK_LINK_OPTIONS})

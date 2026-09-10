@@ -99,7 +99,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
 | `--native-linker-language {c,fortran}` | Requires the named final linker language when prebuilt inputs do not carry it. |
-| `--native-library-dir DIR ...` | Library search directories and runtime paths. |
+| `--native-library-dir DIR ...` | Library search directories and runtime paths. Direct builds add `-L` and `-rpath`; generated CMake projects emit `LIBRARY_DIRS`. |
 | `--lto` | Enables link-time optimization for generated and native compilation and the extension link. Direct builds add `-flto`; generated CMake projects initialize CMake IPO. |
 | `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
 | `--collision-adapter-all` | Applies `--collision-adapter` to every eligible C function in the build. |
@@ -232,7 +232,12 @@ CMake's selected compiler and build configuration own those choices. Native
 and generated-wrapper flag options remain distinct in the generated helper
 call, `--no-standard-logicals` maps to PRIK's CMake compilation plan, and
 `--lto` initializes CMake interprocedural optimization before PRIK creates its
-native and extension targets.
+native and extension targets. Native link inputs keep their category and
+order: `--native-objects` and path-valued `--native-link-item` kinds become
+`LINK_LIBRARIES` file paths, `--native-library` a library name,
+`--native-link-item arg:` a linker argument, and `--native-library-dir` a
+`LIBRARY_DIRS` entry that is both a link search directory and a build runtime
+path.
 With no `--out`, `generate --pyi` prints every generated
 contract. For Fortran, `--out PATH` names a package directory containing
 `__init__.pyi` and any module leaves. For C, it names the single output `.pyi`

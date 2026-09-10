@@ -90,6 +90,26 @@ def _import_extension(module_name: str, build: Path):
         sys.path.remove(str(artifacts[0].parent))
 
 
+def _call_with_unassisted_loader(module_name: str, build: Path, expression: str, *, native_library: Path) -> str:
+    """Import the built extension with no loader path able to find its native library.
+
+    The interpreter keeps whatever loader environment it was started with, since
+    a shared-libpython build needs it, but that environment is asserted not to
+    resolve ``native_library``. Only the extension's own build rpath can.
+    """
+    artifacts = tuple(build.rglob(f"{module_name}*.so"))
+    assert artifacts, f"no CMake extension artifact in {build}"
+    environment = _environment()
+    for variable in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        searched = tuple(entry for entry in environment.get(variable, "").split(os.pathsep) if entry)
+        assert not any((Path(entry) / native_library.name).exists() for entry in searched), (
+            f"{variable} already resolves {native_library.name}, so the import would not prove a build rpath"
+        )
+    environment["PYTHONPATH"] = str(artifacts[0].parent) + os.pathsep + environment["PYTHONPATH"]
+    program = f"import numpy, {module_name}\nprint({expression})\n"
+    return _run([sys.executable, "-c", program], environment=environment).stdout.strip()
+
+
 def _write_project(project: Path, body: str, *, languages: str = "C Fortran") -> None:
     project.mkdir(parents=True, exist_ok=True)
     (project / "CMakeLists.txt").write_text(
@@ -392,12 +412,162 @@ def test_generate_cmake_preserves_ordered_native_link_items(tmp_path: Path):
     cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
     ordered_items = (
         '"-Wl,--start-group"',
-        f'"{Path(os.path.relpath(archive, project)).as_posix()}"',
+        f'"${{CMAKE_CURRENT_LIST_DIR}}/{Path(os.path.relpath(archive, project)).as_posix()}"',
         '"ordered"',
         '"-Wl,--end-group"',
     )
     positions = tuple(cmake_lists.index(item) for item in ordered_items)
     assert positions == tuple(sorted(positions))
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_generate_cmake_links_prebuilt_object_and_archive_paths(tmp_path: Path):
+    prebuilt = tmp_path / "prebuilt native inputs"
+    prebuilt.mkdir()
+    (tmp_path / "scaled.f90").write_text(
+        """real(8) function scaled(x) result(y)
+  real(8), intent(in) :: x
+  y = x * 3.0d0
+end function scaled
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "shifted.f90").write_text(
+        """real(8) function shifted(x) result(y)
+  real(8), intent(in) :: x
+  y = x + 7.0d0
+end function shifted
+""",
+        encoding="utf-8",
+    )
+    archive_object = prebuilt / "scaled.o"
+    archive = prebuilt / "libscaled.a"
+    linked_object = prebuilt / "shifted.o"
+    _run(["gfortran", "-c", "-fPIC", "-o", str(archive_object), str(tmp_path / "scaled.f90")])
+    _run(["ar", "rcs", str(archive), str(archive_object)])
+    _run(["gfortran", "-c", "-fPIC", "-o", str(linked_object), str(tmp_path / "shifted.f90")])
+    archive_object.unlink()
+
+    project = tmp_path / "prebuilt inputs project"
+    project.mkdir()
+    (project / "interface.f90").write_text(
+        """real(8) function scaled(x) result(y)
+  real(8), intent(in) :: x
+  y = x
+end function scaled
+
+real(8) function shifted(x) result(y)
+  real(8), intent(in) :: x
+  y = x
+end function shifted
+""",
+        encoding="utf-8",
+    )
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            str(project / "interface.f90"),
+            "--module-name",
+            "prebuilt_inputs",
+            "--no-compile-input-sources",
+            "--native-objects",
+            str(linked_object),
+            "--native-link-item",
+            f"archive:{archive}",
+            "--native-linker-language",
+            "fortran",
+            "--out-dir",
+            str(project),
+        ]
+    )
+
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    for prebuilt_path in (linked_object, archive):
+        relative = Path(os.path.relpath(prebuilt_path, project)).as_posix()
+        assert f'"${{CMAKE_CURRENT_LIST_DIR}}/{relative}"' in cmake_lists
+
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+    module = _import_extension("prebuilt_inputs", build)
+    assert module.scaled(np.float64(4.0)) == np.float64(12.0)
+    assert module.shifted(np.float64(4.0)) == np.float64(11.0)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_generate_cmake_native_library_dir_reaches_the_runtime_search_path(tmp_path: Path):
+    library_dir = tmp_path / "native runtime lib"
+    library_dir.mkdir()
+    (tmp_path / "runtime_value.f90").write_text(
+        """real(8) function runtime_value(x) result(y)
+  real(8), intent(in) :: x
+  y = x * 5.0d0
+end function runtime_value
+""",
+        encoding="utf-8",
+    )
+    native_library = library_dir / "libprikruntime.so"
+    _run(["gfortran", "-shared", "-fPIC", "-o", str(native_library), str(tmp_path / "runtime_value.f90")])
+
+    project = tmp_path / "runtime rpath project"
+    project.mkdir()
+    (project / "interface.f90").write_text(
+        """real(8) function runtime_value(x) result(y)
+  real(8), intent(in) :: x
+  y = x
+end function runtime_value
+""",
+        encoding="utf-8",
+    )
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            str(project / "interface.f90"),
+            "--module-name",
+            "runtime_rpath",
+            "--no-compile-input-sources",
+            "--native-library",
+            "prikruntime",
+            "--native-library-dir",
+            str(library_dir),
+            "--native-linker-language",
+            "fortran",
+            "--out-dir",
+            str(project),
+        ]
+    )
+
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    relative_library_dir = Path(os.path.relpath(library_dir, project)).as_posix()
+    assert f'LIBRARY_DIRS\n        "{relative_library_dir}"' in cmake_lists
+    # The directory carries CMake link and runtime meaning, so it is not also
+    # repeated as a bare -L linker flag.
+    assert "LINK_OPTIONS" not in cmake_lists
+
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran")
+    called = _call_with_unassisted_loader(
+        "runtime_rpath",
+        build,
+        "runtime_rpath.runtime_value(numpy.float64(3.0))",
+        native_library=native_library,
+    )
+    assert called == "15.0"
 
 
 @pytest.mark.fortran_end_to_end
@@ -1313,7 +1483,8 @@ def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
             "-I",
             "-c",
             f"import sys; sys.path.insert(0, {str(artifact.parent)!r}); "
-            "import installed_square; assert installed_square.installed_square(3.0) == 9.0",
+            "import numpy, installed_square; "
+            "assert installed_square.installed_square(numpy.float64(3.0)) == 9.0",
         ],
         cwd=artifact.parent,
         environment=clean_environment,

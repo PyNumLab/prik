@@ -22,6 +22,17 @@ release tags add a leading `v` to the package version.
   requirements, and standalone `--cmake --lto` initializes IPO for native and
   generated targets.
 
+- `prik generate --cmake` keeps each native link input in its own CMake
+  category: prebuilt objects, archives, and shared libraries stay filesystem
+  paths in `LINK_LIBRARIES` instead of becoming ambiguous relative tokens,
+  while library names and linker arguments keep their meaning and order.
+
+- `prik_add_module()` accepts `LIBRARY_DIRS`, mapping it to
+  `target_link_directories()` and the extension's `BUILD_RPATH`.
+  `generate --cmake` translates `--native-library-dir` into `LIBRARY_DIRS`, so
+  a shared native library outside the system search path is found both at link
+  time and on import without `LD_LIBRARY_PATH`.
+
 - `prik-build.json` schema 5 records generated/native compilation-unit ABI
   flags and explicit native linker-language requirements.
 

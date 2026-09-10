@@ -65,7 +65,8 @@ cmake --build build
 `prik_add_module()` also accepts `SOURCES` for source-first input, `CONTRACT`
 with `FORTRAN_SOURCES` or `C_SOURCES` for an authored semantic `.pyi`,
 `INCLUDE_DIRS`, `MODULE_DIRS`, native and generated-source compile flag groups,
-`LINK_LIBRARIES`, `LINK_OPTIONS`, and additional generation-only `PRIK_ARGS`.
+`LINK_LIBRARIES`, `LIBRARY_DIRS`, `LINK_OPTIONS`, and additional
+generation-only `PRIK_ARGS`.
 For a contract backed only by opaque native inputs, use `NATIVE_LANGUAGE` to
 state the contract ABI language and `LINKER_LANGUAGE` to state the final CMake
 linker driver independently:
@@ -144,6 +145,28 @@ The same form accepts normal project targets such as `native_math` and
 When a linked entry is a CMake target, its compile and include usage
 requirements also reach PRIK's private native object target. Raw library paths
 retain link behavior but do not provide CMake usage requirements.
+
+`LINK_LIBRARIES` keeps each entry's own CMake meaning: a path to an object,
+archive, or shared library stays a file path, a plain name stays a library
+name, and a `-Wl,...` entry stays a linker argument in the position it was
+given.
+
+`LIBRARY_DIRS` names directories that hold native libraries linked by name.
+PRIK gives them to `target_link_directories()` and appends them to the
+extension's `BUILD_RPATH`, so a shared native library outside the system
+search path is found both when CMake links the extension and when Python
+imports it from the build tree. `INSTALL_RPATH` stays under normal project
+control:
+
+```cmake
+prik_add_module(
+    physics
+    FORTRAN_SOURCES solver.f90
+    LINK_LIBRARIES nativefoo
+    LIBRARY_DIRS "${CMAKE_CURRENT_LIST_DIR}/vendor/lib"
+)
+```
+
 Normal Fortran sources and targets carry their link-language requirements
 through CMake. For a raw archive or shared library whose language is otherwise
 opaque, add `LINKER_LANGUAGE Fortran`; PRIK records that requirement in its
@@ -173,3 +196,13 @@ The generated `CMakeLists.txt` loads `UsePRIK.cmake` and calls
 project; `prik generate --cmake` creates a standalone CMake project that uses
 that same helper. `--native-linker-language fortran` emits the explicit raw
 library annotation when standalone input requires the Fortran linker.
+
+Native link inputs keep the meaning they have on the command line.
+`--native-objects` and `--native-link-item object:`, `archive:`, and
+`shared-library:` become `LINK_LIBRARIES` file paths written against
+`CMAKE_CURRENT_LIST_DIR`, so the generated project stays readable and moves
+with its inputs; `--native-library` becomes a library name and
+`--native-link-item arg:` a linker argument, all in their original order.
+`--native-library-dir` becomes `LIBRARY_DIRS`, which keeps the CLI meaning of
+that option: a link-time search directory that is also a runtime search path
+for the built extension.
