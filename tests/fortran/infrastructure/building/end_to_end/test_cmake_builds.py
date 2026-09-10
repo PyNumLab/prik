@@ -499,7 +499,10 @@ def test_generate_cmake_keeps_compile_option_ownership_explicit(tmp_path: Path):
     assert 'WRAPPER_C_FLAGS\n        "-DPRIK_WRAPPER_C"' in cmake_lists
     assert "LINKER_LANGUAGE Fortran" in cmake_lists
     assert "NO_STANDARD_LOGICALS" in cmake_lists
-    assert "INTERPROCEDURAL_OPTIMIZATION TRUE" in cmake_lists
+    lto_initializer = "set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)"
+    assert lto_initializer in cmake_lists
+    assert cmake_lists.index(lto_initializer) < cmake_lists.index("prik_add_module(")
+    assert "set_property(TARGET explicit_options PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)" not in cmake_lists
     assert "--compiler" not in cmake_lists
 
 
@@ -795,6 +798,39 @@ def test_use_prik_cmake_builds_c_source_with_include_directory_and_flag(tmp_path
     _configure_and_build(project, build, language="c")
     module = _import_extension("cexample", build)
     assert module.c_add(np.float64(2.0), np.float64(3.0)) == np.float64(6.0)
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
+def test_use_prik_cmake_propagates_dependency_usage_to_native_objects(tmp_path: Path):
+    project = tmp_path / "native dependency usage"
+    project.mkdir()
+    (project / "interface.c").write_text("double dependency_add(double value);\n", encoding="utf-8")
+    (project / "implementation.c").write_text(
+        "#ifndef PRIK_REQUIRED_DEFINE\n"
+        "#error missing dependency compile definition\n"
+        "#endif\n"
+        "double dependency_add(double value) { return value + 1.0; }\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        """add_library(native_dependency INTERFACE)
+target_compile_definitions(native_dependency INTERFACE PRIK_REQUIRED_DEFINE)
+prik_add_module(
+  dependency_usage
+  SOURCES interface.c
+  C_SOURCES implementation.c
+  LINK_LIBRARIES native_dependency
+)
+""",
+        languages="C",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="c")
+
+    module = _import_extension("dependency_usage", build)
+    assert module.dependency_add(np.float64(2.0)) == np.float64(3.0)
 
 
 @pytest.mark.fortran_end_to_end

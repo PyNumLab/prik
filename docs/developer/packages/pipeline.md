@@ -123,7 +123,9 @@ lossless boundary used by `UsePRIK.cmake` for regeneration, linker-driver
 selection, and target-local compilation. CMake places native units in a
 private per-module object target so source properties cannot leak between
 PRIK extension targets; generated sources remain on the Python extension
-target.
+target. CMake dependency targets stay attached to the extension for linking
+and are also attached to that object target when present, so their usage
+requirements reach native compilation.
 
 `WrapperBuildResult` and saved `.pyi` manifests report each generated native
 group's kind, language, member keys, and source paths, so zero-source,

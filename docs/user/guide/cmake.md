@@ -100,7 +100,10 @@ interoperability option when compatibility with prebuilt objects requires it.
 Only mandatory ABI flags are exported from PRIK's plan; recommended compiler
 profile options remain the CMake toolchain's responsibility.
 CMake build type, debug, and interprocedural-optimization settings remain
-normal CMake target properties; `PRIK_ARGS` rejects compiler and compilation
+normal CMake target properties; set
+`CMAKE_INTERPROCEDURAL_OPTIMIZATION` before `prik_add_module()` when IPO should
+cover both native and generated sources. Standalone `--cmake --lto` emits that
+initializer automatically. `PRIK_ARGS` rejects compiler and compilation
 options that would bypass those target settings.
 
 Use `NO_COMPILE_INPUT_SOURCES` when `SOURCES` supplies only the public
@@ -138,6 +141,9 @@ prik_add_module(
 
 The same form accepts normal project targets such as `native_math` and
 `OpenMP::OpenMP_Fortran`; they remain target-oriented CMake link inputs.
+When a linked entry is a CMake target, its compile and include usage
+requirements also reach PRIK's private native object target. Raw library paths
+retain link behavior but do not provide CMake usage requirements.
 Normal Fortran sources and targets carry their link-language requirements
 through CMake. For a raw archive or shared library whose language is otherwise
 opaque, add `LINKER_LANGUAGE Fortran`; PRIK records that requirement in its

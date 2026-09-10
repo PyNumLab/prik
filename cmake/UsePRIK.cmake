@@ -435,6 +435,11 @@ function(prik_add_module name)
         endif()
         add_library("${_prik_native_target}" OBJECT ${_prik_native_target_sources})
         set_target_properties("${_prik_native_target}" PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        foreach(_prik_library IN LISTS PRIK_LINK_LIBRARIES)
+            if(TARGET "${_prik_library}")
+                target_link_libraries("${_prik_native_target}" PRIVATE "${_prik_library}")
+            endif()
+        endforeach()
         if(_prik_required_linker_language STREQUAL "fortran")
             set_target_properties(
                 "${_prik_native_target}" PROPERTIES Fortran_MODULE_DIRECTORY "${_prik_output_dir}"

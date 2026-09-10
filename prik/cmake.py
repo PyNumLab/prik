@@ -196,8 +196,8 @@ def _module_inputs(*, paths: Iterable[str | Path], args) -> _CMakeModuleInputs:
     )
 
 
-def _project_preamble(*, module_name: str, languages: str) -> list[str]:
-    return [
+def _project_preamble(*, module_name: str, languages: str, lto: bool = False) -> list[str]:
+    lines = [
         "cmake_minimum_required(VERSION 3.20)",
         "",
         f"project({module_name} LANGUAGES {languages})",
@@ -221,9 +221,16 @@ def _project_preamble(*, module_name: str, languages: str) -> list[str]:
         'list(APPEND CMAKE_MODULE_PATH "${PRIK_CMAKE_MODULE_DIR}")',
         "include(UsePRIK)",
         "",
-        "prik_add_module(",
-        f"    {module_name}",
     ]
+    if lto:
+        lines.extend(("set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)", ""))
+    lines.extend(
+        [
+            "prik_add_module(",
+            f"    {module_name}",
+        ]
+    )
+    return lines
 
 
 def _append_source_declarations(
@@ -293,7 +300,7 @@ def write_cmake_project(
         if language == "fortran" or inputs.native_fortran or args.native_linker_language == "fortran"
         else "C"
     )
-    lines = _project_preamble(module_name=inputs.module_name, languages=project_languages)
+    lines = _project_preamble(module_name=inputs.module_name, languages=project_languages, lto=args.lto)
     _append_source_declarations(
         lines,
         inputs,
@@ -303,8 +310,6 @@ def write_cmake_project(
     )
     _append_build_options(lines, args=args, project_dir=project_dir, native_link_items=native_link_items)
     lines.append(")")
-    if args.lto:
-        lines.extend(("", f"set_property(TARGET {inputs.module_name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)"))
 
     cmake_lists = project_dir / "CMakeLists.txt"
     cmake_lists.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -18,6 +18,10 @@ release tags add a leading `v` to the package version.
   final `LINKER_LANGUAGE`, keep native compilation flags target-local, and
   report a clear error when CMake's C language is not enabled.
 
+- CMake dependency targets now propagate their native compile usage
+  requirements, and standalone `--cmake --lto` initializes IPO for native and
+  generated targets.
+
 - `prik-build.json` schema 5 records generated/native compilation-unit ABI
   flags and explicit native linker-language requirements.
 
