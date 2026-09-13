@@ -8,20 +8,29 @@ PRIK installed" belongs here rather than with any single consumer.
 from __future__ import annotations
 
 from pathlib import Path
+import site
 import sys
 import sysconfig
 
 
 def data_roots() -> tuple[Path, ...]:
-    """Return the prefixes an installation's ``share/prik`` data can sit under."""
-    data_root = sysconfig.get_path("data")
-    roots = [Path(data_root)] if data_root else []
-    roots.append(Path(sys.prefix))
-    unique: list[Path] = []
-    for root in roots:
-        if root not in unique:
-            unique.append(root)
-    return tuple(unique)
+    """Return the prefixes an installation's ``share/prik`` data can sit under.
+
+    ``pip install --user`` writes data files under the user base instead of
+    under ``sys.prefix``, so that root belongs here too -- but only while this
+    interpreter would import from the user site at all. A virtual environment,
+    ``-s``, and ``-I`` all switch it off, and the files there then belong to an
+    installation this interpreter cannot use.
+    """
+    candidates = [sysconfig.get_path("data"), sys.prefix]
+    if site.ENABLE_USER_SITE:
+        candidates.append(site.getuserbase())
+    roots: list[Path] = []
+    for candidate in candidates:
+        root = Path(candidate) if candidate else None
+        if root is not None and root not in roots:
+            roots.append(root)
+    return tuple(roots)
 
 
 def install_dir() -> Path:
