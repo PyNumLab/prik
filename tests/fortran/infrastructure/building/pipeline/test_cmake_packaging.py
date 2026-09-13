@@ -57,6 +57,31 @@ def test_installed_distribution_exposes_the_cmake_module_entry_point() -> None:
 
 
 @pytest.mark.slow
+def test_installed_distribution_exposes_the_cmake_root_entry_point_as_prik() -> None:
+    """scikit-build-core sets ``<entry-point name>_ROOT``, so the name is the contract.
+
+    ``find_package(PRIK CONFIG REQUIRED)`` resolves with no argument only
+    because that variable comes out as ``PRIK_ROOT``, which makes the entry
+    point's name load-bearing rather than decorative.
+    """
+    name, directory = installed_output(
+        "import os\n"
+        "from importlib import metadata, resources\n"
+        "roots = [\n"
+        "    entry\n"
+        "    for entry in metadata.distribution('prik').entry_points\n"
+        "    if entry.group == 'cmake.root'\n"
+        "]\n"
+        "assert len(roots) == 1, roots\n"
+        "print(roots[0].name)\n"
+        "print(os.path.realpath(str(resources.files(roots[0].load()))))\n"
+    ).splitlines()
+
+    assert name == "PRIK"
+    assert (Path(directory) / "PRIKConfig.cmake").is_file()
+
+
+@pytest.mark.slow
 def test_installed_console_script_prints_the_paths_a_build_configures_with() -> None:
     """``prik cmake-dir`` and ``prik install-dir`` answer for the installation they run from."""
     script = installed_prik_python().parent / "prik"

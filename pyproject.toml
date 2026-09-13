@@ -102,6 +102,12 @@ prik = "prik.cli:main"
 [project.entry-points."cmake.module"]
 prik = "prik.cmake_modules"
 
+# The entry-point name is the package name scikit-build-core sets <name>_ROOT
+# for, so this one must stay PRIK: it is what makes
+# find_package(PRIK CONFIG REQUIRED) resolve with no PRIK-specific -D flag.
+[project.entry-points."cmake.root"]
+PRIK = "prik.cmake_modules"
+
 [project.urls]
 Homepage = "https://pynumlab.github.io/prik/"
 Documentation = "https://pynumlab.github.io/prik/"

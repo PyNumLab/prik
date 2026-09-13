@@ -70,11 +70,19 @@ helper, and these routes differ only in how CMake reaches it:
 | Packaged directory | `find_package(PRIK CONFIG REQUIRED)` | `-DPRIK_DIR="$(prik cmake-dir)"` |
 | Installation prefix | `find_package(PRIK CONFIG REQUIRED)` | `-DCMAKE_PREFIX_PATH="$(prik install-dir)"` |
 | Module path | `include(UsePRIK)` | `-DCMAKE_MODULE_PATH="$(prik cmake-dir)"` |
-| scikit-build-core | `include(UsePRIK)` | nothing; the backend reads PRIK's `cmake.module` entry point |
+| scikit-build-core | `find_package(PRIK CONFIG REQUIRED)` | nothing at all |
 
 `PRIK_DIR` is package-specific, so setting it does not affect how other CMake
 packages are found; `CMAKE_PREFIX_PATH` is the broader search path every
 `find_package()` call shares.
+
+PRIK publishes both of scikit-build-core's discovery entry points, so either
+project form works there with nothing on the command line:
+
+| Entry point | What the backend sets | What the project calls |
+| --- | --- | --- |
+| `cmake.root` | `PRIK_ROOT` | `find_package(PRIK CONFIG REQUIRED)` |
+| `cmake.module` | `CMAKE_MODULE_PATH` | `include(UsePRIK)` |
 
 `prik install-dir` prints the prefix this PRIK's own installation wrote its data
 files under, which carries the same modules in `share/prik/cmake` and also
@@ -93,17 +101,18 @@ requires = ["scikit-build-core>=0.10", "prik"]
 build-backend = "scikit_build_core.build"
 ```
 
-The backend then puts PRIK's packaged CMake directory on `CMAKE_MODULE_PATH`
-itself, so `include(UsePRIK)` needs nothing on the command line and building
-the wheel is one command:
+The backend installs PRIK into its own build environment and reads PRIK's
+entry points from there, so the project keeps the same
+`find_package(PRIK CONFIG REQUIRED)` it uses everywhere else, and building the
+wheel takes no PRIK-specific argument:
 
 ```bash
-python3 -m pip wheel . --no-deps --wheel-dir dist
+python3 -m pip wheel .
 ```
 
 The three command-line routes above use whichever `prik` the shell resolves.
 scikit-build-core instead uses the PRIK installed in its build environment,
-which it finds through the `cmake.module` entry point. When the build must
+which it finds through those entry points. When the build must
 match the interpreter CMake itself selected -- several environments on one
 machine, or a `Python_EXECUTABLE` the project pins -- ask that interpreter,
 which also needs no `-D` argument:
@@ -126,6 +135,14 @@ include(UsePRIK)
 `prik generate --cmake` writes an equivalent block into the standalone project
 it generates, which is why that project configures with a plain
 `cmake -S . -B build`.
+
+When a build cannot find PRIK, or finds one you did not expect,
+`prik doctor cmake` reports what a build system would discover: the imported
+package, the distribution metadata answering for it, `cmake-dir`,
+`install-dir`, both entry points, and any duplicate installation or
+`PYTHONPATH` entry that could answer instead. Run it through the interpreter in
+question -- `"${Python_EXECUTABLE}" -m prik doctor cmake` -- to see what CMake
+sees.
 
 [`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
 that builds the same module through every route, with a script that checks each

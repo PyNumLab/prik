@@ -10,11 +10,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import venv
 
 import numpy as np
 import pytest
 
-from tests.fortran._support.installed_distribution import clean_environment, installed_prik_python
+from tests.fortran._support.installed_distribution import (
+    UNAVAILABLE_MARKERS,
+    clean_environment,
+    installed_prik_python,
+    prik_wheel,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
@@ -1899,3 +1905,124 @@ def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
         environment=installed_environment,
     )
     assert imported.returncode == 0
+
+
+EXAMPLE_PROJECT = REPOSITORY_ROOT / "examples" / "cmake"
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.slow
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_isolated_scikit_build_core_wheel_finds_prik_without_any_argument(tmp_path: Path):
+    """The end-user route: pip builds in its own environment and no -D flag names PRIK.
+
+    Build isolation is what makes this the real experience -- the build
+    environment holds only what ``[build-system] requires`` installs, so
+    ``find_package(PRIK CONFIG REQUIRED)`` has to resolve from PRIK's own
+    ``cmake.root`` entry point. The requirement is redirected to the wheel
+    built from this checkout, which is the only difference from a user's
+    ``pip wheel .``.
+    """
+    wheel = prik_wheel()
+    project = tmp_path / "isolated example"
+    shutil.copytree(EXAMPLE_PROJECT, project)
+    manifest = project / "pyproject.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace('"prik"', f'"prik @ {wheel.as_uri()}"'),
+        encoding="utf-8",
+    )
+    environment_dir = tmp_path / "user environment"
+    venv.EnvBuilder(with_pip=True).create(environment_dir)
+    user_python = environment_dir / "bin" / "python"
+
+    built = subprocess.run(
+        [str(user_python), "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(tmp_path / "dist"), str(project)],
+        env=clean_environment(),
+        capture_output=True,
+        text=True,
+    )
+    if built.returncode != 0:
+        output = built.stderr.strip() or built.stdout.strip()
+        if any(marker.lower() in output.lower() for marker in UNAVAILABLE_MARKERS):
+            pytest.skip(f"an isolated build environment is unavailable: {output}")
+        pytest.fail(f"isolated scikit-build-core build failed:\n{output}")
+    wheels = tuple((tmp_path / "dist").glob("prik_cmake_example-*.whl"))
+    assert wheels, "the isolated build produced no example wheel"
+
+    _run(
+        [str(user_python), "-m", "pip", "install", str(wheels[0]), "numpy"],
+        environment=clean_environment(),
+    )
+    called = _run(
+        [
+            str(user_python),
+            "-c",
+            "import numpy, heat; print(heat.kernel.diffuse(numpy.array([0.0, 1.0, 0.0]), numpy.float64(0.25)))",
+        ],
+        environment=clean_environment(),
+    )
+    assert called.stdout.split() == ["[0.", "0.5", "0.", "]"], called.stdout
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None, reason="CMake and gfortran are required"
+)
+def test_structural_planning_failure_names_the_interpreter_that_cannot_import_prik(tmp_path: Path):
+    """A configure-time import failure is an environment problem, so it says which one."""
+    project = tmp_path / "unusable interpreter"
+    project.mkdir()
+    (project / "square.f90").write_text(
+        "real(8) function square(x) result(y)\n  real(8), intent(in) :: x\n  y = x * x\nend function square\n",
+        encoding="utf-8",
+    )
+    _write_project(project, "prik_add_module(square FORTRAN_SOURCES square.f90)\n")
+    environment_dir = tmp_path / "environment without prik"
+    venv.EnvBuilder(with_pip=False).create(environment_dir)
+    bare_python = environment_dir / "bin" / "python"
+
+    result = subprocess.run(
+        ["cmake", "-S", str(project), "-B", str(project / "build"), f"-DPython_EXECUTABLE={bare_python}"],
+        env=clean_environment(),
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert str(bare_python) in output
+    assert "No module named prik" in output
+    assert "must be importable by the interpreter" in output
+
+
+@pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None, reason="CMake and gfortran are required"
+)
+def test_structural_planning_failure_keeps_a_real_error_unexplained(tmp_path: Path):
+    """A generation error must reach the user as itself, not as a dependency story."""
+    project = tmp_path / "rejected option"
+    project.mkdir()
+    (project / "square.f90").write_text(
+        "real(8) function square(x) result(y)\n  real(8), intent(in) :: x\n  y = x * x\nend function square\n",
+        encoding="utf-8",
+    )
+    _write_project(
+        project,
+        "prik_add_module(square FORTRAN_SOURCES square.f90 PRIK_ARGS --definitely-not-an-option)\n",
+    )
+
+    result = subprocess.run(
+        ["cmake", "-S", str(project), "-B", str(project / "build")],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "unrecognized arguments" in output
+    assert "must be importable by the interpreter" not in output

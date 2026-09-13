@@ -8,19 +8,19 @@ find_package(
     REQUIRED
 )
 
-set(PRIK_DISCOVERY "include" CACHE STRING "How this project loads PRIK's CMake modules")
-set_property(CACHE PRIK_DISCOVERY PROPERTY STRINGS include find-package)
+set(PRIK_DISCOVERY "find-package" CACHE STRING "How this project loads PRIK's CMake modules")
+set_property(CACHE PRIK_DISCOVERY PROPERTY STRINGS find-package include)
 
-if(PRIK_DISCOVERY STREQUAL "find-package")
-    # Needs PRIK's CMake package on a search path: PRIK_DIR set to
-    # `prik cmake-dir`, or CMAKE_PREFIX_PATH set to `prik install-dir`.
-    find_package(PRIK CONFIG REQUIRED)
-else()
-    # scikit-build-core adds PRIK's packaged module directory to
-    # CMAKE_MODULE_PATH through its cmake.module entry point, so this include
-    # needs no lookup. A plain configure gets there by setting
-    # CMAKE_MODULE_PATH to `prik cmake-dir`.
+if(PRIK_DISCOVERY STREQUAL "include")
+    # The module-path route. A plain configure needs CMAKE_MODULE_PATH set to
+    # `prik cmake-dir`; scikit-build-core supplies it from PRIK's cmake.module
+    # entry point.
     include(UsePRIK)
+else()
+    # The default. scikit-build-core sets PRIK_ROOT from PRIK's cmake.root
+    # entry point, so this needs no argument there at all; a plain configure
+    # passes PRIK_DIR or CMAKE_PREFIX_PATH instead.
+    find_package(PRIK CONFIG REQUIRED)
 endif()
 
 prik_add_module(

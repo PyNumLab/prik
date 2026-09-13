@@ -72,9 +72,25 @@ release tags add a leading `v` to the package version.
   Ninja as a warning because those tests then use the Makefile generator.
 
 - Added the runnable `examples/cmake/` project, which builds one Fortran module
-  through every CMake discovery route -- scikit-build-core's entry point,
+  through every CMake discovery route -- scikit-build-core's entry points,
   `CMAKE_MODULE_PATH`, `PRIK_DIR`, and an installation prefix -- with a script
   that runs each route and calls the built extension.
+
+- PRIK also publishes scikit-build-core's `cmake.root` entry point, which sets
+  `PRIK_ROOT`, so a project listing PRIK in `[build-system] requires` resolves
+  `find_package(PRIK CONFIG REQUIRED)` with no `PRIK_DIR`, `CMAKE_PREFIX_PATH`,
+  or `CMAKE_MODULE_PATH`. `include(UsePRIK)` keeps working through the existing
+  `cmake.module` entry point.
+
+- A configure-time structural query that fails because PRIK or one of its
+  dependencies cannot be imported now names the selected `Python_EXECUTABLE`
+  and how to check it, while keeping the underlying error. Other generation
+  failures are reported unchanged.
+
+- Added `prik doctor cmake`, which reports the imported package, the
+  distribution metadata answering for it, `cmake-dir`, `install-dir`, both
+  CMake entry points, and any duplicate installation or `PYTHONPATH` entry that
+  could answer instead.
 
 - Array handles support allocatable and pointer arguments, results, module
   variables, derived fields, optional arguments, and matching ordinary-array

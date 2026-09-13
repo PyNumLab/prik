@@ -66,6 +66,31 @@ function(_prik_append_cli_flags command option flags)
     set(${command} "${_command}" PARENT_SCOPE)
 endfunction()
 
+function(_prik_report_planning_failure name error)
+    # A missing PRIK, or a missing PRIK dependency, fails the structural query
+    # before it reads anything, and says so as an import error. Only that case
+    # gets the environment hint: a real generation or validation error must
+    # reach the user as itself, not behind a dependency story.
+    set(_prik_hint "")
+    if(error MATCHES "ModuleNotFoundError|ImportError|No module named")
+        set(
+            _prik_hint
+            "\n\nPRIK and its Python dependencies must be importable by the interpreter"
+            " CMake selected. Check it with:\n"
+            "    \"${Python_EXECUTABLE}\" -m prik --version\n"
+            "then install PRIK into that environment, or select an interpreter that has"
+            " it with -DPython_EXECUTABLE=/path/to/python."
+        )
+        string(JOIN "" _prik_hint ${_prik_hint})
+    endif()
+    message(
+        FATAL_ERROR
+        "PRIK structural planning failed for ${name}.\n"
+        "Python_EXECUTABLE: ${Python_EXECUTABLE}\n\n"
+        "${error}${_prik_hint}"
+    )
+endfunction()
+
 function(_prik_json_string_list output_variable json)
     set(_prik_json_path ${ARGN})
     string(JSON _prik_item_count ERROR_VARIABLE _prik_json_error LENGTH "${json}" ${_prik_json_path})
@@ -343,7 +368,7 @@ function(prik_add_module name)
         ERROR_VARIABLE _prik_configure_error
     )
     if(NOT _prik_configure_result EQUAL 0)
-        message(FATAL_ERROR "PRIK structural planning failed for ${name}:\n${_prik_configure_error}")
+        _prik_report_planning_failure("${name}" "${_prik_configure_error}")
     endif()
 
     _prik_json_string_list(_prik_generated_sources "${_prik_plan_json}" generated_sources)

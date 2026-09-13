@@ -52,6 +52,7 @@ _TOP_LEVEL_USAGE = (
     "%(prog)s INPUT [INPUT ...] [BUILD OPTIONS]\n"
     "       %(prog)s {parse,semantics,generate,probe} [OPTIONS] ...\n"
     "       %(prog)s {cmake-dir,install-dir}\n"
+    "       %(prog)s doctor cmake\n"
     "       %(prog)s --version"
 )
 _BUILD_USAGE = (
@@ -89,7 +90,8 @@ _CLI_HELP_DESCRIPTION = (
     "  generate      Generate contracts or wrapper build files\n"
     "  probe         Probe compiler-target datatype and ABI facts\n"
     "  cmake-dir     Print the directory holding PRIK's packaged CMake modules\n"
-    "  install-dir   Print the prefix holding PRIK's installed data files"
+    "  install-dir   Print the prefix holding PRIK's installed data files\n"
+    "  doctor        Report how a build system would discover this PRIK"
 )
 _CLI_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
@@ -2964,6 +2966,38 @@ def _run_path_command(args: argparse.Namespace, parser: argparse.ArgumentParser)
     return 0
 
 
+_DOCTOR_HELP_EPILOG = (
+    f"{_HELP_DIVIDER}\n\n"
+    "  Report what a CMake build would discover:\n"
+    "    prik doctor cmake\n\n"
+    "  Ask a specific interpreter, the way CMake does:\n"
+    "    /path/to/python -m prik doctor cmake"
+)
+
+
+def _doctor_parser(argv: list[str]) -> argparse.ArgumentParser:
+    parser = _new_cli_parser(
+        prog="python3 -m prik doctor",
+        usage="%(prog)s cmake",
+        description="Report how a build system would discover this PRIK installation.",
+        epilog=_DOCTOR_HELP_EPILOG,
+        argv=argv,
+    )
+    parser.set_defaults(command="doctor")
+    parser.add_argument("topic", choices=("cmake",), help="Diagnostic report to print")
+    return parser
+
+
+def _run_doctor_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Print the facts that decide which PRIK a CMake build uses."""
+    from prik.installation import cmake_discovery_report
+
+    del parser  # The only topic is validated by the parser's choices.
+    for label, value in cmake_discovery_report().items():
+        print(f"{label}: {value}")
+    return 0
+
+
 def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
     parser = _new_cli_parser(
         prog="python3 -m prik probe",
@@ -3069,6 +3103,7 @@ _COMMAND_PARSERS = {
         "install-dir",
         "Print the prefix holding PRIK's installed data files.",
     ),
+    "doctor": _doctor_parser,
 }
 
 
@@ -3178,6 +3213,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_probe_command(args, parser)
     if args.command in {"cmake-dir", "install-dir"}:
         return _run_path_command(args, parser)
+    if args.command == "doctor":
+        return _run_doctor_command(args, parser)
     args.language = _resolve_language(args.paths, args.language, parser)
     preprocessing = _build_preprocessing_config(args, parser)
     print_limit = _validate_main_options(args, parser)
