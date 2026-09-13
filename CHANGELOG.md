@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.5.0 — 2026-09-13
+
 - Added CMake integration through the packaged `UsePRIK.cmake` helper and a
   `prik generate --cmake` standalone-project mode. CMake generates PRIK wrapper
   sources as build outputs and owns native compilation, linking, external
