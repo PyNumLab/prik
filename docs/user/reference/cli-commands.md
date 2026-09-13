@@ -304,7 +304,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
 | Command | Prints |
 | --- | --- |
 | `cmake-dir` | The directory holding `UsePRIK.cmake` and `PRIKConfig.cmake`. Use it as `PRIK_DIR`, or add it to `CMAKE_MODULE_PATH` for `include(UsePRIK)`. |
-| `install-dir` | The prefix PRIK's data files are installed under, which holds the same CMake modules in `share/prik/cmake`. Use it in `CMAKE_PREFIX_PATH`. A source checkout installs nothing, so the command reports that rather than naming a prefix. |
+| `install-dir` | The prefix this PRIK's own installation wrote its data files under, which holds the same CMake modules in `share/prik/cmake`. Use it in `CMAKE_PREFIX_PATH`. It comes from that installation's record, so another PRIK installed elsewhere never answers for it. A source checkout installs nothing and an editable install writes no data files, so the command reports that rather than naming a prefix. |
 
 Both make `find_package(PRIK CONFIG REQUIRED)` resolve. See the
 [CMake builds guide](../guide/cmake.md) for the project side.

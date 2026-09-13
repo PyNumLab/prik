@@ -130,16 +130,18 @@ module directory, which is where `PRIKConfig.cmake` lives:
 cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"
 ```
 
-`prik install-dir` prints the prefix PRIK is installed under, which carries the
-same modules in `share/prik/cmake` and also resolves everything else installed
-there:
+`prik install-dir` prints the prefix this PRIK's own installation wrote its
+data files under, which carries the same modules in `share/prik/cmake` and also
+resolves everything else installed there:
 
 ```bash
 cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
 ```
 
-A source checkout installs nothing, so `install-dir` reports that instead of
-naming a prefix; `cmake-dir` always answers.
+The prefix comes from the running installation's own record, so a second PRIK
+installed elsewhere never answers for it. A source checkout installs nothing,
+and an editable install writes no data files, so `install-dir` reports that
+instead of naming a prefix; `cmake-dir` always answers.
 
 `find_package(PRIK CONFIG REQUIRED)` provides exactly what `include(UsePRIK)`
 provides.

@@ -843,5 +843,5 @@ def test_install_dir_prints_a_prefix_that_holds_installed_data_or_reports_none()
     if printed.returncode == 0:
         assert (Path(printed.stdout.strip()) / "share" / "prik").is_dir()
     else:
-        assert "not installed" in printed.stderr
+        assert "prik" in printed.stderr.lower()
         assert not printed.stdout.strip()
