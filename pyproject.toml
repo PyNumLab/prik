@@ -86,9 +86,21 @@ include = ["prik*"]
 
 [tool.setuptools.package-data]
 "prik.runtime.native_support" = ["*.h", "LICENSE"]
+"prik.cmake_modules" = ["*.cmake"]
+
+[tool.setuptools.data-files]
+"share/prik/cmake" = [
+    "prik/cmake_modules/PRIKConfig.cmake",
+    "prik/cmake_modules/UsePRIK.cmake",
+]
 
 [project.scripts]
 prik = "prik.cli:main"
+
+# scikit-build-core adds the directory named here to CMAKE_MODULE_PATH, so a
+# project it builds can include(UsePRIK) without locating PRIK itself.
+[project.entry-points."cmake.module"]
+prik = "prik.cmake_modules"
 
 [project.urls]
 Homepage = "https://pynumlab.github.io/prik/"

@@ -97,7 +97,7 @@ Reach past the root facade when you need a single stage rather than a build.
 | Semantic conversion | `prik.semantics.fortran2ir`, `prik.semantics.pyi2ir` | Fortran conversion helpers, `convert_pyi_to_ir` |
 | C semantic conversion | `prik.semantics.c2ir` | `CToIRConverter`, `c_file_to_semantic_module`, `c_file_to_semantic_modules` |
 | `.pyi` loading and stub emission | `prik.pipeline.pyi` | `pyi_*_to_semantic_module`, `emit_module_stubs` |
-| Build records and results | `prik.pipeline.build` | `WrapperBuildResult`, `NativeBuildPlan`, `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem` |
+| Build records and results | `prik.pipeline.build` | `WrapperBuildResult`, `NativeBuildPlan`, `NativeCompilationUnit`, `GeneratedCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem` |
 | IPython/Jupyter integration | `prik.jupyter` | `%load_ext prik.jupyter`, then `%%fortran`, `%%c`, or `%%pyi` |
 | Target type probing | `prik.preprocessing.probes.fortran_types` | probe source, requirements, expressions, report and error types |
 | C target type probing | `prik.preprocessing.probes.c_types` | `probe_c_standard_types`, `probe_c_standard_types_cached`, and C probe records/error type |

@@ -204,6 +204,18 @@ class Compiler:
         """Return the resolved compiler executable selected for ``language``."""
         return self._executable(self._language(language), ())
 
+    def required_abi_flags(self, language: str) -> tuple[str, ...]:
+        """Return compiler-profile flags required by PRIK's selected ABI.
+
+        These are separate from optimization, debug, position-independent-code,
+        and caller flags so an external build system can preserve PRIK's ABI
+        policy while continuing to own its normal toolchain configuration.
+        """
+        configuration = self._language(language)
+        if language != "fortran" or not self._standard_logicals:
+            return ()
+        return self._strings(configuration.get("logical_interop_flags", ()))
+
     def compile_object(self, object_file: ObjectFile, *, verbose: bool | int = False) -> tuple[str, ...]:
         """Compile exactly one source file into its declared object path."""
 

@@ -281,6 +281,19 @@ jobs:
           ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
+      - name: Verify CMake build tooling
+        shell: bash
+        run: |
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "cmake is missing, so the CMake integration tests would deselect themselves" >&2
+            exit 1
+          fi
+          cmake --version
+          if command -v ninja >/dev/null 2>&1; then
+            ninja --version
+          else
+            echo "::warning::ninja is missing; CMake tests fall back to the Makefile generator"
+          fi
       - name: Run tests
         if: ${{ !matrix.coverage }}
         shell: bash
@@ -401,6 +414,19 @@ jobs:
           gfortran --version
           command -v gcc
           gcc --version
+      - name: Verify CMake build tooling
+        shell: bash
+        run: |
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "cmake is missing, so the CMake integration tests would deselect themselves" >&2
+            exit 1
+          fi
+          cmake --version
+          if command -v ninja >/dev/null 2>&1; then
+            ninja --version
+          else
+            echo "::warning::ninja is missing; CMake tests fall back to the Makefile generator"
+          fi
       - name: Show repository-owned lane plan
         run: |
           python tools/run_fortran_toolchain_lane.py \

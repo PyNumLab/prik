@@ -101,6 +101,7 @@ from prik.policy.models import (
 )
 from prik.policy.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
 from prik.codegen.c.binding import CBindingGenerator
+from prik.naming.generated_files import wrapper_header_name
 from prik.codegen.docstrings import WrapperDocstringBuilder
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
 from prik.planning.models import (
@@ -5774,7 +5775,7 @@ class WrapperGenerator:
             raise ValueError("Generated Fortran payload requires exactly one planned physical source")
         if fortran_source is None and bridge_sources:
             raise ValueError("Planned generated Fortran groups require a rendered source payload")
-        headers = (Path(f"{module_name}_wrapper.h"),)
+        headers = (Path(wrapper_header_name(module_name)),)
 
         # Preserve build-consumed source ordering: bridge, binding units, then header.
         return GeneratedWrapper(

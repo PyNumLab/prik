@@ -71,6 +71,7 @@ from prik.policy.construction import (
     completed_function_wrapper_policy,
     completed_module_variable_policy,
 )
+from prik.naming.generated_files import bridge_source_name
 from prik.policy.exports import PythonExportPolicy
 from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
@@ -424,7 +425,7 @@ class WrapperPlanner(ClassVisitor):
         support_procedures: tuple[GeneratedSupportProcedureEntrypointPlan, ...],
     ) -> tuple[NativeGeneratedCodeGroupPlan, ...]:
         """Keep adapted-user and Fortran-support membership independently visible."""
-        source_paths = (f"bind_c_{module_name}_wrapper.f90",)
+        source_paths = (bridge_source_name(module_name),)
         adapter_members = tuple(
             function.owner_path
             for namespace in namespaces

@@ -7,6 +7,75 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Added CMake integration through the packaged `UsePRIK.cmake` helper and a
+  `prik generate --cmake` standalone-project mode. CMake generates PRIK wrapper
+  sources as build outputs and owns native compilation, linking, external
+  targets, and incremental rebuilds while preserving per-source flags,
+  compiler-required ABI options, preprocessing dependencies, and linker
+  language from PRIK's completed build plan.
+
+- CMake contract modules now distinguish semantic `NATIVE_LANGUAGE` from the
+  final `LINKER_LANGUAGE`, keep native compilation flags target-local, and
+  report a clear error when CMake's C language is not enabled.
+
+- CMake dependency targets now propagate their native compile usage
+  requirements, and standalone `--cmake --lto` initializes IPO for native and
+  generated targets.
+
+- CMake configuration no longer runs PRIK's semantic pipeline. It asks for a
+  structural plan -- deterministic generated filenames, the link driver, and
+  compiler-profile ABI flags -- and the full pipeline then runs once at build
+  time. Configuring a 300-procedure module's plan drops from about 2.5s to
+  0.4s, and the structural query no longer grows with source size.
+
+- Generated CMake targets have a fixed source list. The optional collision
+  adapter and Fortran bridge units are always written, holding a
+  symbol-free placeholder when unused, so a semantic edit changes file
+  contents instead of the build graph and never forces a CMake reconfigure.
+  Transitive semantic inputs now reach CMake through a generated dependency
+  file, which raises the CMake floor for the packaged helper to 3.21.
+
+- `prik generate --cmake` keeps each native link input in its own CMake
+  category: prebuilt objects, archives, and shared libraries stay filesystem
+  paths in `LINK_LIBRARIES` instead of becoming ambiguous relative tokens,
+  while library names and linker arguments keep their meaning and order.
+
+- CMake native object targets receive `LINK_LIBRARIES` with the caller's link
+  syntax unchanged, so `debug`/`optimized` keywords and generator-expression
+  entries keep selecting usage requirements per configuration instead of being
+  flattened or dropped.
+
+- CMake mode rejects a `.C` source suffix, which CMake compiles as C++ while
+  PRIK plans the source as C, and reports a clear error when a module
+  contributes native Fortran sources without CMake's Fortran language enabled.
+
+- `prik_add_module()` accepts `LIBRARY_DIRS`, mapping it to
+  `target_link_directories()` and the extension's `BUILD_RPATH`.
+  `generate --cmake` translates `--native-library-dir` into `LIBRARY_DIRS`, so
+  a shared native library outside the system search path is found both at link
+  time and on import without `LD_LIBRARY_PATH`.
+
+- `prik-build.json` schema 5 records generated/native compilation-unit ABI
+  flags and explicit native linker-language requirements.
+
+- PRIK's CMake modules are packaged inside the `prik` distribution and
+  discovered automatically. scikit-build-core builds pick the directory up
+  through a `cmake.module` entry point, so `include(UsePRIK)` needs no lookup,
+  and a packaged `PRIKConfig.cmake` makes `find_package(PRIK CONFIG REQUIRED)`
+  load the same helper. `prik cmake-dir` prints the packaged module directory
+  and `prik install-dir` the prefix PRIK's data files are installed under, for
+  `-DPRIK_DIR=` and `-DCMAKE_PREFIX_PATH=`. `cmake_module_dir()` and the
+  `share/prik/cmake` installation are unchanged.
+
+- The Ubuntu and macOS unit-test jobs now fail when CMake is missing instead of
+  letting the CMake integration tests deselect themselves, and report a missing
+  Ninja as a warning because those tests then use the Makefile generator.
+
+- Added the runnable `examples/cmake/` project, which builds one Fortran module
+  through every CMake discovery route -- scikit-build-core's entry point,
+  `CMAKE_MODULE_PATH`, `PRIK_DIR`, and an installation prefix -- with a script
+  that runs each route and calls the built extension.
+
 - Array handles support allocatable and pointer arguments, results, module
   variables, derived fields, optional arguments, and matching ordinary-array
   parameters. Numeric and character arrays accept supported forward and

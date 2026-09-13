@@ -1,0 +1,13 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "prik"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "prik-cmake-example"
+version = "0.1.0"
+description = "A PRIK extension built by scikit-build-core through UsePRIK.cmake"
+requires-python = ">=3.10"
+dependencies = ["numpy>=2.1"]
+
+[tool.scikit-build]
+cmake.version = ">=3.21"

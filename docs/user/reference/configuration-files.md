@@ -92,6 +92,17 @@ A representative manifest has this structure:
     "requested_name": null
   },
   "generated_wrapper": {
+    "compilation_units": [
+      {
+        "abi_flags": [],
+        "flags": [],
+        "include_dirs": [
+          "."
+        ],
+        "language": "c",
+        "source": "module_wrapper.c"
+      }
+    ],
     "native_code_groups": [],
     "sources": [
       "module_wrapper.c"
@@ -105,6 +116,7 @@ A representative manifest has this structure:
   "native_build_plan": {
     "compilation_units": [
       {
+        "abi_flags": [],
         "flags": [],
         "include_dirs": [],
         "language": "fortran",
@@ -121,6 +133,7 @@ A representative manifest has this structure:
         "path": "module.o"
       }
     ],
+    "linker_language": null,
     "module_dirs": [
       "."
     ],
@@ -134,18 +147,21 @@ A representative manifest has this structure:
     "shared_library": "module.cpython-<platform>.so",
     "strict_wrapper_names": false
   },
-  "schema_version": 4
+  "schema_version": 5
 }
 ```
 
 The values and array contents vary by build. In particular,
-`generated_wrapper.native_code_groups` records any generated Fortran adapters
-or support sources, while `native_build_plan.link_items` preserves the exact
-order of objects, archives, shared libraries, named libraries, and linker
-arguments. Paths are stored relative to the manifest directory when possible
-and resolved from that directory during replay.
+`generated_wrapper.compilation_units` and
+`native_build_plan.compilation_units` keep source-specific flags, required ABI
+flags, and include directories. `generated_wrapper.native_code_groups` records
+any generated Fortran adapters or support sources, while
+`native_build_plan.link_items` preserves the exact order of objects, archives,
+shared libraries, named libraries, and linker arguments. Paths are stored
+relative to the manifest directory when possible and resolved from that
+directory during replay.
 
-Replay reads the current schema version, `4`. Regenerate the manifest with the
+Replay reads the current schema version, `5`. Regenerate the manifest with the
 current PRIK version when upgrading from an older schema.
 
 ## `Makefile.prik`

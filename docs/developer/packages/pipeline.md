@@ -86,6 +86,7 @@ prik/pipeline/
 
 `build.py` is the orchestration hub. Its public records describe inputs and
 results without executing a build: `NativeCompilationUnit`,
+`GeneratedCompilationUnit`,
 `NativePrebuiltArtifact`, `NativeLinkItem`, `NativeBuildPlan`, and
 `WrapperBuildResult`. Its three public entrypoints are source-first builds,
 contract-first builds, and replay of a saved contract-build manifest.
@@ -113,6 +114,18 @@ Second, native implementation language is explicit everywhere: C and Fortran
 source collections stay distinct, a source-free `.pyi` build states its native
 language instead of deriving it from a compiler or ABI decorator, and prebuilt
 objects, archives, and libraries stay ordered `NativeLinkItem` records.
+
+Build integrations consume the completed result rather than compiler command
+logs. Native and generated compilation units retain their own requested flags,
+required ABI flags, and include directories; the result also records every
+semantic/preprocessing dependency and the final linker language. This is the
+lossless boundary used by `UsePRIK.cmake` for regeneration, linker-driver
+selection, and target-local compilation. CMake places native units in a
+private per-module object target so source properties cannot leak between
+PRIK extension targets; generated sources remain on the Python extension
+target. CMake dependency targets stay attached to the extension for linking
+and are also attached to that object target when present, so their usage
+requirements reach native compilation.
 
 `WrapperBuildResult` and saved `.pyi` manifests report each generated native
 group's kind, language, member keys, and source paths, so zero-source,

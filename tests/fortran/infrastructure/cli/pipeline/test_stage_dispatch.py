@@ -10,6 +10,7 @@ import types
 
 import pytest
 
+from prik.cmake import cmake_module_dir
 from prik.parsers.fortran import FortranParseError
 import prik.cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
@@ -809,3 +810,38 @@ def test_probe_mapping_report_rejects_preprocessing_options(option):
 def test_probe_expressions_are_fortran_only():
     with pytest.raises(ValueError, match="--expr is supported only for --language fortran"):
         prik_cli._probe_output(_probe_args(language="c", expressions=["kind(1.0)"]))
+
+
+def _cli_path(command: str) -> Path:
+    """Return the single path one path-printing command prints."""
+    printed = subprocess.run(
+        [sys.executable, "-m", "prik", command],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(printed.stdout.strip())
+
+
+def test_cmake_dir_prints_the_packaged_cmake_module_directory():
+    """A CMake build substitutes this into PRIK_DIR or CMAKE_MODULE_PATH."""
+    module_dir = _cli_path("cmake-dir")
+
+    assert module_dir == cmake_module_dir()
+    assert (module_dir / "UsePRIK.cmake").is_file()
+    assert (module_dir / "PRIKConfig.cmake").is_file()
+
+
+def test_install_dir_prints_a_prefix_that_holds_installed_data_or_reports_none():
+    """The prefix is only useful when PRIK's data is under it, so nothing else is printed."""
+    printed = subprocess.run(
+        [sys.executable, "-m", "prik", "install-dir"],
+        capture_output=True,
+        text=True,
+    )
+
+    if printed.returncode == 0:
+        assert (Path(printed.stdout.strip()) / "share" / "prik").is_dir()
+    else:
+        assert "prik" in printed.stderr.lower()
+        assert not printed.stdout.strip()
