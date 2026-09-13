@@ -72,17 +72,16 @@ helper, and these routes differ only in how CMake reaches it:
 | Module path | `include(UsePRIK)` | `-DCMAKE_MODULE_PATH="$(prik cmake-dir)"` |
 | scikit-build-core | `find_package(PRIK CONFIG REQUIRED)` | nothing at all |
 
+[`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
+that builds the same module through every one of them, with a script that
+checks each route in turn.
+
+### Configuring a project yourself
+
+The three command-line routes use whichever `prik` the shell resolves.
 `PRIK_DIR` is package-specific, so setting it does not affect how other CMake
 packages are found; `CMAKE_PREFIX_PATH` is the broader search path every
 `find_package()` call shares.
-
-PRIK publishes both of scikit-build-core's discovery entry points, so either
-project form works there with nothing on the command line:
-
-| Entry point | What the backend sets | What the project calls |
-| --- | --- | --- |
-| `cmake.root` | `PRIK_ROOT` | `find_package(PRIK CONFIG REQUIRED)` |
-| `cmake.module` | `CMAKE_MODULE_PATH` | `include(UsePRIK)` |
 
 `prik install-dir` prints the prefix this PRIK's own installation wrote its data
 files under, which carries the same modules in `share/prik/cmake` and also
@@ -91,6 +90,8 @@ installation's own record, so a second PRIK installed elsewhere never answers
 for it. A source checkout installs nothing, and an editable install writes no
 data files, so `install-dir` reports that instead of naming a prefix;
 `cmake-dir` always answers.
+
+### Packaging and pinned interpreters
 
 For a [scikit-build-core](https://scikit-build-core.readthedocs.io/) wheel,
 name PRIK as a build requirement:
@@ -101,22 +102,27 @@ requires = ["scikit-build-core>=0.11", "prik"]
 build-backend = "scikit_build_core.build"
 ```
 
-The backend installs PRIK into its own build environment and reads PRIK's
-entry points from there, so the project keeps the same
-`find_package(PRIK CONFIG REQUIRED)` it uses everywhere else, and building the
-wheel takes no PRIK-specific argument. `cmake.root` arrived in
+The backend installs PRIK into its own build environment and reads PRIK's entry
+points from there -- not the `prik` the shell resolves -- so the project keeps
+the same `find_package(PRIK CONFIG REQUIRED)` it uses everywhere else, and
+building the wheel takes no PRIK-specific argument. `cmake.root` arrived in
 scikit-build-core 0.11, which is why that is the floor:
 
 ```bash
 python3 -m pip wheel .
 ```
 
-The three command-line routes above use whichever `prik` the shell resolves.
-scikit-build-core instead uses the PRIK installed in its build environment,
-which it finds through those entry points. When the build must
-match the interpreter CMake itself selected -- several environments on one
-machine, or a `Python_EXECUTABLE` the project pins -- ask that interpreter,
-which also needs no `-D` argument:
+PRIK publishes both of scikit-build-core's discovery entry points, so either
+project form works there with nothing on the command line:
+
+| Entry point | What the backend sets | What the project calls |
+| --- | --- | --- |
+| `cmake.root` | `PRIK_ROOT` | `find_package(PRIK CONFIG REQUIRED)` |
+| `cmake.module` | `CMAKE_MODULE_PATH` | `include(UsePRIK)` |
+
+When the build must match the interpreter CMake itself selected -- several
+environments on one machine, or a `Python_EXECUTABLE` the project pins -- ask
+that interpreter, which also needs no `-D` argument:
 
 ```cmake
 execute_process(
@@ -137,17 +143,14 @@ include(UsePRIK)
 it generates, which is why that project configures with a plain
 `cmake -S . -B build`.
 
-When a build cannot find PRIK, or finds one you did not expect,
+### When a build finds no PRIK, or the wrong one
+
 `prik doctor cmake` reports what a build system would discover: the imported
 package, the distribution metadata answering for it, `cmake-dir`,
 `install-dir`, both entry points, and any duplicate installation or
 `PYTHONPATH` entry that could answer instead. Run it through the interpreter in
 question -- `"${Python_EXECUTABLE}" -m prik doctor cmake` -- to see what CMake
 sees.
-
-[`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
-that builds the same module through every route, with a script that checks each
-one in turn.
 
 ## Common `prik_add_module()` options
 
