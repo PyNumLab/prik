@@ -11,7 +11,7 @@ and the full `prik_add_module()` surface.
 | File | Role |
 | --- | --- |
 | [`kernel.f90`](kernel.f90) | Fortran module with one diffusion step and one reduction |
-| [`CMakeLists.txt`](CMakeLists.txt) | One `prik_add_module()` call; `PRIK_DISCOVERY` selects `include` or `find-package` |
+| [`CMakeLists.txt`](CMakeLists.txt) | One `prik_add_module()` call; `PRIK_DISCOVERY` selects `find-package` (default) or `include` |
 | [`pyproject.toml`](pyproject.toml) | The same project as a scikit-build-core wheel |
 | [`check_discovery_routes.sh`](check_discovery_routes.sh) | Builds and calls the extension once per route |
 
@@ -20,7 +20,12 @@ and the full `prik_add_module()` surface.
 | `module-path` | `include(UsePRIK)` | `-DCMAKE_MODULE_PATH="$(prik cmake-dir)"` |
 | `find-package-dir` | `find_package(PRIK CONFIG REQUIRED)` | `-DPRIK_DIR="$(prik cmake-dir)"` |
 | `install-prefix` | `find_package(PRIK CONFIG REQUIRED)` | `-DCMAKE_PREFIX_PATH="$(prik install-dir)"` |
-| `scikit-build-core` | `include(UsePRIK)` | nothing: the build backend reads PRIK's `cmake.module` entry point |
+| `scikit-build-core` | `find_package(PRIK CONFIG REQUIRED)` | nothing: the backend sets `PRIK_ROOT` from PRIK's `cmake.root` entry point |
+
+`find_package(PRIK CONFIG REQUIRED)` is the project's default here, so the
+scikit-build-core route needs no argument at all. `PRIK_DISCOVERY=include`
+selects `include(UsePRIK)` instead, which scikit-build-core also supports
+through PRIK's `cmake.module` entry point.
 
 ## Requirements
 
@@ -81,3 +86,18 @@ conserved = heat.kernel.total(values)                       # 1.0
 
 Scalar arguments take NumPy scalars, which is PRIK's ordinary calling
 convention rather than anything specific to CMake builds.
+
+## Diagnosing a route
+
+`prik doctor cmake` reports what a build system would discover -- the imported
+package, the metadata answering for it, both entry points, and anything that
+could answer instead. Run it through the interpreter in question to see what
+that environment offers:
+
+```bash
+PYTHONPATH=. python3 -m prik doctor cmake
+```
+
+The script's `scikit-build-core` route builds against this checkout with build
+isolation off. The isolated build a user gets from `pip wheel .` is covered by
+`tests/fortran/infrastructure/building/end_to_end/test_cmake_builds.py`.

@@ -16,6 +16,7 @@ stages without building one, and two print paths another tool builds against.
 python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]
 python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 python3 -m prik {cmake-dir,install-dir}
+python3 -m prik doctor cmake
 ```
 
 | Command | Purpose |
@@ -27,6 +28,7 @@ python3 -m prik {cmake-dir,install-dir}
 | `probe` | Prints compiler-target datatype and ABI facts. |
 | `cmake-dir` | Prints the directory holding PRIK's packaged CMake modules. |
 | `install-dir` | Prints the prefix holding PRIK's installed data files. |
+| `doctor` | Reports how a build system would discover this PRIK installation. |
 
 ## Getting help
 
@@ -308,6 +310,22 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
 
 Both make `find_package(PRIK CONFIG REQUIRED)` resolve. See the
 [CMake builds guide](../guide/cmake.md) for the project side.
+
+`doctor cmake` reports the same paths together with what resolved them, for
+when a build finds no PRIK or the wrong one:
+
+```bash
+python3 -m prik doctor cmake
+```
+
+| Line | Reports |
+| --- | --- |
+| `prik version`, `imported package` | The version the metadata records, and the package directory actually imported. |
+| `python executable` | The interpreter answering, which is the one CMake selected when the report is run through it. |
+| `cmake-dir`, `install-dir` | The same paths those commands print, or why there is no prefix. |
+| `distribution metadata` | Where the metadata answering for `prik` lives. |
+| `entry point cmake.root`, `entry point cmake.module` | What a build backend would discover, by name and directory. |
+| `conflicts` | Duplicate `prik` distributions, a `PYTHONPATH` entry holding another copy, or metadata that does not describe the imported package. |
 
 ## Compiler preprocessing
 

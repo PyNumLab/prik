@@ -70,8 +70,15 @@ helper, and these routes differ only in how CMake reaches it:
 | Packaged directory | `find_package(PRIK CONFIG REQUIRED)` | `-DPRIK_DIR="$(prik cmake-dir)"` |
 | Installation prefix | `find_package(PRIK CONFIG REQUIRED)` | `-DCMAKE_PREFIX_PATH="$(prik install-dir)"` |
 | Module path | `include(UsePRIK)` | `-DCMAKE_MODULE_PATH="$(prik cmake-dir)"` |
-| scikit-build-core | `include(UsePRIK)` | nothing; the backend reads PRIK's `cmake.module` entry point |
+| scikit-build-core | `find_package(PRIK CONFIG REQUIRED)` | nothing at all |
 
+[`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
+that builds the same module through every one of them, with a script that
+checks each route in turn.
+
+### Configuring a project yourself
+
+The three command-line routes use whichever `prik` the shell resolves.
 `PRIK_DIR` is package-specific, so setting it does not affect how other CMake
 packages are found; `CMAKE_PREFIX_PATH` is the broader search path every
 `find_package()` call shares.
@@ -84,29 +91,38 @@ for it. A source checkout installs nothing, and an editable install writes no
 data files, so `install-dir` reports that instead of naming a prefix;
 `cmake-dir` always answers.
 
+### Packaging and pinned interpreters
+
 For a [scikit-build-core](https://scikit-build-core.readthedocs.io/) wheel,
 name PRIK as a build requirement:
 
 ```toml
 [build-system]
-requires = ["scikit-build-core>=0.10", "prik"]
+requires = ["scikit-build-core>=0.11", "prik"]
 build-backend = "scikit_build_core.build"
 ```
 
-The backend then puts PRIK's packaged CMake directory on `CMAKE_MODULE_PATH`
-itself, so `include(UsePRIK)` needs nothing on the command line and building
-the wheel is one command:
+The backend installs PRIK into its own build environment and reads PRIK's entry
+points from there -- not the `prik` the shell resolves -- so the project keeps
+the same `find_package(PRIK CONFIG REQUIRED)` it uses everywhere else, and
+building the wheel takes no PRIK-specific argument. `cmake.root` arrived in
+scikit-build-core 0.11, which is why that is the floor:
 
 ```bash
-python3 -m pip wheel . --no-deps --wheel-dir dist
+python3 -m pip wheel .
 ```
 
-The three command-line routes above use whichever `prik` the shell resolves.
-scikit-build-core instead uses the PRIK installed in its build environment,
-which it finds through the `cmake.module` entry point. When the build must
-match the interpreter CMake itself selected -- several environments on one
-machine, or a `Python_EXECUTABLE` the project pins -- ask that interpreter,
-which also needs no `-D` argument:
+PRIK publishes both of scikit-build-core's discovery entry points, so either
+project form works there with nothing on the command line:
+
+| Entry point | What the backend sets | What the project calls |
+| --- | --- | --- |
+| `cmake.root` | `PRIK_ROOT` | `find_package(PRIK CONFIG REQUIRED)` |
+| `cmake.module` | `CMAKE_MODULE_PATH` | `include(UsePRIK)` |
+
+When the build must match the interpreter CMake itself selected -- several
+environments on one machine, or a `Python_EXECUTABLE` the project pins -- ask
+that interpreter, which also needs no `-D` argument:
 
 ```cmake
 execute_process(
@@ -127,9 +143,14 @@ include(UsePRIK)
 it generates, which is why that project configures with a plain
 `cmake -S . -B build`.
 
-[`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
-that builds the same module through every route, with a script that checks each
-one in turn.
+### When a build finds no PRIK, or the wrong one
+
+`prik doctor cmake` reports what a build system would discover: the imported
+package, the distribution metadata answering for it, `cmake-dir`,
+`install-dir`, both entry points, and any duplicate installation or
+`PYTHONPATH` entry that could answer instead. Run it through the interpreter in
+question -- `"${Python_EXECUTABLE}" -m prik doctor cmake` -- to see what CMake
+sees.
 
 ## Common `prik_add_module()` options
 
@@ -194,6 +215,14 @@ are present. A source-free contract must state it explicitly. CMake's C
 language must be enabled because every PRIK extension contains generated C
 binding code, and Fortran must be enabled whenever the module contributes
 Fortran sources.
+
+Select the two compilers from one vendor. A generated binding can include the
+Fortran runtime's `ISO_Fortran_binding.h`, which a C compiler from another
+vendor does not find: Apple Clang beside a Homebrew GNU Fortran fails to
+compile the binding, while GNU `gcc` beside GNU Fortran resolves it. The
+toolchain stays CMake's to choose, so name the pair through the usual
+`CMAKE_C_COMPILER` and `CMAKE_Fortran_COMPILER`, or `CMAKE_ARGS` when a build
+backend drives the configure step.
 
 Normal Fortran sources and targets carry their link-language requirements
 through CMake. For a raw archive or shared library whose language is otherwise

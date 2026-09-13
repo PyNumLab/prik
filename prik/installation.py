@@ -7,8 +7,10 @@ PRIK installed" belongs here rather than with any single consumer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib import metadata
 import json
+import os
 from pathlib import Path
 import site
 import sys
@@ -78,6 +80,89 @@ def _running_distribution() -> metadata.Distribution:
     if editable_source is not None and _PACKAGE_DIR.is_relative_to(editable_source):
         return distribution
     raise FileNotFoundError(f"the installed prik distribution does not provide the PRIK running from {_PACKAGE_DIR}")
+
+
+def cmake_discovery_report() -> dict[str, str]:
+    """Return the facts that decide which PRIK a CMake build would use.
+
+    Every value is observed, never inferred: which package is imported, which
+    distribution's metadata answers for it, what the entry points a build
+    backend reads resolve to, and whether anything else on the path could
+    answer instead.
+    """
+    from prik import __version__
+    from prik.cmake import cmake_module_dir
+
+    report = {
+        "prik version": __version__,
+        "imported package": str(_PACKAGE_DIR),
+        "python executable": sys.executable,
+        "cmake-dir": str(cmake_module_dir()),
+    }
+    report.update(_distribution_facts())
+    report["install-dir"] = _reported(install_dir)
+    for group in ("cmake.root", "cmake.module"):
+        report[f"entry point {group}"] = _entry_point_facts(group)
+    conflicts = _discovery_conflicts()
+    report["conflicts"] = "; ".join(conflicts) if conflicts else "none"
+    return report
+
+
+def _reported(answer: Callable[[], Path]) -> str:
+    """Return one reported path, or the reason there is none."""
+    try:
+        return str(answer())
+    except FileNotFoundError as exc:
+        return f"unavailable ({exc})"
+
+
+def _distribution_facts() -> dict[str, str]:
+    """Return where the metadata answering for ``prik`` lives."""
+    try:
+        distribution = metadata.distribution("prik")
+    except metadata.PackageNotFoundError:
+        return {"distribution metadata": "none installed"}
+    return {"distribution metadata": str(distribution.locate_file(""))}
+
+
+def _entry_point_facts(group: str) -> str:
+    """Return what one entry-point group resolves to for this installation."""
+    from importlib import resources
+
+    try:
+        entries = [entry for entry in metadata.distribution("prik").entry_points if entry.group == group]
+    except metadata.PackageNotFoundError:
+        return "unavailable (prik is not installed)"
+    if not entries:
+        return "not declared"
+    resolved = []
+    for entry in entries:
+        try:
+            resolved.append(f"{entry.name} -> {resources.files(entry.load())}")
+        except (ImportError, TypeError) as exc:  # pragma: no cover - a broken installation
+            resolved.append(f"{entry.name} -> unresolvable ({exc})")
+    return ", ".join(resolved)
+
+
+def _discovery_conflicts() -> list[str]:
+    """Return anything that could make another PRIK answer instead of this one."""
+    conflicts = []
+    try:
+        _running_distribution()
+    except FileNotFoundError as exc:
+        conflicts.append(str(exc))
+    installed = [
+        distribution
+        for distribution in metadata.distributions()
+        if (distribution.metadata["Name"] or "").lower() == "prik"
+    ]
+    if len(installed) > 1:
+        locations = ", ".join(sorted(str(distribution.locate_file("")) for distribution in installed))
+        conflicts.append(f"{len(installed)} prik distributions are importable: {locations}")
+    for entry in os.environ.get("PYTHONPATH", "").split(os.pathsep):
+        if entry and (Path(entry) / "prik" / "__init__.py").is_file() and Path(entry).resolve() != _PACKAGE_DIR.parent:
+            conflicts.append(f"PYTHONPATH entry holds another prik package: {entry}")
+    return conflicts
 
 
 def _editable_source(distribution: metadata.Distribution) -> Path | None:

@@ -845,3 +845,22 @@ def test_install_dir_prints_a_prefix_that_holds_installed_data_or_reports_none()
     else:
         assert "prik" in printed.stderr.lower()
         assert not printed.stdout.strip()
+
+
+def test_doctor_cmake_reports_the_discovery_facts_a_build_would_use():
+    """The report is observed facts, so a confusing environment shows up in it."""
+    printed = subprocess.run(
+        [sys.executable, "-m", "prik", "doctor", "cmake"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    report = dict(line.split(": ", 1) for line in printed.stdout.splitlines())
+
+    assert report["cmake-dir"] == str(cmake_module_dir())
+    assert report["imported package"] == str(cmake_module_dir().parent)
+    assert report["python executable"] == sys.executable
+    for label in ("prik version", "distribution metadata", "install-dir", "conflicts"):
+        assert report[label]
+    for group in ("cmake.root", "cmake.module"):
+        assert report[f"entry point {group}"]

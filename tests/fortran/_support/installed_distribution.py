@@ -41,17 +41,21 @@ def clean_environment() -> dict[str, str]:
 
 
 @cache
-def installed_prik_python() -> Path:
-    """Return the interpreter of an environment holding a freshly built wheel."""
+def _workspace() -> Path:
+    """Return one directory that outlives every test in this session."""
     installation = TemporaryDirectory(prefix="prik-installed-wheel-")
     _INSTALLATIONS.append(installation)
-    root = Path(installation.name)
-    distribution_dir = root / "dist"
-    environment = clean_environment()
+    return Path(installation.name)
+
+
+@cache
+def prik_wheel() -> Path:
+    """Return a wheel built from the checkout, built once per session."""
+    distribution_dir = _workspace() / "dist"
     wheel_build = subprocess.run(
         [sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(distribution_dir), "."],
         cwd=REPO_ROOT,
-        env=environment,
+        env=clean_environment(),
         capture_output=True,
         text=True,
     )
@@ -63,11 +67,19 @@ def installed_prik_python() -> Path:
     wheels = tuple(distribution_dir.glob("prik-*.whl"))
     if not wheels:
         pytest.skip("isolated wheel construction produced no wheel")
-    environment_dir = root / "installed"
+    return wheels[0]
+
+
+@cache
+def installed_prik_python() -> Path:
+    """Return the interpreter of an environment holding a freshly built wheel."""
+    wheel = prik_wheel()
+    environment = clean_environment()
+    environment_dir = _workspace() / "installed"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_dir)
     installed_python = environment_dir / "bin" / "python"
     install = subprocess.run(
-        [str(installed_python), "-m", "pip", "install", "--no-deps", str(wheels[0])],
+        [str(installed_python), "-m", "pip", "install", "--no-deps", str(wheel)],
         env=environment,
         capture_output=True,
         text=True,
