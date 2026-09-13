@@ -43,8 +43,7 @@ newer.
 
 ## Existing CMake project
 
-Install PRIK, make its `cmake` directory available through
-`CMAKE_MODULE_PATH`, and include the packaged helper:
+Install PRIK, load its CMake package, and declare the module:
 
 ```cmake
 cmake_minimum_required(VERSION 3.21)
@@ -57,9 +56,75 @@ find_package(
     REQUIRED
 )
 
-# Ask PRIK's Python environment for its packaged CMake helper.
+find_package(PRIK CONFIG REQUIRED)
+
+prik_add_module(
+    physics
+    FORTRAN_SOURCES
+        solver.f90
+        matrix.f90
+)
+```
+
+`prik cmake-dir` prints the directory holding PRIK's packaged CMake modules,
+which is what `PRIK_DIR` names:
+
+```bash
+cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"
+cmake --build build
+```
+
+### Discovery alternatives
+
+`find_package(PRIK CONFIG REQUIRED)` and `include(UsePRIK)` provide the same
+helper, and the routes below differ only in how CMake reaches it.
+
+**An installation prefix.** `prik install-dir` prints the prefix this PRIK's
+own installation wrote its data files under, which carries the same modules in
+`share/prik/cmake` and also resolves everything else installed there:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
+```
+
+The prefix comes from the running installation's own record, so a second PRIK
+installed elsewhere never answers for it.
+
+**A module path.** A project that prefers the module form replaces the
+`find_package()` line with the include:
+
+```cmake
+include(UsePRIK)
+```
+
+```bash
+cmake -S . -B build -DCMAKE_MODULE_PATH="$(prik cmake-dir)"
+```
+
+**scikit-build-core.** Name PRIK as a build requirement:
+
+```toml
+[build-system]
+requires = ["scikit-build-core>=0.10", "prik"]
+build-backend = "scikit_build_core.build"
+```
+
+The backend reads PRIK's `cmake.module` entry point and puts its packaged CMake
+directory on `CMAKE_MODULE_PATH`, so `include(UsePRIK)` needs nothing on the
+command line and building the wheel is one command:
+
+```bash
+python3 -m pip wheel . --no-deps --wheel-dir dist
+```
+
+**A specific Python interpreter.** The commands above answer for whichever
+`prik` the shell resolves. When the build must instead match the interpreter
+CMake itself selected -- several environments on one machine, or a
+`Python_EXECUTABLE` the project pins -- ask that interpreter:
+
+```cmake
 execute_process(
-    COMMAND "${Python_EXECUTABLE}" -c "from prik.cmake import cmake_module_dir; print(cmake_module_dir().as_posix())"
+    COMMAND "${Python_EXECUTABLE}" -m prik cmake-dir
     RESULT_VARIABLE PRIK_CMAKE_MODULE_RESULT
     OUTPUT_VARIABLE PRIK_CMAKE_MODULE_DIR
     ERROR_VARIABLE PRIK_CMAKE_MODULE_ERROR
@@ -70,81 +135,11 @@ if(NOT PRIK_CMAKE_MODULE_RESULT EQUAL 0)
 endif()
 list(APPEND CMAKE_MODULE_PATH "${PRIK_CMAKE_MODULE_DIR}")
 include(UsePRIK)
-
-prik_add_module(
-    physics
-    FORTRAN_SOURCES
-        solver.f90
-        matrix.f90
-)
 ```
 
-Then configure and build the extension:
-
-```bash
-cmake -S . -B build
-cmake --build build
-```
-
-### Other ways to find the helper
-
-With [scikit-build-core](https://scikit-build-core.readthedocs.io/), name PRIK
-as a build requirement:
-
-```toml
-[build-system]
-requires = ["scikit-build-core>=0.10", "prik"]
-build-backend = "scikit_build_core.build"
-```
-
-The backend reads PRIK's `cmake.module` entry point and puts its packaged CMake
-directory on `CMAKE_MODULE_PATH`, so the project needs only the include:
-
-```cmake
-include(UsePRIK)
-```
-
-Building the wheel is then one command:
-
-```bash
-python3 -m pip wheel . --no-deps --wheel-dir dist
-```
-
-PRIK also packages `PRIKConfig.cmake` beside the helper, so any project can load
-it as a CMake package instead:
-
-```cmake
-find_package(PRIK CONFIG REQUIRED)
-
-prik_add_module(
-    physics
-    FORTRAN_SOURCES
-        solver.f90
-)
-```
-
-Point CMake at PRIK when configuring. `prik cmake-dir` prints the packaged
-module directory, which is where `PRIKConfig.cmake` lives:
-
-```bash
-cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"
-```
-
-`prik install-dir` prints the prefix this PRIK's own installation wrote its
-data files under, which carries the same modules in `share/prik/cmake` and also
-resolves everything else installed there:
-
-```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
-```
-
-The prefix comes from the running installation's own record, so a second PRIK
-installed elsewhere never answers for it. A source checkout installs nothing,
-and an editable install writes no data files, so `install-dir` reports that
-instead of naming a prefix; `cmake-dir` always answers.
-
-`find_package(PRIK CONFIG REQUIRED)` provides exactly what `include(UsePRIK)`
-provides.
+That form needs no `-D` argument at all. `prik generate --cmake` writes an
+equivalent block into the standalone project it generates, which is why that
+project configures with a plain `cmake -S . -B build`.
 
 [`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
 that builds the same module through every route, with a script that checks each
