@@ -77,7 +77,8 @@ release tags add a leading `v` to the package version.
   that runs each route and calls the built extension.
 
 - PRIK also publishes scikit-build-core's `cmake.root` entry point, which sets
-  `PRIK_ROOT`, so a project listing PRIK in `[build-system] requires` resolves
+  `PRIK_ROOT`, so a project listing PRIK and `scikit-build-core>=0.11` in
+  `[build-system] requires` resolves
   `find_package(PRIK CONFIG REQUIRED)` with no `PRIK_DIR`, `CMAKE_PREFIX_PATH`,
   or `CMAKE_MODULE_PATH`. `include(UsePRIK)` keeps working through the existing
   `cmake.module` entry point.

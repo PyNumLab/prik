@@ -97,14 +97,15 @@ name PRIK as a build requirement:
 
 ```toml
 [build-system]
-requires = ["scikit-build-core>=0.10", "prik"]
+requires = ["scikit-build-core>=0.11", "prik"]
 build-backend = "scikit_build_core.build"
 ```
 
 The backend installs PRIK into its own build environment and reads PRIK's
 entry points from there, so the project keeps the same
 `find_package(PRIK CONFIG REQUIRED)` it uses everywhere else, and building the
-wheel takes no PRIK-specific argument:
+wheel takes no PRIK-specific argument. `cmake.root` arrived in
+scikit-build-core 0.11, which is why that is the floor:
 
 ```bash
 python3 -m pip wheel .
