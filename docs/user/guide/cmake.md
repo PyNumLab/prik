@@ -86,6 +86,50 @@ cmake -S . -B build
 cmake --build build
 ```
 
+### Other ways to find the helper
+
+With [scikit-build-core](https://scikit-build-core.readthedocs.io/), PRIK's
+packaged CMake directory reaches `CMAKE_MODULE_PATH` through its `cmake.module`
+entry point, so the project needs only the include:
+
+```cmake
+include(UsePRIK)
+```
+
+PRIK also packages `PRIKConfig.cmake` beside the helper, so any project can load
+it as a CMake package instead:
+
+```cmake
+find_package(PRIK CONFIG REQUIRED)
+
+prik_add_module(
+    physics
+    FORTRAN_SOURCES
+        solver.f90
+)
+```
+
+Point CMake at PRIK when configuring. `prik cmake-dir` prints the packaged
+module directory, which is where `PRIKConfig.cmake` lives:
+
+```bash
+cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"
+```
+
+`prik install-dir` prints the prefix PRIK is installed under, which carries the
+same modules in `share/prik/cmake` and also resolves everything else installed
+there:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
+```
+
+A source checkout installs nothing, so `install-dir` reports that instead of
+naming a prefix; `cmake-dir` always answers.
+
+`find_package(PRIK CONFIG REQUIRED)` provides exactly what `include(UsePRIK)`
+provides.
+
 `prik_add_module()` also accepts `SOURCES` for source-first input, `CONTRACT`
 with `FORTRAN_SOURCES` or `C_SOURCES` for an authored semantic `.pyi`,
 `INCLUDE_DIRS`, `MODULE_DIRS`, native and generated-source compile flag groups,

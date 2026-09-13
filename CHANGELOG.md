@@ -58,6 +58,19 @@ release tags add a leading `v` to the package version.
 - `prik-build.json` schema 5 records generated/native compilation-unit ABI
   flags and explicit native linker-language requirements.
 
+- PRIK's CMake modules are packaged inside the `prik` distribution and
+  discovered automatically. scikit-build-core builds pick the directory up
+  through a `cmake.module` entry point, so `include(UsePRIK)` needs no lookup,
+  and a packaged `PRIKConfig.cmake` makes `find_package(PRIK CONFIG REQUIRED)`
+  load the same helper. `prik cmake-dir` prints the packaged module directory
+  and `prik install-dir` the prefix PRIK's data files are installed under, for
+  `-DPRIK_DIR=` and `-DCMAKE_PREFIX_PATH=`. `cmake_module_dir()` and the
+  `share/prik/cmake` installation are unchanged.
+
+- The Ubuntu and macOS unit-test jobs now fail when CMake is missing instead of
+  letting the CMake integration tests deselect themselves, and report a missing
+  Ninja as a warning because those tests then use the Makefile generator.
+
 - Array handles support allocatable and pointer arguments, results, module
   variables, derived fields, optional arguments, and matching ordinary-array
   parameters. Numeric and character arrays accept supported forward and

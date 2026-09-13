@@ -1,0 +1,92 @@
+"""Install a wheel built from the checkout for packaging-facing tests.
+
+What a distribution ships and what it advertises to other build tools are
+properties of an installation, not of the source tree, so a test that makes
+such a claim must ask an installed interpreter. Building and installing the
+wheel once per session keeps that evidence affordable.
+"""
+
+import os
+import subprocess
+import sys
+import venv
+from functools import cache
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import pytest
+
+from tests.fortran._support.paths import REPO_ROOT
+
+
+UNAVAILABLE_MARKERS = (
+    "No module named pip",
+    "No module named build",
+    "No matching distribution found",
+    "Could not find a version that satisfies",
+    "Could not fetch URL",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "Connection timed out",
+)
+
+_INSTALLATIONS: list[TemporaryDirectory] = []
+
+
+def clean_environment() -> dict[str, str]:
+    """Return an environment that cannot reach the checkout through PYTHONPATH."""
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    return environment
+
+
+@cache
+def installed_prik_python() -> Path:
+    """Return the interpreter of an environment holding a freshly built wheel."""
+    installation = TemporaryDirectory(prefix="prik-installed-wheel-")
+    _INSTALLATIONS.append(installation)
+    root = Path(installation.name)
+    distribution_dir = root / "dist"
+    environment = clean_environment()
+    wheel_build = subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(distribution_dir), "."],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if wheel_build.returncode != 0:
+        wheel_output = wheel_build.stderr.strip() or wheel_build.stdout.strip()
+        if any(marker.lower() in wheel_output.lower() for marker in UNAVAILABLE_MARKERS):
+            pytest.skip(f"isolated wheel construction is unavailable: {wheel_output}")
+        pytest.fail(f"isolated wheel construction failed:\n{wheel_output}")
+    wheels = tuple(distribution_dir.glob("prik-*.whl"))
+    if not wheels:
+        pytest.skip("isolated wheel construction produced no wheel")
+    environment_dir = root / "installed"
+    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_dir)
+    installed_python = environment_dir / "bin" / "python"
+    install = subprocess.run(
+        [str(installed_python), "-m", "pip", "install", "--no-deps", str(wheels[0])],
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if install.returncode != 0:
+        pytest.fail(f"installing the built wheel failed:\n{install.stderr.strip() or install.stdout.strip()}")
+    return installed_python
+
+
+def installed_run(*command: str) -> str:
+    """Return what one command prints from inside the installed environment."""
+    result = subprocess.run(command, env=clean_environment(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise AssertionError(
+            f"installed command failed: {' '.join(command)}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result.stdout
+
+
+def installed_output(program: str) -> str:
+    """Return what one program prints from the installed interpreter."""
+    return installed_run(str(installed_prik_python()), "-I", "-c", program)

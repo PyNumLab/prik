@@ -51,6 +51,7 @@ _HELP_DIVIDER = "------------------------------ EXAMPLES -----------------------
 _TOP_LEVEL_USAGE = (
     "%(prog)s INPUT [INPUT ...] [BUILD OPTIONS]\n"
     "       %(prog)s {parse,semantics,generate,probe} [OPTIONS] ...\n"
+    "       %(prog)s {cmake-dir,install-dir}\n"
     "       %(prog)s --version"
 )
 _BUILD_USAGE = (
@@ -68,6 +69,14 @@ _GENERATE_USAGE = (
     "                                --build-manifest PATH [OVERRIDES]"
 )
 _PROBE_USAGE = "%(prog)s --language {fortran,c} --compiler COMPILER [OPTIONS]"
+_PATH_HELP_EPILOG = (
+    f"{_HELP_DIVIDER}\n\n"
+    "  Load PRIK's CMake package from the packaged module directory:\n"
+    '    cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"\n\n'
+    "  Search PRIK's installation prefix instead:\n"
+    '    cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"\n\n'
+    "  Both make find_package(PRIK CONFIG REQUIRED) and include(UsePRIK) work."
+)
 _POINTS_EXAMPLE_HELP = (
     "  See the PRIK homepage for the points.f90 source and generated Python API:\n"
     "    https://pynumlab.github.io/prik/#see-it-in-action\n"
@@ -75,10 +84,12 @@ _POINTS_EXAMPLE_HELP = (
 _CLI_HELP_DESCRIPTION = (
     "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts.\n\n"
     "commands:\n"
-    "  parse       Inspect source declarations and parser facts\n"
-    "  semantics   Convert source code to language-neutral semantic IR\n"
-    "  generate    Generate contracts or wrapper build files\n"
-    "  probe       Probe compiler-target datatype and ABI facts"
+    "  parse         Inspect source declarations and parser facts\n"
+    "  semantics     Convert source code to language-neutral semantic IR\n"
+    "  generate      Generate contracts or wrapper build files\n"
+    "  probe         Probe compiler-target datatype and ABI facts\n"
+    "  cmake-dir     Print the directory holding PRIK's packaged CMake modules\n"
+    "  install-dir   Print the prefix holding PRIK's installed data files"
 )
 _CLI_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
@@ -89,6 +100,8 @@ _CLI_HELP_EPILOG = (
     "    python3 -m prik points.f90 --out geometry\n\n"
     "  Generate an editable semantic contract:\n"
     "    python3 -m prik generate --pyi points.f90 --out contracts\n\n"
+    "  Point a CMake project at PRIK:\n"
+    '    cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"\n\n'
     f"{_POINTS_EXAMPLE_HELP}\n"
     "  More help:\n"
     "    python3 -m prik --help-build\n"
@@ -2921,6 +2934,36 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
     return parser
 
 
+def _path_parser(command: str, description: str) -> Callable[[list[str]], argparse.ArgumentParser]:
+    """Build the parser for one path-printing command."""
+
+    def parser_for(argv: list[str]) -> argparse.ArgumentParser:
+        parser = _new_cli_parser(
+            prog=f"python3 -m prik {command}",
+            usage="%(prog)s",
+            description=description,
+            epilog=_PATH_HELP_EPILOG,
+            argv=argv,
+        )
+        parser.set_defaults(command=command)
+        return parser
+
+    return parser_for
+
+
+def _run_path_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Print one path for a shell to substitute into another tool's command line."""
+    from prik.cmake import cmake_module_dir
+    from prik.installation import install_dir
+
+    resolve = cmake_module_dir if args.command == "cmake-dir" else install_dir
+    try:
+        print(resolve())
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
+    return 0
+
+
 def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
     parser = _new_cli_parser(
         prog="python3 -m prik probe",
@@ -3018,6 +3061,14 @@ _COMMAND_PARSERS = {
     "semantics": _semantics_parser,
     "generate": _generate_parser,
     "probe": _probe_parser,
+    "cmake-dir": _path_parser(
+        "cmake-dir",
+        "Print the directory holding PRIK's packaged CMake modules.",
+    ),
+    "install-dir": _path_parser(
+        "install-dir",
+        "Print the prefix holding PRIK's installed data files.",
+    ),
 }
 
 
@@ -3125,6 +3176,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "probe":
         return _run_probe_command(args, parser)
+    if args.command in {"cmake-dir", "install-dir"}:
+        return _run_path_command(args, parser)
     args.language = _resolve_language(args.paths, args.language, parser)
     preprocessing = _build_preprocessing_config(args, parser)
     print_limit = _validate_main_options(args, parser)

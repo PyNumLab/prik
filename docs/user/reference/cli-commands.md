@@ -10,11 +10,12 @@ publication: reviewed
 # CLI Commands Reference
 
 With no subcommand, PRIK builds a wrapper. Four subcommands expose the earlier
-stages without building one.
+stages without building one, and two print paths another tool builds against.
 
 ```bash
 python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]
 python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
+python3 -m prik {cmake-dir,install-dir}
 ```
 
 | Command | Purpose |
@@ -24,6 +25,8 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 | `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
 | `generate` | Writes `.pyi` contracts, wrapper sources, a Makefile, or a CMake project without compiling. |
 | `probe` | Prints compiler-target datatype and ABI facts. |
+| `cmake-dir` | Prints the directory holding PRIK's packaged CMake modules. |
+| `install-dir` | Prints the prefix holding PRIK's installed data files. |
 
 ## Getting help
 
@@ -283,6 +286,28 @@ mapping report accepts compiler, compiler arguments, runner, cache, and refresh
 options only, because its inventory is fixed and preprocessing cannot change
 it; `-I`, `-D`, `-U`, and `--std` apply to `--expr` measurements, which are
 compiled from generated source.
+
+## Paths
+
+`cmake-dir` and `install-dir` print one path each, so a shell can substitute
+them straight into another tool's command line. Neither takes options or reads
+a source file.
+
+```bash
+python3 -m prik cmake-dir
+python3 -m prik install-dir
+
+cmake -S . -B build -DPRIK_DIR="$(prik cmake-dir)"
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$(prik install-dir)"
+```
+
+| Command | Prints |
+| --- | --- |
+| `cmake-dir` | The directory holding `UsePRIK.cmake` and `PRIKConfig.cmake`. Use it as `PRIK_DIR`, or add it to `CMAKE_MODULE_PATH` for `include(UsePRIK)`. |
+| `install-dir` | The prefix PRIK's data files are installed under, which holds the same CMake modules in `share/prik/cmake`. Use it in `CMAKE_PREFIX_PATH`. A source checkout installs nothing, so the command reports that rather than naming a prefix. |
+
+Both make `find_package(PRIK CONFIG REQUIRED)` resolve. See the
+[CMake builds guide](../guide/cmake.md) for the project side.
 
 ## Compiler preprocessing
 

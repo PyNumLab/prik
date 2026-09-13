@@ -10,7 +10,8 @@ Evidence is split by the stage that establishes it:
 
 - `compiling/` checks compiler and linker command behavior;
 - `pipeline/` checks generated contracts, manifests, Makefiles, explicit native
-  inputs, and source-free `.pyi` build transitions; and
+  inputs, source-free `.pyi` build transitions, and the CMake modules an
+  installed distribution exposes; and
 - `end_to_end/` compiles and imports source, multi-source, runtime-compatibility,
   and mixed-native-bundle extensions.
 

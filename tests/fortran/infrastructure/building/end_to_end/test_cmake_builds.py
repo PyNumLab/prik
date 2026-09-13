@@ -10,14 +10,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import venv
 
 import numpy as np
 import pytest
 
+from tests.fortran._support.installed_distribution import clean_environment, installed_prik_python
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
-USE_PRIK_DIR = REPOSITORY_ROOT / "cmake"
+USE_PRIK_DIR = REPOSITORY_ROOT / "prik" / "cmake_modules"
 BRIDGE_CONTRACT = (
     REPOSITORY_ROOT
     / "tests"
@@ -65,6 +66,7 @@ def _configure_and_build(
     build_project: bool = True,
     environment: dict[str, str] | None = None,
     python_executable: Path | None = None,
+    defines: tuple[str, ...] = (),
 ) -> None:
     command = ["cmake", "-S", str(project), "-B", str(build)]
     if use_ninja and shutil.which("ninja"):
@@ -74,6 +76,7 @@ def _configure_and_build(
         command.append(f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}")
     if python_executable is not None:
         command.append(f"-DPython_EXECUTABLE={python_executable}")
+    command.extend(f"-D{define}" for define in defines)
     _run(command, environment=environment)
     if build_project:
         _run(["cmake", "--build", str(build), "-j2"], environment=environment)
@@ -1796,57 +1799,48 @@ prik_add_module(
 
 
 @pytest.mark.fortran_end_to_end
+@pytest.mark.skipif(
+    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
+    reason="CMake, gfortran, and gcc are required",
+)
+def test_find_package_prik_config_provides_the_module_helper(tmp_path: Path):
+    project = tmp_path / "found package"
+    project.mkdir()
+    (project / "square.f90").write_text(
+        """real(8) function config_square(x) result(y)
+  real(8), intent(in) :: x
+  y = x * x
+end function config_square
+""",
+        encoding="utf-8",
+    )
+    (project / "CMakeLists.txt").write_text(
+        """cmake_minimum_required(VERSION 3.21)
+project(cmake_test LANGUAGES C Fortran)
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(PRIK CONFIG REQUIRED)
+prik_add_module(
+  config_square
+  SOURCES square.f90
+)
+""",
+        encoding="utf-8",
+    )
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran", defines=(f"PRIK_DIR={USE_PRIK_DIR.as_posix()}",))
+    module = _import_extension("config_square", build)
+    assert module.config_square(np.float64(3.0)) == np.float64(9.0)
+
+
+@pytest.mark.fortran_end_to_end
 @pytest.mark.slow
 @pytest.mark.skipif(
     shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
     reason="CMake, gfortran, and gcc are required",
 )
 def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
-    distribution_dir = tmp_path / "dist"
-    clean_environment = os.environ.copy()
-    clean_environment.pop("PYTHONPATH", None)
-    wheel_build = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "wheel",
-            "--no-deps",
-            "--wheel-dir",
-            str(distribution_dir),
-            ".",
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=clean_environment,
-        capture_output=True,
-        text=True,
-    )
-    if wheel_build.returncode != 0:
-        wheel_output = wheel_build.stderr.strip() or wheel_build.stdout.strip()
-        unavailable_markers = (
-            "No module named pip",
-            "No module named build",
-            "No matching distribution found",
-            "Could not find a version that satisfies",
-            "Could not fetch URL",
-            "Temporary failure in name resolution",
-            "Network is unreachable",
-            "Connection timed out",
-        )
-        if any(marker.lower() in wheel_output.lower() for marker in unavailable_markers):
-            pytest.skip(f"isolated wheel construction is unavailable: {wheel_output}")
-        pytest.fail(f"isolated wheel construction failed:\n{wheel_output}")
-    wheels = tuple(distribution_dir.glob("prik-*.whl"))
-    if not wheels:
-        pytest.skip("isolated wheel construction produced no wheel")
-    wheel = wheels[0]
-    environment_dir = tmp_path / "installed"
-    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_dir)
-    installed_python = environment_dir / "bin" / "python"
-    _run(
-        [str(installed_python), "-m", "pip", "install", "--no-deps", str(wheel)],
-        environment=clean_environment,
-    )
+    installed_environment = clean_environment()
+    installed_python = installed_prik_python()
     discovery = _run(
         [
             str(installed_python),
@@ -1854,7 +1848,7 @@ def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
             "-c",
             "from prik.cmake import cmake_module_dir; print(cmake_module_dir() / 'UsePRIK.cmake')",
         ],
-        environment=clean_environment,
+        environment=installed_environment,
     )
     helper = Path(discovery.stdout.strip())
     assert helper.is_file()
@@ -1881,14 +1875,14 @@ def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
             "--out-dir",
             str(project),
         ],
-        environment=clean_environment,
+        environment=installed_environment,
     )
     build = project / "build"
     _configure_and_build(
         project,
         build,
         language="fortran",
-        environment=clean_environment,
+        environment=installed_environment,
         python_executable=installed_python,
     )
     artifact = next(build.rglob("installed_square*.so"))
@@ -1902,6 +1896,6 @@ def test_installed_wheel_discovers_and_builds_with_use_prik(tmp_path: Path):
             "assert installed_square.installed_square(numpy.float64(3.0)) == 9.0",
         ],
         cwd=artifact.parent,
-        environment=clean_environment,
+        environment=installed_environment,
     )
     assert imported.returncode == 0

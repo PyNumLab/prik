@@ -7,9 +7,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import shlex
-import sys
-import sysconfig
 
+from prik.installation import data_roots
 from prik.naming.generated_files import (
     adapter_source_name,
     binding_source_name,
@@ -178,16 +177,13 @@ def _relative_path(path: Path, base: Path) -> str:
 
 
 def _helper_path() -> Path:
-    """Find the helper in a checkout or in the installed data directory."""
-    candidates = [Path(__file__).resolve().parent.parent / "cmake" / "UsePRIK.cmake"]
-    data_root = sysconfig.get_path("data")
-    if data_root:
-        candidates.append(Path(data_root) / "share" / "prik" / "cmake" / "UsePRIK.cmake")
-    candidates.append(Path(sys.prefix) / "share" / "prik" / "cmake" / "UsePRIK.cmake")
+    """Find the helper in the packaged module directory or an installed data directory."""
+    candidates = [Path(__file__).resolve().parent / "cmake_modules" / "UsePRIK.cmake"]
+    candidates.extend(root / "share" / "prik" / "cmake" / "UsePRIK.cmake" for root in data_roots())
     for candidate in candidates:
         if candidate.is_file():
             return candidate.resolve()
-    raise FileNotFoundError("Packaged PRIK CMake helper not found: cmake/UsePRIK.cmake")
+    raise FileNotFoundError("Packaged PRIK CMake helper not found: prik/cmake_modules/UsePRIK.cmake")
 
 
 def cmake_module_dir() -> Path:
