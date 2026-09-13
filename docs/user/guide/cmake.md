@@ -72,6 +72,10 @@ helper, and these routes differ only in how CMake reaches it:
 | Module path | `include(UsePRIK)` | `-DCMAKE_MODULE_PATH="$(prik cmake-dir)"` |
 | scikit-build-core | `include(UsePRIK)` | nothing; the backend reads PRIK's `cmake.module` entry point |
 
+`PRIK_DIR` is package-specific, so setting it does not affect how other CMake
+packages are found; `CMAKE_PREFIX_PATH` is the broader search path every
+`find_package()` call shares.
+
 `prik install-dir` prints the prefix this PRIK's own installation wrote its data
 files under, which carries the same modules in `share/prik/cmake` and also
 resolves everything else installed there. The prefix comes from that
@@ -97,10 +101,12 @@ the wheel is one command:
 python3 -m pip wheel . --no-deps --wheel-dir dist
 ```
 
-Every route above answers for whichever `prik` the shell resolves. When the
-build must instead match the interpreter CMake itself selected -- several
-environments on one machine, or a `Python_EXECUTABLE` the project pins -- ask
-that interpreter, which also needs no `-D` argument:
+The three command-line routes above use whichever `prik` the shell resolves.
+scikit-build-core instead uses the PRIK installed in its build environment,
+which it finds through the `cmake.module` entry point. When the build must
+match the interpreter CMake itself selected -- several environments on one
+machine, or a `Python_EXECUTABLE` the project pins -- ask that interpreter,
+which also needs no `-D` argument:
 
 ```cmake
 execute_process(
