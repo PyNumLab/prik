@@ -1925,6 +1925,12 @@ def test_isolated_scikit_build_core_wheel_finds_prik_without_any_argument(tmp_pa
     ``cmake.root`` entry point. The requirement is redirected to the wheel
     built from this checkout, which is the only difference from a user's
     ``pip wheel .``.
+
+    ``CMAKE_ARGS`` names the compilers the way every other CMake test here
+    does, because PRIK pairs the C driver with the Fortran vendor: a generated
+    binding can include the Fortran runtime's ``ISO_Fortran_binding.h``, which
+    Apple Clang does not find beside a Homebrew GNU Fortran. That is ordinary
+    toolchain configuration, and no argument here names PRIK.
     """
     wheel = prik_wheel()
     project = tmp_path / "isolated example"
@@ -1937,10 +1943,15 @@ def test_isolated_scikit_build_core_wheel_finds_prik_without_any_argument(tmp_pa
     environment_dir = tmp_path / "user environment"
     venv.EnvBuilder(with_pip=True).create(environment_dir)
     user_python = environment_dir / "bin" / "python"
+    build_environment = clean_environment()
+    build_environment["CMAKE_ARGS"] = (
+        f"-DCMAKE_C_COMPILER={shutil.which('gcc')} -DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}"
+    )
+    assert "PRIK" not in build_environment["CMAKE_ARGS"]
 
     built = subprocess.run(
         [str(user_python), "-m", "pip", "wheel", "--no-deps", "--wheel-dir", str(tmp_path / "dist"), str(project)],
-        env=clean_environment(),
+        env=build_environment,
         capture_output=True,
         text=True,
     )

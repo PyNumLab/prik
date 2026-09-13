@@ -216,6 +216,14 @@ language must be enabled because every PRIK extension contains generated C
 binding code, and Fortran must be enabled whenever the module contributes
 Fortran sources.
 
+Select the two compilers from one vendor. A generated binding can include the
+Fortran runtime's `ISO_Fortran_binding.h`, which a C compiler from another
+vendor does not find: Apple Clang beside a Homebrew GNU Fortran fails to
+compile the binding, while GNU `gcc` beside GNU Fortran resolves it. The
+toolchain stays CMake's to choose, so name the pair through the usual
+`CMAKE_C_COMPILER` and `CMAKE_Fortran_COMPILER`, or `CMAKE_ARGS` when a build
+backend drives the configure step.
+
 Normal Fortran sources and targets carry their link-language requirements
 through CMake. For a raw archive or shared library whose language is otherwise
 opaque, add `LINKER_LANGUAGE Fortran`; PRIK records that requirement in its
