@@ -71,6 +71,11 @@ release tags add a leading `v` to the package version.
   letting the CMake integration tests deselect themselves, and report a missing
   Ninja as a warning because those tests then use the Makefile generator.
 
+- Added the runnable `examples/cmake/` project, which builds one Fortran module
+  through every CMake discovery route -- scikit-build-core's entry point,
+  `CMAKE_MODULE_PATH`, `PRIK_DIR`, and an installation prefix -- with a script
+  that runs each route and calls the built extension.
+
 - Array handles support allocatable and pointer arguments, results, module
   variables, derived fields, optional arguments, and matching ordinary-array
   parameters. Numeric and character arrays accept supported forward and

@@ -88,12 +88,26 @@ cmake --build build
 
 ### Other ways to find the helper
 
-With [scikit-build-core](https://scikit-build-core.readthedocs.io/), PRIK's
-packaged CMake directory reaches `CMAKE_MODULE_PATH` through its `cmake.module`
-entry point, so the project needs only the include:
+With [scikit-build-core](https://scikit-build-core.readthedocs.io/), name PRIK
+as a build requirement:
+
+```toml
+[build-system]
+requires = ["scikit-build-core>=0.10", "prik"]
+build-backend = "scikit_build_core.build"
+```
+
+The backend reads PRIK's `cmake.module` entry point and puts its packaged CMake
+directory on `CMAKE_MODULE_PATH`, so the project needs only the include:
 
 ```cmake
 include(UsePRIK)
+```
+
+Building the wheel is then one command:
+
+```bash
+python3 -m pip wheel . --no-deps --wheel-dir dist
 ```
 
 PRIK also packages `PRIKConfig.cmake` beside the helper, so any project can load
@@ -129,6 +143,10 @@ naming a prefix; `cmake-dir` always answers.
 
 `find_package(PRIK CONFIG REQUIRED)` provides exactly what `include(UsePRIK)`
 provides.
+
+[`examples/cmake/`](../../../examples/cmake/README.md) is a runnable project
+that builds the same module through every route, with a script that checks each
+one in turn.
 
 `prik_add_module()` also accepts `SOURCES` for source-first input, `CONTRACT`
 with `FORTRAN_SOURCES` or `C_SOURCES` for an authored semantic `.pyi`,
