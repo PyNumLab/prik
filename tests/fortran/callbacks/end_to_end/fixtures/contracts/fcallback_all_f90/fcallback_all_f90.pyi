@@ -20,7 +20,7 @@ def value_callback(
 def scalar_storage_callback(
     value: InOut(Float64[()]),
     output: Out(Float64[()]),
-    missing: Addr(Float64)
+    missing: Float64[()]
 ) -> None: ...
 
 @prototype

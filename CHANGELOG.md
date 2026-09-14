@@ -7,10 +7,14 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- An `intent(out)` or `intent(inout)` primitive scalar in a callback prototype
-  now reaches Python as rank-zero storage (`Out(Float64[()])`) instead of an
-  independent value, so the value the callback computes reaches the native
-  caller. Python has no writable scalar, so the previous `Out(Addr(T))` spelling
+- A primitive scalar callback dummy the callee may write now reaches Python as
+  rank-zero storage (`Out(Float64[()])`) instead of an independent value, so
+  the value the callback computes reaches the native caller. This covers
+  `intent(out)` and `intent(inout)`, and also a dummy with no declared
+  `intent`, which Fortran permits the callee to modify — that case keeps its
+  missing direction in the contract as a bare `Float64[()]` rather than gaining
+  a synthesized one. `--assume-intent-in-scalars` elects the input-only default
+  for it instead. Python has no writable scalar, so the previous `Out(Addr(T))` spelling
   silently discarded the write; it is now a policy error naming the replacement.
   A prototype still mirrors the native argument list — edit it with
   `@native_call` to project an output into the callable's return value instead.

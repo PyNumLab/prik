@@ -1542,19 +1542,27 @@ def _callback_abi_kind(
 def _callback_adapter_action(
     argument: models.SemanticArgument,
 ) -> CallbackTransferAction:
-    """Select callback copy direction from the prototype's exact dummy intent."""
+    """Select callback copy direction from the prototype's completed dummy contract.
+
+    A declared ``intent`` names the direction outright.  With none declared the
+    callee may both read and modify the dummy, so the direction follows the
+    completed storage: writable rank-zero storage copies in and out, while a
+    value projection is input-only.
+    """
     semantic_type = argument.semantic_type
     intent = argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)
     if intent == "out":
         return CallbackTransferAction.COPY_OUT
     if intent == "inout":
         return CallbackTransferAction.COPY_IN_OUT
-    if (
-        intent == "in"
-        or bool(argument.origin.metadata.get("value"))
-        or (semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0)
-    ):
+    if intent == "in" or bool(argument.origin.metadata.get("value")):
         return CallbackTransferAction.COPY_IN
+    if semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0:
+        return (
+            CallbackTransferAction.COPY_IN_OUT
+            if _is_scalar_storage_type(semantic_type)
+            else CallbackTransferAction.COPY_IN
+        )
     return CallbackTransferAction.COPY_IN_OUT
 
 

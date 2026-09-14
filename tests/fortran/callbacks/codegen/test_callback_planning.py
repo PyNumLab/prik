@@ -64,18 +64,15 @@ def test_callback_policy_completes_value_default_and_explicit_reference_before_p
     assert scalar.thread_action is CallbackThreadAction.REQUIRE_ENTERING_THREAD
     assert scalar.gil_actions == (CallbackGILAction.ACQUIRE_GIL, CallbackGILAction.RELEASE_GIL)
     assert tuple(transfer.abi for transfer in scalar.arguments) == (CallbackABIKind.REFERENCE,) * 3
+    # An undeclared intent permits the callee to read and modify the dummy, so
+    # it copies both ways rather than defaulting to copy-in.
     assert tuple(transfer.adapter_action for transfer in scalar.arguments) == (
         CallbackTransferAction.COPY_IN_OUT,
         CallbackTransferAction.COPY_OUT,
-        CallbackTransferAction.COPY_IN,
+        CallbackTransferAction.COPY_IN_OUT,
     )
-    # A dummy the native caller reads back needs storage Python can write
-    # through; a copy-in-only dummy keeps the independent value projection.
-    assert tuple(transfer.python_action for transfer in scalar.arguments) == (
-        PythonBarrierAction.SCALAR_STORAGE,
-        PythonBarrierAction.SCALAR_STORAGE,
-        PythonBarrierAction.SCALAR_VALUE,
-    )
+    # Every dummy the callee may write needs storage Python can write through.
+    assert tuple(transfer.python_action for transfer in scalar.arguments) == (PythonBarrierAction.SCALAR_STORAGE,) * 3
 
     array = policies["apply_array_storage_callback"].arguments[0].callback
     assert array.arguments[0].abi is CallbackABIKind.REFERENCE

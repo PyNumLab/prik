@@ -1,5 +1,7 @@
-"""Rank-zero callback storage: an edited contract writes through native memory."""
+"""Rank-zero callback storage: writable scalar dummies reach native memory."""
 
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -166,3 +168,83 @@ def test_callback_docstring_states_the_callable_signature_and_write_through(tmp_
     assert "x : ndarray[float64], intent(in)" in documentation
     assert "f : ndarray[float64], intent(out); assign through it (f[...] = value)" in documentation
     assert "An exception or an invalid return value terminates the process." in documentation
+
+
+SOURCE_UNDECLARED = """
+module fcallback_undeclared_intent_f90
+  implicit none
+
+  abstract interface
+    subroutine tweak_callback(value)
+      real(8) :: value
+    end subroutine tweak_callback
+  end interface
+
+contains
+  subroutine drive(callback, seed, result)
+    procedure(tweak_callback) :: callback
+    real(8), intent(in) :: seed
+    real(8), intent(out) :: result
+
+    result = seed
+    call callback(result)
+  end subroutine drive
+end module fcallback_undeclared_intent_f90
+"""
+
+
+def _undeclared_intent_module(tmp_path: Path):
+    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
+    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
+    return _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {
+            "bind_c_fcallback_undeclared_intent_f90_wrapper.f90",
+            "fcallback_undeclared_intent_f90_wrapper.c",
+            "fcallback_undeclared_intent_f90_wrapper.h",
+        },
+    )
+
+
+def test_callback_scalar_without_declared_intent_is_read_and_written(tmp_path: Path):
+    """An undeclared ``intent`` is conservatively both read and written.
+
+    Fortran permits the callee to modify such a dummy, so the callable must
+    observe the incoming value and see its own write reach the native caller.
+    """
+    module = _undeclared_intent_module(tmp_path)
+    observed = []
+
+    def tweak(value):
+        observed.append(float(value))
+        assert value.flags.writeable
+        value[...] = float(value) * 3.0
+
+    assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)
+    assert observed == [7.0]
+
+
+def test_undeclared_intent_stays_undeclared_in_the_generated_contract(tmp_path: Path):
+    """The conservative transfer must not invent a direction the source lacks.
+
+    The contract records the absent ``intent`` by carrying no direction
+    wrapper, and the generated interface body declares the dummy without one.
+    """
+    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
+    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(contracts)],
+        check=True,
+        capture_output=True,
+    )
+    contract = (contracts / "fcallback_undeclared_intent_f90.pyi").read_text(encoding="utf-8")
+
+    assert "value: Float64[()]" in contract
+    assert "In(" not in contract and "Out(" not in contract and "InOut(" not in contract
+
+    _undeclared_intent_module(tmp_path)
+    bridge = (tmp_path / "build" / "bind_c_fcallback_undeclared_intent_f90_wrapper.f90").read_text(encoding="utf-8")
+    assert "real(c_double) :: value" in bridge
+    assert "intent(inout) :: value" not in bridge

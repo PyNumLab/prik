@@ -805,22 +805,22 @@ class FortranToIRConverter(ClassVisitor):
             ),
         )
 
-    @staticmethod
     def _normalize_callback_reference_storage(
+        self,
         callback_argument: SemanticArgument,
         source_argument: FortranArgument | FortranVariable,
     ) -> None:
         """Make every non-value callback dummy a permissive reference contract.
 
-        A dummy the native caller reads back after the call needs storage the
-        Python callable can write through.  Python has no writable scalar, so
-        an ``out`` or ``inout`` primitive scalar records rank-zero storage
-        rather than the value contract used for a read-only dummy.
+        A dummy the callee may write needs storage the Python callable can
+        write through.  Python has no writable scalar, so such a primitive
+        scalar records rank-zero storage rather than the value contract used
+        for a dummy the callee only reads.
         """
         if getattr(source_argument, "pass_by_value", False):
             return
         semantic_type = callback_argument.semantic_type
-        written_back = FortranToIRConverter._is_written_back_callback_scalar(source_argument, semantic_type)
+        written_back = self._is_written_back_callback_scalar(source_argument, semantic_type)
         if written_back or (semantic_type.name == "String" and semantic_type.rank == 0):
             semantic_type.storage = SemanticStorageContract(
                 kind="array",
@@ -844,19 +844,24 @@ class FortranToIRConverter(ClassVisitor):
             semantic_type.storage.mutable = True
         semantic_type.ownership.mutable = True
 
-    @staticmethod
     def _is_written_back_callback_scalar(
+        self,
         source_argument: FortranArgument | FortranVariable,
         semantic_type: SemanticType,
     ) -> bool:
-        """Report whether one primitive scalar callback dummy is read back by the caller."""
+        """Report whether the callee may write one primitive scalar callback dummy.
+
+        Fortran permits a dummy with no declared ``intent`` to be both read and
+        modified, so an undeclared direction is conservatively writable.  Only
+        ``assume_intent_in_scalars`` elects the input-only default for it; the
+        declaration itself keeps no intent either way.
+        """
+        if int(semantic_type.rank or 0) != 0 or semantic_type.name not in SEMANTIC_SCALAR_TYPE_NAMES:
+            return False
         intent = getattr(source_argument, "intent", None)
-        return bool(
-            intent is not None
-            and str(intent).casefold() in {"out", "inout"}
-            and int(semantic_type.rank or 0) == 0
-            and semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
-        )
+        if intent is None:
+            return not self.assume_intent_in_scalars
+        return str(intent).casefold() in {"out", "inout"}
 
     @staticmethod
     def _record_prototype_argument_intent(

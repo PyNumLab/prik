@@ -119,7 +119,9 @@ end module callbacks
     assert "callback: transform_iface" in emitted
     assert "@prototype\ndef value_iface(" in emitted
     assert "value: In(Int32)" in emitted
-    assert "ref: Addr(Float64)" in emitted
+    # A dummy with no declared intent keeps that absence in the contract while
+    # carrying storage the callee may write through.
+    assert "ref: Float64[()]" in emitted
     assert "@prototype\ndef string_iface(" in emitted
     assert "read_label: In(String[8])" in emitted
     assert native_contract_issues(parse_pyi_text(emitted, module_name=module.name)) == []

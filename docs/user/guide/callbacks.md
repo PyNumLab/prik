@@ -234,13 +234,21 @@ For scalar arguments, choose the spelling from the Fortran callback dummy:
 Both forms call Python with an independent `np.float64` scalar. The difference
 is the native calling convention PRIK must match.
 
-A dummy the native caller reads back after the call is different: PRIK generates
-rank-zero storage for it, because Python has no writable scalar.
+A dummy the callee may write is different: PRIK generates rank-zero storage for
+it, because Python has no writable scalar. A dummy with no declared `intent`
+counts here — Fortran lets the callee both read and modify it, so PRIK is
+conservative and the contract records the missing direction by carrying no
+wrapper:
 
-| Fortran callback dummy | Generated prototype |
-| --- | --- |
-| `real(8), intent(out) :: f` | `f: Out(Float64[()])` |
-| `real(8), intent(inout) :: f` | `f: InOut(Float64[()])` |
+| Fortran callback dummy | Generated prototype | Callback may |
+| --- | --- | --- |
+| `real(8), intent(in) :: f` | `f: In(Addr(Float64))` | read |
+| `real(8), intent(out) :: f` | `f: Out(Float64[()])` | write |
+| `real(8), intent(inout) :: f` | `f: InOut(Float64[()])` | read and write |
+| `real(8) :: f` | `f: Float64[()]` | read and write |
+
+Pass `--assume-intent-in-scalars` to treat an undeclared scalar as input-only
+instead; the dummy still records no direction, it simply stops being writable.
 
 Python receives a rank-zero NumPy view of the native storage. Assign through it;
 rebinding the name changes nothing the native caller will read:
@@ -283,8 +291,9 @@ derived-type callback dummy declared with the Fortran `value` attribute.
 - Return the exact NumPy scalar type when PRIK expects a scalar callback result.
 - Primitive scalar callback arguments arrive as independent NumPy scalar values,
   whether the native dummy is `value` or reference.
-- Primitive scalar `in` arguments arrive as independent values; `out` and
-  `inout` arguments arrive as rank-zero storage you assign through.
+- Primitive scalar `in` arguments arrive as independent values. Arguments the
+  callee may write — `out`, `inout`, or no declared `intent` — arrive as
+  rank-zero storage you assign through.
 - Arrays and derived-type arguments can expose live native state; copy data you
   need after the wrapped call returns.
 

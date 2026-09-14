@@ -22,10 +22,10 @@ from prik.policy.construction import completed_function_wrapper_policy
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 
 
-def _source_semantic_module(filename: str, *, module_name: str):
+def _source_semantic_module(filename: str, *, module_name: str, assume_intent_in_scalars: bool = False):
     source = FIXTURES / "native" / filename
     parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
-    modules = fortran_project_to_semantic_modules(parsed)
+    modules = fortran_project_to_semantic_modules(parsed, assume_intent_in_scalars=assume_intent_in_scalars)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)
     complete_semantic_policies(module)
@@ -118,12 +118,13 @@ end module solver_mod
     )
 
 
-def test_written_back_callback_scalars_default_to_rank_zero_storage():
-    """A dummy the native caller reads back is projected as writable storage.
+def test_writable_callback_scalars_use_rank_zero_storage_without_synthesizing_intent():
+    """Every dummy the callee may write is projected as writable storage.
 
-    Python has no writable scalar, so an out or inout primitive scalar must
-    reach the callable as rank-zero storage; a copy-in-only dummy keeps the
-    independent value projection.
+    Python has no writable scalar, so a dummy the native caller reads back must
+    reach the callable as rank-zero storage.  An undeclared ``intent`` is
+    conservatively writable because Fortran permits the callee to modify it,
+    and the declaration keeps no intent of its own either way.
     """
     module = _source_semantic_module("fcallback_all_f90.f90", module_name="fcallback_all_f90")
     function = next(item for item in module.functions if item.name == "apply_scalar_storage_callback")
@@ -131,12 +132,33 @@ def test_written_back_callback_scalars_default_to_rank_zero_storage():
     transfers = policy.arguments[0].callback.arguments
 
     assert [transfer.intent for transfer in transfers] == ["inout", "out", None]
-    assert [transfer.python_action for transfer in transfers] == [
-        PythonBarrierAction.SCALAR_STORAGE,
-        PythonBarrierAction.SCALAR_STORAGE,
-        PythonBarrierAction.SCALAR_VALUE,
+    assert [transfer.python_action for transfer in transfers] == [PythonBarrierAction.SCALAR_STORAGE] * 3
+    assert [transfer.adapter_action for transfer in transfers] == [
+        CallbackTransferAction.COPY_IN_OUT,
+        CallbackTransferAction.COPY_OUT,
+        CallbackTransferAction.COPY_IN_OUT,
     ]
     assert policy.supported is True
+
+
+def test_assume_intent_in_scalars_elects_the_input_only_default_for_an_undeclared_intent():
+    """The flag chooses which default an undeclared ``intent`` receives.
+
+    It narrows the conservative read/write default to input-only; it does not
+    give the dummy a declared direction, so the contract still carries none.
+    """
+    module = _source_semantic_module(
+        "fcallback_all_f90.f90",
+        module_name="fcallback_all_f90",
+        assume_intent_in_scalars=True,
+    )
+    function = next(item for item in module.functions if item.name == "apply_scalar_storage_callback")
+    transfers = completed_function_wrapper_policy(function).arguments[0].callback.arguments
+
+    undeclared = transfers[2]
+    assert undeclared.intent is None
+    assert undeclared.python_action is PythonBarrierAction.SCALAR_VALUE
+    assert undeclared.adapter_action is CallbackTransferAction.COPY_IN
 
 
 @pytest.mark.parametrize(
