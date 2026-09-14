@@ -51,6 +51,7 @@ from prik.semantics.models import (
     PYTHON_VALUE_MUTABILITY_METADATA,
     PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
+    UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
     RUNTIME_RELEASE_GIL_METADATA,
     HIDDEN_NATIVE_OUTPUT_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
@@ -229,7 +230,13 @@ class PyiPrinter(ClassVisitor):
         if semantic_type.name == "Unknown" or semantic_type.dtype == "Unknown":
             raise ValueError("Cannot emit .pyi with unresolved semantic type 'Unknown'")
         array_descriptor = native_array_descriptor_kind(semantic_type)
-        if PROTOTYPE_REF_METADATA in semantic_type.metadata:
+        unresolved_interface = semantic_type.metadata.get(UNRESOLVED_PROCEDURE_INTERFACE_METADATA)
+        if unresolved_interface is not None:
+            # The declaration named an interface no supplied module declares.
+            # Spelling that name keeps the extracted contract self-consistent
+            # with the import already emitted for it.
+            text = str(unresolved_interface)
+        elif PROTOTYPE_REF_METADATA in semantic_type.metadata:
             text = semantic_type.name
         elif array_descriptor is not None:
             wrapper = "Allocatable" if array_descriptor == "allocatable" else "Pointer"

@@ -21,6 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 __all__ = (
+    "RUNTIME_EXTENT_MARKERS",
     "ArrayExpressionSource",
     "DeclarationExpressionCall",
     "ResolvedDeclarationExtent",
@@ -41,7 +42,11 @@ __all__ = (
 )
 
 
-_RUNTIME_DIMENSIONS = frozenset({":", "::Strided", "...", "Flat"})
+# A runtime extent has a concrete rank but no compile-time bound, so a backend
+# spells it from the descriptor it is handed rather than from the expression.
+RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
+_ASSUMED_RANK_MARKER = "..."
+_RUNTIME_DIMENSIONS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
     ".eq.": "==",
     ".ne.": "!=",

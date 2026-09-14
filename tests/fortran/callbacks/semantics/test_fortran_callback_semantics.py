@@ -3,6 +3,7 @@
 from prik.parsers.fortran import parse_fortran_project
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import FortranToIRConverter
+from prik.semantics.models import UNRESOLVED_PROCEDURE_INTERFACE_METADATA
 from prik.semantics.native_contract import native_contract_issues
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
@@ -194,3 +195,69 @@ end module duplicate_prototypes
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 
     assert [prototype.name for prototype in module.prototypes] == ["callback"]
+
+
+def test_imported_abstract_interface_resolves_across_files_and_keeps_its_declared_name():
+    """A `procedure(OBJ)` dummy resolves against the module that declares OBJ.
+
+    The interface name reaches the generated contract as a public symbol, so
+    the declaration keeps the spelling the interface was declared with rather
+    than the casefolded key used to match it.
+    """
+    interface_source = """
+module pintrf_mod
+  implicit none
+  private
+  public :: OBJ
+
+  abstract interface
+    subroutine OBJ(x, f)
+      implicit none
+      real(8), intent(in) :: x(:)
+      real(8), intent(out) :: f
+    end subroutine OBJ
+  end interface
+end module pintrf_mod
+"""
+    solver_source = """
+module solver_mod
+  use, non_intrinsic :: pintrf_mod, only : OBJ
+  implicit none
+contains
+  subroutine minimize(calfun, x, f)
+    procedure(OBJ) :: calfun
+    real(8), intent(in) :: x(:)
+    real(8), intent(out) :: f
+    call calfun(x, f)
+  end subroutine minimize
+end module solver_mod
+"""
+    project = parse_fortran_project({"pintrf.f90": interface_source, "solver.f90": solver_source})
+    modules = {module.name: module for module in FortranToIRConverter().visit(project)}
+
+    callback = get_function(modules["solver_mod"], "minimize").arguments[0].semantic_type
+    assert callback.name == "OBJ"
+    assert callback.storage is not None and callback.storage.kind == "callback"
+    assert [argument.name for argument in callback.metadata["callback_arguments"]] == ["x", "f"]
+    assert callback.metadata["arguments"][0].shape == ["::Strided"]
+    assert callback.metadata["return"].name == "None"
+
+
+def test_named_but_undeclared_procedure_interface_is_recorded_for_diagnosis():
+    """An unresolved `procedure(OBJ)` keeps the name so later stages can report it."""
+    source = """
+module solver_mod
+  use, non_intrinsic :: pintrf_mod, only : OBJ
+  implicit none
+contains
+  subroutine minimize(calfun, x)
+    procedure(OBJ) :: calfun
+    real(8), intent(in) :: x
+  end subroutine minimize
+end module solver_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    callback = get_function(module, "minimize").arguments[0].semantic_type
+    assert callback.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] == "OBJ"

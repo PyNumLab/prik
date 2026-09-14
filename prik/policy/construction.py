@@ -1574,6 +1574,13 @@ def _callback_transfer_blockers(
         )
     if transfer.passed_by_value and transfer.rank > 0:
         blockers.append(f"callback argument {argument.name!r} cannot pass an array by value")
+    if _discards_callback_scalar_writeback(transfer):
+        # Python has no writable scalar, so a value projection cannot deliver
+        # anything back to the native caller that reads this dummy after the call.
+        blockers.append(
+            f"callback argument {argument.name!r} is intent({transfer.intent}) and cannot use the "
+            f"value spelling Addr({semantic_type.name}); use {semantic_type.name}[()] for writable storage"
+        )
     if semantic_type.name == "String":
         if transfer.character_length is None or transfer.character_length <= 0:
             blockers.append(f"callback argument {argument.name!r} requires a fixed positive character length")
@@ -1585,6 +1592,17 @@ def _callback_transfer_blockers(
     elif transfer.derived_type_identity is None and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
         blockers.append(f"callback argument {argument.name!r} has unsupported type {semantic_type.name!r}")
     return tuple(blockers)
+
+
+def _discards_callback_scalar_writeback(transfer: CallbackTransferPolicy) -> bool:
+    """Report whether a written-back scalar dummy was projected as an unwritable value."""
+    return bool(
+        transfer.rank == 0
+        and not transfer.passed_by_value
+        and transfer.intent is not None
+        and str(transfer.intent).casefold() in {"out", "inout"}
+        and transfer.python_action is PythonBarrierAction.SCALAR_VALUE
+    )
 
 
 def _callback_result_policy(
@@ -4373,6 +4391,12 @@ def _derived_argument_handoff_blockers(
     """Require the exact native type definition for a typed value call."""
     if derived is None:
         return ()
+    interface = argument.semantic_type.metadata.get(models.UNRESOLVED_PROCEDURE_INTERFACE_METADATA)
+    if interface is not None:
+        return (
+            f"argument {argument.name!r} declares procedure interface {str(interface)!r}, "
+            "which no supplied source declares; add the module that declares it to the build inputs",
+        )
     return _derived_type_definition_blockers(f"argument {argument.name!r}", derived, derived_types)
 
 

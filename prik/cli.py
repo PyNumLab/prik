@@ -617,6 +617,9 @@ def _convert_fortran_semantic_sources(
         refresh=context.refresh_fortran_type_probe,
     )
     converted_files = []
+    # A module that imports an abstract interface from another supplied file
+    # must resolve it here, exactly as a multi-file wrapper build does.
+    modules_by_file = {id(fobj): list(fobj.modules) for _p, fobj in parsed_files}
     for p, fobj in parsed_files:
         compile_time_values = _fortran_compile_time_values(fobj, context.preprocessing, **probe_options)
         type_facts = _fortran_type_facts(
@@ -631,6 +634,9 @@ def _convert_fortran_semantic_sources(
             compile_time_values=compile_time_values,
             wrapped_derived_types=wrapped_derived_types,
             assume_intent_in_scalars=context.assume_intent_in_scalars,
+            sibling_modules=[
+                module for key, modules in modules_by_file.items() if key != id(fobj) for module in modules
+            ],
             **({"type_facts": type_facts} if type_facts is not None else {}),
         )
         converted_files.append((p, modules))

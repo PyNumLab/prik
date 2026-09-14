@@ -11,6 +11,7 @@ from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.ownership import PythonBarrierAction
 from prik.policy.models import (
     CallbackABIKind,
     CallbackTransferAction,
@@ -83,3 +84,109 @@ def apply(callback: callback_shape) -> None: ...
     assert isinstance(policy, FunctionWrapperPolicy)
     assert policy.supported is False
     assert blocker in policy.blockers
+
+
+def test_procedure_interface_from_an_unsupplied_module_is_blocked_by_name():
+    """A named interface no input declares is reported against that name.
+
+    Without the module that declares it the dummy has no signature, so the
+    diagnostic must name the interface the declaration asked for rather than
+    the opaque placeholder type it fell back to.
+    """
+    source = """
+module solver_mod
+  use, non_intrinsic :: pintrf_mod, only : OBJ
+  implicit none
+contains
+  subroutine minimize(calfun, x)
+    procedure(OBJ) :: calfun
+    real(8), intent(in) :: x
+  end subroutine minimize
+end module solver_mod
+"""
+    parsed = parse_fortran_project({"solver.f90": source})
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="solver_mod")
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert policy.supported is False
+    assert (
+        "argument 'calfun' declares procedure interface 'OBJ', which no supplied source declares; "
+        "add the module that declares it to the build inputs" in policy.blockers
+    )
+
+
+def test_written_back_callback_scalars_default_to_rank_zero_storage():
+    """A dummy the native caller reads back is projected as writable storage.
+
+    Python has no writable scalar, so an out or inout primitive scalar must
+    reach the callable as rank-zero storage; a copy-in-only dummy keeps the
+    independent value projection.
+    """
+    module = _source_semantic_module("fcallback_all_f90.f90", module_name="fcallback_all_f90")
+    function = next(item for item in module.functions if item.name == "apply_scalar_storage_callback")
+    policy = completed_function_wrapper_policy(function)
+    transfers = policy.arguments[0].callback.arguments
+
+    assert [transfer.intent for transfer in transfers] == ["inout", "out", None]
+    assert [transfer.python_action for transfer in transfers] == [
+        PythonBarrierAction.SCALAR_STORAGE,
+        PythonBarrierAction.SCALAR_STORAGE,
+        PythonBarrierAction.SCALAR_VALUE,
+    ]
+    assert policy.supported is True
+
+
+@pytest.mark.parametrize(
+    ("prototype", "blocker"),
+    [
+        (
+            "def callback_shape(value: Out(Addr(Float64))) -> None: ...",
+            "callback argument 'value' is intent(out) and cannot use the value spelling "
+            "Addr(Float64); use Float64[()] for writable storage",
+        ),
+        (
+            "def callback_shape(value: InOut(Addr(Int32))) -> None: ...",
+            "callback argument 'value' is intent(inout) and cannot use the value spelling "
+            "Addr(Int32); use Int32[()] for writable storage",
+        ),
+    ],
+)
+def test_value_spelling_is_blocked_for_written_back_callback_scalars(prototype: str, blocker: str):
+    """An out or inout dummy spelled as a value would silently discard the write."""
+    module = parse_pyi_text(
+        f"""
+@prototype
+{prototype}
+
+def apply(callback: callback_shape) -> None: ...
+""",
+        module_name="discarded_callback_writeback",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert policy.supported is False
+    assert blocker in policy.blockers
+
+
+def test_read_only_callback_scalars_keep_the_value_spelling():
+    """An in dummy is never read back, so the value projection stays valid."""
+    module = parse_pyi_text(
+        """
+@prototype
+def callback_shape(value: In(Addr(Float64))) -> None: ...
+
+def apply(callback: callback_shape) -> None: ...
+""",
+        module_name="read_only_callback_scalar",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert policy.supported is True
+    assert policy.arguments[0].callback.arguments[0].python_action is PythonBarrierAction.SCALAR_VALUE

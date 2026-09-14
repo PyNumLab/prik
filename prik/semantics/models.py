@@ -18,6 +18,7 @@ from typing import Any
 EXTERNAL_TYPE_REF_METADATA = "external_type_ref"
 PROTOTYPE_REF_METADATA = "prototype_ref"
 PROTOTYPE_INTENT_METADATA = "prototype_intent"
+UNRESOLVED_PROCEDURE_INTERFACE_METADATA = "unresolved_procedure_interface"
 INTERNAL_MODULE_VARIABLE_ACCESS_METADATA = "internal_module_variable_access"
 INTERNAL_MODULE_VARIABLE_NAME_METADATA = "internal_module_variable_name"
 INTERNAL_NATIVE_ARRAY_HANDLE_OPERATION_METADATA = "internal_native_array_handle_operation"

@@ -72,6 +72,7 @@ from prik.semantics.models import (
     PYTHON_STATIC_METADATA,
     PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
+    UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
     SemanticArgument,
     SemanticArrayContract,
     SemanticClass,
@@ -344,17 +345,27 @@ class FortranToIRConverter(ClassVisitor):
         parsed_file: FortranFile,
         *,
         standalone_module_name: str | None = None,
+        sibling_modules: Iterable[FortranModule] = (),
     ) -> list[SemanticModule]:
         """Convert every module and standalone procedure group in one file.
 
         The method first expands the wrapped-derived-type lookup from the file,
         then preserves parser module order.  Standalone procedures are emitted
-        last as the requested synthetic module when present.
+        last as the requested synthetic module when present.  ``sibling_modules``
+        supplies modules parsed from other files so that an abstract interface
+        imported across files resolves the same way it does for a project.
         """
         converter = self._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
         converter = converter._with_additional_abstract_types(self._abstract_types_from_file(parsed_file))
-        modules = [converter.visit(module) for module in parsed_file.modules]
+        known_modules = {item.name.casefold(): item for item in (*sibling_modules, *parsed_file.modules)}
+        modules = [
+            converter.visit(
+                module,
+                callback_interfaces=self._imported_callback_interface_lookup(known_modules, module),
+            )
+            for module in parsed_file.modules
+        ]
         if parsed_file.procedures:
             modules.append(
                 converter.procedures_to_semantic_module(
@@ -688,9 +699,23 @@ class FortranToIRConverter(ClassVisitor):
         project: FortranProject,
         module: FortranModule,
     ) -> dict[str, FortranProcedureSignature]:
-        """Resolve abstract interfaces imported from another parsed module."""
+        """Resolve abstract interfaces imported from another parsed project module."""
         modules = {name.casefold(): item for name, item in project.modules.items()}
         modules.update({item.name.casefold(): item for parsed_file in project.files for item in parsed_file.modules})
+        return cls._imported_callback_interface_lookup(modules, module)
+
+    @classmethod
+    def _imported_callback_interface_lookup(
+        cls,
+        modules: dict[str, FortranModule],
+        module: FortranModule,
+    ) -> dict[str, FortranProcedureSignature]:
+        """Resolve abstract interfaces imported from another known module.
+
+        The index is keyed by casefolded module name; an interface declared in
+        a module outside it stays unresolved, which later stages report against
+        the ``use`` that named it.
+        """
         imported: dict[str, FortranProcedureSignature] = {}
         for module_name, mappings in module.uses.items():
             source_module = modules.get(module_name.casefold())
@@ -725,7 +750,13 @@ class FortranToIRConverter(ClassVisitor):
         interface_name = str(arg.kind or arg.name)
         signature = callback_interfaces.get(interface_name.casefold())
         if signature is None:
-            return self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            semantic_type = self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            if getattr(arg, "kind", None):
+                # The declaration named an interface that no supplied module
+                # declares, which later stages report against that name rather
+                # than against the opaque procedure type used as a placeholder.
+                semantic_type.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] = interface_name
+            return semantic_type
 
         context = self._procedure_derived_type_context(signature, derived_type_context)
         projected_arguments = list(signature.arguments)
@@ -779,11 +810,18 @@ class FortranToIRConverter(ClassVisitor):
         callback_argument: SemanticArgument,
         source_argument: FortranArgument | FortranVariable,
     ) -> None:
-        """Make every non-value callback dummy a permissive reference contract."""
+        """Make every non-value callback dummy a permissive reference contract.
+
+        A dummy the native caller reads back after the call needs storage the
+        Python callable can write through.  Python has no writable scalar, so
+        an ``out`` or ``inout`` primitive scalar records rank-zero storage
+        rather than the value contract used for a read-only dummy.
+        """
         if getattr(source_argument, "pass_by_value", False):
             return
         semantic_type = callback_argument.semantic_type
-        if semantic_type.name == "String" and semantic_type.rank == 0:
+        written_back = FortranToIRConverter._is_written_back_callback_scalar(source_argument, semantic_type)
+        if written_back or (semantic_type.name == "String" and semantic_type.rank == 0):
             semantic_type.storage = SemanticStorageContract(
                 kind="array",
                 read_only=False,
@@ -805,6 +843,20 @@ class FortranToIRConverter(ClassVisitor):
             semantic_type.storage.read_only = False
             semantic_type.storage.mutable = True
         semantic_type.ownership.mutable = True
+
+    @staticmethod
+    def _is_written_back_callback_scalar(
+        source_argument: FortranArgument | FortranVariable,
+        semantic_type: SemanticType,
+    ) -> bool:
+        """Report whether one primitive scalar callback dummy is read back by the caller."""
+        intent = getattr(source_argument, "intent", None)
+        return bool(
+            intent is not None
+            and str(intent).casefold() in {"out", "inout"}
+            and int(semantic_type.rank or 0) == 0
+            and semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
+        )
 
     @staticmethod
     def _record_prototype_argument_intent(
@@ -3674,12 +3726,15 @@ def fortran_file_to_semantic_modules(
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
     assume_intent_in_scalars: bool = False,
+    sibling_modules: Iterable[FortranModule] = (),
 ) -> list[SemanticModule]:
     """Convert every module and standalone procedure group in one parsed file.
 
     Use this rather than the single-module helper when file-level procedures
     matter.  Parser module ordering is retained, and ``standalone_module_name``
-    controls the synthetic module used for top-level procedures.
+    controls the synthetic module used for top-level procedures.  Pass
+    ``sibling_modules`` when other files were parsed alongside this one so an
+    abstract interface imported across files resolves.
 
     Example:
         >>> parsed = FortranFile(procedures=[FortranProcedureSignature(name="tick", kind="subroutine")])
@@ -3694,6 +3749,7 @@ def fortran_file_to_semantic_modules(
     ).visit(
         parsed_file,
         standalone_module_name=standalone_module_name,
+        sibling_modules=sibling_modules,
     )
 
 

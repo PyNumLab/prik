@@ -69,7 +69,13 @@ def test_callback_policy_completes_value_default_and_explicit_reference_before_p
         CallbackTransferAction.COPY_OUT,
         CallbackTransferAction.COPY_IN,
     )
-    assert tuple(transfer.python_action for transfer in scalar.arguments) == (PythonBarrierAction.SCALAR_VALUE,) * 3
+    # A dummy the native caller reads back needs storage Python can write
+    # through; a copy-in-only dummy keeps the independent value projection.
+    assert tuple(transfer.python_action for transfer in scalar.arguments) == (
+        PythonBarrierAction.SCALAR_STORAGE,
+        PythonBarrierAction.SCALAR_STORAGE,
+        PythonBarrierAction.SCALAR_VALUE,
+    )
 
     array = policies["apply_array_storage_callback"].arguments[0].callback
     assert array.arguments[0].abi is CallbackABIKind.REFERENCE
@@ -157,7 +163,9 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
         callback.arguments[1].extent_roles = ()
     elif edit == "scalar_projection":
         callback = _callback_argument(plan, "apply_scalar_storage_callback").callback
-        callback.arguments[0].python_action = PythonBarrierAction.SCALAR_STORAGE
+        # A rank-zero storage transfer cannot claim the value projection: an
+        # immutable value cannot deliver a write back to the native caller.
+        callback.arguments[0].python_action = PythonBarrierAction.SCALAR_VALUE
     elif edit == "result":
         callback = _callback_argument(plan, "apply_value_callback").callback
         callback.result.action = CallbackResultAction.RETURN_VOID
@@ -245,3 +253,61 @@ def test_optional_callback_retains_one_exact_policy_blocker():
 
     with pytest.raises(ValueError, match="unsupported optional callback"):
         WrapperPlanner().build(module)
+
+
+def test_runtime_callback_extents_lower_to_assumed_shape_dummies_and_measured_copies():
+    """Codegen spells a runtime extent instead of leaking the plan's marker.
+
+    A runtime extent reaches the bridge as a public marker rather than an
+    expression, so the dummy takes the caller's descriptor and the contiguous
+    copy that backs ``c_loc`` is measured from that dummy.
+    """
+    module = pyi_file_to_semantic_module(ARRAY_CONTRACT, module_name="fcallback_array_f90")
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    callback = _callback_argument(plan, "apply_assumed_shape").callback
+    assert [transfer.array.shape for transfer in callback.arguments] == [("::Strided",), ("::Strided",)]
+
+    _, bridge = _sources(plan)
+    assert "::Strided" not in bridge
+    assert "real(c_double), intent(in), dimension(:) :: values" in bridge
+    assert "real(c_double), target, dimension(size(values, 1)) :: values_callback_storage" in bridge
+    assert "real(c_double), intent(out), dimension(:) :: doubled" in bridge
+    assert "real(c_double), target, dimension(size(doubled, 1)) :: doubled_callback_storage" in bridge
+
+
+def test_rank_zero_callback_storage_lowers_to_a_direction_correct_native_view():
+    """Rank-zero storage aliases native memory instead of copying a value.
+
+    Writeability follows the completed transfer direction, so only an ``out``
+    or ``inout`` dummy can be written through.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, In, InOut, Out, prototype
+
+@prototype
+def directions_callback(
+    read_value: In(Float64[()]),
+    update_value: InOut(Float64[()]),
+    write_value: Out(Float64[()])
+) -> None: ...
+
+def apply_directions(callback: directions_callback) -> None: ...
+""",
+        module_name="callback_scalar_storage",
+    )
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    callback = _callback_argument(plan, "apply_directions").callback
+    assert [transfer.python_action for transfer in callback.arguments] == [PythonBarrierAction.SCALAR_STORAGE] * 3
+    assert [transfer.abi for transfer in callback.arguments] == [CallbackABIKind.REFERENCE] * 3
+
+    c_source, _bridge = _sources(plan)
+    read_only = "PyArray_New(&PyArray_Type, 0, NULL, NPY_FLOAT64, NULL, read_value_data, 0, "
+    assert f"{read_only}NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL)" in c_source
+    for parameter in ("update_value", "write_value"):
+        writable = f"PyArray_New(&PyArray_Type, 0, NULL, NPY_FLOAT64, NULL, {parameter}_data, 0, "
+        assert f"{writable}NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)" in c_source

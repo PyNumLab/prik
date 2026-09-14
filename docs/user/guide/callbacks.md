@@ -216,6 +216,14 @@ copying an undefined incoming value, and `InOut(...)` copies the incoming value
 and writes changes back after the callback. Omitting the wrapper preserves an
 omitted Fortran `intent` rather than inventing one.
 
+An assumed-shape callback dummy is spelled `Float64[::]`, and Python receives
+the extent the native caller passed:
+
+| Fortran callback dummy | Matching prototype |
+| --- | --- |
+| `real(8), intent(in) :: values(count)` | `values: In(Float64[count])` |
+| `real(8), intent(in) :: values(:)` | `values: In(Float64[::])` |
+
 For scalar arguments, choose the spelling from the Fortran callback dummy:
 
 | Fortran callback dummy | Matching prototype |
@@ -225,6 +233,43 @@ For scalar arguments, choose the spelling from the Fortran callback dummy:
 
 Both forms call Python with an independent `np.float64` scalar. The difference
 is the native calling convention PRIK must match.
+
+A dummy the native caller reads back after the call is different: PRIK generates
+rank-zero storage for it, because Python has no writable scalar.
+
+| Fortran callback dummy | Generated prototype |
+| --- | --- |
+| `real(8), intent(out) :: f` | `f: Out(Float64[()])` |
+| `real(8), intent(inout) :: f` | `f: InOut(Float64[()])` |
+
+Python receives a rank-zero NumPy view of the native storage. Assign through it;
+rebinding the name changes nothing the native caller will read:
+
+```python
+def objective(x, f):
+    f[...] = float(np.sum(x * x))   # delivers the value
+    f = float(np.sum(x * x))        # rebinds a local name; the caller sees nothing
+```
+
+To keep an ordinary Python function, write a small adapter and pass that:
+
+```python
+def objective(x):
+    return float(np.sum(x * x))
+
+def objective_prik(x, f):
+    f[...] = objective(x)
+```
+
+A prototype keeps the native callback's argument list, so the Python callable
+mirrors the Fortran interface. To call a return-style function instead, edit the
+prototype to project the output:
+
+```python
+@prototype
+@native_call([Arg(0), Return("f", 0)])
+def OBJ(x: In(Float64[::])) -> Float64: ...
+```
 
 `Value(T)` is only for supported non-primitive scalar value dummies, such as a
 derived-type callback dummy declared with the Fortran `value` attribute.
@@ -238,8 +283,8 @@ derived-type callback dummy declared with the Fortran `value` attribute.
 - Return the exact NumPy scalar type when PRIK expects a scalar callback result.
 - Primitive scalar callback arguments arrive as independent NumPy scalar values,
   whether the native dummy is `value` or reference.
-- Primitive scalar reference writeback is unsupported; return a scalar result
-  instead.
+- Primitive scalar `in` arguments arrive as independent values; `out` and
+  `inout` arguments arrive as rank-zero storage you assign through.
 - Arrays and derived-type arguments can expose live native state; copy data you
   need after the wrapped call returns.
 
@@ -269,7 +314,7 @@ The current callback contract does not support:
   or supported scalar derived types.
 - Arrays passed by Fortran `value`, arrays of derived values, and array callback
   results without a complete fixed shape. Pass arrays by reference and give array
-  results an exact primitive shape.
+  results an exact primitive shape; an array *argument* may be assumed-shape.
 - Variable-length callback strings. Use a fixed positive `String[n]` length.
 - Callback execution on a different Python thread. The callback must run on the
   same thread that entered the wrapper.

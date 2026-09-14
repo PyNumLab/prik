@@ -7,6 +7,39 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- An `intent(out)` or `intent(inout)` primitive scalar in a callback prototype
+  now reaches Python as rank-zero storage (`Out(Float64[()])`) instead of an
+  independent value, so the value the callback computes reaches the native
+  caller. Python has no writable scalar, so the previous `Out(Addr(T))` spelling
+  silently discarded the write; it is now a policy error naming the replacement.
+  A prototype still mirrors the native argument list — edit it with
+  `@native_call` to project an output into the callable's return value instead.
+
+- Generated docstrings now state a callback's exact callable signature —
+  arity, per-argument direction and element type, how an output is delivered,
+  and the lifetime and fatal-error rules — taken from the same completed
+  prototype the trampoline is generated from.
+
+- Assumed-shape array arguments are now supported inside a callback prototype.
+  A `procedure(iface)` dummy whose interface declares `values(:)` lowers to an
+  assumed-shape bridge dummy and a contiguous call-local copy measured from it,
+  instead of emitting an invalid array declaration. Array callback *results*
+  still require an exact shape and now report that directly.
+
+- A dummy procedure's interface name keeps the spelling it was declared with.
+  Generated `.pyi` contracts previously annotated `procedure(OBJ)` as `obj`
+  while importing `OBJ`, so PRIK could not rebuild from the contract it had
+  just written.
+
+- `prik generate --pyi` now resolves an abstract interface imported from
+  another supplied source file, matching multi-file wrapper builds.
+
+- A `procedure(iface)` dummy whose interface no supplied source declares now
+  reports the interface by name and asks for the module that declares it,
+  instead of failing against an opaque placeholder type. Contract extraction
+  spells that interface name so the generated `.pyi` stays consistent with the
+  import it already emits.
+
 ## 0.5.0 — 2026-09-13
 
 - Added CMake integration through the packaged `UsePRIK.cmake` helper and a

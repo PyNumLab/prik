@@ -14,7 +14,11 @@ from dataclasses import dataclass, replace
 import re
 from typing import ClassVar
 
-from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
+from prik.utilities.declaration_expressions import (
+    RUNTIME_EXTENT_MARKERS,
+    declaration_extent_uses_power,
+    render_declaration_extent,
+)
 from prik.policy.ownership import (
     CodegenAction,
     ObjectKind,
@@ -230,7 +234,6 @@ class CBindingGenerator(ClassVisitor):
     class; unsupported plan actions fail instead of being reinterpreted here.
     """
 
-    _RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
     _SHARED_OUTPUT_CLEANUP_MIN_RESULTS = 4
 
     def require_supported(self, plan: ModulePlan) -> None:
@@ -981,6 +984,8 @@ class CBindingGenerator(ClassVisitor):
         match transfer.python_action:
             case PythonBarrierAction.SCALAR_VALUE:
                 nodes = self._callback_scalar_value_nodes(transfer, target)
+            case PythonBarrierAction.SCALAR_STORAGE:
+                nodes = self._callback_scalar_storage_nodes(transfer, target)
             case PythonBarrierAction.ARRAY_STORAGE:
                 nodes = self._callback_array_nodes(transfer, position, target)
             case PythonBarrierAction.STRING_STORAGE:
@@ -1016,6 +1021,41 @@ class CBindingGenerator(ClassVisitor):
                 target,
                 "PyObject *",
                 CodeExpression(f"prik_{self._scalar_helper_suffix(scalar)}_to_numpy({value_pointer})"),
+            ),
+        )
+
+    def _callback_scalar_storage_nodes(
+        self,
+        transfer: CallbackTransferPlan,
+        target: str,
+    ) -> tuple[CDeclaration, ...]:
+        """Materialize one completed rank-zero storage projection over native memory.
+
+        The Python callable receives a rank-zero view of the same storage the
+        adapter hands the native caller, so an ``out`` or ``inout`` dummy is
+        written through instead of arriving as an independent value.
+        """
+        if transfer.abi is not CallbackABIKind.REFERENCE:
+            raise ValueError(
+                f"Unsupported rank-zero storage callback ABI for {transfer.owner_path!r}: {transfer.abi.value}"
+            )
+        scalar = PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
+        parameter = self._callback_parameter_base_name(transfer)
+        flags = "NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED"
+        if transfer.adapter_action in {
+            CallbackTransferAction.COPY_OUT,
+            CallbackTransferAction.COPY_IN_OUT,
+            CallbackTransferAction.BORROW_WRITABLE,
+        }:
+            flags += " | NPY_ARRAY_WRITEABLE"
+        return (
+            CDeclaration(
+                target,
+                "PyObject *",
+                CodeExpression(
+                    f"PyArray_New(&PyArray_Type, 0, NULL, {scalar.numpy_type_macro}, "
+                    f"NULL, {parameter}_data, 0, {flags}, NULL)"
+                ),
             ),
         )
 
@@ -8028,7 +8068,7 @@ class CBindingGenerator(ClassVisitor):
         flattened: bool,
     ) -> str | None:
         """Lower one axis extent, or None when the axis carries no declared extent."""
-        if flattened or expression in self._RUNTIME_EXTENT_MARKERS:
+        if flattened or expression in RUNTIME_EXTENT_MARKERS:
             return None
         if array.extent_evaluation[axis] == "bridge":
             return None

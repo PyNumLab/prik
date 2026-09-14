@@ -3941,7 +3941,10 @@ class FortranParser(ClassVisitor):
             return declaration, split_csv((decl.group("attrs") or "").strip().lstrip(", "))
         if re.match(r"^procedure\s*\(", left, re.IGNORECASE):
             procm = _REGEX["procedure_dummy"].match(left)
-            iface = procm.group("iface").lower() if procm else None
+            # The interface name is a user-visible symbol that reaches the
+            # generated .pyi contract, so it keeps its declared spelling;
+            # every comparison against it normalizes case at the comparison.
+            iface = procm.group("iface") if procm else None
             return self._new_declaration("procedure", iface), split_csv(
                 (procm.group("attrs") if procm else "").strip().lstrip(", ")
             )
@@ -4043,7 +4046,7 @@ class FortranParser(ClassVisitor):
                 filename=filename,
                 code="PARSE_INTERNAL_STATE",
             )
-        if declaration.base_type == "procedure" and declaration.kind in proc_state.imports:
+        if declaration.base_type == "procedure" and self._scope_key(declaration.kind or "") in proc_state.imports:
             declaration.kind = ""
         for normalized_name, shape, _initializer, entity_declaration in self._declaration_entities(
             right,

@@ -2329,19 +2329,34 @@ class WrapperGenerator:
         transfer: CallbackTransferPlan,
         position: int,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require every primitive scalar callback transfer to use its value projection."""
-        if position < 0 or transfer.object_kind is not ObjectKind.SCALAR or transfer.rank != 0:
+        """Require every primitive scalar callback transfer to use a completed projection.
+
+        A rank-zero primitive dummy is projected either as an independent value
+        or, when the native caller reads it back, as rank-zero storage the
+        callable writes through.  Any other pairing of projection, ABI and copy
+        direction means completed policy and the plan disagree.
+        """
+        if position < 0 or transfer.rank != 0:
             return ()
-        valid = (
-            transfer.python_action is PythonBarrierAction.SCALAR_VALUE
-            and transfer.abi in {CallbackABIKind.VALUE, CallbackABIKind.REFERENCE}
-            and transfer.adapter_action
-            in {
-                CallbackTransferAction.COPY_IN,
-                CallbackTransferAction.COPY_OUT,
-                CallbackTransferAction.COPY_IN_OUT,
-            }
-        )
+        copies = {
+            CallbackTransferAction.COPY_IN,
+            CallbackTransferAction.COPY_OUT,
+            CallbackTransferAction.COPY_IN_OUT,
+        }
+        if transfer.object_kind is ObjectKind.SCALAR:
+            valid = (
+                transfer.python_action is PythonBarrierAction.SCALAR_VALUE
+                and transfer.abi in {CallbackABIKind.VALUE, CallbackABIKind.REFERENCE}
+                and transfer.adapter_action in copies
+            )
+        elif transfer.object_kind is ObjectKind.NUMPY_ARRAY:
+            valid = (
+                transfer.python_action is PythonBarrierAction.SCALAR_STORAGE
+                and transfer.abi is CallbackABIKind.REFERENCE
+                and transfer.adapter_action in copies
+            )
+        else:
+            return ()
         return (
             ()
             if valid

@@ -14,7 +14,7 @@ from dataclasses import replace
 import re
 
 from prik.naming.native_symbols import NativeSymbolNames
-from prik.utilities.declaration_expressions import render_declaration_extent
+from prik.utilities.declaration_expressions import RUNTIME_EXTENT_MARKERS, render_declaration_extent
 from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
@@ -858,7 +858,7 @@ class FortranBridgeGenerator(ClassVisitor):
         }:
             attributes.append("target")
         if transfer.rank:
-            attributes.append(f"dimension({self._callback_shape(transfer)})")
+            attributes.append(f"dimension({self._callback_dummy_shape(transfer)})")
         return FortranParameter(
             self._callback_parameter_base_name(transfer),
             self._callback_native_type(transfer),
@@ -932,7 +932,7 @@ class FortranBridgeGenerator(ClassVisitor):
         }:
             attributes = ["target"]
             if transfer.rank:
-                attributes.append(f"dimension({self._callback_shape(transfer)})")
+                attributes.append(f"dimension({self._callback_storage_shape(transfer)})")
             declarations.append(
                 FortranDeclaration(
                     self._callback_storage_name(transfer),
@@ -1062,7 +1062,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     (
                         CodeExpression("callback_result_data"),
                         CodeExpression("callback_result_view"),
-                        CodeExpression(f"[{self._callback_shape(transfer)}]"),
+                        CodeExpression(f"[{self._callback_result_shape(transfer)}]"),
                     ),
                 ),
                 FortranAssignment("callback_result", CodeExpression("callback_result_view")),
@@ -1086,7 +1086,7 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError("Callback function result is missing its transfer plan")
         result_type = self._callback_native_type(transfer)
         if transfer.rank:
-            result_type += f", dimension({self._callback_shape(transfer)})"
+            result_type += f", dimension({self._callback_result_shape(transfer)})"
         return result_type
 
     def _callback_native_type(self, transfer: CallbackTransferPlan) -> str:
@@ -1104,13 +1104,53 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return the base Fortran dummy name reserved for one callback transfer."""
         return re.sub(r"\W", "_", transfer.name).casefold()
 
-    def _callback_shape(self, transfer: CallbackTransferPlan) -> str:
-        """Render completed callback extents in native Fortran syntax."""
+    def _callback_array_shape(self, transfer: CallbackTransferPlan) -> tuple[str, ...]:
+        """Return one callback transfer's completed public extent expressions."""
         if transfer.array is None or transfer.array.rank is None:
             raise ValueError(f"Callback array transfer {transfer.owner_path!r} has no shape plan")
+        return tuple(transfer.array.shape)
+
+    def _callback_dummy_shape(self, transfer: CallbackTransferPlan) -> str:
+        """Render one callback dummy's extents in native Fortran syntax.
+
+        A runtime extent lowers to an assumed-shape axis, so the dummy takes
+        the native caller's descriptor.  The contiguous call-local copy
+        declared beside it carries the concrete bounds instead.
+        """
         return ", ".join(
-            render_declaration_extent(expression, {}, target="fortran") for expression in transfer.array.shape
+            ":" if expression in RUNTIME_EXTENT_MARKERS else render_declaration_extent(expression, {}, target="fortran")
+            for expression in self._callback_array_shape(transfer)
         )
+
+    def _callback_storage_shape(self, transfer: CallbackTransferPlan) -> str:
+        """Render the contiguous call-local copy's extents for one callback dummy.
+
+        An assumed-shape dummy cannot back ``c_loc``, so the copy is an
+        automatic array measured from the dummy it was declared beside.
+        """
+        base = self._callback_parameter_base_name(transfer)
+        return ", ".join(
+            f"size({base}, {axis + 1})"
+            if expression in RUNTIME_EXTENT_MARKERS
+            else render_declaration_extent(expression, {}, target="fortran")
+            for axis, expression in enumerate(self._callback_array_shape(transfer))
+        )
+
+    def _callback_result_shape(self, transfer: CallbackTransferPlan) -> str:
+        """Render a callback array result's extents, which must be explicit.
+
+        A function result has no caller descriptor to measure, so a runtime
+        extent here means policy admitted a form the native result cannot
+        spell.
+        """
+        shape = self._callback_array_shape(transfer)
+        runtime = [expression for expression in shape if expression in RUNTIME_EXTENT_MARKERS]
+        if runtime:
+            raise ValueError(
+                f"Callback array result {transfer.owner_path!r} has runtime extents {runtime} "
+                "and cannot be spelled as a native function result"
+            )
+        return ", ".join(render_declaration_extent(expression, {}, target="fortran") for expression in shape)
 
     def _callback_address_source(self, transfer: CallbackTransferPlan) -> str:
         """Return the C-address expression that backs one callback transfer."""
@@ -8536,7 +8576,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare one exact function result from the shared prototype plan."""
         result_type = self._procedure_prototype_type(result)
         if result.rank:
-            result_type += f", dimension({self._procedure_prototype_shape(result.array, result.owner_path)})"
+            result_type += f", dimension({self._procedure_prototype_result_shape(result.array, result.owner_path)})"
         return result_type
 
     def _procedure_prototype_type(
@@ -8554,9 +8594,29 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @staticmethod
     def _procedure_prototype_shape(array: ArrayHandoffPlan | None, owner_path: str) -> str:
-        """Render an exact prototype array shape without backend role substitution."""
+        """Render a prototype dummy's shape without backend role substitution.
+
+        A runtime extent lowers to an assumed-shape axis so the interface body
+        matches the native declaration it describes.
+        """
         if array is None or array.rank is None:
             raise ValueError(f"Prototype value {owner_path!r} has no concrete shape")
+        return ", ".join(
+            ":" if expression in RUNTIME_EXTENT_MARKERS else render_declaration_extent(expression, {}, target="fortran")
+            for expression in array.shape
+        )
+
+    @staticmethod
+    def _procedure_prototype_result_shape(array: ArrayHandoffPlan | None, owner_path: str) -> str:
+        """Render a prototype function result's shape, which must be explicit."""
+        if array is None or array.rank is None:
+            raise ValueError(f"Prototype value {owner_path!r} has no concrete shape")
+        runtime = [expression for expression in array.shape if expression in RUNTIME_EXTENT_MARKERS]
+        if runtime:
+            raise ValueError(
+                f"Prototype result {owner_path!r} has runtime extents {runtime} "
+                "and cannot be spelled as a native function result"
+            )
         return ", ".join(render_declaration_extent(expression, {}, target="fortran") for expression in array.shape)
 
     def _procedure_prototype_imports(
