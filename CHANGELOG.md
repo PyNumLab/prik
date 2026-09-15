@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A callback interface's result now keeps the declaring module's type identity,
+  matching its dummies. An imported function interface returning a type its own
+  module declares previously attributed that type to the consuming module and
+  failed to build, both from Fortran source and from a generated contract.
+
+- A renamed callback import keeps the declared interface name beside the local
+  one, so a contract imports `OBJ as LOCAL_OBJ` rather than a name the declaring
+  module never defines. A reference that differs from the declaration only in
+  case is now spelled canonically instead of binding a second name.
+
+- Following a re-exported callback interface respects Fortran accessibility. A
+  module that imports an interface privately no longer exposes it to a later
+  `use`, and the rule applies at every hop of a chain.
+
 - An abstract interface imported from another module now converts in the scope
   of the module that declares it. A derived type the interface names belongs to
   that module, so wrapping a consumer that imports only the interface — and not

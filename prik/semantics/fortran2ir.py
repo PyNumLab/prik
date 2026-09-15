@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from pathlib import Path
 
@@ -185,6 +185,18 @@ class _CallbackInterface:
 
     signature: FortranProcedureSignature
     module: FortranModule | None = None
+    local_name: str | None = None
+    """Spelling the importing scope binds, when a ``use`` renamed the interface."""
+
+    @property
+    def native_name(self) -> str:
+        """Return the name the declaring module gives this interface."""
+        return self.signature.name
+
+    @property
+    def visible_name(self) -> str:
+        """Return the canonical spelling visible where the interface was resolved."""
+        return self.local_name or self.signature.name
 
 
 @dataclass(frozen=True)
@@ -714,6 +726,7 @@ class FortranToIRConverter(ClassVisitor):
         module: FortranModule,
         *,
         seen: frozenset[str] = frozenset(),
+        exported_only: bool = False,
     ) -> dict[str, _CallbackInterface]:
         """Index every interface name visible in one module.
 
@@ -722,6 +735,10 @@ class FortranToIRConverter(ClassVisitor):
         ``use`` hops resolves to the module that actually declares it.  A module
         outside the index leaves its names unresolved, which later stages report
         against the ``use`` that named them.
+
+        ``exported_only`` applies the module's accessibility to the result, for
+        a caller reaching the names from outside through ``use``.  A module
+        still sees its own private interfaces, so it is left off in that case.
         """
         key = module.name.casefold()
         if key in seen:
@@ -734,7 +751,13 @@ class FortranToIRConverter(ClassVisitor):
             seen=seen | {key},
             override=False,
         )
-        return visible
+        if not exported_only:
+            return visible
+        return {
+            name: resolved
+            for name, resolved in visible.items()
+            if cls._symbol_visibility(module, resolved.visible_name) == "public"
+        }
 
     @classmethod
     def _scope_callback_interfaces(
@@ -769,12 +792,17 @@ class FortranToIRConverter(ClassVisitor):
             source_module = modules.get(module_name.casefold())
             if source_module is None:
                 continue
-            source_lookup = cls._module_callback_interfaces(modules, source_module, seen=seen)
+            source_lookup = cls._module_callback_interfaces(
+                modules,
+                source_module,
+                seen=seen,
+                exported_only=True,
+            )
             imported = (
                 source_lookup
                 if not mappings
                 else {
-                    mapping.local_name.casefold(): resolved
+                    mapping.local_name.casefold(): replace(resolved, local_name=mapping.local_name)
                     for mapping in mappings
                     if (resolved := source_lookup.get(mapping.source.casefold())) is not None
                 }
@@ -828,7 +856,7 @@ class FortranToIRConverter(ClassVisitor):
             self._normalize_callback_reference_storage(callback_argument, source_argument)
             self._record_prototype_argument_intent(callback_argument, source_argument)
             self._record_imported_prototype_type_origin(
-                callback_argument,
+                callback_argument.semantic_type,
                 source_argument,
                 resolved,
                 derived_type_context,
@@ -838,17 +866,29 @@ class FortranToIRConverter(ClassVisitor):
             if signature.result
             else SemanticType("None", dtype="None")
         )
+        # A result carries the declaring module's types exactly as a dummy does.
+        self._record_imported_prototype_type_origin(
+            callback_return,
+            signature.result,
+            resolved,
+            derived_type_context,
+        )
         prototype_module = str(signature.module or "")
+        # The declaring module names the interface; the importing scope may bind
+        # a different spelling. Both are source facts, and a contract needs each
+        # of them to import the right name under the right alias.
+        native_name = resolved.native_name if resolved is not None else interface_name
+        local_name = resolved.visible_name if resolved is not None else interface_name
         return SemanticType(
-            interface_name,
+            local_name,
             dtype="Prototype",
             metadata={
                 "arguments": [item.semantic_type for item in callback_arguments],
                 "callback_arguments": callback_arguments,
                 "return": callback_return,
                 PROTOTYPE_REF_METADATA: {
-                    "name": interface_name,
-                    "local_name": interface_name,
+                    "name": native_name,
+                    "local_name": local_name,
                     "origin_module": prototype_module,
                 },
                 "native_callback_kind": signature.kind,
@@ -934,8 +974,8 @@ class FortranToIRConverter(ClassVisitor):
 
     def _record_imported_prototype_type_origin(
         self,
-        callback_argument: SemanticArgument,
-        source_argument: FortranArgument | FortranVariable,
+        semantic_type: SemanticType,
+        declaration: FortranArgument | FortranVariable | None,
         resolved: _CallbackInterface | None,
         consuming_context: _DerivedTypeContext | None,
     ) -> None:
@@ -946,18 +986,17 @@ class FortranToIRConverter(ClassVisitor):
         origin keeps the identity with the module that declares the type rather
         than the one that happened to import the interface.
         """
-        if resolved is None or resolved.module is None:
+        if resolved is None or resolved.module is None or declaration is None:
             return
-        if str(getattr(source_argument, "base_type", "")).casefold() != "derived":
+        if str(getattr(declaration, "base_type", "")).casefold() != "derived":
             return
         declaring = resolved.module.name
         consuming = str(consuming_context.module or "") if consuming_context is not None else ""
         if declaring.casefold() == consuming.casefold():
             return
-        semantic_type = callback_argument.semantic_type
         if EXTERNAL_TYPE_REF_METADATA in semantic_type.metadata:
             return
-        name = str(getattr(source_argument, "kind", "") or semantic_type.name)
+        name = str(getattr(declaration, "kind", "") or semantic_type.name)
         wrapped = (declaring.casefold(), name.casefold()) in self.wrapped_derived_types
         semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] = {
             "name": name,

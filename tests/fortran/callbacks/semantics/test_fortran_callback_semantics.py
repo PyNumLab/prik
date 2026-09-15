@@ -3,7 +3,11 @@
 from prik.parsers.fortran import parse_fortran_project
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import FortranToIRConverter
-from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, UNRESOLVED_PROCEDURE_INTERFACE_METADATA
+from prik.semantics.models import (
+    EXTERNAL_TYPE_REF_METADATA,
+    PROTOTYPE_REF_METADATA,
+    UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
+)
 from prik.semantics.native_contract import native_contract_issues
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
@@ -363,3 +367,202 @@ end module chain_mod
     assert callback.storage is not None and callback.storage.kind == "callback"
     point = callback.metadata["callback_arguments"][0].semantic_type
     assert point.metadata[EXTERNAL_TYPE_REF_METADATA]["origin_module"] == "callback_types"
+
+
+MAKE_POINT_SOURCE = """
+module callback_types
+  implicit none
+  type :: point_t
+    real(8) :: x
+  end type point_t
+
+  abstract interface
+    function make_point(x) result(p)
+      import :: point_t
+      implicit none
+      real(8), intent(in) :: x
+      type(point_t) :: p
+    end function make_point
+  end interface
+end module callback_types
+"""
+
+
+def test_imported_interface_result_keeps_the_declaring_module():
+    """A callback result carries the declaring module's types like a dummy does.
+
+    Ownership was recorded only while iterating dummies, so a function
+    interface returning a module-owned type attributed it to the consumer.
+    """
+    consumer_source = """
+module consumer
+  use callback_types, only : make_point
+  implicit none
+contains
+  subroutine run(f)
+    procedure(make_point) :: f
+  end subroutine run
+end module consumer
+"""
+    project = parse_fortran_project({"callback_types.f90": MAKE_POINT_SOURCE, "consumer.f90": consumer_source})
+    modules = {module.name: module for module in FortranToIRConverter().visit(project)}
+
+    callback = get_function(modules["consumer"], "run").arguments[0].semantic_type
+    result = callback.metadata["return"]
+    assert result.name == "point_t"
+    assert result.metadata[EXTERNAL_TYPE_REF_METADATA]["origin_module"] == "callback_types"
+
+
+def test_procedure_local_rename_keeps_both_the_declared_and_local_names():
+    """A renamed import binds a new name without changing the declared one.
+
+    The contract must import the declaring name under the local alias, which
+    requires keeping the two spellings apart as separate source facts.
+    """
+    source = """
+module ren_types
+  implicit none
+  abstract interface
+    subroutine OBJ(x)
+      implicit none
+      real(8), intent(in) :: x
+    end subroutine OBJ
+  end interface
+end module ren_types
+
+module ren_consumer
+  implicit none
+contains
+  subroutine run_ren(callback)
+    use ren_types, only : LOCAL_OBJ => OBJ
+    implicit none
+    procedure(LOCAL_OBJ) :: callback
+  end subroutine run_ren
+end module ren_consumer
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source))[1]
+
+    callback = get_function(module, "run_ren").arguments[0].semantic_type
+    assert callback.name == "LOCAL_OBJ"
+    assert callback.metadata[PROTOTYPE_REF_METADATA] == {
+        "name": "OBJ",
+        "local_name": "LOCAL_OBJ",
+        "origin_module": "ren_types",
+    }
+
+
+def test_interface_reference_uses_the_declared_spelling():
+    """Fortran matches names case-insensitively; Python contracts do not.
+
+    A reference spelled in another case is the same interface, so the contract
+    keeps the declared spelling instead of binding a second name.
+    """
+    source = """
+module cas_mod
+  implicit none
+  abstract interface
+    subroutine OBJ(x)
+      implicit none
+      real(8), intent(in) :: x
+    end subroutine OBJ
+  end interface
+contains
+  subroutine run_cas(callback)
+    procedure(obj) :: callback
+  end subroutine run_cas
+end module cas_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    assert get_function(module, "run_cas").arguments[0].semantic_type.name == "OBJ"
+
+
+ACCESSIBILITY_SOURCE = """
+module acc_a
+  implicit none
+  abstract interface
+    subroutine OBJ(x)
+      implicit none
+      real(8), intent(in) :: x
+    end subroutine OBJ
+  end interface
+end module acc_a
+
+module acc_b_public
+  use acc_a, only : OBJ
+  implicit none
+  private
+  public :: OBJ
+end module acc_b_public
+
+module acc_b_private
+  use acc_a, only : OBJ
+  implicit none
+  private
+end module acc_b_private
+
+module acc_ok
+  use acc_b_public, only : OBJ
+  implicit none
+contains
+  subroutine run_ok(callback)
+    procedure(OBJ) :: callback
+  end subroutine run_ok
+end module acc_ok
+
+module acc_bad
+  use acc_b_private, only : OBJ
+  implicit none
+contains
+  subroutine run_bad(callback)
+    procedure(OBJ) :: callback
+  end subroutine run_bad
+end module acc_bad
+"""
+
+
+def _is_resolved_callback(module, function_name: str) -> bool:
+    semantic_type = get_function(module, function_name).arguments[0].semantic_type
+    return semantic_type.storage is not None and semantic_type.storage.kind == "callback"
+
+
+def test_reexported_interface_resolves_only_when_the_module_publishes_it():
+    """Following a re-export must respect the module's own accessibility.
+
+    A name a module imports privately is not part of its interface, so reaching
+    it through ``use`` must not resolve even though the chain exists.
+    """
+    modules = {
+        module.name: module for module in FortranToIRConverter().visit(parse_fortran_source(ACCESSIBILITY_SOURCE))
+    }
+
+    assert _is_resolved_callback(modules["acc_ok"], "run_ok")
+    assert not _is_resolved_callback(modules["acc_bad"], "run_bad")
+
+
+def test_accessibility_is_enforced_at_every_re_export_hop():
+    """A private hop anywhere in the chain stops the name from travelling."""
+    source = (
+        ACCESSIBILITY_SOURCE
+        + """
+module acc_mid
+  use acc_b_public, only : OBJ
+  implicit none
+  private
+end module acc_mid
+
+module acc_far
+  use acc_mid, only : OBJ
+  implicit none
+contains
+  subroutine run_far(callback)
+    procedure(OBJ) :: callback
+  end subroutine run_far
+end module acc_far
+"""
+    )
+    modules = {module.name: module for module in FortranToIRConverter().visit(parse_fortran_source(source))}
+
+    assert not _is_resolved_callback(modules["acc_far"], "run_far")

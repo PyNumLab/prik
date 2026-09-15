@@ -58,6 +58,20 @@ contains
     call calfun(x, f)
   end subroutine minimize_renamed
 end module renamed_mod
+
+module scoped_rename_mod
+  implicit none
+contains
+  subroutine minimize_scoped(calfun, x, f)
+    use, non_intrinsic :: pintrf_mod, only : SCOPED_OBJ => OBJ
+    implicit none
+    procedure(SCOPED_OBJ) :: calfun
+    real(8), intent(in) :: x
+    real(8), intent(out) :: f
+
+    call calfun(x, f)
+  end subroutine minimize_scoped
+end module scoped_rename_mod
 """
 
 
@@ -111,6 +125,13 @@ def test_multi_file_generation_places_the_prototype_with_its_declaring_module(tm
     assert "from pintrf_mod import OBJ as LOCAL_OBJ" in renamed
     assert "calfun: LOCAL_OBJ" in renamed
 
+    # A procedure-local rename reaches the contract through the synthetic
+    # prototype import rather than the module's own import list.
+    scoped = (contracts / "scoped_rename_mod.pyi").read_text(encoding="utf-8")
+    assert "from pintrf_mod import OBJ as SCOPED_OBJ" in scoped
+    assert "calfun: SCOPED_OBJ" in scoped
+    assert "import SCOPED_OBJ" not in scoped.replace("OBJ as SCOPED_OBJ", "")
+
 
 def test_generated_multi_file_contracts_parse_without_native_contract_issues(tmp_path: Path):
     """PRIK must be able to read back every contract it just wrote."""
@@ -140,3 +161,91 @@ def test_building_from_generated_multi_file_contracts_runs_the_callback(tmp_path
 
     assert module.solver_mod.minimize(objective, np.float64(3.0)) == np.float64(9.0)
     assert module.renamed_mod.minimize_renamed(objective, np.float64(4.0)) == np.float64(16.0)
+    assert module.scoped_rename_mod.minimize_scoped(objective, np.float64(5.0)) == np.float64(25.0)
+
+
+CALLBACK_RESULT_TYPES_SOURCE = """
+module cbresult_types
+  implicit none
+  type :: point_t
+    real(8) :: x
+  end type point_t
+
+  abstract interface
+    function make_point(x) result(p)
+      import :: point_t
+      implicit none
+      real(8), intent(in) :: x
+      type(point_t) :: p
+    end function make_point
+  end interface
+end module cbresult_types
+"""
+
+CALLBACK_RESULT_CONSUMER_SOURCE = """
+module cbresult_consumer
+  use, non_intrinsic :: cbresult_types, only : make_point, point_t
+  implicit none
+contains
+  subroutine run(f, seed, out_x)
+    procedure(make_point) :: f
+    real(8), intent(in) :: seed
+    real(8), intent(out) :: out_x
+    type(point_t) :: made
+
+    made = f(seed)
+    out_x = made%x
+  end subroutine run
+end module cbresult_consumer
+"""
+
+
+def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
+    """A callback result type belongs to the module that declares the interface.
+
+    Attributing it to the consuming module produced an identity no wrapper
+    definition could satisfy, so the build failed outright.  The generated
+    contract must name the declaring module and the extension must build.
+
+    The built extension is not called here: resolving a cross-module derived
+    type through the runtime namespace is a separate, pre-existing gap that
+    also affects ordinary functions returning an imported type.
+    """
+    sources = []
+    for name, text in (
+        ("cbresult_types.f90", CALLBACK_RESULT_TYPES_SOURCE),
+        ("cbresult_consumer.f90", CALLBACK_RESULT_CONSUMER_SOURCE),
+    ):
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        sources.append(path)
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            *[str(path) for path in sources],
+            "--out",
+            str(contracts),
+            "--compiler",
+            _compiler(),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    declaring = (contracts / "cbresult_types.pyi").read_text(encoding="utf-8")
+    assert "def make_point(" in declaring
+    assert "-> point_t: ..." in declaring
+
+    result = build_pyi_extension(
+        contracts / "__init__.pyi",
+        input_compiler=_compiler(),
+        native_fortran_sources=[str(path) for path in sources],
+        output_dir=tmp_path / "build",
+        output_name="callback_result_types",
+    )
+    assert result.shared_library.exists()

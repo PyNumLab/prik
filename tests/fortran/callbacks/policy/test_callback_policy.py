@@ -260,3 +260,46 @@ end module consumer
 
     assert policy.supported is True
     assert policy.arguments[0].callback.arguments[0].derived_type_identity == ("callback_types", "point_t")
+
+
+def test_imported_interface_result_keeps_its_declaring_module_in_the_completed_identity():
+    """A callback result's type identity must name the module that declares it."""
+    sources = {
+        "callback_types.f90": """
+module callback_types
+  implicit none
+  type :: point_t
+    real(8) :: x
+  end type point_t
+
+  abstract interface
+    function make_point(x) result(p)
+      import :: point_t
+      implicit none
+      real(8), intent(in) :: x
+      type(point_t) :: p
+    end function make_point
+  end interface
+end module callback_types
+""",
+        "consumer.f90": """
+module consumer
+  use callback_types, only : make_point
+  implicit none
+contains
+  subroutine run(f)
+    procedure(make_point) :: f
+  end subroutine run
+end module consumer
+""",
+    }
+    parsed = parse_fortran_project(sources)
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="merged")
+    complete_semantic_policies(module)
+
+    policy = completed_function_wrapper_policy(next(item for item in module.functions if item.name == "run"))
+
+    assert policy.supported is True
+    assert policy.arguments[0].callback.result.transfer.derived_type_identity == ("callback_types", "point_t")

@@ -3842,17 +3842,41 @@ def _relative_imported_namespace(module_name: str, source_name: str) -> str:
     return f"{module_path}.{source_name}"
 
 
+def _record_declaring_module_for_prototype_type(
+    semantic_type: SemanticType,
+    declaring_module: str,
+    declared_types: frozenset[str],
+) -> None:
+    """Name the declaring module for a derived type a referenced prototype owns."""
+    if not declaring_module or semantic_type.name not in declared_types:
+        return
+    if EXTERNAL_TYPE_REF_METADATA in semantic_type.metadata:
+        return
+    semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] = {
+        "name": semantic_type.name,
+        "local_name": semantic_type.name,
+        "origin_module": declaring_module,
+    }
+
+
 def _bind_prototype_reference(
     semantic_type: SemanticType,
     prototype: SemanticPrototype,
     *,
     origin_module: str,
     source_name: str,
+    declared_types: frozenset[str] = frozenset(),
 ) -> None:
     """Complete one type annotation as a named callback prototype reference."""
     local_name = semantic_type.name
     arguments = deepcopy(prototype.arguments)
     return_type = deepcopy(prototype.return_type) or SemanticType("None", dtype="None")
+    # The prototype's own types are written in the declaring module's scope, so
+    # a type local to that module keeps its origin when the reference is copied
+    # into a module that only imported the interface.
+    declaring_module = str(prototype.origin.native_scope or origin_module)
+    for value in (*(argument.semantic_type for argument in arguments), return_type):
+        _record_declaring_module_for_prototype_type(value, declaring_module, declared_types)
     semantic_type.dtype = "Prototype"
     semantic_type.metadata = {
         "arguments": [argument.semantic_type for argument in arguments],
@@ -3935,6 +3959,9 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     pipeline chaining; absent external definitions remain opaque references.
     """
     definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
+    declared_class_names = {
+        module.name: frozenset(declaration.name for declaration in module.classes) for module in modules
+    }
     prototypes = _prototypes_with_reexports(modules)
     functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
@@ -3964,6 +3991,7 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
                         prototype,
                         origin_module=str(prototype.origin.native_scope or origin_module.lstrip(".")),
                         source_name=source_name,
+                        declared_types=declared_class_names.get(str(prototype.origin.native_scope or ""), frozenset()),
                     )
                     continue
             declaration = definitions.get((ref.get("origin_module"), ref.get("name")))
