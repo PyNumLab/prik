@@ -3949,6 +3949,38 @@ def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str,
     return resolved
 
 
+def _bind_referenced_prototype(
+    semantic_type: SemanticType,
+    ref: dict[str, object],
+    prototypes: dict[tuple[str, str], SemanticPrototype],
+    declared_class_names: dict[str, frozenset[str]],
+) -> bool:
+    """Complete one external reference as a prototype, reporting whether it matched."""
+    origin_module = ref.get("origin_module")
+    source_name = ref.get("name")
+    if not isinstance(origin_module, str) or not isinstance(source_name, str):
+        return False
+    prototype = next(
+        (
+            found
+            for candidate in _external_module_candidates(origin_module)
+            if (found := prototypes.get((candidate, source_name))) is not None
+        ),
+        None,
+    )
+    if prototype is None:
+        return False
+    declaring_module = str(prototype.origin.native_scope or "")
+    _bind_prototype_reference(
+        semantic_type,
+        prototype,
+        origin_module=declaring_module or origin_module.lstrip("."),
+        source_name=source_name,
+        declared_types=declared_class_names.get(declaring_module, frozenset()),
+    )
+    return True
+
+
 def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[SemanticModule]:
     """Resolve imported class and prototype references across converted modules.
 
@@ -3969,31 +4001,8 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict):
                 continue
-            origin_module = ref.get("origin_module")
-            source_name = ref.get("name")
-            if isinstance(origin_module, str) and isinstance(source_name, str):
-                module_candidates = (
-                    origin_module,
-                    origin_module.lstrip("."),
-                    origin_module.lstrip(".").rsplit(".", 1)[-1],
-                )
-                prototype = next(
-                    (
-                        candidate_prototype
-                        for candidate in module_candidates
-                        if candidate and (candidate_prototype := prototypes.get((candidate, source_name))) is not None
-                    ),
-                    None,
-                )
-                if prototype is not None:
-                    _bind_prototype_reference(
-                        semantic_type,
-                        prototype,
-                        origin_module=str(prototype.origin.native_scope or origin_module.lstrip(".")),
-                        source_name=source_name,
-                        declared_types=declared_class_names.get(str(prototype.origin.native_scope or ""), frozenset()),
-                    )
-                    continue
+            if _bind_referenced_prototype(semantic_type, ref, prototypes, declared_class_names):
+                continue
             declaration = definitions.get((ref.get("origin_module"), ref.get("name")))
             wrapped = declaration is not None and (
                 not isinstance(declaration, SemanticClass) or "Opaque" not in declaration.base_classes
