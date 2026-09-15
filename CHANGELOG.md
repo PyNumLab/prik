@@ -37,9 +37,11 @@ release tags add a leading `v` to the package version.
   interface named by a procedure-local `use` is bound in the generated `.pyi`
   instead of appearing as a free name.
 
-- Callback docstrings now state each array argument's rank and extents, and
-  every generated docstring spells a runtime extent the way the `.pyi` contract
-  spells it (`::`) rather than exposing the internal marker.
+- Callback docstrings now state each array argument's rank and extents. Every
+  generated docstring and diagnostic spells a runtime extent with the shorthand
+  a contract uses (`Float64[::]`) rather than the explicit step the IR stores
+  (`Float64[::Strided]`); the two are the same contract, while `Float64[:]`
+  remains the distinct contiguous one.
 
 - A primitive scalar callback dummy the callee may write now reaches Python as
   rank-zero storage (`Out(Float64[()])`) instead of an independent value, so

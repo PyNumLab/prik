@@ -361,3 +361,28 @@ def test_callback_docstrings_carry_array_rank_and_public_extents():
     assert "input : ndarray[float64], rank 2, shape (::, ::), intent(in)" in documentation
     assert "output : ndarray[float64], rank 2, shape (::, ::), intent(out)" in documentation
     assert "::Strided" not in documentation
+
+
+def test_callback_array_result_diagnostic_uses_the_contract_spelling():
+    """A rejected shape is reported the way a contract would spell it.
+
+    A function result has no caller descriptor to measure, so a runtime extent
+    there is refused; the message names the extent the author wrote rather than
+    the explicit step the IR stores.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, In, prototype
+
+@prototype
+def strided_result(x: In(Float64)) -> Float64[::]: ...
+
+def apply(callback: strided_result) -> None: ...
+""",
+        module_name="callback_strided_result",
+    )
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    with pytest.raises(ValueError, match=r"runtime extents \['::'\]"):
+        _sources(plan)

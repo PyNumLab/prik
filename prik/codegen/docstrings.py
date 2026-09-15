@@ -10,6 +10,7 @@ re-derived from native declarations or backend output.
 from __future__ import annotations
 
 from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
+from prik.utilities.declaration_expressions import contract_extent_spelling
 from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ArrayPythonLayout,
@@ -69,8 +70,6 @@ _ARRAY_ELEMENT_TYPES = {
 _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
 
 _UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
-# A runtime extent is documented the way the `.pyi` contract spells it.
-_PUBLIC_RUNTIME_EXTENTS = {"::Strided": "::"}
 
 
 class WrapperDocstringBuilder:
@@ -1025,7 +1024,7 @@ class WrapperDocstringBuilder:
         if array is None or not array.rank:
             return ()
         display = array.display_shape or array.shape
-        extents = ", ".join(_PUBLIC_RUNTIME_EXTENTS.get(str(extent), str(extent)) for extent in display)
+        extents = ", ".join(contract_extent_spelling(extent) for extent in display)
         return (f"rank {array.rank}",) + ((f"shape ({extents})",) if extents else ())
 
     @staticmethod
@@ -1052,7 +1051,7 @@ class WrapperDocstringBuilder:
         lines = [WrapperDocstringBuilder._array_rank_line(array)]
         display_shape = array.display_shape or array.shape
         if display_shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in display_shape):
-            extents = (_PUBLIC_RUNTIME_EXTENTS.get(str(extent), str(extent)) for extent in display_shape)
+            extents = (contract_extent_spelling(extent) for extent in display_shape)
             lines.append(f"    Shape: ({', '.join(extents)})")
         layout = WrapperDocstringBuilder._array_layout_label(array)
         if layout is not None:

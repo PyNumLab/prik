@@ -26,6 +26,7 @@ __all__ = (
     "DeclarationExpressionCall",
     "ResolvedDeclarationExtent",
     "canonicalize_declaration_extent",
+    "contract_extent_spelling",
     "declaration_expression_call_sites",
     "declaration_expression_calls",
     "declaration_extent_references",
@@ -45,6 +46,21 @@ __all__ = (
 # A runtime extent has a concrete rank but no compile-time bound, so a backend
 # spells it from the descriptor it is handed rather than from the expression.
 RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
+_SHORTHAND_EXTENT_SPELLINGS = {"::Strided": "::"}
+
+
+def contract_extent_spelling(expression: str) -> str:
+    """Return the shorthand contract spelling for one extent expression.
+
+    Some extents have two equivalent public spellings -- ``T[::Strided]`` names
+    the step explicitly and ``T[::]`` abbreviates it -- and the IR keeps the
+    explicit one.  Generated contracts, docstrings and diagnostics read better
+    with the shorthand, so anything user-facing renders through this.  Note
+    ``T[:]`` is a different contract, not a shorthand: it is contiguous.
+    """
+    return _SHORTHAND_EXTENT_SPELLINGS.get(str(expression), str(expression))
+
+
 _ASSUMED_RANK_MARKER = "..."
 _RUNTIME_DIMENSIONS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
