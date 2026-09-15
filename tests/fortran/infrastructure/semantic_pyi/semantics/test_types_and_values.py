@@ -252,21 +252,31 @@ def apply(
     assert args["scratch"].source_shape == []
 
 
-def test_convert_pyi_to_ir_accepts_explicit_strided_marker_for_edited_contracts():
+def test_convert_pyi_to_ir_reads_a_strided_axis_from_its_empty_step():
+    """An empty step marks a strided axis; a bounded axis keeps its bounds."""
     module = parse_pyi_text(
         """
-current: Float64[::]
-explicit: Float64[::Strided]
+unbounded: Float64[::]
 bounded: Float64[0:n:]
-explicit_bounded: Float64[0:n:Strided]
 """,
         module_name="strided_axes",
     )
 
     arrays = [variable.semantic_type.storage.array for variable in module.variables]
-    assert [array.shape for array in arrays] == [["::Strided"], ["::Strided"], ["0:n:Strided"], ["0:n:Strided"]]
-    assert [array.axes for array in arrays] == [["strided"], ["strided"], ["strided"], ["strided"]]
-    assert [array.contiguous for array in arrays] == [False, False, False, False]
+    assert [array.shape for array in arrays] == [["::Strided"], ["0:n:Strided"]]
+    assert [array.axes for array in arrays] == [["strided"], ["strided"]]
+    assert [array.contiguous for array in arrays] == [False, False]
+
+
+@pytest.mark.parametrize("dimension", ["Float64[::Strided]", "Float64[0:n:Strided]", "Float64[::2]"])
+def test_convert_pyi_to_ir_rejects_a_dimension_step(dimension: str):
+    """A dimension carries bounds only, so the step position spells nothing.
+
+    `T[::]` already says strided, so the longer explicit form it replaced is
+    refused rather than kept as a second way to write the same contract.
+    """
+    with pytest.raises(ValueError, match="not part of the contract grammar"):
+        parse_pyi_text(f"x: {dimension}\n", module_name="rejected_step")
 
 
 def test_convert_pyi_to_ir_uses_fortran_native_array_defaults():

@@ -748,9 +748,6 @@ and supported pure specification functions. `size(values, 2)`, for example,
 becomes the second public extent. PRIK rejects expressions it cannot resolve
 before lowering.
 
-`Strided` is a compatibility spelling for older explicit forms such as
-`T[::Strided]`; author the shorter `T[::]` form.
-
 ### Character Length And Shape
 
 `String` uses the first subscription for character length and a second
@@ -994,7 +991,7 @@ valid and whether it is buildable.
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |
-| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F`, `Strided` |
+| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F` |
 | General metadata | `Aliased`, `ArrayCategory`, `AssumedType`, `FortranAllocatable`, `Immutable`, `MaybeUnallocated`, `Polymorphic`, `SourceName` |
 | Constraints and ownership | `Bounded`, `Finite`, `Range`, `Ownership`, `Transfer`, `Destruction`, `PointerAssociation`, `PointerPolicy` |
 | Prototype direction | `In`, `Out`, `InOut` |

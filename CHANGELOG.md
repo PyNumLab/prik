@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Removed the `Strided` contract name and the dimension step that carried it.
+  `T[::]` already spells a strided axis and `T[:]` a contiguous one, so the
+  longer `T[::Strided]` and `T[0:n:Strided]` forms are gone rather than kept as
+  a second way to write the same contract. A value in a dimension's step
+  position is now rejected with a message naming the spelling to use.
+
 - A callback interface's result now keeps the declaring module's type identity,
   matching its dummies. An imported function interface returning a type its own
   module declares previously attributed that type to the consuming module and

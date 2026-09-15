@@ -2658,14 +2658,20 @@ class _PyiAstParser:
         return expression
 
     def slice_text(self, node: ast.Slice) -> str:
-        """Render one dimension slice, preserving the contract's strided marker."""
+        """Render one dimension slice as written.
+
+        A dimension carries bounds only.  The step position spells nothing the
+        contract grammar defines, so a value there is rejected rather than read
+        as an extent expression.
+        """
+        if node.step is not None:
+            step = ast.unparse(node.step)
+            raise ValueError(
+                f"Array dimension step {step!r} is not part of the contract grammar; "
+                "write 'T[::]' for a strided axis or 'T[:]' for a contiguous one"
+            )
         lower = "" if node.lower is None else ast.unparse(node.lower)
         upper = "" if node.upper is None else ast.unparse(node.upper)
-        step = ""
-        if node.step is not None:
-            step = _STRIDED_DIMENSION_SENTINEL if self.matches_name(node.step, "Strided") else ast.unparse(node.step)
-        if step:
-            return f"{lower}:{upper}:{step}"
         return f"{lower}:{upper}"
 
     # Callback and result conversion
