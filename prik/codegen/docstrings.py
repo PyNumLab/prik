@@ -69,6 +69,8 @@ _ARRAY_ELEMENT_TYPES = {
 _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
 
 _UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
+# A runtime extent is documented the way the `.pyi` contract spells it.
+_PUBLIC_RUNTIME_EXTENTS = {"::Strided": "::"}
 
 
 class WrapperDocstringBuilder:
@@ -1003,13 +1005,28 @@ class WrapperDocstringBuilder:
 
     @staticmethod
     def _callback_parameter_text(transfer: CallbackTransferPlan) -> str:
-        """Render one prototype dummy with the access its projection allows."""
-        text = f"{transfer.name} : {WrapperDocstringBuilder._callback_transfer_type(transfer)}"
+        """Render one prototype dummy with the shape and access it presents."""
+        parts = [f"{transfer.name} : {WrapperDocstringBuilder._callback_transfer_type(transfer)}"]
+        parts.extend(WrapperDocstringBuilder._callback_array_facts(transfer.array))
         if transfer.intent is not None:
-            text += f", intent({transfer.intent})"
+            parts.append(f"intent({transfer.intent})")
+        text = ", ".join(parts)
         if transfer.python_action is PythonBarrierAction.SCALAR_STORAGE:
             text += f"; assign through it ({transfer.name}[...] = value)"
         return text
+
+    @staticmethod
+    def _callback_array_facts(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
+        """Describe one callback array's rank and extents from its completed plan.
+
+        The callable's ABI depends on both, and extents are spelled the way the
+        `.pyi` contract spells them so the two descriptions agree.
+        """
+        if array is None or not array.rank:
+            return ()
+        display = array.display_shape or array.shape
+        extents = ", ".join(_PUBLIC_RUNTIME_EXTENTS.get(str(extent), str(extent)) for extent in display)
+        return (f"rank {array.rank}",) + ((f"shape ({extents})",) if extents else ())
 
     @staticmethod
     def _callback_result_type(result: CallbackResultPlan) -> str:
@@ -1035,7 +1052,8 @@ class WrapperDocstringBuilder:
         lines = [WrapperDocstringBuilder._array_rank_line(array)]
         display_shape = array.display_shape or array.shape
         if display_shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in display_shape):
-            lines.append(f"    Shape: ({', '.join(map(str, display_shape))})")
+            extents = (_PUBLIC_RUNTIME_EXTENTS.get(str(extent), str(extent)) for extent in display_shape)
+            lines.append(f"    Shape: ({', '.join(extents)})")
         layout = WrapperDocstringBuilder._array_layout_label(array)
         if layout is not None:
             lines.append(f"    Layout: {layout}")

@@ -3883,6 +3883,48 @@ def _bind_prototype_reference(
     )
 
 
+def _external_module_candidates(module_name: str) -> tuple[str, ...]:
+    """Return the spellings one import may use to name the same contract module."""
+    stripped = module_name.lstrip(".")
+    return tuple(
+        dict.fromkeys(candidate for candidate in (module_name, stripped, stripped.rsplit(".", 1)[-1]) if candidate)
+    )
+
+
+def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str, str], SemanticPrototype]:
+    """Index every prototype name a contract module binds, declared or re-exported.
+
+    A module that imports a prototype and publishes it binds that name without
+    declaring it, so a consumer importing it from there must still resolve to
+    the declaring module.  Repeating to a fixed point follows a chain of any
+    length.
+    """
+    resolved = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    changed = True
+    while changed:
+        changed = False
+        for module in modules:
+            for imported in module.imports:
+                if not isinstance(imported, SemanticImport):
+                    continue
+                for item in imported.items:
+                    local_name = item.target or item.source
+                    if (module.name, local_name) in resolved:
+                        continue
+                    prototype = next(
+                        (
+                            found
+                            for candidate in _external_module_candidates(imported.module)
+                            if (found := resolved.get((candidate, item.source))) is not None
+                        ),
+                        None,
+                    )
+                    if prototype is not None:
+                        resolved[(module.name, local_name)] = prototype
+                        changed = True
+    return resolved
+
+
 def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[SemanticModule]:
     """Resolve imported class and prototype references across converted modules.
 
@@ -3893,7 +3935,7 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     pipeline chaining; absent external definitions remain opaque references.
     """
     definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
-    prototypes = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    prototypes = _prototypes_with_reexports(modules)
     functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
         for semantic_type in _module_semantic_types(module):

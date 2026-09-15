@@ -1467,8 +1467,48 @@ class PyiPrinter(ClassVisitor):
         satisfied_namespaces = cls._satisfied_procedure_namespace_import_names(imports, procedure_namespaces)
         imports.extend(cls._synthetic_flat_external_type_imports(module, imports, procedure_namespaces))
         imports.extend(cls._missing_expression_callable_imports(module, imports))
+        imports.extend(cls._missing_prototype_imports(module, imports))
         imports.extend(cls._missing_procedure_namespace_imports(procedure_namespaces, satisfied_namespaces))
         return imports
+
+    @classmethod
+    def _missing_prototype_imports(
+        cls,
+        module: SemanticModule,
+        imports: list[str | SemanticImport],
+    ) -> list[SemanticImport]:
+        """Return imports for prototypes this module references but never declares.
+
+        A ``use`` inside one procedure names an interface without appearing in
+        the module's own imports, so the annotation would reference a name the
+        contract never binds.  The prototype reference records where it came
+        from, which is enough to bind it explicitly.
+        """
+        bound = {
+            (item.target or item.source).casefold()
+            for imported in imports
+            if isinstance(imported, SemanticImport)
+            for item in imported.items
+        }
+        bound.update(prototype.name.casefold() for prototype in module.prototypes)
+        required: dict[str, list[SemanticImportItem]] = {}
+        for semantic_type in _module_semantic_types(module):
+            reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
+            if not isinstance(reference, dict):
+                continue
+            local_name = str(reference.get("local_name") or reference.get("name") or "")
+            origin = str(reference.get("origin_module") or "")
+            if not local_name or not origin or local_name.casefold() in bound:
+                continue
+            native_name = str(reference.get("name") or local_name)
+            required.setdefault(origin, []).append(
+                SemanticImportItem(
+                    source=native_name,
+                    target=local_name if local_name != native_name else None,
+                )
+            )
+            bound.add(local_name.casefold())
+        return [SemanticImport(module=name, items=items) for name, items in required.items()]
 
     @classmethod
     def _missing_expression_callable_imports(

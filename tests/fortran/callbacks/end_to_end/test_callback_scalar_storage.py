@@ -164,7 +164,7 @@ def test_callback_docstring_states_the_callable_signature_and_write_through(tmp_
     documentation = module.evaluate.__doc__
 
     assert "Called as: calfun(x, f) -> None" in documentation
-    assert "x : ndarray[float64], intent(in)" in documentation
+    assert "x : ndarray[float64], rank 1, shape (::), intent(in)" in documentation
     assert "f : ndarray[float64], intent(out); assign through it (f[...] = value)" in documentation
     assert "An exception or an invalid return value terminates the process." in documentation
 
@@ -249,3 +249,40 @@ def test_undeclared_intent_survives_the_generated_contract_round_trip(tmp_path: 
         value[...] = float(value) * 3.0
 
     assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)
+
+
+def test_assume_intent_in_scalars_makes_an_undeclared_callback_scalar_input_only(tmp_path: Path):
+    """The flag narrows the default without declaring a direction.
+
+    The contract still carries no direction wrapper, because the source still
+    declares none; only the projection and the copy direction change.
+    """
+    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
+    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {
+            "bind_c_fcallback_undeclared_intent_f90_wrapper.f90",
+            "fcallback_undeclared_intent_f90_wrapper.c",
+            "fcallback_undeclared_intent_f90_wrapper.h",
+        },
+        assume_intent_in_scalars=True,
+    )
+    contract = (tmp_path / "build" / "contracts" / "fcallback_undeclared_intent_f90.pyi").read_text(encoding="utf-8")
+    assert "value: Addr(Float64)" in contract
+    assert "In(" not in contract and "Out(" not in contract and "InOut(" not in contract
+
+    bridge = (tmp_path / "build" / "bind_c_fcallback_undeclared_intent_f90_wrapper.f90").read_text(encoding="utf-8")
+    assert "real(c_double) :: value" in bridge
+    assert not any(f"intent({direction}) :: value" in bridge for direction in ("in", "out", "inout"))
+    # Input-only: nothing is copied back out of the call-local storage.
+    assert "value = value_callback_storage" not in bridge
+
+    observed = []
+
+    def tweak(value):
+        observed.append(float(value))
+
+    assert module.drive(tweak, np.float64(7.0)) == np.float64(7.0)
+    assert observed == [7.0]

@@ -308,3 +308,56 @@ def apply_directions(callback: directions_callback) -> None: ...
     for parameter in ("update_value", "write_value"):
         writable = f"PyArray_New(&PyArray_Type, 0, NULL, NPY_FLOAT64, NULL, {parameter}_data, 0, "
         assert f"{writable}NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)" in c_source
+
+
+MATRIX_CONTRACT = """
+from prik.contracts import Float64, In, Out, prototype
+
+@prototype
+def matrix_callback(
+    input: In(Float64[::, ::]),
+    output: Out(Float64[::, ::])
+) -> None: ...
+
+def apply_matrix(callback: matrix_callback) -> None: ...
+"""
+
+
+def _matrix_plan():
+    module = pyi_text_to_semantic_module(MATRIX_CONTRACT, module_name="callback_matrix")
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def test_multidimensional_runtime_extents_measure_every_axis_from_the_dummy():
+    """Each axis of an assumed-shape callback array is lowered independently.
+
+    A rank-one fix can silently ignore later axes, so the copy that backs
+    ``c_loc`` must be measured on every axis of the dummy it sits beside.
+    """
+    plan = _matrix_plan()
+    callback = _callback_argument(plan, "apply_matrix").callback
+    assert [transfer.array.rank for transfer in callback.arguments] == [2, 2]
+
+    _, bridge = _sources(plan)
+    assert "::Strided" not in bridge
+    assert "real(c_double), intent(in), dimension(:, :) :: input" in bridge
+    assert "real(c_double), target, dimension(size(input, 1), size(input, 2)) :: input_callback_storage" in bridge
+    assert "real(c_double), intent(out), dimension(:, :) :: output" in bridge
+    assert "real(c_double), target, dimension(size(output, 1), size(output, 2)) :: output_callback_storage" in bridge
+
+
+def test_callback_docstrings_carry_array_rank_and_public_extents():
+    """A callable's ABI depends on rank and shape, so both are documented.
+
+    Extents use the spelling the `.pyi` contract uses, so the two descriptions
+    of the same array agree and no internal marker reaches the reader.
+    """
+    plan = _matrix_plan()
+    c_source, _bridge = _sources(plan)
+    documentation = c_source.encode().decode("unicode_escape")
+
+    assert "Called as: callback(input, output) -> None" in documentation
+    assert "input : ndarray[float64], rank 2, shape (::, ::), intent(in)" in documentation
+    assert "output : ndarray[float64], rank 2, shape (::, ::), intent(out)" in documentation
+    assert "::Strided" not in documentation

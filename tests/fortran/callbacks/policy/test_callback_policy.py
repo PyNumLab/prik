@@ -212,3 +212,51 @@ def apply(callback: callback_shape) -> None: ...
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
     assert policy.supported is True
     assert policy.arguments[0].callback.arguments[0].python_action is PythonBarrierAction.SCALAR_VALUE
+
+
+def test_imported_interface_keeps_its_declaring_module_in_the_completed_identity():
+    """A type an imported interface owns must not be attributed to the consumer.
+
+    The consuming module never imports ``point_t``, so an identity taken from
+    the consuming scope names a type that module does not define and no wrapper
+    definition can satisfy it.
+    """
+    sources = {
+        "callback_types.f90": """
+module callback_types
+  implicit none
+  type :: point_t
+    real(8) :: x
+  end type point_t
+
+  abstract interface
+    subroutine move_point(p)
+      import :: point_t
+      implicit none
+      type(point_t), intent(inout) :: p
+    end subroutine move_point
+  end interface
+end module callback_types
+""",
+        "consumer.f90": """
+module consumer
+  use callback_types, only : move_point
+  implicit none
+contains
+  subroutine run(f)
+    procedure(move_point) :: f
+  end subroutine run
+end module consumer
+""",
+    }
+    parsed = parse_fortran_project(sources)
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="merged")
+    complete_semantic_policies(module)
+
+    function = next(item for item in module.functions if item.name == "run")
+    policy = completed_function_wrapper_policy(function)
+
+    assert policy.supported is True
+    assert policy.arguments[0].callback.arguments[0].derived_type_identity == ("callback_types", "point_t")

@@ -3,7 +3,7 @@
 from prik.parsers.fortran import parse_fortran_project
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import FortranToIRConverter
-from prik.semantics.models import UNRESOLVED_PROCEDURE_INTERFACE_METADATA
+from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, UNRESOLVED_PROCEDURE_INTERFACE_METADATA
 from prik.semantics.native_contract import native_contract_issues
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
@@ -263,3 +263,103 @@ end module solver_mod
 
     callback = get_function(module, "minimize").arguments[0].semantic_type
     assert callback.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] == "OBJ"
+
+
+CALLBACK_TYPES_SOURCE = """
+module callback_types
+  implicit none
+  type :: point_t
+    real(8) :: x
+  end type point_t
+
+  abstract interface
+    subroutine move_point(p)
+      import :: point_t
+      implicit none
+      type(point_t), intent(inout) :: p
+    end subroutine move_point
+  end interface
+end module callback_types
+"""
+
+
+def test_imported_interface_resolves_its_types_in_the_declaring_module():
+    """An interface body is written in the scope of the module that declares it.
+
+    The consuming module need not import the types the interface names, so
+    those types must keep the declaring module's identity rather than being
+    attributed to whichever module imported the interface.
+    """
+    consumer_source = """
+module consumer
+  use callback_types, only : move_point
+  implicit none
+contains
+  subroutine run(f)
+    procedure(move_point) :: f
+  end subroutine run
+end module consumer
+"""
+    project = parse_fortran_project({"callback_types.f90": CALLBACK_TYPES_SOURCE, "consumer.f90": consumer_source})
+    modules = {module.name: module for module in FortranToIRConverter().visit(project)}
+
+    callback = get_function(modules["consumer"], "run").arguments[0].semantic_type
+    point = callback.metadata["callback_arguments"][0].semantic_type
+    assert point.name == "point_t"
+    assert point.metadata[EXTERNAL_TYPE_REF_METADATA]["origin_module"] == "callback_types"
+
+
+def test_procedure_local_use_resolves_an_imported_interface():
+    """A ``use`` inside one procedure names the interface only in that scope."""
+    source = """
+module proclocal_mod
+  implicit none
+contains
+  subroutine run_local(callback)
+    use callback_types, only : move_point
+    implicit none
+    procedure(move_point) :: callback
+  end subroutine run_local
+end module proclocal_mod
+"""
+    project = parse_fortran_project({"callback_types.f90": CALLBACK_TYPES_SOURCE, "users.f90": source})
+    modules = {module.name: module for module in FortranToIRConverter().visit(project)}
+
+    callback = get_function(modules["proclocal_mod"], "run_local").arguments[0].semantic_type
+    assert callback.name == "move_point"
+    assert callback.storage is not None and callback.storage.kind == "callback"
+
+
+def test_reexported_interface_resolves_through_every_import_hop():
+    """An interface published by a re-exporting module resolves to its declarer."""
+    reexport_source = """
+module reexport_mod
+  use callback_types, only : move_point
+  implicit none
+  public :: move_point
+end module reexport_mod
+"""
+    chain_source = """
+module chain_mod
+  use reexport_mod, only : move_point
+  implicit none
+contains
+  subroutine run_chain(callback)
+    procedure(move_point) :: callback
+  end subroutine run_chain
+end module chain_mod
+"""
+    project = parse_fortran_project(
+        {
+            "callback_types.f90": CALLBACK_TYPES_SOURCE,
+            "reexport.f90": reexport_source,
+            "chain.f90": chain_source,
+        }
+    )
+    modules = {module.name: module for module in FortranToIRConverter().visit(project)}
+
+    callback = get_function(modules["chain_mod"], "run_chain").arguments[0].semantic_type
+    assert callback.name == "move_point"
+    assert callback.storage is not None and callback.storage.kind == "callback"
+    point = callback.metadata["callback_arguments"][0].semantic_type
+    assert point.metadata[EXTERNAL_TYPE_REF_METADATA]["origin_module"] == "callback_types"

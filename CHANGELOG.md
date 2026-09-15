@@ -7,6 +7,26 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- An abstract interface imported from another module now converts in the scope
+  of the module that declares it. A derived type the interface names belongs to
+  that module, so wrapping a consumer that imports only the interface — and not
+  the types it mentions — no longer fails against a type identity attributed to
+  the consuming module.
+
+- Callback interface resolution now covers a `use` inside a single procedure, a
+  standalone procedure's own imports, and an interface re-exported through any
+  number of modules. File, project, and `generate --pyi` conversion share one
+  resolver rather than each carrying its own lookup, and a contract that
+  re-exports a prototype resolves back to the module that declares it.
+
+- A contract now imports a prototype it references but never declares, so an
+  interface named by a procedure-local `use` is bound in the generated `.pyi`
+  instead of appearing as a free name.
+
+- Callback docstrings now state each array argument's rank and extents, and
+  every generated docstring spells a runtime extent the way the `.pyi` contract
+  spells it (`::`) rather than exposing the internal marker.
+
 - A primitive scalar callback dummy the callee may write now reaches Python as
   rank-zero storage (`Out(Float64[()])`) instead of an independent value, so
   the value the callback computes reaches the native caller. This covers
