@@ -686,6 +686,17 @@ class SemanticReexport:
     module: str = ""
     """Module publishing the name, which is not the one declaring it."""
 
+    entity_kind: str = "unknown"
+    """What the published name declares where it comes from.
+
+    Re-export reaches Python as a namespace alias only for an entity that is one
+    Python object, which today means an ordinary procedure. Every other kind --
+    a callback prototype, a module variable whose state stays live, a derived
+    type, a generic -- keeps to the semantic and contract-import paths that
+    already carry it, and records its kind here rather than an alias that would
+    misrepresent it.
+    """
+
 
 @dataclass
 class SemanticModule:

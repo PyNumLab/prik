@@ -1940,7 +1940,10 @@ class FortranParser(ClassVisitor):
         """Collect interfaces and attach module-owned blocks to their owners."""
         interfaces = self._merged_generic_interfaces(
             [
-                self._visit(unit, parent_scope=scope, filename=filename)
+                (
+                    self._visit(unit, parent_scope=scope, filename=filename),
+                    self._interface_scope_identity(scope),
+                )
                 for unit, scope in self._collect_interface_source_units(lines, filename)
             ]
         )
@@ -1955,21 +1958,40 @@ class FortranParser(ClassVisitor):
         return [iface for iface in interfaces if iface.module is None]
 
     @staticmethod
-    def _merged_generic_interfaces(interfaces: list[FortranInterface]) -> list[FortranInterface]:
+    def _interface_scope_identity(scope: _ParserScope | None) -> tuple[tuple[str, str], ...]:
+        """Return the lexical scope chain that owns one interface block.
+
+        A generic belongs to the scope declaring it, and a module, a submodule
+        and each procedure inside them are all separate scopes. The chain names
+        every enclosing one, so two procedures of the same module never look
+        like a single owner.
+        """
+        chain: list[tuple[str, str]] = []
+        while scope is not None:
+            chain.append((str(scope.kind), str(scope.name or "").casefold()))
+            scope = scope.parent
+        return tuple(reversed(chain))
+
+    @staticmethod
+    def _merged_generic_interfaces(
+        interfaces: list[tuple[FortranInterface, tuple[tuple[str, str], ...]]],
+    ) -> list[FortranInterface]:
         """Combine blocks that extend one generic interface into a single record.
 
         Fortran lets a generic interface be built from several blocks in the
         same scope, each contributing specifics.  They name one generic, so the
         parser reports one interface carrying every entry in declaration order.
+        Two scopes that happen to use one name declare two generics, so the
+        lexical owner is part of the identity rather than the module alone.
         Abstract and unnamed blocks are never generics and stay as they are.
         """
-        merged: dict[tuple[str, str], FortranInterface] = {}
+        merged: dict[tuple[tuple[tuple[str, str], ...], str], FortranInterface] = {}
         result: list[FortranInterface] = []
-        for interface in interfaces:
+        for interface, scope_identity in interfaces:
             if not interface.name or interface.abstract:
                 result.append(interface)
                 continue
-            key = (str(interface.module or "").lower(), interface.name.lower())
+            key = (scope_identity, interface.name.lower())
             existing = merged.get(key)
             if existing is None:
                 merged[key] = interface

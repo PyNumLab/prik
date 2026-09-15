@@ -72,6 +72,7 @@ from prik.policy.construction import (
     completed_module_variable_policy,
 )
 from prik.naming.generated_files import bridge_source_name
+from prik.naming.policy import normalize_public_name
 from prik.policy.exports import PythonExportPolicy
 from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
@@ -154,6 +155,9 @@ from prik.planning.entrypoints import (
     build_callback_support_procedure_entrypoint,
     build_generated_support_procedure_projection,
 )
+
+# Re-export reaches Python only where the published name is one exported object.
+_ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "derived_type"})
 
 
 _DATATYPE_FAMILIES = {
@@ -541,19 +545,58 @@ class WrapperPlanner(ClassVisitor):
             for path in namespace_paths
         )
 
-    @staticmethod
-    def _aliases_by_namespace(module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
-        """Group each published re-export under the namespace that publishes it."""
+    def _aliases_by_namespace(self, module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
+        """Group each published re-export under the namespace that publishes it.
+
+        An alias binds one Python object already exported elsewhere, so it is
+        planned only where the published name reaches Python as exactly that.
+        The declaration it names supplies the attribute to read, because a
+        Fortran spelling is not a Python attribute and only the completed export
+        knows which name the declaring namespace actually bound.
+        """
         grouped = defaultdict(list)
         for reexport in module.reexports:
+            if reexport.entity_kind not in _ALIASABLE_REEXPORT_KINDS:
+                continue
+            source_namespace = tuple(part.casefold() for part in reexport.origin_module.split(".") if part)
+            source_name = self._exported_declaration_name(module, source_namespace, reexport.source_name)
+            if source_name is None:
+                continue
             grouped[tuple(part.casefold() for part in reexport.module.split(".") if part)].append(
                 NamespaceAliasPlan(
-                    python_name=reexport.local_name,
-                    source_namespace=tuple(part.casefold() for part in reexport.origin_module.split(".") if part),
-                    source_name=reexport.source_name,
+                    python_name=normalize_public_name(reexport.local_name).name,
+                    source_namespace=source_namespace,
+                    source_name=source_name,
                 )
             )
         return grouped
+
+    @staticmethod
+    def _exported_declaration_name(
+        module: models.SemanticModule,
+        namespace: tuple[str, ...],
+        source_name: str,
+    ) -> str | None:
+        """Return the Python name one namespace bound for a re-exported entity.
+
+        A record reaching here states the entity either the way its source
+        declares it or the way its own contract already published it, so both
+        spellings identify the declaration. Finding none means the namespace
+        exports no such object and there is nothing an alias could bind.
+        """
+        wanted = source_name.casefold()
+        for declaration in (*module.functions, *module.classes):
+            if getattr(declaration, "visibility", "public") != "public":
+                continue
+            native = str(getattr(declaration, "native_name", "") or declaration.name).casefold()
+            exports = declaration.metadata.get(models.PYTHON_EXPORTS_METADATA) or ()
+            for export in exports:
+                name = export.get("name")
+                if not name or tuple(export.get("namespace") or ()) != namespace:
+                    continue
+                if native == wanted or str(name).casefold() == wanted:
+                    return str(name)
+        return None
 
     def _namespace_plan(
         self,

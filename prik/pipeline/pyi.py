@@ -134,8 +134,17 @@ def emit_module_stubs(
     # A prototype keeps the spelling its own contract declares, so every module
     # rendered here is told which names those are before any of them writes an
     # import binding one.
+    # A module binds a prototype name by declaring one or by publishing one it
+    # imported; either way a contract reading from it names it that way.
     declared_prototype_names = {
-        str(prototype.name) for module in emitted_modules.values() for prototype in module.prototypes
+        (module_name, str(prototype.name))
+        for module_name, module in emitted_modules.items()
+        for prototype in module.prototypes
+    } | {
+        (module_name, str(reexport.local_name))
+        for module_name, module in emitted_modules.items()
+        for reexport in module.reexports
+        if reexport.entity_kind == "prototype"
     }
     return {
         module_name: emit_module(

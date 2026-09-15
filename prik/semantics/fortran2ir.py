@@ -1436,7 +1436,7 @@ class FortranToIRConverter(ClassVisitor):
             classes=semantic_classes,
             variables=module_variables + enum_constants,
             imports=self._module_imports(module),
-            reexports=self._module_reexports(module),
+            reexports=self._module_reexports(module, index),
             metadata=metadata,
             origin=SemanticOrigin(
                 source_language="fortran",
@@ -1533,14 +1533,21 @@ class FortranToIRConverter(ClassVisitor):
             ),
         )
 
-    @staticmethod
-    def _module_reexports(module: FortranModule) -> list[SemanticReexport]:
+    @classmethod
+    def _module_reexports(
+        cls,
+        module: FortranModule,
+        module_index: dict[str, FortranModule] | None = None,
+    ) -> list[SemanticReexport]:
         """Return the imported names this module explicitly publishes.
 
         Naming an imported entity in a ``public`` statement says the module
         means it to be part of its own interface, so that name is published
         here as well.  A name that is public only because the module default is
-        public carries no such statement and stays where it was declared.
+        public carries no such statement and stays where it was declared, and a
+        ``use`` that publishes nothing explicitly re-exports nothing at all.
+        Each record also states what the name declares where it comes from,
+        because only some kinds reach Python as one object to alias.
         """
         declared = {
             *(procedure.name.casefold() for procedure in module.procedures),
@@ -1548,14 +1555,85 @@ class FortranToIRConverter(ClassVisitor):
             *(variable.name.casefold() for variable in getattr(module, "variables", ())),
         }
         published = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
+        index = module_index or {}
         reexports: list[SemanticReexport] = []
+        named: set[str] = set()
         for module_name, mappings in module.uses.items():
             for mapping in mappings:
                 local_name = mapping.local_name
+                named.add(local_name.casefold())
                 if local_name.casefold() in declared or local_name.casefold() not in published:
                     continue
-                reexports.append(SemanticReexport(local_name, module_name, mapping.source, module.name))
+                reexports.append(
+                    SemanticReexport(
+                        local_name,
+                        module_name,
+                        mapping.source,
+                        module.name,
+                        entity_kind=cls._reexported_entity_kind(index.get(module_name.casefold()), mapping.source),
+                    )
+                )
+        reexports.extend(cls._wildcard_reexports(module, index, declared=declared, published=published, named=named))
         return reexports
+
+    @classmethod
+    def _wildcard_reexports(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        *,
+        declared: set[str],
+        published: set[str],
+        named: set[str],
+    ) -> list[SemanticReexport]:
+        """Return published names a plain ``use`` brought into this module.
+
+        A ``use`` naming no list carries every public name of the module it
+        reads, so a name this module publishes without declaring it is one of
+        them. The published name says which, and it is resolved only when one
+        such module declares it: two that do leave the origin genuinely
+        ambiguous, which is not something to guess at.
+        """
+        wildcard = [
+            index[module_name.casefold()]
+            for module_name, mappings in module.uses.items()
+            if not mappings and module_name.casefold() in index
+        ]
+        if not wildcard:
+            return []
+        reexports: list[SemanticReexport] = []
+        for name in sorted(published):
+            if name in declared or name in named:
+                continue
+            origins = [
+                (used, kind) for used in wildcard if (kind := cls._reexported_entity_kind(used, name)) != "unknown"
+            ]
+            if len(origins) != 1:
+                continue
+            used, kind = origins[0]
+            reexports.append(SemanticReexport(name, used.name, name, module.name, entity_kind=kind))
+        return reexports
+
+    @staticmethod
+    def _reexported_entity_kind(declaring: FortranModule | None, source_name: str) -> str:
+        """Return what one published name declares in the module it comes from."""
+        if declaring is None:
+            return "unknown"
+        key = source_name.casefold()
+        if any(procedure.name.casefold() == key for procedure in declaring.procedures):
+            return "procedure"
+        for interface in declaring.interfaces:
+            if interface.abstract and any(signature.name.casefold() == key for signature in interface.procedures):
+                return "prototype"
+            if interface.name and interface.name.casefold() == key:
+                return "prototype" if interface.abstract else "generic"
+            if not interface.abstract and any(signature.name.casefold() == key for signature in interface.procedures):
+                return "procedure"
+        if any(derived.name.casefold() == key for derived in declaring.derived_types):
+            return "derived_type"
+        if any(variable.name.casefold() == key for variable in getattr(declaring, "variables", ())):
+            return "variable"
+        return "unknown"
 
     @staticmethod
     def _module_imports(module: FortranModule) -> list[str | SemanticImport]:

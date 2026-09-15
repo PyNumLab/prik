@@ -332,3 +332,33 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
         f[...] = float(x) * 7.0
 
     assert module.chain_consumer_mod.run_chain(objective, np.float64(6.0)) == np.float64(42.0)
+
+
+def test_renamed_reexport_chain_builds_directly_from_its_fortran_source(tmp_path: Path):
+    """Publishing an imported interface adds no runtime name to alias.
+
+    A module publishing an imported prototype states where a callback signature
+    comes from, and a signature is not an object Python holds. Binding one at
+    runtime reaches for an attribute of a module that exports nothing at all,
+    so the chain has to reach the build through prototype resolution alone.
+    """
+    from tests.fortran._support.wrapper_build import _build_source_and_import
+
+    source = tmp_path / "chain.f90"
+    source.write_text(RENAMED_CHAIN_SOURCE, encoding="utf-8")
+
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_chain_wrapper.f90", "chain_wrapper.c", "chain_wrapper.h"},
+    )
+
+    def calfun(x, f):
+        f[()] = x * 3.0
+
+    assert module.run_chain(calfun, np.float64(4.0)) == pytest.approx(12.0)
+    # The consuming module is the only namespace with a runtime name, so the
+    # declaring and publishing modules contributed nothing to alias.
+    extension = sys.modules[module.__name__.split(".", 1)[0]]
+    assert not hasattr(extension, "chain_declares_mod")
+    assert not hasattr(extension, "chain_middle_mod")

@@ -727,3 +727,47 @@ def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
 
     assert "class point_t:" in code
     assert "@bind(" not in code
+
+
+def test_prototype_spelling_is_kept_only_for_the_module_that_declares_one():
+    """A prototype identity names its module, not a spelling used anywhere.
+
+    One module may declare a prototype while another spells an ordinary
+    declaration the same way. The second follows Python naming, so an import
+    reading from it asks for the name that module actually defines.
+    """
+    callbacks = parse_fortran_source("""
+module callback_mod
+implicit none
+private
+public :: OBJ
+abstract interface
+subroutine OBJ(x)
+implicit none
+real(8), intent(in) :: x
+end subroutine OBJ
+end interface
+end module callback_mod
+""")
+    values = parse_fortran_source("""
+module values_mod
+implicit none
+integer, parameter :: OBJ = 1
+end module values_mod
+""")
+    consumer = parse_fortran_source("""
+module consumer_mod
+use values_mod, only : OBJ
+implicit none
+end module consumer_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (callbacks, values, consumer)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def OBJ(" in stubs["callback_mod"]
+    assert "obj: Final[Int32]" in stubs["values_mod"]
+    assert "from .values_mod import obj" in stubs["consumer_mod"]
+    assert "import OBJ" not in stubs["consumer_mod"]

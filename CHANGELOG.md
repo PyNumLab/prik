@@ -7,6 +7,33 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Publishing an imported name re-exports it at runtime only where the name is
+  one Python object to bind. A module publishing an imported callback prototype
+  states where a signature comes from, and a signature is not an object, so
+  binding one reached for an attribute of a module that exports nothing and the
+  build failed outright. Each re-export now records what it publishes, and only
+  a procedure or a derived type becomes a runtime alias; every other kind keeps
+  to the semantic and contract-import paths that already carry it.
+
+- A re-export binds the Python name its declaring module actually published
+  rather than the Fortran spelling it was written with, so publishing an entity
+  spelled in capitals no longer looks up an attribute that does not exist.
+
+- A name a module publishes after a plain `use` is now re-exported. The `use`
+  carries every public name of the module it reads, and the `public` statement
+  says which of them this module means to publish; an origin that two such
+  modules could supply stays unresolved rather than guessed.
+
+- A generic interface built from several blocks merges within the scope
+  declaring it. Two procedures of one module may each declare an interface of
+  the same name, and merging them on the module they share let one procedure's
+  specifics answer the other's calls.
+
+- A generated contract writes an overload's target and a prototype import the
+  way the contract declaring them spells each one. The overload named a source
+  spelling that matched no declaration it holds, and a prototype's spelling was
+  kept for every module using that name rather than the one declaring it.
+
 - A contract can now rename what it declares. `SourceName` states the native
   entity a variable or constant reaches, the way `bind` already did for a
   callable, instead of replacing the name the declaration states -- editing a

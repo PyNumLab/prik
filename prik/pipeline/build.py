@@ -2078,6 +2078,7 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
                         origin_module=source_namespace,
                         source_name=primary["name"],
                         module=".".join(alias["namespace"]),
+                        entity_kind="derived_type",
                     )
                 )
             exports[:] = [primary]

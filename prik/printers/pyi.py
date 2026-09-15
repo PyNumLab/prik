@@ -166,18 +166,22 @@ class PyiPrinter(ClassVisitor):
         self,
         *,
         normalize_fortran_public_names: bool = False,
-        declared_prototype_names: Iterable[str] = (),
+        declared_prototype_names: Iterable[tuple[str, str]] = (),
     ):
         """Configure public-name normalization for independent emissions.
 
         Set normalize_fortran_public_names when emitting source-derived Fortran
         contracts whose public names need Python normalization. Pass
-        declared_prototype_names when rendering one module alongside others, so
-        an import naming a prototype another contract declares is written under
-        the spelling that contract keeps.
+        declared_prototype_names, as ``(module, name)`` pairs, when rendering one
+        module alongside others, so an import naming a prototype another
+        contract declares is written under the spelling that contract keeps.
+        The declaring module is part of that identity because an unrelated
+        module may spell an ordinary declaration the same way.
         """
         self._normalize_fortran_public_names = normalize_fortran_public_names
-        self._declared_prototype_names = frozenset(str(name) for name in declared_prototype_names)
+        self._declared_prototype_names = frozenset(
+            (str(module).casefold(), str(name)) for module, name in declared_prototype_names
+        )
 
     def emit(self, node) -> str:
         """Render one supported semantic model to semantic .pyi text.
@@ -380,6 +384,20 @@ class PyiPrinter(ClassVisitor):
             parameter_indent="        ",
         ).rstrip()
 
+    @staticmethod
+    def _overload_target_name(candidate: SemanticFunction, context: _PyiEmissionContext) -> str:
+        """Return the specific an overload names, as this contract declares it.
+
+        The target names a declaration in the same contract, and a contract
+        writing its declarations under Python names writes that one the same
+        way. Naming the source spelling instead points at no declaration the
+        contract holds.
+        """
+        target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
+        if not context.normalize_fortran_public_names or candidate.origin.source_language != "fortran":
+            return target
+        return normalize_public_name(target).name
+
     def _visit_ProcedureOverloadSet(
         self,
         overload_set: ProcedureOverloadSet,
@@ -391,7 +409,7 @@ class PyiPrinter(ClassVisitor):
         definitions = []
         for procedure in overload_set.procedures:
             candidate = deepcopy(procedure)
-            target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
+            target = self._overload_target_name(candidate, context)
             if in_class:
                 candidate = self._overload_method(overload_set, candidate)
                 definition = self._emit_method(
@@ -1769,15 +1787,21 @@ class PyiPrinter(ClassVisitor):
         *,
         native_source: bool = False,
         public_names: bool = False,
-        verbatim_names: frozenset[str] = frozenset(),
+        verbatim_names: frozenset[tuple[str, str]] = frozenset(),
     ) -> str:
         """Emit import syntax."""
         if isinstance(imp, str):
             return f"import {imp}"
         if not imp.items:
             return f"import {imp.module}"
+        source_module = imp.module.lstrip(".").casefold()
         items = ", ".join(
-            PyiPrinter._emit_import_item(item, public_names=public_names, verbatim_names=verbatim_names)
+            PyiPrinter._emit_import_item(
+                item,
+                public_names=public_names,
+                verbatim_names=verbatim_names,
+                source_module=source_module,
+            )
             for item in imp.items
         )
         module_name = f".{imp.module}" if native_source and not imp.module.startswith(".") else imp.module
@@ -1788,7 +1812,8 @@ class PyiPrinter(ClassVisitor):
         item: SemanticImportItem,
         *,
         public_names: bool = False,
-        verbatim_names: frozenset[str] = frozenset(),
+        verbatim_names: frozenset[tuple[str, str]] = frozenset(),
+        source_module: str = "",
     ) -> str:
         """Emit import item syntax.
 
@@ -1800,9 +1825,13 @@ class PyiPrinter(ClassVisitor):
         the exception: it keeps its declared spelling wherever it is written,
         because an annotation naming it is written the same way.
         """
-        # The source names what the dependency declares and the target what
-        # this contract calls it; either spelling identifies a prototype.
-        if item.source in verbatim_names or (item.target or item.source) in verbatim_names:
+        # The source names what the module read from declares and the target
+        # what this contract calls it; either spelling identifies a prototype
+        # of that module, and a same-named declaration elsewhere does not.
+        if (source_module, item.source) in verbatim_names or (
+            source_module,
+            item.target or item.source,
+        ) in verbatim_names:
             return PyiPrinter._verbatim_import_item(item)
         source = PyiPrinter._public_import_name(item.source, public_names=public_names)
         target = PyiPrinter._public_import_name(item.target, public_names=public_names)
@@ -1824,25 +1853,28 @@ class PyiPrinter(ClassVisitor):
             return name
         return normalize_public_name(name).name
 
-    def _verbatim_import_names(self, module: SemanticModule) -> frozenset[str]:
-        """Return imported names a contract writes under their declared spelling.
+    def _verbatim_import_names(self, module: SemanticModule) -> frozenset[tuple[str, str]]:
+        """Return prototype identities a contract writes under declared spelling.
 
         A prototype keeps the spelling its own contract declares, and an
         annotation naming one is written the same way, so an import binding it
-        keeps that spelling too. Which names those are is a fact about the
-        contracts that declare them, so it comes from the modules rendered
-        together with this one; a prototype this module declares itself and one
-        an annotation here already resolved are known without them.
+        keeps that spelling too. Each identity names the module declaring the
+        prototype as well as the prototype, because another module may spell an
+        ordinary declaration the same way and that one follows Python naming.
+        The modules rendered together with this one supply the identities; a
+        prototype this module declares itself and one an annotation here already
+        resolved are known without them.
         """
         names = set(self._declared_prototype_names)
-        names.update(str(prototype.name) for prototype in module.prototypes)
+        names.update((module.name.casefold(), str(prototype.name)) for prototype in module.prototypes)
         for semantic_type in _module_semantic_types(module):
             reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
             if not isinstance(reference, dict):
                 continue
             local_name = reference.get("local_name") or reference.get("name")
-            if local_name:
-                names.add(str(local_name))
+            origin = reference.get("origin_module")
+            if local_name and origin:
+                names.add((str(origin).casefold(), str(local_name)))
         return frozenset(names)
 
     def _append_items(self, sections: list[str], items: list, emit_item) -> None:

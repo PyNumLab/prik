@@ -251,3 +251,48 @@ end module vec_mod
 
     assert [binding["name"] for binding in module.derived_types[0].generic_bindings] == ["operator(+)"]
     assert module.derived_types[0].generic_bindings[0]["targets"] == ["add_int", "add_real"]
+
+
+def test_same_generic_name_in_two_procedures_declares_two_generics():
+    """A generic belongs to the scope declaring it, and procedures are scopes.
+
+    Two procedures of one module may each declare an interface of the same
+    name, and they name different generics. Merging them on the module they
+    share would let one procedure's specifics answer the other's calls.
+    """
+    source = """
+module scoped_mod
+  implicit none
+contains
+  subroutine first(x)
+    real(8), intent(in) :: x
+    interface local_generic
+      subroutine first_impl(a)
+        real(8), intent(in) :: a
+      end subroutine first_impl
+    end interface
+    call local_generic(x)
+  end subroutine first
+
+  subroutine second(n)
+    integer, intent(in) :: n
+    interface local_generic
+      subroutine second_impl(b)
+        integer, intent(in) :: b
+      end subroutine second_impl
+    end interface
+    call local_generic(n)
+  end subroutine second
+end module scoped_mod
+"""
+
+    module = parse_fortran_module(source)
+
+    assert [
+        (interface.name, [signature.name for signature in interface.procedures])
+        for interface in module.interfaces
+        if interface.name
+    ] == [
+        ("local_generic", ["first_impl"]),
+        ("local_generic", ["second_impl"]),
+    ]
