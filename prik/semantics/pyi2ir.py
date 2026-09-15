@@ -291,11 +291,14 @@ class _PyiAstParser:
         namespaces: dict[str, str] = {}
         for imported in self.module.imports:
             if isinstance(imported, SemanticImport):
+                # A sibling leaf is imported relatively, but a native scope is
+                # the module's own name, so the relative marker is dropped.
+                module_name = imported.module.lstrip(".")
                 if imported.items:
                     for item in imported.items:
-                        explicit[(item.target or item.source).casefold()] = (imported.module, item.source)
+                        explicit[(item.target or item.source).casefold()] = (module_name, item.source)
                 else:
-                    namespaces[imported.module.split(".", 1)[0].casefold()] = imported.module
+                    namespaces[module_name.split(".", 1)[0].casefold()] = module_name
                 continue
             for item in str(imported).split(","):
                 module_name, _, alias = item.strip().partition(" as ")

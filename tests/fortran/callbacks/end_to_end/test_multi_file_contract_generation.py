@@ -118,17 +118,17 @@ def test_multi_file_generation_places_the_prototype_with_its_declaring_module(tm
     assert "@prototype\ndef OBJ(" in declaring
 
     consuming = (contracts / "solver_mod.pyi").read_text(encoding="utf-8")
-    assert "from pintrf_mod import OBJ" in consuming
+    assert "from .pintrf_mod import OBJ" in consuming
     assert "calfun: OBJ" in consuming
 
     renamed = (contracts / "renamed_mod.pyi").read_text(encoding="utf-8")
-    assert "from pintrf_mod import OBJ as LOCAL_OBJ" in renamed
+    assert "from .pintrf_mod import OBJ as LOCAL_OBJ" in renamed
     assert "calfun: LOCAL_OBJ" in renamed
 
     # A procedure-local rename reaches the contract through the synthetic
     # prototype import rather than the module's own import list.
     scoped = (contracts / "scoped_rename_mod.pyi").read_text(encoding="utf-8")
-    assert "from pintrf_mod import OBJ as SCOPED_OBJ" in scoped
+    assert "from .pintrf_mod import OBJ as SCOPED_OBJ" in scoped
     assert "calfun: SCOPED_OBJ" in scoped
     assert "import SCOPED_OBJ" not in scoped.replace("OBJ as SCOPED_OBJ", "")
 
@@ -312,11 +312,11 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
     )
 
     # Each contract mirrors the `use` its own module wrote.
-    assert "from chain_declares_mod import OBJ as MID" in (contracts / "chain_middle_mod.pyi").read_text(
+    assert "from .chain_declares_mod import OBJ as MID" in (contracts / "chain_middle_mod.pyi").read_text(
         encoding="utf-8"
     )
     consuming = (contracts / "chain_consumer_mod.pyi").read_text(encoding="utf-8")
-    assert "from chain_middle_mod import MID as LOCAL" in consuming
+    assert "from .chain_middle_mod import MID as LOCAL" in consuming
     assert "calfun: LOCAL" in consuming
 
     result = build_pyi_extension(

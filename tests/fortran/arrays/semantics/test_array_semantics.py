@@ -230,7 +230,7 @@ end module expression_owner
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array
 
-    assert "from extent_helpers import extent_for as imported_extent" in generated
+    assert "from .extent_helpers import extent_for as imported_extent" in generated
     assert "Float64[imported_extent(n), local_extent(n)]" in generated
     assert reloaded_array.expression_callables == array.expression_callables
 
@@ -271,7 +271,7 @@ end module expression_owner
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array
 
-    assert "from extent_helpers import extent_for" in generated
+    assert "from .extent_helpers import extent_for" in generated
     assert reloaded_array.expression_callables == array.expression_callables
 
 
