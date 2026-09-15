@@ -188,3 +188,45 @@ end subroutine
 
     assert len(signatures) == 1
     assert signatures[0].name == "touch"
+
+
+def test_repeated_use_of_one_module_accumulates_its_imports():
+    """A scope may name the same module in several `use` statements.
+
+    Each statement adds what it lists, so a later one extends the imports
+    rather than replacing them; real sources split long import lists this way,
+    and dropping the earlier statements loses the names they carried.
+    """
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use, intrinsic :: iso_fortran_env, only : INT32, SP => REAL32, DP => REAL64
+  use, intrinsic :: iso_fortran_env, only : QP => REAL128
+  use, intrinsic :: iso_fortran_env, only : STDOUT => OUTPUT_UNIT
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+
+    assert [(item.source, item.target) for item in module.uses["iso_fortran_env"]] == [
+        ("INT32", None),
+        ("REAL32", "SP"),
+        ("REAL64", "DP"),
+        ("REAL128", "QP"),
+        ("OUTPUT_UNIT", "STDOUT"),
+    ]
+
+
+def test_a_bare_use_absorbs_the_named_imports_of_the_same_module():
+    """Importing everything subsumes any list beside it."""
+    module = parse_fortran_file(
+        """
+module wide_mod
+  use kinds_mod, only : rk
+  use kinds_mod
+  implicit none
+end module wide_mod
+"""
+    ).modules[0]
+
+    assert module.uses["kinds_mod"] == []

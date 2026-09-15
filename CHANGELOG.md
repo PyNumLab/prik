@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A scope naming the same module in several `use` statements now keeps every
+  import. Each statement was replacing the previous one, so only the last
+  survived; a module splitting a long import list across lines silently lost
+  the names the earlier lines carried, and any kind parameter among them stopped
+  resolving.
+
+- A procedure whose outputs have no completed ordering is now reported as an
+  unsupported wrapper policy instead of raising a comparison error.
+
 - Generated Fortran module leaves now import sibling contracts relatively, so
   building a leaf directly loads the contracts its declarations depend on.
   A native derived type exported through several modules shares one set of

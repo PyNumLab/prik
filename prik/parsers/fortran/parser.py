@@ -3451,7 +3451,7 @@ class FortranParser(ClassVisitor):
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use and hasattr(target, "uses"):
             module_name, mappings = parsed_use
-            target.uses[module_name] = mappings
+            self._record_use_mappings(target.uses, module_name, mappings)
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3619,8 +3619,8 @@ class FortranParser(ClassVisitor):
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
             module_name, mappings = parsed_use
-            proc_state.uses[module_name] = mappings
-            proc_state.local_uses[module_name] = mappings
+            self._record_use_mappings(proc_state.uses, module_name, mappings)
+            self._record_use_mappings(proc_state.local_uses, module_name, mappings)
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -5715,6 +5715,30 @@ class FortranParser(ClassVisitor):
             return None
         name = match.groupdict().get("name")
         return name if name else None
+
+    @staticmethod
+    def _record_use_mappings(
+        uses: dict[str, list[FortranUseMapping]],
+        module_name: str,
+        mappings: list[FortranUseMapping],
+    ) -> None:
+        """Accumulate one ``use`` statement into a scope's import table.
+
+        A scope may name the same module more than once, each statement adding
+        what it lists, so a later statement extends the imports rather than
+        replacing them.  A bare ``use`` imports everything, which the empty
+        mapping list already means, and absorbs any list beside it.
+        """
+        existing = uses.get(module_name)
+        if existing is None or not mappings:
+            uses[module_name] = mappings
+            return
+        if not existing:
+            return
+        known = {(item.source.casefold(), (item.target or item.source).casefold()) for item in existing}
+        existing.extend(
+            item for item in mappings if (item.source.casefold(), (item.target or item.source).casefold()) not in known
+        )
 
     @staticmethod
     def _parse_use_statement(line: str) -> tuple[str, list[FortranUseMapping]] | None:

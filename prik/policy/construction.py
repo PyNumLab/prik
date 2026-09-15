@@ -5921,6 +5921,10 @@ def _result_position_blockers(
     )
     if not positions:
         return ()
+    if any(position is None for position in positions):
+        # An unplaced output has no position to order, which this check reports
+        # rather than comparing against the positions that do exist.
+        return (f"binding result positions are incomplete; received {positions}",)
     if sorted(positions) == list(range(len(positions))) and len(set(positions)) == len(positions):
         return ()
     return (f"binding result positions must cover 0..{len(positions) - 1} exactly once; received {positions}",)
