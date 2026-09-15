@@ -210,7 +210,8 @@ def _compile_native_object(source: Path, native_dir: Path) -> Path:
     return native_object
 
 
-def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_package: Path) -> Path:
+def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_package: Path | None) -> Path:
+    """Generate one contract package, comparing it to a fixture when given."""
     _run_captured_command(
         [
             sys.executable,
@@ -225,7 +226,8 @@ def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_pac
             _compiler(),
         ],
     )
-    assert_generated_pyi_package_matches_fixture(package_dir, expected_package)
+    if expected_package is not None:
+        assert_generated_pyi_package_matches_fixture(package_dir, expected_package)
     return package_dir / "__init__.pyi"
 
 
@@ -262,7 +264,12 @@ def _build_inline_pyi_contract_module(
     return module, result
 
 
-def _build_generated_pyi_and_import(source_template: Path, workdir: Path, expected_contract_package: Path):
+def _build_generated_pyi_and_import(
+    source_template: Path,
+    workdir: Path,
+    expected_contract_package: Path | None = None,
+):
+    """Generate a contract from source, then build and import through that contract."""
     source_dir = workdir / "source"
     source_dir.mkdir(parents=True)
     source = source_dir / source_template.name

@@ -1,13 +1,12 @@
 """Rank-zero callback storage: writable scalar dummies reach native memory."""
 
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
     _build_inline_pyi_contract_module,
     _build_source_and_import,
 )
@@ -225,26 +224,28 @@ def test_callback_scalar_without_declared_intent_is_read_and_written(tmp_path: P
     assert observed == [7.0]
 
 
-def test_undeclared_intent_stays_undeclared_in_the_generated_contract(tmp_path: Path):
-    """The conservative transfer must not invent a direction the source lacks.
+def test_undeclared_intent_survives_the_generated_contract_round_trip(tmp_path: Path):
+    """The absent ``intent`` must survive source, contract, codegen and runtime.
 
-    The contract records the absent ``intent`` by carrying no direction
-    wrapper, and the generated interface body declares the dummy without one.
+    Building through PRIK's own generated contract proves the bare
+    ``Float64[()]`` spelling carries the conservative read/write transfer all
+    the way to the trampoline, rather than only appearing in the contract text.
     """
     source = tmp_path / "fcallback_undeclared_intent_f90.f90"
     source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
-    contracts = tmp_path / "contracts"
-    subprocess.run(
-        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(contracts)],
-        check=True,
-        capture_output=True,
-    )
-    contract = (contracts / "fcallback_undeclared_intent_f90.pyi").read_text(encoding="utf-8")
+    workdir = tmp_path / "round_trip"
+    module = _build_generated_pyi_and_import(source, workdir)
 
+    contract = (workdir / "contracts" / source.stem / f"{source.stem}.pyi").read_text(encoding="utf-8")
     assert "value: Float64[()]" in contract
     assert "In(" not in contract and "Out(" not in contract and "InOut(" not in contract
 
-    _undeclared_intent_module(tmp_path)
-    bridge = (tmp_path / "build" / "bind_c_fcallback_undeclared_intent_f90_wrapper.f90").read_text(encoding="utf-8")
+    bridge = next((workdir / "pyi_build").glob("bind_c_*_wrapper.f90")).read_text(encoding="utf-8")
     assert "real(c_double) :: value" in bridge
-    assert "intent(inout) :: value" not in bridge
+    assert not any(f"intent({direction}) :: value" in bridge for direction in ("in", "out", "inout"))
+    assert "value = value_callback_storage" in bridge
+
+    def tweak(value):
+        value[...] = float(value) * 3.0
+
+    assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)

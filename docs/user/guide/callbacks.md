@@ -289,11 +289,10 @@ derived-type callback dummy declared with the Fortran `value` attribute.
 - The callback is only valid **during** the wrapped native call.
 - Native code must not store the callback for later use.
 - Return the exact NumPy scalar type when PRIK expects a scalar callback result.
-- Primitive scalar callback arguments arrive as independent NumPy scalar values,
-  whether the native dummy is `value` or reference.
-- Primitive scalar `in` arguments arrive as independent values. Arguments the
-  callee may write — `out`, `inout`, or no declared `intent` — arrive as
-  rank-zero storage you assign through.
+- Primitive scalar callback arguments projected as values arrive as independent
+  NumPy scalar values, whether the native dummy is `value` or reference.
+  Writable reference scalars — `out`, `inout`, or no declared `intent` — arrive
+  as rank-zero storage you assign through.
 - Arrays and derived-type arguments can expose live native state; copy data you
   need after the wrapped call returns.
 
