@@ -391,6 +391,8 @@ class SemanticMethod(SemanticFunction):
 class ProcedureOverloadSet:
     name: str
     procedures: list[SemanticFunction] = field(default_factory=list)
+    native_scope: str | None = None
+    """Module declaring the generic, which need not own every specific."""
 
 
 FORTRAN_GENERIC_NAME_METADATA = "fortran_generic_name"

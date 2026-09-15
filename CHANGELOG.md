@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generic interface that repeats a `use`-associated name now extends that
+  generic instead of replacing it, so the importing module dispatches to the
+  specifics it inherited as well as its own. Accumulation stays one-directional,
+  as Fortran requires: the declaring module does not gain what a later module
+  adds. An inherited specific is reachable only through the generic, because the
+  import never bound its own name.
+
 - A generic interface may now be declared across several blocks in one scope,
   which Fortran allows and real sources use to add specifics under
   preprocessor guards. The blocks become one generic carrying every entry in

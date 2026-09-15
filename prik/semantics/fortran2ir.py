@@ -28,6 +28,7 @@ from prik.parsers.fortran.models import (
     FortranEnum,
     FortranEnumerator,
     FortranFile,
+    FortranInterface,
     FortranModule,
     FortranProject,
     FortranProgram,
@@ -1380,12 +1381,17 @@ class FortranToIRConverter(ClassVisitor):
                 ),
             )
 
-        overload_sets = self._module_overload_sets(
+        overload_sets, inherited_functions = self._module_overload_sets(
             module,
             procedure_lookup,
             context,
             semantic_classes,
+            module_index=index,
         )
+        # A specific reached through a use-associated generic is callable here,
+        # so it joins this module's functions. The import never bound its own
+        # name, so it stays private and is reachable only through the generic.
+        semantic_functions.extend(inherited_functions)
         metadata = {}
         common_variables = {name.casefold() for name in module.common_variables}
         enum_constants = [
@@ -2533,7 +2539,9 @@ class FortranToIRConverter(ClassVisitor):
         procedure_lookup: dict[str, SemanticFunction],
         context: _DerivedTypeContext,
         semantic_classes: list[SemanticClass],
-    ) -> list[ProcedureOverloadSet]:
+        *,
+        module_index: dict[str, FortranModule] | None = None,
+    ) -> tuple[list[ProcedureOverloadSet], list[SemanticFunction]]:
         """Convert module generic interfaces into function or class overload sets.
 
         Normal procedure generics remain module overloads.  Defined operators
@@ -2541,6 +2549,7 @@ class FortranToIRConverter(ClassVisitor):
         constructors preserve the existing descriptive conversion failure.
         """
         overload_sets: list[ProcedureOverloadSet] = []
+        inherited_functions: list[SemanticFunction] = []
         class_map = {semantic_class.name.casefold(): semantic_class for semantic_class in semantic_classes}
         for interface in module.interfaces:
             if not interface.name or interface.abstract:
@@ -2553,10 +2562,19 @@ class FortranToIRConverter(ClassVisitor):
                 )
                 for signature in interface.procedures
             }
-            target_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
+            inherited_names, inherited_lookup = self._inherited_generic_specifics(
+                module,
+                interface.name,
+                module_index or {},
+            )
+            for name in inherited_names:
+                if not any(item.name.casefold() == name.casefold() for item in inherited_functions):
+                    inherited_functions.append(inherited_lookup[name.casefold()])
+            own_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
+            target_names = [*inherited_names, *own_names]
             procedures, missing = self._resolve_overload_targets(
                 target_names,
-                procedure_lookup | inline_lookup,
+                procedure_lookup | inline_lookup | inherited_lookup,
                 visibility=self._symbol_visibility(module, interface.name),
             )
             if missing or not procedures:
@@ -2570,7 +2588,7 @@ class FortranToIRConverter(ClassVisitor):
                     # constructor, so its specifics become the class's own
                     # `__init__` overload set rather than a module generic.
                     constructor_set = self._normal_overload_set("__init__", procedures)
-                    target_lookup = procedure_lookup | inline_lookup
+                    target_lookup = procedure_lookup | inline_lookup | inherited_lookup
                     for target_name, candidate in zip(target_names, constructor_set.procedures, strict=True):
                         if target_lookup[target_name.casefold()].visibility == "private":
                             # A private specific is unreachable by name; the type
@@ -2580,8 +2598,14 @@ class FortranToIRConverter(ClassVisitor):
                     self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
                     self._mark_constructor_specifics(procedures, procedure_lookup, interface.name)
                     continue
-                overload_set = self._normal_overload_set(interface.name, procedures)
-                target_lookup = procedure_lookup | inline_lookup
+                overload_set = self._normal_overload_set(
+                    interface.name,
+                    procedures,
+                    native_scope=str(module.origin.native_name or module.name)
+                    if hasattr(module, "origin")
+                    else module.name,
+                )
+                target_lookup = procedure_lookup | inline_lookup | inherited_lookup
                 for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
                     if target_lookup[target_name.casefold()].visibility == "private":
                         candidate.native_name = interface.name
@@ -2596,7 +2620,7 @@ class FortranToIRConverter(ClassVisitor):
             self._apply_assignment_projection_to_originals(interface.name, procedures, procedure_lookup, class_map)
             for semantic_class, class_sets in defined_sets:
                 self._merge_overload_sets(semantic_class.overload_sets, class_sets)
-        return overload_sets
+        return overload_sets, inherited_functions
 
     def _bound_overload_sets(
         self,
@@ -2701,7 +2725,12 @@ class FortranToIRConverter(ClassVisitor):
                 existing.procedures.extend(overload_set.procedures)
 
     @staticmethod
-    def _normal_overload_set(name: str, procedures: list[SemanticFunction]) -> ProcedureOverloadSet:
+    def _normal_overload_set(
+        name: str,
+        procedures: list[SemanticFunction],
+        *,
+        native_scope: str | None = None,
+    ) -> ProcedureOverloadSet:
         """Copy regular generic candidates and attach generic dispatch metadata.
 
         Type-bound methods are projected back to ordinary functions while
@@ -2733,7 +2762,7 @@ class FortranToIRConverter(ClassVisitor):
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             candidate.metadata[OVERLOAD_TARGET_METADATA] = candidate.native_name or candidate.name
             candidates.append(candidate)
-        return ProcedureOverloadSet(name, candidates)
+        return ProcedureOverloadSet(name, candidates, native_scope=native_scope)
 
     def _defined_overload_sets(
         self,
@@ -2986,6 +3015,67 @@ class FortranToIRConverter(ClassVisitor):
     def _is_procedure_generic_name(name: str) -> bool:
         """Return whether a generic spelling is an ordinary callable identifier."""
         return re.fullmatch(r"[a-z_]\w*", name, re.IGNORECASE) is not None
+
+    def _inherited_generic_specifics(
+        self,
+        module: FortranModule,
+        generic_name: str,
+        modules: dict[str, FortranModule],
+    ) -> tuple[list[str], dict[str, SemanticFunction]]:
+        """Return the specifics one generic inherits from the generic it extends.
+
+        A local interface block repeating a ``use``-associated generic name
+        extends that generic rather than replacing it, so this scope resolves
+        every specific that reached it through the import as well as its own.
+        Accumulation runs one way: the declaring module never sees what a later
+        module adds.
+        """
+        source_module, source_generic = self._imported_generic_interface(module, generic_name, modules)
+        if source_module is None or source_generic is None:
+            return [], {}
+        inherited, lookup = self._inherited_generic_specifics(source_module, source_generic.name, modules)
+        signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
+        source_context = self._module_derived_type_context(source_module)
+        names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
+        for name in names:
+            signature = signatures.get(name.casefold())
+            if signature is None or name.casefold() in lookup:
+                continue
+            function = self.visit(signature, visibility="private", derived_type_context=source_context)
+            lookup[name.casefold()] = function
+            inherited.append(name)
+        return inherited, lookup
+
+    @staticmethod
+    def _imported_generic_interface(
+        module: FortranModule,
+        generic_name: str,
+        modules: dict[str, FortranModule],
+    ) -> tuple[FortranModule | None, FortranInterface | None]:
+        """Find the generic one module imports under ``generic_name``, if any."""
+        for module_name, mappings in module.uses.items():
+            source_module = modules.get(module_name.casefold())
+            if source_module is None:
+                continue
+            sources = (
+                [generic_name]
+                if not mappings
+                else [
+                    mapping.source for mapping in mappings if mapping.local_name.casefold() == generic_name.casefold()
+                ]
+            )
+            for source_name in sources:
+                generic = next(
+                    (
+                        item
+                        for item in source_module.interfaces
+                        if item.name and not item.abstract and item.name.casefold() == source_name.casefold()
+                    ),
+                    None,
+                )
+                if generic is not None:
+                    return source_module, generic
+        return None, None
 
     @staticmethod
     def _resolve_overload_targets(

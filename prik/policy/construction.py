@@ -745,6 +745,22 @@ def _class_method_blockers(method: ClassMethodPolicy) -> str | None:
     return None
 
 
+def _overload_candidate_scope(
+    procedure: models.SemanticFunction,
+    owner_path: str,
+    module_generic: bool,
+) -> str:
+    """Return the scope that addresses one overload candidate.
+
+    A module generic addresses each specific by the module that owns it, so a
+    specific inherited from an imported generic stays findable.  A class-bound
+    overload is addressed by its class instead, which owns every candidate.
+    """
+    if not module_generic:
+        return owner_path
+    return str(procedure.origin.native_scope or owner_path)
+
+
 def _overload_policy(
     owner_path: str,
     overload: models.ProcedureOverloadSet,
@@ -752,13 +768,15 @@ def _overload_policy(
     python_name: str | None = None,
     procedures: tuple[models.SemanticFunction, ...] | None = None,
     python_exports: tuple[PythonExportPolicy, ...] = (),
+    module_generic: bool = False,
 ) -> OverloadPolicy:
     """Complete one overload set from explicit concrete-procedure links."""
     selected = tuple(overload.procedures) if procedures is None else procedures
     public_name = python_name or overload.name
     candidates = tuple(
         OverloadCandidatePolicy(
-            owner_path=f"{owner_path}.{overload.name}.{procedure.name}",
+            owner_path=f"{_overload_candidate_scope(procedure, owner_path, module_generic)}"
+            f".{overload.name}.{procedure.name}",
             arguments=(),
             passed_object=False,
         )
@@ -782,13 +800,16 @@ def build_module_overload_policy(
 ) -> OverloadPolicy:
     """Complete the stable owner and Python exports for one module generic."""
     if not overload.procedures:
-        return _overload_policy(module.name, overload)
+        return _overload_policy(overload.native_scope or module.name, overload, module_generic=True)
     first = overload.procedures[0]
-    native_scope = str(first.origin.native_scope or module.name)
+    # A generic extending an imported one holds specifics from another module,
+    # so the declared scope names the owner rather than the first specific.
+    native_scope = str(overload.native_scope or first.origin.native_scope or module.name)
     return _overload_policy(
         native_scope,
         overload,
         python_exports=completed_python_exports(first, overload.name),
+        module_generic=True,
     )
 
 
