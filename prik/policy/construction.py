@@ -173,6 +173,7 @@ from prik.policy.models import (
     FunctionWrapperPolicy,
 )
 from prik.utilities.declaration_expressions import (
+    RUNTIME_DIMENSION_MARKERS,
     declaration_expression_call_sites,
     declaration_extent_references,
     resolve_declaration_extent,
@@ -5745,7 +5746,7 @@ def _ordinary_array_result_blockers(
     if decision.nullable or decision.descriptor_boundary:
         blockers.append(f"{label} is descriptor-backed or nullable")
     array = _array_handoff_policy(semantic_type)
-    if array is None or array.rank is None or any(shape in {":", "::Strided", "...", "Flat"} for shape in array.shape):
+    if array is None or array.rank is None or any(shape in RUNTIME_DIMENSION_MARKERS for shape in array.shape):
         blockers.append(f"{label} ordinary array shape is not fully expressible")
     elif array.native_order != array.order:
         blockers.append(f"{label} COPY_F applies only to Python-visible array arguments")
@@ -7777,7 +7778,7 @@ def _is_phase6_raw_array_address_type(semantic_type: models.SemanticType) -> boo
     supported_element = _is_plan_primitive_value_type(semantic_type) or (
         semantic_type.name == "String" and policy.itemsize is not None
     )
-    return supported_element and all(item not in {":", "::Strided", "...", "Flat"} for item in policy.shape)
+    return supported_element and all(item not in RUNTIME_DIMENSION_MARKERS for item in policy.shape)
 
 
 def _is_raw_array_address_type(semantic_type: models.SemanticType) -> bool:

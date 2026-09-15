@@ -21,12 +21,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 __all__ = (
+    "RUNTIME_DIMENSION_MARKERS",
     "RUNTIME_EXTENT_MARKERS",
     "ArrayExpressionSource",
     "DeclarationExpressionCall",
     "ResolvedDeclarationExtent",
     "canonicalize_declaration_extent",
-    "contract_extent_spelling",
     "declaration_expression_call_sites",
     "declaration_expression_calls",
     "declaration_extent_references",
@@ -35,6 +35,7 @@ __all__ = (
     "fortran_extent_to_python",
     "is_declaration_expression_helper",
     "is_public_declaration_expression",
+    "is_strided_extent",
     "render_declaration_extent",
     "resolve_declaration_extent",
     "split_declaration_assignment",
@@ -45,24 +46,23 @@ __all__ = (
 
 # A runtime extent has a concrete rank but no compile-time bound, so a backend
 # spells it from the descriptor it is handed rather than from the expression.
-RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
-_SHORTHAND_EXTENT_SPELLINGS = {"::Strided": "::"}
+RUNTIME_EXTENT_MARKERS = frozenset({":", "::", "Flat"})
 
 
-def contract_extent_spelling(expression: str) -> str:
-    """Return the shorthand contract spelling for one extent expression.
+def is_strided_extent(expression: str) -> bool:
+    """Return whether one extent expression describes a strided axis.
 
-    Some extents have two equivalent public spellings -- ``T[::Strided]`` names
-    the step explicitly and ``T[::]`` abbreviates it -- and the IR keeps the
-    explicit one.  Generated contracts, docstrings and diagnostics read better
-    with the shorthand, so anything user-facing renders through this.  Note
-    ``T[:]`` is a different contract, not a shorthand: it is contiguous.
+    A trailing empty step marks it, with or without bounds: ``::`` spans the
+    whole axis and ``lower:upper:`` narrows it.  Without that step the axis is
+    contiguous, so ``:`` and ``lower:upper`` are dense.
     """
-    return _SHORTHAND_EXTENT_SPELLINGS.get(str(expression), str(expression))
+    parts = str(expression).split(":")
+    return len(parts) == 3 and parts[2] == ""
 
 
 _ASSUMED_RANK_MARKER = "..."
-_RUNTIME_DIMENSIONS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
+# Every extent whose value only exists at run time, assumed rank included.
+RUNTIME_DIMENSION_MARKERS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
     ".eq.": "==",
     ".ne.": "!=",
@@ -381,7 +381,7 @@ def resolve_declaration_extent(
     stored on completed policy and consumed by backend rendering.
     """
     # Stage 1: preserve caller-owned runtime dimension markers.
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ResolvedDeclarationExtent(expression)
 
     # Stage 2: parse the public expression before binding any producer roles.
@@ -416,7 +416,7 @@ def declaration_extent_references(expression: str) -> tuple[str, ...]:
     known. Array properties and unsupported syntax return ``<invalid>`` so the
     later policy stage cannot accidentally treat them as scalar values.
     """
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ()
     tree = _parse_expression(expression)
     if tree is None:
@@ -1612,7 +1612,7 @@ def render_declaration_extent(
     """
     if target not in {"c", "fortran"}:
         raise ValueError(f"unsupported declaration-expression target: {target!r}")
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return expression
     try:
         node = ast.parse(expression, mode="eval").body

@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The semantic IR now carries a strided axis as `::`, the spelling a contract
+  uses, instead of a longer internal token. `prik semantics` output changes
+  accordingly; contracts, docstrings and generated sources are unaffected
+  because they already printed the contract spelling.
+
 - Removed the `Strided` contract name and the dimension step that carried it.
   `T[::]` already spells a strided axis and `T[:]` a contiguous one, so the
   longer `T[::Strided]` and `T[0:n:Strided]` forms are gone rather than kept as

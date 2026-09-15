@@ -264,10 +264,9 @@ def test_runtime_callback_extents_lower_to_assumed_shape_dummies_and_measured_co
     plan = WrapperPlanner().build(module)
 
     callback = _callback_argument(plan, "apply_assumed_shape").callback
-    assert [transfer.array.shape for transfer in callback.arguments] == [("::Strided",), ("::Strided",)]
+    assert [transfer.array.shape for transfer in callback.arguments] == [("::",), ("::",)]
 
     _, bridge = _sources(plan)
-    assert "::Strided" not in bridge
     assert "real(c_double), intent(in), dimension(:) :: values" in bridge
     assert "real(c_double), target, dimension(size(values, 1)) :: values_callback_storage" in bridge
     assert "real(c_double), intent(out), dimension(:) :: doubled" in bridge
@@ -340,7 +339,6 @@ def test_multidimensional_runtime_extents_measure_every_axis_from_the_dummy():
     assert [transfer.array.rank for transfer in callback.arguments] == [2, 2]
 
     _, bridge = _sources(plan)
-    assert "::Strided" not in bridge
     assert "real(c_double), intent(in), dimension(:, :) :: input" in bridge
     assert "real(c_double), target, dimension(size(input, 1), size(input, 2)) :: input_callback_storage" in bridge
     assert "real(c_double), intent(out), dimension(:, :) :: output" in bridge
@@ -360,7 +358,6 @@ def test_callback_docstrings_carry_array_rank_and_public_extents():
     assert "Called as: callback(input, output) -> None" in documentation
     assert "input : ndarray[float64], rank 2, shape (::, ::), intent(in)" in documentation
     assert "output : ndarray[float64], rank 2, shape (::, ::), intent(out)" in documentation
-    assert "::Strided" not in documentation
 
 
 def test_callback_array_result_diagnostic_uses_the_contract_spelling():

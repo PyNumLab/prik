@@ -242,7 +242,7 @@ def apply(
     assert args["A"].source_shape == ["LDA", "N"]
     assert args["A"].lower_bounds == [None, None]
     assert args["A"].upper_bounds == [None, None]
-    assert args["work"].shape == ["::Strided"]
+    assert args["work"].shape == ["::"]
     assert args["work"].axes == ["strided"]
     assert args["work"].contiguous is False
     assert args["work"].source_shape == []
@@ -263,7 +263,7 @@ bounded: Float64[0:n:]
     )
 
     arrays = [variable.semantic_type.storage.array for variable in module.variables]
-    assert [array.shape for array in arrays] == [["::Strided"], ["0:n:Strided"]]
+    assert [array.shape for array in arrays] == [["::"], ["0:n:"]]
     assert [array.axes for array in arrays] == [["strided"], ["strided"]]
     assert [array.contiguous for array in arrays] == [False, False]
 

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from prik.utilities.declaration_expressions import RUNTIME_DIMENSION_MARKERS
 from prik.utilities.stage_values import StageRecord
 from prik.policy.ownership import (
     AssignmentMode,
@@ -5048,7 +5049,7 @@ class WrapperGenerator:
     def _array_result_extent_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Reject unresolved ordinary array result extent spellings."""
         array = plan.array
-        if array is not None and any(shape in {":", "::Strided", "...", "Flat"} for shape in array.shape):
+        if array is not None and any(shape in RUNTIME_DIMENSION_MARKERS for shape in array.shape):
             return (self._diagnostic(plan.owner_path, "unresolved-array-result-shape", array.shape),)
         return ()
 

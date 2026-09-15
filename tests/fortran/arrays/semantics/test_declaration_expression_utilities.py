@@ -34,7 +34,7 @@ def test_source_helpers_keep_nested_syntax_intact() -> None:
         "[third, fourth]",
     ]
     assert split_top_level_expression("'first''part', second", ",") == ["'first''part'", "second"]
-    assert split_top_level_expression("first::Strided:upper", ":") == ["first", "", "Strided", "upper"]
+    assert split_top_level_expression("first::middle:upper", ":") == ["first", "", "middle", "upper"]
     with pytest.raises(ValueError, match="one character"):
         split_top_level_expression("value", "::")
 
@@ -111,7 +111,7 @@ def test_normalization_and_inspection_preserve_expression_provenance() -> None:
     assert declaration_extent_references("n + max(m, 1)") == ("n", "m")
     assert declaration_extent_references("values.shape[0]") == ("<invalid>",)
     assert declaration_extent_references("not valid (") == ("<invalid>",)
-    assert declaration_extent_references("::Strided") == ()
+    assert declaration_extent_references("::") == ()
     assert declaration_extent_uses_power("n ** 2")
     assert not declaration_extent_uses_power("not valid (")
     assert is_declaration_expression_helper("SUM")
@@ -192,7 +192,7 @@ def test_role_resolution_reuses_completed_roles_and_names_blockers() -> None:
     array_roles = {"values": ("values", ("value_role_0", "value_role_1"))}
     callable_roles = {"extent_for": ("prik_extent_for", "extent_role")}
 
-    assert resolve_declaration_extent("::Strided", scalar_roles, array_roles) == ResolvedDeclarationExtent("::Strided")
+    assert resolve_declaration_extent("::", scalar_roles, array_roles) == ResolvedDeclarationExtent("::")
     assert resolve_declaration_extent("n + values.shape[1]", scalar_roles, array_roles) == ResolvedDeclarationExtent(
         "n + __prik_extent_values_1",
         ("n", "__prik_extent_values_1"),

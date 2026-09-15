@@ -2235,7 +2235,7 @@ class _PyiAstParser:
             )
             lower_bounds, upper_bounds = _PyiAstParser._bounds_from_source_shape(source_shape)
             return (
-                [dim.replace(_STRIDED_DIMENSION_SENTINEL, "Strided") for dim in dims],
+                [dim.replace(_STRIDED_DIMENSION_SENTINEL, "") for dim in dims],
                 None,
                 source_shape,
                 lower_bounds,

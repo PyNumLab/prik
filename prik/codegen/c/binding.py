@@ -8239,7 +8239,7 @@ class CBindingGenerator(ClassVisitor):
         nodes = []
         for axis, expression in enumerate(actual.shape):
             if (
-                expression in {":", "::Strided", "Flat"}
+                expression in RUNTIME_EXTENT_MARKERS
                 or (actual.flatten_storage and axis == actual.flat_axis)
                 or array.extent_evaluation[axis] == "bridge"
             ):
@@ -8374,7 +8374,7 @@ class CBindingGenerator(ClassVisitor):
         if handoff is None or handoff.rank is None:
             return ()
         checks = []
-        runtime_markers = {":", "::Strided", "Flat"}
+        runtime_markers = RUNTIME_EXTENT_MARKERS
         for axis, expression in enumerate(handoff.shape):
             if expression in runtime_markers:
                 continue
@@ -8405,7 +8405,7 @@ class CBindingGenerator(ClassVisitor):
             return ()
         checks = []
         for axis, expression in enumerate(handoff.shape):
-            if expression in {":", "::Strided", "Flat"} or handoff.extent_evaluation[axis] == "bridge":
+            if expression in RUNTIME_EXTENT_MARKERS or handoff.extent_evaluation[axis] == "bridge":
                 continue
             expected = self._array_extent_expression(handoff, axis, expression, context)
             checks.append(

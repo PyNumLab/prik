@@ -157,7 +157,7 @@ end module contract_mod
 
     assumed = array_contract(args["assumed"].semantic_type)
     assert assumed.category == "assumed_shape"
-    assert assumed.shape == ["::Strided", "::Strided"]
+    assert assumed.shape == ["::", "::"]
     assert assumed.order == "ORDER_F"
 
     contig = array_contract(args["contig"].semantic_type)
@@ -268,7 +268,7 @@ def test_fortran_native_storage_contracts_preserve_exact_bounds_and_member_flags
     assert semantic_member.semantic_type.storage.array.pointer is True
     assert plain_member.optional is False
     assert plain_member.visibility == "public"
-    assert plain_member.semantic_type.storage.array.shape == ["::Strided"]
+    assert plain_member.semantic_type.storage.array.shape == ["::"]
     assert plain_member.semantic_type.storage.array.allocatable is False
     assert plain_member.semantic_type.storage.array.pointer is False
     assert plain_member.origin.source_language == "fortran"

@@ -37,6 +37,7 @@ from prik.parsers.fortran.models import (
     FortranVariable,
 )
 from prik.utilities.declaration_expressions import (
+    is_strided_extent,
     ArrayExpressionSource,
     canonicalize_declaration_extent,
     declaration_expression_calls,
@@ -2269,7 +2270,7 @@ class FortranToIRConverter(ClassVisitor):
         if category == "assumed_rank":
             return ["..."]
         if category == "assumed_shape" and not contiguous:
-            return ["::Strided" for _dim in shape]
+            return ["::" for _dim in shape]
 
         axes: list[str] = []
         for dim in shape:
@@ -2326,7 +2327,7 @@ class FortranToIRConverter(ClassVisitor):
     @staticmethod
     def _is_strided_axis(axis: str) -> bool:
         """Return whether an encoded public axis carries the strided marker."""
-        return "Strided" in axis
+        return is_strided_extent(axis)
 
     @staticmethod
     def _reference_storage_contract(*, writes_argument: bool) -> SemanticStorageContract:

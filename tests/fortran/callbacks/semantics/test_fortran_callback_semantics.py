@@ -245,7 +245,7 @@ end module solver_mod
     assert callback.name == "OBJ"
     assert callback.storage is not None and callback.storage.kind == "callback"
     assert [argument.name for argument in callback.metadata["callback_arguments"]] == ["x", "f"]
-    assert callback.metadata["arguments"][0].shape == ["::Strided"]
+    assert callback.metadata["arguments"][0].shape == ["::"]
     assert callback.metadata["return"].name == "None"
 
 

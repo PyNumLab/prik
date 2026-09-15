@@ -14,11 +14,7 @@ from dataclasses import replace
 import re
 
 from prik.naming.native_symbols import NativeSymbolNames
-from prik.utilities.declaration_expressions import (
-    RUNTIME_EXTENT_MARKERS,
-    contract_extent_spelling,
-    render_declaration_extent,
-)
+from prik.utilities.declaration_expressions import RUNTIME_EXTENT_MARKERS, render_declaration_extent
 from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
@@ -1148,7 +1144,7 @@ class FortranBridgeGenerator(ClassVisitor):
         spell.
         """
         shape = self._callback_array_shape(transfer)
-        runtime = [contract_extent_spelling(expression) for expression in shape if expression in RUNTIME_EXTENT_MARKERS]
+        runtime = [expression for expression in shape if expression in RUNTIME_EXTENT_MARKERS]
         if runtime:
             raise ValueError(
                 f"Callback array result {transfer.owner_path!r} has runtime extents {runtime} "
@@ -8615,9 +8611,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Render a prototype function result's shape, which must be explicit."""
         if array is None or array.rank is None:
             raise ValueError(f"Prototype value {owner_path!r} has no concrete shape")
-        runtime = [
-            contract_extent_spelling(expression) for expression in array.shape if expression in RUNTIME_EXTENT_MARKERS
-        ]
+        runtime = [expression for expression in array.shape if expression in RUNTIME_EXTENT_MARKERS]
         if runtime:
             raise ValueError(
                 f"Prototype result {owner_path!r} has runtime extents {runtime} "

@@ -43,7 +43,7 @@ end module
 
     contract = array_contract(x.semantic_type)
     assert contract.category == "assumed_shape"
-    assert contract.shape == ["::Strided"]
+    assert contract.shape == ["::"]
     assert contract.source_shape == [":"]
     assert contract.order is None
 
@@ -76,7 +76,7 @@ end module
     assert A.semantic_type.rank == 2
 
     contract = array_contract(A.semantic_type)
-    assert A.semantic_type.shape == ["::Strided", "::Strided"]
+    assert A.semantic_type.shape == ["::", "::"]
     assert contract.source_shape == [":", ":"]
     assert contract.category == "assumed_shape"
     assert contract.order == "ORDER_F"

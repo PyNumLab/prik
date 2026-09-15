@@ -664,12 +664,7 @@ class PyiPrinter(ClassVisitor):
     @staticmethod
     def _printed_array_dimension(dimension: object) -> str:
         """Return the public `.pyi` spelling for an array dimension."""
-        text = PyiPrinter._canonical_array_dimension(dimension)
-        if text == "::Strided":
-            return "::"
-        if text.endswith(":Strided"):
-            return text[: -len("Strided")]
-        return text
+        return PyiPrinter._canonical_array_dimension(dimension)
 
     @staticmethod
     def _array_annotation_metadata(
