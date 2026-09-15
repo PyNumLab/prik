@@ -89,6 +89,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticOrigin,
     SemanticPrototype,
+    SemanticReexport,
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
@@ -287,6 +288,10 @@ def _resolve_compile_time_text(text: str, compile_time_values: dict[str, str]) -
         return compile_time_values.get(token.lower(), token)
 
     return re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*\b", replace_symbol, raw)
+
+
+# Language-owned modules are contract vocabulary, not sibling contract leaves.
+_INTRINSIC_FORTRAN_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 
 
 class FortranToIRConverter(ClassVisitor):
@@ -1431,6 +1436,7 @@ class FortranToIRConverter(ClassVisitor):
             classes=semantic_classes,
             variables=module_variables + enum_constants,
             imports=self._module_imports(module),
+            reexports=self._module_reexports(module),
             metadata=metadata,
             origin=SemanticOrigin(
                 source_language="fortran",
@@ -1526,6 +1532,30 @@ class FortranToIRConverter(ClassVisitor):
                 source_kind="external_root",
             ),
         )
+
+    @staticmethod
+    def _module_reexports(module: FortranModule) -> list[SemanticReexport]:
+        """Return the imported names this module explicitly publishes.
+
+        Naming an imported entity in a ``public`` statement says the module
+        means it to be part of its own interface, so that name is published
+        here as well.  A name that is public only because the module default is
+        public carries no such statement and stays where it was declared.
+        """
+        declared = {
+            *(procedure.name.casefold() for procedure in module.procedures),
+            *(derived.name.casefold() for derived in module.derived_types),
+            *(variable.name.casefold() for variable in getattr(module, "variables", ())),
+        }
+        published = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
+        reexports: list[SemanticReexport] = []
+        for module_name, mappings in module.uses.items():
+            for mapping in mappings:
+                local_name = mapping.local_name
+                if local_name.casefold() in declared or local_name.casefold() not in published:
+                    continue
+                reexports.append(SemanticReexport(local_name, module_name, mapping.source, module.name))
+        return reexports
 
     @staticmethod
     def _module_imports(module: FortranModule) -> list[str | SemanticImport]:
@@ -2562,16 +2592,12 @@ class FortranToIRConverter(ClassVisitor):
                 )
                 for signature in interface.procedures
             }
-            inherited_names, inherited_lookup = self._inherited_generic_specifics(
+            target_names, inherited_lookup = self._generic_target_names(
                 module,
-                interface.name,
+                interface,
                 module_index or {},
+                inherited_functions,
             )
-            for name in inherited_names:
-                if not any(item.name.casefold() == name.casefold() for item in inherited_functions):
-                    inherited_functions.append(inherited_lookup[name.casefold()])
-            own_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
-            target_names = [*inherited_names, *own_names]
             procedures, missing = self._resolve_overload_targets(
                 target_names,
                 procedure_lookup | inline_lookup | inherited_lookup,
@@ -3015,6 +3041,26 @@ class FortranToIRConverter(ClassVisitor):
     def _is_procedure_generic_name(name: str) -> bool:
         """Return whether a generic spelling is an ordinary callable identifier."""
         return re.fullmatch(r"[a-z_]\w*", name, re.IGNORECASE) is not None
+
+    def _generic_target_names(
+        self,
+        module: FortranModule,
+        interface: FortranInterface,
+        modules: dict[str, FortranModule],
+        inherited_functions: list[SemanticFunction],
+    ) -> tuple[list[str], dict[str, SemanticFunction]]:
+        """Order one generic's specifics, inherited before locally declared.
+
+        ``inherited_functions`` collects each specific this module gained from
+        the generic it extends, so the module can carry them for dispatch.
+        """
+        inherited_names, inherited_lookup = self._inherited_generic_specifics(module, interface.name, modules)
+        known = {item.name.casefold() for item in inherited_functions}
+        inherited_functions.extend(
+            inherited_lookup[name.casefold()] for name in inherited_names if name.casefold() not in known
+        )
+        own_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
+        return [*inherited_names, *own_names], inherited_lookup
 
     def _inherited_generic_specifics(
         self,

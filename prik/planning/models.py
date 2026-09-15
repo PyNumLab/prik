@@ -1388,6 +1388,19 @@ class DeclarationCallablePlan(StageRecord):
 
 
 @dataclass
+class NamespaceAliasPlan(StageRecord):
+    """Bind one name in a namespace to a callable another namespace owns.
+
+    A re-export publishes an existing declaration rather than adding one, so
+    the alias names where the callable lives instead of repeating its plan.
+    """
+
+    python_name: str
+    source_namespace: tuple[str, ...]
+    source_name: str
+
+
+@dataclass
 class NamespacePlan(StageRecord):
     """Represent one Python namespace and its directly exported wrapper owners.
 
@@ -1403,6 +1416,7 @@ class NamespacePlan(StageRecord):
     derived_types: tuple[DerivedTypePlan, ...] = ()
     classes: tuple[ClassSurfacePlan, ...] = ()
     overloads: tuple[OverloadPlan, ...] = ()
+    aliases: tuple[NamespaceAliasPlan, ...] = ()
     docstring: str | None = None
 
 

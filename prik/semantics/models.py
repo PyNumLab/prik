@@ -673,10 +673,27 @@ class SemanticImport:
 
 
 @dataclass
+class SemanticReexport:
+    """Record one name a module publishes on behalf of the module it imports.
+
+    A re-export names an existing declaration rather than adding one, so it
+    carries only where the declaration lives and what this module calls it.
+    """
+
+    local_name: str
+    origin_module: str
+    source_name: str
+    module: str = ""
+    """Module publishing the name, which is not the one declaring it."""
+
+
+@dataclass
 class SemanticModule:
     name: str
 
     functions: list[SemanticFunction] = field(default_factory=list)
+
+    reexports: list[SemanticReexport] = field(default_factory=list)
 
     prototypes: list[SemanticPrototype] = field(default_factory=list)
 

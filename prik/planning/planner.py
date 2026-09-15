@@ -130,6 +130,7 @@ from prik.planning.models import (
     NativeEntrypointParameterPlan,
     NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
+    NamespaceAliasPlan,
     NamespacePlan,
     NativeArrayActualPlan,
     NativeArrayDefaultHandlePlan,
@@ -371,8 +372,16 @@ class WrapperPlanner(ClassVisitor):
             module,
             class_policies,
         )
+        aliases = self._aliases_by_namespace(module)
         if not any(
-            (*functions.values(), *variables.values(), *derived_types.values(), *classes.values(), *overloads.values())
+            (
+                *functions.values(),
+                *variables.values(),
+                *derived_types.values(),
+                *classes.values(),
+                *overloads.values(),
+                *aliases.values(),
+            )
         ):
             raise ValueError(f"Semantic module {module.name!r} has no public wrapper exports")
 
@@ -381,7 +390,9 @@ class WrapperPlanner(ClassVisitor):
         self._attach_overload_functions(functions, overloads)
 
         # Complete stable namespace paths, generated symbols, and required headers.
-        namespaces = self._namespace_plans(module.name, functions, variables, derived_types, classes, overloads)
+        namespaces = self._namespace_plans(
+            module.name, functions, variables, derived_types, classes, overloads, aliases
+        )
         support_projection = build_generated_support_procedure_projection(namespaces)
         support_procedures = support_projection.support_procedures
         generated_code_groups = self._native_generated_code_groups(
@@ -509,10 +520,13 @@ class WrapperPlanner(ClassVisitor):
         derived_types: dict,
         classes: dict,
         overloads: dict,
+        aliases: dict,
     ) -> tuple[NamespacePlan, ...]:
         """Freeze linked namespace members in dependency-safe path order."""
         self._complete_generated_symbols(functions, variables)
-        namespace_paths = self._namespace_paths((*functions, *variables, *derived_types, *classes, *overloads))
+        namespace_paths = self._namespace_paths(
+            (*functions, *variables, *derived_types, *classes, *overloads, *aliases)
+        )
         return tuple(
             self._namespace_plan(
                 module_name,
@@ -522,9 +536,24 @@ class WrapperPlanner(ClassVisitor):
                 tuple(derived_types[path]),
                 tuple(classes[path]),
                 tuple(overloads[path]),
+                tuple(aliases[path]),
             )
             for path in namespace_paths
         )
+
+    @staticmethod
+    def _aliases_by_namespace(module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
+        """Group each published re-export under the namespace that publishes it."""
+        grouped = defaultdict(list)
+        for reexport in module.reexports:
+            grouped[(reexport.module.casefold(),)].append(
+                NamespaceAliasPlan(
+                    python_name=reexport.local_name,
+                    source_namespace=(reexport.origin_module.casefold(),),
+                    source_name=reexport.source_name,
+                )
+            )
+        return grouped
 
     def _namespace_plan(
         self,
@@ -535,6 +564,7 @@ class WrapperPlanner(ClassVisitor):
         derived_types: tuple[DerivedTypePlan, ...],
         classes: tuple[ClassSurfacePlan, ...],
         overloads: tuple[OverloadPlan, ...],
+        aliases: tuple[NamespaceAliasPlan, ...] = (),
     ) -> NamespacePlan:
         """Create one namespace after its generated symbols are complete."""
         return NamespacePlan(
@@ -545,6 +575,7 @@ class WrapperPlanner(ClassVisitor):
             derived_types=derived_types,
             classes=classes,
             overloads=overloads,
+            aliases=aliases,
         )
 
     def _complete_derived_backend_symbols(

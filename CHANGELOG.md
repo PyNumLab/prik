@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A module that names an imported procedure in a `public` statement now
+  publishes it, so a facade module reaches Python instead of disappearing. The
+  declaration is not repeated: the published name binds to the one wrapper its
+  declaring module exposes, so `facade.proc is home.proc`, and the contract
+  keeps spelling the re-export as the import it already was. A name public only
+  because the module default is public states no such intent and is unchanged.
+
 - A generic interface that repeats a `use`-associated name now extends that
   generic instead of replacing it, so the importing module dispatches to the
   specifics it inherited as well as its own. Accumulation stays one-directional,

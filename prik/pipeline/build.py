@@ -3057,6 +3057,7 @@ def _merge_wrapper_modules(modules: list[SemanticModule], *, name: str | None = 
         functions=[function for module in modules for function in module.functions],
         prototypes=[prototype for module in modules for prototype in module.prototypes],
         overload_sets=[overload for module in modules for overload in module.overload_sets],
+        reexports=[reexport for module in modules for reexport in module.reexports],
         classes=[semantic_class for module in modules for semantic_class in module.classes],
         variables=[variable for module in modules for variable in module.variables],
         metadata=_wrapper_module_metadata(modules),

@@ -15340,9 +15340,40 @@ class CBindingGenerator(ClassVisitor):
                     for namespace in child_namespaces
                     for node in self._child_namespace_import_registration_nodes(plan, namespace)
                 ),
+                # Aliases bind after every namespace is populated, so the
+                # callable a re-export names already exists.
+                *(
+                    node
+                    for namespace in (root_namespace, *child_namespaces)
+                    for node in self._namespace_alias_nodes(plan, namespace)
+                ),
                 CReturn(CodeExpression("mod")),
             ),
         )
+
+    def _namespace_alias_nodes(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Bind each re-exported name to the callable its owner already exposes.
+
+        A re-export publishes an existing declaration, so the name is bound to
+        that one object rather than to a second wrapper for the same procedure.
+        """
+        target = self._namespace_object_name(namespace)
+        nodes: list[CExpressionStatement] = []
+        for alias in namespace.aliases:
+            source = self._namespace_object_name(self._namespace(plan, alias.source_namespace))
+            nodes.append(
+                CExpressionStatement(
+                    CodeExpression(
+                        f'if (prik_bind_namespace_alias({target}, "{alias.python_name}", '
+                        f'{source}, "{alias.source_name}") < 0) {{ Py_DECREF(mod); return NULL; }}'
+                    )
+                )
+            )
+        return tuple(nodes)
 
     def _ordered_child_namespaces(self, plan: ModulePlan) -> tuple[NamespacePlan, ...]:
         """Return parents before descendants regardless of editable tuple order."""
