@@ -514,3 +514,99 @@ def test_emit_module_aliases_standalone_only_for_actual_name_collisions():
     assert "@prik_standalone\ndef standalone() -> Int32: ..." in colliding
     assert "standalone as prik_standalone_2" in twice_colliding.splitlines()[0]
     assert "@prik_standalone_2\ndef standalone() -> Int32: ..." in twice_colliding
+
+
+def test_generated_contract_imports_a_name_under_the_spelling_its_definition_uses():
+    """An import binds the name the module it reads from actually defines.
+
+    A source-derived contract writes its declarations under Python names, so a
+    Fortran entity spelled in capitals is declared lower case. An import asking
+    for the source spelling names nothing the dependency contract defines, and
+    loading the package back fails on it.
+    """
+    consts = parse_fortran_source("""
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+end module consts_mod
+""")
+    infos = parse_fortran_source("""
+module infos_mod
+use consts_mod, only : IK
+implicit none
+end module infos_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(infos)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert 'ik: Final[Annotated[Int32, SourceName("IK")]]' in stubs["consts_mod"]
+    assert "from .consts_mod import ik" in stubs["infos_mod"]
+    assert "import IK" not in stubs["infos_mod"]
+
+
+def test_generated_contract_renames_an_imported_name_under_both_spellings():
+    """A renamed import binds the defined name to this contract's own name."""
+    consts = parse_fortran_source("""
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+end module consts_mod
+""")
+    renaming = parse_fortran_source("""
+module renaming_mod
+use consts_mod, only : MY_IK => IK
+implicit none
+end module renaming_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(renaming)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "from .consts_mod import ik as my_ik" in stubs["renaming_mod"]
+
+
+def test_generated_contract_imports_a_prototype_under_its_declared_spelling():
+    """A prototype keeps its spelling, so the import that binds it keeps it too.
+
+    A contract writes a prototype under the name its own declaration states, and
+    an annotation naming that prototype is written the same way, so normalizing
+    the import would bind a name no declaration defines.
+    """
+    declares = parse_fortran_source("""
+module pintrf_mod
+implicit none
+private
+public :: OBJ
+abstract interface
+subroutine OBJ(x)
+implicit none
+real(8), intent(in) :: x(:)
+end subroutine OBJ
+end interface
+end module pintrf_mod
+""")
+    solver = parse_fortran_source("""
+module solver_mod
+use pintrf_mod, only : OBJ
+implicit none
+contains
+subroutine solve(calfun, x)
+procedure(OBJ) :: calfun
+real(8), intent(inout) :: x(:)
+end subroutine solve
+end module solver_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(declares), fortran_module_to_semantic_module(solver)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def OBJ(" in stubs["pintrf_mod"]
+    assert "from .pintrf_mod import OBJ" in stubs["solver_mod"]
+    assert "calfun: OBJ" in stubs["solver_mod"]

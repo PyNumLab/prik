@@ -7,6 +7,14 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generated contract now imports each name under the spelling the contract
+  that defines it uses. A source-derived contract declares a Fortran entity
+  under a Python name, so one spelled in capitals is declared lower case, while
+  the import kept asking for the source spelling and named nothing the
+  dependency defines -- loading the package back failed on it. A prototype is
+  unchanged: it keeps its declared spelling wherever it is written, so an import
+  binding one keeps it too.
+
 - An overload declaration whose specific projects an output argument into its
   result is now accepted. The check compared the declared result against the
   projected one including the write-through the native argument passing states,

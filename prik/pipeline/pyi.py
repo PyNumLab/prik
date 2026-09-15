@@ -131,10 +131,17 @@ def emit_module_stubs(
         target.classes.extend(cls for cls in dependency.classes if cls.name not in existing)
 
     complete_semantic_policies(module for module in emitted_modules.values() if module.origin.source_language != "c")
+    # A prototype keeps the spelling its own contract declares, so every module
+    # rendered here is told which names those are before any of them writes an
+    # import binding one.
+    declared_prototype_names = {
+        str(prototype.name) for module in emitted_modules.values() for prototype in module.prototypes
+    }
     return {
         module_name: emit_module(
             module,
             normalize_fortran_public_names=normalize_fortran_public_names,
+            declared_prototype_names=declared_prototype_names,
         ).strip()
         for module_name, module in emitted_modules.items()
     }
