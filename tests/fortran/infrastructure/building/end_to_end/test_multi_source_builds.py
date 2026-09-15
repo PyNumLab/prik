@@ -298,7 +298,8 @@ def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
     assert entry.read_text(encoding="utf-8") == (
         "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n"
     )
-    assert "shared_types" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .shared_types import box" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
 
 
 def test_multi_source_generated_contract_build_matches_source_runtime_and_link_order(tmp_path: Path):
@@ -331,6 +332,28 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
     ]
     _assert_combined_runtime(source_module)
     _assert_combined_runtime(generated_module)
+    assert generated_module.box_ops.box is generated_module.shared_types.box
+
+
+def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
+    sources = _write_combined_sources(tmp_path)
+    entry = _generate_combined_contract(sources, tmp_path / "contracts")
+    native_objects = _compile_native_objects(sources, tmp_path / "native")
+
+    module, payload = _build_contract(
+        entry.parent / "box_ops.pyi",
+        native_objects,
+        tmp_path / "leaf_build",
+        output_name="box_leaf",
+    )
+
+    assert payload["sources"] == [
+        str(entry.parent / "box_ops.pyi"),
+        str(entry.parent / "shared_types.pyi"),
+    ]
+    box = module.box()
+    box.value = np.int32(7)
+    assert module.box_value(box) == np.int32(7)
 
 
 def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias(tmp_path: Path):

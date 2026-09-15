@@ -7,6 +7,207 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Publishing an imported name re-exports it at runtime only where the name is
+  one Python object to bind. A module publishing an imported callback prototype
+  states where a signature comes from, and a signature is not an object, so
+  binding one reached for an attribute of a module that exports nothing and the
+  build failed outright. Each re-export now records what it publishes, and only
+  a procedure or a derived type becomes a runtime alias; every other kind keeps
+  to the semantic and contract-import paths that already carry it.
+
+- A re-export binds the Python name its declaring module actually published
+  rather than the Fortran spelling it was written with, so publishing an entity
+  spelled in capitals no longer looks up an attribute that does not exist.
+
+- A name a module publishes after a plain `use` is now re-exported. The `use`
+  carries every public name of the module it reads, and the `public` statement
+  says which of them this module means to publish; an origin that two such
+  modules could supply stays unresolved rather than guessed.
+
+- A generic interface built from several blocks merges within the scope
+  declaring it. Two procedures of one module may each declare an interface of
+  the same name, and merging them on the module they share let one procedure's
+  specifics answer the other's calls.
+
+- A generated contract writes an overload's target and a prototype import the
+  way the contract declaring them spells each one. The overload named a source
+  spelling that matched no declaration it holds, and a prototype's spelling was
+  kept for every module using that name rather than the one declaring it.
+
+- A contract can now rename what it declares. `SourceName` states the native
+  entity a variable or constant reaches, the way `bind` already did for a
+  callable, instead of replacing the name the declaration states -- editing a
+  contract to give an entity a Python name exported the source spelling and
+  dropped the edit. A source name inside `Final[...]` reaches its declaration
+  as well, where it was previously ignored. A generated contract is affected
+  too: a Fortran entity Python cannot spell, such as one named `lambda`, is
+  declared as `lambda_` and now stays reachable under that name.
+
+- A class can state the native type it reaches through `bind`, so a derived
+  type can be exported under a different Python name. An imported class
+  reference resolves through the name its declaring contract states, and a
+  renamed class keeps its `bind` when the contract is regenerated.
+
+- A generated Fortran contract no longer records a source spelling that differs
+  from its Python name only by case. Fortran names entities without regard to
+  case, so a capitalized `IK` written as `ik` renames nothing and the generated
+  Fortran reaches it either way; every such declaration nevertheless carried a
+  `SourceName` or `@bind` stating the capitals back. A name Python cannot hold
+  as written -- a keyword, an illegal character, one a collision moved aside --
+  is a real rename and still keeps its original, as does every name from a
+  source language that is case-sensitive.
+
+- A generated contract now imports each name under the spelling the contract
+  that defines it uses. A source-derived contract declares a Fortran entity
+  under a Python name, so one spelled in capitals is declared lower case, while
+  the import kept asking for the source spelling and named nothing the
+  dependency defines -- loading the package back failed on it. A prototype is
+  unchanged: it keeps its declared spelling wherever it is written, so an import
+  binding one keeps it too.
+
+- An overload declaration whose specific projects an output argument into its
+  result is now accepted. The check compared the declared result against the
+  projected one including the write-through the native argument passing states,
+  and a native scalar descriptor result including the descriptor topology that
+  only a `native_call` result wrapper can name -- neither of which a declared
+  result type spells. A generated contract carrying such a generic, for example
+  one over `intent(out)` allocatable arguments, was rejected on read-back by the
+  same tool that wrote it.
+
+- A contract generated from a source whose abstract interface types a dummy
+  through a kind of its own now resolves that kind. An interface body's
+  variables reached no target probe, so a kind named only there -- through a
+  `use` written inside the body -- had no storage fact and `generate --pyi`
+  failed on a declaration the wrapper build accepted.
+
+- A derived type building one generic binding from several `generic ::`
+  statements now collects every specific into that binding. Each statement was
+  recorded as its own binding of the same name, so only the first reached
+  dispatch and calling the generic with the argument types of any later
+  statement raised `no matching overload`.
+
+- A scope naming the same module in several `use` statements now keeps every
+  import. Each statement was replacing the previous one, so only the last
+  survived; a module splitting a long import list across lines silently lost
+  the names the earlier lines carried, and any kind parameter among them stopped
+  resolving.
+
+- A procedure whose outputs have no completed ordering is now reported as an
+  unsupported wrapper policy instead of raising a comparison error.
+
+- Generated Fortran module leaves now import sibling contracts relatively, so
+  building a leaf directly loads the contracts its declarations depend on.
+  A native derived type exported through several modules shares one set of
+  generated support procedures.
+
+- A module that names an imported procedure in a `public` statement now
+  publishes it, so a facade module reaches Python instead of disappearing. The
+  declaration is not repeated: the published name binds to the one wrapper its
+  declaring module exposes, so `facade.proc is home.proc`, and the contract
+  keeps spelling the re-export as the import it already was. A name public only
+  because the module default is public states no such intent and is unchanged.
+
+- A generic interface that repeats a `use`-associated name now extends that
+  generic instead of replacing it, so the importing module dispatches to the
+  specifics it inherited as well as its own. Accumulation stays one-directional,
+  as Fortran requires: the declaring module does not gain what a later module
+  adds. An inherited specific is reachable only through the generic, because the
+  import never bound its own name.
+
+- A generic interface may now be declared across several blocks in one scope,
+  which Fortran allows and real sources use to add specifics under
+  preprocessor guards. The blocks become one generic carrying every entry in
+  declaration order, instead of being rejected as a duplicate declaration.
+
+- A callback interface reached through renaming re-exports now records the name
+  its declaring module gives it. The reference followed the module back to the
+  declaration but kept an alias from partway along the chain, so it named a
+  symbol that module does not define.
+
+- The semantic IR now carries a strided axis as `::`, the spelling a contract
+  uses, instead of a longer internal token. `prik semantics` output changes
+  accordingly; contracts, docstrings and generated sources are unaffected
+  because they already printed the contract spelling.
+
+- Removed the `Strided` contract name and the dimension step that carried it.
+  `T[::]` already spells a strided axis and `T[:]` a contiguous one, so the
+  longer `T[::Strided]` and `T[0:n:Strided]` forms are gone rather than kept as
+  a second way to write the same contract. A value in a dimension's step
+  position is now rejected with a message naming the spelling to use.
+
+- A callback interface's result now keeps the declaring module's type identity,
+  matching its dummies. An imported function interface returning a type its own
+  module declares previously attributed that type to the consuming module and
+  failed to build, both from Fortran source and from a generated contract.
+
+- A renamed callback import keeps the declared interface name beside the local
+  one, so a contract imports `OBJ as LOCAL_OBJ` rather than a name the declaring
+  module never defines. A reference that differs from the declaration only in
+  case is now spelled canonically instead of binding a second name.
+
+- Following a re-exported callback interface respects Fortran accessibility. A
+  module that imports an interface privately no longer exposes it to a later
+  `use`, and the rule applies at every hop of a chain.
+
+- An abstract interface imported from another module now converts in the scope
+  of the module that declares it. A derived type the interface names belongs to
+  that module, so wrapping a consumer that imports only the interface — and not
+  the types it mentions — no longer fails against a type identity attributed to
+  the consuming module.
+
+- Callback interface resolution now covers a `use` inside a single procedure, a
+  standalone procedure's own imports, and an interface re-exported through any
+  number of modules. File, project, and `generate --pyi` conversion share one
+  resolver rather than each carrying its own lookup, and a contract that
+  re-exports a prototype resolves back to the module that declares it.
+
+- A contract now imports a prototype it references but never declares, so an
+  interface named by a procedure-local `use` is bound in the generated `.pyi`
+  instead of appearing as a free name.
+
+- Callback docstrings now state each array argument's rank and extents. Every
+  generated docstring and diagnostic spells a runtime extent with the shorthand
+  a contract uses (`Float64[::]`) rather than the explicit step the IR stores
+  (`Float64[::Strided]`); the two are the same contract, while `Float64[:]`
+  remains the distinct contiguous one.
+
+- A primitive scalar callback dummy the callee may write now reaches Python as
+  rank-zero storage (`Out(Float64[()])`) instead of an independent value, so
+  the value the callback computes reaches the native caller. This covers
+  `intent(out)` and `intent(inout)`, and also a dummy with no declared
+  `intent`, which Fortran permits the callee to modify — that case keeps its
+  missing direction in the contract as a bare `Float64[()]` rather than gaining
+  a synthesized one. `--assume-intent-in-scalars` elects the input-only default
+  for it instead. Python has no writable scalar, so the previous `Out(Addr(T))` spelling
+  silently discarded the write; it is now a policy error naming the replacement.
+  A prototype still mirrors the native argument list — edit it with
+  `@native_call` to project an output into the callable's return value instead.
+
+- Generated docstrings now state a callback's exact callable signature —
+  arity, per-argument direction and element type, how an output is delivered,
+  and the lifetime and fatal-error rules — taken from the same completed
+  prototype the trampoline is generated from.
+
+- Assumed-shape array arguments are now supported inside a callback prototype.
+  A `procedure(iface)` dummy whose interface declares `values(:)` lowers to an
+  assumed-shape bridge dummy and a contiguous call-local copy measured from it,
+  instead of emitting an invalid array declaration. Array callback *results*
+  still require an exact shape and now report that directly.
+
+- A dummy procedure's interface name keeps the spelling it was declared with.
+  Generated `.pyi` contracts previously annotated `procedure(OBJ)` as `obj`
+  while importing `OBJ`, so PRIK could not rebuild from the contract it had
+  just written.
+
+- `prik generate --pyi` now resolves an abstract interface imported from
+  another supplied source file, matching multi-file wrapper builds.
+
+- A `procedure(iface)` dummy whose interface no supplied source declares now
+  reports the interface by name and asks for the module that declares it,
+  instead of failing against an opaque placeholder type. Contract extraction
+  spells that interface name so the generated `.pyi` stays consistent with the
+  import it already emits.
+
 ## 0.5.0 — 2026-09-13
 
 - Added CMake integration through the packaged `UsePRIK.cmake` helper and a

@@ -73,7 +73,7 @@ def test_generated_pyi_synthetic_imports_are_stably_sorted(type_stems):
         )
         return [line for line in emit_module(module).splitlines() if line.startswith("from ")]
 
-    expected = [f"from types import {', '.join(sorted(type_names))}"]
+    expected = [f"from .types import {', '.join(sorted(type_names))}"]
     assert import_lines(type_names) == expected
     assert import_lines(reversed(type_names)) == expected
 

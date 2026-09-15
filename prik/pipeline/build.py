@@ -66,6 +66,7 @@ from prik.semantics.models import (
     SemanticImport,
     SemanticModule,
     SemanticPrototype,
+    SemanticReexport,
     SemanticVariable,
     _module_semantic_types,
 )
@@ -2063,6 +2064,24 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
 
     tree = _pyi_export_tree(entry, modules_by_path, cache={}, pending=set())
     _record_pyi_exports(tree)
+    for module in modules_by_path.values():
+        for declaration in module.classes:
+            exports = _declaration_exports(declaration)
+            if len(exports) < 2:
+                continue
+            primary = exports[0]
+            source_namespace = ".".join(primary["namespace"])
+            for alias in exports[1:]:
+                module.reexports.append(
+                    SemanticReexport(
+                        local_name=alias["name"],
+                        origin_module=source_namespace,
+                        source_name=primary["name"],
+                        module=".".join(alias["namespace"]),
+                        entity_kind="derived_type",
+                    )
+                )
+            exports[:] = [primary]
 
 
 def _pyi_export_tree(
@@ -3057,6 +3076,7 @@ def _merge_wrapper_modules(modules: list[SemanticModule], *, name: str | None = 
         functions=[function for module in modules for function in module.functions],
         prototypes=[prototype for module in modules for prototype in module.prototypes],
         overload_sets=[overload for module in modules for overload in module.overload_sets],
+        reexports=[reexport for module in modules for reexport in module.reexports],
         classes=[semantic_class for module in modules for semantic_class in module.classes],
         variables=[variable for module in modules for variable in module.variables],
         metadata=_wrapper_module_metadata(modules),

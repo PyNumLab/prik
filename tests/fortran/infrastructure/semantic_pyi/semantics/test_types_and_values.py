@@ -194,7 +194,10 @@ def f() -> tuple[F64, Gives["y", F64]]: ...
         module_name="edited",
     )
 
-    assert module.variables[0].name == "native_alias"
+    # The declared name stays the Python name; SourceName states the native
+    # entity it reaches, as bind does for a callable.
+    assert module.variables[0].name == "alias"
+    assert module.variables[0].origin.native_name == "native_alias"
     assert module.variables[0].semantic_type.shape == ["1:n"]
     assert module.functions[0].return_type is not None
     assert module.functions[0].return_type.name == "Float64"
@@ -242,7 +245,7 @@ def apply(
     assert args["A"].source_shape == ["LDA", "N"]
     assert args["A"].lower_bounds == [None, None]
     assert args["A"].upper_bounds == [None, None]
-    assert args["work"].shape == ["::Strided"]
+    assert args["work"].shape == ["::"]
     assert args["work"].axes == ["strided"]
     assert args["work"].contiguous is False
     assert args["work"].source_shape == []
@@ -252,21 +255,31 @@ def apply(
     assert args["scratch"].source_shape == []
 
 
-def test_convert_pyi_to_ir_accepts_explicit_strided_marker_for_edited_contracts():
+def test_convert_pyi_to_ir_reads_a_strided_axis_from_its_empty_step():
+    """An empty step marks a strided axis; a bounded axis keeps its bounds."""
     module = parse_pyi_text(
         """
-current: Float64[::]
-explicit: Float64[::Strided]
+unbounded: Float64[::]
 bounded: Float64[0:n:]
-explicit_bounded: Float64[0:n:Strided]
 """,
         module_name="strided_axes",
     )
 
     arrays = [variable.semantic_type.storage.array for variable in module.variables]
-    assert [array.shape for array in arrays] == [["::Strided"], ["::Strided"], ["0:n:Strided"], ["0:n:Strided"]]
-    assert [array.axes for array in arrays] == [["strided"], ["strided"], ["strided"], ["strided"]]
-    assert [array.contiguous for array in arrays] == [False, False, False, False]
+    assert [array.shape for array in arrays] == [["::"], ["0:n:"]]
+    assert [array.axes for array in arrays] == [["strided"], ["strided"]]
+    assert [array.contiguous for array in arrays] == [False, False]
+
+
+@pytest.mark.parametrize("dimension", ["Float64[::Strided]", "Float64[0:n:Strided]", "Float64[::2]"])
+def test_convert_pyi_to_ir_rejects_a_dimension_step(dimension: str):
+    """A dimension carries bounds only, so the step position spells nothing.
+
+    `T[::]` already says strided, so the longer explicit form it replaced is
+    refused rather than kept as a second way to write the same contract.
+    """
+    with pytest.raises(ValueError, match="not part of the contract grammar"):
+        parse_pyi_text(f"x: {dimension}\n", module_name="rejected_step")
 
 
 def test_convert_pyi_to_ir_uses_fortran_native_array_defaults():
@@ -585,3 +598,44 @@ end module solver_mod
 
     assert native_contract_issues(parse_pyi_text(constrained, module_name="solver_mod")) == []
     assert native_contract_issues(parse_pyi_text(changed_abi, module_name="solver_mod")) == []
+
+
+def test_source_name_binds_a_native_entity_without_taking_the_declared_name():
+    """`SourceName` states what a declaration reaches, like `bind` on a callable.
+
+    A contract is edited to give an entity the name Python should call it, and
+    that name has to survive. Reading the source spelling as the declaration's
+    own name discards the edit and exports the native spelling instead.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Annotated, Final, Int32, SourceName
+
+tally: Annotated[Int32, SourceName("COUNTER")]
+
+limit: Final[Annotated[Int32, SourceName("MAXFUN")]]
+""",
+        module_name="edited",
+    )
+
+    assert [(item.name, item.origin.native_name) for item in module.variables] == [
+        ("tally", "COUNTER"),
+        ("limit", "MAXFUN"),
+    ]
+    assert [constraint.name for constraint in module.variables[1].semantic_type.constraints] == ["Constant"]
+
+
+def test_class_binds_a_native_type_under_its_own_python_name():
+    """A class states the native type it reaches when the two names differ."""
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, bind
+
+@bind("POINT_T")
+class PointType:
+    x: Float64
+""",
+        module_name="edited",
+    )
+
+    assert (module.classes[0].name, module.classes[0].native_name) == ("PointType", "POINT_T")

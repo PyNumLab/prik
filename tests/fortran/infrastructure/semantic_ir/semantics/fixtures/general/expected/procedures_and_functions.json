@@ -14,7 +14,7 @@
                 "rank": 1,
                 "dtype": "Float64",
                 "shape": [
-                  "::Strided"
+                  "::"
                 ],
                 "constraints": [],
                 "coercions": [],
@@ -33,7 +33,7 @@
                   "array": {
                     "rank": 1,
                     "shape": [
-                      "::Strided"
+                      "::"
                     ],
                     "lower_bounds": [],
                     "upper_bounds": [],
@@ -269,7 +269,7 @@
                 "rank": 1,
                 "dtype": "Float64",
                 "shape": [
-                  "::Strided"
+                  "::"
                 ],
                 "constraints": [],
                 "coercions": [],
@@ -288,7 +288,7 @@
                   "array": {
                     "rank": 1,
                     "shape": [
-                      "::Strided"
+                      "::"
                     ],
                     "lower_bounds": [],
                     "upper_bounds": [],
@@ -414,6 +414,7 @@
           }
         }
       ],
+      "reexports": [],
       "prototypes": [],
       "overload_sets": [],
       "classes": [],

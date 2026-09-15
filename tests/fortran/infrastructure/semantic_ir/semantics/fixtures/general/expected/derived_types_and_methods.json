@@ -3,6 +3,7 @@
     {
       "name": "mesh_mod",
       "functions": [],
+      "reexports": [],
       "prototypes": [],
       "overload_sets": [],
       "classes": [

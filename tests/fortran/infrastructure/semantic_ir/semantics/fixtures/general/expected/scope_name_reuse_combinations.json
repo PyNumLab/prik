@@ -1002,6 +1002,7 @@
           }
         }
       ],
+      "reexports": [],
       "prototypes": [],
       "overload_sets": [
         {
@@ -1351,7 +1352,8 @@
                 "metadata": {}
               }
             }
-          ]
+          ],
+          "native_scope": "scope_name_reuse_combinations"
         }
       ],
       "classes": [

@@ -239,7 +239,6 @@ ORDER_C = _ContractExpression()
 ORDER_F = _ContractExpression()
 Pointer = _DescriptorContract("pointer")
 Polymorphic = _ContractExpression()
-Strided = _ContractExpression()
 
 Arg = _expression
 ArrayCategory = _expression
@@ -411,7 +410,6 @@ CONTRACT_SYMBOLS = frozenset(
         "Returns",
         "SizeT",
         "SourceName",
-        "Strided",
         "String",
         "Transfer",
         "UInt",

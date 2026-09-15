@@ -18,6 +18,7 @@ from typing import Any
 EXTERNAL_TYPE_REF_METADATA = "external_type_ref"
 PROTOTYPE_REF_METADATA = "prototype_ref"
 PROTOTYPE_INTENT_METADATA = "prototype_intent"
+UNRESOLVED_PROCEDURE_INTERFACE_METADATA = "unresolved_procedure_interface"
 INTERNAL_MODULE_VARIABLE_ACCESS_METADATA = "internal_module_variable_access"
 INTERNAL_MODULE_VARIABLE_NAME_METADATA = "internal_module_variable_name"
 INTERNAL_NATIVE_ARRAY_HANDLE_OPERATION_METADATA = "internal_native_array_handle_operation"
@@ -390,6 +391,8 @@ class SemanticMethod(SemanticFunction):
 class ProcedureOverloadSet:
     name: str
     procedures: list[SemanticFunction] = field(default_factory=list)
+    native_scope: str | None = None
+    """Module declaring the generic, which need not own every specific."""
 
 
 FORTRAN_GENERIC_NAME_METADATA = "fortran_generic_name"
@@ -670,10 +673,38 @@ class SemanticImport:
 
 
 @dataclass
+class SemanticReexport:
+    """Record one name a module publishes on behalf of the module it imports.
+
+    A re-export names an existing declaration rather than adding one, so it
+    carries only where the declaration lives and what this module calls it.
+    """
+
+    local_name: str
+    origin_module: str
+    source_name: str
+    module: str = ""
+    """Module publishing the name, which is not the one declaring it."""
+
+    entity_kind: str = "unknown"
+    """What the published name declares where it comes from.
+
+    Re-export reaches Python as a namespace alias only for an entity that is one
+    Python object, which today means an ordinary procedure. Every other kind --
+    a callback prototype, a module variable whose state stays live, a derived
+    type, a generic -- keeps to the semantic and contract-import paths that
+    already carry it, and records its kind here rather than an alias that would
+    misrepresent it.
+    """
+
+
+@dataclass
 class SemanticModule:
     name: str
 
     functions: list[SemanticFunction] = field(default_factory=list)
+
+    reexports: list[SemanticReexport] = field(default_factory=list)
 
     prototypes: list[SemanticPrototype] = field(default_factory=list)
 

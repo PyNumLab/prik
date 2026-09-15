@@ -21,6 +21,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 __all__ = (
+    "RUNTIME_DIMENSION_MARKERS",
+    "RUNTIME_EXTENT_MARKERS",
     "ArrayExpressionSource",
     "DeclarationExpressionCall",
     "ResolvedDeclarationExtent",
@@ -33,6 +35,7 @@ __all__ = (
     "fortran_extent_to_python",
     "is_declaration_expression_helper",
     "is_public_declaration_expression",
+    "is_strided_extent",
     "render_declaration_extent",
     "resolve_declaration_extent",
     "split_declaration_assignment",
@@ -41,7 +44,25 @@ __all__ = (
 )
 
 
-_RUNTIME_DIMENSIONS = frozenset({":", "::Strided", "...", "Flat"})
+# A runtime extent has a concrete rank but no compile-time bound, so a backend
+# spells it from the descriptor it is handed rather than from the expression.
+RUNTIME_EXTENT_MARKERS = frozenset({":", "::", "Flat"})
+
+
+def is_strided_extent(expression: str) -> bool:
+    """Return whether one extent expression describes a strided axis.
+
+    A trailing empty step marks it, with or without bounds: ``::`` spans the
+    whole axis and ``lower:upper:`` narrows it.  Without that step the axis is
+    contiguous, so ``:`` and ``lower:upper`` are dense.
+    """
+    parts = str(expression).split(":")
+    return len(parts) == 3 and parts[2] == ""
+
+
+_ASSUMED_RANK_MARKER = "..."
+# Every extent whose value only exists at run time, assumed rank included.
+RUNTIME_DIMENSION_MARKERS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
     ".eq.": "==",
     ".ne.": "!=",
@@ -360,7 +381,7 @@ def resolve_declaration_extent(
     stored on completed policy and consumed by backend rendering.
     """
     # Stage 1: preserve caller-owned runtime dimension markers.
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ResolvedDeclarationExtent(expression)
 
     # Stage 2: parse the public expression before binding any producer roles.
@@ -395,7 +416,7 @@ def declaration_extent_references(expression: str) -> tuple[str, ...]:
     known. Array properties and unsupported syntax return ``<invalid>`` so the
     later policy stage cannot accidentally treat them as scalar values.
     """
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ()
     tree = _parse_expression(expression)
     if tree is None:
@@ -1591,7 +1612,7 @@ def render_declaration_extent(
     """
     if target not in {"c", "fortran"}:
         raise ValueError(f"unsupported declaration-expression target: {target!r}")
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return expression
     try:
         node = ast.parse(expression, mode="eval").body

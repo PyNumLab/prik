@@ -1938,10 +1938,15 @@ class FortranParser(ClassVisitor):
         units: _ParsedFileUnits,
     ) -> list[FortranInterface]:
         """Collect interfaces and attach module-owned blocks to their owners."""
-        interfaces = [
-            self._visit(unit, parent_scope=scope, filename=filename)
-            for unit, scope in self._collect_interface_source_units(lines, filename)
-        ]
+        interfaces = self._merged_generic_interfaces(
+            [
+                (
+                    self._visit(unit, parent_scope=scope, filename=filename),
+                    self._interface_scope_identity(scope),
+                )
+                for unit, scope in self._collect_interface_source_units(lines, filename)
+            ]
+        )
         for module in units.modules:
             module.interfaces = [
                 iface for iface in interfaces if iface.module and iface.module.lower() == module.name.lower()
@@ -1951,6 +1956,50 @@ class FortranParser(ClassVisitor):
                 iface for iface in interfaces if iface.module and iface.module.lower() == submodule.name.lower()
             ]
         return [iface for iface in interfaces if iface.module is None]
+
+    @staticmethod
+    def _interface_scope_identity(scope: _ParserScope | None) -> tuple[tuple[str, str], ...]:
+        """Return the lexical scope chain that owns one interface block.
+
+        A generic belongs to the scope declaring it, and a module, a submodule
+        and each procedure inside them are all separate scopes. The chain names
+        every enclosing one, so two procedures of the same module never look
+        like a single owner.
+        """
+        chain: list[tuple[str, str]] = []
+        while scope is not None:
+            chain.append((str(scope.kind), str(scope.name or "").casefold()))
+            scope = scope.parent
+        return tuple(reversed(chain))
+
+    @staticmethod
+    def _merged_generic_interfaces(
+        interfaces: list[tuple[FortranInterface, tuple[tuple[str, str], ...]]],
+    ) -> list[FortranInterface]:
+        """Combine blocks that extend one generic interface into a single record.
+
+        Fortran lets a generic interface be built from several blocks in the
+        same scope, each contributing specifics.  They name one generic, so the
+        parser reports one interface carrying every entry in declaration order.
+        Two scopes that happen to use one name declare two generics, so the
+        lexical owner is part of the identity rather than the module alone.
+        Abstract and unnamed blocks are never generics and stay as they are.
+        """
+        merged: dict[tuple[tuple[tuple[str, str], ...], str], FortranInterface] = {}
+        result: list[FortranInterface] = []
+        for interface, scope_identity in interfaces:
+            if not interface.name or interface.abstract:
+                result.append(interface)
+                continue
+            key = (scope_identity, interface.name.lower())
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = interface
+                result.append(interface)
+                continue
+            existing.procedures.extend(interface.procedures)
+            existing.specific_procedures.extend(interface.specific_procedures)
+        return result
 
     def _resolve_file_compile_time_facts(self, units: _ParsedFileUnits) -> None:
         """Apply source-visible compile-time symbols within one parsed file.
@@ -2811,7 +2860,12 @@ class FortranParser(ClassVisitor):
                 continue
             if unit.kind == "procedure":
                 key = ("procedure", unit.name.lower())
-            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type", "interface"}:
+            elif unit.kind == "interface":
+                # A generic interface may be declared in several blocks, each
+                # adding specifics to the same name, so a repeat is not a
+                # duplicate declaration.
+                continue
+            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type"}:
                 key = (unit.kind, unit.name.lower())
             else:
                 continue
@@ -3419,7 +3473,7 @@ class FortranParser(ClassVisitor):
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use and hasattr(target, "uses"):
             module_name, mappings = parsed_use
-            target.uses[module_name] = mappings
+            self._record_use_mappings(target.uses, module_name, mappings)
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3587,8 +3641,8 @@ class FortranParser(ClassVisitor):
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
             module_name, mappings = parsed_use
-            proc_state.uses[module_name] = mappings
-            proc_state.local_uses[module_name] = mappings
+            self._record_use_mappings(proc_state.uses, module_name, mappings)
+            self._record_use_mappings(proc_state.local_uses, module_name, mappings)
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -3713,6 +3767,23 @@ class FortranParser(ClassVisitor):
         )
 
     @staticmethod
+    def _record_generic_binding(dtype: FortranDerivedType, binding: dict) -> None:
+        """Record one ``generic ::`` statement on a derived type.
+
+        Fortran lets a type-bound generic be built from several statements in
+        one type, each contributing specifics. They name one binding, so the
+        parser reports one record carrying every target in declaration order.
+        The standard requires every statement for a binding to declare the same
+        accessibility, so the first statement's attributes stand for the rest.
+        """
+        key = "".join(str(binding["name"]).split()).lower()
+        for existing in dtype.generic_bindings:
+            if "".join(str(existing["name"]).split()).lower() == key:
+                existing["targets"].extend(binding["targets"])
+                return
+        dtype.generic_bindings.append(binding)
+
+    @staticmethod
     def _apply_default_component_visibility(
         dtype: FortranDerivedType,
         declaration: str,
@@ -3769,13 +3840,14 @@ class FortranParser(ClassVisitor):
             attrs = [a.strip().lower() for a in split_csv(attr_txt)] if attr_txt else []
             lhs, rhs_txt = [x.strip() for x in right.split("=>", 1)]
             rhs = [r.strip() for r in split_csv(rhs_txt)]
-            dtype.generic_bindings.append(
+            self._record_generic_binding(
+                dtype,
                 {
                     "name": lhs,
                     "targets": rhs,
                     "attrs": attrs,
                     "visibility": _binding_visibility(attrs, dtype.binding_visibility),
-                }
+                },
             )
             return
 
@@ -3941,7 +4013,10 @@ class FortranParser(ClassVisitor):
             return declaration, split_csv((decl.group("attrs") or "").strip().lstrip(", "))
         if re.match(r"^procedure\s*\(", left, re.IGNORECASE):
             procm = _REGEX["procedure_dummy"].match(left)
-            iface = procm.group("iface").lower() if procm else None
+            # The interface name is a user-visible symbol that reaches the
+            # generated .pyi contract, so it keeps its declared spelling;
+            # every comparison against it normalizes case at the comparison.
+            iface = procm.group("iface") if procm else None
             return self._new_declaration("procedure", iface), split_csv(
                 (procm.group("attrs") if procm else "").strip().lstrip(", ")
             )
@@ -4043,7 +4118,7 @@ class FortranParser(ClassVisitor):
                 filename=filename,
                 code="PARSE_INTERNAL_STATE",
             )
-        if declaration.base_type == "procedure" and declaration.kind in proc_state.imports:
+        if declaration.base_type == "procedure" and self._scope_key(declaration.kind or "") in proc_state.imports:
             declaration.kind = ""
         for normalized_name, shape, _initializer, entity_declaration in self._declaration_entities(
             right,
@@ -5680,6 +5755,30 @@ class FortranParser(ClassVisitor):
             return None
         name = match.groupdict().get("name")
         return name if name else None
+
+    @staticmethod
+    def _record_use_mappings(
+        uses: dict[str, list[FortranUseMapping]],
+        module_name: str,
+        mappings: list[FortranUseMapping],
+    ) -> None:
+        """Accumulate one ``use`` statement into a scope's import table.
+
+        A scope may name the same module more than once, each statement adding
+        what it lists, so a later statement extends the imports rather than
+        replacing them.  A bare ``use`` imports everything, which the empty
+        mapping list already means, and absorbs any list beside it.
+        """
+        existing = uses.get(module_name)
+        if existing is None or not mappings:
+            uses[module_name] = mappings
+            return
+        if not existing:
+            return
+        known = {(item.source.casefold(), (item.target or item.source).casefold()) for item in existing}
+        existing.extend(
+            item for item in mappings if (item.source.casefold(), (item.target or item.source).casefold()) not in known
+        )
 
     @staticmethod
     def _parse_use_statement(line: str) -> tuple[str, list[FortranUseMapping]] | None:

@@ -97,6 +97,15 @@ def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
     assert second.contract_import() == ""
 
 
+def test_printing_loaded_contract_preserves_absolute_support_imports():
+    module = _parse_pyi_text(
+        "from typing import Any\nfrom prik.contracts import Int32\n\ndef identity(value: Int32) -> Int32: ...\n",
+        module_name="identity",
+    )
+
+    assert "from typing import Any" in emit_module(module)
+
+
 def test_printer_validation_and_opaque_dependency_edge_cases():
     printer = PyiPrinter()
 
@@ -283,7 +292,7 @@ end module
 
     code = generate_pyi(source)
 
-    assert "from list_input import delete_input_list as delete_input" in code
+    assert "from .list_input import delete_input_list as delete_input" in code
 
 
 def test_emit_imported_derived_type_reference_without_reexporting_class():
@@ -302,7 +311,7 @@ end module physics
     stubs = emit_module_stubs(module)
     code = stubs["physics"]
 
-    assert "from types_mod import particle" in code
+    assert "from .types_mod import particle" in code
     assert "from . import types_mod" not in code
     assert "p: particle" in code
     assert "Addr(particle)" not in code
@@ -416,7 +425,7 @@ end module physics
     stubs = emit_module_stubs(fortran_module_to_semantic_module(parsed))
 
     assert "import types_mod" in stubs["physics"]
-    assert "from types_mod import particle" in stubs["physics"]
+    assert "from .types_mod import particle" in stubs["physics"]
     assert stubs["types_mod"].endswith("class particle(Opaque):\n    pass")
 
 
@@ -505,3 +514,260 @@ def test_emit_module_aliases_standalone_only_for_actual_name_collisions():
     assert "@prik_standalone\ndef standalone() -> Int32: ..." in colliding
     assert "standalone as prik_standalone_2" in twice_colliding.splitlines()[0]
     assert "@prik_standalone_2\ndef standalone() -> Int32: ..." in twice_colliding
+
+
+def test_generated_contract_imports_a_name_under_the_spelling_its_definition_uses():
+    """An import binds the name the module it reads from actually defines.
+
+    A source-derived contract writes its declarations under Python names, so a
+    Fortran entity spelled in capitals is declared lower case. An import asking
+    for the source spelling names nothing the dependency contract defines, and
+    loading the package back fails on it.
+    """
+    consts = parse_fortran_source("""
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+end module consts_mod
+""")
+    infos = parse_fortran_source("""
+module infos_mod
+use consts_mod, only : IK
+implicit none
+end module infos_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(infos)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "ik: Final[Int32]" in stubs["consts_mod"]
+    assert "from .consts_mod import ik" in stubs["infos_mod"]
+    assert "import IK" not in stubs["infos_mod"]
+
+
+def test_generated_contract_renames_an_imported_name_under_both_spellings():
+    """A renamed import binds the defined name to this contract's own name."""
+    consts = parse_fortran_source("""
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+end module consts_mod
+""")
+    renaming = parse_fortran_source("""
+module renaming_mod
+use consts_mod, only : MY_IK => IK
+implicit none
+end module renaming_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(renaming)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "from .consts_mod import ik as my_ik" in stubs["renaming_mod"]
+
+
+def test_generated_contract_imports_a_prototype_under_its_declared_spelling():
+    """A prototype keeps its spelling, so the import that binds it keeps it too.
+
+    A contract writes a prototype under the name its own declaration states, and
+    an annotation naming that prototype is written the same way, so normalizing
+    the import would bind a name no declaration defines.
+    """
+    declares = parse_fortran_source("""
+module pintrf_mod
+implicit none
+private
+public :: OBJ
+abstract interface
+subroutine OBJ(x)
+implicit none
+real(8), intent(in) :: x(:)
+end subroutine OBJ
+end interface
+end module pintrf_mod
+""")
+    solver = parse_fortran_source("""
+module solver_mod
+use pintrf_mod, only : OBJ
+implicit none
+contains
+subroutine solve(calfun, x)
+procedure(OBJ) :: calfun
+real(8), intent(inout) :: x(:)
+end subroutine solve
+end module solver_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(declares), fortran_module_to_semantic_module(solver)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def OBJ(" in stubs["pintrf_mod"]
+    assert "from .pintrf_mod import OBJ" in stubs["solver_mod"]
+    assert "calfun: OBJ" in stubs["solver_mod"]
+
+
+def test_fortran_contract_records_no_source_name_for_a_case_only_python_name():
+    """Writing a Fortran entity in lower case renames nothing worth recording.
+
+    Fortran names entities without regard to case, so a capitalized source
+    spelling and the lower-case Python name are the same entity and the
+    generated Fortran reaches it either way.
+    """
+    source = """
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+contains
+subroutine SCALE_VALUE(x)
+integer, intent(in) :: x
+end subroutine SCALE_VALUE
+end module consts_mod
+"""
+
+    code = emit_module(
+        fortran_module_to_semantic_module(parse_fortran_source(source)),
+        normalize_fortran_public_names=True,
+    )
+
+    assert "ik: Final[Int32]" in code
+    assert "def scale_value(" in code
+    assert "SourceName" not in code
+    assert "@bind(" not in code
+
+
+def test_fortran_contract_records_a_source_name_python_cannot_spell():
+    """A name Python cannot hold as written keeps the spelling it came from."""
+    source = """
+module naming_mod
+implicit none
+integer :: lambda
+integer :: LAMBDA_
+contains
+subroutine ASSERT(x)
+integer, intent(in) :: x
+end subroutine ASSERT
+end module naming_mod
+"""
+
+    code = emit_module(
+        fortran_module_to_semantic_module(parse_fortran_source(source)),
+        normalize_fortran_public_names=True,
+    )
+
+    assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
+    assert 'lambda__2: Annotated[Int32, SourceName("LAMBDA_")]' in code
+    assert '@bind("ASSERT")\n@native_call([Addr(Arg(0))])\ndef assert_(' in code
+
+
+def test_non_fortran_declaration_compares_its_native_spelling_exactly():
+    """Every other source language names its entities exactly, case included."""
+    origin = SemanticOrigin(source_language="c", native_scope="c_mod")
+    module = SemanticModule(
+        name="c_mod",
+        functions=[
+            SemanticFunction(
+                "scale_value",
+                native_name="ScaleValue",
+                return_type=SemanticType("Int32"),
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert '@bind("ScaleValue")' in code
+
+
+def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
+    """A renamed class states its native type so the contract reads back."""
+    origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
+    module = SemanticModule(
+        name="shapes_mod",
+        classes=[
+            SemanticClass(
+                name="PointType",
+                native_name="POINT_T",
+                fields=[SemanticField("x", SemanticType("Float64"))],
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert '@bind("POINT_T")\nclass PointType:' in code
+
+
+def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
+    """A class named without regard to case states no separate native type."""
+    origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
+    module = SemanticModule(
+        name="shapes_mod",
+        classes=[
+            SemanticClass(
+                name="point_t",
+                native_name="POINT_T",
+                fields=[SemanticField("x", SemanticType("Float64"))],
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert "class point_t:" in code
+    assert "@bind(" not in code
+
+
+def test_prototype_spelling_is_kept_only_for_the_module_that_declares_one():
+    """A prototype identity names its module, not a spelling used anywhere.
+
+    One module may declare a prototype while another spells an ordinary
+    declaration the same way. The second follows Python naming, so an import
+    reading from it asks for the name that module actually defines.
+    """
+    callbacks = parse_fortran_source("""
+module callback_mod
+implicit none
+private
+public :: OBJ
+abstract interface
+subroutine OBJ(x)
+implicit none
+real(8), intent(in) :: x
+end subroutine OBJ
+end interface
+end module callback_mod
+""")
+    values = parse_fortran_source("""
+module values_mod
+implicit none
+integer, parameter :: OBJ = 1
+end module values_mod
+""")
+    consumer = parse_fortran_source("""
+module consumer_mod
+use values_mod, only : OBJ
+implicit none
+end module consumer_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (callbacks, values, consumer)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def OBJ(" in stubs["callback_mod"]
+    assert "obj: Final[Int32]" in stubs["values_mod"]
+    assert "from .values_mod import obj" in stubs["consumer_mod"]
+    assert "import OBJ" not in stubs["consumer_mod"]

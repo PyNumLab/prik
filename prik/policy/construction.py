@@ -173,6 +173,7 @@ from prik.policy.models import (
     FunctionWrapperPolicy,
 )
 from prik.utilities.declaration_expressions import (
+    RUNTIME_DIMENSION_MARKERS,
     declaration_expression_call_sites,
     declaration_extent_references,
     resolve_declaration_extent,
@@ -744,6 +745,22 @@ def _class_method_blockers(method: ClassMethodPolicy) -> str | None:
     return None
 
 
+def _overload_candidate_scope(
+    procedure: models.SemanticFunction,
+    owner_path: str,
+    module_generic: bool,
+) -> str:
+    """Return the scope that addresses one overload candidate.
+
+    A module generic addresses each specific by the module that owns it, so a
+    specific inherited from an imported generic stays findable.  A class-bound
+    overload is addressed by its class instead, which owns every candidate.
+    """
+    if not module_generic:
+        return owner_path
+    return str(procedure.origin.native_scope or owner_path)
+
+
 def _overload_policy(
     owner_path: str,
     overload: models.ProcedureOverloadSet,
@@ -751,13 +768,15 @@ def _overload_policy(
     python_name: str | None = None,
     procedures: tuple[models.SemanticFunction, ...] | None = None,
     python_exports: tuple[PythonExportPolicy, ...] = (),
+    module_generic: bool = False,
 ) -> OverloadPolicy:
     """Complete one overload set from explicit concrete-procedure links."""
     selected = tuple(overload.procedures) if procedures is None else procedures
     public_name = python_name or overload.name
     candidates = tuple(
         OverloadCandidatePolicy(
-            owner_path=f"{owner_path}.{overload.name}.{procedure.name}",
+            owner_path=f"{_overload_candidate_scope(procedure, owner_path, module_generic)}"
+            f".{overload.name}.{procedure.name}",
             arguments=(),
             passed_object=False,
         )
@@ -781,13 +800,16 @@ def build_module_overload_policy(
 ) -> OverloadPolicy:
     """Complete the stable owner and Python exports for one module generic."""
     if not overload.procedures:
-        return _overload_policy(module.name, overload)
+        return _overload_policy(overload.native_scope or module.name, overload, module_generic=True)
     first = overload.procedures[0]
-    native_scope = str(first.origin.native_scope or module.name)
+    # A generic extending an imported one holds specifics from another module,
+    # so the declared scope names the owner rather than the first specific.
+    native_scope = str(overload.native_scope or first.origin.native_scope or module.name)
     return _overload_policy(
         native_scope,
         overload,
         python_exports=completed_python_exports(first, overload.name),
+        module_generic=True,
     )
 
 
@@ -1542,19 +1564,27 @@ def _callback_abi_kind(
 def _callback_adapter_action(
     argument: models.SemanticArgument,
 ) -> CallbackTransferAction:
-    """Select callback copy direction from the prototype's exact dummy intent."""
+    """Select callback copy direction from the prototype's completed dummy contract.
+
+    A declared ``intent`` names the direction outright.  With none declared the
+    callee may both read and modify the dummy, so the direction follows the
+    completed storage: writable rank-zero storage copies in and out, while a
+    value projection is input-only.
+    """
     semantic_type = argument.semantic_type
     intent = argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)
     if intent == "out":
         return CallbackTransferAction.COPY_OUT
     if intent == "inout":
         return CallbackTransferAction.COPY_IN_OUT
-    if (
-        intent == "in"
-        or bool(argument.origin.metadata.get("value"))
-        or (semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0)
-    ):
+    if intent == "in" or bool(argument.origin.metadata.get("value")):
         return CallbackTransferAction.COPY_IN
+    if semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0:
+        return (
+            CallbackTransferAction.COPY_IN_OUT
+            if _is_scalar_storage_type(semantic_type)
+            else CallbackTransferAction.COPY_IN
+        )
     return CallbackTransferAction.COPY_IN_OUT
 
 
@@ -1574,6 +1604,13 @@ def _callback_transfer_blockers(
         )
     if transfer.passed_by_value and transfer.rank > 0:
         blockers.append(f"callback argument {argument.name!r} cannot pass an array by value")
+    if _discards_callback_scalar_writeback(transfer):
+        # Python has no writable scalar, so a value projection cannot deliver
+        # anything back to the native caller that reads this dummy after the call.
+        blockers.append(
+            f"callback argument {argument.name!r} is intent({transfer.intent}) and cannot use the "
+            f"value spelling Addr({semantic_type.name}); use {semantic_type.name}[()] for writable storage"
+        )
     if semantic_type.name == "String":
         if transfer.character_length is None or transfer.character_length <= 0:
             blockers.append(f"callback argument {argument.name!r} requires a fixed positive character length")
@@ -1585,6 +1622,17 @@ def _callback_transfer_blockers(
     elif transfer.derived_type_identity is None and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
         blockers.append(f"callback argument {argument.name!r} has unsupported type {semantic_type.name!r}")
     return tuple(blockers)
+
+
+def _discards_callback_scalar_writeback(transfer: CallbackTransferPolicy) -> bool:
+    """Report whether a written-back scalar dummy was projected as an unwritable value."""
+    return bool(
+        transfer.rank == 0
+        and not transfer.passed_by_value
+        and transfer.intent is not None
+        and str(transfer.intent).casefold() in {"out", "inout"}
+        and transfer.python_action is PythonBarrierAction.SCALAR_VALUE
+    )
 
 
 def _callback_result_policy(
@@ -4373,6 +4421,12 @@ def _derived_argument_handoff_blockers(
     """Require the exact native type definition for a typed value call."""
     if derived is None:
         return ()
+    interface = argument.semantic_type.metadata.get(models.UNRESOLVED_PROCEDURE_INTERFACE_METADATA)
+    if interface is not None:
+        return (
+            f"argument {argument.name!r} declares procedure interface {str(interface)!r}, "
+            "which no supplied source declares; add the module that declares it to the build inputs",
+        )
     return _derived_type_definition_blockers(f"argument {argument.name!r}", derived, derived_types)
 
 
@@ -4766,7 +4820,15 @@ def _resolve_derived_type_policy(
     if exact is not None:
         return exact
     if semantic_type.metadata.get(models.EXTERNAL_TYPE_REF_METADATA) is not None:
-        return None
+        # An imported reference names the type the way the module declaring it
+        # writes it, which is its own name rather than the native type it binds.
+        # The search stays inside that module, so a type of the same name
+        # declared elsewhere is never reached.
+        scope, name = requested_identity
+        imported_matches = tuple(
+            policy for policy in derived_types.values() if policy.native_scope == scope and policy.type_name == name
+        )
+        return imported_matches[0] if len(imported_matches) == 1 else None
     local_matches = tuple(policy for policy in derived_types.values() if policy.type_name == semantic_type.name)
     return local_matches[0] if len(local_matches) == 1 else None
 
@@ -5713,7 +5775,7 @@ def _ordinary_array_result_blockers(
     if decision.nullable or decision.descriptor_boundary:
         blockers.append(f"{label} is descriptor-backed or nullable")
     array = _array_handoff_policy(semantic_type)
-    if array is None or array.rank is None or any(shape in {":", "::Strided", "...", "Flat"} for shape in array.shape):
+    if array is None or array.rank is None or any(shape in RUNTIME_DIMENSION_MARKERS for shape in array.shape):
         blockers.append(f"{label} ordinary array shape is not fully expressible")
     elif array.native_order != array.order:
         blockers.append(f"{label} COPY_F applies only to Python-visible array arguments")
@@ -5867,6 +5929,10 @@ def _result_position_blockers(
     )
     if not positions:
         return ()
+    if any(position is None for position in positions):
+        # An unplaced output has no position to order, which this check reports
+        # rather than comparing against the positions that do exist.
+        return (f"binding result positions are incomplete; received {positions}",)
     if sorted(positions) == list(range(len(positions))) and len(set(positions)) == len(positions):
         return ()
     return (f"binding result positions must cover 0..{len(positions) - 1} exactly once; received {positions}",)
@@ -7745,7 +7811,7 @@ def _is_phase6_raw_array_address_type(semantic_type: models.SemanticType) -> boo
     supported_element = _is_plan_primitive_value_type(semantic_type) or (
         semantic_type.name == "String" and policy.itemsize is not None
     )
-    return supported_element and all(item not in {":", "::Strided", "...", "Flat"} for item in policy.shape)
+    return supported_element and all(item not in RUNTIME_DIMENSION_MARKERS for item in policy.shape)
 
 
 def _is_raw_array_address_type(semantic_type: models.SemanticType) -> bool:

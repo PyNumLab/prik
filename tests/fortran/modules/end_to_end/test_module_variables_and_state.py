@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from tests.fortran._support.wrapper_build import (
+    _build_source_and_import,
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
     _sole_native_module,
@@ -534,3 +535,139 @@ def test_declared_length_character_module_arrays_compile_and_expose_their_width(
     module.deferred_ptr.deallocate()
     assert module.deferred_ptr.associated is False
     assert module.deferred_ptr.shape is None
+
+
+REEXPORT_SOURCE = """
+module reexport_home_mod
+  implicit none
+contains
+  subroutine scale_value(value, scaled)
+    integer, intent(in) :: value
+    integer, intent(out) :: scaled
+    scaled = value * 2
+  end subroutine scale_value
+end module reexport_home_mod
+
+module reexport_facade_mod
+  use reexport_home_mod, only : scale_value
+  implicit none
+  private
+  public :: scale_value
+end module reexport_facade_mod
+
+module reexport_default_mod
+  use reexport_home_mod
+  implicit none
+end module reexport_default_mod
+
+module reexport_shout_mod
+  implicit none
+contains
+  subroutine SCALE_LOUD(value, scaled)
+    integer, intent(in) :: value
+    integer, intent(out) :: scaled
+    scaled = value * 3
+  end subroutine SCALE_LOUD
+end module reexport_shout_mod
+
+module reexport_case_mod
+  use reexport_shout_mod, only : SCALE_LOUD
+  implicit none
+  private
+  public :: SCALE_LOUD
+end module reexport_case_mod
+
+module reexport_renamed_mod
+  use reexport_home_mod, only : public_scale => scale_value
+  implicit none
+  private
+  public :: public_scale
+end module reexport_renamed_mod
+
+module reexport_wildcard_mod
+  use reexport_home_mod
+  implicit none
+  private
+  public :: scale_value
+end module reexport_wildcard_mod
+"""
+
+
+def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_path: Path):
+    """Naming an imported procedure in a `public` statement publishes it here.
+
+    The declaration is not repeated: the published name binds to the one
+    wrapper its own module exposes, so both namespaces share a single callable.
+    A module that merely imports without publishing adds no name of its own.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_facade_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
+
+    # A plain `use` states no intent to publish, so it adds nothing.
+    assert not hasattr(module, "reexport_default_mod") or "scale_value" not in dir(module.reexport_default_mod)
+
+    # One wrapper defines the procedure; the facade only names it again.
+    generated = (tmp_path / "build" / "reexport_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_value") == 1
+
+
+def test_published_import_resolves_the_python_name_its_declaring_module_bound(tmp_path: Path):
+    """A re-export binds a Python attribute, which is not a Fortran spelling.
+
+    A Fortran entity written in capitals is exported under its Python name, so
+    the module publishing it has to reach for that name rather than the source
+    spelling, which names no attribute at all.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_case_mod.scale_loud is module.reexport_shout_mod.scale_loud
+    assert module.reexport_case_mod.scale_loud(np.int32(4)) == np.int32(12)
+    assert not hasattr(module.reexport_case_mod, "SCALE_LOUD")
+
+
+def test_renamed_published_import_shares_the_wrapper_it_renames(tmp_path: Path):
+    """A renamed re-export states a new name for one existing callable."""
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_renamed_mod.public_scale is module.reexport_home_mod.scale_value
+    assert module.reexport_renamed_mod.public_scale(np.int32(6)) == np.int32(12)
+
+
+def test_publishing_a_name_a_plain_use_brought_in_republishes_only_that_name(tmp_path: Path):
+    """A plain `use` publishes nothing until a name is named in `public`.
+
+    Such a `use` carries every public name of the module it reads, so the
+    `public` statement is what says which of them this module means to publish.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_wildcard_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
+    # The same plain `use` without a `public` statement publishes nothing.
+    assert not hasattr(module, "reexport_default_mod") or "scale_value" not in dir(module.reexport_default_mod)

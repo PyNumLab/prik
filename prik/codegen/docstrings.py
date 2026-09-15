@@ -24,6 +24,7 @@ from prik.planning.models import (
     ArrayHandoffPlan,
     BindingStatusErrorPlan,
     CallbackHandoffPlan,
+    CallbackResultPlan,
     CallbackTransferPlan,
     ClassMethodPlan,
     ClassSurfacePlan,
@@ -67,7 +68,7 @@ _ARRAY_ELEMENT_TYPES = {
 
 _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
 
-_UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
+_UNKNOWN_EXTENTS = frozenset({"", ":", "*", ".."})
 
 
 class WrapperDocstringBuilder:
@@ -748,6 +749,7 @@ class WrapperDocstringBuilder:
         optional = argument.binding.optional_mode not in {OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR}
         nullable = optional or argument.binding.nullable
         lines = [f"{argument.binding.python_name} : {self._type(argument, nullable=nullable, signature=False)}"]
+        lines.extend(self._callback_signature_lines(argument))
         lines.extend(self._array_lines(argument.array))
         lines.extend(self._native_c_array_storage_lines(argument))
         lines.extend(self._optional_lines(argument))
@@ -967,18 +969,73 @@ class WrapperDocstringBuilder:
 
     @staticmethod
     def _callback_transfer_type(transfer: CallbackTransferPlan) -> str:
-        """Render a callback prototype argument or result from completed ABI facts.
+        """Render one callback prototype dummy as the Python object it receives.
 
-        Derived transfers preserve their type identity.  Arrays and reference
-        ABI transfers render as NumPy arrays; other transfers use the scalar
-        map.  The helper is pure and does not inspect outer wrapper policy.
+        The spelling follows the completed Python projection rather than the
+        native ABI: a dummy projected as storage arrives as an array the
+        callable can write through, and one projected as a value does not.
         """
         if transfer.derived_type_identity is not None:
             return transfer.semantic_type_name
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
-        if transfer.array is not None or transfer.abi.value == "reference":
+        if transfer.python_action in {PythonBarrierAction.ARRAY_STORAGE, PythonBarrierAction.SCALAR_STORAGE}:
             return f"ndarray[{scalar}]"
         return scalar
+
+    def _callback_signature_lines(self, argument: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Document the exact callable one callback parameter expects.
+
+        Every fact comes from the completed prototype the trampoline is
+        generated from, so the documented arity, direction and access cannot
+        drift from the callable the native caller actually invokes.
+        """
+        callback = argument.callback
+        if callback is None:
+            return ()
+        parameters = ", ".join(transfer.name for transfer in callback.arguments)
+        result = self._callback_result_type(callback.result)
+        return (
+            f"    Called as: {argument.binding.python_name}({parameters}) -> {result}",
+            *(f"      {self._callback_parameter_text(transfer)}" for transfer in callback.arguments),
+            "    Valid only during this call; do not retain the callable or its arguments.",
+            "    An exception or an invalid return value terminates the process.",
+        )
+
+    @staticmethod
+    def _callback_parameter_text(transfer: CallbackTransferPlan) -> str:
+        """Render one prototype dummy with the shape and access it presents."""
+        parts = [f"{transfer.name} : {WrapperDocstringBuilder._callback_transfer_type(transfer)}"]
+        parts.extend(WrapperDocstringBuilder._callback_array_facts(transfer.array))
+        if transfer.intent is not None:
+            parts.append(f"intent({transfer.intent})")
+        text = ", ".join(parts)
+        if transfer.python_action is PythonBarrierAction.SCALAR_STORAGE:
+            text += f"; assign through it ({transfer.name}[...] = value)"
+        return text
+
+    @staticmethod
+    def _callback_array_facts(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
+        """Describe one callback array's rank and extents from its completed plan.
+
+        The callable's ABI depends on both, and extents are spelled the way the
+        `.pyi` contract spells them so the two descriptions agree.
+        """
+        if array is None or not array.rank:
+            return ()
+        display = array.display_shape or array.shape
+        extents = ", ".join(str(extent) for extent in display)
+        return (f"rank {array.rank}",) + ((f"shape ({extents})",) if extents else ())
+
+    @staticmethod
+    def _callback_result_type(result: CallbackResultPlan) -> str:
+        """Render what the callable must return, or ``None`` for a subroutine."""
+        transfer = result.transfer
+        if transfer is None:
+            return "None"
+        if transfer.derived_type_identity is not None:
+            return transfer.semantic_type_name
+        scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
+        return f"ndarray[{scalar}]" if transfer.array is not None else scalar
 
     @staticmethod
     def _array_lines(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
@@ -993,7 +1050,8 @@ class WrapperDocstringBuilder:
         lines = [WrapperDocstringBuilder._array_rank_line(array)]
         display_shape = array.display_shape or array.shape
         if display_shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in display_shape):
-            lines.append(f"    Shape: ({', '.join(map(str, display_shape))})")
+            extents = (str(extent) for extent in display_shape)
+            lines.append(f"    Shape: ({', '.join(extents)})")
         layout = WrapperDocstringBuilder._array_layout_label(array)
         if layout is not None:
             lines.append(f"    Layout: {layout}")

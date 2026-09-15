@@ -254,7 +254,6 @@ class _PyiAstParser:
                     semantic_type,
                     prototype,
                     origin_module=self.module.name,
-                    source_name=prototype.name,
                 )
 
     def _resolve_declaration_expression_callables(self) -> None:
@@ -292,11 +291,14 @@ class _PyiAstParser:
         namespaces: dict[str, str] = {}
         for imported in self.module.imports:
             if isinstance(imported, SemanticImport):
+                # A sibling leaf is imported relatively, but a native scope is
+                # the module's own name, so the relative marker is dropped.
+                module_name = imported.module.lstrip(".")
                 if imported.items:
                     for item in imported.items:
-                        explicit[(item.target or item.source).casefold()] = (imported.module, item.source)
+                        explicit[(item.target or item.source).casefold()] = (module_name, item.source)
                 else:
-                    namespaces[imported.module.split(".", 1)[0].casefold()] = imported.module
+                    namespaces[module_name.split(".", 1)[0].casefold()] = module_name
                 continue
             for item in str(imported).split(","):
                 module_name, _, alias = item.strip().partition(" as ")
@@ -449,6 +451,7 @@ class _PyiAstParser:
         visibility: str,
         native_abi: str | None = None,
         abstract: bool = False,
+        native_name: str | None = None,
     ) -> SemanticClass:
         """Convert one class AST node, its body, and supported native metadata.
 
@@ -479,7 +482,9 @@ class _PyiAstParser:
             metadata["fortran_bind_c"] = True
         semantic_class = SemanticClass(
             name=node.name,
-            native_name=node.name,
+            # A class names its Python type; `bind` states the native type it
+            # reaches when the two are spelled differently.
+            native_name=native_name or node.name,
             fields=body.fields,
             methods=body.methods,
             destructors=body.destructors,
@@ -537,6 +542,7 @@ class _PyiAstParser:
         has_native_call: bool = False,
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
+        restates_projected_result: bool = False,
     ) -> SemanticFunction:
         """Convert a module-level stub into a semantic function declaration.
 
@@ -550,6 +556,7 @@ class _PyiAstParser:
             node,
             projection=actual_projection,
             native_result=native_result,
+            restates_projected_result=restates_projected_result,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if has_native_call:
@@ -648,6 +655,7 @@ class _PyiAstParser:
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
         deferred: bool = False,
+        restates_projected_result: bool = False,
     ) -> SemanticMethod:
         """Convert a class stub into a semantic method declaration.
 
@@ -662,6 +670,7 @@ class _PyiAstParser:
             projection=actual_projection,
             native_result=native_result,
             drop_untyped_self=True,
+            restates_projected_result=restates_projected_result,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if deferred:
@@ -816,8 +825,6 @@ class _PyiAstParser:
         """
         name = self.annotation_target(node.target)
         visibility, semantic_type, original_name = self.visible_type(node.annotation)
-        if original_name is not None:
-            name = original_name
         self._validate_python_value_policy(
             semantic_type,
             writable=self._type_uses_writable_storage(semantic_type),
@@ -829,6 +836,11 @@ class _PyiAstParser:
             visibility=visibility,
             default_value=self.assignment_default_value(node.value, semantic_type),
         )
+        if original_name is not None:
+            # A declared name is what Python calls this entity; `SourceName`
+            # states the entity it reaches, exactly as `bind` does for a
+            # callable, and leaves the declared name alone.
+            binding.origin.native_name = original_name
         if visibility == "private":
             binding.origin.metadata[USER_PRIVATE_METADATA] = True
         binding.optional = self.default_marks_optional(node.value)
@@ -1276,14 +1288,46 @@ class _PyiAstParser:
 
     @staticmethod
     def _matches_projected_return(declared, target_return) -> bool:
-        """Compare a declared result with a target's, ignoring result ownership."""
+        """Compare a declared result with a target's, ignoring result ownership.
+
+        A projected output is written through as a native argument and returned
+        as an ordinary result. Whether the call writes it is a property of that
+        argument passing, which a declared result type does not state, so the
+        comparison reads it from the declaration rather than the target.
+        """
         declared_type = _PyiAstParser._visible_overload_type(declared)
         target_type = _PyiAstParser._visible_overload_type(target_return)
         if declared_type is None or target_type is None:
             return declared_type == target_type
-        expected = deepcopy(target_type)
+        declared_type = deepcopy(declared_type)
+        # An unwrapped `| None` leaves a parse marker behind when no projection
+        # consumes it, which names nothing about the type itself.
+        declared_type.metadata.pop(_PYI_OPTIONAL_RETURN_METADATA, None)
+        expected = _PyiAstParser._visible_projected_result(target_type)
         expected.ownership = deepcopy(declared_type.ownership)
+        if expected.storage is not None and declared_type.storage is not None:
+            expected.storage.read_only = declared_type.storage.read_only
+            expected.storage.mutable = declared_type.storage.mutable
         return declared_type == expected
+
+    @staticmethod
+    def _visible_projected_result(target_type: SemanticType) -> SemanticType:
+        """Return the public result form a declaration can spell for a projection.
+
+        A native scalar descriptor result is written as a nullable value plus a
+        `native_call` result wrapper naming the descriptor, and an overload
+        declaration carries no `native_call`. Its descriptor topology therefore
+        has no place in the declared annotation, exactly as the contract printer
+        emits it.
+        """
+        expected = deepcopy(target_type)
+        if _PyiAstParser._semantic_scalar_descriptor_kind(expected) is None:
+            return expected
+        for key in ("fortran_allocatable", "fortran_pointer", "fortran_pointer_association"):
+            expected.metadata.pop(key, None)
+        if expected.storage is not None and expected.storage.kind in {"reference", "pointer", "address"}:
+            expected.storage = None
+        return expected
 
     @staticmethod
     def _projected_overload_arguments(
@@ -1943,6 +1987,18 @@ class _PyiAstParser:
                     )
                 semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] = True
                 return semantic_type, None
+        if self.is_subscript_of(node, "Final"):
+            # `Final` marks the value immutable and wraps the annotation that
+            # carries any source name, which the declaration still needs.
+            items = self.subscript_items(node)
+            if len(items) == 1:
+                semantic_type, original_name = self.semantic_type_annotation(
+                    items[0],
+                    allow_optional_absent_handle=allow_optional_absent_handle,
+                )
+                if not any(constraint.name == "Constant" for constraint in semantic_type.constraints):
+                    semantic_type.constraints.append(SemanticConstraint("Constant"))
+                return semantic_type, original_name
         if not self.is_subscript_of(node, "Annotated"):
             return self.semantic_type(node), None
 
@@ -2235,7 +2291,7 @@ class _PyiAstParser:
             )
             lower_bounds, upper_bounds = _PyiAstParser._bounds_from_source_shape(source_shape)
             return (
-                [dim.replace(_STRIDED_DIMENSION_SENTINEL, "Strided") for dim in dims],
+                [dim.replace(_STRIDED_DIMENSION_SENTINEL, "") for dim in dims],
                 None,
                 source_shape,
                 lower_bounds,
@@ -2658,14 +2714,20 @@ class _PyiAstParser:
         return expression
 
     def slice_text(self, node: ast.Slice) -> str:
-        """Render one dimension slice, preserving the contract's strided marker."""
+        """Render one dimension slice as written.
+
+        A dimension carries bounds only.  The step position spells nothing the
+        contract grammar defines, so a value there is rejected rather than read
+        as an extent expression.
+        """
+        if node.step is not None:
+            step = ast.unparse(node.step)
+            raise ValueError(
+                f"Array dimension step {step!r} is not part of the contract grammar; "
+                "write 'T[::]' for a strided axis or 'T[:]' for a contiguous one"
+            )
         lower = "" if node.lower is None else ast.unparse(node.lower)
         upper = "" if node.upper is None else ast.unparse(node.upper)
-        step = ""
-        if node.step is not None:
-            step = _STRIDED_DIMENSION_SENTINEL if self.matches_name(node.step, "Strided") else ast.unparse(node.step)
-        if step:
-            return f"{lower}:{upper}:{step}"
         return f"{lower}:{upper}"
 
     # Callback and result conversion
@@ -3013,6 +3075,7 @@ class _PyiAstParser:
         projection: list[ProjectionMapping],
         native_result: ProjectionMapping | None = None,
         drop_untyped_self: bool = False,
+        restates_projected_result: bool = False,
     ) -> tuple[list[SemanticArgument], SemanticType | None]:
         """Build a callable's arguments, results, and native projection metadata.
 
@@ -3030,6 +3093,13 @@ class _PyiAstParser:
 
         # Construct direct and projected outputs from the Python return shape.
         optional_return_positions = self._optional_native_return_positions(projection, native_result)
+        if restates_projected_result:
+            # An overload declaration restates the result its specific projects,
+            # and the projection that makes a slot nullable lives on that
+            # specific -- a declaration carrying one is rejected outright. Read
+            # every slot of such a declaration as nullable so it can spell the
+            # result the specific already produces.
+            optional_return_positions = set(range(len(self.return_items(node.returns))))
         return_type, returned_args = self.return_projection(
             node.returns,
             optional_return_positions=optional_return_positions,
@@ -3591,6 +3661,7 @@ class _ClassBodyVisitor(ClassVisitor):
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
             deferred=decorators.abstract_method,
+            restates_projected_result=decorators.overload_target is not None,
         )
         self.parser._reject_private_constructor(node.name, decorators.visibility)
         if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
@@ -3634,7 +3705,6 @@ class _ClassBodyVisitor(ClassVisitor):
         decorators = self.parser.decorators(node.decorator_list, context="class body")
         if (
             decorators.has_native_call
-            or decorators.bind_target is not None
             or decorators.overload_target is not None
             or decorators.is_static
             or decorators.release_gil
@@ -3658,6 +3728,7 @@ class _ClassBodyVisitor(ClassVisitor):
                 visibility=decorators.visibility,
                 native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
+                native_name=decorators.bind_target,
             )
         )
 
@@ -3702,7 +3773,6 @@ class _ModuleVisitor(ClassVisitor):
         decorators = self.parser.decorators(node.decorator_list, context="class")
         if (
             decorators.has_native_call
-            or decorators.bind_target is not None
             or decorators.overload_target is not None
             or decorators.is_static
             or decorators.release_gil
@@ -3724,6 +3794,7 @@ class _ModuleVisitor(ClassVisitor):
                 visibility=decorators.visibility,
                 native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
+                native_name=decorators.bind_target,
             )
         )
 
@@ -3752,6 +3823,7 @@ class _ModuleVisitor(ClassVisitor):
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
+            restates_projected_result=decorators.overload_target is not None,
         )
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
@@ -3813,7 +3885,7 @@ def _imported_type_refs(module: SemanticModule) -> dict[str, tuple[str, str, str
         if isinstance(imp, SemanticImport):
             for item in imp.items:
                 local_name = item.target or item.source
-                imported[local_name] = (imp.module, item.source, local_name)
+                imported[local_name] = (imp.module.lstrip("."), item.source, local_name)
                 if imp.module.startswith("."):
                     imported_namespaces[local_name] = _relative_imported_namespace(imp.module, item.source)
             continue
@@ -3842,17 +3914,47 @@ def _relative_imported_namespace(module_name: str, source_name: str) -> str:
     return f"{module_path}.{source_name}"
 
 
+def _record_declaring_module_for_prototype_type(
+    semantic_type: SemanticType,
+    declaring_module: str,
+    declared_types: frozenset[str],
+) -> None:
+    """Name the declaring module for a derived type a referenced prototype owns."""
+    if not declaring_module or semantic_type.name not in declared_types:
+        return
+    if EXTERNAL_TYPE_REF_METADATA in semantic_type.metadata:
+        return
+    semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] = {
+        "name": semantic_type.name,
+        "local_name": semantic_type.name,
+        "origin_module": declaring_module,
+    }
+
+
 def _bind_prototype_reference(
     semantic_type: SemanticType,
     prototype: SemanticPrototype,
     *,
     origin_module: str,
-    source_name: str,
+    declared_types: frozenset[str] = frozenset(),
 ) -> None:
-    """Complete one type annotation as a named callback prototype reference."""
+    """Complete one type annotation as a named callback prototype reference.
+
+    The declaring prototype names the symbol.  A reference reached through
+    renaming re-exports carries the last alias it passed through, which names
+    nothing in the module that declares it, so the name is taken from the
+    declaration rather than from the caller.
+    """
     local_name = semantic_type.name
+    source_name = prototype.name
     arguments = deepcopy(prototype.arguments)
     return_type = deepcopy(prototype.return_type) or SemanticType("None", dtype="None")
+    # The prototype's own types are written in the declaring module's scope, so
+    # a type local to that module keeps its origin when the reference is copied
+    # into a module that only imported the interface.
+    declaring_module = str(prototype.origin.native_scope or origin_module)
+    for value in (*(argument.semantic_type for argument in arguments), return_type):
+        _record_declaring_module_for_prototype_type(value, declaring_module, declared_types)
     semantic_type.dtype = "Prototype"
     semantic_type.metadata = {
         "arguments": [argument.semantic_type for argument in arguments],
@@ -3883,6 +3985,79 @@ def _bind_prototype_reference(
     )
 
 
+def _external_module_candidates(module_name: str) -> tuple[str, ...]:
+    """Return the spellings one import may use to name the same contract module."""
+    stripped = module_name.lstrip(".")
+    return tuple(
+        dict.fromkeys(candidate for candidate in (module_name, stripped, stripped.rsplit(".", 1)[-1]) if candidate)
+    )
+
+
+def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str, str], SemanticPrototype]:
+    """Index every prototype name a contract module binds, declared or re-exported.
+
+    A module that imports a prototype and publishes it binds that name without
+    declaring it, so a consumer importing it from there must still resolve to
+    the declaring module.  Repeating to a fixed point follows a chain of any
+    length.
+    """
+    resolved = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    changed = True
+    while changed:
+        changed = False
+        for module in modules:
+            for imported in module.imports:
+                if not isinstance(imported, SemanticImport):
+                    continue
+                for item in imported.items:
+                    local_name = item.target or item.source
+                    if (module.name, local_name) in resolved:
+                        continue
+                    prototype = next(
+                        (
+                            found
+                            for candidate in _external_module_candidates(imported.module)
+                            if (found := resolved.get((candidate, item.source))) is not None
+                        ),
+                        None,
+                    )
+                    if prototype is not None:
+                        resolved[(module.name, local_name)] = prototype
+                        changed = True
+    return resolved
+
+
+def _bind_referenced_prototype(
+    semantic_type: SemanticType,
+    ref: dict[str, object],
+    prototypes: dict[tuple[str, str], SemanticPrototype],
+    declared_class_names: dict[str, frozenset[str]],
+) -> bool:
+    """Complete one external reference as a prototype, reporting whether it matched."""
+    origin_module = ref.get("origin_module")
+    source_name = ref.get("name")
+    if not isinstance(origin_module, str) or not isinstance(source_name, str):
+        return False
+    prototype = next(
+        (
+            found
+            for candidate in _external_module_candidates(origin_module)
+            if (found := prototypes.get((candidate, source_name))) is not None
+        ),
+        None,
+    )
+    if prototype is None:
+        return False
+    declaring_module = str(prototype.origin.native_scope or "")
+    _bind_prototype_reference(
+        semantic_type,
+        prototype,
+        origin_module=declaring_module or origin_module.lstrip("."),
+        declared_types=declared_class_names.get(declaring_module, frozenset()),
+    )
+    return True
+
+
 def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[SemanticModule]:
     """Resolve imported class and prototype references across converted modules.
 
@@ -3893,37 +4068,18 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     pipeline chaining; absent external definitions remain opaque references.
     """
     definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
-    prototypes = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    declared_class_names = {
+        module.name: frozenset(declaration.name for declaration in module.classes) for module in modules
+    }
+    prototypes = _prototypes_with_reexports(modules)
     functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
         for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict):
                 continue
-            origin_module = ref.get("origin_module")
-            source_name = ref.get("name")
-            if isinstance(origin_module, str) and isinstance(source_name, str):
-                module_candidates = (
-                    origin_module,
-                    origin_module.lstrip("."),
-                    origin_module.lstrip(".").rsplit(".", 1)[-1],
-                )
-                prototype = next(
-                    (
-                        candidate_prototype
-                        for candidate in module_candidates
-                        if candidate and (candidate_prototype := prototypes.get((candidate, source_name))) is not None
-                    ),
-                    None,
-                )
-                if prototype is not None:
-                    _bind_prototype_reference(
-                        semantic_type,
-                        prototype,
-                        origin_module=str(prototype.origin.native_scope or origin_module.lstrip(".")),
-                        source_name=source_name,
-                    )
-                    continue
+            if _bind_referenced_prototype(semantic_type, ref, prototypes, declared_class_names):
+                continue
             declaration = definitions.get((ref.get("origin_module"), ref.get("name")))
             wrapped = declaration is not None and (
                 not isinstance(declaration, SemanticClass) or "Opaque" not in declaration.base_classes

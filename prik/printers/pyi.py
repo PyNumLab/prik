@@ -19,6 +19,7 @@ import re
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
+from prik.naming.policy import normalize_public_name
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
@@ -51,6 +52,7 @@ from prik.semantics.models import (
     PYTHON_VALUE_MUTABILITY_METADATA,
     PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
+    UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
     RUNTIME_RELEASE_GIL_METADATA,
     HIDDEN_NATIVE_OUTPUT_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
@@ -73,6 +75,7 @@ from prik.semantics.models import (
     _module_semantic_types,
 )
 from prik.semantics.native_array_handles import native_array_data_type, native_array_descriptor_kind
+from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.utilities.visitor import ClassVisitor
 
 _WRAPPED_CALLABLE_TYPE_METADATA = "pyi_wrapped_callable_type"
@@ -159,13 +162,26 @@ class PyiPrinter(ClassVisitor):
     # Public entrypoints and state
     # ------------------------------------------------------------------
 
-    def __init__(self, *, normalize_fortran_public_names: bool = False):
+    def __init__(
+        self,
+        *,
+        normalize_fortran_public_names: bool = False,
+        declared_prototype_names: Iterable[tuple[str, str]] = (),
+    ):
         """Configure public-name normalization for independent emissions.
 
         Set normalize_fortran_public_names when emitting source-derived Fortran
-        contracts whose public names need Python normalization.
+        contracts whose public names need Python normalization. Pass
+        declared_prototype_names, as ``(module, name)`` pairs, when rendering one
+        module alongside others, so an import naming a prototype another
+        contract declares is written under the spelling that contract keeps.
+        The declaring module is part of that identity because an unrelated
+        module may spell an ordinary declaration the same way.
         """
         self._normalize_fortran_public_names = normalize_fortran_public_names
+        self._declared_prototype_names = frozenset(
+            (str(module).casefold(), str(name)) for module, name in declared_prototype_names
+        )
 
     def emit(self, node) -> str:
         """Render one supported semantic model to semantic .pyi text.
@@ -229,7 +245,13 @@ class PyiPrinter(ClassVisitor):
         if semantic_type.name == "Unknown" or semantic_type.dtype == "Unknown":
             raise ValueError("Cannot emit .pyi with unresolved semantic type 'Unknown'")
         array_descriptor = native_array_descriptor_kind(semantic_type)
-        if PROTOTYPE_REF_METADATA in semantic_type.metadata:
+        unresolved_interface = semantic_type.metadata.get(UNRESOLVED_PROCEDURE_INTERFACE_METADATA)
+        if unresolved_interface is not None:
+            # The declaration named an interface no supplied module declares.
+            # Spelling that name keeps the extracted contract self-consistent
+            # with the import already emitted for it.
+            text = str(unresolved_interface)
+        elif PROTOTYPE_REF_METADATA in semantic_type.metadata:
             text = semantic_type.name
         elif array_descriptor is not None:
             wrapper = "Allocatable" if array_descriptor == "allocatable" else "Pointer"
@@ -362,6 +384,20 @@ class PyiPrinter(ClassVisitor):
             parameter_indent="        ",
         ).rstrip()
 
+    @staticmethod
+    def _overload_target_name(candidate: SemanticFunction, context: _PyiEmissionContext) -> str:
+        """Return the specific an overload names, as this contract declares it.
+
+        The target names a declaration in the same contract, and a contract
+        writing its declarations under Python names writes that one the same
+        way. Naming the source spelling instead points at no declaration the
+        contract holds.
+        """
+        target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
+        if not context.normalize_fortran_public_names or candidate.origin.source_language != "fortran":
+            return target
+        return normalize_public_name(target).name
+
     def _visit_ProcedureOverloadSet(
         self,
         overload_set: ProcedureOverloadSet,
@@ -373,7 +409,7 @@ class PyiPrinter(ClassVisitor):
         definitions = []
         for procedure in overload_set.procedures:
             candidate = deepcopy(procedure)
-            target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
+            target = self._overload_target_name(candidate, context)
             if in_class:
                 candidate = self._overload_method(overload_set, candidate)
                 definition = self._emit_method(
@@ -433,6 +469,15 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"@{context.contract('abstract')}")
         if self._class_uses_c_abi(cls):
             decorators.append(f'@{context.contract("native_abi")}("c")')
+        # Only a Fortran type states a separate native name here. A C struct
+        # keeps its native spelling -- `struct node` for `node` -- through its
+        # own representation rules, which state it without a decorator.
+        if (
+            cls.origin.source_language == "fortran"
+            and cls.native_name
+            and self._renames_native_entity(cls, cls.native_name, cls.name)
+        ):
+            decorators.append(f"@{context.contract('bind')}({json.dumps(str(cls.native_name))})")
         decorator_text = "\n".join(decorators)
         if decorator_text:
             decorator_text += "\n"
@@ -657,12 +702,7 @@ class PyiPrinter(ClassVisitor):
     @staticmethod
     def _printed_array_dimension(dimension: object) -> str:
         """Return the public `.pyi` spelling for an array dimension."""
-        text = PyiPrinter._canonical_array_dimension(dimension)
-        if text == "::Strided":
-            return "::"
-        if text.endswith(":Strided"):
-            return text[: -len("Strided")]
-        return text
+        return PyiPrinter._canonical_array_dimension(dimension)
 
     @staticmethod
     def _array_annotation_metadata(
@@ -941,7 +981,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             variable,
             context,
-            original_name=variable.name if name != variable.name else None,
+            original_name=variable.name if self._renames_native_entity(variable, variable.name, name) else None,
         )
 
     def _emit_module_variable(
@@ -955,7 +995,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             arg,
             context,
-            original_name=arg.name if name != arg.name else None,
+            original_name=arg.name if self._renames_native_entity(arg, arg.name, name) else None,
         )
 
     @staticmethod
@@ -1332,7 +1372,7 @@ class PyiPrinter(ClassVisitor):
             or self._python_literal_text(field.default_value)
             or "..."
         )
-        if name != field.name:
+        if self._renames_native_entity(field, field.name, name):
             type_text = self._annotated_type_text(
                 type_text,
                 [f"{context.contract('SourceName')}({json.dumps(field.name)})"],
@@ -1442,8 +1482,16 @@ class PyiPrinter(ClassVisitor):
         if contract_import:
             sections.append(contract_import)
         imports = self._effective_imports(module)
+        verbatim = self._verbatim_import_names(module)
         for imp in imports:
-            sections.append(self._emit_import(imp))
+            sections.append(
+                self._emit_import(
+                    imp,
+                    native_source=not module.metadata.get(PYI_LOADED_METADATA),
+                    public_names=context.normalize_fortran_public_names,
+                    verbatim_names=verbatim,
+                )
+            )
         if contract_import or imports:
             sections.append("")
 
@@ -1460,8 +1508,48 @@ class PyiPrinter(ClassVisitor):
         satisfied_namespaces = cls._satisfied_procedure_namespace_import_names(imports, procedure_namespaces)
         imports.extend(cls._synthetic_flat_external_type_imports(module, imports, procedure_namespaces))
         imports.extend(cls._missing_expression_callable_imports(module, imports))
+        imports.extend(cls._missing_prototype_imports(module, imports))
         imports.extend(cls._missing_procedure_namespace_imports(procedure_namespaces, satisfied_namespaces))
         return imports
+
+    @classmethod
+    def _missing_prototype_imports(
+        cls,
+        module: SemanticModule,
+        imports: list[str | SemanticImport],
+    ) -> list[SemanticImport]:
+        """Return imports for prototypes this module references but never declares.
+
+        A ``use`` inside one procedure names an interface without appearing in
+        the module's own imports, so the annotation would reference a name the
+        contract never binds.  The prototype reference records where it came
+        from, which is enough to bind it explicitly.
+        """
+        bound = {
+            (item.target or item.source).casefold()
+            for imported in imports
+            if isinstance(imported, SemanticImport)
+            for item in imported.items
+        }
+        bound.update(prototype.name.casefold() for prototype in module.prototypes)
+        required: dict[str, list[SemanticImportItem]] = {}
+        for semantic_type in _module_semantic_types(module):
+            reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
+            if not isinstance(reference, dict):
+                continue
+            local_name = str(reference.get("local_name") or reference.get("name") or "")
+            origin = str(reference.get("origin_module") or "")
+            if not local_name or not origin or local_name.casefold() in bound:
+                continue
+            native_name = str(reference.get("name") or local_name)
+            required.setdefault(origin, []).append(
+                SemanticImportItem(
+                    source=native_name,
+                    target=local_name if local_name != native_name else None,
+                )
+            )
+            bound.add(local_name.casefold())
+        return [SemanticImport(module=name, items=items) for name, items in required.items()]
 
     @classmethod
     def _missing_expression_callable_imports(
@@ -1694,21 +1782,100 @@ class PyiPrinter(ClassVisitor):
         )
 
     @staticmethod
-    def _emit_import(imp: str | SemanticImport) -> str:
+    def _emit_import(
+        imp: str | SemanticImport,
+        *,
+        native_source: bool = False,
+        public_names: bool = False,
+        verbatim_names: frozenset[tuple[str, str]] = frozenset(),
+    ) -> str:
         """Emit import syntax."""
         if isinstance(imp, str):
             return f"import {imp}"
         if not imp.items:
             return f"import {imp.module}"
-        items = ", ".join(PyiPrinter._emit_import_item(item) for item in imp.items)
-        return f"from {imp.module} import {items}"
+        source_module = imp.module.lstrip(".").casefold()
+        items = ", ".join(
+            PyiPrinter._emit_import_item(
+                item,
+                public_names=public_names,
+                verbatim_names=verbatim_names,
+                source_module=source_module,
+            )
+            for item in imp.items
+        )
+        module_name = f".{imp.module}" if native_source and not imp.module.startswith(".") else imp.module
+        return f"from {module_name} import {items}"
 
     @staticmethod
-    def _emit_import_item(item: SemanticImportItem) -> str:
-        """Emit import item syntax."""
+    def _emit_import_item(
+        item: SemanticImportItem,
+        *,
+        public_names: bool = False,
+        verbatim_names: frozenset[tuple[str, str]] = frozenset(),
+        source_module: str = "",
+    ) -> str:
+        """Emit import item syntax.
+
+        An import names what the module it reads from publishes. Where a
+        source-derived contract writes its declarations under Python names, the
+        names it imports are spelled that way too -- a source keeping a Fortran
+        entity in capitals declares it lower case, and an importer asking for
+        the source spelling asks for a name no contract defines. A prototype is
+        the exception: it keeps its declared spelling wherever it is written,
+        because an annotation naming it is written the same way.
+        """
+        # The source names what the module read from declares and the target
+        # what this contract calls it; either spelling identifies a prototype
+        # of that module, and a same-named declaration elsewhere does not.
+        if (source_module, item.source) in verbatim_names or (
+            source_module,
+            item.target or item.source,
+        ) in verbatim_names:
+            return PyiPrinter._verbatim_import_item(item)
+        source = PyiPrinter._public_import_name(item.source, public_names=public_names)
+        target = PyiPrinter._public_import_name(item.target, public_names=public_names)
+        if target and target != source:
+            return f"{source} as {target}"
+        return source
+
+    @staticmethod
+    def _verbatim_import_item(item: SemanticImportItem) -> str:
+        """Emit one import item under the spelling its declaration keeps."""
         if item.target and item.target != item.source:
             return f"{item.source} as {item.target}"
         return item.source
+
+    @staticmethod
+    def _public_import_name(name: str | None, *, public_names: bool) -> str | None:
+        """Return one imported name as the contract that defines it spells it."""
+        if not public_names or not name or name == "*":
+            return name
+        return normalize_public_name(name).name
+
+    def _verbatim_import_names(self, module: SemanticModule) -> frozenset[tuple[str, str]]:
+        """Return prototype identities a contract writes under declared spelling.
+
+        A prototype keeps the spelling its own contract declares, and an
+        annotation naming one is written the same way, so an import binding it
+        keeps that spelling too. Each identity names the module declaring the
+        prototype as well as the prototype, because another module may spell an
+        ordinary declaration the same way and that one follows Python naming.
+        The modules rendered together with this one supply the identities; a
+        prototype this module declares itself and one an annotation here already
+        resolved are known without them.
+        """
+        names = set(self._declared_prototype_names)
+        names.update((module.name.casefold(), str(prototype.name)) for prototype in module.prototypes)
+        for semantic_type in _module_semantic_types(module):
+            reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
+            if not isinstance(reference, dict):
+                continue
+            local_name = reference.get("local_name") or reference.get("name")
+            origin = reference.get("origin_module")
+            if local_name and origin:
+                names.add((str(origin).casefold(), str(local_name)))
+        return frozenset(names)
 
     def _append_items(self, sections: list[str], items: list, emit_item) -> None:
         """Append items."""
@@ -2104,13 +2271,13 @@ class PyiPrinter(ClassVisitor):
         if bind_target is not None:
             return bind_target
 
-        if isinstance(func, SemanticMethod) and func.name != emitted_name:
+        if isinstance(func, SemanticMethod) and PyiPrinter._renames_native_entity(func, func.name, emitted_name):
             if not context.public_namespace:
                 return func.native_name
             class_name = context.public_namespace[-1]
             return f"{class_name}.{func.name}"
 
-        if func.native_name and func.native_name != emitted_name:
+        if func.native_name and PyiPrinter._renames_native_entity(func, func.native_name, emitted_name):
             return func.native_name
 
         return None
@@ -2521,6 +2688,26 @@ class PyiPrinter(ClassVisitor):
         return getattr(node, "visibility", "public") == "private"
 
     @staticmethod
+    def _renames_native_entity(declaration: object, native_name: object, emitted_name: str) -> bool:
+        """Return whether an emitted name has to record the spelling it came from.
+
+        A Fortran entity is named without regard to case, so writing one under a
+        lower-case Python name renames nothing and states nothing worth
+        recording. Any other difference is a real rename -- a Python keyword, a
+        character an identifier cannot hold, a name a collision moved aside --
+        and the declaration keeps the original beside it. Every other source
+        language names its entities exactly, so there the spellings are compared
+        as written.
+        """
+        native = str(native_name)
+        if native == emitted_name:
+            return False
+        origin = getattr(declaration, "origin", None)
+        if getattr(origin, "source_language", None) != "fortran":
+            return True
+        return native.casefold() != emitted_name.casefold()
+
+    @staticmethod
     def _annotation_target(name: str) -> str:
         """Handle annotation target for the current generation context."""
         if name.isidentifier() and not keyword.iskeyword(name):
@@ -2545,15 +2732,25 @@ class PyiPrinter(ClassVisitor):
 _DEFAULT_PRINTER = PyiPrinter()
 
 
-def emit_module(module: SemanticModule, *, normalize_fortran_public_names: bool = False) -> str:
+def emit_module(
+    module: SemanticModule,
+    *,
+    normalize_fortran_public_names: bool = False,
+    declared_prototype_names: Iterable[str] = (),
+) -> str:
     """Render one semantic module through the shared default printer.
 
     Use this convenience entrypoint for ordinary one-module emission. Set
     normalize_fortran_public_names to use a printer configured for normalized
-    public names. Both paths create a fresh module emission context.
+    public names, and declared_prototype_names to name the prototypes the
+    modules rendered alongside this one declare. Both paths create a fresh
+    module emission context.
     """
-    if normalize_fortran_public_names:
-        return PyiPrinter(normalize_fortran_public_names=True).emit(module)
+    if normalize_fortran_public_names or declared_prototype_names:
+        return PyiPrinter(
+            normalize_fortran_public_names=normalize_fortran_public_names,
+            declared_prototype_names=declared_prototype_names,
+        ).emit(module)
     return _DEFAULT_PRINTER.emit(module)
 
 

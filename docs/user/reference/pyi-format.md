@@ -114,8 +114,8 @@ The generated forms therefore have these responsibilities:
 | C `<name>.pyi` | Selected C declarations in one directly buildable contract file. |
 
 A contract build receives one entry `.pyi`: the package `__init__.pyi` for the
-Fortran layout above, or the C file itself. Relative imports from a package
-entry discover its leaf files.
+full Fortran package, a Fortran module leaf for that module and its imported
+siblings, or the C file itself. Relative imports discover dependent contracts.
 
 ### Entry Contract And Extension Identity
 
@@ -141,10 +141,18 @@ contracts/
 Building `api.pyi` directly exposes its declarations at the extension root and
 uses `api` as the default extension name.
 
-Use the entry, not every imported leaf, on the command line:
+Use one entry on the command line to build the full package:
 
 ```bash
 python3 -m prik contracts/solver/__init__.pyi \
+  --native-objects build/solver.o
+```
+
+To build a module leaf directly, pass that leaf as the entry. Its relative
+imports load sibling contracts needed by its declarations:
+
+```bash
+python3 -m prik contracts/solver/solver_mod.pyi \
   --native-objects build/solver.o
 ```
 
@@ -748,9 +756,6 @@ and supported pure specification functions. `size(values, 2)`, for example,
 becomes the second public extent. PRIK rejects expressions it cannot resolve
 before lowering.
 
-`Strided` is a compatibility spelling for older explicit forms such as
-`T[::Strided]`; author the shorter `T[::]` form.
-
 ### Character Length And Shape
 
 `String` uses the first subscription for character length and a second
@@ -994,7 +999,7 @@ valid and whether it is buildable.
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |
-| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F`, `Strided` |
+| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F` |
 | General metadata | `Aliased`, `ArrayCategory`, `AssumedType`, `FortranAllocatable`, `Immutable`, `MaybeUnallocated`, `Polymorphic`, `SourceName` |
 | Constraints and ownership | `Bounded`, `Finite`, `Range`, `Ownership`, `Transfer`, `Destruction`, `PointerAssociation`, `PointerPolicy` |
 | Prototype direction | `In`, `Out`, `InOut` |
