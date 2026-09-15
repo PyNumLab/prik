@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generic interface may now be declared across several blocks in one scope,
+  which Fortran allows and real sources use to add specifics under
+  preprocessor guards. The blocks become one generic carrying every entry in
+  declaration order, instead of being rejected as a duplicate declaration.
+
 - A callback interface reached through renaming re-exports now records the name
   its declaring module gives it. The reference followed the module back to the
   declaration but kept an alias from partway along the chain, so it named a

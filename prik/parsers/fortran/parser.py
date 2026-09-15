@@ -1938,10 +1938,12 @@ class FortranParser(ClassVisitor):
         units: _ParsedFileUnits,
     ) -> list[FortranInterface]:
         """Collect interfaces and attach module-owned blocks to their owners."""
-        interfaces = [
-            self._visit(unit, parent_scope=scope, filename=filename)
-            for unit, scope in self._collect_interface_source_units(lines, filename)
-        ]
+        interfaces = self._merged_generic_interfaces(
+            [
+                self._visit(unit, parent_scope=scope, filename=filename)
+                for unit, scope in self._collect_interface_source_units(lines, filename)
+            ]
+        )
         for module in units.modules:
             module.interfaces = [
                 iface for iface in interfaces if iface.module and iface.module.lower() == module.name.lower()
@@ -1951,6 +1953,31 @@ class FortranParser(ClassVisitor):
                 iface for iface in interfaces if iface.module and iface.module.lower() == submodule.name.lower()
             ]
         return [iface for iface in interfaces if iface.module is None]
+
+    @staticmethod
+    def _merged_generic_interfaces(interfaces: list[FortranInterface]) -> list[FortranInterface]:
+        """Combine blocks that extend one generic interface into a single record.
+
+        Fortran lets a generic interface be built from several blocks in the
+        same scope, each contributing specifics.  They name one generic, so the
+        parser reports one interface carrying every entry in declaration order.
+        Abstract and unnamed blocks are never generics and stay as they are.
+        """
+        merged: dict[tuple[str, str], FortranInterface] = {}
+        result: list[FortranInterface] = []
+        for interface in interfaces:
+            if not interface.name or interface.abstract:
+                result.append(interface)
+                continue
+            key = (str(interface.module or "").lower(), interface.name.lower())
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = interface
+                result.append(interface)
+                continue
+            existing.procedures.extend(interface.procedures)
+            existing.specific_procedures.extend(interface.specific_procedures)
+        return result
 
     def _resolve_file_compile_time_facts(self, units: _ParsedFileUnits) -> None:
         """Apply source-visible compile-time symbols within one parsed file.
@@ -2811,7 +2838,12 @@ class FortranParser(ClassVisitor):
                 continue
             if unit.kind == "procedure":
                 key = ("procedure", unit.name.lower())
-            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type", "interface"}:
+            elif unit.kind == "interface":
+                # A generic interface may be declared in several blocks, each
+                # adding specifics to the same name, so a repeat is not a
+                # duplicate declaration.
+                continue
+            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type"}:
                 key = (unit.kind, unit.name.lower())
             else:
                 continue

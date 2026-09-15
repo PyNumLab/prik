@@ -8,6 +8,7 @@ from prik.parsers.fortran import parse_fortran_file
 from tests.fortran._support.parser_procedures import (
     parse_fortran_interfaces,
     parse_fortran_module,
+    parse_fortran_modules,
 )
 from prik.parsers.fortran.models import FortranParseError
 
@@ -105,3 +106,77 @@ end module unsupported_generic
         parse_fortran_file(source, filename="unsupported_generic.f90")
 
     assert exc_info.value.code == "PARSE_UNSUPPORTED_DECLARATION"
+
+
+def test_generic_interface_declared_in_several_blocks_becomes_one_generic():
+    """Fortran builds one generic from as many blocks as a scope declares.
+
+    Real sources split a generic across preprocessor-guarded blocks, adding
+    specifics only for the kinds a build supports, so repeated blocks name one
+    generic rather than redeclaring it.
+    """
+    source = """
+module huge_mod
+  implicit none
+  private
+  public :: huge_value
+
+  interface huge_value
+    module procedure huge_value_sp, huge_value_dp
+  end interface huge_value
+
+  interface huge_value
+    module procedure huge_value_qp
+  end interface huge_value
+contains
+  real function huge_value_sp(x)
+    real, intent(in) :: x
+    huge_value_sp = huge(x)
+  end function huge_value_sp
+  real(8) function huge_value_dp(x)
+    real(8), intent(in) :: x
+    huge_value_dp = huge(x)
+  end function huge_value_dp
+  real(16) function huge_value_qp(x)
+    real(16), intent(in) :: x
+    huge_value_qp = huge(x)
+  end function huge_value_qp
+end module huge_mod
+"""
+
+    module = parse_fortran_module(source)
+
+    generics = [interface for interface in module.interfaces if interface.name]
+    assert len(generics) == 1
+    assert generics[0].name == "huge_value"
+    assert generics[0].specific_procedures == ["huge_value_sp", "huge_value_dp", "huge_value_qp"]
+
+
+def test_repeated_generic_names_stay_separate_per_module():
+    """Two modules in one file each own their generic of the same name."""
+    source = """
+module first_mod
+  implicit none
+  interface report
+    module procedure report_first
+  end interface report
+contains
+  subroutine report_first()
+  end subroutine report_first
+end module first_mod
+
+module second_mod
+  implicit none
+  interface report
+    module procedure report_second
+  end interface report
+contains
+  subroutine report_second()
+  end subroutine report_second
+end module second_mod
+"""
+
+    modules = {module.name: module for module in parse_fortran_modules(source)}
+
+    assert [item.specific_procedures for item in modules["first_mod"].interfaces if item.name] == [["report_first"]]
+    assert [item.specific_procedures for item in modules["second_mod"].interfaces if item.name] == [["report_second"]]
