@@ -254,7 +254,6 @@ class _PyiAstParser:
                     semantic_type,
                     prototype,
                     origin_module=self.module.name,
-                    source_name=prototype.name,
                 )
 
     def _resolve_declaration_expression_callables(self) -> None:
@@ -3870,11 +3869,17 @@ def _bind_prototype_reference(
     prototype: SemanticPrototype,
     *,
     origin_module: str,
-    source_name: str,
     declared_types: frozenset[str] = frozenset(),
 ) -> None:
-    """Complete one type annotation as a named callback prototype reference."""
+    """Complete one type annotation as a named callback prototype reference.
+
+    The declaring prototype names the symbol.  A reference reached through
+    renaming re-exports carries the last alias it passed through, which names
+    nothing in the module that declares it, so the name is taken from the
+    declaration rather than from the caller.
+    """
     local_name = semantic_type.name
+    source_name = prototype.name
     arguments = deepcopy(prototype.arguments)
     return_type = deepcopy(prototype.return_type) or SemanticType("None", dtype="None")
     # The prototype's own types are written in the declaring module's scope, so
@@ -3981,7 +3986,6 @@ def _bind_referenced_prototype(
         semantic_type,
         prototype,
         origin_module=declaring_module or origin_module.lstrip("."),
-        source_name=source_name,
         declared_types=declared_class_names.get(declaring_module, frozenset()),
     )
     return True

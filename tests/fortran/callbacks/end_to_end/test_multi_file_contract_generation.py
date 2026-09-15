@@ -249,3 +249,86 @@ def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
         output_name="callback_result_types",
     )
     assert result.shared_library.exists()
+
+
+RENAMED_CHAIN_SOURCE = """
+module chain_declares_mod
+  implicit none
+  abstract interface
+    subroutine OBJ(x, f)
+      implicit none
+      real(8), intent(in) :: x
+      real(8), intent(out) :: f
+    end subroutine OBJ
+  end interface
+end module chain_declares_mod
+
+module chain_middle_mod
+  use, non_intrinsic :: chain_declares_mod, only : MID => OBJ
+  implicit none
+  public :: MID
+end module chain_middle_mod
+
+module chain_consumer_mod
+  use, non_intrinsic :: chain_middle_mod, only : LOCAL => MID
+  implicit none
+contains
+  subroutine run_chain(calfun, x, f)
+    procedure(LOCAL) :: calfun
+    real(8), intent(in) :: x
+    real(8), intent(out) :: f
+
+    call calfun(x, f)
+  end subroutine run_chain
+end module chain_consumer_mod
+"""
+
+
+def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path: Path):
+    """Each hop renames the interface, so only the declaring module names it.
+
+    A rename and a re-export are covered separately elsewhere; combining them
+    is what exposes a reference that followed the module back to the declaration
+    while keeping an alias from somewhere along the way.
+    """
+    source = tmp_path / "chain.f90"
+    source.write_text(RENAMED_CHAIN_SOURCE, encoding="utf-8")
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            str(source),
+            "--out",
+            str(contracts),
+            "--compiler",
+            _compiler(),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    # Each contract mirrors the `use` its own module wrote.
+    assert "from chain_declares_mod import OBJ as MID" in (contracts / "chain_middle_mod.pyi").read_text(
+        encoding="utf-8"
+    )
+    consuming = (contracts / "chain_consumer_mod.pyi").read_text(encoding="utf-8")
+    assert "from chain_middle_mod import MID as LOCAL" in consuming
+    assert "calfun: LOCAL" in consuming
+
+    result = build_pyi_extension(
+        contracts / "__init__.pyi",
+        input_compiler=_compiler(),
+        native_fortran_sources=[str(source)],
+        output_dir=tmp_path / "build",
+        output_name="renamed_chain_callbacks",
+    )
+    module = _import_from_build_dir(result.module_name, result.output_dir)
+
+    def objective(x, f):
+        f[...] = float(x) * 7.0
+
+    assert module.chain_consumer_mod.run_chain(objective, np.float64(6.0)) == np.float64(42.0)

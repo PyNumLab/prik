@@ -1,7 +1,9 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
 import pytest
+from prik.pipeline.pyi import pyi_paths_to_semantic_modules
 from prik.policy.completion import complete_semantic_policies
+from prik.semantics.models import PROTOTYPE_REF_METADATA
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
@@ -215,3 +217,31 @@ def test_convert_pyi_to_ir_rejects_redundant_or_invalid_prototype_value_wrappers
             f"@prototype\ndef callback(value: {annotation}) -> None: ...",
             module_name="callbacks",
         )
+
+
+def test_renamed_reexport_chain_resolves_to_the_declaring_name(tmp_path):
+    """A reference follows both module and symbol provenance to the declaration.
+
+    Each hop of a renaming chain binds a new alias, and only the module that
+    declares the prototype knows the name it declared.  Recording an alias from
+    somewhere along the chain would name a symbol the declaring module does not
+    define.
+    """
+    for name, text in (
+        (
+            "mod_a.pyi",
+            "from prik.contracts import Float64, In, prototype\n\n@prototype\ndef OBJ(x: In(Float64)) -> None: ...\n",
+        ),
+        ("mod_b.pyi", "from mod_a import OBJ as MID\n"),
+        ("mod_c.pyi", "from mod_b import MID as LOCAL\n\ndef run(callback: LOCAL) -> None: ...\n"),
+    ):
+        (tmp_path / name).write_text(text, encoding="utf-8")
+
+    modules = {module.name: module for module in pyi_paths_to_semantic_modules(sorted(tmp_path.glob("*.pyi")))}
+
+    callback = next(item for item in modules["mod_c"].functions if item.name == "run").arguments[0].semantic_type
+    assert callback.metadata[PROTOTYPE_REF_METADATA] == {
+        "name": "OBJ",
+        "local_name": "LOCAL",
+        "origin_module": "mod_a",
+    }

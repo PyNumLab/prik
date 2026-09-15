@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A callback interface reached through renaming re-exports now records the name
+  its declaring module gives it. The reference followed the module back to the
+  declaration but kept an alias from partway along the chain, so it named a
+  symbol that module does not define.
+
 - The semantic IR now carries a strided axis as `::`, the spelling a contract
   uses, instead of a longer internal token. `prik semantics` output changes
   accordingly; contracts, docstrings and generated sources are unaffected
