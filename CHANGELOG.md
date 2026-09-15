@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A derived type building one generic binding from several `generic ::`
+  statements now collects every specific into that binding. Each statement was
+  recorded as its own binding of the same name, so only the first reached
+  dispatch and calling the generic with the argument types of any later
+  statement raised `no matching overload`.
+
 - A scope naming the same module in several `use` statements now keeps every
   import. Each statement was replacing the previous one, so only the last
   survived; a module splitting a long import list across lines silently lost

@@ -3745,6 +3745,23 @@ class FortranParser(ClassVisitor):
         )
 
     @staticmethod
+    def _record_generic_binding(dtype: FortranDerivedType, binding: dict) -> None:
+        """Record one ``generic ::`` statement on a derived type.
+
+        Fortran lets a type-bound generic be built from several statements in
+        one type, each contributing specifics. They name one binding, so the
+        parser reports one record carrying every target in declaration order.
+        The standard requires every statement for a binding to declare the same
+        accessibility, so the first statement's attributes stand for the rest.
+        """
+        key = "".join(str(binding["name"]).split()).lower()
+        for existing in dtype.generic_bindings:
+            if "".join(str(existing["name"]).split()).lower() == key:
+                existing["targets"].extend(binding["targets"])
+                return
+        dtype.generic_bindings.append(binding)
+
+    @staticmethod
     def _apply_default_component_visibility(
         dtype: FortranDerivedType,
         declaration: str,
@@ -3801,13 +3818,14 @@ class FortranParser(ClassVisitor):
             attrs = [a.strip().lower() for a in split_csv(attr_txt)] if attr_txt else []
             lhs, rhs_txt = [x.strip() for x in right.split("=>", 1)]
             rhs = [r.strip() for r in split_csv(rhs_txt)]
-            dtype.generic_bindings.append(
+            self._record_generic_binding(
+                dtype,
                 {
                     "name": lhs,
                     "targets": rhs,
                     "attrs": attrs,
                     "visibility": _binding_visibility(attrs, dtype.binding_visibility),
-                }
+                },
             )
             return
 

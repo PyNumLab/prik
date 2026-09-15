@@ -180,3 +180,74 @@ end module second_mod
 
     assert [item.specific_procedures for item in modules["first_mod"].interfaces if item.name] == [["report_first"]]
     assert [item.specific_procedures for item in modules["second_mod"].interfaces if item.name] == [["report_second"]]
+
+
+def test_type_bound_generic_declared_in_several_statements_becomes_one_binding():
+    """A type-bound generic collects specifics from as many statements as it takes.
+
+    A derived type may name one generic binding over several ``generic ::``
+    statements, and every statement contributes specifics to that one binding
+    rather than declaring another of the same name.
+    """
+    source = """
+module shape_mod
+  implicit none
+  type :: shape_t
+    real(8) :: v
+  contains
+    procedure :: area_int
+    procedure :: area_real
+    generic :: area => area_int
+    generic :: area => area_real
+  end type shape_t
+contains
+  real(8) function area_int(self, k)
+    class(shape_t), intent(in) :: self
+    integer, intent(in) :: k
+    area_int = self%v * k
+  end function area_int
+  real(8) function area_real(self, k)
+    class(shape_t), intent(in) :: self
+    real(8), intent(in) :: k
+    area_real = self%v * k
+  end function area_real
+end module shape_mod
+"""
+
+    module = parse_fortran_module(source)
+
+    assert [binding["name"] for binding in module.derived_types[0].generic_bindings] == ["area"]
+    assert module.derived_types[0].generic_bindings[0]["targets"] == ["area_int", "area_real"]
+
+
+def test_type_bound_operator_generic_merges_across_statements_and_spacing():
+    """One defined operator binding survives being split across statements."""
+    source = """
+module vec_mod
+  implicit none
+  type :: vec_t
+    real(8) :: v
+  contains
+    procedure :: add_int
+    procedure :: add_real
+    generic :: operator(+) => add_int
+    generic :: operator (+) => add_real
+  end type vec_t
+contains
+  type(vec_t) function add_int(self, k)
+    class(vec_t), intent(in) :: self
+    integer, intent(in) :: k
+    add_int%v = self%v + k
+  end function add_int
+  type(vec_t) function add_real(self, k)
+    class(vec_t), intent(in) :: self
+    real(8), intent(in) :: k
+    add_real%v = self%v + k
+  end function add_real
+end module vec_mod
+"""
+
+    module = parse_fortran_module(source)
+
+    assert [binding["name"] for binding in module.derived_types[0].generic_bindings] == ["operator(+)"]
+    assert module.derived_types[0].generic_bindings[0]["targets"] == ["add_int", "add_real"]
