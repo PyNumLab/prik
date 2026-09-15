@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- An overload declaration whose specific projects an output argument into its
+  result is now accepted. The check compared the declared result against the
+  projected one including the write-through the native argument passing states,
+  and a native scalar descriptor result including the descriptor topology that
+  only a `native_call` result wrapper can name -- neither of which a declared
+  result type spells. A generated contract carrying such a generic, for example
+  one over `intent(out)` allocatable arguments, was rejected on read-back by the
+  same tool that wrote it.
+
 - A contract generated from a source whose abstract interface types a dummy
   through a kind of its own now resolves that kind. An interface body's
   variables reached no target probe, so a kind named only there -- through a

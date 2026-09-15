@@ -539,6 +539,7 @@ class _PyiAstParser:
         has_native_call: bool = False,
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
+        restates_projected_result: bool = False,
     ) -> SemanticFunction:
         """Convert a module-level stub into a semantic function declaration.
 
@@ -552,6 +553,7 @@ class _PyiAstParser:
             node,
             projection=actual_projection,
             native_result=native_result,
+            restates_projected_result=restates_projected_result,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if has_native_call:
@@ -650,6 +652,7 @@ class _PyiAstParser:
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
         deferred: bool = False,
+        restates_projected_result: bool = False,
     ) -> SemanticMethod:
         """Convert a class stub into a semantic method declaration.
 
@@ -664,6 +667,7 @@ class _PyiAstParser:
             projection=actual_projection,
             native_result=native_result,
             drop_untyped_self=True,
+            restates_projected_result=restates_projected_result,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if deferred:
@@ -1278,14 +1282,46 @@ class _PyiAstParser:
 
     @staticmethod
     def _matches_projected_return(declared, target_return) -> bool:
-        """Compare a declared result with a target's, ignoring result ownership."""
+        """Compare a declared result with a target's, ignoring result ownership.
+
+        A projected output is written through as a native argument and returned
+        as an ordinary result. Whether the call writes it is a property of that
+        argument passing, which a declared result type does not state, so the
+        comparison reads it from the declaration rather than the target.
+        """
         declared_type = _PyiAstParser._visible_overload_type(declared)
         target_type = _PyiAstParser._visible_overload_type(target_return)
         if declared_type is None or target_type is None:
             return declared_type == target_type
-        expected = deepcopy(target_type)
+        declared_type = deepcopy(declared_type)
+        # An unwrapped `| None` leaves a parse marker behind when no projection
+        # consumes it, which names nothing about the type itself.
+        declared_type.metadata.pop(_PYI_OPTIONAL_RETURN_METADATA, None)
+        expected = _PyiAstParser._visible_projected_result(target_type)
         expected.ownership = deepcopy(declared_type.ownership)
+        if expected.storage is not None and declared_type.storage is not None:
+            expected.storage.read_only = declared_type.storage.read_only
+            expected.storage.mutable = declared_type.storage.mutable
         return declared_type == expected
+
+    @staticmethod
+    def _visible_projected_result(target_type: SemanticType) -> SemanticType:
+        """Return the public result form a declaration can spell for a projection.
+
+        A native scalar descriptor result is written as a nullable value plus a
+        `native_call` result wrapper naming the descriptor, and an overload
+        declaration carries no `native_call`. Its descriptor topology therefore
+        has no place in the declared annotation, exactly as the contract printer
+        emits it.
+        """
+        expected = deepcopy(target_type)
+        if _PyiAstParser._semantic_scalar_descriptor_kind(expected) is None:
+            return expected
+        for key in ("fortran_allocatable", "fortran_pointer", "fortran_pointer_association"):
+            expected.metadata.pop(key, None)
+        if expected.storage is not None and expected.storage.kind in {"reference", "pointer", "address"}:
+            expected.storage = None
+        return expected
 
     @staticmethod
     def _projected_overload_arguments(
@@ -3021,6 +3057,7 @@ class _PyiAstParser:
         projection: list[ProjectionMapping],
         native_result: ProjectionMapping | None = None,
         drop_untyped_self: bool = False,
+        restates_projected_result: bool = False,
     ) -> tuple[list[SemanticArgument], SemanticType | None]:
         """Build a callable's arguments, results, and native projection metadata.
 
@@ -3038,6 +3075,13 @@ class _PyiAstParser:
 
         # Construct direct and projected outputs from the Python return shape.
         optional_return_positions = self._optional_native_return_positions(projection, native_result)
+        if restates_projected_result:
+            # An overload declaration restates the result its specific projects,
+            # and the projection that makes a slot nullable lives on that
+            # specific -- a declaration carrying one is rejected outright. Read
+            # every slot of such a declaration as nullable so it can spell the
+            # result the specific already produces.
+            optional_return_positions = set(range(len(self.return_items(node.returns))))
         return_type, returned_args = self.return_projection(
             node.returns,
             optional_return_positions=optional_return_positions,
@@ -3599,6 +3643,7 @@ class _ClassBodyVisitor(ClassVisitor):
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
             deferred=decorators.abstract_method,
+            restates_projected_result=decorators.overload_target is not None,
         )
         self.parser._reject_private_constructor(node.name, decorators.visibility)
         if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
@@ -3760,6 +3805,7 @@ class _ModuleVisitor(ClassVisitor):
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
+            restates_projected_result=decorators.overload_target is not None,
         )
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
