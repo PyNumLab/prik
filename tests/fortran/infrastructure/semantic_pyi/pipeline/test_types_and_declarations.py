@@ -55,7 +55,12 @@ end module
     assert ") -> Float64: ..." in code
 
 
-def test_fortran_generated_contracts_emit_python_name_and_bind_original_name():
+def test_fortran_generated_contracts_emit_python_name_without_binding_the_same_name():
+    """A capitalized Fortran procedure is written lower case and binds nothing.
+
+    Fortran reaches a procedure without regard to case, so the lower-case
+    Python name already names it and no original spelling has to be recorded.
+    """
     module = SemanticModule(
         name="math_mod",
         functions=[
@@ -72,7 +77,8 @@ def test_fortran_generated_contracts_emit_python_name_and_bind_original_name():
 
     code = emit_module(module, normalize_fortran_public_names=True)
 
-    assert '@bind("SQUARE_R4")\ndef square_r4(' in code
+    assert "def square_r4(" in code
+    assert "@bind(" not in code
 
 
 def test_emit_rejects_unknown_semantic_type():

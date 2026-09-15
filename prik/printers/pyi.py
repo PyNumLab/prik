@@ -451,6 +451,15 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"@{context.contract('abstract')}")
         if self._class_uses_c_abi(cls):
             decorators.append(f'@{context.contract("native_abi")}("c")')
+        # Only a Fortran type states a separate native name here. A C struct
+        # keeps its native spelling -- `struct node` for `node` -- through its
+        # own representation rules, which state it without a decorator.
+        if (
+            cls.origin.source_language == "fortran"
+            and cls.native_name
+            and self._renames_native_entity(cls, cls.native_name, cls.name)
+        ):
+            decorators.append(f"@{context.contract('bind')}({json.dumps(str(cls.native_name))})")
         decorator_text = "\n".join(decorators)
         if decorator_text:
             decorator_text += "\n"
@@ -954,7 +963,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             variable,
             context,
-            original_name=variable.name if name != variable.name else None,
+            original_name=variable.name if self._renames_native_entity(variable, variable.name, name) else None,
         )
 
     def _emit_module_variable(
@@ -968,7 +977,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             arg,
             context,
-            original_name=arg.name if name != arg.name else None,
+            original_name=arg.name if self._renames_native_entity(arg, arg.name, name) else None,
         )
 
     @staticmethod
@@ -1345,7 +1354,7 @@ class PyiPrinter(ClassVisitor):
             or self._python_literal_text(field.default_value)
             or "..."
         )
-        if name != field.name:
+        if self._renames_native_entity(field, field.name, name):
             type_text = self._annotated_type_text(
                 type_text,
                 [f"{context.contract('SourceName')}({json.dumps(field.name)})"],
@@ -2230,13 +2239,13 @@ class PyiPrinter(ClassVisitor):
         if bind_target is not None:
             return bind_target
 
-        if isinstance(func, SemanticMethod) and func.name != emitted_name:
+        if isinstance(func, SemanticMethod) and PyiPrinter._renames_native_entity(func, func.name, emitted_name):
             if not context.public_namespace:
                 return func.native_name
             class_name = context.public_namespace[-1]
             return f"{class_name}.{func.name}"
 
-        if func.native_name and func.native_name != emitted_name:
+        if func.native_name and PyiPrinter._renames_native_entity(func, func.native_name, emitted_name):
             return func.native_name
 
         return None
@@ -2645,6 +2654,26 @@ class PyiPrinter(ClassVisitor):
     def _is_private(node) -> bool:
         """Return whether is private."""
         return getattr(node, "visibility", "public") == "private"
+
+    @staticmethod
+    def _renames_native_entity(declaration: object, native_name: object, emitted_name: str) -> bool:
+        """Return whether an emitted name has to record the spelling it came from.
+
+        A Fortran entity is named without regard to case, so writing one under a
+        lower-case Python name renames nothing and states nothing worth
+        recording. Any other difference is a real rename -- a Python keyword, a
+        character an identifier cannot hold, a name a collision moved aside --
+        and the declaration keeps the original beside it. Every other source
+        language names its entities exactly, so there the spellings are compared
+        as written.
+        """
+        native = str(native_name)
+        if native == emitted_name:
+            return False
+        origin = getattr(declaration, "origin", None)
+        if getattr(origin, "source_language", None) != "fortran":
+            return True
+        return native.casefold() != emitted_name.casefold()
 
     @staticmethod
     def _annotation_target(name: str) -> str:

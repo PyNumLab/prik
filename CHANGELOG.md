@@ -21,6 +21,15 @@ release tags add a leading `v` to the package version.
   reference resolves through the name its declaring contract states, and a
   renamed class keeps its `bind` when the contract is regenerated.
 
+- A generated Fortran contract no longer records a source spelling that differs
+  from its Python name only by case. Fortran names entities without regard to
+  case, so a capitalized `IK` written as `ik` renames nothing and the generated
+  Fortran reaches it either way; every such declaration nevertheless carried a
+  `SourceName` or `@bind` stating the capitals back. A name Python cannot hold
+  as written -- a keyword, an illegal character, one a collision moved aside --
+  is a real rename and still keeps its original, as does every name from a
+  source language that is case-sensitive.
+
 - A generated contract now imports each name under the spelling the contract
   that defines it uses. A source-derived contract declares a Fortran entity
   under a Python name, so one spelled in capitals is declared lower case, while

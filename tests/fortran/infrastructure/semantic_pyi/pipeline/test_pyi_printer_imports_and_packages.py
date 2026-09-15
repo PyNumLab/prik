@@ -542,7 +542,7 @@ end module infos_mod
         normalize_fortran_public_names=True,
     )
 
-    assert 'ik: Final[Annotated[Int32, SourceName("IK")]]' in stubs["consts_mod"]
+    assert "ik: Final[Int32]" in stubs["consts_mod"]
     assert "from .consts_mod import ik" in stubs["infos_mod"]
     assert "import IK" not in stubs["infos_mod"]
 
@@ -610,3 +610,120 @@ end module solver_mod
     assert "def OBJ(" in stubs["pintrf_mod"]
     assert "from .pintrf_mod import OBJ" in stubs["solver_mod"]
     assert "calfun: OBJ" in stubs["solver_mod"]
+
+
+def test_fortran_contract_records_no_source_name_for_a_case_only_python_name():
+    """Writing a Fortran entity in lower case renames nothing worth recording.
+
+    Fortran names entities without regard to case, so a capitalized source
+    spelling and the lower-case Python name are the same entity and the
+    generated Fortran reaches it either way.
+    """
+    source = """
+module consts_mod
+implicit none
+integer, parameter :: IK = 4
+contains
+subroutine SCALE_VALUE(x)
+integer, intent(in) :: x
+end subroutine SCALE_VALUE
+end module consts_mod
+"""
+
+    code = emit_module(
+        fortran_module_to_semantic_module(parse_fortran_source(source)),
+        normalize_fortran_public_names=True,
+    )
+
+    assert "ik: Final[Int32]" in code
+    assert "def scale_value(" in code
+    assert "SourceName" not in code
+    assert "@bind(" not in code
+
+
+def test_fortran_contract_records_a_source_name_python_cannot_spell():
+    """A name Python cannot hold as written keeps the spelling it came from."""
+    source = """
+module naming_mod
+implicit none
+integer :: lambda
+integer :: LAMBDA_
+contains
+subroutine ASSERT(x)
+integer, intent(in) :: x
+end subroutine ASSERT
+end module naming_mod
+"""
+
+    code = emit_module(
+        fortran_module_to_semantic_module(parse_fortran_source(source)),
+        normalize_fortran_public_names=True,
+    )
+
+    assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
+    assert 'lambda__2: Annotated[Int32, SourceName("LAMBDA_")]' in code
+    assert '@bind("ASSERT")\n@native_call([Addr(Arg(0))])\ndef assert_(' in code
+
+
+def test_non_fortran_declaration_compares_its_native_spelling_exactly():
+    """Every other source language names its entities exactly, case included."""
+    origin = SemanticOrigin(source_language="c", native_scope="c_mod")
+    module = SemanticModule(
+        name="c_mod",
+        functions=[
+            SemanticFunction(
+                "scale_value",
+                native_name="ScaleValue",
+                return_type=SemanticType("Int32"),
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert '@bind("ScaleValue")' in code
+
+
+def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
+    """A renamed class states its native type so the contract reads back."""
+    origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
+    module = SemanticModule(
+        name="shapes_mod",
+        classes=[
+            SemanticClass(
+                name="PointType",
+                native_name="POINT_T",
+                fields=[SemanticField("x", SemanticType("Float64"))],
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert '@bind("POINT_T")\nclass PointType:' in code
+
+
+def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
+    """A class named without regard to case states no separate native type."""
+    origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
+    module = SemanticModule(
+        name="shapes_mod",
+        classes=[
+            SemanticClass(
+                name="point_t",
+                native_name="POINT_T",
+                fields=[SemanticField("x", SemanticType("Float64"))],
+                origin=origin,
+            )
+        ],
+        origin=origin,
+    )
+
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert "class point_t:" in code
+    assert "@bind(" not in code
