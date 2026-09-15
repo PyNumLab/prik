@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract can now rename what it declares. `SourceName` states the native
+  entity a variable or constant reaches, the way `bind` already did for a
+  callable, instead of replacing the name the declaration states -- editing a
+  contract to give an entity a Python name exported the source spelling and
+  dropped the edit. A source name inside `Final[...]` reaches its declaration
+  as well, where it was previously ignored. A generated contract is affected
+  too: a Fortran entity Python cannot spell, such as one named `lambda`, is
+  declared as `lambda_` and now stays reachable under that name.
+
+- A class can state the native type it reaches through `bind`, so a derived
+  type can be exported under a different Python name. An imported class
+  reference resolves through the name its declaring contract states, and a
+  renamed class keeps its `bind` when the contract is regenerated.
+
 - A generated contract now imports each name under the spelling the contract
   that defines it uses. A source-derived contract declares a Fortran entity
   under a Python name, so one spelled in capitals is declared lower case, while

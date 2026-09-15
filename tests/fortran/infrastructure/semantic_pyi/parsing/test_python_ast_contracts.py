@@ -79,7 +79,8 @@ alias: Annotated[Int32, SourceName("native_alias"), Finite]
         SemanticConstraint("Bounded", [1, 8]),
         SemanticConstraint("Finite"),
     ]
-    assert module.variables[1].name == "native_alias"
+    assert module.variables[1].name == "alias"
+    assert module.variables[1].origin.native_name == "native_alias"
     assert module.variables[1].semantic_type.constraints == [SemanticConstraint("Finite")]
     emitted = emit_module(SemanticModule(name="constraints", variables=[module.variables[0]]))
     assert "value: Annotated[Int32, Bounded(1, 8), Finite]" in emitted

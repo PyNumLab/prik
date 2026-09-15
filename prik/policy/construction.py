@@ -4820,7 +4820,15 @@ def _resolve_derived_type_policy(
     if exact is not None:
         return exact
     if semantic_type.metadata.get(models.EXTERNAL_TYPE_REF_METADATA) is not None:
-        return None
+        # An imported reference names the type the way the module declaring it
+        # writes it, which is its own name rather than the native type it binds.
+        # The search stays inside that module, so a type of the same name
+        # declared elsewhere is never reached.
+        scope, name = requested_identity
+        imported_matches = tuple(
+            policy for policy in derived_types.values() if policy.native_scope == scope and policy.type_name == name
+        )
+        return imported_matches[0] if len(imported_matches) == 1 else None
     local_matches = tuple(policy for policy in derived_types.values() if policy.type_name == semantic_type.name)
     return local_matches[0] if len(local_matches) == 1 else None
 

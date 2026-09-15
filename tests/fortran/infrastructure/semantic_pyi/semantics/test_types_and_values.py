@@ -194,7 +194,10 @@ def f() -> tuple[F64, Gives["y", F64]]: ...
         module_name="edited",
     )
 
-    assert module.variables[0].name == "native_alias"
+    # The declared name stays the Python name; SourceName states the native
+    # entity it reaches, as bind does for a callable.
+    assert module.variables[0].name == "alias"
+    assert module.variables[0].origin.native_name == "native_alias"
     assert module.variables[0].semantic_type.shape == ["1:n"]
     assert module.functions[0].return_type is not None
     assert module.functions[0].return_type.name == "Float64"
@@ -595,3 +598,44 @@ end module solver_mod
 
     assert native_contract_issues(parse_pyi_text(constrained, module_name="solver_mod")) == []
     assert native_contract_issues(parse_pyi_text(changed_abi, module_name="solver_mod")) == []
+
+
+def test_source_name_binds_a_native_entity_without_taking_the_declared_name():
+    """`SourceName` states what a declaration reaches, like `bind` on a callable.
+
+    A contract is edited to give an entity the name Python should call it, and
+    that name has to survive. Reading the source spelling as the declaration's
+    own name discards the edit and exports the native spelling instead.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Annotated, Final, Int32, SourceName
+
+tally: Annotated[Int32, SourceName("COUNTER")]
+
+limit: Final[Annotated[Int32, SourceName("MAXFUN")]]
+""",
+        module_name="edited",
+    )
+
+    assert [(item.name, item.origin.native_name) for item in module.variables] == [
+        ("tally", "COUNTER"),
+        ("limit", "MAXFUN"),
+    ]
+    assert [constraint.name for constraint in module.variables[1].semantic_type.constraints] == ["Constant"]
+
+
+def test_class_binds_a_native_type_under_its_own_python_name():
+    """A class states the native type it reaches when the two names differ."""
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, bind
+
+@bind("POINT_T")
+class PointType:
+    x: Float64
+""",
+        module_name="edited",
+    )
+
+    assert (module.classes[0].name, module.classes[0].native_name) == ("PointType", "POINT_T")

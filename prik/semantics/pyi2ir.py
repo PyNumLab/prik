@@ -451,6 +451,7 @@ class _PyiAstParser:
         visibility: str,
         native_abi: str | None = None,
         abstract: bool = False,
+        native_name: str | None = None,
     ) -> SemanticClass:
         """Convert one class AST node, its body, and supported native metadata.
 
@@ -481,7 +482,9 @@ class _PyiAstParser:
             metadata["fortran_bind_c"] = True
         semantic_class = SemanticClass(
             name=node.name,
-            native_name=node.name,
+            # A class names its Python type; `bind` states the native type it
+            # reaches when the two are spelled differently.
+            native_name=native_name or node.name,
             fields=body.fields,
             methods=body.methods,
             destructors=body.destructors,
@@ -822,8 +825,6 @@ class _PyiAstParser:
         """
         name = self.annotation_target(node.target)
         visibility, semantic_type, original_name = self.visible_type(node.annotation)
-        if original_name is not None:
-            name = original_name
         self._validate_python_value_policy(
             semantic_type,
             writable=self._type_uses_writable_storage(semantic_type),
@@ -835,6 +836,11 @@ class _PyiAstParser:
             visibility=visibility,
             default_value=self.assignment_default_value(node.value, semantic_type),
         )
+        if original_name is not None:
+            # A declared name is what Python calls this entity; `SourceName`
+            # states the entity it reaches, exactly as `bind` does for a
+            # callable, and leaves the declared name alone.
+            binding.origin.native_name = original_name
         if visibility == "private":
             binding.origin.metadata[USER_PRIVATE_METADATA] = True
         binding.optional = self.default_marks_optional(node.value)
@@ -1981,6 +1987,18 @@ class _PyiAstParser:
                     )
                 semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] = True
                 return semantic_type, None
+        if self.is_subscript_of(node, "Final"):
+            # `Final` marks the value immutable and wraps the annotation that
+            # carries any source name, which the declaration still needs.
+            items = self.subscript_items(node)
+            if len(items) == 1:
+                semantic_type, original_name = self.semantic_type_annotation(
+                    items[0],
+                    allow_optional_absent_handle=allow_optional_absent_handle,
+                )
+                if not any(constraint.name == "Constant" for constraint in semantic_type.constraints):
+                    semantic_type.constraints.append(SemanticConstraint("Constant"))
+                return semantic_type, original_name
         if not self.is_subscript_of(node, "Annotated"):
             return self.semantic_type(node), None
 
@@ -3687,7 +3705,6 @@ class _ClassBodyVisitor(ClassVisitor):
         decorators = self.parser.decorators(node.decorator_list, context="class body")
         if (
             decorators.has_native_call
-            or decorators.bind_target is not None
             or decorators.overload_target is not None
             or decorators.is_static
             or decorators.release_gil
@@ -3711,6 +3728,7 @@ class _ClassBodyVisitor(ClassVisitor):
                 visibility=decorators.visibility,
                 native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
+                native_name=decorators.bind_target,
             )
         )
 
@@ -3755,7 +3773,6 @@ class _ModuleVisitor(ClassVisitor):
         decorators = self.parser.decorators(node.decorator_list, context="class")
         if (
             decorators.has_native_call
-            or decorators.bind_target is not None
             or decorators.overload_target is not None
             or decorators.is_static
             or decorators.release_gil
@@ -3777,6 +3794,7 @@ class _ModuleVisitor(ClassVisitor):
                 visibility=decorators.visibility,
                 native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
+                native_name=decorators.bind_target,
             )
         )
 
