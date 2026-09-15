@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract generated from a source whose abstract interface types a dummy
+  through a kind of its own now resolves that kind. An interface body's
+  variables reached no target probe, so a kind named only there -- through a
+  `use` written inside the body -- had no storage fact and `generate --pyi`
+  failed on a declaration the wrapper build accepted.
+
 - A derived type building one generic binding from several `generic ::`
   statements now collects every specific into that binding. Each statement was
   recorded as its own binding of the same name, so only the first reached

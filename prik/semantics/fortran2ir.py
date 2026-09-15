@@ -3550,6 +3550,7 @@ class _FortranVariableContextVisitor(ClassVisitor):
             node.block_data_units,
             node.procedures,
             node.derived_types,
+            node.interfaces,
         )
         for collection in collections:
             for child in collection:
@@ -3583,6 +3584,25 @@ class _FortranVariableContextVisitor(ClassVisitor):
             _variable_context(variable, unit_kind="block_data", unit=owner, module=None, role="variable")
             for variable in node.variables
         )
+
+    def _visit_FortranInterface(
+        self,
+        node: FortranInterface,
+        *,
+        module_name: str | None = None,
+        **_context,
+    ):
+        """Return the variable contexts an interface body declares.
+
+        An interface body types its own dummies, and the kind it names may come
+        from a ``use`` written inside that body. Those variables reach a target
+        probe only from here, since no module variable or module procedure
+        declares them.
+        """
+        contexts = []
+        for procedure in node.procedures:
+            contexts.extend(self._visit(procedure, module_name=module_name or node.module))
+        return tuple(contexts)
 
     @staticmethod
     def _visit_FortranProcedureSignature(
@@ -3645,6 +3665,8 @@ class _FortranVariableContextVisitor(ClassVisitor):
             contexts.extend(self._visit(procedure, module_name=owner))
         for derived_type in node.derived_types:
             contexts.extend(self._visit(derived_type, module_name=owner))
+        for interface in node.interfaces:
+            contexts.extend(self._visit(interface, module_name=owner))
         return tuple(contexts)
 
 
