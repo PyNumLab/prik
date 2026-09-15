@@ -546,10 +546,10 @@ class WrapperPlanner(ClassVisitor):
         """Group each published re-export under the namespace that publishes it."""
         grouped = defaultdict(list)
         for reexport in module.reexports:
-            grouped[(reexport.module.casefold(),)].append(
+            grouped[tuple(part.casefold() for part in reexport.module.split(".") if part)].append(
                 NamespaceAliasPlan(
                     python_name=reexport.local_name,
-                    source_namespace=(reexport.origin_module.casefold(),),
+                    source_namespace=tuple(part.casefold() for part in reexport.origin_module.split(".") if part),
                     source_name=reexport.source_name,
                 )
             )

@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated Fortran module leaves now import sibling contracts relatively, so
+  building a leaf directly loads the contracts its declarations depend on.
+  A native derived type exported through several modules shares one set of
+  generated support procedures.
+
 - A module that names an imported procedure in a `public` statement now
   publishes it, so a facade module reaches Python instead of disappearing. The
   declaration is not repeated: the published name binds to the one wrapper its

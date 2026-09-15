@@ -114,8 +114,8 @@ The generated forms therefore have these responsibilities:
 | C `<name>.pyi` | Selected C declarations in one directly buildable contract file. |
 
 A contract build receives one entry `.pyi`: the package `__init__.pyi` for the
-Fortran layout above, or the C file itself. Relative imports from a package
-entry discover its leaf files.
+full Fortran package, a Fortran module leaf for that module and its imported
+siblings, or the C file itself. Relative imports discover dependent contracts.
 
 ### Entry Contract And Extension Identity
 
@@ -141,10 +141,18 @@ contracts/
 Building `api.pyi` directly exposes its declarations at the extension root and
 uses `api` as the default extension name.
 
-Use the entry, not every imported leaf, on the command line:
+Use one entry on the command line to build the full package:
 
 ```bash
 python3 -m prik contracts/solver/__init__.pyi \
+  --native-objects build/solver.o
+```
+
+To build a module leaf directly, pass that leaf as the entry. Its relative
+imports load sibling contracts needed by its declarations:
+
+```bash
+python3 -m prik contracts/solver/solver_mod.pyi \
   --native-objects build/solver.o
 ```
 

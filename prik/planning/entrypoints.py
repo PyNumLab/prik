@@ -133,8 +133,17 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         self.namespaces = namespaces
         self.functions = tuple(function for namespace in namespaces for function in namespace.functions)
         self.variables = tuple(variable for namespace in namespaces for variable in namespace.variables)
-        self.derived_types = tuple(derived for namespace in namespaces for derived in namespace.derived_types)
-        self.classes = tuple(surface for namespace in namespaces for surface in namespace.classes)
+        # One native type may be exported through several Python namespaces.
+        # Its support procedures belong to the native type, not each export.
+        derived_by_identity = {}
+        classes_by_identity = {}
+        for namespace in namespaces:
+            for derived in namespace.derived_types:
+                derived_by_identity.setdefault(derived.type_identity, derived)
+            for surface in namespace.classes:
+                classes_by_identity.setdefault(surface.type_identity, surface)
+        self.derived_types = tuple(derived_by_identity.values())
+        self.classes = tuple(classes_by_identity.values())
 
     def build(self) -> GeneratedSupportProcedureProjection:
         """Collect external and binding-local support in declaration order."""

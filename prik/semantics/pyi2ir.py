@@ -3818,7 +3818,7 @@ def _imported_type_refs(module: SemanticModule) -> dict[str, tuple[str, str, str
         if isinstance(imp, SemanticImport):
             for item in imp.items:
                 local_name = item.target or item.source
-                imported[local_name] = (imp.module, item.source, local_name)
+                imported[local_name] = (imp.module.lstrip("."), item.source, local_name)
                 if imp.module.startswith("."):
                     imported_namespaces[local_name] = _relative_imported_namespace(imp.module, item.source)
             continue

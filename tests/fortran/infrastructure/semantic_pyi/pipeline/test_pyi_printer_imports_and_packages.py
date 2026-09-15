@@ -97,6 +97,15 @@ def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
     assert second.contract_import() == ""
 
 
+def test_printing_loaded_contract_preserves_absolute_support_imports():
+    module = _parse_pyi_text(
+        "from typing import Any\nfrom prik.contracts import Int32\n\ndef identity(value: Int32) -> Int32: ...\n",
+        module_name="identity",
+    )
+
+    assert "from typing import Any" in emit_module(module)
+
+
 def test_printer_validation_and_opaque_dependency_edge_cases():
     printer = PyiPrinter()
 
@@ -283,7 +292,7 @@ end module
 
     code = generate_pyi(source)
 
-    assert "from list_input import delete_input_list as delete_input" in code
+    assert "from .list_input import delete_input_list as delete_input" in code
 
 
 def test_emit_imported_derived_type_reference_without_reexporting_class():
@@ -302,7 +311,7 @@ end module physics
     stubs = emit_module_stubs(module)
     code = stubs["physics"]
 
-    assert "from types_mod import particle" in code
+    assert "from .types_mod import particle" in code
     assert "from . import types_mod" not in code
     assert "p: particle" in code
     assert "Addr(particle)" not in code
@@ -416,7 +425,7 @@ end module physics
     stubs = emit_module_stubs(fortran_module_to_semantic_module(parsed))
 
     assert "import types_mod" in stubs["physics"]
-    assert "from types_mod import particle" in stubs["physics"]
+    assert "from .types_mod import particle" in stubs["physics"]
     assert stubs["types_mod"].endswith("class particle(Opaque):\n    pass")
 
 

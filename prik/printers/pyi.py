@@ -74,6 +74,7 @@ from prik.semantics.models import (
     _module_semantic_types,
 )
 from prik.semantics.native_array_handles import native_array_data_type, native_array_descriptor_kind
+from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.utilities.visitor import ClassVisitor
 
 _WRAPPED_CALLABLE_TYPE_METADATA = "pyi_wrapped_callable_type"
@@ -1445,7 +1446,7 @@ class PyiPrinter(ClassVisitor):
             sections.append(contract_import)
         imports = self._effective_imports(module)
         for imp in imports:
-            sections.append(self._emit_import(imp))
+            sections.append(self._emit_import(imp, native_source=not module.metadata.get(PYI_LOADED_METADATA)))
         if contract_import or imports:
             sections.append("")
 
@@ -1736,14 +1737,15 @@ class PyiPrinter(ClassVisitor):
         )
 
     @staticmethod
-    def _emit_import(imp: str | SemanticImport) -> str:
+    def _emit_import(imp: str | SemanticImport, *, native_source: bool = False) -> str:
         """Emit import syntax."""
         if isinstance(imp, str):
             return f"import {imp}"
         if not imp.items:
             return f"import {imp.module}"
         items = ", ".join(PyiPrinter._emit_import_item(item) for item in imp.items)
-        return f"from {imp.module} import {items}"
+        module_name = f".{imp.module}" if native_source and not imp.module.startswith(".") else imp.module
+        return f"from {module_name} import {items}"
 
     @staticmethod
     def _emit_import_item(item: SemanticImportItem) -> str:
