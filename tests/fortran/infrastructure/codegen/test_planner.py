@@ -72,6 +72,27 @@ def right_value(x: Int32) -> Int32: ...
     assert plan.namespaces[2].functions[0].symbol_name == "right_shared_value"
 
 
+def test_two_python_names_one_folded_stem_get_separate_generated_symbols():
+    """A generated symbol is shared with Fortran, which folds the two together."""
+    module = parse_pyi_text(
+        """
+def left_value(x: Int32) -> Int32: ...
+def right_value(x: Int32) -> Int32: ...
+""",
+        module_name="folded",
+    )
+    module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": (), "name": "Foo"}]
+    module.functions[1].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": (), "name": "foo"}]
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner().build(module)
+
+    functions = plan.namespaces[0].functions
+    assert [function.binding.python_name for function in functions] == ["Foo", "foo"]
+    stems = [function.symbol_name for function in functions]
+    assert len({stem.casefold() for stem in stems}) == len(stems)
+
+
 def test_binding_registers_child_namespaces_as_importable_submodules():
     module = parse_pyi_text(
         """

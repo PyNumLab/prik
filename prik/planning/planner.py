@@ -72,7 +72,7 @@ from prik.policy.construction import (
     completed_module_variable_policy,
 )
 from prik.naming.generated_files import bridge_source_name
-from prik.naming.policy import normalize_public_name
+from prik.naming.policy import normalize_public_name, preserves_source_case
 from prik.policy.exports import PythonExportPolicy
 from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
@@ -555,6 +555,7 @@ class WrapperPlanner(ClassVisitor):
         knows which name the declaring namespace actually bound.
         """
         grouped = defaultdict(list)
+        preserve_case = preserves_source_case(module.origin.source_language)
         for reexport in module.reexports:
             if reexport.entity_kind not in _ALIASABLE_REEXPORT_KINDS:
                 continue
@@ -564,7 +565,7 @@ class WrapperPlanner(ClassVisitor):
                 continue
             grouped[tuple(part.casefold() for part in reexport.module.split(".") if part)].append(
                 NamespaceAliasPlan(
-                    python_name=normalize_public_name(reexport.local_name).name,
+                    python_name=normalize_public_name(reexport.local_name, preserve_case=preserve_case).name,
                     source_namespace=source_namespace,
                     source_name=source_name,
                 )
@@ -1152,8 +1153,30 @@ class WrapperPlanner(ClassVisitor):
         for namespace, item in entries:
             if counts[item.symbol_name.casefold()] > 1:
                 item.symbol_name = self._symbol_name(namespace, item.symbol_name)
+        self._separate_folded_generated_symbols(entries)
         self._qualify_variable_bridge_collisions(functions, variables)
         self._complete_entrypoint_symbols(functions)
+
+    @staticmethod
+    def _separate_folded_generated_symbols(entries: tuple[tuple[tuple[str, ...], object], ...]) -> None:
+        """Separate stems that only a case-sensitive source keeps apart.
+
+        A generated symbol is shared with Fortran, which folds case, so two
+        declarations a case-sensitive language distinguishes by spelling alone
+        reach one stem that qualifying by namespace cannot separate. They
+        publish different Python names, so the stems are numbered in plan order.
+        """
+        taken: set[str] = set()
+        for _namespace, item in entries:
+            stem = item.symbol_name
+            if stem.casefold() not in taken:
+                taken.add(stem.casefold())
+                continue
+            suffix = 2
+            while f"{stem}_{suffix}".casefold() in taken:
+                suffix += 1
+            item.symbol_name = f"{stem}_{suffix}"
+            taken.add(item.symbol_name.casefold())
 
     @staticmethod
     def _complete_entrypoint_symbols(

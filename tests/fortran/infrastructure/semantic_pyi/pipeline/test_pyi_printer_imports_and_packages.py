@@ -73,7 +73,7 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
         origin=origin,
     )
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
     assert 'lambda__2: Annotated[Int32, SourceName("lambda_")]' in code
@@ -83,7 +83,7 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
 
 
 def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
-    printer = PyiPrinter(normalize_fortran_public_names=True)
+    printer = PyiPrinter(normalize_public_names=True)
     first = printer._emission_context(SemanticModule(name="first"))
     second = printer._emission_context(SemanticModule(name="second"))
     nested = first.inside_class("record_t")
@@ -540,7 +540,7 @@ end module infos_mod
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(infos)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "ik: Final[Int32]" in stubs["consts_mod"]
@@ -565,7 +565,7 @@ end module renaming_mod
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(consts), fortran_module_to_semantic_module(renaming)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "from .consts_mod import ik as my_ik" in stubs["renaming_mod"]
@@ -605,7 +605,7 @@ end module solver_mod
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(declares), fortran_module_to_semantic_module(solver)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "def OBJ(" in stubs["pintrf_mod"]
@@ -633,7 +633,7 @@ end module consts_mod
 
     code = emit_module(
         fortran_module_to_semantic_module(parse_fortran_source(source)),
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "ik: Final[Int32]" in code
@@ -658,7 +658,7 @@ end module naming_mod
 
     code = emit_module(
         fortran_module_to_semantic_module(parse_fortran_source(source)),
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
@@ -682,7 +682,7 @@ def test_non_fortran_declaration_compares_its_native_spelling_exactly():
         origin=origin,
     )
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert '@bind("ScaleValue")' in code
 
@@ -703,7 +703,7 @@ def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
         origin=origin,
     )
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert '@bind("POINT_T")\nclass PointType:' in code
 
@@ -724,7 +724,7 @@ def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
         origin=origin,
     )
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert "class point_t:" in code
     assert "@bind(" not in code
@@ -765,7 +765,7 @@ end module consumer_mod
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(item) for item in (callbacks, values, consumer)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "def OBJ(" in stubs["callback_mod"]
@@ -807,7 +807,7 @@ end module user_mod
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(item) for item in (callbacks, user)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "def OBJ(" in stubs["callback_mod"]
@@ -840,7 +840,7 @@ end module collide_user
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(item) for item in (home, user)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "def lambda__2(" in stubs["collide_home"]
@@ -889,7 +889,7 @@ end module surface_consumer
 
     stubs = emit_module_stubs(
         [fortran_module_to_semantic_module(item) for item in (home, facade, consumer)],
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     # The publishing module names the import; the consuming one does not.
@@ -918,7 +918,7 @@ end module kinds_mod
 """
 
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert [reexport.origin_module for reexport in module.reexports] == ["iso_fortran_env", "iso_fortran_env"]
     assert "iso_fortran_env" not in code
@@ -953,7 +953,7 @@ end module state_facade
 
     modules = fortran_file_to_semantic_modules(parsed)
     facade = next(module for module in modules if module.name == "state_facade")
-    stubs = emit_module_stubs(modules, normalize_fortran_public_names=True)
+    stubs = emit_module_stubs(modules, normalize_public_names=True)
 
     assert sorted((item.local_name, item.entity_kind) for item in facade.reexports) == [
         ("bump", "procedure"),

@@ -17,6 +17,7 @@ from .policy import (
     PublicNameRecord,
     generated_symbol_rules,
     normalize_public_name,
+    preserves_source_case,
 )
 
 __all__ = (
@@ -32,6 +33,7 @@ __all__ = (
     "bridge_source_name",
     "generated_symbol_rules",
     "normalize_public_name",
+    "preserves_source_case",
     "stub_identifier",
     "wrapper_header_name",
 )

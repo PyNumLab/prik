@@ -68,7 +68,7 @@ end module powalg_mod
 
     code = emit_module(
         fortran_module_to_semantic_module(parse_fortran_source(source)),
-        normalize_fortran_public_names=True,
+        normalize_public_names=True,
     )
 
     assert "def qradd_rdiag(" in code

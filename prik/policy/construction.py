@@ -20,7 +20,7 @@ import numpy
 from immutabledict import immutabledict
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
-from prik.naming import NamingPolicy
+from prik.naming import NamingPolicy, preserves_source_case
 from prik.semantics import models
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
@@ -482,7 +482,10 @@ def build_class_surface_policy(
     strict_wrapper_names: bool = False,
 ) -> ClassSurfacePolicy:
     """Complete constructor, method, inheritance, and registration decisions."""
-    naming = NamingPolicy(strict_public_names=strict_wrapper_names)
+    naming = NamingPolicy(
+        strict_public_names=strict_wrapper_names,
+        preserve_case=preserves_source_case(semantic_class.origin.source_language),
+    )
     fields = _python_named_class_fields(derived.fields, naming, owner_path)
     named_derived = replace(derived, fields=fields)
     methods = _python_named_class_methods(semantic_class, naming, owner_path)

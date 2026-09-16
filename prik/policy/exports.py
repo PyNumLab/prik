@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prik.naming import NamingPolicy, normalize_public_name
+from prik.naming import NamingPolicy, normalize_public_name, preserves_source_case
 from prik.semantics import models
 
 
@@ -33,7 +33,10 @@ def complete_python_export_policy(
     strict_wrapper_names: bool = False,
 ) -> None:
     """Resolve every public export name within its owning Python namespace."""
-    naming = NamingPolicy(strict_public_names=strict_wrapper_names)
+    naming = NamingPolicy(
+        strict_public_names=strict_wrapper_names,
+        preserve_case=preserves_source_case(module.origin.source_language),
+    )
     for owner in _module_export_owners(module):
         if getattr(owner, "visibility", "public") == "private":
             continue
@@ -107,7 +110,8 @@ def completed_python_exports(
             )
         )
     if not exports and getattr(owner, "visibility", "public") != "private":
-        exports.append(PythonExportPolicy((), normalize_public_name(default_name).name))
+        preserve_case = preserves_source_case(owner.origin.source_language)
+        exports.append(PythonExportPolicy((), normalize_public_name(default_name, preserve_case=preserve_case).name))
     return tuple(dict.fromkeys(exports))
 
 

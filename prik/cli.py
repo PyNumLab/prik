@@ -670,8 +670,9 @@ def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
         if _is_c_semantic_file(modules):
             # A generated C starter contract preserves raw source facts, even
             # for a form that the direct-only wrapper policy will later block.
-            # ``--pyi`` is contract extraction, not wrapper planning.
-            module_stubs = {module.name: emit_module(module).strip() for module in modules}
+            # ``--pyi`` is contract extraction, not wrapper planning. The names
+            # are still C's, so they are written the way a build publishes them.
+            module_stubs = {module.name: emit_module(module, normalize_public_names=True).strip() for module in modules}
             out[str(p)] = {
                 "semantic_modules": [asdict(module) for module in modules],
                 "pyi": "\n\n".join(module_stubs.values()).strip(),
@@ -710,7 +711,7 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
         emit_module_stubs(
             native_modules,
             available_modules=available_modules,
-            normalize_fortran_public_names=True,
+            normalize_public_names=True,
         )
         if native_modules
         else {}
@@ -722,7 +723,7 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
         external_stubs = emit_module_stubs(
             [module],
             available_modules=available_modules,
-            normalize_fortran_public_names=True,
+            normalize_public_names=True,
         )
         external_text.append(external_stubs.pop(module.name))
         for name, text in external_stubs.items():

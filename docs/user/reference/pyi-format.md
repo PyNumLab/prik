@@ -1009,12 +1009,16 @@ def consume(class_: Annotated[Int32, SourceName("class")]) -> None: ...
 Python export name. `SourceName(...)` preserves a native data or argument name.
 These are separate operations.
 
-When PRIK generates a Fortran contract, it lowercases Fortran identifiers,
-adds a trailing underscore to Python keywords, normalizes other invalid Python
-identifiers, and gives remaining collisions deterministic numeric suffixes.
-The same policy covers module members, classes, methods, fields, and argument
-names. `--strict-wrapper-names` rejects a generated name that would need any of
-these fixes.
+When PRIK generates a contract it adds a trailing underscore to Python
+keywords, normalizes other invalid Python identifiers, and gives remaining
+collisions deterministic numeric suffixes. A Fortran identifier is lowercased
+as well, because Fortran writes one declaration under many spellings and none
+of them is the declaration's own. A C identifier keeps its case: C names each
+declaration exactly, so `BarBaz` stays `BarBaz`, and `Foo` and `foo` stay two
+functions. The same policy covers module members, classes, methods, fields, and
+argument names, and it decides the names a build publishes and the names the
+contract describing that build states. `--strict-wrapper-names` rejects a
+generated name that would need any of these fixes.
 
 Fortran `bind(C, name=...)` changes the native symbol, not the Python name. In
 an edited contract, `@bind("native_name")` records that native-name distinction;

@@ -104,7 +104,7 @@ def emit_module_stubs(
     modules: SemanticModule | Iterable[SemanticModule],
     *,
     available_modules: Iterable[SemanticModule] | None = None,
-    normalize_fortran_public_names: bool = False,
+    normalize_public_names: bool = False,
 ) -> dict[str, str]:
     """Complete and render semantic modules plus opaque dependencies.
 
@@ -148,14 +148,14 @@ def emit_module_stubs(
     }
     # What a contract publishes a name under is settled by rendering it, so
     # every module is named once before any of them writes an import.
-    naming_printer = PyiPrinter(normalize_fortran_public_names=normalize_fortran_public_names)
+    naming_printer = PyiPrinter(normalize_public_names=normalize_public_names)
     published_names_by_module = {
         module_name: naming_printer.published_names(module) for module_name, module in emitted_modules.items()
     }
     return {
         module_name: emit_module(
             module,
-            normalize_fortran_public_names=normalize_fortran_public_names,
+            normalize_public_names=normalize_public_names,
             declared_prototype_names=declared_prototype_names,
             published_names_by_module=published_names_by_module,
         ).strip()

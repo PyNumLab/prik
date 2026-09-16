@@ -10,6 +10,8 @@ import warnings
 from prik.utilities.strings import create_incremented_string
 
 _NON_IDENTIFIER = re.compile(r"[^0-9A-Za-z_]")
+# Only a case-insensitive source language has no spelling of its own to keep.
+_CASE_INSENSITIVE_SOURCE_LANGUAGES = frozenset({"fortran"})
 _SYMBOL_CONTEXTS = frozenset({"module", "function", "class", "variable", "wrapper"})
 _PARENT_CONTEXTS = frozenset({"module", "function", "class", "loop", "program"})
 
@@ -53,23 +55,41 @@ class GeneratedSymbolRules:
         return folded in self.keywords or any(folded == str(symbol).casefold() for symbol in symbols)
 
 
-def normalize_public_name(raw_name: object) -> NormalizedPublicName:
-    """Convert a source spelling into a valid, lower-case Python identifier."""
+def preserves_source_case(source_language: object) -> bool:
+    """Return whether a source language's own casing is part of a name.
+
+    A case-insensitive language writes the same declaration many ways, so no
+    spelling is the declaration's own and one canonical lower-case form is the
+    Python name. Every other language distinguishes two spellings as two
+    declarations, so the source casing is the name and folding it would both
+    lose the identity and invent collisions the source does not have.
+    """
+    return str(source_language or "").casefold() not in _CASE_INSENSITIVE_SOURCE_LANGUAGES
+
+
+def normalize_public_name(raw_name: object, *, preserve_case: bool = False) -> NormalizedPublicName:
+    """Convert a source spelling into a valid Python identifier.
+
+    The result is lower-cased unless ``preserve_case`` says the source casing
+    is part of the name; see ``preserves_source_case``. Either way the spelling
+    is only adjusted where Python cannot accept it.
+    """
     source = str(raw_name).strip()
-    folded = source.casefold()
-    normalized = _NON_IDENTIFIER.sub("_", folded) or "_"
+    candidate = source if preserve_case else source.casefold()
+    normalized = _NON_IDENTIFIER.sub("_", candidate) or "_"
     if not (normalized[0].isalpha() or normalized[0] == "_"):
         normalized = f"_{normalized}"
     if keyword.iskeyword(normalized):
         normalized = f"{normalized}_"
-    return NormalizedPublicName(normalized, needs_fix=normalized != folded)
+    return NormalizedPublicName(normalized, needs_fix=normalized != candidate)
 
 
 class NamingPolicy:
     """Allocate Python exports and language-safe generated symbols."""
 
-    def __init__(self, *, strict_public_names: bool = False):
+    def __init__(self, *, strict_public_names: bool = False, preserve_case: bool = False):
         self.strict_public_names = strict_public_names
+        self.preserve_case = preserve_case
         self._public_names: dict[tuple[str, ...], dict[str, PublicNameRecord]] = {}
 
     def reserve_public_name(
@@ -81,7 +101,7 @@ class NamingPolicy:
         owner: object | None = None,
     ) -> str:
         """Reserve one public Python name within its namespace."""
-        normalized = normalize_public_name(raw_name)
+        normalized = normalize_public_name(raw_name, preserve_case=self.preserve_case)
         raw_text = str(raw_name)
         namespace_key = tuple(str(part) for part in namespace)
         namespace_text = ".".join(namespace_key) or "<module>"

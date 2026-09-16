@@ -845,10 +845,12 @@ def _write_build_contract_package(
     reshaping the Python surface never needs a separate `generate --pyi` run.
     The package lives in its own directory inside the build output so its
     ``__init__.pyi`` cannot make the build directory look like a Python package.
+    Only a source build writes one, so the declarations are named in Fortran or
+    C and the contract states the Python names this build just published.
     """
     if not source_modules:
         return ()
-    stubs = emit_module_stubs(source_modules)
+    stubs = emit_module_stubs(source_modules, normalize_public_names=True)
     package_dir = output_dir / BUILD_CONTRACT_DIRECTORY_NAME
     package_dir.mkdir(parents=True, exist_ok=True)
     written = []

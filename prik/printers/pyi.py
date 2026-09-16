@@ -19,7 +19,7 @@ import re
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
-from prik.naming.policy import normalize_public_name
+from prik.naming.policy import normalize_public_name, preserves_source_case
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
@@ -88,7 +88,7 @@ _FLAT_DIMENSION_PRINT_SENTINEL = "@prik.Flat"
 class _PyiEmissionContext:
     """Own all state accumulated while rendering one semantic node tree."""
 
-    normalize_fortran_public_names: bool
+    normalize_public_names: bool
     default_array_order: str | None = None
     semantic_class_names: frozenset[str] = frozenset()
     contract_aliases: dict[str, str] = field(default_factory=dict)
@@ -138,6 +138,10 @@ class _PyiEmissionContext:
             self.published_names.setdefault(str(raw_name).casefold(), public_name)
         return public_name
 
+    def normalized(self, raw_name: object) -> str:
+        """Return one name under this emission's naming rule, reserving nothing."""
+        return normalize_public_name(raw_name, preserve_case=self.naming_policy.preserve_case).name
+
     def contract_import(self) -> str:
         """Return the direct import for contract symbols used by this emission."""
         if not self.contract_imports:
@@ -179,21 +183,23 @@ class PyiPrinter(ClassVisitor):
     def __init__(
         self,
         *,
-        normalize_fortran_public_names: bool = False,
+        normalize_public_names: bool = False,
         declared_prototype_names: Iterable[tuple[str, str]] = (),
         published_names_by_module: dict[str, dict[str, str]] | None = None,
     ):
         """Configure public-name normalization for independent emissions.
 
-        Set normalize_fortran_public_names when emitting source-derived Fortran
-        contracts whose public names need Python normalization. Pass
+        Set normalize_public_names when emitting a contract extracted from
+        native source, whose declarations are named in that language rather
+        than in Python. A contract read back from .pyi is already named in
+        Python and keeps every spelling verbatim. Pass
         declared_prototype_names, as ``(module, name)`` pairs, when rendering one
         module alongside others, so an import naming a prototype another
         contract declares is written under the spelling that contract keeps.
         The declaring module is part of that identity because an unrelated
         module may spell an ordinary declaration the same way.
         """
-        self._normalize_fortran_public_names = normalize_fortran_public_names
+        self._normalize_public_names = normalize_public_names
         self._declared_prototype_names = {
             (str(module).casefold(), str(name).casefold()): str(name) for module, name in declared_prototype_names
         }
@@ -233,10 +239,14 @@ class PyiPrinter(ClassVisitor):
         """Build isolated state for one public emission call."""
         if not isinstance(node, SemanticModule):
             return _PyiEmissionContext(
-                normalize_fortran_public_names=self._normalize_fortran_public_names,
+                normalize_public_names=self._normalize_public_names,
             )
+        # Naming is decided by prik.naming for every stage; the emission only
+        # tells it which language the declarations were written in.
+        naming_policy = NamingPolicy(preserve_case=preserves_source_case(node.origin.source_language))
         return _PyiEmissionContext(
-            normalize_fortran_public_names=self._normalize_fortran_public_names,
+            normalize_public_names=self._normalize_public_names,
+            naming_policy=naming_policy,
             default_array_order=self._native_default_array_order(node.origin.source_language),
             semantic_class_names=frozenset(
                 str(cls.name)
@@ -429,13 +439,13 @@ class PyiPrinter(ClassVisitor):
         contract holds.
         """
         target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
-        if not context.normalize_fortran_public_names or candidate.origin.source_language != "fortran":
+        if not context.normalize_public_names:
             return target
         # The specific was named while this same contract was rendered, and a
         # collision may have moved that name aside, so the naming it settled on
         # is what the target has to state.
         published = context.published_names.get(target.casefold())
-        return published or normalize_public_name(target).name
+        return published or context.normalized(target)
 
     def _visit_ProcedureOverloadSet(
         self,
@@ -1592,7 +1602,7 @@ class PyiPrinter(ClassVisitor):
                 self._emit_import(
                     imp,
                     native_source=not module.metadata.get(PYI_LOADED_METADATA),
-                    public_names=context.normalize_fortran_public_names,
+                    public_names=context.normalize_public_names,
                     verbatim_names=verbatim,
                     published_names_by_module=self._published_names_by_module,
                 )
@@ -2303,11 +2313,7 @@ class PyiPrinter(ClassVisitor):
         owner: object | None = None,
     ) -> str:
         """Return the Python-visible callable name to write in the contract."""
-        if (
-            not context.normalize_fortran_public_names
-            or func.name.startswith("__")
-            or func.origin.source_language != "fortran"
-        ):
+        if not context.normalize_public_names or func.name.startswith("__"):
             return func.name
         return context.public_name(
             func.name,
@@ -2321,7 +2327,7 @@ class PyiPrinter(ClassVisitor):
         context: _PyiEmissionContext,
     ) -> str:
         """Return the Python-visible class data-member name."""
-        if not context.normalize_fortran_public_names:
+        if not context.normalize_public_names:
             return variable.name
         return context.public_name(variable.name, category="field", owner=variable)
 
@@ -2331,7 +2337,7 @@ class PyiPrinter(ClassVisitor):
         context: _PyiEmissionContext,
     ) -> str:
         """Return the Python-visible module variable name."""
-        if not context.normalize_fortran_public_names:
+        if not context.normalize_public_names:
             return variable.name
         return context.public_name(variable.name, category="variable", owner=variable)
 
@@ -2891,22 +2897,22 @@ _DEFAULT_PRINTER = PyiPrinter()
 def emit_module(
     module: SemanticModule,
     *,
-    normalize_fortran_public_names: bool = False,
+    normalize_public_names: bool = False,
     declared_prototype_names: Iterable[tuple[str, str]] = (),
     published_names_by_module: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render one semantic module through the shared default printer.
 
     Use this convenience entrypoint for ordinary one-module emission. Set
-    normalize_fortran_public_names to use a printer configured for normalized
-    public names, declared_prototype_names to name the prototypes the modules
-    rendered alongside this one declare, and published_names_by_module to state
-    the spelling each of those modules published its names under. Every path
-    creates a fresh module emission context.
+    normalize_public_names when the module is named in its own source language
+    rather than in Python, declared_prototype_names to name the prototypes the
+    modules rendered alongside this one declare, and published_names_by_module
+    to state the spelling each of those modules published its names under.
+    Every path creates a fresh module emission context.
     """
-    if normalize_fortran_public_names or declared_prototype_names or published_names_by_module:
+    if normalize_public_names or declared_prototype_names or published_names_by_module:
         return PyiPrinter(
-            normalize_fortran_public_names=normalize_fortran_public_names,
+            normalize_public_names=normalize_public_names,
             declared_prototype_names=declared_prototype_names,
             published_names_by_module=published_names_by_module,
         ).emit(module)

@@ -7,6 +7,26 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A wrapper's Python names are decided once, by `prik.naming`, and every stage
+  that writes a name implements that decision. The `.pyi` printer re-derived
+  them instead, and only for Fortran, so a build and the contract describing it
+  could disagree: a C function named for a Python keyword built as `lambda_`
+  while its contract said `def lambda(`, which is not Python at all. A contract
+  now names exactly what the build beside it publishes, and records the source
+  spelling with `@bind` wherever the two differ.
+
+- A C declaration keeps the case it is written in. Folding it is a Fortran rule,
+  correct there because Fortran writes one declaration many ways and none of
+  the spellings is its own. C names each declaration exactly, so folding both
+  lost that name -- `BarBaz` reached Python as `barbaz` -- and invented
+  collisions the source does not have: `Foo` and `foo` are two functions, and
+  they arrived as `foo` and `foo_2` with nothing to say which was which. This
+  changes the published names of existing C wrappers.
+
+- The contract a source build writes beside its artifacts states published
+  Python names. It stated raw source spellings, so a Fortran build wrote
+  `def SCALE_VALUE(` next to a module exposing `scale_value`.
+
 - A re-exported declaration is owned by the contract declaring it, whichever
   order an entry contract imports from. The namespace encountered first owned
   it, so a facade listed before the module it reads from took ownership of a

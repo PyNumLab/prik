@@ -75,7 +75,7 @@ def test_fortran_generated_contracts_emit_python_name_without_binding_the_same_n
         origin=SemanticOrigin(source_language="fortran", source_kind="module"),
     )
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
     assert "def square_r4(" in code
     assert "@bind(" not in code
