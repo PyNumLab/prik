@@ -590,6 +590,33 @@ module reexport_wildcard_mod
   private
   public :: scale_value
 end module reexport_wildcard_mod
+
+module reexport_hop_mod
+  use reexport_facade_mod, only : scale_value
+  implicit none
+  private
+  public :: scale_value
+end module reexport_hop_mod
+
+module reexport_collide_mod
+  implicit none
+contains
+  subroutine lambda(x)
+    integer, intent(inout) :: x
+    x = x + 1
+  end subroutine lambda
+  subroutine lambda_(x)
+    integer, intent(inout) :: x
+    x = x + 100
+  end subroutine lambda_
+end module reexport_collide_mod
+
+module reexport_collide_user_mod
+  use reexport_collide_mod, only : lambda_
+  implicit none
+  private
+  public :: lambda_
+end module reexport_collide_user_mod
 """
 
 
@@ -671,3 +698,43 @@ def test_publishing_a_name_a_plain_use_brought_in_republishes_only_that_name(tmp
     assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
     # The same plain `use` without a `public` statement publishes nothing.
     assert not hasattr(module, "reexport_default_mod") or "scale_value" not in dir(module.reexport_default_mod)
+
+
+def test_publishing_an_already_published_import_follows_it_to_its_declaration(tmp_path: Path):
+    """A published name may come from a module that published it in turn.
+
+    The module a `use` reads is not always the one declaring the entity, so
+    each hop is followed until the declaration itself is reached; stopping at
+    the first module leaves the name looking like nothing at all.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_hop_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_hop_mod.scale_value(np.int32(7)) == np.int32(14)
+
+
+def test_published_import_binds_the_declaration_a_collision_moved_aside(tmp_path: Path):
+    """Two source names may want one Python name, and only one may have it.
+
+    A module holding both `lambda` and `lambda_` publishes them as `lambda_`
+    and `lambda__2`, so a module publishing the second reaches the name the
+    declaring module settled on rather than the one its source resembles.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_collide_mod.lambda_(np.int32(0)) == np.int32(1)
+    assert module.reexport_collide_mod.lambda__2(np.int32(0)) == np.int32(100)
+    assert module.reexport_collide_user_mod.lambda_ is module.reexport_collide_mod.lambda__2
+    assert module.reexport_collide_user_mod.lambda_(np.int32(0)) == np.int32(100)

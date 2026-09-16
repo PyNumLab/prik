@@ -332,7 +332,12 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
     ]
     _assert_combined_runtime(source_module)
     _assert_combined_runtime(generated_module)
-    assert generated_module.box_ops.box is generated_module.shared_types.box
+    # `box_ops` imports the type to express its own signature and publishes no
+    # name of its own, so neither route adds one. The type stays where it is
+    # declared, and both builds agree on that.
+    assert not hasattr(generated_module.box_ops, "box")
+    assert not hasattr(source_module.box_ops, "box")
+    assert generated_module.shared_types.box is not None
 
 
 def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):

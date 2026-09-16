@@ -7,6 +7,21 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A published name is followed to the module declaring it, however many
+  modules published it along the way. Reading only the module a `use` names
+  left a name published twice over looking like nothing at all, and the
+  re-export was dropped.
+
+- A generated contract states a re-export by aliasing the name to itself, the
+  way a stub marks anything it publishes, so an import written to express a
+  declaration is no longer republished. Source and contract builds agree on
+  what a module exports; a package entry contract still selects its surface by
+  importing, which is what such a contract is for.
+
+- A generic declared inside a procedure is no longer read as one of its
+  module's own, and an import binds the name a collision made its declaring
+  contract use rather than one derived from the source spelling.
+
 - Publishing an imported name re-exports it at runtime only where the name is
   one Python object to bind. A module publishing an imported callback prototype
   states where a signature comes from, and a signature is not an object, so

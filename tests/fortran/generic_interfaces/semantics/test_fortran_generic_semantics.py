@@ -210,3 +210,41 @@ end module shape_mod
     assert [(item.name, [proc.name for proc in item.procedures]) for item in shape.overload_sets] == [
         ("area", ["area_integer", "area_real"])
     ]
+
+
+def test_a_generic_declared_inside_a_procedure_is_not_a_module_generic():
+    """A generic belongs to the scope declaring it, and a procedure is a scope.
+
+    An interface written inside a procedure names a generic of that procedure.
+    Reading it as one of the module's own would publish it, and two procedures
+    naming one generic would each answer for the other.
+    """
+    source = """
+module scoped_mod
+  implicit none
+contains
+  subroutine first(x)
+    real(8), intent(in) :: x
+    interface local_generic
+      subroutine first_impl(a)
+        real(8), intent(in) :: a
+      end subroutine first_impl
+    end interface
+    call local_generic(x)
+  end subroutine first
+
+  subroutine second(n)
+    integer, intent(in) :: n
+    interface local_generic
+      subroutine second_impl(b)
+        integer, intent(in) :: b
+      end subroutine second_impl
+    end interface
+    call local_generic(n)
+  end subroutine second
+end module scoped_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    assert module.overload_sets == []

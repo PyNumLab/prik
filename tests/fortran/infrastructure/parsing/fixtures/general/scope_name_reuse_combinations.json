@@ -504,7 +504,11 @@
             "do_work_r",
             "do_work_l"
           ],
-          "abstract": false
+          "abstract": false,
+          "declaring_scope_kind": "module",
+          "declaring_scope_path": [
+            "scope_name_reuse_combinations"
+          ]
         }
       ],
       "enums": [],
@@ -1024,7 +1028,11 @@
             "do_work_r",
             "do_work_l"
           ],
-          "abstract": false
+          "abstract": false,
+          "declaring_scope_kind": "module",
+          "declaring_scope_path": [
+            "scope_name_reuse_combinations"
+          ]
         }
       ],
       "enums": [],

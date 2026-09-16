@@ -1940,10 +1940,7 @@ class FortranParser(ClassVisitor):
         """Collect interfaces and attach module-owned blocks to their owners."""
         interfaces = self._merged_generic_interfaces(
             [
-                (
-                    self._visit(unit, parent_scope=scope, filename=filename),
-                    self._interface_scope_identity(scope),
-                )
+                self._interface_with_scope(unit, scope, filename)
                 for unit, scope in self._collect_interface_source_units(lines, filename)
             ]
         )
@@ -1956,6 +1953,19 @@ class FortranParser(ClassVisitor):
                 iface for iface in interfaces if iface.module and iface.module.lower() == submodule.name.lower()
             ]
         return [iface for iface in interfaces if iface.module is None]
+
+    def _interface_with_scope(
+        self,
+        unit: SourceUnit,
+        scope: _ParserScope,
+        filename: str | None,
+    ) -> tuple[FortranInterface, tuple[tuple[str, str], ...]]:
+        """Parse one interface block and record the scope that declares it."""
+        interface = self._visit(unit, parent_scope=scope, filename=filename)
+        identity = self._interface_scope_identity(scope)
+        interface.declaring_scope_kind = identity[-1][0] if identity else "file"
+        interface.declaring_scope_path = [name for _kind, name in identity if name]
+        return interface, identity
 
     @staticmethod
     def _interface_scope_identity(scope: _ParserScope | None) -> tuple[tuple[str, str], ...]:

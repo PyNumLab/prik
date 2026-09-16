@@ -367,6 +367,17 @@ class FortranInterface:
     specific_procedures: list[str] = field(default_factory=list)
     abstract: bool = False
 
+    declaring_scope_kind: str = "module"
+    """Kind of scope declaring this block: file, module, submodule or procedure."""
+
+    declaring_scope_path: list[str] = field(default_factory=list)
+    """Names of the scopes enclosing this block, outermost first.
+
+    A generic belongs to the scope declaring it, so a block written inside a
+    procedure names a generic of that procedure and not of its module. Keeping
+    the owner lets later stages read only the generics a module itself declares.
+    """
+
 
 @dataclass
 class FortranEnumerator:

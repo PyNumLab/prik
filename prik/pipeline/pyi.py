@@ -16,7 +16,7 @@ from pathlib import Path
 
 from prik.parsers.pyi import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
-from prik.printers.pyi import emit_module
+from prik.printers.pyi import PyiPrinter, emit_module
 from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _module_semantic_types
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.semantics.pyi2ir import convert_pyi_to_ir, reconcile_external_type_refs
@@ -146,11 +146,18 @@ def emit_module_stubs(
         for reexport in module.reexports
         if reexport.entity_kind == "prototype"
     }
+    # What a contract publishes a name under is settled by rendering it, so
+    # every module is named once before any of them writes an import.
+    naming_printer = PyiPrinter(normalize_fortran_public_names=normalize_fortran_public_names)
+    published_names_by_module = {
+        module_name: naming_printer.published_names(module) for module_name, module in emitted_modules.items()
+    }
     return {
         module_name: emit_module(
             module,
             normalize_fortran_public_names=normalize_fortran_public_names,
             declared_prototype_names=declared_prototype_names,
+            published_names_by_module=published_names_by_module,
         ).strip()
         for module_name, module in emitted_modules.items()
     }

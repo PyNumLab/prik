@@ -771,3 +771,125 @@ end module consumer_mod
     assert "obj: Final[Int32]" in stubs["values_mod"]
     assert "from .values_mod import obj" in stubs["consumer_mod"]
     assert "import OBJ" not in stubs["consumer_mod"]
+
+
+def test_prototype_import_uses_the_declared_spelling_whatever_case_names_it():
+    """Fortran reaches a prototype without regard to case; a contract does not.
+
+    A module may write `use callback_mod, only : obj` for a prototype declared
+    as `OBJ`, and the annotation then names it that way. The import binds the
+    declared spelling under the name this contract uses.
+    """
+    callbacks = parse_fortran_source("""
+module callback_mod
+implicit none
+public :: OBJ
+abstract interface
+subroutine OBJ(x)
+implicit none
+real(8), intent(in) :: x
+end subroutine OBJ
+end interface
+end module callback_mod
+""")
+    user = parse_fortran_source("""
+module user_mod
+use callback_mod, only : obj
+implicit none
+contains
+subroutine run(f, v)
+procedure(obj) :: f
+real(8), intent(in) :: v
+end subroutine run
+end module user_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (callbacks, user)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def OBJ(" in stubs["callback_mod"]
+    assert "from .callback_mod import OBJ as obj" in stubs["user_mod"]
+    assert "f: obj" in stubs["user_mod"]
+
+
+def test_import_binds_the_name_a_collision_made_the_declaring_contract_use():
+    """A collision moves a name aside, and the import follows it there."""
+    home = parse_fortran_source("""
+module collide_home
+implicit none
+contains
+subroutine lambda(x)
+integer, intent(inout) :: x
+end subroutine lambda
+subroutine lambda_(x)
+integer, intent(inout) :: x
+end subroutine lambda_
+end module collide_home
+""")
+    user = parse_fortran_source("""
+module collide_user
+use collide_home, only : lambda_
+implicit none
+private
+public :: lambda_
+end module collide_user
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (home, user)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "def lambda__2(" in stubs["collide_home"]
+    assert "from .collide_home import lambda__2 as lambda_" in stubs["collide_user"]
+
+
+def test_a_contract_states_a_reexport_by_aliasing_the_name_it_publishes():
+    """An import expresses a declaration; an alias publishes a name.
+
+    A module publishing an imported entity writes it aliased to itself, the way
+    a stub marks anything it re-exports, so a contract reading this one can tell
+    the two apart. An import written only to name a type states no such intent.
+    """
+    home = parse_fortran_source("""
+module publish_home
+implicit none
+type :: box
+integer :: value
+end type box
+contains
+subroutine scale_value(x)
+integer, intent(inout) :: x
+end subroutine scale_value
+end module publish_home
+""")
+    facade = parse_fortran_source("""
+module publish_facade
+use publish_home, only : scale_value
+implicit none
+private
+public :: scale_value
+end module publish_facade
+""")
+    consumer = parse_fortran_source("""
+module publish_consumer
+use publish_home, only : box
+implicit none
+contains
+integer function box_value(item) result(out)
+type(box), intent(in) :: item
+out = item%value
+end function box_value
+end module publish_consumer
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (home, facade, consumer)],
+        normalize_fortran_public_names=True,
+    )
+
+    assert "from .publish_home import scale_value as scale_value" in stubs["publish_facade"]
+    assert "from .publish_home import box\n" in stubs["publish_consumer"]
+    assert "box as box" not in stubs["publish_consumer"]

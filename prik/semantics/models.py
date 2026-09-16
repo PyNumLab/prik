@@ -690,11 +690,11 @@ class SemanticReexport:
     """What the published name declares where it comes from.
 
     Re-export reaches Python as a namespace alias only for an entity that is one
-    Python object, which today means an ordinary procedure. Every other kind --
-    a callback prototype, a module variable whose state stays live, a derived
-    type, a generic -- keeps to the semantic and contract-import paths that
-    already carry it, and records its kind here rather than an alias that would
-    misrepresent it.
+    Python object, which today means an ordinary procedure or a derived type.
+    Every other kind -- a callback prototype, a module variable whose state
+    stays live, a generic -- keeps to the semantic and contract-import paths
+    that already carry it, and records its kind here rather than an alias that
+    would misrepresent it.
     """
 
 

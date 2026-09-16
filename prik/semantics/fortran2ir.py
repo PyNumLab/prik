@@ -1564,17 +1564,58 @@ class FortranToIRConverter(ClassVisitor):
                 named.add(local_name.casefold())
                 if local_name.casefold() in declared or local_name.casefold() not in published:
                     continue
+                kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, mapping.source)
                 reexports.append(
                     SemanticReexport(
                         local_name,
-                        module_name,
-                        mapping.source,
+                        origin_module,
+                        origin_name,
                         module.name,
-                        entity_kind=cls._reexported_entity_kind(index.get(module_name.casefold()), mapping.source),
+                        entity_kind=kind,
                     )
                 )
         reexports.extend(cls._wildcard_reexports(module, index, declared=declared, published=published, named=named))
         return reexports
+
+    @classmethod
+    def _resolve_reexport_origin(
+        cls,
+        index: dict[str, FortranModule],
+        module_name: str,
+        source_name: str,
+        seen: frozenset[tuple[str, str]] = frozenset(),
+    ) -> tuple[str, str, str]:
+        """Return where a published name is declared, following every hop.
+
+        A module may publish a name it imported from a module that published it
+        in turn, so the module a ``use`` reads is not always the one declaring
+        the entity. Following the chain reports the declaration itself: its
+        kind, the module holding it, and the name it is declared under. A name
+        reached through no declaration, or through a cycle, stays unknown.
+        """
+        key = (module_name.casefold(), source_name.casefold())
+        declaring = index.get(module_name.casefold())
+        if declaring is None or key in seen:
+            return "unknown", module_name, source_name
+        kind = cls._declared_entity_kind(declaring, source_name)
+        if kind != "unknown":
+            return kind, declaring.name, source_name
+        seen = seen | {key}
+        for used_name, mappings in declaring.uses.items():
+            for mapping in mappings:
+                if mapping.local_name.casefold() == source_name.casefold():
+                    return cls._resolve_reexport_origin(index, used_name, mapping.source, seen)
+        # A `use` naming no list carries every public name of what it reads.
+        resolved = [
+            origin
+            for used_name, mappings in declaring.uses.items()
+            if not mappings
+            for origin in (cls._resolve_reexport_origin(index, used_name, source_name, seen),)
+            if origin[0] != "unknown"
+        ]
+        if len(resolved) == 1:
+            return resolved[0]
+        return "unknown", module_name, source_name
 
     @classmethod
     def _wildcard_reexports(
@@ -1606,17 +1647,20 @@ class FortranToIRConverter(ClassVisitor):
             if name in declared or name in named:
                 continue
             origins = [
-                (used, kind) for used in wildcard if (kind := cls._reexported_entity_kind(used, name)) != "unknown"
+                origin
+                for used in wildcard
+                for origin in (cls._resolve_reexport_origin(index, used.name, name),)
+                if origin[0] != "unknown"
             ]
             if len(origins) != 1:
                 continue
-            used, kind = origins[0]
-            reexports.append(SemanticReexport(name, used.name, name, module.name, entity_kind=kind))
+            kind, origin_module, origin_name = origins[0]
+            reexports.append(SemanticReexport(name, origin_module, origin_name, module.name, entity_kind=kind))
         return reexports
 
     @staticmethod
-    def _reexported_entity_kind(declaring: FortranModule | None, source_name: str) -> str:
-        """Return what one published name declares in the module it comes from."""
+    def _declared_entity_kind(declaring: FortranModule | None, source_name: str) -> str:
+        """Return what one name declares in the module that holds its declaration."""
         if declaring is None:
             return "unknown"
         key = source_name.casefold()
@@ -2661,6 +2705,10 @@ class FortranToIRConverter(ClassVisitor):
         class_map = {semantic_class.name.casefold(): semantic_class for semantic_class in semantic_classes}
         for interface in module.interfaces:
             if not interface.name or interface.abstract:
+                continue
+            if interface.declaring_scope_kind == "procedure":
+                # A generic written inside a procedure belongs to that
+                # procedure, so it is never part of the module's own interface.
                 continue
             inline_lookup = {
                 signature.name.casefold(): self.visit(

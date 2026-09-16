@@ -585,6 +585,7 @@ class WrapperPlanner(ClassVisitor):
         exports no such object and there is nothing an alias could bind.
         """
         wanted = source_name.casefold()
+        published: str | None = None
         for declaration in (*module.functions, *module.classes):
             if getattr(declaration, "visibility", "public") != "public":
                 continue
@@ -594,9 +595,15 @@ class WrapperPlanner(ClassVisitor):
                 name = export.get("name")
                 if not name or tuple(export.get("namespace") or ()) != namespace:
                     continue
-                if native == wanted or str(name).casefold() == wanted:
+                # A source spelling identifies the declaration itself, while a
+                # published one identifies what a namespace called it. Only a
+                # collision makes the two name different declarations, and then
+                # the source spelling is the one that came from Fortran.
+                if native == wanted:
                     return str(name)
-        return None
+                if str(name).casefold() == wanted:
+                    published = published or str(name)
+        return published
 
     def _namespace_plan(
         self,
