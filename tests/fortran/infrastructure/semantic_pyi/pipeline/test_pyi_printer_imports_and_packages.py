@@ -3,6 +3,7 @@
 import pytest
 import prik.pipeline.pyi as pyi_pipeline
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.printers.pyi import published_name
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -984,3 +985,20 @@ end module state_facade
     ]
     assert "from .state_home import counter, bump" in stubs["state_facade"]
     assert stubs["state_facade"].rstrip().endswith('__all__ = ["counter", "bump"]')
+
+
+def test_two_spellings_a_case_sensitive_source_keeps_apart_publish_separately():
+    """A contract records each source name as written, so neither displaces the other.
+
+    Keying what a contract published by a folded name loses one of a pair only
+    a case-sensitive source distinguishes, and an importer then binds whichever
+    was recorded first.
+    """
+    published = {"Foo": "Foo", "foo": "foo", "SCALE": "scale"}
+
+    assert published_name(published, "Foo") == "Foo"
+    assert published_name(published, "foo") == "foo"
+    # A case-insensitive source still reaches its name under any spelling.
+    assert published_name(published, "scale") == "scale"
+    assert published_name(published, "Scale") == "scale"
+    assert published_name(published, "missing") is None

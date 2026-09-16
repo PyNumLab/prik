@@ -172,7 +172,7 @@ class _PyiEmissionContext:
     def publish(self, raw_name: object, public_name: str) -> str:
         """Record the spelling this contract published one name under."""
         if not self.public_namespace:
-            self.published_names.setdefault(str(raw_name).casefold(), public_name)
+            self.published_names.setdefault(str(raw_name), public_name)
         return public_name
 
     def normalized(self, raw_name: object) -> str:
@@ -195,6 +195,24 @@ class _PyiEmissionContext:
         if isinstance(owner, str | int | tuple):
             return owner
         return id(owner)
+
+
+def published_name(published: dict[str, str] | None, source: object) -> str | None:
+    """Return the spelling a contract published one source name under.
+
+    A contract records the name exactly as its source spells it, so two
+    declarations a case-sensitive language keeps apart keep separate entries.
+    A case-insensitive source may still ask for either spelling, which the
+    fallback answers once no exact entry does.
+    """
+    if not published:
+        return None
+    wanted = str(source)
+    exact = published.get(wanted)
+    if exact is not None:
+        return exact
+    folded = wanted.casefold()
+    return next((value for key, value in published.items() if key.casefold() == folded), None)
 
 
 # Publication of these kinds has no runtime form yet, so a generated contract
@@ -266,10 +284,10 @@ class PyiPrinter(ClassVisitor):
         self._visit(module, context)
         names = dict(context.published_names)
         for prototype in module.prototypes:
-            names[str(prototype.name).casefold()] = str(prototype.name)
+            names[str(prototype.name)] = str(prototype.name)
         for reexport in module.reexports:
             if reexport.entity_kind == "prototype":
-                names[str(reexport.local_name).casefold()] = str(reexport.local_name)
+                names[str(reexport.local_name)] = str(reexport.local_name)
         return names
 
     def _emission_context(self, node) -> _PyiEmissionContext:
@@ -541,7 +559,7 @@ class PyiPrinter(ClassVisitor):
         # The specific was named while this same contract was rendered, and a
         # collision may have moved that name aside, so the naming it settled on
         # is what the target has to state.
-        published = context.published_names.get(target.casefold())
+        published = published_name(context.published_names, target)
         return published or context.normalized(target)
 
     def _visit_ProcedureOverloadSet(
@@ -2100,7 +2118,7 @@ class PyiPrinter(ClassVisitor):
         # published name aside.
         source = PyiPrinter._public_import_name(item.source, public_names=public_names)
         if public_names and published_names:
-            source = published_names.get(item.source.casefold(), source)
+            source = published_name(published_names, item.source) or source
         # A name this module publishes is bound under the name export policy
         # completed for it, which a collision with one of this module's own
         # declarations may have moved aside.
