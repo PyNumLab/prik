@@ -7,6 +7,22 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A re-exported declaration is owned by the contract declaring it, whichever
+  order an entry contract imports from. The namespace encountered first owned
+  it, so a facade listed before the module it reads from took ownership of a
+  procedure it only republishes.
+
+- A wildcard import reads the surface its dependency publishes, where it used to
+  take every name that dependency held. A withheld name stays reachable by
+  asking for it, which a contract needing it to express a declaration -- or
+  meaning to publish it itself -- still does.
+
+- A contract publishes only what a build of the same Fortran source can. A
+  module variable and a generic reach Python in the namespace declaring them,
+  so a generated contract states neither as a re-export, and a contract asking
+  for one is refused rather than given a second projection the source route
+  has no way to produce.
+
 - A contract's `__all__` names its sub-namespaces as well, so leaving one off
   keeps the package from exposing it. A generated entry contract states the
   modules it imports for that reason, and a contract stating no list still

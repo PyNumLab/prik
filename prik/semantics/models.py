@@ -716,7 +716,12 @@ class SemanticModule:
     imports: list[str | SemanticImport] = field(default_factory=list)
 
     exported_names: list[str] | None = None
-    """Every name this module publishes, or ``None`` when it states no list.
+    """This module's public symbol surface, or ``None`` when it states no list.
+
+    A published symbol is not always one Python object: a prototype names a
+    callback signature that contracts refer to and nothing exposes at runtime,
+    while a procedure names a callable. What the name declares decides how
+    publishing it appears.
 
     A contract states its whole public surface here, so a name it imports is
     published when it is listed and stays a dependency when it is not. The list

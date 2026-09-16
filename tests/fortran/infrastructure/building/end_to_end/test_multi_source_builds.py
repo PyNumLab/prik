@@ -456,3 +456,81 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
         assert module.second_api.double_value(np.int32(4)) == 10
     finally:
         sys.path.remove(str(tmp_path))
+
+
+REEXPORT_OWNERSHIP_SOURCE = """\
+module owner_mod
+  implicit none
+contains
+  subroutine scale_twice(value, scaled)
+    integer, intent(in) :: value
+    integer, intent(out) :: scaled
+    scaled = value * 2
+  end subroutine scale_twice
+end module owner_mod
+
+module facade_mod
+  use owner_mod, only : scale_twice
+  implicit none
+  private
+  public :: scale_twice
+end module facade_mod
+
+module renaming_mod
+  use owner_mod, only : doubled => scale_twice
+  implicit none
+  private
+  public :: doubled
+end module renaming_mod
+"""
+
+
+def _entry_listing(package: Path, modules: list[str]) -> None:
+    """Rewrite a package entry so it imports its modules in one stated order."""
+    lines = "".join(f"from . import {name}\n" for name in modules)
+    stated = ", ".join(f'"{name}"' for name in modules)
+    (package / "__init__.pyi").write_text(f"{lines}\n__all__ = [{stated}]\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "order",
+    [
+        pytest.param(["owner_mod", "facade_mod", "renaming_mod"], id="declaration-first"),
+        pytest.param(["renaming_mod", "facade_mod", "owner_mod"], id="declaration-last"),
+    ],
+)
+def test_reexport_is_owned_by_its_declaring_contract_whatever_the_entry_lists_first(
+    order: list[str],
+    tmp_path: Path,
+):
+    """The contract declaring a procedure owns it, whichever entry names it first.
+
+    An entry composes a package by importing from it, and the order it does so
+    is not a statement about where anything is declared. Reading ownership from
+    that order lets a facade own what it only republishes, and the wrapper then
+    belongs to the wrong namespace.
+    """
+    source = tmp_path / "ownership.f90"
+    source.write_text(REEXPORT_OWNERSHIP_SOURCE, encoding="utf-8")
+    package = tmp_path / "contracts"
+    subprocess.run(
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(package)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    entry = package / "__init__.pyi"
+    _entry_listing(package, order)
+
+    native_objects = _compile_native_objects((source,), tmp_path / "native")
+    module, _payload = _build_contract(entry, native_objects, tmp_path / "build", output_name="ownership")
+
+    assert module.facade_mod.scale_twice is module.owner_mod.scale_twice
+    assert module.renaming_mod.doubled is module.owner_mod.scale_twice
+    assert module.facade_mod.scale_twice(np.int32(21)) == np.int32(42)
+
+    # One wrapper defines the procedure, and the declaring namespace holds it.
+    generated = next((tmp_path / "build").rglob("*_wrapper.c")).read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_twice") == 1
+    assert 'prik_bind_namespace_alias(namespace_facade_mod, "scale_twice", namespace_owner_mod' in generated
+    assert 'prik_bind_namespace_alias(namespace_renaming_mod, "doubled", namespace_owner_mod' in generated

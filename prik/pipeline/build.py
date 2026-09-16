@@ -2074,11 +2074,15 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
 
     tree = _pyi_export_tree(entry, modules_by_path, cache={}, pending=set())
     _record_pyi_exports(tree)
+    namespace_by_contract = _namespace_by_contract(tree, entry)
     # A declaration published from more than one namespace is one entity, so
-    # the namespaces after the first bind what the first already exports rather
-    # than each wrapping the native declaration again. A rename changes the
-    # name a namespace binds, never the object behind it.
-    for module in modules_by_path.values():
+    # the namespaces beyond its own bind what its own already exports rather
+    # than each wrapping the native declaration again. Which namespace owns it
+    # is settled by the contract declaring it, never by the order an entry
+    # happens to import from. A rename changes the name a namespace binds,
+    # never the object behind it.
+    for path, module in modules_by_path.items():
+        home = namespace_by_contract.get(path)
         for declaration, entity_kind in (
             *((item, "derived_type") for item in module.classes),
             *((item, "procedure") for item in module.functions),
@@ -2086,9 +2090,13 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
             exports = _declaration_exports(declaration)
             if len(exports) < 2:
                 continue
-            primary = exports[0]
+            primary = next(
+                (export for export in exports if tuple(export["namespace"]) == home),
+                exports[0],
+            )
+            aliases = [export for export in exports if export is not primary]
             source_namespace = ".".join(primary["namespace"])
-            for alias in exports[1:]:
+            for alias in aliases:
                 module.reexports.append(
                     SemanticReexport(
                         local_name=alias["name"],
@@ -2099,6 +2107,7 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
                     )
                 )
             exports[:] = [primary]
+        _reject_unsupported_republication(path, module)
 
 
 def _pyi_export_tree(
@@ -2176,7 +2185,11 @@ def _merge_relative_import(
         dependency_tree = _required_export_tree(dependency, modules_by_path, cache, pending)
         for item in semantic_import.items:
             if item.source == "*":
+                # A wildcard takes the surface the dependency publishes. A name
+                # it withheld is still reachable, but only by asking for it.
                 for name, child in dependency_tree.children.items():
+                    if name in dependency_tree.unpublished:
+                        continue
                     _merge_export_child(tree, name, child, origin=path)
                 continue
             if item.source not in dependency_tree.children:
@@ -2237,6 +2250,51 @@ def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, 
         f"Conflicting .pyi exports for {name!r} while resolving {origin}: "
         f"existing from {existing_origins}; new from {new_origins}"
     )
+
+
+def _reject_unsupported_republication(path: Path, module: SemanticModule) -> None:
+    """Refuse a published name whose kind reaches Python through one namespace.
+
+    A module variable holds state that stays live where it is declared, and a
+    generic is a dispatch surface rather than one object, so neither can be
+    bound a second time. A source build publishes neither, and a contract that
+    asks for it says what no build can do rather than quietly differing.
+    """
+    for declaration, kind in (
+        *((item, "module variable") for item in module.variables),
+        *((item, "generic") for item in module.overload_sets),
+    ):
+        exports = _declaration_exports(declaration)
+        if len(exports) < 2:
+            continue
+        namespaces = ", ".join(".".join(export["namespace"]) or "<root>" for export in exports)
+        raise ValueError(
+            f"{path}: {kind} {declaration.name!r} is published by more than one contract "
+            f"({namespaces}); republishing this kind is not supported"
+        )
+
+
+def _namespace_by_contract(tree: _PyiExportNode, entry: Path) -> dict[Path, tuple[str, ...]]:
+    """Return the Python namespace each contract's own declarations live in.
+
+    A contract publishes its declarations in one namespace of its own, and any
+    other namespace publishing them is republishing what that one owns. The
+    entry contract owns the package root; every other namespace node names the
+    contract it was built from.
+    """
+    namespaces: dict[Path, tuple[str, ...]] = {entry: ()}
+
+    def walk(node: _PyiExportNode, namespace: tuple[str, ...]) -> None:
+        for name, child in node.children.items():
+            if not child.children:
+                continue
+            child_namespace = (*namespace, name)
+            for origin in child.origins:
+                namespaces.setdefault(origin, child_namespace)
+            walk(child, child_namespace)
+
+    walk(tree, ())
+    return namespaces
 
 
 def _record_pyi_exports(tree: _PyiExportNode, namespace: tuple[str, ...] = ()) -> None:

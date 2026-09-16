@@ -12,6 +12,7 @@ from prik.pipeline.pyi import (
     opaque_dependency_modules,
     pyi_text_to_semantic_module as _parse_pyi_text,
 )
+from prik.semantics import fortran_file_to_semantic_modules
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
     SemanticArgument,
@@ -922,3 +923,41 @@ end module kinds_mod
     assert [reexport.origin_module for reexport in module.reexports] == ["iso_fortran_env", "iso_fortran_env"]
     assert "iso_fortran_env" not in code
     assert '__all__ = ["rate"]' in code
+
+
+def test_generated_contract_omits_a_republication_no_build_can_expose():
+    """A contract states only what publishing can actually reach.
+
+    A module variable holds state that stays live where it is declared, and a
+    generic is a dispatch surface rather than one object, so neither reaches a
+    second namespace. A source build publishes neither, and a contract written
+    from that source claims neither, which keeps the two builds agreeing.
+    """
+    parsed = parse_fortran_source("""
+module state_home
+implicit none
+integer, save :: counter = 7
+contains
+subroutine bump()
+counter = counter + 1
+end subroutine bump
+end module state_home
+
+module state_facade
+use state_home, only : counter, bump
+implicit none
+private
+public :: counter, bump
+end module state_facade
+""")
+
+    modules = fortran_file_to_semantic_modules(parsed)
+    facade = next(module for module in modules if module.name == "state_facade")
+    stubs = emit_module_stubs(modules, normalize_fortran_public_names=True)
+
+    assert sorted((item.local_name, item.entity_kind) for item in facade.reexports) == [
+        ("bump", "procedure"),
+        ("counter", "variable"),
+    ]
+    # The procedure is publishable; the live variable stays where it is declared.
+    assert stubs["state_facade"].rstrip().endswith('__all__ = ["bump"]')

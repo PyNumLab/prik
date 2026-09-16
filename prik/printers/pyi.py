@@ -156,6 +156,11 @@ class _PyiEmissionContext:
         return id(owner)
 
 
+# Publication of these kinds has no runtime form yet, so a generated contract
+# does not claim it.
+_UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"variable", "generic"})
+
+
 class PyiPrinter(ClassVisitor):
     """Emit editable Python stub text from semantic IR models.
 
@@ -633,6 +638,11 @@ class PyiPrinter(ClassVisitor):
         names.extend(str(overload_set.name) for overload_set in module.overload_sets)
         for reexport in module.reexports:
             if self._is_source_kind_import(str(reexport.origin_module)):
+                continue
+            if reexport.entity_kind in _UNPUBLISHABLE_REEXPORT_KINDS:
+                # A live module variable and a generic dispatcher have no single
+                # object another namespace can bind, so a source build publishes
+                # neither and a contract generated from it states neither.
                 continue
             # A prototype keeps its declared spelling wherever it is written, so
             # the name published for it is the one its import binds.

@@ -193,11 +193,27 @@ def area(item: box) -> Int32: ...
 __all__ = ["area"]
 ```
 
-The list is the whole public surface, not only the names a contract re-exports.
-It settles a question import syntax cannot answer, because one import serves two
-purposes: naming a type a declaration needs, and publishing an entity this
-contract means to expose. `from .shapes_mod import box as crate` reads the same
-whether `crate` avoids a collision or is published under a new name.
+The list states the contract's complete public symbol surface, not only the names
+it re-exports. It settles a question import syntax cannot answer, because one
+import serves two purposes: naming a type a declaration needs, and publishing an
+entity this contract means to expose. `from .shapes_mod import box as crate`
+reads the same whether `crate` avoids a collision or is published under a new
+name.
+
+A published symbol is not always a Python object the extension exposes. What the
+name declares decides how publishing it appears:
+
+| Published symbol | How it appears |
+| --- | --- |
+| Procedure | A runtime callable. |
+| Derived type | A runtime type. |
+| Package sub-namespace | A runtime namespace attribute. |
+| Prototype | A callback signature contracts name, with no runtime object. |
+| Module variable | Only in the namespace declaring it; republishing is unsupported. |
+| Generic interface | Only in the namespace declaring it; republishing is unsupported. |
+
+A name whose kind cannot reach a second namespace is refused rather than
+published differently from a build of the same Fortran source.
 
 PRIK writes the list into every generated contract, holding what the Fortran
 source publishes: the module's own public declarations, and any imported name it
@@ -211,7 +227,24 @@ names in a `public` statement. Edit it freely.
 | Remove `__all__` | Publishes everything the contract reaches, its declarations and its imports alike. |
 
 A name in `__all__` must be one the contract declares or imports; naming
-anything else is rejected before wrapper planning.
+anything else is rejected before wrapper planning, so renaming a declaration
+means renaming what the contract publishes.
+
+A wildcard import reads the surface its dependency publishes:
+
+```python
+from .shapes_mod import *
+```
+
+brings in what `shapes_mod` states in its own `__all__` and nothing it withheld.
+A withheld name stays reachable by asking for it, which a contract needing it to
+express a declaration -- or meaning to publish it itself -- still can:
+
+```python
+from .shapes_mod import crate
+
+__all__ = ["crate"]
+```
 
 ### Contract Import Graph
 
