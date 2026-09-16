@@ -6,7 +6,9 @@ such a claim must ask an installed interpreter. Building and installing the
 wheel once per session keeps that evidence affordable.
 """
 
+import importlib
 import os
+import site
 import subprocess
 import sys
 import venv
@@ -86,7 +88,35 @@ def installed_prik_python() -> Path:
     )
     if install.returncode != 0:
         pytest.fail(f"installing the built wheel failed:\n{install.stderr.strip() or install.stdout.strip()}")
+    _share_runtime_dependencies(environment_dir)
     return installed_python
+
+
+def _share_runtime_dependencies(environment_dir: Path) -> None:
+    """Make the wheel's runtime dependencies importable in the new environment.
+
+    The wheel is installed without its dependencies, so the environment reads
+    them from the interpreter that built it. ``system_site_packages`` shares
+    only the interpreter's system directories, and the commands under test run
+    isolated, which drops the per-user directory a development install commonly
+    writes to. The directories holding those dependencies are named here so the
+    environment resolves them wherever this interpreter found them.
+    """
+    required = ("immutabledict", "numpy", "filelock")
+    roots = {
+        str(Path(module.__file__).resolve().parent.parent)
+        for module in (importlib.import_module(name) for name in required)
+        if module.__file__
+    }
+    site_packages = tuple(Path(environment_dir).glob("lib/python*/site-packages"))
+    if not site_packages:
+        return
+    shared = [root for root in sorted(roots) if root not in _DEFAULT_SITE_DIRECTORIES]
+    if shared:
+        (site_packages[0] / "_prik_runtime_dependencies.pth").write_text("\n".join(shared) + "\n", encoding="utf-8")
+
+
+_DEFAULT_SITE_DIRECTORIES = frozenset(site.getsitepackages())
 
 
 def installed_run(*command: str) -> str:
