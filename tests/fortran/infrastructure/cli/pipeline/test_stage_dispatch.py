@@ -326,7 +326,9 @@ end module physics
     assert prik_cli.main() == 0
 
     package = tmp_path / "physics"
-    assert (package / "__init__.pyi").read_text(encoding="utf-8") == "from . import physics\n"
+    assert (package / "__init__.pyi").read_text(encoding="utf-8") == (
+        'from . import physics\n\n__all__ = ["physics"]\n'
+    )
     assert (package / "types_mod.pyi").read_text(
         encoding="utf-8"
     ) == 'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]\n'

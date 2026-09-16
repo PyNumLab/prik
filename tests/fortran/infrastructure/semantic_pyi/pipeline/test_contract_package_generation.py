@@ -86,7 +86,7 @@ def test_same_named_module_uses_init_entry_and_keeps_externals_at_root(tmp_path:
         "from . import contract_same_name\n\n"
         "@standalone\n"
         "def external_ping() -> None: ...\n\n"
-        '__all__ = ["external_ping"]\n'
+        '__all__ = ["contract_same_name", "external_ping"]\n'
     )
     assert "def module_ping() -> None: ..." in (entry.parent / "contract_same_name.pyi").read_text(encoding="utf-8")
 
@@ -99,7 +99,7 @@ def test_import_graph_generation_writes_entry_and_native_leaves(tmp_path: Path):
 
     assert entry == tmp_path / "contracts" / "contract_import_graph" / "__init__.pyi"
     assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi", "deep.pyi", "m1.pyi"}
-    assert entry.read_text(encoding="utf-8") == "from . import m1\nfrom . import deep\n"
+    assert entry.read_text(encoding="utf-8") == ('from . import m1\nfrom . import deep\n\n__all__ = ["m1", "deep"]\n')
 
 
 def test_multi_module_generation_keeps_each_native_namespace(tmp_path: Path):
@@ -126,5 +126,6 @@ def test_multi_module_generation_keeps_each_native_namespace(tmp_path: Path):
         "contract_right_mod.pyi",
     }
     assert (package / "__init__.pyi").read_text(encoding="utf-8") == (
-        "from . import contract_left_mod\nfrom . import contract_right_mod\n"
+        "from . import contract_left_mod\nfrom . import contract_right_mod\n\n"
+        '__all__ = ["contract_left_mod", "contract_right_mod"]\n'
     )

@@ -296,7 +296,8 @@ def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
     assert not (package / "second_api").exists()
     assert not (package / "combined_extensions").exists()
     assert entry.read_text(encoding="utf-8") == (
-        "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n"
+        "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n\n"
+        '__all__ = ["first_math", "shared_types", "second_math", "box_ops"]\n'
     )
     assert "from .shared_types import box" in (package / "box_ops.pyi").read_text(encoding="utf-8")
     assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
@@ -375,7 +376,8 @@ def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias
         "from . import shared_types\n"
         "from . import second_math\n"
         "from . import box_ops\n"
-        "from .second_math import double_after_add as fused_value\n",
+        "from .second_math import double_after_add as fused_value\n\n"
+        '__all__ = ["first_math", "shared_types", "second_math", "box_ops", "fused_value"]\n',
         encoding="utf-8",
     )
 

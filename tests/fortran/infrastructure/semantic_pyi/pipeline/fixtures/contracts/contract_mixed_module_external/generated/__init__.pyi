@@ -7,4 +7,4 @@ def external_double(
     value: Int32
 ) -> Int32: ...
 
-__all__ = ["external_double"]
+__all__ = ["contract_math_mod", "external_double"]

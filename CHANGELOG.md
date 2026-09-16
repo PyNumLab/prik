@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract's `__all__` names its sub-namespaces as well, so leaving one off
+  keeps the package from exposing it. A generated entry contract states the
+  modules it imports for that reason, and a contract stating no list still
+  publishes everything it reaches.
+
 - A contract states everything it publishes in a closing `__all__`. An import
   cannot say whether a name is needed to express a declaration or meant to be
   published, because a rename reads the same either way, so the list settles it.

@@ -760,6 +760,9 @@ def _source_root_stub(module_names: list[str], external_text: list[str]) -> str:
     lines = [f"from . import {name}" for name in module_names]
     import_section = "\n".join(line for line in [contract_section, *lines] if line)
     sections = [import_section, *external_sections]
+    # The entry publishes its package tree as well as any standalone name, and
+    # both are stated so either can be taken off the list.
+    exported_names = [*module_names, *exported_names]
     if exported_names:
         # Each source file states what it publishes, and this entry holds them
         # all, so one list closes the file the way one does in any contract,

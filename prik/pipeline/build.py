@@ -2047,21 +2047,15 @@ class _PyiExportNode:
     declarations: list[object] = field(default_factory=list)
     children: dict[str, _PyiExportNode] = field(default_factory=dict)
     origins: set[Path] = field(default_factory=set)
-    namespaces: set[str] = field(default_factory=set)
-    """Child names attached as sub-namespaces rather than bound entities.
-
-    ``from . import other`` builds the package tree, which is structure rather
-    than a name the contract publishes, so a stated ``__all__`` names entities
-    and leaves the tree alone.
-    """
-
     unpublished: set[str] = field(default_factory=set)
     """Names this node resolves but its contract left out of ``__all__``.
 
     A contract stating no list publishes everything it reaches, so a name is
     withheld only where the contract named its surface and left this one off.
-    Such a name still resolves, because a contract reading from this one has to
-    resolve what it names; it simply does not become a Python attribute here.
+    A sub-namespace is part of that surface like anything else, so leaving one
+    off keeps the package from exposing it. Such a name still resolves, because
+    a contract reading from this one has to resolve what it names; it simply
+    does not become a Python attribute here.
     """
 
 
@@ -2193,9 +2187,7 @@ def _merge_relative_import(
     for item in semantic_import.items:
         dependency = _relative_import_path(path, semantic_import.module, item.source)
         dependency_tree = _required_export_tree(dependency, modules_by_path, cache, pending)
-        local = item.target or item.source
-        _merge_export_child(tree, local, dependency_tree, origin=path)
-        tree.namespaces.add(local)
+        _merge_export_child(tree, item.target or item.source, dependency_tree, origin=path)
 
 
 def _relative_import_path(path: Path, module: str, imported_module: str) -> Path:
@@ -2225,8 +2217,7 @@ def _apply_stated_exports(tree: _PyiExportNode, path: Path, exported_names: list
     missing = [name for name in stated if name not in tree.children]
     if missing:
         raise ValueError(f"{path}: __all__ names nothing this contract declares or imports: {missing}")
-    published = set(stated) | tree.namespaces
-    tree.unpublished = {name for name in tree.children if name not in published}
+    tree.unpublished = {name for name in tree.children if name not in set(stated)}
 
 
 def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, *, origin: Path) -> None:

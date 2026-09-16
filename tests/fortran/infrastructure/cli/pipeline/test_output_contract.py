@@ -288,7 +288,7 @@ end module m
 
     assert res.stdout == ""
     package = tmp_path / "mini"
-    assert (package / "mini.pyi").read_text(encoding="utf-8") == "from . import m\n"
+    assert (package / "mini.pyi").read_text(encoding="utf-8") == 'from . import m\n\n__all__ = ["m"]\n'
     assert "def add1" in (package / "m.pyi").read_text(encoding="utf-8")
 
 
@@ -316,7 +316,7 @@ end module second_mod
     assert result.stdout == ""
     package = tmp_path / "combined"
     assert (package / "combined.pyi").read_text(encoding="utf-8") == (
-        "from . import first_mod\nfrom . import second_mod\n"
+        'from . import first_mod\nfrom . import second_mod\n\n__all__ = ["first_mod", "second_mod"]\n'
     )
     assert "def first(" in (package / "first_mod.pyi").read_text(encoding="utf-8")
     assert "def second(" in (package / "second_mod.pyi").read_text(encoding="utf-8")
@@ -341,7 +341,7 @@ end module explicit_mod
 
     assert res.stdout == ""
     text = (out / "__init__.pyi").read_text(encoding="utf-8")
-    assert text == "from . import explicit_mod\n"
+    assert text == 'from . import explicit_mod\n\n__all__ = ["explicit_mod"]\n'
     leaf_text = (out / "explicit_mod.pyi").read_text(encoding="utf-8")
     assert "@native_call([Return('x', 0)])" in leaf_text
     assert "def set_value(" in leaf_text
