@@ -165,15 +165,15 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     assert "Persistent allocatable descriptor handle." in module.__doc__
     assert "Replacement assignment is not supported." in module.__doc__
     assert "build_values" in module.__doc__
-    assert "buffer" in module.__doc__
+    assert "Buffer" in module.__doc__
     assert "build_values(n) -> AllocatableArray[float64]" in module.build_values.__doc__
     assert "values : AllocatableArray[float64]" in module.build_values.__doc__
     assert "Descriptor ownership: owned" in module.build_values.__doc__
     assert "Unallocated state remains inside the returned handle." in module.build_values.__doc__
     assert not hasattr(module, "get_module_values")
-    assert "Fields" in module.buffer.__doc__
-    assert "values : AllocatableArray[float64]" in module.buffer.__doc__
-    assert "allocatable array descriptor handle" in module.buffer.values.__doc__
+    assert "Fields" in module.Buffer.__doc__
+    assert "values : AllocatableArray[float64]" in module.Buffer.__doc__
+    assert "allocatable array descriptor handle" in module.Buffer.values.__doc__
 
     module_values = module.module_values
     assert isinstance(module_values, AllocatableArray)
@@ -268,7 +268,7 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     gc.collect()
     np.testing.assert_allclose(retained_result_view, np.array([3.0, 6.0, 9.0], dtype=np.float64))
 
-    values = module.buffer()
+    values = module.Buffer()
     field_handle = values.values
     assert isinstance(field_handle, AllocatableArray)
     assert field_handle.owner is values

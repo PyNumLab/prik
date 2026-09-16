@@ -1,16 +1,16 @@
 from prik.contracts import Int32, destroy
 
-class child:
+class Child:
     @destroy
     def cleanup_child(self) -> None: ...
 
-class parent:
+class Parent:
     def __init__(self) -> None: ...
 
-    value: child
+    value: Child
 
 def get_final_count() -> Int32: ...
 
 def reset_final_count() -> None: ...
 
-__all__ = ["child", "parent", "get_final_count", "reset_final_count"]
+__all__ = ["Child", "Parent", "get_final_count", "reset_final_count"]

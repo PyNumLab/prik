@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Arg, Float64, In, InOut, Int32, Out, Return, Returns, String, native_call, prototype
 
-class point_t:
+class Point_T:
     def __init__(
         self,
         *,
@@ -39,8 +39,8 @@ def string_storage_callback(
 
 @prototype
 def point_callback(
-    value: In(point_t)
-) -> point_t: ...
+    value: In(Point_T)
+) -> Point_T: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
 def apply_value_callback(
@@ -71,12 +71,12 @@ def apply_string_storage_callback(
 
 def apply_point_callback(
     callback: point_callback,
-    value: point_t,
-    output: point_t
+    value: Point_T,
+    output: Point_T
 ) -> None: ...
 
 __all__ = [
-    "point_t",
+    "Point_T",
     "value_callback",
     "scalar_storage_callback",
     "array_storage_callback",

@@ -209,11 +209,17 @@ name declares decides how publishing it appears:
 | Derived type | A runtime type. |
 | Package sub-namespace | A runtime namespace attribute. |
 | Prototype | A callback signature contracts name, with no runtime object. |
-| Module variable | Only in the namespace declaring it; republishing is unsupported. |
-| Generic interface | Only in the namespace declaring it; republishing is unsupported. |
+| Module variable | Live state, publishable only by the namespace declaring it. |
+| Generic interface | A dispatch surface, publishable only by the namespace declaring it. |
 
-A name whose kind cannot reach a second namespace is refused rather than
-published differently from a build of the same Fortran source.
+A procedure and a derived type each reach Python as one object, so another
+namespace can bind that object and PRIK re-exports it under whatever name the
+importing contract states. A module variable and a generic reach Python as
+neither, so no other namespace can publish one. Every namespace naming one of
+those two kinds in its `__all__` is checked against the namespace declaring it:
+listing it beside the declaring contract is refused, and so is moving it to a
+facade by withholding it at home, which publishes it in exactly one namespace
+and still not the one it lives in.
 
 PRIK writes the list into every generated contract, holding what the Fortran
 source publishes: the module's own public declarations, and any imported name it
@@ -1011,14 +1017,25 @@ These are separate operations.
 
 When PRIK generates a contract it adds a trailing underscore to Python
 keywords, normalizes other invalid Python identifiers, and gives remaining
-collisions deterministic numeric suffixes. A Fortran identifier is lowercased
-as well, because Fortran writes one declaration under many spellings and none
-of them is the declaration's own. A C identifier keeps its case: C names each
-declaration exactly, so `BarBaz` stays `BarBaz`, and `Foo` and `foo` stay two
-functions. The same policy covers module members, classes, methods, fields, and
-argument names, and it decides the names a build publishes and the names the
+collisions deterministic numeric suffixes.
+
+PRIK chooses a spelling only where the source has none. Fortran writes one
+declaration under many spellings, so PRIK picks: a wrapped type becomes a
+Python class and is spelled like one, capitalizing each underscore-separated
+word, and every other declaration is lowercased. `type :: point_t` publishes as
+`Point_T`, and `subroutine SCALE_VALUE` as `scale_value`. C names each
+declaration exactly, so its spelling is kept as written: `BarBaz` stays
+`BarBaz`, `struct point` stays `point`, and `Foo` and `foo` remain two
+functions.
+
+These are defaults, not constraints. Rename a declaration in the contract and
+the build follows it, because a Fortran name resolves without regard to case
+and `@bind(...)` states a native name that differs from the Python one. The
+same policy covers module members, classes, methods, fields, and argument
+names, and it decides both the names a build publishes and the names the
 contract describing that build states. `--strict-wrapper-names` rejects a
-generated name that would need any of these fixes.
+generated name Python could not otherwise spell; it does not object to the
+chosen casing.
 
 Fortran `bind(C, name=...)` changes the native symbol, not the Python name. In
 an edited contract, `@bind("native_name")` records that native-name distinction;

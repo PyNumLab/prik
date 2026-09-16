@@ -7,13 +7,36 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- A wrapper's Python names are decided once, by `prik.naming`, and every stage
-  that writes a name implements that decision. The `.pyi` printer re-derived
-  them instead, and only for Fortran, so a build and the contract describing it
-  could disagree: a C function named for a Python keyword built as `lambda_`
-  while its contract said `def lambda(`, which is not Python at all. A contract
-  now names exactly what the build beside it publishes, and records the source
-  spelling with `@bind` wherever the two differ.
+- A module variable and a generic are published only by the namespace declaring
+  them, which is now checked against that namespace rather than by counting the
+  namespaces publishing them. Counting caught a contract listing one beside its
+  declaring contract but not one moving it to a facade, because withholding the
+  name at home left exactly one publisher -- a relocation the source route has
+  no way to produce. A procedure and a derived type each reach Python as one
+  object and are re-exported through aliases as before.
+
+- A wrapper's Python names are decided once, by post-IR export policy, and
+  every stage that writes a name reads that decision. The `.pyi` printer
+  allocated its own instead, so a build and the contract describing it could
+  disagree: a C function named for a Python keyword built as `lambda_` while
+  its contract said `def lambda(`, which is not Python at all. Worse, the two
+  allocators walked declarations in different orders -- policy takes classes,
+  functions, overloads, then variables, the printer took variables before
+  functions -- so a module variable and a procedure whose names both normalize
+  to `lambda_` were settled one way by the build and the other way by the
+  contract. The contract then held the right set of names attached to the wrong
+  declarations. A contract now names exactly what the build beside it
+  publishes, derived types included, and records the source spelling with
+  `@bind` wherever the two differ.
+
+- A wrapped type is spelled like the Python class it becomes. Fortran writes
+  one declaration under many spellings, so PRIK picks one, and picking
+  `point_t` for something used as `Point_T(...)` read as a function. A derived
+  type now publishes with each underscore-separated word capitalized --
+  `type :: point_t` reaches Python as `Point_T` -- while every other Fortran
+  declaration stays lowercased. Renaming one in the contract still works, so
+  this is a default rather than a constraint. This changes the published class
+  names of existing Fortran wrappers.
 
 - A C declaration keeps the case it is written in. Folding it is a Fortran rule,
   correct there because Fortran writes one declaration many ways and none of

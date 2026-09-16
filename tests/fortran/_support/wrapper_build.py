@@ -575,8 +575,8 @@ def _assert_modern_string_examples(module):
 
 
 def _assert_modern_class_examples(module):
-    assert hasattr(module, "vector")
-    value = module.vector()
+    assert hasattr(module, "Vector")
+    value = module.Vector()
     value.x = np.float64(3.0)
     value.y = np.float64(4.0)
 
@@ -592,8 +592,8 @@ def _assert_modern_class_examples(module):
     assert value.x == np.float64(3.75)
     assert value.y == np.float64(3.0)
 
-    assert hasattr(module, "vector_store")
-    store = module.vector_store()
+    assert hasattr(module, "Vector_Store")
+    store = module.Vector_Store()
     values = store.values
     matrix_values = store.matrix
     assert isinstance(values, AllocatableArray)
@@ -649,7 +649,7 @@ def _assert_modern_class_examples(module):
     with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
         store.set_matrix(np.array(replacement, order="C"))
 
-    made = module.vector_store.make(np.int64(4), np.float64(1.5))
+    made = module.Vector_Store.make(np.int64(4), np.float64(1.5))
     made_values = made.values
     assert isinstance(made_values, AllocatableArray)
     assert made_values.owner is made

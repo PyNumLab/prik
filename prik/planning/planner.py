@@ -72,7 +72,6 @@ from prik.policy.construction import (
     completed_module_variable_policy,
 )
 from prik.naming.generated_files import bridge_source_name
-from prik.naming.policy import normalize_public_name, preserves_source_case
 from prik.policy.exports import PythonExportPolicy
 from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
@@ -552,10 +551,11 @@ class WrapperPlanner(ClassVisitor):
         planned only where the published name reaches Python as exactly that.
         The declaration it names supplies the attribute to read, because a
         Fortran spelling is not a Python attribute and only the completed export
-        knows which name the declaring namespace actually bound.
+        knows which name the declaring namespace actually bound. The alias
+        publishes under the name export policy completed for it, inside the same
+        ledger as this module's declarations, so it cannot take one of theirs.
         """
         grouped = defaultdict(list)
-        preserve_case = preserves_source_case(module.origin.source_language)
         for reexport in module.reexports:
             if reexport.entity_kind not in _ALIASABLE_REEXPORT_KINDS:
                 continue
@@ -565,7 +565,7 @@ class WrapperPlanner(ClassVisitor):
                 continue
             grouped[tuple(part.casefold() for part in reexport.module.split(".") if part)].append(
                 NamespaceAliasPlan(
-                    python_name=normalize_public_name(reexport.local_name, preserve_case=preserve_case).name,
+                    python_name=reexport.python_name or str(reexport.local_name),
                     source_namespace=source_namespace,
                     source_name=source_name,
                 )

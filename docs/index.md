@@ -173,7 +173,7 @@ python3 -m prik points.f90 --out geometry
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 points.move(item, np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)             # 4.0 2.0
@@ -191,16 +191,16 @@ The generated `points.pyi` is:
 ```python
 from prik.contracts import Addr, Arg, Float64, native_call
 
-class point:
+class Point:
     x: Float64 = 0.0
     y: Float64 = 0.0
 
     def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
-def move(item: point, dx: Float64, dy: Float64) -> None: ...
+def move(item: Point, dx: Float64, dy: Float64) -> None: ...
 
-def norm_squared(item: point) -> Float64: ...
+def norm_squared(item: Point) -> Float64: ...
 ```
 
 Generate it:
@@ -220,7 +220,7 @@ The edited `points.pyi` is:
 ```python
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
-class point:
+class Point:
     x: Float64 = 0.0
     y: Float64 = 0.0
 
@@ -260,7 +260,7 @@ The native Fortran is unchanged, but the Python surface is now:
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 item.translate(np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)       # 4.0 2.0

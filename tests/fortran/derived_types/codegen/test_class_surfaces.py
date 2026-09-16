@@ -27,8 +27,8 @@ def _surface(plan, name: str):
 
 def test_inheritance_and_polymorphism_are_completed_before_planning():
     plan = _plan(INHERITANCE)
-    base = _surface(plan, "base_shape")
-    circle = _surface(plan, "circle")
+    base = _surface(plan, "Base_Shape")
+    circle = _surface(plan, "Circle")
     derived = next(
         item
         for namespace in plan.namespaces
@@ -45,15 +45,15 @@ def test_inheritance_and_polymorphism_are_completed_before_planning():
     assert circle.base_identities == (base.type_identity,)
     assert [field.name for field in derived.fields] == ["size", "radius"]
     assert tuple(variant.python_name for variant in describe.arguments[0].polymorphic.variants) == (
-        "box",
-        "circle",
-        "base_shape",
+        "Box",
+        "Circle",
+        "Base_Shape",
     )
 
 
 def test_invalid_class_graph_fails_before_emission():
     plan = _plan(INHERITANCE)
-    _surface(plan, "circle").base_identities = (("missing", "base"),)
+    _surface(plan, "Circle").base_identities = (("missing", "base"),)
 
     with pytest.raises(ValueError, match="missing-or-late-class-base"):
         WrapperGenerator().generate(plan)

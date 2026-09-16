@@ -22,6 +22,7 @@ from prik.semantics.models import (
     SemanticField,
     SemanticFunction,
     SemanticImport,
+    SemanticImportItem,
     SemanticModule,
     SemanticOrigin,
     SemanticStorageContract,
@@ -258,6 +259,34 @@ def test_emit_module_stubs_honors_available_opaque_dependency_modules():
     )
 
     assert set(stubs) == {"api"}
+
+
+def test_emit_module_stubs_uses_available_module_public_names_in_imports():
+    origin = SemanticOrigin(source_language="fortran")
+    available_type = SemanticModule(
+        name="types",
+        classes=[SemanticClass(name="point_t", origin=origin)],
+        origin=origin,
+    )
+    consumer = SemanticModule(
+        name="consumer",
+        imports=[
+            SemanticImport(
+                module="types",
+                items=[SemanticImportItem(source="point_t")],
+            )
+        ],
+        origin=origin,
+    )
+
+    stubs = emit_module_stubs(
+        consumer,
+        available_modules=[available_type, consumer],
+        normalize_public_names=True,
+    )
+
+    assert set(stubs) == {"consumer"}
+    assert "from .types import Point_T as point_t" in stubs["consumer"]
 
 
 def test_emit_omits_resolved_source_kind_imports():
@@ -895,8 +924,8 @@ end module surface_consumer
     # The publishing module names the import; the consuming one does not.
     assert stubs["surface_facade"].rstrip().endswith('__all__ = ["scale_value"]')
     assert stubs["surface_consumer"].rstrip().endswith('__all__ = ["crate_value"]')
-    assert "from .surface_home import box as crate" in stubs["surface_consumer"]
-    assert '__all__ = ["box", "scale_value"]' in stubs["surface_home"]
+    assert "from .surface_home import Box as crate" in stubs["surface_consumer"]
+    assert '__all__ = ["Box", "scale_value"]' in stubs["surface_home"]
 
 
 def test_a_published_intrinsic_name_states_no_contract_import():

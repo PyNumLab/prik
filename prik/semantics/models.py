@@ -401,6 +401,16 @@ OVERLOAD_TARGET_METADATA = "overload_target"
 PYTHON_BOUND_POSITION_METADATA = "python_bound_position"
 PYTHON_METHOD_NAME_METADATA = "python_method_name"
 PYTHON_EXPORTS_METADATA = "python_exports"
+
+
+def export_namespace(export: dict[str, object]) -> tuple[str, ...]:
+    """Return one normalized namespace tuple from semantic export metadata."""
+    raw_namespace = export.get("namespace", ())
+    if not isinstance(raw_namespace, tuple | list):
+        return ()
+    return tuple(str(part) for part in raw_namespace)
+
+
 PYTHON_EXPORTS_PREPARED_METADATA = "python_exports_prepared"
 POLICY_COMPLETION_PREPARED_METADATA = "policy_completion_prepared"
 HIDDEN_NATIVE_OUTPUT_METADATA = "hidden_native_output"
@@ -685,6 +695,14 @@ class SemanticReexport:
     source_name: str
     module: str = ""
     """Module publishing the name, which is not the one declaring it."""
+
+    python_name: str = ""
+    """The Python name this module publishes the re-export under.
+
+    Post-IR export policy completes it inside the same namespace ledger as the
+    module's own declarations, so an alias cannot be given a name a declaration
+    already holds. Every later stage reads it rather than deriving one.
+    """
 
     entity_kind: str = "unknown"
     """What the published name declares where it comes from.

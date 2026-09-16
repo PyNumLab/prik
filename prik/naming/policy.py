@@ -67,12 +67,29 @@ def preserves_source_case(source_language: object) -> bool:
     return str(source_language or "").casefold() not in _CASE_INSENSITIVE_SOURCE_LANGUAGES
 
 
-def normalize_public_name(raw_name: object, *, preserve_case: bool = False) -> NormalizedPublicName:
+def _capitalized_words(name: str) -> str:
+    """Return one identifier with each underscore-separated word capitalized."""
+    return "_".join(word[:1].upper() + word[1:] for word in name.split("_"))
+
+
+def normalize_public_name(
+    raw_name: object,
+    *,
+    preserve_case: bool = False,
+    category: str = "function",
+) -> NormalizedPublicName:
     """Convert a source spelling into a valid Python identifier.
 
-    The result is lower-cased unless ``preserve_case`` says the source casing
-    is part of the name; see ``preserves_source_case``. Either way the spelling
-    is only adjusted where Python cannot accept it.
+    PRIK chooses a spelling only where the source has none. ``preserve_case``
+    says the source casing is part of the name (see ``preserves_source_case``),
+    and then the spelling is adjusted only where Python cannot accept it.
+    Otherwise the choice is PRIK's: a wrapped type reaches Python as a class,
+    so a ``class`` capitalizes each word -- ``point_t`` becomes ``Point_T`` --
+    and every other declaration is lower-cased.
+
+    ``needs_fix`` reports only the adjustments Python forced, never the chosen
+    style, so ``--strict-wrapper-names`` rejects a name Python cannot spell
+    rather than one PRIK merely cased.
     """
     source = str(raw_name).strip()
     candidate = source if preserve_case else source.casefold()
@@ -81,7 +98,10 @@ def normalize_public_name(raw_name: object, *, preserve_case: bool = False) -> N
         normalized = f"_{normalized}"
     if keyword.iskeyword(normalized):
         normalized = f"{normalized}_"
-    return NormalizedPublicName(normalized, needs_fix=normalized != candidate)
+    needs_fix = normalized != candidate
+    if not preserve_case and category == "class":
+        normalized = _capitalized_words(normalized)
+    return NormalizedPublicName(normalized, needs_fix=needs_fix)
 
 
 class NamingPolicy:
@@ -101,7 +121,7 @@ class NamingPolicy:
         owner: object | None = None,
     ) -> str:
         """Reserve one public Python name within its namespace."""
-        normalized = normalize_public_name(raw_name, preserve_case=self.preserve_case)
+        normalized = normalize_public_name(raw_name, preserve_case=self.preserve_case, category=category)
         raw_text = str(raw_name)
         namespace_key = tuple(str(part) for part in namespace)
         namespace_text = ".".join(namespace_key) or "<module>"

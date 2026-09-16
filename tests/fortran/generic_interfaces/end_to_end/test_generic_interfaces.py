@@ -90,13 +90,13 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
     assert module.summarize(np.float64(2.5)) == np.float64(2.5)
     assert module.summarize(np.array([1.0, 2.0, 3.0], dtype=np.float64)) == np.float64(6.0)
 
-    value = module.accumulator()
+    value = module.Accumulator()
     value.add(np.int32(2))
     value.add(value=np.float64(0.5))
     assert value.total == np.float64(2.5)
     assert module.inspect(value) == np.float64(2.5)
 
-    sample = module.sample()
+    sample = module.Sample()
     sample.value = np.float64(7.25)
     assert module.inspect(sample) == np.float64(7.25)
 

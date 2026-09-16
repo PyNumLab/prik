@@ -658,7 +658,6 @@ _SOURCE_SEMANTIC_PIPELINES = {
 
 def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
     from prik.pipeline.pyi import emit_module_stubs
-    from prik.printers import emit_module
 
     out: dict[str, dict] = {}
     available_modules = [module for _p, modules in converted_files for module in modules]
@@ -669,10 +668,12 @@ def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
             continue
         if _is_c_semantic_file(modules):
             # A generated C starter contract preserves raw source facts, even
-            # for a form that the direct-only wrapper policy will later block.
-            # ``--pyi`` is contract extraction, not wrapper planning. The names
-            # are still C's, so they are written the way a build publishes them.
-            module_stubs = {module.name: emit_module(module, normalize_public_names=True).strip() for module in modules}
+            # for a form that the direct-only wrapper policy will later block:
+            # ``--pyi`` is contract extraction, not wrapper planning. Emission
+            # still goes through the shared stub pipeline, which completes the
+            # public names policy owns without completing wrapper policy.
+            stubs = emit_module_stubs(modules, normalize_public_names=True)
+            module_stubs = {module.name: stubs[module.name] for module in modules}
             out[str(p)] = {
                 "semantic_modules": [asdict(module) for module in modules],
                 "pyi": "\n\n".join(module_stubs.values()).strip(),

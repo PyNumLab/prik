@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Pass, Return, Returns, native_call
 
-class buffer:
+class Buffer:
     def __init__(self) -> None: ...
 
     values: Allocatable[Float64[:]]
@@ -84,7 +84,7 @@ def make_matrix(
 ) -> Allocatable[Float64[:, :]]: ...
 
 __all__ = [
-    "buffer",
+    "Buffer",
     "module_values",
     "allocate_module_values",
     "deallocate_module_values",

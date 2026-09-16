@@ -336,6 +336,12 @@ class CBindingGenerator(ClassVisitor):
             for surface in namespace.classes
             if surface.python_names
         }
+        # Generated code fetching a wrapped type out of its namespace needs the
+        # name that namespace published it under. That is planned once, here,
+        # so no emission site re-derives it from the native type name.
+        self._class_python_names_by_type = {
+            identity[1].casefold(): name for identity, name in class_python_names.items()
+        }
         # Stage 3: select support and assemble generated functions in dependency order.
         functions = tuple(function for namespace in plan.namespaces for function in self.visit(namespace))
         needs_native_support = self.requires_native_support(plan)
@@ -962,6 +968,22 @@ class CBindingGenerator(ClassVisitor):
         )
 
     @staticmethod
+    def _wrap_helper_attribute(semantic_type_name: object) -> str:
+        """Return the internal helper attaching native storage for one type.
+
+        The helper is keyed on the native type's own name, the way
+        ``CBindingNames.class_wrap_helper`` defines it, so the attribute does
+        not move when naming policy publishes the type under a different name
+        and a contract naming its classes in Python still resolves it.
+        """
+        return f"_prik_wrap_{str(semantic_type_name).casefold()}"
+
+    def _published_class_name(self, semantic_type_name: str) -> str:
+        """Return the name the namespace published one wrapped type under."""
+        index = getattr(self, "_class_python_names_by_type", {})
+        return index.get(str(semantic_type_name).casefold(), str(semantic_type_name))
+
+    @staticmethod
     def _callback_abort_if_null(
         callback: CallbackHandoffPlan,
         name: str,
@@ -1144,7 +1166,7 @@ class CBindingGenerator(ClassVisitor):
                 helper,
                 "PyObject *",
                 CodeExpression(
-                    f'PyObject_GetAttrString(callback_context->module, "_prik_wrap_{transfer.semantic_type_name}")'
+                    f'PyObject_GetAttrString(callback_context->module, "{self._wrap_helper_attribute(transfer.semantic_type_name)}")'
                 ),
             ),
             CDeclaration(
@@ -1301,7 +1323,10 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "callback_expected_type",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString({context}->module, "{transfer.semantic_type_name}")'),
+                CodeExpression(
+                    f"PyObject_GetAttrString({context}->module, "
+                    f'"{self._published_class_name(transfer.semantic_type_name)}")'
+                ),
             ),
             self._callback_abort_if_null(
                 callback,
@@ -3576,7 +3601,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "child_helper",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{type_name}")'),
+                CodeExpression(f'PyObject_GetAttrString(self, "{self._wrap_helper_attribute(type_name)}")'),
             ),
             CIf(
                 CodeExpression("child_helper == NULL"),
@@ -6491,7 +6516,7 @@ class CBindingGenerator(ClassVisitor):
                     CDeclaration(
                         helper,
                         "PyObject *",
-                        CodeExpression(f'PyObject_GetAttrString({owner}, "_prik_wrap_{type_name}")'),
+                        CodeExpression(f'PyObject_GetAttrString({owner}, "{self._wrap_helper_attribute(type_name)}")'),
                     ),
                     CIf(
                         CodeExpression(f"{helper} == NULL"),
@@ -6526,7 +6551,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "helper",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString({owner}, "_prik_wrap_{type_name}")'),
+                CodeExpression(f'PyObject_GetAttrString({owner}, "{self._wrap_helper_attribute(type_name)}")'),
             ),
             CIf(
                 CodeExpression("helper == NULL"),
@@ -10073,7 +10098,9 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 helper,
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{plan.derived.type_name}")'),
+                CodeExpression(
+                    f'PyObject_GetAttrString(self, "{self._wrap_helper_attribute(plan.derived.type_name)}")'
+                ),
             ),
             CIf(
                 CodeExpression(f"{helper} == NULL"),
@@ -10170,7 +10197,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 helper,
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{type_name}")'),
+                CodeExpression(f'PyObject_GetAttrString(self, "{self._wrap_helper_attribute(type_name)}")'),
             ),
             CIf(
                 CodeExpression(f"{helper} == NULL"),

@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Arg, Int32, native_call
 
-class box:
+class Box:
     def __init__(
         self,
         *,
@@ -12,6 +12,6 @@ class box:
 @native_call([Addr(Arg(0))])
 def make_box(
     value: Int32
-) -> box: ...
+) -> Box: ...
 
-__all__ = ["box", "make_box"]
+__all__ = ["Box", "make_box"]

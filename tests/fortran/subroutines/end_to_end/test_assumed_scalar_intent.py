@@ -48,7 +48,7 @@ def test_assumed_scalar_intent_returns_only_the_function_result(tmp_path: Path):
 
 def test_assumed_scalar_intent_keeps_array_and_derived_writeback(tmp_path: Path):
     module = _module(tmp_path, assume_intent_in_scalars=True)
-    item = module.sample(x=np.float64(1.0))
+    item = module.Sample(x=np.float64(1.0))
     values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
 
     assert module.touch(np.int32(5), item, values) is None

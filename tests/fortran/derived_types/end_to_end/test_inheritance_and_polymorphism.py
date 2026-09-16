@@ -31,16 +31,16 @@ def test_fortran_extension_types_generate_python_inheritance(
         pyi_parity_build_mode,
     )
 
-    assert issubclass(module.circle, module.base_shape)
-    assert issubclass(module.box, module.base_shape)
+    assert issubclass(module.Circle, module.Base_Shape)
+    assert issubclass(module.Box, module.Base_Shape)
 
-    base = module.base_shape()
+    base = module.Base_Shape()
     base.size = np.float64(3.0)
     assert base.area() == np.float64(3.0)
     assert module.describe_shape(base) == np.float64(3.0)
 
-    circle = module.circle()
-    assert isinstance(circle, module.base_shape)
+    circle = module.Circle()
+    assert isinstance(circle, module.Base_Shape)
     circle.set_size(np.float64(5.0))
     circle.radius = np.float64(2.0)
     assert circle.size == np.float64(5.0)
@@ -48,11 +48,11 @@ def test_fortran_extension_types_generate_python_inheritance(
     np.testing.assert_allclose(circle.area(), expected_circle_area)
     np.testing.assert_allclose(module.describe_shape(circle), expected_circle_area)
 
-    module.base_shape.set_size(circle, np.float64(7.0))
+    module.Base_Shape.set_size(circle, np.float64(7.0))
     assert circle.size == np.float64(7.0)
 
-    box = module.box()
-    assert isinstance(box, module.base_shape)
+    box = module.Box()
+    assert isinstance(box, module.Base_Shape)
     box.set_size(np.float64(2.0))
     box.width = np.float64(3.0)
     assert box.area() == np.float64(32.0)

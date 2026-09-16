@@ -53,7 +53,7 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert "Assignment writes through to native storage." not in module_docstring
 
     assert module.nmax == np.int32(12)
-    assert isinstance(module.black, module.rgb_color)
+    assert isinstance(module.black, module.Rgb_Color)
     assert module.black.r == np.int32(0)
     assert module.black.g == np.int32(0)
     assert module.black.b == np.int32(0)

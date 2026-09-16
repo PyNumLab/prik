@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Annotated, Arg, Bool32, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
 
-class vector:
+class Vector:
     def __init__(
         self,
         *,
@@ -12,91 +12,91 @@ class vector:
     @overload("add_vectors")
     def __add__(
         self,
-        right: vector
-    ) -> vector: ...
+        right: Vector
+    ) -> Vector: ...
 
     @overload("add_vector_integer")
     def __add__(
         self,
         right: Int32
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("add_vector_real")
     def __add__(
         self,
         right: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("add_real_vector")
     def __radd__(
         self,
         left: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("add_vector_array")
     def __add__(
         self,
         right: Float64[::]
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("add_vector_offset")
     def __add__(
         self,
-        right: offset
-    ) -> vector: ...
+        right: Offset
+    ) -> Vector: ...
 
     @overload("positive_vector")
-    def __pos__(self) -> vector: ...
+    def __pos__(self) -> Vector: ...
 
     @overload("subtract_vector_real")
     def __sub__(
         self,
         right: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("subtract_real_vector")
     def __rsub__(
         self,
         left: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("negative_vector")
-    def __neg__(self) -> vector: ...
+    def __neg__(self) -> Vector: ...
 
     @overload("multiply_vector_real")
     def __mul__(
         self,
         right: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("divide_vector_real")
     def __truediv__(
         self,
         right: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("power_vector_integer")
     def __pow__(
         self,
         right: Int32
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("equal_vectors")
     def __eq__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("equivalent_vector_offset", generic="operator(.eqv.)")
     def __eq__(
         self,
-        right: offset
+        right: Offset
     ) -> Bool32: ...
 
     @overload("not_equal_vectors")
     def __ne__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("not_equivalent_vector_integer", generic="operator(.neqv.)")
@@ -108,7 +108,7 @@ class vector:
     @overload("less_vectors")
     def __lt__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("less_vector_real")
@@ -126,31 +126,31 @@ class vector:
     @overload("greater_vectors")
     def __gt__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("less_equal_vectors")
     def __le__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("greater_equal_vectors")
     def __ge__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("and_vectors")
     def __and__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("or_vectors")
     def __or__(
         self,
-        right: vector
+        right: Vector
     ) -> Bool32: ...
 
     @overload("not_vector")
@@ -159,28 +159,28 @@ class vector:
     @overload("dot_vectors")
     def operator_dot(
         self,
-        right: vector
+        right: Vector
     ) -> Float64: ...
 
     @overload("shift_real_vector")
     def r_operator_shift(
         self,
         left: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("assign_vector_integer")
     def assign(
         self,
         right: Int32
-    ) -> vector: ...
+    ) -> Vector: ...
 
     @overload("assign_vector_real")
     def assign(
         self,
         right: Float64
-    ) -> vector: ...
+    ) -> Vector: ...
 
-class offset:
+class Offset:
     def __init__(
         self,
         *,
@@ -192,16 +192,16 @@ class offset:
     @overload("add_vector_offset")
     def __radd__(
         self,
-        left: vector
-    ) -> vector: ...
+        left: Vector
+    ) -> Vector: ...
 
     @overload("equivalent_vector_offset", generic="operator(.eqv.)")
     def __eq__(
         self,
-        left: vector
+        left: Vector
     ) -> Bool32: ...
 
-class counter:
+class Counter:
     def __init__(
         self,
         *,
@@ -216,13 +216,13 @@ class counter:
     def add_integer(
         self,
         right: Int32
-    ) -> counter: ...
+    ) -> Counter: ...
 
     @overload("counter_add_integer")
     def __add__(
         self,
         right: Int32
-    ) -> counter: ...
+    ) -> Counter: ...
 
 @private
 @native_call([Addr(Arg(0))])
@@ -238,110 +238,110 @@ def convert_real(
 
 @private
 def add_vectors(
-    left: vector,
-    right: vector
-) -> vector: ...
+    left: Vector,
+    right: Vector
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def add_vector_integer(
-    left: vector,
+    left: Vector,
     right: Int32
-) -> vector: ...
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def add_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
-) -> vector: ...
+) -> Vector: ...
 
 @private
 @native_call([Addr(Arg(0)), Arg(1)])
 def add_real_vector(
     left: Float64,
-    right: vector
-) -> vector: ...
+    right: Vector
+) -> Vector: ...
 
 @private
 def add_vector_array(
-    left: vector,
+    left: Vector,
     right: Float64[::]
-) -> vector: ...
+) -> Vector: ...
 
 @private
 def add_vector_offset(
-    left: vector,
-    right: offset
-) -> vector: ...
+    left: Vector,
+    right: Offset
+) -> Vector: ...
 
 @private
 def positive_vector(
-    value: vector
-) -> vector: ...
+    value: Vector
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def subtract_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
-) -> vector: ...
+) -> Vector: ...
 
 @private
 @native_call([Addr(Arg(0)), Arg(1)])
 def subtract_real_vector(
     left: Float64,
-    right: vector
-) -> vector: ...
+    right: Vector
+) -> Vector: ...
 
 @private
 def negative_vector(
-    value: vector
-) -> vector: ...
+    value: Vector
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def multiply_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
-) -> vector: ...
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def divide_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
-) -> vector: ...
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def power_vector_integer(
-    left: vector,
+    left: Vector,
     right: Int32
-) -> vector: ...
+) -> Vector: ...
 
 @private
 def equal_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def not_equal_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def less_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def less_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
 ) -> Bool32: ...
 
@@ -349,90 +349,90 @@ def less_vector_real(
 @native_call([Addr(Arg(0)), Arg(1)])
 def less_real_vector(
     left: Float64,
-    right: vector
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def less_equal_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def greater_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def greater_equal_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def and_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def or_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Bool32: ...
 
 @private
 def not_vector(
-    value: vector
+    value: Vector
 ) -> Bool32: ...
 
 @private
 def equivalent_vector_offset(
-    left: vector,
-    right: offset
+    left: Vector,
+    right: Offset
 ) -> Bool32: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def not_equivalent_vector_integer(
-    left: vector,
+    left: Vector,
     right: Int32
 ) -> Bool32: ...
 
 @private
 def dot_vectors(
-    left: vector,
-    right: vector
+    left: Vector,
+    right: Vector
 ) -> Float64: ...
 
 @private
 @native_call([Addr(Arg(0)), Arg(1)])
 def shift_real_vector(
     left: Float64,
-    right: vector
-) -> vector: ...
+    right: Vector
+) -> Vector: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def assign_vector_integer(
-    left: vector,
+    left: Vector,
     right: Int32
-) -> Returns["left", vector]: ...
+) -> Returns["left", Vector]: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def assign_vector_real(
-    left: vector,
+    left: Vector,
     right: Float64
-) -> Returns["left", vector]: ...
+) -> Returns["left", Vector]: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def counter_add_integer(
-    self: Annotated[counter, Polymorphic],
+    self: Annotated[Counter, Polymorphic],
     right: Int32
-) -> counter: ...
+) -> Counter: ...
 
 @bind("convert")
 @overload("convert_integer")
@@ -446,4 +446,4 @@ def convert(
     value: Float64
 ) -> Float64: ...
 
-__all__ = ["vector", "offset", "counter", "convert"]
+__all__ = ["Vector", "Offset", "Counter", "convert"]

@@ -86,7 +86,7 @@ def test_callback_policy_completes_value_default_and_explicit_reference_before_p
     assert tuple(transfer.character_length for transfer in string.arguments) == (8, 8, 8)
 
     derived = policies["apply_point_callback"].arguments[0].callback
-    assert derived.arguments[0].derived_type_identity == ("fcallback_all_f90", "point_t")
+    assert derived.arguments[0].derived_type_identity == ("fcallback_all_f90", "Point_T")
     assert derived.result.action is CallbackResultAction.RETURN_DERIVED_ADDRESS
 
 

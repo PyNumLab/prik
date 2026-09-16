@@ -28,11 +28,11 @@ def test_accessibility_statements_shape_the_generated_class(tmp_path: Path):
     """
     module = _build_source_and_import(SOURCE, tmp_path, GENERATED)
 
-    assert hasattr(module, "gated")
-    members = {name for name in dir(module.gated) if not name.startswith("_")}
+    assert hasattr(module, "Gated")
+    members = {name for name in dir(module.Gated) if not name.startswith("_")}
     assert members == {"shown", "step", "peek"}
 
-    instance = module.gated(shown=np.int32(5))
+    instance = module.Gated(shown=np.int32(5))
     assert instance.shown == np.int32(5)
     assert instance.peek() == np.int32(7)
     instance.step()

@@ -239,7 +239,7 @@ def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
 
     declaring = (contracts / "cbresult_types.pyi").read_text(encoding="utf-8")
     assert "def make_point(" in declaring
-    assert "-> point_t: ..." in declaring
+    assert "-> Point_T: ..." in declaring
 
     result = build_pyi_extension(
         contracts / "__init__.pyi",

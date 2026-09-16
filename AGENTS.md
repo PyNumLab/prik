@@ -107,13 +107,16 @@ that has no answer, the decision has two authorities and no owner; if it has
 one, the other site must read the answer rather than compute it. This applies to
 derivation carrying state or a condition — a collision counter, a reservation
 ledger, a language gate, a default — because that is what drifts; calling a
-pure, total helper from several stages is fine. Prefer reading the owner's
-recorded output: the completed policy, the shared plan, or the metadata the
-owner wrote. Where that output genuinely is unavailable at that point — contract
-extraction runs without policy completion, because completion rejects C the
-direct route cannot build — call the owner's same entrypoint with the same
-inputs, never a local variant and never an extra condition the owner does not
-have.
+pure, total helper from several stages is fine. Read the owner's recorded
+output: the completed policy, the shared plan, or the metadata the owner wrote.
+Where a stage cannot run the owner's full completion, run the narrower
+completion step for that one decision rather than deriving it again — contract
+extraction must describe C that the direct-only wrapper would reject, so
+`emit_module_stubs` completes public-name policy for every module and the rest
+only where a build request allows it. Sharing the owner's helper is not enough
+when the derivation keeps a ledger: two allocators fed the same declarations in
+a different order produce the same set of names attached to different
+declarations, which every per-stage test still passes.
 
 Where one decision reaches users through two artifacts, a test must compare
 those artifacts rather than only check each one. A built extension and the

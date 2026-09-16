@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Arg, Final, Int32, native_call
 
-class paint:
+class Paint:
     def __init__(
         self,
         *,
@@ -22,4 +22,4 @@ def round_trip_color(
     color: Int32
 ) -> Int32: ...
 
-__all__ = ["paint", "red", "blue", "green", "yellow", "round_trip_color"]
+__all__ = ["Paint", "red", "blue", "green", "yellow", "round_trip_color"]

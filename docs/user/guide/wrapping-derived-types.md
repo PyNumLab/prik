@@ -93,7 +93,7 @@ The generated `points.pyi` is:
 ```python
 from prik.contracts import Addr, Arg, Float64, native_call
 
-class point:
+class Point:
     def __init__(
         self,
         *,
@@ -104,14 +104,14 @@ class point:
     x: Float64 = 0.0
     y: Float64 = 0.0
 
-class holder:
+class Holder:
     def __init__(self) -> None: ...
 
-    origin: point
+    origin: Point
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def move(
-    item: point,
+    item: Point,
     dx: Float64,
     dy: Float64
 ) -> None: ...
@@ -120,11 +120,11 @@ def move(
 def make_point(
     x: Float64,
     y: Float64
-) -> point: ...
+) -> Point: ...
 
 def set_origin(
-    container: holder,
-    item: point
+    container: Holder,
+    item: Point
 ) -> None: ...
 ```
 
@@ -149,7 +149,7 @@ sys.path.insert(0, "build/geometry")
 import geometry.points as points
 
 # Create new object
-item = points.point(x=np.float64(1.0), y=np.float64(2.0))
+item = points.Point(x=np.float64(1.0), y=np.float64(2.0))
 
 # Call method (inout mutation)
 points.move(item, np.float64(3.0), np.float64(4.0))
@@ -180,17 +180,17 @@ Result:
 The class docstring gives a short index:
 
 ```python
-print(points.point.__doc__)
+print(points.Point.__doc__)
 ```
 
 ```text
-point
+Point
 
 Opaque wrapper for native type point.
 
 Constructor
 -----------
-point(*, x=0.0, y=0.0) -> point
+Point(*, x=0, y=0) -> Point
 
 Fields
 ------
@@ -201,7 +201,7 @@ y : float64
 The constructor has its own detailed docstring:
 
 ```python
-print(points.point.__init__.__doc__)
+print(points.Point.__init__.__doc__)
 ```
 
 ---
@@ -281,12 +281,12 @@ as the constructor.
 
 In this mapping, `@bind` selects the native initializer,
 `@native_call(...)` gives its argument order, `Pass()` inserts the new
-`point`, and `Addr(Arg(i))` passes Python argument `i` by address:
+`Point`, and `Addr(Arg(i))` passes Python argument `i` by address:
 
 ```python
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
-class point:
+class Point:
     x: Float64
     y: Float64
 
@@ -299,8 +299,8 @@ Replace the generated field-keyword `__init__` declaration with this one.
 The edit changes construction only; it does not create
 `initialize_point` in the native module.
 
-After rebuilding, `points.point.__init__.__doc__` starts with
-`point(x, y) -> point` and lists both parameters.
+After rebuilding, `points.Point.__init__.__doc__` starts with
+`Point(x, y) -> Point` and lists both parameters.
 
 For the complete replacement rules, see
 [Replace the Constructor](../reference/pyi-contracts/functions-and-classes.md#replace-the-constructor).
@@ -349,12 +349,12 @@ the module declaration:
 ```python
 from prik.contracts import Addr, Arg, Float64, Pass, native_call
 
-class point:
+class Point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def move(self, dx: Float64, dy: Float64) -> None: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
-def move(item: point, dx: Float64, dy: Float64) -> None: ...
+def move(item: Point, dx: Float64, dy: Float64) -> None: ...
 ```
 
 Both declarations call the existing native `move` procedure:
@@ -402,7 +402,7 @@ Fortran one:
 | `procedure, public ::` on a binding | Published regardless of the type default |
 
 The class docstring now lists `move(dx, dy) -> None` under `Methods`.
-`points.point.move.__doc__` contains its complete parameter and return details.
+`points.Point.move.__doc__` contains its complete parameter and return details.
 
 For the complete mapping rules, see
 [Expose a Module Procedure as a Method](../reference/pyi-contracts/functions-and-classes.md#expose-a-module-procedure-as-a-method).
@@ -556,7 +556,7 @@ generic:
 ```python
 from prik.contracts import Float64, Int32, bind, overload, private
 
-class counter:
+class Counter:
     @private
     def add_integer(self, amount: Int32) -> Int32: ...
 
@@ -610,19 +610,19 @@ The generated contract exposes `operator(+)` as `__add__`:
 ```python
 from prik.contracts import overload, private
 
-class point:
+class Point:
     @overload("add_points")
-    def __add__(self, right: point) -> point: ...
+    def __add__(self, right: Point) -> Point: ...
 
 @private
-def add_points(left: point, right: point) -> point: ...
+def add_points(left: Point, right: Point) -> Point: ...
 ```
 
 Python uses the normal operator:
 
 ```python
-left = points.point(x=np.float64(1.0), y=np.float64(2.0))
-right = points.point(x=np.float64(3.0), y=np.float64(4.0))
+left = points.Point(x=np.float64(1.0), y=np.float64(2.0))
+right = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 total = left + right
 print(total.x, total.y)  # 4.0 6.0
 ```
@@ -630,7 +630,7 @@ print(total.x, total.y)  # 4.0 6.0
 The magic method docstring shows the accepted operator signatures:
 
 ```python
-print(points.point.__add__.__doc__)
+print(points.Point.__add__.__doc__)
 ```
 
 The relevant part is:
@@ -640,7 +640,7 @@ __add__(*args, **kwargs)
 
 Supported Signatures
 --------------------
-__add__(right: point) -> point
+__add__(right: Point) -> Point
 ```
 
 | Fortran generic | Python method | Python syntax |

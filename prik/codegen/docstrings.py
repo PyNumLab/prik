@@ -89,6 +89,15 @@ class WrapperDocstringBuilder:
         are explicit plan overrides and remain unchanged. The same plan is
         returned for generation-stage chaining.
         """
+        # A docstring documents the Python API, so a wrapped type is named the
+        # way its namespace publishes it. Planning settled that name; indexing
+        # it here keeps every rendered signature reading the same one.
+        self._published_class_names = {
+            surface.type_identity[1].casefold(): surface.python_names[0]
+            for namespace in plan.namespaces
+            for surface in namespace.classes
+            if surface.python_names
+        }
         for namespace in plan.namespaces:
             self._render_namespace(plan.owner_path, namespace)
         return plan
@@ -915,6 +924,11 @@ class WrapperDocstringBuilder:
             return type_name
         return f"{type_name} | None" if signature else f"{type_name} or None"
 
+    def _published_class_name(self, semantic_type_name: object) -> str:
+        """Return the name a namespace publishes one wrapped type under."""
+        index = getattr(self, "_published_class_names", {})
+        return index.get(str(semantic_type_name).casefold(), str(semantic_type_name))
+
     def _base_type(self, transfer) -> str:
         """Map one completed transfer family and storage facet to public type text.
 
@@ -925,7 +939,7 @@ class WrapperDocstringBuilder:
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.CALLBACK:
             return self._callback_type(transfer.callback)
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.DERIVED:
-            return transfer.semantic_type_name
+            return self._published_class_name(transfer.semantic_type_name)
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
         array_element = _ARRAY_ELEMENT_TYPES.get(transfer.semantic_type_name, scalar)
         handle = getattr(transfer, "native_array_handle", None)

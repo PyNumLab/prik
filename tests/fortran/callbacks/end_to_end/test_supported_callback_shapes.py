@@ -63,11 +63,11 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
 
     assert module.apply_string_storage_callback(string_callback, "OLD     ") == ("UPDATED!", "WRITTEN!")
 
-    point = module.point_t(x=np.float64(2.0), y=np.float64(5.0))
-    shifted = module.point_t()
+    point = module.Point_T(x=np.float64(2.0), y=np.float64(5.0))
+    shifted = module.Point_T()
     assert (
         module.apply_point_callback(
-            lambda value: module.point_t(x=value.x + 1.0, y=value.y * 2.0),
+            lambda value: module.Point_T(x=value.x + 1.0, y=value.y * 2.0),
             point,
             shifted,
         )

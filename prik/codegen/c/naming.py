@@ -113,10 +113,18 @@ class CBindingNames:
         *,
         fallback: str | None = None,
     ) -> str:
-        """Return the Python helper attaching existing native storage."""
-        name = surface.python_names[0] if surface is not None else fallback
+        """Return the Python helper attaching existing native storage.
+
+        The helper is internal, and the generated code reaching for it knows
+        the native type it is wrapping rather than the name Python publishes
+        that type under, so it is keyed on the type's own identity the way
+        ``class_create_method`` is. Keying it on the published name instead
+        would move it whenever naming policy spells the class differently and
+        leave every such lookup resolving to nothing.
+        """
+        name = surface.type_identity[1].casefold() if surface is not None else fallback
         if name is None:
-            raise ValueError("Class wrapper helper requires a Python type name")
+            raise ValueError("Class wrapper helper requires a native type name")
         return f"_prik_wrap_{name}"
 
     @staticmethod

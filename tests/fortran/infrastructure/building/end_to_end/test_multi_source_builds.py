@@ -299,7 +299,7 @@ def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
         "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n\n"
         '__all__ = ["first_math", "shared_types", "second_math", "box_ops"]\n'
     )
-    assert "from .shared_types import box" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .shared_types import Box as box" in (package / "box_ops.pyi").read_text(encoding="utf-8")
     assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
 
 
@@ -336,9 +336,9 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
     # `box_ops` imports the type to express its own signature and publishes no
     # name of its own, so neither route adds one. The type stays where it is
     # declared, and both builds agree on that.
-    assert not hasattr(generated_module.box_ops, "box")
-    assert not hasattr(source_module.box_ops, "box")
-    assert generated_module.shared_types.box is not None
+    assert not hasattr(generated_module.box_ops, "Box")
+    assert not hasattr(source_module.box_ops, "Box")
+    assert generated_module.shared_types.Box is not None
 
 
 def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
@@ -357,7 +357,7 @@ def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
         str(entry.parent / "box_ops.pyi"),
         str(entry.parent / "shared_types.pyi"),
     ]
-    box = module.box()
+    box = module.Box()
     box.value = np.int32(7)
     assert module.box_value(box) == np.int32(7)
 

@@ -32,7 +32,7 @@ def test_derived_all_direct_route_keeps_generated_type_support_separate(
         pyi_parity_build_mode,
     )
 
-    value = module.point(x=np.float64(1.5), y=np.float64(2.5))
+    value = module.Point(x=np.float64(1.5), y=np.float64(2.5))
     references_before = sys.getrefcount(value)
     assert module.direct_sum(value) == np.float64(4.0)
     shifted = module.direct_shift(value, np.float64(2.0))
@@ -74,7 +74,7 @@ def test_derived_mixed_route_adapts_only_by_value_aggregate(
         pyi_parity_build_mode,
     )
 
-    value = module.point(x=np.float64(2.0), y=np.float64(3.0))
+    value = module.Point(x=np.float64(2.0), y=np.float64(3.0))
     assert module.direct_sum(value) == np.float64(5.0)
     assert module.adapted_sum_by_value(value) == np.float64(5.0)
 
@@ -100,7 +100,7 @@ def test_derived_mixed_route_matches_edited_source_free_contract(tmp_path: Path)
         tmp_path, module_name=stem, source_text=source, contract_text=contract
     )
 
-    value = module.point(x=np.float64(2.0), y=np.float64(3.0))
+    value = module.Point(x=np.float64(2.0), y=np.float64(3.0))
     assert module.direct_sum(value) == np.float64(5.0)
     assert module.adapted_sum_by_value(value) == np.float64(5.0)
     bridge = (result.output_dir / f"bind_c_{stem}_wrapper.f90").read_text(encoding="utf-8").casefold()

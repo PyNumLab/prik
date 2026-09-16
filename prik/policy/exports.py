@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 from prik.naming import NamingPolicy, normalize_public_name, preserves_source_case
 from prik.semantics import models
+from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
+from prik.semantics.models import export_namespace
 
 
 @dataclass(frozen=True)
@@ -32,10 +34,17 @@ def complete_python_export_policy(
     *,
     strict_wrapper_names: bool = False,
 ) -> None:
-    """Resolve every public export name within its owning Python namespace."""
+    """Resolve every public export name within its owning Python namespace.
+
+    A module read from a semantic ``.pyi`` is already named in Python -- the
+    contract states the names it publishes -- so those spellings are kept
+    exactly. Only a module converted from native source has names PRIK must
+    choose, and only where the source language has no spelling of its own.
+    """
+    contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
     naming = NamingPolicy(
         strict_public_names=strict_wrapper_names,
-        preserve_case=preserves_source_case(module.origin.source_language),
+        preserve_case=contract_named or preserves_source_case(module.origin.source_language),
     )
     for owner in _module_export_owners(module):
         if getattr(owner, "visibility", "public") == "private":
@@ -47,16 +56,56 @@ def complete_python_export_policy(
             metadata[models.PYTHON_EXPORTS_METADATA] = exports
         category = _owner_category(owner)
         for export in exports:
-            namespace = _export_namespace(export)
+            namespace = export_namespace(export)
             raw_name = owner.name if export.get("name") is None else export["name"]
             resolved_name = naming.reserve_public_name(
                 namespace,
                 raw_name,
-                category=category,
+                category="function" if contract_named else category,
                 owner=f"{category} {owner.name}",
             )
             if export.get("name") is None:
                 export["name"] = resolved_name
+    _complete_reexport_names(module, naming, contract_named=contract_named)
+
+
+def _complete_reexport_names(
+    module: models.SemanticModule,
+    naming: NamingPolicy,
+    *,
+    contract_named: bool,
+) -> None:
+    """Name each re-export in the namespace that publishes it.
+
+    A re-export adds no declaration, but it does add a Python attribute, so it
+    competes for a name with everything the publishing module declares. It is
+    reserved after those declarations: a module's own declaration keeps the
+    name it would have had, and an imported alias is the one moved aside.
+    """
+    for reexport in module.reexports:
+        if reexport.python_name:
+            continue
+        category = "class" if reexport.entity_kind == "derived_type" else "function"
+        reexport.python_name = naming.reserve_public_name(
+            _reexport_namespace(module, reexport),
+            reexport.local_name,
+            category="function" if contract_named else category,
+            owner=f"re-export {reexport.local_name}",
+        )
+
+
+def _reexport_namespace(module: models.SemanticModule, reexport: models.SemanticReexport) -> tuple[str, ...]:
+    """Return the Python namespace one re-export publishes into.
+
+    A re-export names the module publishing it. Completing that same module
+    names it against the module's own root, which is where its declarations
+    are; completing a merged package instead names it inside the namespace
+    that module occupies there, beside the declarations it sits with.
+    """
+    publisher = str(reexport.module or "")
+    if not publisher or publisher.casefold() == str(module.name).casefold():
+        return ()
+    return tuple(part.casefold() for part in publisher.split(".") if part)
 
 
 def _module_export_owners(module: models.SemanticModule):
@@ -80,14 +129,6 @@ def _owner_category(owner) -> str:
     return "function"
 
 
-def _export_namespace(export: dict[str, object]) -> tuple[str, ...]:
-    """Return one normalized namespace tuple from semantic export metadata."""
-    raw_namespace = export.get("namespace", ())
-    if not isinstance(raw_namespace, tuple | list):
-        return ()
-    return tuple(str(part) for part in raw_namespace)
-
-
 def completed_python_exports(
     owner: models.SemanticFunction | models.SemanticVariable,
     default_name: str,
@@ -105,13 +146,17 @@ def completed_python_exports(
             )
         exports.append(
             PythonExportPolicy(
-                namespace=_export_namespace(item),
+                namespace=export_namespace(item),
                 name=str(name),
             )
         )
     if not exports and getattr(owner, "visibility", "public") != "private":
-        preserve_case = preserves_source_case(owner.origin.source_language)
-        exports.append(PythonExportPolicy((), normalize_public_name(default_name, preserve_case=preserve_case).name))
+        fallback = normalize_public_name(
+            default_name,
+            preserve_case=preserves_source_case(owner.origin.source_language),
+            category=_owner_category(owner),
+        )
+        exports.append(PythonExportPolicy((), fallback.name))
     return tuple(dict.fromkeys(exports))
 
 

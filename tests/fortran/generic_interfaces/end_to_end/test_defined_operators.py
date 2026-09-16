@@ -33,21 +33,21 @@ def test_fortran_defined_operators_and_assignment_dispatch_in_generated_c_extens
     )
 
     def vector(value):
-        result = module.vector()
+        result = module.Vector()
         result.value = np.float64(value)
         return result
 
     def offset(value):
-        result = module.offset()
+        result = module.Offset()
         result.value = np.float64(value)
         return result
 
     left = vector(5.0)
     right = vector(2.0)
 
-    assert "__add__(*args, **kwargs)" in module.vector.__doc__
-    assert "__add__(right: vector) -> vector" in module.vector.__add__.__doc__
-    assert "add_vectors" not in module.vector.__add__.__doc__
+    assert "__add__(*args, **kwargs)" in module.Vector.__doc__
+    assert "__add__(right: Vector) -> Vector" in module.Vector.__add__.__doc__
+    assert "add_vectors" not in module.Vector.__add__.__doc__
 
     assert module.convert(np.int32(2)) == np.int32(12)
     assert module.convert(np.float64(2.0)) == np.float64(2.5)
@@ -96,7 +96,7 @@ def test_fortran_defined_operators_and_assignment_dispatch_in_generated_c_extens
     assert assigned.assign(assigned) is assigned
     assert assigned.value == np.float64(3.5)
 
-    counter = module.counter()
+    counter = module.Counter()
     counter.value = np.int32(4)
     assert (counter + np.int32(3)).value == np.int32(7)
 

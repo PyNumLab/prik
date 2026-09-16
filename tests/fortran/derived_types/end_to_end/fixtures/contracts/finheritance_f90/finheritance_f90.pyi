@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Annotated, Arg, Float64, Pass, Polymorphic, bind, native_call
 
-class base_shape:
+class Base_Shape:
     def __init__(
         self,
         *,
@@ -19,7 +19,7 @@ class base_shape:
         value: Float64
     ) -> None: ...
 
-class circle(base_shape):
+class Circle(Base_Shape):
     def __init__(
         self,
         *,
@@ -31,7 +31,7 @@ class circle(base_shape):
     @bind("circle_area")
     def area(self) -> Float64: ...
 
-class box(base_shape):
+class Box(Base_Shape):
     def __init__(
         self,
         *,
@@ -44,25 +44,25 @@ class box(base_shape):
     def area(self) -> Float64: ...
 
 def base_area(
-    self: Annotated[base_shape, Polymorphic]
+    self: Annotated[Base_Shape, Polymorphic]
 ) -> Float64: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
 def base_set_size(
-    self: Annotated[base_shape, Polymorphic],
+    self: Annotated[Base_Shape, Polymorphic],
     value: Float64
 ) -> None: ...
 
 def circle_area(
-    self: Annotated[circle, Polymorphic]
+    self: Annotated[Circle, Polymorphic]
 ) -> Float64: ...
 
 def box_area(
-    self: Annotated[box, Polymorphic]
+    self: Annotated[Box, Polymorphic]
 ) -> Float64: ...
 
 def describe_shape(
-    item: Annotated[base_shape, Polymorphic]
+    item: Annotated[Base_Shape, Polymorphic]
 ) -> Float64: ...
 
-__all__ = ["base_shape", "circle", "box", "base_area", "base_set_size", "circle_area", "box_area", "describe_shape"]
+__all__ = ["Base_Shape", "Circle", "Box", "base_area", "base_set_size", "circle_area", "box_area", "describe_shape"]

@@ -2109,7 +2109,7 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
                     )
                 )
             exports[:] = [primary]
-        _reject_unsupported_republication(path, module)
+        _reject_unsupported_republication(path, module, home)
 
 
 def _pyi_export_tree(
@@ -2254,25 +2254,35 @@ def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, 
     )
 
 
-def _reject_unsupported_republication(path: Path, module: SemanticModule) -> None:
-    """Refuse a published name whose kind reaches Python through one namespace.
+def _reject_unsupported_republication(
+    path: Path,
+    module: SemanticModule,
+    home: tuple[str, ...] | None,
+) -> None:
+    """Refuse a published name whose kind reaches Python only where it is declared.
 
     A module variable holds state that stays live where it is declared, and a
-    generic is a dispatch surface rather than one object, so neither can be
-    bound a second time. A source build publishes neither, and a contract that
-    asks for it says what no build can do rather than quietly differing.
+    generic is a dispatch surface rather than one object, so neither reaches
+    Python as an object another namespace can bind. A procedure or a derived
+    type does, which is why those two are re-exported through aliases instead.
+
+    Every namespace publishing one of these kinds is therefore checked against
+    the namespace declaring it, not merely counted: moving one to a facade
+    publishes it in exactly one place and still says what no build can do.
     """
     for declaration, kind in (
         *((item, "module variable") for item in module.variables),
         *((item, "generic") for item in module.overload_sets),
     ):
         exports = _declaration_exports(declaration)
-        if len(exports) < 2:
+        relocated = [export for export in exports if home is None or tuple(export["namespace"]) != home]
+        if not relocated:
             continue
-        namespaces = ", ".join(".".join(export["namespace"]) or "<root>" for export in exports)
+        declaring = "<unknown>" if home is None else (".".join(home) or "<root>")
+        namespaces = ", ".join(".".join(export["namespace"]) or "<root>" for export in relocated)
         raise ValueError(
-            f"{path}: {kind} {declaration.name!r} is published by more than one contract "
-            f"({namespaces}); republishing this kind is not supported"
+            f"{path}: {kind} {declaration.name!r} is declared in {declaring} and published in "
+            f"{namespaces}; this kind is publishable only by the namespace declaring it"
         )
 
 

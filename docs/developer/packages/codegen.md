@@ -219,7 +219,7 @@ class State:
     def __new__(cls, *args, **kwargs):
         'Construction is disabled.'
         raise TypeError('State objects come from native code.')
-def _prik_wrap_State(capsule, owner=None, ops=None, origin='direct'):
+def _prik_wrap_state_t(capsule, owner=None, ops=None, origin='direct'):
     ...
 ```
 

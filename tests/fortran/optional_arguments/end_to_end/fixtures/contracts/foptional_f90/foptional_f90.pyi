@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Arg, Float64, Int32, Returns, String, native_call
 
-class sample:
+class Sample:
     def __init__(
         self,
         *,
@@ -15,7 +15,7 @@ def summarize(
     scale: Int32 = ...,
     values: Float64[::] = ...,
     label: String = ...,
-    item: sample = ...
+    item: Sample = ...
 ) -> Int32: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
@@ -36,4 +36,4 @@ def optional_status(
     status: Int32[()] = ...
 ) -> tuple[Int32, Returns["status", Int32[()]] | None]: ...
 
-__all__ = ["sample", "summarize", "mutate_optional", "fill_optional", "optional_status"]
+__all__ = ["Sample", "summarize", "mutate_optional", "fill_optional", "optional_status"]

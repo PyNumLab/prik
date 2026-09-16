@@ -34,15 +34,15 @@ def test_fortran_default_constructor_keywords_and_finalization(
 
     module.reset_final_count()
 
-    defaulted = module.initialized()
+    defaulted = module.Initialized()
     assert defaulted.id == np.int32(7)
     assert defaulted.scale == np.float64(2.5)
 
-    partial = module.initialized(id=np.int32(11))
+    partial = module.Initialized(id=np.int32(11))
     assert partial.id == np.int32(11)
     assert partial.scale == np.float64(2.5)
 
-    keyword = module.initialized(id=np.int32(4), scale=np.float64(6.5))
+    keyword = module.Initialized(id=np.int32(4), scale=np.float64(6.5))
     assert keyword.id == np.int32(4)
     assert keyword.scale == np.float64(6.5)
 
@@ -58,12 +58,12 @@ def test_fortran_default_constructor_keywords_and_finalization(
     assert module.get_final_count() == np.int32(3)
 
     with pytest.raises(TypeError):
-        module.initialized(np.int32(1))
+        module.Initialized(np.int32(1))
     gc.collect()
     assert module.get_final_count() == np.int32(4)
 
     with pytest.raises(TypeError):
-        module.initialized(missing=np.int32(1))
+        module.Initialized(missing=np.int32(1))
     gc.collect()
     assert module.get_final_count() == np.int32(5)
 

@@ -47,7 +47,7 @@ def test_subroutine_outputs_and_caller_storage_follow_documented_projection_rule
     assert module.no_intent_scalar(no_intent) == np.float64(6.0)
     assert no_intent == np.float64(5.0)
 
-    point = module.point()
+    point = module.Point()
     assert module.fill_point(point) is None
     assert point.x == np.float64(9.5)
 

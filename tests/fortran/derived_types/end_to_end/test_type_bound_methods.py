@@ -31,7 +31,7 @@ def test_modern_fortran_derived_type_exposes_class_and_type_bound_methods(
         pyi_parity_build_mode,
     )
 
-    assert "make(n, fill_value) -> vector_store" in module.vector_store.make.__doc__
-    assert "n : int64" in module.vector_store.make.__doc__
-    assert "wrapped native instance" not in module.vector_store.make.__doc__
+    assert "make(n, fill_value) -> Vector_Store" in module.Vector_Store.make.__doc__
+    assert "n : int64" in module.Vector_Store.make.__doc__
+    assert "wrapped native instance" not in module.Vector_Store.make.__doc__
     _assert_modern_class_examples(module)
