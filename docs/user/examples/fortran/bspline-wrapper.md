@@ -135,7 +135,7 @@ import numpy as np
 import prik_bspline.bspline_oo_module as bspline
 
 x = np.linspace(0.0, 2.0 * np.pi, 25)
-spline = bspline.bspline_1d(x, np.sin(x), np.int32(4))
+spline = bspline.Bspline_1d(x, np.sin(x), np.int32(4))
 
 value, iflag = spline.evaluate(np.float64(1.234), np.int32(0))
 area, iflag = spline.integral(np.float64(0.0), np.float64(np.pi))
@@ -145,11 +145,11 @@ The abstract base is exported but cannot be constructed. Its concrete
 extensions inherit the base bindings and answer its deferred operations:
 
 ```python
-bspline.bspline_class()
+bspline.Bspline_Class()
 # TypeError: bspline_class is an abstract native type and cannot be
 #            instantiated; create one of its concrete extensions instead
 
-issubclass(bspline.bspline_1d, bspline.bspline_class)   # True
+issubclass(bspline.Bspline_1d, bspline.Bspline_Class)   # True
 ```
 
 The procedural module exposes the matching `db1ink` through `db6ink` setup
