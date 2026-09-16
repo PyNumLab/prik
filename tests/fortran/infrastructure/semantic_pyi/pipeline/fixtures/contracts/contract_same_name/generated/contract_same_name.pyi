@@ -1,1 +1,3 @@
 def module_ping() -> None: ...
+
+__all__ = ["module_ping"]

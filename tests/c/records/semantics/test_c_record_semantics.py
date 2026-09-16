@@ -117,6 +117,7 @@ void use_context(struct private_context *ctx);
     assert (
         stubs["private"]
         == "from prik.contracts import CStruct, Opaque\n\nclass private_context(CStruct, Opaque):\n    pass"
+        '\n\n__all__ = ["private_context"]'
     )
 
 

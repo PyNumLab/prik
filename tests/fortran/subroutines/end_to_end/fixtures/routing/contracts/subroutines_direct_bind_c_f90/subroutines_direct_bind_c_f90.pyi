@@ -11,3 +11,5 @@ def direct_reference(
 def direct_outputs(
     value: Int32
 ) -> tuple[Returns["value", Int32], Int32, Int32]: ...
+
+__all__ = ["direct_reference", "direct_outputs"]

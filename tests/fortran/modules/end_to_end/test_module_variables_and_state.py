@@ -738,3 +738,63 @@ def test_published_import_binds_the_declaration_a_collision_moved_aside(tmp_path
     assert module.reexport_collide_mod.lambda__2(np.int32(0)) == np.int32(100)
     assert module.reexport_collide_user_mod.lambda_ is module.reexport_collide_mod.lambda__2
     assert module.reexport_collide_user_mod.lambda_(np.int32(0)) == np.int32(100)
+
+
+def test_a_reexport_binds_one_callable_from_source_and_from_its_contract(tmp_path: Path):
+    """A published name is an alias, so both routes bind the same object.
+
+    A re-export names a procedure that is already wrapped, whichever way the
+    build was described. Wrapping it a second time would give one native
+    procedure two Python objects, and a renamed re-export is no different: the
+    name it binds changes, not the callable behind it.
+    """
+    import subprocess
+    import sys
+
+    from tests.fortran._support.wrapper_build import _compiler, _import_from_build_dir
+    from prik import build_pyi_extension
+
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+
+    from_source = _build_source_and_import(
+        source,
+        tmp_path / "source_build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+    assert from_source.reexport_facade_mod.scale_value is from_source.reexport_home_mod.scale_value
+    assert from_source.reexport_renamed_mod.public_scale is from_source.reexport_home_mod.scale_value
+
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            str(source),
+            "--out",
+            str(contracts),
+            "--compiler",
+            _compiler(),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    result = build_pyi_extension(
+        contracts / "__init__.pyi",
+        input_compiler=_compiler(),
+        native_fortran_sources=[str(source)],
+        output_dir=tmp_path / "contract_build",
+        output_name="reexport_contract",
+    )
+    from_contract = _import_from_build_dir(result.module_name, result.output_dir)
+
+    assert from_contract.reexport_facade_mod.scale_value is from_contract.reexport_home_mod.scale_value
+    assert from_contract.reexport_renamed_mod.public_scale is from_contract.reexport_home_mod.scale_value
+    assert from_contract.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
+
+    # One wrapper defines the procedure on either route.
+    generated = (result.output_dir / "reexport_contract_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_value") == 1

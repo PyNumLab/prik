@@ -54,3 +54,22 @@ def replace_names(
 def rewrite_storage(
     label: String[8]
 ) -> Returns["label", String[8]]: ...
+
+__all__ = [
+    "char_code_default",
+    "char_code_len1",
+    "char_code_kind1",
+    "char_code_c_char",
+    "string_len_fixed",
+    "string_len_assumed",
+    "string_len_c_char",
+    "char_result_default",
+    "char_result_c_char",
+    "string_result_fixed",
+    "string_result_padded",
+    "string_result_c_char",
+    "string_result_deferred",
+    "fixed_array_extent",
+    "replace_names",
+    "rewrite_storage",
+]

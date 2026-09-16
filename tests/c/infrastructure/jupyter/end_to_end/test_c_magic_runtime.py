@@ -76,6 +76,8 @@ def test_generated_c_contract_can_be_edited_then_compiled_once(tmp_path: Path, m
         "from prik.contracts import Float64, bind",
     )
     contract = contract.replace("def square(", '@bind("square")\ndef squared(')
+    # Renaming a declaration renames what the contract publishes.
+    contract = contract.replace('__all__ = ["square"]', '__all__ = ["squared"]')
     line = magic_line.removeprefix("%%pyi").strip()
 
     magic.pyi(line, contract)

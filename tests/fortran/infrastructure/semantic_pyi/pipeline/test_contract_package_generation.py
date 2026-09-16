@@ -85,7 +85,8 @@ def test_same_named_module_uses_init_entry_and_keeps_externals_at_root(tmp_path:
         "from prik.contracts import standalone\n"
         "from . import contract_same_name\n\n"
         "@standalone\n"
-        "def external_ping() -> None: ...\n"
+        "def external_ping() -> None: ...\n\n"
+        '__all__ = ["external_ping"]\n'
     )
     assert "def module_ping() -> None: ..." in (entry.parent / "contract_same_name.pyi").read_text(encoding="utf-8")
 

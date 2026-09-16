@@ -109,3 +109,16 @@ def make_vector_store(
     n: Int64,
     fill_value: Float64
 ) -> vector_store: ...
+
+__all__ = [
+    "vector",
+    "vector_store",
+    "scale",
+    "shift_vector",
+    "magnitude",
+    "allocate_values",
+    "set_values",
+    "allocate_matrix",
+    "set_matrix",
+    "make_vector_store",
+]

@@ -4,3 +4,5 @@ from . import module2
 
 @prik_standalone
 def standalone() -> Int32: ...
+
+__all__ = ["standalone"]

@@ -23,3 +23,5 @@ def direct_call_notify(
     callback: direct_notify,
     value: Int32
 ) -> None: ...
+
+__all__ = ["direct_callback", "direct_notify", "direct_apply", "direct_call_notify"]

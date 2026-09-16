@@ -15,3 +15,5 @@ def direct_round_trip(
 def adapted_next(
     state: Int32
 ) -> Int32: ...
+
+__all__ = ["stopped", "ready", "running", "direct_round_trip", "adapted_next"]

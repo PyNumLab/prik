@@ -1,199 +1,11 @@
 {
   "semantic_modules": [
     {
-      "name": "constants_mod",
-      "functions": [],
-      "reexports": [],
-      "prototypes": [],
-      "overload_sets": [],
       "classes": [],
-      "variables": [
-        {
-          "name": "nmax",
-          "semantic_type": {
-            "name": "Int32",
-            "rank": 0,
-            "dtype": "Int32",
-            "shape": [],
-            "constraints": [
-              {
-                "name": "Constant",
-                "arguments": []
-              }
-            ],
-            "coercions": [],
-            "ownership": {
-              "ownership": "borrowed",
-              "mutable": false,
-              "aliasing": true
-            },
-            "metadata": {},
-            "storage": null,
-            "origin": {
-              "source_language": "fortran",
-              "native_name": "nmax",
-              "native_abi": null,
-              "native_symbol": null,
-              "native_scope": null,
-              "source_kind": "variable",
-              "source_type": "integer(kind=c_int)",
-              "source_location": {},
-              "metadata": {
-                "rank": 0,
-                "shape": [],
-                "lower_bounds": [],
-                "upper_bounds": [],
-                "allocatable": false,
-                "pointer": false,
-                "target": false,
-                "contiguous": false,
-                "optional": false,
-                "value": false,
-                "constant": true
-              }
-            }
-          },
-          "visibility": "public",
-          "default_value": "100",
-          "metadata": {
-            "fortran_initializer": "100"
-          },
-          "origin": {
-            "source_language": "fortran",
-            "native_name": "nmax",
-            "native_abi": null,
-            "native_symbol": null,
-            "native_scope": "constants_mod",
-            "source_kind": "variable",
-            "source_type": "integer(kind=c_int)",
-            "source_location": {},
-            "metadata": {
-              "rank": 0,
-              "shape": [],
-              "lower_bounds": [],
-              "upper_bounds": [],
-              "allocatable": false,
-              "pointer": false,
-              "target": false,
-              "contiguous": false,
-              "optional": false,
-              "value": false,
-              "constant": true
-            }
-          }
-        },
-        {
-          "name": "origin",
-          "semantic_type": {
-            "name": "Float64",
-            "rank": 1,
-            "dtype": "Float64",
-            "shape": [
-              "3"
-            ],
-            "constraints": [],
-            "coercions": [],
-            "ownership": {
-              "ownership": "borrowed",
-              "mutable": false,
-              "aliasing": true
-            },
-            "metadata": {},
-            "storage": {
-              "kind": "array",
-              "read_only": false,
-              "mutable": false,
-              "pointer_depth": 0,
-              "ownership": "borrowed",
-              "array": {
-                "rank": 1,
-                "shape": [
-                  "3"
-                ],
-                "lower_bounds": [],
-                "upper_bounds": [],
-                "source_shape": [
-                  "3"
-                ],
-                "category": "explicit_shape",
-                "order": null,
-                "copy_order": null,
-                "axes": [
-                  "dense"
-                ],
-                "contiguous": true,
-                "allocatable": false,
-                "pointer": false,
-                "metadata": {}
-              },
-              "calling_convention": null,
-              "metadata": {}
-            },
-            "origin": {
-              "source_language": "fortran",
-              "native_name": "origin",
-              "native_abi": null,
-              "native_symbol": null,
-              "native_scope": null,
-              "source_kind": "variable",
-              "source_type": "real(kind=c_double)",
-              "source_location": {},
-              "metadata": {
-                "rank": 1,
-                "shape": [
-                  "3"
-                ],
-                "lower_bounds": [
-                  "1"
-                ],
-                "upper_bounds": [
-                  "3"
-                ],
-                "allocatable": false,
-                "pointer": false,
-                "target": false,
-                "contiguous": false,
-                "optional": false,
-                "value": false
-              }
-            }
-          },
-          "visibility": "public",
-          "default_value": null,
-          "metadata": {},
-          "origin": {
-            "source_language": "fortran",
-            "native_name": "origin",
-            "native_abi": null,
-            "native_symbol": null,
-            "native_scope": "constants_mod",
-            "source_kind": "variable",
-            "source_type": "real(kind=c_double)",
-            "source_location": {},
-            "metadata": {
-              "rank": 1,
-              "shape": [
-                "3"
-              ],
-              "lower_bounds": [
-                "1"
-              ],
-              "upper_bounds": [
-                "3"
-              ],
-              "allocatable": false,
-              "pointer": false,
-              "target": false,
-              "contiguous": false,
-              "optional": false,
-              "value": false
-            }
-          }
-        }
-      ],
+      "exported_names": null,
+      "functions": [],
       "imports": [
         {
-          "module": "iso_c_binding",
           "items": [
             {
               "source": "c_int",
@@ -203,21 +15,210 @@
               "source": "c_double",
               "target": null
             }
-          ]
+          ],
+          "module": "iso_c_binding"
         }
       ],
       "metadata": {},
+      "name": "constants_mod",
       "origin": {
-        "source_language": "fortran",
-        "native_name": "constants_mod",
+        "metadata": {},
         "native_abi": null,
-        "native_symbol": null,
+        "native_name": "constants_mod",
         "native_scope": "constants_mod",
+        "native_symbol": null,
         "source_kind": "module",
-        "source_type": null,
+        "source_language": "fortran",
         "source_location": {},
-        "metadata": {}
-      }
+        "source_type": null
+      },
+      "overload_sets": [],
+      "prototypes": [],
+      "reexports": [],
+      "variables": [
+        {
+          "default_value": "100",
+          "metadata": {
+            "fortran_initializer": "100"
+          },
+          "name": "nmax",
+          "origin": {
+            "metadata": {
+              "allocatable": false,
+              "constant": true,
+              "contiguous": false,
+              "lower_bounds": [],
+              "optional": false,
+              "pointer": false,
+              "rank": 0,
+              "shape": [],
+              "target": false,
+              "upper_bounds": [],
+              "value": false
+            },
+            "native_abi": null,
+            "native_name": "nmax",
+            "native_scope": "constants_mod",
+            "native_symbol": null,
+            "source_kind": "variable",
+            "source_language": "fortran",
+            "source_location": {},
+            "source_type": "integer(kind=c_int)"
+          },
+          "semantic_type": {
+            "coercions": [],
+            "constraints": [
+              {
+                "arguments": [],
+                "name": "Constant"
+              }
+            ],
+            "dtype": "Int32",
+            "metadata": {},
+            "name": "Int32",
+            "origin": {
+              "metadata": {
+                "allocatable": false,
+                "constant": true,
+                "contiguous": false,
+                "lower_bounds": [],
+                "optional": false,
+                "pointer": false,
+                "rank": 0,
+                "shape": [],
+                "target": false,
+                "upper_bounds": [],
+                "value": false
+              },
+              "native_abi": null,
+              "native_name": "nmax",
+              "native_scope": null,
+              "native_symbol": null,
+              "source_kind": "variable",
+              "source_language": "fortran",
+              "source_location": {},
+              "source_type": "integer(kind=c_int)"
+            },
+            "ownership": {
+              "aliasing": true,
+              "mutable": false,
+              "ownership": "borrowed"
+            },
+            "rank": 0,
+            "shape": [],
+            "storage": null
+          },
+          "visibility": "public"
+        },
+        {
+          "default_value": null,
+          "metadata": {},
+          "name": "origin",
+          "origin": {
+            "metadata": {
+              "allocatable": false,
+              "contiguous": false,
+              "lower_bounds": [
+                "1"
+              ],
+              "optional": false,
+              "pointer": false,
+              "rank": 1,
+              "shape": [
+                "3"
+              ],
+              "target": false,
+              "upper_bounds": [
+                "3"
+              ],
+              "value": false
+            },
+            "native_abi": null,
+            "native_name": "origin",
+            "native_scope": "constants_mod",
+            "native_symbol": null,
+            "source_kind": "variable",
+            "source_language": "fortran",
+            "source_location": {},
+            "source_type": "real(kind=c_double)"
+          },
+          "semantic_type": {
+            "coercions": [],
+            "constraints": [],
+            "dtype": "Float64",
+            "metadata": {},
+            "name": "Float64",
+            "origin": {
+              "metadata": {
+                "allocatable": false,
+                "contiguous": false,
+                "lower_bounds": [
+                  "1"
+                ],
+                "optional": false,
+                "pointer": false,
+                "rank": 1,
+                "shape": [
+                  "3"
+                ],
+                "target": false,
+                "upper_bounds": [
+                  "3"
+                ],
+                "value": false
+              },
+              "native_abi": null,
+              "native_name": "origin",
+              "native_scope": null,
+              "native_symbol": null,
+              "source_kind": "variable",
+              "source_language": "fortran",
+              "source_location": {},
+              "source_type": "real(kind=c_double)"
+            },
+            "ownership": {
+              "aliasing": true,
+              "mutable": false,
+              "ownership": "borrowed"
+            },
+            "rank": 1,
+            "shape": [
+              "3"
+            ],
+            "storage": {
+              "array": {
+                "allocatable": false,
+                "axes": [
+                  "dense"
+                ],
+                "category": "explicit_shape",
+                "contiguous": true,
+                "copy_order": null,
+                "lower_bounds": [],
+                "metadata": {},
+                "order": null,
+                "pointer": false,
+                "rank": 1,
+                "shape": [
+                  "3"
+                ],
+                "source_shape": [
+                  "3"
+                ],
+                "upper_bounds": []
+              },
+              "calling_convention": null,
+              "kind": "array",
+              "metadata": {},
+              "mutable": false,
+              "ownership": "borrowed",
+              "pointer_depth": 0,
+              "read_only": false
+            }
+          },
+          "visibility": "public"
+        }
+      ]
     }
   ]
 }

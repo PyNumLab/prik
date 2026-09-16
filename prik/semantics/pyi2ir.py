@@ -3768,6 +3768,21 @@ class _ModuleVisitor(ClassVisitor):
         """Convert a module variable declaration."""
         self.parser.module.variables.append(self.parser.ann_assign(node))
 
+    def _visit_Assign(self, node: ast.Assign) -> None:
+        """Record the list of names this contract states that it publishes."""
+        targets = [target for target in node.targets if isinstance(target, ast.Name)]
+        if len(targets) != 1 or targets[0].id != "__all__":
+            raise ValueError(f"Unsupported .pyi node: {_node_text(node)!r}")
+        if self.parser.module.exported_names is not None:
+            raise ValueError("A contract states __all__ once")
+        try:
+            names = ast.literal_eval(node.value)
+        except ValueError as exc:
+            raise ValueError(f"__all__ expects a list of name strings: {_node_text(node)!r}") from exc
+        if not isinstance(names, list | tuple) or not all(isinstance(name, str) for name in names):
+            raise ValueError(f"__all__ expects a list of name strings: {_node_text(node)!r}")
+        self.parser.module.exported_names = [str(name) for name in names]
+
     def _visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Convert a semantic class declaration."""
         decorators = self.parser.decorators(node.decorator_list, context="class")

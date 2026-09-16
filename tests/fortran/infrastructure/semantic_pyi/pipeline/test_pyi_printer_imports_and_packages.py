@@ -316,7 +316,7 @@ end module physics
     assert "p: particle" in code
     assert "Addr(particle)" not in code
     assert "class particle" not in code
-    assert stubs["types_mod"].endswith("class particle(Opaque):\n    pass")
+    assert stubs["types_mod"].endswith('class particle(Opaque):\n    pass\n\n__all__ = ["particle"]')
 
 
 def test_emit_procedure_local_imported_derived_types_as_qualified_module_refs():
@@ -426,7 +426,7 @@ end module physics
 
     assert "import types_mod" in stubs["physics"]
     assert "from .types_mod import particle" in stubs["physics"]
-    assert stubs["types_mod"].endswith("class particle(Opaque):\n    pass")
+    assert stubs["types_mod"].endswith('class particle(Opaque):\n    pass\n\n__all__ = ["particle"]')
 
 
 def test_emit_omits_structured_source_kind_import_without_items():
@@ -843,18 +843,19 @@ end module collide_user
     )
 
     assert "def lambda__2(" in stubs["collide_home"]
-    assert "from .collide_home import lambda__2 as lambda_" in stubs["collide_user"]
+    assert "from .collide_home import lambda__2" in stubs["collide_user"]
+    assert '__all__ = ["lambda_"]' in stubs["collide_user"]
 
 
-def test_a_contract_states_a_reexport_by_aliasing_the_name_it_publishes():
-    """An import expresses a declaration; an alias publishes a name.
+def test_generated_contract_states_the_names_its_source_publishes():
+    """A contract names its whole public surface, not only its re-exports.
 
-    A module publishing an imported entity writes it aliased to itself, the way
-    a stub marks anything it re-exports, so a contract reading this one can tell
-    the two apart. An import written only to name a type states no such intent.
+    An import cannot say whether a name is needed to express a declaration or
+    meant to be published, because a rename reads the same either way. The list
+    settles it, and is written to be edited.
     """
     home = parse_fortran_source("""
-module publish_home
+module surface_home
 implicit none
 type :: box
 integer :: value
@@ -863,26 +864,26 @@ contains
 subroutine scale_value(x)
 integer, intent(inout) :: x
 end subroutine scale_value
-end module publish_home
+end module surface_home
 """)
     facade = parse_fortran_source("""
-module publish_facade
-use publish_home, only : scale_value
+module surface_facade
+use surface_home, only : scale_value
 implicit none
 private
 public :: scale_value
-end module publish_facade
+end module surface_facade
 """)
     consumer = parse_fortran_source("""
-module publish_consumer
-use publish_home, only : box
+module surface_consumer
+use surface_home, only : crate => box
 implicit none
 contains
-integer function box_value(item) result(out)
-type(box), intent(in) :: item
+integer function crate_value(item) result(out)
+type(crate), intent(in) :: item
 out = item%value
-end function box_value
-end module publish_consumer
+end function crate_value
+end module surface_consumer
 """)
 
     stubs = emit_module_stubs(
@@ -890,6 +891,34 @@ end module publish_consumer
         normalize_fortran_public_names=True,
     )
 
-    assert "from .publish_home import scale_value as scale_value" in stubs["publish_facade"]
-    assert "from .publish_home import box\n" in stubs["publish_consumer"]
-    assert "box as box" not in stubs["publish_consumer"]
+    # The publishing module names the import; the consuming one does not.
+    assert stubs["surface_facade"].rstrip().endswith('__all__ = ["scale_value"]')
+    assert stubs["surface_consumer"].rstrip().endswith('__all__ = ["crate_value"]')
+    assert "from .surface_home import box as crate" in stubs["surface_consumer"]
+    assert '__all__ = ["box", "scale_value"]' in stubs["surface_home"]
+
+
+def test_a_published_intrinsic_name_states_no_contract_import():
+    """Publishing a name from an intrinsic module publishes nothing here.
+
+    A module may name an intrinsic constant in its `public` statement, and the
+    module it came from has no contract to read it from. The declaration was
+    never found, so there is nothing to import and nothing to publish.
+    """
+    source = """
+module kinds_mod
+use iso_fortran_env, only : REAL64, INT32
+implicit none
+private
+public :: REAL64, INT32
+public :: rate
+real(REAL64), parameter :: rate = 2.0d0
+end module kinds_mod
+"""
+
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+    code = emit_module(module, normalize_fortran_public_names=True)
+
+    assert [reexport.origin_module for reexport in module.reexports] == ["iso_fortran_env", "iso_fortran_env"]
+    assert "iso_fortran_env" not in code
+    assert '__all__ = ["rate"]' in code

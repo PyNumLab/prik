@@ -5,3 +5,5 @@ from .first_math import add_one
 def double_after_add(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["double_after_add"]

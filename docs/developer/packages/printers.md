@@ -152,12 +152,15 @@ from prik.contracts import Float64, bind
 def double_value(
     value: Float64
 ) -> Float64: ...
+
+__all__ = ["double_value"]
 ```
 
 The native examples prove that punctuation and layout are added to already
 formed nodes. The `.pyi` import and `@bind` line show that required contract
 imports and native identity are derived from semantic IR without attaching
-wrapper policy.
+wrapper policy, and the closing `__all__` states the surface the module
+publishes.
 
 ## Tests And Evidence
 

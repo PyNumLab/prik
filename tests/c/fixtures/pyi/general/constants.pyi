@@ -19,3 +19,15 @@ def coordinate_axis_name(
 ) -> Addr(Int8): ...
 
 def coordinate_axis_count() -> SizeT: ...
+
+__all__ = [
+    "COORD_X",
+    "COORD_Y",
+    "COORD_Z",
+    "PRIK_GENERAL_NMAX",
+    "PRIK_GENERAL_ORIGIN_RANK",
+    "nmax",
+    "origin",
+    "coordinate_axis_name",
+    "coordinate_axis_count",
+]

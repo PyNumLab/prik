@@ -35,3 +35,15 @@ def all_exprs(
     x8: Int[(8 + 3) * (2 + 1) - 1],
     x9: Int[(8 - 3) * (8 - 2)]
 ) -> None: ...
+
+__all__ = [
+    "PRIK_EXPR_N0",
+    "PRIK_EXPR_N1",
+    "PRIK_EXPR_A",
+    "PRIK_EXPR_B",
+    "PRIK_EXPR_C",
+    "fill_grid",
+    "update_plane",
+    "use_expr",
+    "all_exprs",
+]

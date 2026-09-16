@@ -580,7 +580,67 @@ class PyiPrinter(ClassVisitor):
         sections: list[str] = []
         self._append_imports(sections, module, context)
         sections.extend(body_sections)
+        # The list reads as a summary of what came before it, so it closes the
+        # contract rather than standing between the imports and the
+        # declarations it names.
+        exported = self._module_exported_names(module, context, overload_targets)
+        # A contract with nothing in it states nothing; the list summarises a
+        # surface, and an empty file has none to summarise.
+        if exported is not None and sections:
+            sections.append(self.emit_exported_names(exported))
         return "\n".join(sections).rstrip()
+
+    @staticmethod
+    def emit_exported_names(exported: list[str]) -> str:
+        """Render the list of names a contract states that it publishes."""
+        if not exported:
+            return "__all__ = []"
+        items = ", ".join(json.dumps(name) for name in exported)
+        line = f"__all__ = [{items}]"
+        if len(line) <= 116:
+            return line
+        body = "\n".join(f"    {json.dumps(name)}," for name in exported)
+        return f"__all__ = [\n{body}\n]"
+
+    def _module_exported_names(
+        self,
+        module: SemanticModule,
+        context: _PyiEmissionContext,
+        overload_targets: set[str],
+    ) -> list[str] | None:
+        """Return every name this contract publishes, in the order it writes them.
+
+        The list states the module's whole public surface rather than only the
+        names it re-exports, so removing one stops publishing it and adding one
+        publishes something the contract names for its declarations alone. A
+        contract that was read rather than derived keeps the list it stated.
+        """
+        if module.exported_names is not None:
+            return list(module.exported_names)
+        if module.metadata.get(PYI_LOADED_METADATA):
+            return None
+        names: list[str] = []
+        for semantic_class in self._contract_items(module.classes):
+            if not self._is_private(semantic_class):
+                names.append(semantic_class.name)
+        names.extend(str(prototype.name) for prototype in module.prototypes)
+        for variable in self._contract_items(module.variables):
+            if getattr(variable, "visibility", "public") != "private":
+                names.append(self._module_variable_name(variable, context))
+        for function in self._contract_items(module.functions, keep_names=overload_targets):
+            if not self._is_private(function):
+                names.append(self._callable_name(function, context))
+        names.extend(str(overload_set.name) for overload_set in module.overload_sets)
+        for reexport in module.reexports:
+            if self._is_source_kind_import(str(reexport.origin_module)):
+                continue
+            # A prototype keeps its declared spelling wherever it is written, so
+            # the name published for it is the one its import binds.
+            local = str(reexport.local_name)
+            names.append(
+                local if reexport.entity_kind == "prototype" else self._public_import_name(local, public_names=True)
+            )
+        return list(dict.fromkeys(names))
 
     # ------------------------------------------------------------------
     # Shared helpers
@@ -1525,7 +1585,6 @@ class PyiPrinter(ClassVisitor):
                     public_names=context.normalize_fortran_public_names,
                     verbatim_names=verbatim,
                     published_names_by_module=self._published_names_by_module,
-                    reexported=frozenset(str(item.local_name).casefold() for item in module.reexports),
                 )
             )
         if contract_import or imports:
@@ -1545,8 +1604,44 @@ class PyiPrinter(ClassVisitor):
         imports.extend(cls._synthetic_flat_external_type_imports(module, imports, procedure_namespaces))
         imports.extend(cls._missing_expression_callable_imports(module, imports))
         imports.extend(cls._missing_prototype_imports(module, imports))
+        imports.extend(cls._missing_reexport_imports(module, imports))
         imports.extend(cls._missing_procedure_namespace_imports(procedure_namespaces, satisfied_namespaces))
         return imports
+
+    @classmethod
+    def _missing_reexport_imports(
+        cls,
+        module: SemanticModule,
+        imports: list[str | SemanticImport],
+    ) -> list[SemanticImport]:
+        """Return imports binding published names no import already names.
+
+        A plain ``use`` carries every public name of the module it reads, so a
+        name published through one is not written in any import list. The
+        contract has to name it explicitly, because a published name must be
+        one the contract itself reaches.
+        """
+        bound = {
+            (item.target or item.source).casefold()
+            for imported in imports
+            if isinstance(imported, SemanticImport)
+            for item in imported.items
+        }
+        required: dict[str, list[SemanticImportItem]] = {}
+        for reexport in module.reexports:
+            local = str(reexport.local_name)
+            # An intrinsic module has no contract to read a name from, so a
+            # name published out of one states nothing this contract can bind.
+            if cls._is_source_kind_import(str(reexport.origin_module)):
+                continue
+            if local.casefold() in bound or not reexport.origin_module:
+                continue
+            source = str(reexport.source_name) or local
+            required.setdefault(str(reexport.origin_module), []).append(
+                SemanticImportItem(source=source, target=local if local != source else None)
+            )
+            bound.add(local.casefold())
+        return [SemanticImport(module=name, items=items) for name, items in required.items()]
 
     @classmethod
     def _missing_prototype_imports(
@@ -1825,7 +1920,6 @@ class PyiPrinter(ClassVisitor):
         public_names: bool = False,
         verbatim_names: dict[tuple[str, str], str] | None = None,
         published_names_by_module: dict[str, dict[str, str]] | None = None,
-        reexported: frozenset[str] = frozenset(),
     ) -> str:
         """Emit import syntax."""
         if isinstance(imp, str):
@@ -1841,7 +1935,6 @@ class PyiPrinter(ClassVisitor):
                 verbatim_names=verbatim_names,
                 source_module=source_module,
                 published_names=published_names,
-                reexported=reexported,
             )
             for item in imp.items
         )
@@ -1856,7 +1949,6 @@ class PyiPrinter(ClassVisitor):
         verbatim_names: dict[tuple[str, str], str] | None = None,
         source_module: str = "",
         published_names: dict[str, str] | None = None,
-        reexported: frozenset[str] = frozenset(),
     ) -> str:
         """Emit import item syntax.
 
@@ -1880,17 +1972,16 @@ class PyiPrinter(ClassVisitor):
             # A prototype keeps its declared spelling on both sides, because an
             # annotation naming it is written exactly that way.
             return prototype if local == prototype else f"{prototype} as {local}"
+        # The name read from the other contract is the one it published; the
+        # name bound here is what this contract calls the entity. They part
+        # company when a rename says so, and also when a collision moved the
+        # published name aside.
         source = PyiPrinter._public_import_name(item.source, public_names=public_names)
         if public_names and published_names:
             source = published_names.get(item.source.casefold(), source)
-        target = PyiPrinter._public_import_name(item.target, public_names=public_names)
-        if target and target != source:
-            return f"{source} as {target}"
-        if local.casefold() in reexported:
-            # Publishing an imported name is stated by aliasing it explicitly,
-            # so a contract reading this one can tell a re-export from an import
-            # written only to express a declaration.
-            return f"{source} as {source}"
+        bound = PyiPrinter._public_import_name(local, public_names=public_names)
+        if bound and bound != source:
+            return f"{source} as {bound}"
         return source
 
     @staticmethod

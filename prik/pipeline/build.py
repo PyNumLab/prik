@@ -2047,13 +2047,21 @@ class _PyiExportNode:
     declarations: list[object] = field(default_factory=list)
     children: dict[str, _PyiExportNode] = field(default_factory=dict)
     origins: set[Path] = field(default_factory=set)
-    unpublished: set[str] = field(default_factory=set)
-    """Names this node resolves for its own declarations but does not export.
+    namespaces: set[str] = field(default_factory=set)
+    """Child names attached as sub-namespaces rather than bound entities.
 
-    An import states what a contract needs to express its declarations, which
-    is not the same as a name it means to publish. Both reach the tree, because
-    a contract reading from this one still has to resolve what it names, and
-    only a published name becomes a Python attribute here.
+    ``from . import other`` builds the package tree, which is structure rather
+    than a name the contract publishes, so a stated ``__all__`` names entities
+    and leaves the tree alone.
+    """
+
+    unpublished: set[str] = field(default_factory=set)
+    """Names this node resolves but its contract left out of ``__all__``.
+
+    A contract stating no list publishes everything it reaches, so a name is
+    withheld only where the contract named its surface and left this one off.
+    Such a name still resolves, because a contract reading from this one has to
+    resolve what it names; it simply does not become a Python attribute here.
     """
 
 
@@ -2070,14 +2078,17 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
         for declaration in _module_declarations(module):
             _set_declaration_exports(declaration, [])
 
-    # The entry contract is the package's own surface: it declares little and
-    # exists to choose what the package exports, so the names it imports are
-    # the ones it means to publish. A module contract imports what it needs to
-    # express its declarations, which is not the same intent.
-    tree = _pyi_export_tree(entry, modules_by_path, cache={}, pending=set(), publishes_imports=True)
+    tree = _pyi_export_tree(entry, modules_by_path, cache={}, pending=set())
     _record_pyi_exports(tree)
+    # A declaration published from more than one namespace is one entity, so
+    # the namespaces after the first bind what the first already exports rather
+    # than each wrapping the native declaration again. A rename changes the
+    # name a namespace binds, never the object behind it.
     for module in modules_by_path.values():
-        for declaration in module.classes:
+        for declaration, entity_kind in (
+            *((item, "derived_type") for item in module.classes),
+            *((item, "procedure") for item in module.functions),
+        ):
             exports = _declaration_exports(declaration)
             if len(exports) < 2:
                 continue
@@ -2090,7 +2101,7 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
                         origin_module=source_namespace,
                         source_name=primary["name"],
                         module=".".join(alias["namespace"]),
-                        entity_kind="derived_type",
+                        entity_kind=entity_kind,
                     )
                 )
             exports[:] = [primary]
@@ -2100,7 +2111,6 @@ def _pyi_export_tree(
     path: Path,
     modules_by_path: dict[Path, SemanticModule],
     *,
-    publishes_imports: bool = False,
     cache: dict[Path, _PyiExportNode],
     pending: set[Path],
 ) -> _PyiExportNode:
@@ -2137,15 +2147,15 @@ def _pyi_export_tree(
     for semantic_import in module.imports:
         if not isinstance(semantic_import, SemanticImport) or not semantic_import.module.startswith("."):
             continue
-        _merge_relative_import(
-            tree,
-            path,
-            semantic_import,
-            modules_by_path,
-            cache,
-            pending,
-            publishes_imports=publishes_imports,
-        )
+        _merge_relative_import(tree, path, semantic_import, modules_by_path, cache, pending)
+    if module.exported_names is not None:
+        # A stated list is the whole public surface: a name on it is published
+        # whether this contract declares or imports it, and one left off stays
+        # available to express declarations without reaching Python. A contract
+        # stating no list has named no surface, so everything it reaches is
+        # published, which is what an entry contract selecting from its package
+        # has always meant.
+        _apply_stated_exports(tree, path, module.exported_names)
     pending.remove(path)
     cache[path] = tree
     return tree
@@ -2158,7 +2168,6 @@ def _merge_relative_import(
     modules_by_path: dict[Path, SemanticModule],
     cache: dict[Path, _PyiExportNode],
     pending: set[Path],
-    publishes_imports: bool = False,
 ) -> None:
     """Merge one relative import's exports into the current namespace tree.
 
@@ -2178,19 +2187,15 @@ def _merge_relative_import(
                 continue
             if item.source not in dependency_tree.children:
                 raise ValueError(f"Imported semantic name {item.source!r} not found in {dependency}")
-            local = item.target or item.source
-            _merge_export_child(tree, local, dependency_tree.children[item.source], origin=path)
-            if item.target is None and not publishes_imports:
-                # A plain import names what this contract needs to express its
-                # own declarations. Re-export is stated by aliasing the name
-                # explicitly, as a stub does for anything it means to publish.
-                tree.unpublished.add(local)
+            _merge_export_child(tree, item.target or item.source, dependency_tree.children[item.source], origin=path)
         return
 
     for item in semantic_import.items:
         dependency = _relative_import_path(path, semantic_import.module, item.source)
         dependency_tree = _required_export_tree(dependency, modules_by_path, cache, pending)
-        _merge_export_child(tree, item.target or item.source, dependency_tree, origin=path)
+        local = item.target or item.source
+        _merge_export_child(tree, local, dependency_tree, origin=path)
+        tree.namespaces.add(local)
 
 
 def _relative_import_path(path: Path, module: str, imported_module: str) -> Path:
@@ -2212,6 +2217,16 @@ def _required_export_tree(
     if path not in modules_by_path:
         raise FileNotFoundError(f"Imported semantic .pyi contract not found: {path}")
     return _pyi_export_tree(path, modules_by_path, cache=cache, pending=pending)
+
+
+def _apply_stated_exports(tree: _PyiExportNode, path: Path, exported_names: list[str]) -> None:
+    """Publish exactly the names one contract states, and nothing else."""
+    stated = list(dict.fromkeys(exported_names))
+    missing = [name for name in stated if name not in tree.children]
+    if missing:
+        raise ValueError(f"{path}: __all__ names nothing this contract declares or imports: {missing}")
+    published = set(stated) | tree.namespaces
+    tree.unpublished = {name for name in tree.children if name not in published}
 
 
 def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, *, origin: Path) -> None:

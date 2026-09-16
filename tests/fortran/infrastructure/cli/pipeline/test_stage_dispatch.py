@@ -320,7 +320,7 @@ end module physics
     payload = prik_cli._semantic_report([str(physics)])
 
     assert payload[str(physics)]["pyi_dependencies"] == {
-        "types_mod": "from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass"
+        "types_mod": 'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]'
     }
     monkeypatch.setattr(sys, "argv", ["prik", "generate", "--pyi", str(physics), "--out"])
     assert prik_cli.main() == 0
@@ -329,7 +329,7 @@ end module physics
     assert (package / "__init__.pyi").read_text(encoding="utf-8") == "from . import physics\n"
     assert (package / "types_mod.pyi").read_text(
         encoding="utf-8"
-    ) == "from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n"
+    ) == 'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]\n'
 
 
 @pytest.mark.parametrize(

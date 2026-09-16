@@ -12,3 +12,5 @@ def standalone_direct(
 def standalone_adapted(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["standalone_direct", "standalone_adapted"]

@@ -36,3 +36,5 @@ def populate(
 def score_by_value(
     value: tagged_point
 ) -> Float64: ...
+
+__all__ = ["point", "tagged_point", "populate", "score_by_value"]

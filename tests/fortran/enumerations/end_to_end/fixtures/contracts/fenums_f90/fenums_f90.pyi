@@ -21,3 +21,5 @@ yellow: Final[Int32] = 11
 def round_trip_color(
     color: Int32
 ) -> Int32: ...
+
+__all__ = ["paint", "red", "blue", "green", "yellow", "round_trip_color"]

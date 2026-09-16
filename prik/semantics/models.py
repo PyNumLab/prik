@@ -715,6 +715,15 @@ class SemanticModule:
 
     imports: list[str | SemanticImport] = field(default_factory=list)
 
+    exported_names: list[str] | None = None
+    """Every name this module publishes, or ``None`` when it states no list.
+
+    A contract states its whole public surface here, so a name it imports is
+    published when it is listed and stays a dependency when it is not. The list
+    is written to be edited: a generated contract fills it with what the source
+    publishes, and removing or adding a name changes what reaches Python.
+    """
+
     metadata: dict[str, Any] = field(default_factory=dict)
 
     origin: SemanticOrigin = field(default_factory=SemanticOrigin, compare=False)

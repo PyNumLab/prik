@@ -38,3 +38,12 @@ def apply_assumed_shape(
     values: Float64[::],
     doubled: Float64[::]
 ) -> None: ...
+
+__all__ = [
+    "reduce_callback",
+    "transform_callback",
+    "assumed_shape_callback",
+    "apply_reduce",
+    "apply_transform",
+    "apply_assumed_shape",
+]

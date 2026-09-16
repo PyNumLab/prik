@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shlex
@@ -744,29 +745,58 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
 
 
 def _source_root_stub(module_names: list[str], external_text: list[str]) -> str:
+    from prik.printers.pyi import PyiPrinter
+
     contract_imports: set[str] = set()
+    exported_names: list[str] = []
     external_sections = []
     for text in external_text:
-        imports, body = _split_contract_imports(text)
+        imports, exported, body = _split_contract_imports(text)
         contract_imports.update(imports)
+        exported_names.extend(name for name in exported if name not in exported_names)
         if body:
             external_sections.append(body)
     contract_section = f"from prik.contracts import {', '.join(sorted(contract_imports))}" if contract_imports else ""
     lines = [f"from . import {name}" for name in module_names]
     import_section = "\n".join(line for line in [contract_section, *lines] if line)
     sections = [import_section, *external_sections]
+    if exported_names:
+        # Each source file states what it publishes, and this entry holds them
+        # all, so one list closes the file the way one does in any contract,
+        # wrapped the same way a long list is wrapped anywhere else.
+        sections.append(PyiPrinter.emit_exported_names(exported_names))
     return "\n\n".join(section for section in sections if section).strip()
 
 
-def _split_contract_imports(text: str) -> tuple[set[str], str]:
+def _split_contract_imports(text: str) -> tuple[set[str], list[str], str]:
+    """Separate a contract's required imports and stated exports from its body."""
     imports: set[str] = set()
+    exported: list[str] = []
     body_lines = []
+    pending: list[str] = []
     for line in text.splitlines():
+        if pending:
+            # A long list is written over several lines, so it is read back the
+            # same way: gather until the brackets close.
+            pending.append(line)
+            joined = "\n".join(pending)
+            if joined.count("[") == joined.count("]"):
+                exported.extend(ast.literal_eval(joined.split("=", 1)[1].strip()))
+                pending = []
+            continue
         if line.startswith("from prik.contracts import "):
             imports.update(item.strip() for item in line.removeprefix("from prik.contracts import ").split(","))
             continue
+        if line.startswith("__all__"):
+            if line.count("[") == line.count("]"):
+                exported.extend(ast.literal_eval(line.split("=", 1)[1].strip()))
+            else:
+                pending = [line]
+            continue
         body_lines.append(line)
-    return imports, "\n".join(body_lines).strip()
+    if pending:
+        raise ValueError(f"Unterminated __all__ in generated contract: {pending[0]!r}")
+    return imports, exported, "\n".join(body_lines).strip()
 
 
 def _format_pyi_report(semantic_report: dict[str, dict]) -> str:

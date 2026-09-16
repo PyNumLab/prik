@@ -30,3 +30,16 @@ def scaled_counter() -> Float64: ...
 def next_local() -> Int32: ...
 
 def black_sum() -> Int32: ...
+
+__all__ = [
+    "rgb_color",
+    "nmax",
+    "black",
+    "counter",
+    "scale",
+    "saved_counter",
+    "summarize",
+    "scaled_counter",
+    "next_local",
+    "black_sum",
+]

@@ -13,3 +13,5 @@ class box:
 def make_box(
     value: Int32
 ) -> box: ...
+
+__all__ = ["box", "make_box"]

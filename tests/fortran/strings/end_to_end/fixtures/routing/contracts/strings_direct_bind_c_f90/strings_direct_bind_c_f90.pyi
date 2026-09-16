@@ -22,3 +22,5 @@ def direct_uppercase_buffer(
     n: Int32,
     text: String[1][n]
 ) -> None: ...
+
+__all__ = ["direct_char_code", "direct_uppercase", "direct_buffer_sum", "direct_uppercase_buffer"]

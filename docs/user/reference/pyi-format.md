@@ -180,6 +180,39 @@ Aliases change the Python API only. They do not rename native modules, types,
 or symbols. Conflicting wildcard exports are rejected; resolve them with
 explicit imports and aliases.
 
+### Stating What A Contract Publishes
+
+A contract may end with `__all__`, naming every entity it publishes:
+
+```python
+from prik.contracts import Int32
+from .shapes_mod import box
+
+def area(item: box) -> Int32: ...
+
+__all__ = ["area"]
+```
+
+The list is the whole public surface, not only the names a contract re-exports.
+It settles a question import syntax cannot answer, because one import serves two
+purposes: naming a type a declaration needs, and publishing an entity this
+contract means to expose. `from .shapes_mod import box as crate` reads the same
+whether `crate` avoids a collision or is published under a new name.
+
+PRIK writes the list into every generated contract, holding what the Fortran
+source publishes: the module's own public declarations, and any imported name it
+names in a `public` statement. Edit it freely.
+
+| Edit | Effect |
+| --- | --- |
+| Remove a name | The entity stays declared and callable from other contracts, but no longer reaches Python here. |
+| Add an imported name | Publishes it here as well, including one imported only to express a declaration. |
+| `__all__ = []` | Publishes nothing from this contract. |
+| Remove `__all__` | Publishes everything the contract reaches, its declarations and its imports alike. |
+
+A name in `__all__` must be one the contract declares or imports; naming
+anything else is rejected before wrapper planning.
+
 ### Contract Import Graph
 
 PRIK parses contract files without executing them. Relative imports recursively

@@ -36,3 +36,15 @@ def string_result_padded() -> String[8]: ...
 
 @standalone
 def string_result_declared() -> String[6]: ...
+
+__all__ = [
+    "char_code_default",
+    "char_code_star1",
+    "string_len_star8",
+    "string_len_assumed",
+    "string_len_entity",
+    "char_result_default",
+    "string_result_star8",
+    "string_result_padded",
+    "string_result_declared",
+]

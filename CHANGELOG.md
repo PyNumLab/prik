@@ -7,6 +7,18 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract states everything it publishes in a closing `__all__`. An import
+  cannot say whether a name is needed to express a declaration or meant to be
+  published, because a rename reads the same either way, so the list settles it.
+  PRIK writes what the source publishes -- the module's own public declarations
+  and any imported name a `public` statement names -- and the list is there to
+  be edited: remove a name to stop publishing it, add an imported one to publish
+  it, or remove the list to publish everything the contract reaches.
+
+- A re-exported procedure binds the callable its declaring module exported
+  rather than being wrapped again, so a contract build gives the same object a
+  source build does, under a renamed re-export as well.
+
 - A published name is followed to the module declaring it, however many
   modules published it along the way. Reading only the module a `use` names
   left a name published twice over looking like nothing at all, and the

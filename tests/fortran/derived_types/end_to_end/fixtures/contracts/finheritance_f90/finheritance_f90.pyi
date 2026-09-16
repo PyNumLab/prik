@@ -64,3 +64,5 @@ def box_area(
 def describe_shape(
     item: Annotated[base_shape, Polymorphic]
 ) -> Float64: ...
+
+__all__ = ["base_shape", "circle", "box", "base_area", "base_set_size", "circle_area", "box_area", "describe_shape"]
