@@ -670,6 +670,9 @@ class CBindingGenerator(ClassVisitor):
             # Every published component converts through the bundled helpers, so a
             # type whose module exposes only `bind(C)` procedures still needs them.
             or any(derived.fields for derived in self._derived_types(plan))
+            # A namespace alias binds its target through a bundled helper, which a
+            # module publishing nothing else would otherwise never include.
+            or any(namespace.aliases for namespace in plan.namespaces)
         )
 
     def _module_needs_allocator(self, plan: ModulePlan) -> bool:

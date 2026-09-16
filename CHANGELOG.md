@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A module publishing a re-exported name links again when that alias is the only
+  thing it needs a bundled helper for. Binding an alias calls one, but a module
+  with no arguments, results, module variables or derived-type fields was
+  treated as needing none, so the generated extension referenced
+  `prik_bind_namespace_alias` without carrying it and failed to import.
+
 - A module-variable re-export now publishes another live route to the declaring
   variable instead of being omitted or rejected. Every namespace reuses one
   completed variable plan and its native accessors, so scalar assignment, array
