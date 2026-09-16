@@ -115,3 +115,40 @@ def test_prik_resolve_language_handles_c_input_edges(tmp_path: Path):
     assert str(requested_error.value) == (
         f"C input {c_header} is incompatible with --language fortran; pass --language c. Use --help for examples."
     )
+
+
+def test_pyi_wrapper_build_rejects_export_symbols(tmp_path: Path, capsys):
+    """A contract already states its public surface, so the C allowlist has nothing to select."""
+    contract = tmp_path / "api.pyi"
+    contract.write_text("from prik.contracts import Int\n", encoding="utf-8")
+    implementation = tmp_path / "api.c"
+    implementation.write_text("int increment(int value) { return value + 1; }\n", encoding="utf-8")
+    exports = tmp_path / "exports.txt"
+    exports.write_text("increment\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        prik_cli.main(
+            [
+                str(contract),
+                "--native-c-sources",
+                str(implementation),
+                "--export-symbols",
+                str(exports),
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    message = capsys.readouterr().err
+    assert "--export-symbols selects the public surface" in message
+    assert "__all__" in message
+
+
+def test_export_symbols_help_names_the_public_surface_it_selects():
+    """The option and a contract's __all__ state the same thing, so the help says so."""
+    build_help = prik_cli._build_parser(["input.h", "--language", "c", "--help"]).format_help()
+    generate_help = prik_cli._generate_parser(["--help"]).format_help()
+
+    for help_text in (build_help, generate_help):
+        assert "--export-symbols" in help_text
+        assert "public surface" in help_text
+        assert "__all__" in help_text

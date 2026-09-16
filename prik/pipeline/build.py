@@ -3933,8 +3933,12 @@ def build_c_extension(
     unsupported operations raise a documented completed-policy diagnostic
     before planning, generated files, or compiler commands. A selected genuine
     identifier collision may use a separate C forwarder translation unit.
-    ``export_symbols`` restricts semantic conversion to those exact reachable
-    C functions and can explicitly select declarations from included headers.
+    ``export_symbols`` names the source-side public surface: semantic conversion
+    keeps exactly those reachable C functions, and can explicitly select
+    declarations from included headers. It is the C-source equivalent of the
+    ``__all__`` a semantic ``.pyi`` contract states for itself; emitted stubs
+    record the corresponding Python public names there. Unknown names are
+    rejected rather than silently narrowing the module.
     ``compile_input_sources`` controls whether the parsed C sources are also
     compiled. ``native_c_sources`` adds separately compiled C inputs, while explicit
     Fortran inputs are supported only as ordinary link dependencies.

@@ -34,7 +34,11 @@ release tags add a leading `v` to the package version.
   PRIK writes what the source publishes -- the module's own public declarations
   and any imported name a `public` statement names -- and the list is there to
   be edited: remove a name to stop publishing it, add an imported one to publish
-  it, or remove the list to publish everything the contract reaches.
+  it, or remove the list to publish everything the contract reaches. Reading C
+  source states the same thing through `--export-symbols` /
+  `build_c_extension(export_symbols=...)`, which selects the source-side public
+  surface and writes the corresponding Python names into the generated
+  contract's `__all__`.
 
 - A re-exported procedure binds the callable its declaring module exported
   rather than being wrapped again, so a contract build gives the same object a

@@ -1037,8 +1037,8 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         )
     if getattr(args, "export_symbols", None):
         parser.error(
-            "--export-symbols selects declarations while reading C source; a semantic .pyi contract "
-            "already states its public functions"
+            "--export-symbols selects the public surface while reading C source; a semantic .pyi "
+            "contract already states its public surface in __all__"
         )
     if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
@@ -2329,7 +2329,10 @@ def _add_semantic_interpretation_options(
     group.add_argument(
         "--export-symbols",
         metavar="FILE",
-        help="Select exact reachable C functions from a UTF-8 name file; C semantic commands only",
+        help=(
+            "Select exact reachable C functions from a UTF-8 name file as the source-side "
+            "public surface; generate --pyi records the corresponding Python names in __all__"
+        ),
     )
 
 

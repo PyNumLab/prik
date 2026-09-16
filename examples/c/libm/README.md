@@ -15,7 +15,9 @@ caller-owned output arrays, see [TA-Lib](../ta_lib/README.md).
 Its layout mirrors the other real-library examples:
 
 - `libm_probe.h` includes the target toolchain's own `<math.h>`.
-- `iso_c99_routines.txt` is the reviewed 60-function allowlist.
+- `iso_c99_routines.txt` is the reviewed 60-function allowlist: it selects the
+  source-side public function surface, and the generated contract records the
+  corresponding Python public names in `__all__`.
 - `build_prik.sh` generates the target contract and builds the extension.
 - `build_all.sh` exposes the built module on `PYTHONPATH`.
 - `routine_inventory.py` groups every public function and names its test.
@@ -97,6 +99,11 @@ if ! python3 -m prik --language c "$LIBM_BUILD_ROOT/prik/contract/libm_api.pyi" 
   return 1 2>/dev/null || exit 1
 fi
 ```
+
+The first command generates `libm_api.pyi`, which lists the allowlisted
+functions in `__all__`; the second builds from that contract. From then on
+`__all__` is what publishes the API, and the allowlist is read only when the
+contract is regenerated from C source.
 
 The public signature uses target-sized NumPy contract types. Exact native C
 identities appear only at the native boundary. For example, an LP64 target may

@@ -125,6 +125,13 @@ python3 -m prik generate --pyi --language c include/vendor.h \
   --out vendor.pyi
 ```
 
+`symbols.txt` defines the source-side public function surface. PRIK records the
+corresponding Python public names in `vendor.pyi`'s `__all__`. Review and edit
+that list alongside the signatures: once you build from the contract, `__all__`
+controls what the contract publishes and `--export-symbols` is no longer used.
+Adding a name to `__all__` publishes a declaration the contract already
+reaches; it cannot conjure one the C sources never declared.
+
 Pass the header's normal `-I`, `-D`, and `--std` options when it needs them.
 Review `vendor.pyi` before building. Primitive scalar signatures are ready to
 use; edit pointer parameters when they represent arrays, outputs, or strings.

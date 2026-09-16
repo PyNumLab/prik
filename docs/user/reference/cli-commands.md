@@ -389,11 +389,22 @@ C contracts—not whether the native compiler can find an include file.
 | `--include-exposure {reachable-project,roots-only}` | Exposes reachable project headers by default, or only the root inputs. |
 | `--public-include PATH_OR_PATTERN` | Exposes declarations from matching included files. Repeat as needed. |
 | `--private-include PATH_OR_PATTERN` | Hides declarations from matching included files. Repeat as needed. |
-| `--export-symbols FILE` | Selects the exact reachable C functions named by FILE and makes those declarations public, including declarations from otherwise-private system headers. |
+| `--export-symbols FILE` | Selects the exact reachable C functions named by FILE as the source-side public surface, including declarations from otherwise-private system headers. `generate --pyi` records the corresponding Python public names in the contract's `__all__`. |
 
-`--export-symbols` is a function-only allowlist for commands that produce
-semantic IR: source builds, `semantics`, and `generate --pyi`. The UTF-8 file
-contains one ASCII C identifier per line; blank lines and text after `#` are ignored.
+`--export-symbols` is a function-only allowlist for commands that read C
+source: source builds, `semantics`, and `generate --pyi`. It defines the
+source-side public function surface. When `generate --pyi` writes that surface
+as an editable semantic contract, the corresponding Python public names are
+written to the contract's `__all__`.
+
+The two lists live in different naming domains: the file names native C
+identifiers, and `__all__` names what the contract publishes to Python. After
+generation the contract is authoritative — edit `__all__` to change what it
+publishes rather than passing `--export-symbols` again, which a contract build
+rejects.
+
+The UTF-8 file contains one ASCII C identifier per line; blank lines and text
+after `#` are ignored.
 Every listed name must resolve to exactly one reachable function. Empty files,
 invalid or repeated names, unknown names, names of non-function declarations,
 and ambiguous declarations fail the command. All declarations not selected by
