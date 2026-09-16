@@ -197,9 +197,10 @@ build = build_c_extension(
 ```
 
 `export_symbols=` is the Python API equivalent of `--export-symbols`: it selects
-the same source-side public function surface for a direct C source build. A
-direct build writes no `.pyi`; generating a contract instead represents that
-same surface as `__all__`.
+the same source-side public function surface for a direct C source build. The
+build writes type stubs for the extension into a `contracts/` directory beside
+it, and those stubs state the selected surface as `__all__` the same way
+`generate --pyi` does.
 
 ### Inspect a broader C API
 
