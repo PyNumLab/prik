@@ -7,13 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- A module variable and a generic are published only by the namespace declaring
-  them, which is now checked against that namespace rather than by counting the
-  namespaces publishing them. Counting caught a contract listing one beside its
-  declaring contract but not one moving it to a facade, because withholding the
-  name at home left exactly one publisher -- a relocation the source route has
-  no way to produce. A procedure and a derived type each reach Python as one
-  object and are re-exported through aliases as before.
+- A module-variable re-export now publishes another live route to the declaring
+  variable instead of being omitted or rejected. Every namespace reuses one
+  completed variable plan and its native accessors, so scalar assignment, array
+  mutation, allocation, pointer association, derived state, and read-only
+  parameters retain one native identity. Generic interfaces remain publishable
+  only by their declaring namespace.
 
 - A wrapper's Python names are decided once, by post-IR export policy, and
   every stage that writes a name reads that decision. The `.pyi` printer
@@ -59,12 +58,6 @@ release tags add a leading `v` to the package version.
   take every name that dependency held. A withheld name stays reachable by
   asking for it, which a contract needing it to express a declaration -- or
   meaning to publish it itself -- still does.
-
-- A contract publishes only what a build of the same Fortran source can. A
-  module variable and a generic reach Python in the namespace declaring them,
-  so a generated contract states neither as a re-export, and a contract asking
-  for one is refused rather than given a second projection the source route
-  has no way to produce.
 
 - A contract's `__all__` names its sub-namespaces as well, so leaving one off
   keeps the package from exposing it. A generated entry contract states the

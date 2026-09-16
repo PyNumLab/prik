@@ -2,9 +2,9 @@
 
 A procedure or a derived type reaches Python as one object, so another
 namespace can bind it and PRIK re-exports it through an alias. A module
-variable holds state that stays live where it is declared and a generic is a
-dispatch surface rather than one object, so neither reaches Python as something
-a second namespace can bind at all.
+variable likewise permits multiple publications, but all of them refer to the
+one variable plan and its live native state. A generic remains a dispatch
+surface rather than one object, so only its declaring namespace can publish it.
 """
 
 from __future__ import annotations
@@ -110,46 +110,55 @@ def test_the_declaring_namespace_may_publish_either_kind(name: str, tmp_path: Pa
     assert result.output_dir.is_dir()
 
 
-@pytest.mark.parametrize(
-    ("name", "kind"),
-    [("counter", "module variable"), ("area", "generic")],
-)
-def test_a_facade_beside_the_declaring_namespace_is_refused(name: str, kind: str, tmp_path: Path):
-    """Two namespaces would need two bindings of something that has only one."""
+def test_a_facade_may_publish_the_declaring_namespaces_variable(tmp_path: Path):
+    """A second publication reads the declaring variable's completed plan."""
     entry = _package(
         tmp_path,
         home_exports=ALL_NAMES,
-        facade=f'from .home import {name}\n\n__all__ = ["{name}"]\n',
+        facade='from .home import counter\n\n__all__ = ["counter"]\n',
     )
 
-    with pytest.raises(ValueError) as error:
-        _plan(entry, tmp_path, f"both_{name}")
+    result = _plan(entry, tmp_path, "both_counter")
 
-    message = str(error.value)
-    assert f"{kind} {name!r} is declared in home and published in facade" in message
-    assert "publishable only by the namespace declaring it" in message
+    generated = (result.output_dir / "both_counter_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * module_get_counter(void) {") == 1
+    assert generated.count("static int module_set_counter(PyObject * value_obj) {") == 1
 
 
-@pytest.mark.parametrize(
-    ("name", "kind"),
-    [("counter", "module variable"), ("area", "generic")],
-)
-def test_moving_either_kind_to_a_facade_alone_is_refused(name: str, kind: str, tmp_path: Path):
-    """Relocating publishes it in one place and still not where it lives.
+def test_a_facade_may_be_the_only_publication_of_a_declared_variable(tmp_path: Path):
+    """Withholding the declaring name changes publication, not ownership."""
+    entry = _package(
+        tmp_path,
+        home_exports=[item for item in ALL_NAMES if item != "counter"],
+        facade='from .home import counter\n\n__all__ = ["counter"]\n',
+    )
 
-    Counting namespaces would accept this, because withholding the name at
-    home leaves exactly one publisher.
+    result = _plan(entry, tmp_path, "facade_only_counter")
+
+    generated = (result.output_dir / "facade_only_counter_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * module_get_counter(void) {") == 1
+    assert generated.count("static int module_set_counter(PyObject * value_obj) {") == 1
+
+
+@pytest.mark.parametrize("home_exports", [ALL_NAMES, [item for item in ALL_NAMES if item != "area"]])
+def test_a_generic_cannot_be_published_from_a_facade(home_exports: list[str], tmp_path: Path):
+    """A generic is not one native entity that another namespace can bind.
+
+    The restriction holds whether its declaring namespace also publishes it or
+    the facade is its only requested publication.
     """
     entry = _package(
         tmp_path,
-        home_exports=[item for item in ALL_NAMES if item != name],
-        facade=f'from .home import {name}\n\n__all__ = ["{name}"]\n',
+        home_exports=home_exports,
+        facade='from .home import area\n\n__all__ = ["area"]\n',
     )
 
     with pytest.raises(ValueError) as error:
-        _plan(entry, tmp_path, f"facade_only_{name}")
+        _plan(entry, tmp_path, "facade_area")
 
-    assert f"{kind} {name!r} is declared in home and published in facade" in str(error.value)
+    message = str(error.value)
+    assert "generic 'area' is declared in home and published in facade" in message
+    assert "publishable only by the namespace declaring it" in message
 
 
 def test_a_procedure_still_reaches_python_through_a_facade(tmp_path: Path):

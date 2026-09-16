@@ -199,7 +199,7 @@ class _PyiEmissionContext:
 
 # Publication of these kinds has no runtime form yet, so a generated contract
 # does not claim it.
-_UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"variable", "generic"})
+_UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic"})
 
 
 class PyiPrinter(ClassVisitor):
@@ -748,9 +748,8 @@ class PyiPrinter(ClassVisitor):
             if self._is_source_kind_import(str(reexport.origin_module)):
                 continue
             if reexport.entity_kind in _UNPUBLISHABLE_REEXPORT_KINDS:
-                # A live module variable and a generic dispatcher have no single
-                # object another namespace can bind, so a source build publishes
-                # neither and a contract generated from it states neither.
+                # A generic dispatcher has no single object another namespace
+                # can bind, so a source build does not publish it here.
                 continue
             # A prototype keeps its declared spelling wherever it is written, so
             # the name published for it is the one its import binds.

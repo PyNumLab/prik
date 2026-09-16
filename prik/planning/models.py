@@ -805,6 +805,19 @@ class ModuleVariablePlan(StageRecord):
 
 
 @dataclass
+class ModuleVariablePublicationPlan(StageRecord):
+    """Publish one existing module-variable plan in a Python namespace.
+
+    ``variable_owner_path`` identifies the sole plan that owns native access,
+    storage, initialization, and support procedures.  This record adds only
+    Python names in one namespace; it never creates another variable plan.
+    """
+
+    variable_owner_path: str
+    python_names: tuple[str, ...]
+
+
+@dataclass
 class BindingFunctionPlan(StageRecord):
     """Store Python-visible call behavior for one generated binding function.
 
@@ -1413,6 +1426,7 @@ class NamespacePlan(StageRecord):
     python_path: tuple[str, ...]
     functions: tuple[FunctionPlan, ...] = ()
     variables: tuple[ModuleVariablePlan, ...] = ()
+    variable_publications: tuple[ModuleVariablePublicationPlan, ...] = ()
     derived_types: tuple[DerivedTypePlan, ...] = ()
     classes: tuple[ClassSurfacePlan, ...] = ()
     overloads: tuple[OverloadPlan, ...] = ()

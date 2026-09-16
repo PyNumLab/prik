@@ -220,6 +220,10 @@ Public functions, variables, constants, and generated classes are exported at
 the extension root. If the original module imports were replaced,
 `library.module1` and `library.module2` are no longer exported. The native
 Fortran modules and their storage do not move; only the Python API changes.
+Publishing a module variable in more than one namespace gives every name the
+same live storage, so a write, allocation, pointer association, or derived
+object mutation through one name is visible through all of them. Parameters
+remain read-only constants in every namespace.
 
 Wildcard imports never use import order to resolve a collision. If both
 modules export the same name, the wrapper build fails and asks for an explicit

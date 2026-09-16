@@ -113,6 +113,7 @@ from prik.planning.models import (
     LifecycleActionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NamespacePlan,
     NativeArrayHandlePlan,
     NativeEntrypointABIValueKind,
@@ -14479,14 +14480,14 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 reject_replacement=(variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT),
             )
-            for variable in namespace.variables
+            for variable, publication in self._variable_publications(module, namespace)
             if variable.binding.getter_action
             not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }
-            for python_name in variable.binding.python_names
+            for python_name in publication.python_names
         )
         if not entries:
             return None
@@ -15482,7 +15483,7 @@ class CBindingGenerator(ClassVisitor):
             *self._module_native_array_owner_nodes(namespace, object_name),
             *self._derived_module_owner_nodes(namespace, object_name),
             *self._module_initializer_nodes(namespace),
-            *self._module_constant_nodes(namespace, object_name),
+            *self._module_constant_nodes(module, namespace, object_name),
         )
 
     def _namespace_python_initializer_nodes(
@@ -15587,22 +15588,29 @@ class CBindingGenerator(ClassVisitor):
 
     def _module_constant_nodes(
         self,
+        plan: ModulePlan,
         namespace: NamespacePlan,
         module_object: str,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Materialize scalar constants in the ordinary module dictionary."""
         nodes = []
         index = 0
-        for variable in namespace.variables:
+        namespace_symbol = self._namespace_symbol(namespace)
+        for variable, publication in self._variable_publications(plan, namespace):
             if variable.binding.getter_action not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
                 continue
-            for python_name in variable.binding.python_names:
-                value_name = f"constant_{variable.symbol_name}_value_{index}"
-                object_name = f"constant_{variable.symbol_name}_object_{index}"
+            local_stem = (
+                variable.symbol_name
+                if any(item.owner_path == variable.owner_path for item in namespace.variables)
+                else f"{namespace_symbol}_{variable.symbol_name}"
+            )
+            for python_name in publication.python_names:
+                value_name = f"constant_{local_stem}_value_{index}"
+                object_name = f"constant_{local_stem}_object_{index}"
                 nodes.extend(
                     (
                         *self._module_constant_declarations(variable, value_name, object_name),
@@ -15812,6 +15820,23 @@ class CBindingGenerator(ClassVisitor):
     def _variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
         """Return variables from the supplied completed binding records; this helper preserves the selected binding behavior."""
         return tuple(variable for namespace in plan.namespaces for variable in namespace.variables)
+
+    def _variable_publications(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[tuple[ModuleVariablePlan, ModuleVariablePublicationPlan], ...]:
+        """Resolve namespace publications to their one native variable plan."""
+        variables = {variable.owner_path: variable for variable in self._variables(plan)}
+        resolved = []
+        for publication in namespace.variable_publications:
+            variable = variables.get(publication.variable_owner_path)
+            if variable is None:
+                raise ValueError(
+                    f"Module-variable publication references missing plan {publication.variable_owner_path!r}"
+                )
+            resolved.append((variable, publication))
+        return tuple(resolved)
 
     def _namespace(self, plan: ModulePlan, python_path: tuple[str, ...]) -> NamespacePlan:
         """Return the binding-local namespace derived from the supplied completed binding records; this helper preserves completed policy."""

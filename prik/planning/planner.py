@@ -117,6 +117,7 @@ from prik.planning.models import (
     LifecycleActionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NativeGeneratedCodeGroupKind,
     NativeGeneratedCodeGroupPlan,
     GeneratedSupportProcedureImplementationOwner,
@@ -371,7 +372,7 @@ class WrapperPlanner(ClassVisitor):
         self._complete_derived_backend_symbols(semantic_classes)
 
         # Project every public surface before linking private callable entries.
-        functions, variables, derived_types, classes, overloads = self._namespace_member_plans(
+        functions, variables, variable_publications, derived_types, classes, overloads = self._namespace_member_plans(
             module,
             class_policies,
         )
@@ -380,6 +381,7 @@ class WrapperPlanner(ClassVisitor):
             (
                 *functions.values(),
                 *variables.values(),
+                *variable_publications.values(),
                 *derived_types.values(),
                 *classes.values(),
                 *overloads.values(),
@@ -394,7 +396,14 @@ class WrapperPlanner(ClassVisitor):
 
         # Complete stable namespace paths, generated symbols, and required headers.
         namespaces = self._namespace_plans(
-            module.name, functions, variables, derived_types, classes, overloads, aliases
+            module.name,
+            functions,
+            variables,
+            variable_publications,
+            derived_types,
+            classes,
+            overloads,
+            aliases,
         )
         support_projection = build_generated_support_procedure_projection(namespaces)
         support_procedures = support_projection.support_procedures
@@ -482,7 +491,7 @@ class WrapperPlanner(ClassVisitor):
         self,
         module: models.SemanticModule,
         class_policies: _ClassPolicyCatalog,
-    ) -> tuple[dict, dict, dict, dict, dict]:
+    ) -> tuple[dict, dict, dict, dict, dict, dict]:
         """Build namespace-owned plan maps from one shared class-policy catalog.
 
         Direct functions and variables are projected first. The local catalog
@@ -492,11 +501,12 @@ class WrapperPlanner(ClassVisitor):
         """
         # Project ordinary module members independently from class-owned surfaces.
         functions = self._functions_by_namespace(module)
-        variables = self._variables_by_namespace(module)
+        variables, variable_publications = self._variables_by_namespace(module)
 
         return (
             functions,
             variables,
+            variable_publications,
             self._derived_types_by_namespace(class_policies),
             self._classes_by_namespace(module.name, class_policies),
             self._module_overloads_by_namespace(module),
@@ -520,6 +530,7 @@ class WrapperPlanner(ClassVisitor):
         module_name: str,
         functions: dict,
         variables: dict,
+        variable_publications: dict,
         derived_types: dict,
         classes: dict,
         overloads: dict,
@@ -528,7 +539,7 @@ class WrapperPlanner(ClassVisitor):
         """Freeze linked namespace members in dependency-safe path order."""
         self._complete_generated_symbols(functions, variables)
         namespace_paths = self._namespace_paths(
-            (*functions, *variables, *derived_types, *classes, *overloads, *aliases)
+            (*functions, *variables, *variable_publications, *derived_types, *classes, *overloads, *aliases)
         )
         return tuple(
             self._namespace_plan(
@@ -536,6 +547,7 @@ class WrapperPlanner(ClassVisitor):
                 path,
                 tuple(functions[path]),
                 tuple(variables[path]),
+                tuple(variable_publications[path]),
                 tuple(derived_types[path]),
                 tuple(classes[path]),
                 tuple(overloads[path]),
@@ -612,6 +624,7 @@ class WrapperPlanner(ClassVisitor):
         path: tuple[str, ...],
         functions: tuple[FunctionPlan, ...],
         variables: tuple[ModuleVariablePlan, ...],
+        variable_publications: tuple[ModuleVariablePublicationPlan, ...],
         derived_types: tuple[DerivedTypePlan, ...],
         classes: tuple[ClassSurfacePlan, ...],
         overloads: tuple[OverloadPlan, ...],
@@ -623,6 +636,7 @@ class WrapperPlanner(ClassVisitor):
             python_path=path,
             functions=functions,
             variables=variables,
+            variable_publications=variable_publications,
             derived_types=derived_types,
             classes=classes,
             overloads=overloads,
@@ -1126,9 +1140,13 @@ class WrapperPlanner(ClassVisitor):
     def _variables_by_namespace(
         self,
         module: models.SemanticModule,
-    ) -> dict[tuple[str, ...], list[ModuleVariablePlan]]:
-        """Group exported module-variable plans by completed Python namespace."""
+    ) -> tuple[
+        dict[tuple[str, ...], list[ModuleVariablePlan]],
+        dict[tuple[str, ...], list[ModuleVariablePublicationPlan]],
+    ]:
+        """Plan each native variable once and group its Python publications."""
         variables = defaultdict(list)
+        publications = defaultdict(list)
         for variable in module.variables:
             if variable.visibility != "public":
                 continue
@@ -1136,11 +1154,30 @@ class WrapperPlanner(ClassVisitor):
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
+            native_namespace = tuple(part.casefold() for part in str(policy.native_module).split(".") if part)
+            declaring_namespace = (
+                native_namespace
+                if native_namespace in exports_by_namespace
+                else ()
+                if () in exports_by_namespace and str(policy.native_module).casefold() == module.name.casefold()
+                else native_namespace
+            )
+            declaring_names = tuple(exports_by_namespace.get(declaring_namespace, ())) or (policy.name,)
+            plan = self._module_variable_plan(
+                policy,
+                declaring_namespace,
+                declaring_names,
+                module.name,
+            )
+            variables[declaring_namespace].append(plan)
             for namespace, python_names in exports_by_namespace.items():
-                variables[namespace].append(
-                    self._module_variable_plan(policy, namespace, tuple(python_names), module.name)
+                publications[namespace].append(
+                    ModuleVariablePublicationPlan(
+                        variable_owner_path=plan.owner_path,
+                        python_names=tuple(python_names),
+                    )
                 )
-        return variables
+        return variables, publications
 
     def _complete_generated_symbols(
         self,

@@ -2259,21 +2259,13 @@ def _reject_unsupported_republication(
     module: SemanticModule,
     home: tuple[str, ...] | None,
 ) -> None:
-    """Refuse a published name whose kind reaches Python only where it is declared.
+    """Refuse a generic published outside the namespace declaring it.
 
-    A module variable holds state that stays live where it is declared, and a
-    generic is a dispatch surface rather than one object, so neither reaches
-    Python as an object another namespace can bind. A procedure or a derived
-    type does, which is why those two are re-exported through aliases instead.
-
-    Every namespace publishing one of these kinds is therefore checked against
-    the namespace declaring it, not merely counted: moving one to a facade
-    publishes it in exactly one place and still says what no build can do.
+    A module variable has a dedicated publication plan that routes every
+    namespace to one native variable plan. A generic remains a dispatch
+    surface rather than one bindable object, so it cannot be republished.
     """
-    for declaration, kind in (
-        *((item, "module variable") for item in module.variables),
-        *((item, "generic") for item in module.overload_sets),
-    ):
+    for declaration, kind in ((item, "generic") for item in module.overload_sets):
         exports = _declaration_exports(declaration)
         relocated = [export for export in exports if home is None or tuple(export["namespace"]) != home]
         if not relocated:
@@ -2381,6 +2373,30 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
                     else [{"namespace": namespace, "name": None}]
                 ),
             )
+
+    variables_by_identity = {
+        (module.name.casefold(), str(variable.origin.native_name or variable.name).casefold()): variable
+        for module in modules
+        for variable in module.variables
+    }
+    for module in modules:
+        for reexport in module.reexports:
+            if reexport.entity_kind != "variable":
+                continue
+            variable = variables_by_identity.get(
+                (str(reexport.origin_module).casefold(), str(reexport.source_name).casefold())
+            )
+            if variable is None:
+                raise ValueError(
+                    f"Cannot resolve re-exported module variable {reexport.origin_module}.{reexport.source_name}"
+                )
+            export = {
+                "namespace": tuple(part.casefold() for part in str(reexport.module).split(".") if part),
+                "name": str(reexport.local_name),
+            }
+            exports = _declaration_exports(variable)
+            if export not in exports:
+                exports.append(export)
 
 
 # Native build inputs and link planning

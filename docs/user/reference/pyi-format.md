@@ -209,17 +209,16 @@ name declares decides how publishing it appears:
 | Derived type | A runtime type. |
 | Package sub-namespace | A runtime namespace attribute. |
 | Prototype | A callback signature contracts name, with no runtime object. |
-| Module variable | Live state, publishable only by the namespace declaring it. |
+| Module variable | Live state or a constant; every publication reaches the declaring variable. |
 | Generic interface | A dispatch surface, publishable only by the namespace declaring it. |
 
 A procedure and a derived type each reach Python as one object, so another
-namespace can bind that object and PRIK re-exports it under whatever name the
-importing contract states. A module variable and a generic reach Python as
-neither, so no other namespace can publish one. Every namespace naming one of
-those two kinds in its `__all__` is checked against the namespace declaring it:
-listing it beside the declaring contract is refused, and so is moving it to a
-facade by withholding it at home, which publishes it in exactly one namespace
-and still not the one it lives in.
+namespace can bind that object under whatever name the importing contract
+states. A module-variable re-export instead installs another route to the same
+declaring variable: reads, writes, allocation, pointer association, and derived
+object state remain shared. A `Final[...]` parameter is published with the same
+constant semantics in every namespace. A generic is a dispatch surface rather
+than one object and remains publishable only by its declaring namespace.
 
 PRIK writes the list into every generated contract, holding what the Fortran
 source publishes: the module's own public declarations, and any imported name it

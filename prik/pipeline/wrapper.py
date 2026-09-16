@@ -325,6 +325,7 @@ class WrapperGenerator:
             )
         diagnostics.extend(self._generated_support_procedure_entrypoint_diagnostics(plan))
         diagnostics.extend(self._namespace_tree_diagnostics(plan))
+        diagnostics.extend(self._module_variable_publication_diagnostics(plan))
 
         # Validate every typed member against the shared records in its namespace.
         for namespace in plan.namespaces:
@@ -1023,7 +1024,7 @@ class WrapperGenerator:
     def _python_export_name_diagnostics(self, plan: NamespacePlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return duplicate local export-name diagnostics."""
         names = [function.binding.python_name for function in plan.functions]
-        names.extend(name for variable in plan.variables for name in variable.binding.python_names)
+        names.extend(name for publication in plan.variable_publications for name in publication.python_names)
         names.extend(name for derived in plan.derived_types for name in derived.python_names)
         names.extend(overload.python_name for overload in plan.overloads)
         return tuple(
@@ -1055,6 +1056,33 @@ class WrapperGenerator:
                 diagnostics.append(
                     self._diagnostic(overload.owner_path, "inconsistent-overload-export-owner", expected_owner)
                 )
+        return tuple(diagnostics)
+
+    def _module_variable_publication_diagnostics(
+        self,
+        plan: ModulePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate that every publication references one canonical variable plan."""
+        owners = {variable.owner_path for namespace in plan.namespaces for variable in namespace.variables}
+        diagnostics = []
+        for namespace in plan.namespaces:
+            for publication in namespace.variable_publications:
+                if publication.variable_owner_path not in owners:
+                    diagnostics.append(
+                        self._diagnostic(
+                            namespace.owner_path,
+                            "missing-module-variable-publication-owner",
+                            publication.variable_owner_path,
+                        )
+                    )
+                if not publication.python_names:
+                    diagnostics.append(
+                        self._diagnostic(
+                            namespace.owner_path,
+                            "empty-module-variable-publication",
+                            publication.variable_owner_path,
+                        )
+                    )
         return tuple(diagnostics)
 
     def _generated_symbol_diagnostics(self, plan: ModulePlan) -> tuple[WrapperPlanDiagnostic, ...]:

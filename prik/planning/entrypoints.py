@@ -492,6 +492,13 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 if case.action is not DerivedCallAction.INCOMPATIBLE
             )
         )
+        identities.update(
+            variable.derived.handoff.type_identity
+            for variable in self.variables
+            if variable.derived is not None
+            and variable.derived.handoff.storage
+            in {DerivedObjectStorage.MODULE_ALLOCATABLE, DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET}
+        )
         return tuple(derived for derived in self.derived_types if derived.type_identity in identities)
 
     def _pointer_holder_types(self) -> tuple[DerivedTypePlan, ...]:
@@ -512,6 +519,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 for case in argument.derived_call.cases
                 if case.action is not DerivedCallAction.INCOMPATIBLE
             )
+        )
+        identities.update(
+            variable.derived.handoff.type_identity
+            for variable in self.variables
+            if variable.derived is not None and variable.derived.handoff.storage is DerivedObjectStorage.MODULE_POINTER
         )
         return tuple(derived for derived in self.derived_types if derived.type_identity in identities)
 

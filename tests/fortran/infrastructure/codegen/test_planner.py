@@ -72,6 +72,30 @@ def right_value(x: Int32) -> Int32: ...
     assert plan.namespaces[2].functions[0].symbol_name == "right_shared_value"
 
 
+def test_planner_keeps_one_module_variable_plan_for_multiple_publications():
+    """Namespace publications reference one plan that owns native access."""
+    module = parse_pyi_text("counter: Int32\n", module_name="state")
+    module.variables[0].metadata[PYTHON_EXPORTS_METADATA] = [
+        {"namespace": (), "name": "counter"},
+        {"namespace": ("facade",), "name": "counter"},
+    ]
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner().build(module)
+
+    variables = [variable for namespace in plan.namespaces for variable in namespace.variables]
+    publications = [
+        (namespace.python_path, publication.variable_owner_path, publication.python_names)
+        for namespace in plan.namespaces
+        for publication in namespace.variable_publications
+    ]
+    assert len(variables) == 1
+    assert publications == [
+        ((), variables[0].owner_path, ("counter",)),
+        (("facade",), variables[0].owner_path, ("counter",)),
+    ]
+
+
 def test_two_python_names_one_folded_stem_get_separate_generated_symbols():
     """A generated symbol is shared with Fortran, which folds the two together."""
     module = parse_pyi_text(

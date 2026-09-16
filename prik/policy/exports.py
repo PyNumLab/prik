@@ -64,8 +64,7 @@ def complete_python_export_policy(
                 category="function" if contract_named else category,
                 owner=f"{category} {owner.name}",
             )
-            if export.get("name") is None:
-                export["name"] = resolved_name
+            export["name"] = resolved_name
     _complete_reexport_names(module, naming, contract_named=contract_named)
 
 
@@ -85,13 +84,46 @@ def _complete_reexport_names(
     for reexport in module.reexports:
         if reexport.python_name:
             continue
-        category = "class" if reexport.entity_kind == "derived_type" else "function"
+        if reexport.entity_kind == "variable":
+            completed_name = _completed_variable_reexport_name(module, reexport)
+            if completed_name is not None:
+                reexport.python_name = completed_name
+                continue
+        category = {
+            "derived_type": "class",
+            "variable": "variable",
+        }.get(reexport.entity_kind, "function")
         reexport.python_name = naming.reserve_public_name(
             _reexport_namespace(module, reexport),
             reexport.local_name,
             category="function" if contract_named else category,
             owner=f"re-export {reexport.local_name}",
         )
+
+
+def _completed_variable_reexport_name(
+    module: models.SemanticModule,
+    reexport: models.SemanticReexport,
+) -> str | None:
+    """Read a variable re-export name from its declaring variable policy.
+
+    A merged source build contains the declaring variable, whose export list is
+    the authority for every publication. Contract extraction may emit an
+    importing module separately, in which case the declaration is unavailable
+    and the re-export is named locally instead.
+    """
+    wanted_module = str(reexport.origin_module).casefold()
+    wanted_name = str(reexport.source_name).casefold()
+    namespace = _reexport_namespace(module, reexport)
+    for variable in module.variables:
+        native_module = str(variable.origin.native_scope or "").casefold()
+        native_name = str(variable.origin.native_name or variable.name).casefold()
+        if native_module != wanted_module or native_name != wanted_name:
+            continue
+        for export in variable.metadata.get(models.PYTHON_EXPORTS_METADATA, ()):
+            if export_namespace(export) == namespace and export.get("name") is not None:
+                return str(export["name"])
+    return None
 
 
 def _reexport_namespace(module: models.SemanticModule, reexport: models.SemanticReexport) -> tuple[str, ...]:

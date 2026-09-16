@@ -73,6 +73,7 @@ ModulePlan
     │   │   └── BridgeCallSlotPlan (optional adapter facet)
     │   └── LifecycleActionPlan
     └── ModuleVariablePlan
+        └── ModuleVariablePublicationPlan (one or more namespace bindings)
 ```
 
 Each callable, argument, and result always owns binding and entrypoint views;
@@ -82,6 +83,14 @@ the exported symbol, direct return, ordered parameter groups, value/address
 projection, presence and length fields, descriptors, and hidden outputs.
 Bridge records own adapter-local representation conversion and the invocation
 of the original Fortran procedure.
+
+One `ModuleVariablePlan` owns each declaring native variable and its completed
+getter, setter, ownership, descriptor, array, and derived-object mechanisms.
+`ModuleVariablePublicationPlan` records only a namespace and Python names that
+publish that plan. Re-exporting module state therefore adds publication records
+without adding variable plans, accessors, support procedures, initialization,
+allocation state, or pointer state. Parameters use the same structure while
+retaining constant-value lowering.
 
 `NativeEntrypointModulePlan.support_procedures` is the authoritative registry for
 externally linked generated helper callables that are not ordinary wrapped

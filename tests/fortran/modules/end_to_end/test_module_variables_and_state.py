@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
     _build_source_and_import,
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
@@ -17,6 +18,47 @@ FIXTURES = Path(__file__).parent / "fixtures"
 MODULE_VARIABLES_F90_SOURCE = FIXTURES / "native" / "fmodule_vars_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
+
+
+MODULE_VARIABLE_REEXPORT_SOURCE = """
+module reexport_state_home
+  use iso_fortran_env, only: int32, real64
+  implicit none
+
+  type :: item
+    integer(int32) :: value = 0
+  end type item
+
+  integer(int32), parameter :: limit = 7
+  integer(int32) :: counter = 3
+  integer(int32) :: numbers(3)
+  real(real64), allocatable :: values(:)
+  real(real64), target :: backing(3)
+  real(real64), pointer :: selected(:) => null()
+  type(item) :: current
+  type(item), allocatable :: optional_item
+
+contains
+
+  subroutine setup()
+    numbers = [1, 2, 3]
+    if (.not. allocated(values)) allocate(values(3))
+    values = [4.0_real64, 5.0_real64, 6.0_real64]
+    backing = [7.0_real64, 8.0_real64, 9.0_real64]
+    selected => backing
+    current%value = 10
+    if (.not. allocated(optional_item)) allocate(optional_item)
+    optional_item%value = 11
+  end subroutine setup
+end module reexport_state_home
+
+module reexport_state_facade
+  use reexport_state_home, only: limit, counter, numbers, values, selected, current, optional_item
+  implicit none
+  private
+  public :: limit, counter, numbers, values, selected, current, optional_item
+end module reexport_state_facade
+"""
 
 
 def _module_variables_build_dir(tmp_path: Path, build_mode: str) -> Path:
@@ -618,6 +660,100 @@ module reexport_collide_user_mod
   public :: lambda_
 end module reexport_collide_user_mod
 """
+
+
+def test_module_variable_reexports_share_one_native_entity_from_source_and_contract(
+    pyi_parity_build_mode: str,
+    tmp_path: Path,
+):
+    """Every publication reads one variable plan and its live native state."""
+    source = tmp_path / "module_variable_reexports.f90"
+    source.write_text(MODULE_VARIABLE_REEXPORT_SOURCE, encoding="utf-8")
+
+    if pyi_parity_build_mode == "source":
+        build_dir = tmp_path / "source_build"
+        module = _build_source_and_import(
+            source,
+            build_dir,
+            {
+                "bind_c_module_variable_reexports_wrapper.f90",
+                "module_variable_reexports_wrapper.c",
+                "module_variable_reexports_wrapper.h",
+            },
+        )
+    else:
+        workdir = tmp_path / "generated_pyi_build"
+        module = _build_generated_pyi_and_import(source, workdir)
+        build_dir = workdir / "pyi_build"
+
+        contracts = workdir / "contracts" / source.stem
+        home_contract = (contracts / "reexport_state_home.pyi").read_text(encoding="utf-8")
+        facade_contract = (contracts / "reexport_state_facade.pyi").read_text(encoding="utf-8")
+        assert "counter: Int32" in home_contract
+        assert "limit: Final[Int32]" in home_contract
+        assert "from .reexport_state_home import " in facade_contract
+        imported_names = facade_contract.partition("import ")[2].partition("\n")[0].split(", ")
+        assert {"counter", "limit"}.issubset(imported_names)
+        assert '"counter"' in facade_contract.partition("__all__ = ")[2]
+        assert '"limit"' in facade_contract.partition("__all__ = ")[2]
+
+    home = module.reexport_state_home
+    facade = module.reexport_state_facade
+    home.setup()
+
+    assert home.limit == facade.limit == np.int32(7)
+
+    home.counter = np.int32(10)
+    assert facade.counter == np.int32(10)
+    facade.counter = np.int32(25)
+    assert home.counter == np.int32(25)
+
+    home.numbers[0] = np.int32(21)
+    assert facade.numbers[0] == np.int32(21)
+    facade.numbers[1] = np.int32(22)
+    assert home.numbers[1] == np.int32(22)
+
+    home.values.to_numpy()[0] = np.float64(31.0)
+    assert facade.values.to_numpy()[0] == np.float64(31.0)
+    facade.values.to_numpy()[1] = np.float64(32.0)
+    assert home.values.to_numpy()[1] == np.float64(32.0)
+
+    assert home.selected.associated is True
+    facade.selected.nullify()
+    assert home.selected.associated is False
+
+    home.current.value = np.int32(41)
+    assert facade.current.value == np.int32(41)
+    facade.current.value = np.int32(42)
+    assert home.current.value == np.int32(42)
+
+    home.optional_item.value = np.int32(51)
+    assert facade.optional_item.value == np.int32(51)
+    facade.optional_item.value = np.int32(52)
+    assert home.optional_item.value == np.int32(52)
+
+    generated = next(build_dir.glob("*_wrapper.c")).read_text(encoding="utf-8")
+    assert "module_get_limit" not in generated
+    assert "module_set_limit" not in generated
+    for name in ("counter", "numbers", "values", "selected", "current", "optional_item"):
+        assert generated.count(f"static PyObject * module_get_{name}(void) {{") == 1
+    assert generated.count("static int module_set_counter(PyObject * value_obj) {") == 1
+
+    bridge = next(build_dir.glob("bind_c_*_wrapper.f90")).read_text(encoding="utf-8")
+    assert "bind_c_get_limit" not in bridge
+    assert "bind_c_set_limit" not in bridge
+    for signature in (
+        "function bind_c_get_counter(",
+        "subroutine bind_c_set_counter(",
+        "function bind_c_get_numbers(",
+        "subroutine bind_c_values_descriptor(",
+        "subroutine bind_c_selected_descriptor(",
+        "function bind_c_prik_module_field_current_value_get(",
+        "subroutine bind_c_prik_module_field_current_value_set(",
+        "function bind_c_prik_module_field_optional_item_value_get(",
+        "subroutine bind_c_prik_module_field_optional_item_value_set(",
+    ):
+        assert bridge.count(signature) == 1
 
 
 def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_path: Path):

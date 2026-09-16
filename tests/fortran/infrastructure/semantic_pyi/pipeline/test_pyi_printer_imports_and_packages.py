@@ -954,14 +954,8 @@ end module kinds_mod
     assert '__all__ = ["rate"]' in code
 
 
-def test_generated_contract_omits_a_republication_no_build_can_expose():
-    """A contract states only what publishing can actually reach.
-
-    A module variable holds state that stays live where it is declared, and a
-    generic is a dispatch surface rather than one object, so neither reaches a
-    second namespace. A source build publishes neither, and a contract written
-    from that source claims neither, which keeps the two builds agreeing.
-    """
+def test_generated_contract_publishes_a_module_variable_reexport():
+    """A re-exporting contract names the declaring variable as public state."""
     parsed = parse_fortran_source("""
 module state_home
 implicit none
@@ -988,5 +982,5 @@ end module state_facade
         ("bump", "procedure"),
         ("counter", "variable"),
     ]
-    # The procedure is publishable; the live variable stays where it is declared.
-    assert stubs["state_facade"].rstrip().endswith('__all__ = ["bump"]')
+    assert "from .state_home import counter, bump" in stubs["state_facade"]
+    assert stubs["state_facade"].rstrip().endswith('__all__ = ["counter", "bump"]')

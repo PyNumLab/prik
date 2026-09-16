@@ -34,6 +34,7 @@ from prik.planning.models import (
     FunctionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NamespacePlan,
     OverloadPlan,
     ResultPlan,
@@ -98,6 +99,14 @@ class WrapperDocstringBuilder:
             for surface in namespace.classes
             if surface.python_names
         }
+        self._module_variables_by_owner = {
+            variable.owner_path: variable for namespace in plan.namespaces for variable in namespace.variables
+        }
+        # A publication can sort before the namespace that owns its canonical
+        # variable plan. Render every canonical variable first so namespace
+        # summaries only read completed documentation from that owner.
+        for variable in self._module_variables_by_owner.values():
+            self._render_module_variable(variable)
         for namespace in plan.namespaces:
             self._render_namespace(plan.owner_path, namespace)
         return plan
@@ -120,11 +129,15 @@ class WrapperDocstringBuilder:
             self._render_class_surface(surface, () if derived_type is None else derived_type.fields)
 
         if namespace.docstring is None:
+            variable_publications = tuple(
+                (self._module_variables_by_owner[publication.variable_owner_path], publication)
+                for publication in namespace.variable_publications
+            )
             namespace.docstring = self.namespace(
                 module_name,
                 namespace.python_path,
                 namespace.functions,
-                namespace.variables,
+                variable_publications,
                 namespace.classes,
                 namespace.overloads,
             )
@@ -194,7 +207,7 @@ class WrapperDocstringBuilder:
         module_name: str,
         path: tuple[str, ...],
         functions: tuple[FunctionPlan, ...],
-        variables: tuple[ModuleVariablePlan, ...],
+        variables: tuple[tuple[ModuleVariablePlan, ModuleVariablePublicationPlan], ...],
         classes,
         overloads: tuple[OverloadPlan, ...],
     ) -> str:
@@ -215,7 +228,11 @@ class WrapperDocstringBuilder:
         self._append_section(
             lines,
             "Module Attributes",
-            tuple(line for variable in variables for line in self._module_variable_summary_lines(variable)),
+            tuple(
+                line
+                for variable, publication in variables
+                for line in self._module_variable_summary_lines(variable, publication.python_names)
+            ),
         )
         self._append_section(lines, "Functions", callable_lines)
         self._append_section(lines, "Classes", tuple(name for surface in classes for name in surface.python_names))
@@ -1140,7 +1157,11 @@ class WrapperDocstringBuilder:
             return result.projected_call_slot.python_name
         return "result" if result.result_position == 0 else f"result_{result.result_position}"
 
-    def _module_variable_summary_lines(self, variable: ModuleVariablePlan) -> tuple[str, ...]:
+    def _module_variable_summary_lines(
+        self,
+        variable: ModuleVariablePlan,
+        python_names: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...]:
         """Expand one module-variable docstring for every exported Python alias.
 
         The first line supplies the rendered type while the remaining details
@@ -1154,7 +1175,8 @@ class WrapperDocstringBuilder:
         _name, separator, type_name = first.partition(" : ")
         if not separator:
             return (first,)
-        return tuple(line for name in variable.binding.python_names for line in (f"{name} : {type_name}", *details))
+        names = variable.binding.python_names if python_names is None else python_names
+        return tuple(line for name in names for line in (f"{name} : {type_name}", *details))
 
     def _keyword_field_signature(
         self,

@@ -41,8 +41,9 @@ native module or select a native object file.
 
 Only declarations reachable from `__init__.pyi` are public. Missing files,
 import cycles, and two different exports using the same Python name are
-errors. Explicit aliases share the same native target, but Python object
-identity is not guaranteed for every read.
+errors. Explicit aliases share the same native target. A module-variable alias
+reads and writes the declaring variable's live native storage; it does not
+create another variable.
 
 ## Remove or Hide a Declaration
 
@@ -157,6 +158,34 @@ nmax: Final[Int32] = 12
 
 See [Wrapping Modules](../../guide/wrapping-modules.md#shape-the-module-api-with-the-contract)
 for the resulting Python usage.
+
+## Re-export Module State
+
+Import a variable into another leaf and include it in that leaf's `__all__`:
+
+```python
+# state.pyi
+from prik.contracts import Int32
+
+counter: Int32
+__all__ = ["counter"]
+```
+
+```python
+# facade.pyi
+from .state import counter
+
+__all__ = ["counter"]
+```
+
+Both `package.state.counter` and `package.facade.counter` access the same
+native variable. Assignment, array mutation, allocation, pointer association,
+and derived-object changes made through either namespace are immediately
+visible through the other. PRIK completes the variable's access and ownership
+policy once; the second namespace changes publication only.
+
+A re-exported `Final[...]` parameter remains the same read-only constant. It
+does not gain setter or storage machinery.
 
 ## Next
 
