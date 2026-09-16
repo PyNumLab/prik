@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract may publish a module variable only through a facade, leaving the
+  namespace declaring it out of Python entirely. Owning the one native variable
+  plan used to put that namespace there anyway, so a package hiding its
+  declaring module exposed it regardless.
+
+- A published Fortran `parameter` is documented as what it is. Each namespace
+  receives the declared value as an ordinary Python attribute: assignment is
+  not refused, rebinding one name leaves the Fortran parameter unchanged, and
+  it does not rebind any other namespace publishing the same parameter. The
+  reference previously called this a read-only constant.
+
 - A module publishing a re-exported name links again when that alias is the only
   thing it needs a bundled helper for. Binding an alias calls one, but a module
   with no arguments, results, module variables or derived-type fields was

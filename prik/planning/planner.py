@@ -1154,14 +1154,7 @@ class WrapperPlanner(ClassVisitor):
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
-            native_namespace = tuple(part.casefold() for part in str(policy.native_module).split(".") if part)
-            declaring_namespace = (
-                native_namespace
-                if native_namespace in exports_by_namespace
-                else ()
-                if () in exports_by_namespace and str(policy.native_module).casefold() == module.name.casefold()
-                else native_namespace
-            )
+            declaring_namespace = self._canonical_variable_namespace(policy, module.name, set(exports_by_namespace))
             declaring_names = tuple(exports_by_namespace.get(declaring_namespace, ())) or (policy.name,)
             plan = self._module_variable_plan(
                 policy,
@@ -1178,6 +1171,30 @@ class WrapperPlanner(ClassVisitor):
                     )
                 )
         return variables, publications
+
+    @staticmethod
+    def _canonical_variable_namespace(
+        policy,
+        module_name: str,
+        exported: set[tuple[str, ...]],
+    ) -> tuple[str, ...]:
+        """Return the namespace the one native variable plan is owned by.
+
+        Ownership follows the namespace declaring the variable wherever that
+        namespace publishes it. A contract may publish a variable only through
+        a facade, though, and native ownership must not put the declaring
+        namespace into Python merely to hold the plan, so ownership moves to a
+        namespace that is published. The choice is the least path so one plan
+        owns the variable whichever order namespaces are walked in.
+        """
+        native_namespace = tuple(part.casefold() for part in str(policy.native_module).split(".") if part)
+        if native_namespace in exported:
+            return native_namespace
+        if () in exported and str(policy.native_module).casefold() == module_name.casefold():
+            return ()
+        if exported:
+            return min(exported)
+        return native_namespace
 
     def _complete_generated_symbols(
         self,

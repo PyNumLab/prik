@@ -184,8 +184,19 @@ and derived-object changes made through either namespace are immediately
 visible through the other. PRIK completes the variable's access and ownership
 policy once; the second namespace changes publication only.
 
-A re-exported `Final[...]` parameter remains the same read-only constant. It
-does not gain setter or storage machinery.
+A re-exported `Final[...]` parameter behaves differently, because a Fortran
+`parameter` has no native storage to share and no setter. Each namespace
+receives the same native constant value as an ordinary Python attribute:
+
+- every publication starts at the value the Fortran `parameter` declares;
+- assigning to one, such as `facade.limit`, rebinds that Python name and does
+  not modify the Fortran parameter;
+- assigning to one does not rebind the others, so the namespaces can disagree
+  afterwards.
+
+Assignment is not refused. Nothing enforces the constant at runtime, so treat
+a published parameter as a value each namespace holds rather than a shared
+read-only view of native state.
 
 ## Next
 
