@@ -98,6 +98,33 @@ the selected plan requires a genuinely new emitted-code mechanism; those
 generators should otherwise keep reusing and dispatching existing planned
 paths.
 
+A decision is read, not recomputed. Completed policy moving forward also means a
+later stage must not derive the same answer a second time, which is harder to
+notice than an override because the second site often calls the same helper and
+so reads as reuse rather than as a second authority. When two places need one
+answer, ask: **if these two call sites disagreed, which one would be wrong?** If
+that has no answer, the decision has two authorities and no owner; if it has
+one, the other site must read the answer rather than compute it. This applies to
+derivation carrying state or a condition — a collision counter, a reservation
+ledger, a language gate, a default — because that is what drifts; calling a
+pure, total helper from several stages is fine. Prefer reading the owner's
+recorded output: the completed policy, the shared plan, or the metadata the
+owner wrote. Where that output genuinely is unavailable at that point — contract
+extraction runs without policy completion, because completion rejects C the
+direct route cannot build — call the owner's same entrypoint with the same
+inputs, never a local variant and never an extra condition the owner does not
+have.
+
+Where one decision reaches users through two artifacts, a test must compare
+those artifacts rather than only check each one. A built extension and the
+`.pyi` contract describing it are one such pair: each had passing tests while
+the names they published disagreed, because nothing asserted that they agreed.
+Treat the same comparison as a recommendation, not a requirement, for internal
+pairs such as a wrapper plan and the sources generated from it. Watch for a
+second policy or allocator instance, for a language, route, or flag gate at the
+consumer that the owner lacks, and for a `prik/printers/` helper that returns a
+name, kind, or decision rather than text.
+
 To answer an ABI question, or to decide whether something belongs in the
 binding or in the Fortran bridge, first ask: **how would this work for a
 `bind(C)` procedure, where there is no bridge at all?** A direct entrypoint has
