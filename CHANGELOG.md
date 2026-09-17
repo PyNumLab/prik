@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- TA-Lib's pinned reference harness now preserves binary64 array inputs across
+  its preliminary JSON self-checks, preventing architecture-dependent BETA
+  mismatches without weakening the 322-indicator PRIK comparison.
+
 - A module variable's canonical wrapper plan is now owned by its declaring
   native module and name. Adding, removing, or renaming Python facades changes
   only namespace publications, so support-operation and holder identities no

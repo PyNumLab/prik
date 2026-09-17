@@ -147,7 +147,9 @@ wrapper builds, and makes the generated module importable. `build_prik.sh`
 performs three checked operations:
 
 1. [`native_build.py`](native_build.py) fetches, verifies, builds, and caches
-   the pinned native release and its reference-test tools.
+   the pinned native release and its reference-test tools. The helper configures
+   the abstract-test JSON request writer for exact binary64 round trips; it does
+   not modify the TA-Lib library linked by either comparison path.
 2. PRIK generates a complete public-header inventory for the pinned compiler
    target. The inventory is for the surface audit; it is not used as the
    wrapper contract.
@@ -212,7 +214,9 @@ integer output arrays, while the session fixture checks `TA_Initialize` and
 The runner starts with abstraction-protocol self-checks. The adapter forwards
 those setup requests to the direct reference server because the abstraction
 API is explicitly excluded. They do not cross the generated wrapper and do
-not count toward the required 322-indicator coverage set.
+not count toward the required 322-indicator coverage set. Those self-checks use
+17 significant digits for array values, so their JSON transport preserves the
+runner's binary64 inputs exactly on every target.
 
 The detailed user guide includes the complete
 [test flow and CI target explanation](../../../docs/user/examples/c/ta-lib-wrapper.md#where-the-expected-results-come-from).

@@ -369,7 +369,10 @@ The suite has four complementary layers:
 TA-Lib's runner performs abstraction-protocol self-checks before the indicator
 comparisons. That API is outside this example, so those setup requests are
 forwarded directly to the native reference server. They are not counted as
-PRIK calls and cannot satisfy the required 322-name coverage set.
+PRIK calls and cannot satisfy the required 322-name coverage set. The native
+build helper configures this preliminary protocol to write array values with
+17 significant digits, preserving its binary64 inputs across JSON without
+changing the TA-Lib library used by either numerical comparison path.
 
 ## Tested platforms
 
