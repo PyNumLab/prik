@@ -63,6 +63,7 @@ def is_strided_extent(expression: str) -> bool:
 _ASSUMED_RANK_MARKER = "..."
 _QUOTED_LITERAL = re.compile(r"'[^']*'|\"[^\"]*\"")
 _IDENTIFIER_PATTERN = r"\b[A-Za-z_]\w*\b"
+_SELECTOR_KEYWORD = re.compile(r"\s*[A-Za-z_]\w*\s*=(?!=)")
 # Every extent whose value only exists at run time, assumed rank included.
 RUNTIME_DIMENSION_MARKERS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
@@ -445,6 +446,25 @@ def declaration_expression_identifiers(expression: str) -> tuple[str, ...]:
     identifiers with the literals removed, so a quoted spelling stays out
     either way.
     """
+    names: list[str] = []
+    for part in split_top_level_expression(expression, ","):
+        names.extend(_expression_identifiers(_selector_value(part)))
+    return tuple(dict.fromkeys(names))
+
+
+def _selector_value(part: str) -> str:
+    """Return the expression one declaration selector supplies.
+
+    A selector writes its keyword before the value it carries, as ``len=n``
+    and ``kind=c_char`` do. The keyword is syntax naming the slot rather than
+    an entity the declaration reads, so only what follows it is an expression.
+    """
+    match = _SELECTOR_KEYWORD.match(part)
+    return part[match.end() :] if match is not None else part
+
+
+def _expression_identifiers(expression: str) -> tuple[str, ...]:
+    """Return the names one expression reads, scanning only what will not parse."""
     text = _python_parseable_fortran_expression(expression)
     tree = _parse_expression(text)
     if tree is not None:

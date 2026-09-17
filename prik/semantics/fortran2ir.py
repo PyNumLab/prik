@@ -712,10 +712,21 @@ class FortranToIRConverter(ClassVisitor):
     def _declared_callback_interfaces(
         container: FortranModule | FortranFile,
     ) -> dict[str, _CallbackInterface]:
-        """Index interfaces declared directly in one module or file."""
+        """Index interfaces declared directly in one module or file.
+
+        A block written inside a contained procedure belongs to that procedure,
+        which may declare its own interface under a name another procedure uses
+        for a different one. Those blocks are stored beside the module's own, so
+        only the module's are indexed here and each procedure adds its own.
+        """
         owner = container if isinstance(container, FortranModule) else None
+        blocks = (
+            FortranToIRConverter._module_interfaces(container)
+            if isinstance(container, FortranModule)
+            else container.interfaces
+        )
         lookup: dict[str, _CallbackInterface] = {}
-        for interface in container.interfaces:
+        for interface in blocks:
             for signature in interface.procedures:
                 lookup.setdefault(signature.name.casefold(), _CallbackInterface(signature, owner))
             if interface.name and len(interface.procedures) == 1:
@@ -774,16 +785,38 @@ class FortranToIRConverter(ClassVisitor):
         uses: dict[str, list[FortranUseMapping]],
         *,
         base: dict[str, _CallbackInterface],
+        owner: FortranModule | None = None,
+        scope_name: str | None = None,
     ) -> dict[str, _CallbackInterface]:
-        """Extend a visible interface set with one inner scope's own imports.
+        """Extend a visible interface set with one inner scope's own declarations.
 
-        A procedure-local or standalone-procedure ``use`` names the interface in
-        that scope, so it takes precedence over anything the enclosing scope
-        made visible under the same name.
+        A procedure-local ``use``, and an interface block written inside the
+        procedure, both name the interface in that scope alone, so each takes
+        precedence over anything the enclosing scope made visible under the
+        same name. Two procedures may name different interfaces the same way,
+        which is why the enclosing module contributes only its own blocks.
         """
         visible = dict(base)
+        for interface in cls._procedure_interfaces(owner, scope_name):
+            for signature in interface.procedures:
+                visible[signature.name.casefold()] = _CallbackInterface(signature, owner)
+            if interface.name and len(interface.procedures) == 1:
+                visible[interface.name.casefold()] = _CallbackInterface(interface.procedures[0], owner)
         cls._merge_imported_callback_interfaces(visible, modules, uses, seen=frozenset(), override=True)
         return visible
+
+    @staticmethod
+    def _procedure_interfaces(owner: FortranModule | None, scope_name: str | None):
+        """Return the interface blocks written inside one contained procedure."""
+        if owner is None or scope_name is None:
+            return ()
+        wanted = scope_name.casefold()
+        return tuple(
+            interface
+            for interface in owner.interfaces
+            if str(getattr(interface, "declaring_scope_kind", "module")).casefold() == "procedure"
+            and [part.casefold() for part in getattr(interface, "declaring_scope_path", ())][-1:] == [wanted]
+        )
 
     @classmethod
     def _merge_imported_callback_interfaces(
@@ -1364,7 +1397,13 @@ class FortranToIRConverter(ClassVisitor):
                 derived_type_context=context,
                 # A procedure-local ``use`` names an interface only inside that
                 # procedure, so each one resolves against its own imports.
-                callback_interfaces=self._scope_callback_interfaces(index, proc.uses, base=callback_interfaces),
+                callback_interfaces=self._scope_callback_interfaces(
+                    index,
+                    proc.uses,
+                    base=callback_interfaces,
+                    owner=module,
+                    scope_name=proc.name,
+                ),
             )
             for proc in source_procedures
         ]

@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import ClassVar, Literal
 
 from prik.utilities.declaration_expressions import (
+    declaration_expression_identifiers,
     evaluate_integer_expression,
     split_declaration_assignment,
     split_dimension_bounds,
@@ -5497,11 +5498,16 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _extract_symbol_names(expr: str) -> set[str]:
-        """Extract lowercase identifier tokens from one expression."""
+        """Return the lower-case names one expression reads.
+
+        The names come from parsing, so a character literal's contents stay
+        part of its value: a parameter whose value is ``"widen"`` does not read
+        a parameter named ``widen``.
+        """
         keywords = {"and", "or", "not"}
         return {
             token.lower()
-            for token in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr or "")
+            for token in declaration_expression_identifiers(expr or "")
             if not token.isdigit() and token.lower() not in keywords
         }
 

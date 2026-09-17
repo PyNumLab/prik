@@ -336,7 +336,20 @@ def test_an_expression_reports_the_names_it_reads():
     assert set(declaration_expression_identifiers("size(values)")) == {"size", "values"}
 
 
-def test_unparseable_declaration_text_still_reports_names_outside_literals():
-    """A kind selector is not an expression, so the names are scanned instead."""
-    assert declaration_expression_identifiers("len=3") == ("len",)
-    assert declaration_expression_identifiers('kind="box"') == ("kind",)
+def test_a_selector_keyword_names_a_slot_rather_than_an_entity():
+    """`len` and `kind` are syntax, so only the value they carry is read."""
+    assert declaration_expression_identifiers("len=3") == ()
+    assert declaration_expression_identifiers("len=n") == ("n",)
+    assert declaration_expression_identifiers("kind=c_char") == ("c_char",)
+    assert declaration_expression_identifiers('kind="box"') == ()
+
+
+def test_each_selector_in_one_declaration_is_read_separately():
+    """A character declaration carries both selectors in one stored string."""
+    assert declaration_expression_identifiers("len=n, kind=c_char") == ("n", "c_char")
+    assert declaration_expression_identifiers("len=1, kind=c_char") == ("c_char",)
+
+
+def test_a_comparison_is_not_read_as_a_selector():
+    """`==` is an operator, so both sides are part of the expression."""
+    assert set(declaration_expression_identifiers("a == b")) == {"a", "b"}

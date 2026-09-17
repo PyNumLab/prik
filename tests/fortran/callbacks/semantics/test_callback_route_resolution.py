@@ -122,3 +122,61 @@ end module owning_mod
 """,
         module_name="owning_mod",
     ) == {"cb": "owning_mod"}
+
+
+LOCAL_CALLBACKS = """\
+module local_mod
+  implicit none
+contains
+  subroutine first(f)
+    abstract interface
+      subroutine cb(x)
+        integer, intent(in) :: x
+      end subroutine cb
+    end interface
+    procedure(cb) :: f
+    call f(1)
+  end subroutine first
+
+  subroutine second(f)
+    abstract interface
+      subroutine cb(x)
+        real(8), intent(in) :: x
+      end subroutine cb
+    end interface
+    procedure(cb) :: f
+    call f(1.0d0)
+  end subroutine second
+end module local_mod
+"""
+
+
+def test_each_procedure_resolves_the_callback_it_declares(tmp_path: Path):
+    """Two procedures may name different interfaces the same way.
+
+    A block written inside a procedure belongs to it, and the parser stores
+    those beside the module's own, so indexing the module's blocks without
+    regard to scope lets whichever came first answer for both.
+    """
+    source = tmp_path / "local_callbacks.f90"
+    source.write_text(LOCAL_CALLBACKS, encoding="utf-8")
+    project = parse_fortran_project([source])
+    modules = [module for parsed in (getattr(project, "files", None) or [project]) for module in parsed.modules]
+    index = FortranToIRConverter._callback_module_index(modules)
+    owner = next(module for module in modules if module.name == "local_mod")
+
+    # The module declares no interface of its own; both belong to a procedure.
+    assert FortranToIRConverter._declared_callback_interfaces(owner) == {}
+
+    seen = {}
+    for procedure in owner.procedures:
+        scope = FortranToIRConverter._scope_callback_interfaces(
+            index,
+            procedure.uses,
+            base={},
+            owner=owner,
+            scope_name=procedure.name,
+        )
+        seen[procedure.name] = [argument.base_type for argument in scope["cb"].signature.arguments]
+
+    assert seen == {"first": ["integer"], "second": ["real"]}
