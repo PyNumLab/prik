@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterable
 
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.utilities.declaration_expressions import declaration_extent_references
 from prik.policy.ownership import (
     CodegenAction,
     OwnershipDecision,
@@ -2120,12 +2121,19 @@ def _semantic_shape(semantic_type: models.SemanticType) -> list[str]:
 
 
 def _is_resolved_extent(value: object, visible_scalar_names: set[str]) -> bool:
-    """Report whether an extent is concrete or references only visible scalar inputs."""
+    """Report whether an extent is concrete or references only visible scalar inputs.
+
+    The references come from parsing the extent, which is what distinguishes a
+    value the extent reads from the name of a call it makes: ``max(n, m)``
+    reads ``n`` and ``m``, and requiring ``max`` to be a visible scalar would
+    refuse an expression declaration support otherwise accepts. Syntax that
+    stage cannot resolve reports a name no argument carries, so it stays
+    refused.
+    """
     text = str(value).strip()
     if not text or text in {":", "*", "...", ".."} or ":" in text:
         return False
-    names = set(re.findall(r"\b[A-Za-z_]\w*\b", text))
-    return names <= visible_scalar_names
+    return set(declaration_extent_references(text)) <= visible_scalar_names
 
 
 def _complete_variable(

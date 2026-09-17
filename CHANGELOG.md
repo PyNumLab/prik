@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A raw address contract accepts an extent built from the declaration calls
+  PRIK supports, so `Addr(Float64[max(n, m)])` and `Addr(Float64[abs(n)])` are
+  no longer refused as unresolved. Deciding that by scanning the extent's text
+  counted the call's own name among the values it reads, which no argument
+  carries. An extent naming something no argument supplies, a runtime extent,
+  and an unsupported call are refused as before.
+
 - TA-Lib's pinned reference harness now preserves binary64 array inputs across
   its preliminary JSON self-checks, preventing architecture-dependent BETA
   mismatches without weakening the 322-indicator PRIK comparison.
