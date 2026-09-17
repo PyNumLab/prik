@@ -1533,19 +1533,131 @@ class FortranToIRConverter(ClassVisitor):
             ),
         )
 
+    @staticmethod
+    def _effective_accessibility(module: FortranModule):
+        """Return whether one name is public in this module, by Fortran's rules.
+
+        Accessibility is settled by precedence: an access statement naming the
+        entity decides it, otherwise the module's bare ``public``/``private``
+        default does, and the default is itself ``public``. A use-associated
+        entity is covered by those same rules, so an ordinary default-public
+        module publishes what it imports without naming it anywhere.
+        """
+        default_public = str(getattr(module, "default_visibility", "public")).casefold() != "private"
+        explicit_public = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
+        explicit_private = {str(name).casefold() for name in getattr(module, "private_symbols", ())}
+
+        def is_public(name: object) -> bool:
+            folded = str(name).casefold()
+            if folded in explicit_private:
+                return False
+            if folded in explicit_public:
+                return True
+            return default_public
+
+        return is_public
+
     @classmethod
+    def _module_declaration_dependencies(cls, module: FortranModule) -> set[str]:
+        """Return imported names used to express this module's declarations.
+
+        The parser models retain declaration expressions but not executable
+        statements here, so intersecting their identifiers with names visible
+        through ``use`` distinguishes a dependency from an otherwise implicit
+        default-public re-export. An explicit ``public`` statement remains the
+        module's authoritative request to publish the name.
+        """
+
+        declaration_text: list[str] = []
+
+        def add_variable(variable: FortranVariable | None) -> None:
+            if variable is None:
+                return
+            declaration_text.extend(
+                str(value)
+                for value in (
+                    variable.kind,
+                    variable.target_kind_expression,
+                    variable.symbolic_value,
+                    variable.value,
+                    *variable.shape,
+                    *variable.lbound,
+                    *variable.ubound,
+                )
+                if value is not None
+            )
+
+        def add_procedure(procedure: FortranProcedureSignature) -> None:
+            for argument in procedure.arguments:
+                add_variable(argument)
+            add_variable(procedure.result)
+            for variable in procedure.variables.values():
+                add_variable(variable)
+
+        for variable in module.variables:
+            add_variable(variable)
+        for procedure in module.procedures:
+            add_procedure(procedure)
+        for derived in module.derived_types:
+            if derived.extends is not None:
+                declaration_text.append(str(getattr(derived.extends, "name", derived.extends)))
+            for field in derived.fields:
+                add_variable(field)
+            for binding in derived.procedure_bindings:
+                interface_name = binding.get("interface")
+                if interface_name:
+                    declaration_text.append(str(interface_name))
+        for interface in module.interfaces:
+            for procedure in interface.procedures:
+                add_procedure(procedure)
+
+        return {
+            identifier.casefold() for text in declaration_text for identifier in re.findall(r"\b[A-Za-z_]\w*\b", text)
+        }
+
+    @classmethod
+    def _module_public_names(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        seen: frozenset[str] = frozenset(),
+    ) -> set[str]:
+        """Return the names one module offers to a plain ``use`` of it."""
+        key = module.name.casefold()
+        if key in seen:
+            return set()
+        seen = seen | {key}
+        is_public = cls._effective_accessibility(module)
+        dependencies = cls._module_declaration_dependencies(module)
+        explicit_public = {str(name).casefold() for name in module.public_symbols}
+        offered = {
+            *(procedure.name for procedure in module.procedures),
+            *(derived.name for derived in module.derived_types),
+            *(variable.name for variable in getattr(module, "variables", ())),
+            *(mapping.local_name for mappings in module.uses.values() for mapping in mappings),
+        }
+        offered.update(
+            name
+            for module_name, mappings in module.uses.items()
+            if not mappings and module_name.casefold() in index
+            for name in cls._module_public_names(index[module_name.casefold()], index, seen)
+        )
+        return {
+            str(name).casefold()
+            for name in offered
+            if is_public(name) and (str(name).casefold() not in dependencies or str(name).casefold() in explicit_public)
+        }
+
     def _module_reexports(
         cls,
         module: FortranModule,
         module_index: dict[str, FortranModule] | None = None,
     ) -> list[SemanticReexport]:
-        """Return the imported names this module explicitly publishes.
+        """Return the imported names this module publishes.
 
-        Naming an imported entity in a ``public`` statement says the module
-        means it to be part of its own interface, so that name is published
-        here as well.  A name that is public only because the module default is
-        public carries no such statement and stays where it was declared, and a
-        ``use`` that publishes nothing explicitly re-exports nothing at all.
+        A use-associated entity belongs to this module's interface when the
+        module's effective accessibility makes it public, which an ordinary
+        default-public module does without any access statement naming it.
         Each record also states what the name declares where it comes from,
         because only some kinds reach Python as one object to alias.
         """
@@ -1554,7 +1666,9 @@ class FortranToIRConverter(ClassVisitor):
             *(derived.name.casefold() for derived in module.derived_types),
             *(variable.name.casefold() for variable in getattr(module, "variables", ())),
         }
-        published = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
+        is_public = cls._effective_accessibility(module)
+        dependencies = cls._module_declaration_dependencies(module)
+        explicit_public = {str(name).casefold() for name in module.public_symbols}
         index = module_index or {}
         reexports: list[SemanticReexport] = []
         named: set[str] = set()
@@ -1562,7 +1676,12 @@ class FortranToIRConverter(ClassVisitor):
             for mapping in mappings:
                 local_name = mapping.local_name
                 named.add(local_name.casefold())
-                if local_name.casefold() in declared or local_name.casefold() not in published:
+                local_key = local_name.casefold()
+                if (
+                    local_key in declared
+                    or not is_public(local_name)
+                    or (local_key in dependencies and local_key not in explicit_public)
+                ):
                     continue
                 kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, mapping.source)
                 reexports.append(
@@ -1574,7 +1693,16 @@ class FortranToIRConverter(ClassVisitor):
                         entity_kind=kind,
                     )
                 )
-        reexports.extend(cls._wildcard_reexports(module, index, declared=declared, published=published, named=named))
+        reexports.extend(
+            cls._wildcard_reexports(
+                module,
+                index,
+                declared=declared,
+                dependencies=dependencies,
+                explicit_public=explicit_public,
+                named=named,
+            )
+        )
         return reexports
 
     @classmethod
@@ -1624,14 +1752,15 @@ class FortranToIRConverter(ClassVisitor):
         index: dict[str, FortranModule],
         *,
         declared: set[str],
-        published: set[str],
+        dependencies: set[str],
+        explicit_public: set[str],
         named: set[str],
     ) -> list[SemanticReexport]:
-        """Return published names a plain ``use`` brought into this module.
+        """Return the names a plain ``use`` carried into this module and it publishes.
 
         A ``use`` naming no list carries every public name of the module it
-        reads, so a name this module publishes without declaring it is one of
-        them. The published name says which, and it is resolved only when one
+        reads, and this module's effective accessibility then decides which of
+        those it publishes in turn. A carried name is resolved only when one
         such module declares it: two that do leave the origin genuinely
         ambiguous, which is not something to guess at.
         """
@@ -1642,9 +1771,16 @@ class FortranToIRConverter(ClassVisitor):
         ]
         if not wildcard:
             return []
+        is_public = cls._effective_accessibility(module)
+        carried = {name for used in wildcard for name in cls._module_public_names(used, index)}
         reexports: list[SemanticReexport] = []
-        for name in sorted(published):
-            if name in declared or name in named:
+        for name in sorted(carried):
+            if (
+                name in declared
+                or name in named
+                or not is_public(name)
+                or (name in dependencies and name not in explicit_public)
+            ):
                 continue
             origins = [
                 origin

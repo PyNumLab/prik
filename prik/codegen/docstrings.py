@@ -99,9 +99,7 @@ class WrapperDocstringBuilder:
             for surface in namespace.classes
             if surface.python_names
         }
-        self._module_variables_by_owner = {
-            variable.owner_path: variable for namespace in plan.namespaces for variable in namespace.variables
-        }
+        self._module_variables_by_owner = {variable.owner_path: variable for variable in plan.variables}
         # A publication can sort before the namespace that owns its canonical
         # variable plan. Render every canonical variable first so namespace
         # summaries only read completed documentation from that owner.
@@ -118,8 +116,6 @@ class WrapperDocstringBuilder:
         for derived_type in namespace.derived_types:
             for field in derived_type.fields:
                 self._render_field(field)
-        for variable in namespace.variables:
-            self._render_module_variable(variable)
         for overload in namespace.overloads:
             self._render_overload(overload)
 
@@ -494,7 +490,7 @@ class WrapperDocstringBuilder:
         documentation.  Getter, setter, array-handle, and derived-object text
         comes directly from the completed variable plan.
         """
-        name = variable.binding.python_names[0]
+        name = variable.owner_path.rsplit(".", 1)[-1]
         nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
@@ -1175,7 +1171,7 @@ class WrapperDocstringBuilder:
         _name, separator, type_name = first.partition(" : ")
         if not separator:
             return (first,)
-        names = variable.binding.python_names if python_names is None else python_names
+        names = (variable.owner_path.rsplit(".", 1)[-1],) if python_names is None else python_names
         return tuple(line for name in names for line in (f"{name} : {type_name}", *details))
 
     def _keyword_field_signature(

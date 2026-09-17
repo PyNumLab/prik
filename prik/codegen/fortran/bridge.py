@@ -271,68 +271,8 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _visit_ModulePlan(self, plan: ModulePlan) -> FortranModule:
         """Build one complete bridge module from one validated module plan."""
-        self._generated_support_procedure_entrypoints = {
-            (procedure.owner_path, procedure.role): procedure for procedure in plan.entrypoint.support_procedures
-        }
-        self._derived_owner_paths = {
-            derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
-        }
-        # An abstract native type has no instances of its own, so an adapter
-        # reaches one only through a concrete extension's address.
-        self._abstract_backend_symbols = frozenset(
-            derived.backend_symbol for derived in self._derived_types(plan) if derived.abstract
-        )
-        if plan.bridge is None:
-            raise ValueError(f"Fortran lowering requires a bridge plan for {plan.owner_path!r}")
-        self._bridge_allocatable_holder_owner_paths = frozenset(plan.bridge.allocatable_holder_type_owner_paths)
-        self._bridge_pointer_holder_owner_paths = frozenset(plan.bridge.pointer_holder_type_owner_paths)
-        self._bridge_allocatable_holder_field_owner_paths = frozenset(
-            plan.bridge.allocatable_holder_field_type_owner_paths
-        )
-        self._bridge_pointer_holder_field_owner_paths = frozenset(plan.bridge.pointer_holder_field_type_owner_paths)
-        # Scoped origins are module-wide facts needed by derived-call lowering.
-        scoped_origin_type_identities = self._scoped_origin_type_identities(plan)
-        procedures = (
-            *(
-                procedure
-                for namespace in plan.namespaces
-                for procedure in self.visit(namespace, scoped_origin_type_identities)
-            ),
-            # Typed derived-field access remains separate from class orchestration.
-            *self._derived_field_procedures(plan),
-            # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
-            *self._class_constructor_procedures(plan),
-            *(
-                self._derived_destroy_procedure(derived)
-                for derived in self._derived_types(plan)
-                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "derived:destroy")
-            ),
-            *(
-                self._allocatable_holder_destroy_procedure(derived)
-                for derived in self._derived_types(plan)
-                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:destroy")
-            ),
-            *(
-                self._allocatable_holder_presence_procedure(derived)
-                for derived in self._derived_types(plan)
-                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:present")
-            ),
-            *(
-                self._pointer_holder_destroy_procedure(derived)
-                for derived in self._derived_types(plan)
-                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:destroy")
-            ),
-            *(
-                self._pointer_holder_presence_procedure(derived)
-                for derived in self._derived_types(plan)
-                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:present")
-            ),
-            *(
-                procedure
-                for variable in self._derived_origin_variables(plan)
-                for procedure in self._derived_origin_procedures(variable)
-            ),
-        )
+        self._prepare_module_context(plan)
+        procedures = self._module_procedures(plan)
         # Assemble imports, declarations, and procedures from plan projections.
         return FortranModule(
             name=f"bind_c_{plan.entrypoint.owner_path}_wrapper",
@@ -357,6 +297,82 @@ class FortranBridgeGenerator(ClassVisitor):
             declarations=self._prototype_entity_declarations(plan),
             procedures=self._apply_generated_support_procedure_entrypoints(procedures),
             standalone_procedures=self._callback_standalone_adapter_procedures(plan),
+        )
+
+    def _prepare_module_context(self, plan: ModulePlan) -> None:
+        """Cache validated module-wide facts consumed by bridge emitters."""
+        self._generated_support_procedure_entrypoints = {
+            (procedure.owner_path, procedure.role): procedure for procedure in plan.entrypoint.support_procedures
+        }
+        self._derived_owner_paths = {
+            derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
+        }
+        # An abstract native type has no instances of its own, so an adapter
+        # reaches one only through a concrete extension's address.
+        self._abstract_backend_symbols = frozenset(
+            derived.backend_symbol for derived in self._derived_types(plan) if derived.abstract
+        )
+        if plan.bridge is None:
+            raise ValueError(f"Fortran lowering requires a bridge plan for {plan.owner_path!r}")
+        self._bridge_allocatable_holder_owner_paths = frozenset(plan.bridge.allocatable_holder_type_owner_paths)
+        self._bridge_pointer_holder_owner_paths = frozenset(plan.bridge.pointer_holder_type_owner_paths)
+        self._bridge_allocatable_holder_field_owner_paths = frozenset(
+            plan.bridge.allocatable_holder_field_type_owner_paths
+        )
+        self._bridge_pointer_holder_field_owner_paths = frozenset(plan.bridge.pointer_holder_field_type_owner_paths)
+
+    def _module_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
+        """Return bridge procedures in their established emission order."""
+        # Scoped origins are module-wide facts needed by derived-call lowering.
+        scoped_origin_type_identities = self._scoped_origin_type_identities(plan)
+        return (
+            *(
+                procedure
+                for namespace in plan.namespaces
+                for procedure in self.visit(namespace, scoped_origin_type_identities)
+            ),
+            *(procedure for variable in plan.variables for procedure in self.visit(variable)),
+            # Typed derived-field access remains separate from class orchestration.
+            *self._derived_field_procedures(plan),
+            # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
+            *self._class_constructor_procedures(plan),
+            *self._derived_lifecycle_procedures(plan),
+            *(
+                procedure
+                for variable in self._derived_origin_variables(plan)
+                for procedure in self._derived_origin_procedures(variable)
+            ),
+        )
+
+    def _derived_lifecycle_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
+        """Return planned destruction and presence helpers for derived storage."""
+        derived_types = self._derived_types(plan)
+        return (
+            *(
+                self._derived_destroy_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "derived:destroy")
+            ),
+            *(
+                self._allocatable_holder_destroy_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:destroy")
+            ),
+            *(
+                self._allocatable_holder_presence_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:present")
+            ),
+            *(
+                self._pointer_holder_destroy_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:destroy")
+            ),
+            *(
+                self._pointer_holder_presence_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:present")
+            ),
         )
 
     def _generated_support_procedure_entrypoint(
@@ -597,7 +613,6 @@ class FortranBridgeGenerator(ClassVisitor):
                 for function in plan.functions
                 for procedure in self._default_native_array_argument_operations(function)
             ),
-            *(procedure for variable in plan.variables for procedure in self.visit(variable)),
         )
 
     def _visit_FunctionPlan(
@@ -9477,8 +9492,8 @@ class FortranBridgeGenerator(ClassVisitor):
         return tuple(function for namespace in plan.namespaces for function in namespace.functions)
 
     def _variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
-        """Flatten namespaces into module-variable plans while preserving module and namespace order."""
-        return tuple(variable for namespace in plan.namespaces for variable in namespace.variables)
+        """Return the canonical module-variable registry in planner order."""
+        return plan.variables
 
     def _iso_symbol(self, semantic_type_name: str) -> str:
         """Return the iso_c_binding symbol required by one semantic primitive type."""

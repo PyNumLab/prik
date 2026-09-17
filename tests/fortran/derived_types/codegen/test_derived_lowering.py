@@ -204,7 +204,7 @@ current: Annotated[point, Aliased]
     )
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
-    variable = plan.namespaces[0].variables[0]
+    variable = plan.variables[0]
 
     assert variable.derived.handoff.origin is DerivedObjectOrigin.NATIVE_MODULE
     assert variable.derived.handoff.release is DerivedRelease.NATIVE_OWNER

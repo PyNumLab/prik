@@ -200,10 +200,12 @@ class _PyiEmissionContext:
 def published_name(published: dict[str, str] | None, source: object) -> str | None:
     """Return the spelling a contract published one source name under.
 
-    A contract records the name exactly as its source spells it, so two
+    A contract records each name exactly as its source spells it, so two
     declarations a case-sensitive language keeps apart keep separate entries.
-    A case-insensitive source may still ask for either spelling, which the
-    fallback answers once no exact entry does.
+    A case-insensitive source may ask under any spelling, which is answered
+    only when one entry can mean it: where several fold together the request
+    names no single declaration, and guessing one would depend on the order
+    they happened to be recorded in.
     """
     if not published:
         return None
@@ -212,7 +214,8 @@ def published_name(published: dict[str, str] | None, source: object) -> str | No
     if exact is not None:
         return exact
     folded = wanted.casefold()
-    return next((value for key, value in published.items() if key.casefold() == folded), None)
+    matches = [value for key, value in published.items() if key.casefold() == folded]
+    return matches[0] if len(matches) == 1 else None
 
 
 # Publication of these kinds has no runtime form yet, so a generated contract

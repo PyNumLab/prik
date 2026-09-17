@@ -53,11 +53,19 @@ class PythonSurfaceEmitter(ClassVisitor):
     def __init__(self, context: PythonSurfaceContext) -> None:
         self._context = context
 
-    def emit(self, namespace: NamespacePlan) -> str:
+    def emit(
+        self,
+        namespace: NamespacePlan,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> str:
         """Return overloads, opaque classes, and typed member operation maps."""
-        return self.visit(namespace)
+        return self.visit(namespace, variables)
 
-    def _visit_NamespacePlan(self, namespace: NamespacePlan) -> str:
+    def _visit_NamespacePlan(
+        self,
+        namespace: NamespacePlan,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> str:
         """Render one planned namespace as executable Python source."""
         surfaces = self._class_surfaces(namespace)
         class_names = self._class_names(namespace)
@@ -75,7 +83,7 @@ class PythonSurfaceEmitter(ClassVisitor):
             ),
         ]
         sections.extend(self._holder_ops_python_sources(namespace))
-        sections.extend(self._module_proxy_ops_python_sources(namespace))
+        sections.extend(self._module_proxy_ops_python_sources(variables))
         return "\n\n".join(section for section in sections if section)
 
     @staticmethod
@@ -107,12 +115,13 @@ class PythonSurfaceEmitter(ClassVisitor):
             ),
         )
 
-    def _module_proxy_ops_python_sources(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_proxy_ops_python_sources(
+        self,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> tuple[str, ...]:
         """Render persistent module-derived operation maps in declaration order."""
         return tuple(
-            self._module_proxy_ops_python_source(variable)
-            for variable in namespace.variables
-            if variable.derived is not None
+            self._module_proxy_ops_python_source(variable) for variable in variables if variable.derived is not None
         )
 
     def _derived_type_python_source(
@@ -613,4 +622,4 @@ if __name__ == "__main__":
     example_context = PythonSurfaceContext(frozenset(), frozenset(), frozenset())
 
     print("Rendered Python facade:")
-    print(PythonSurfaceEmitter(example_context).emit(example_namespace))
+    print(PythonSurfaceEmitter(example_context).emit(example_namespace, ()))

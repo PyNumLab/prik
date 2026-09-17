@@ -326,14 +326,14 @@ class WrapperGenerator:
         diagnostics.extend(self._generated_support_procedure_entrypoint_diagnostics(plan))
         diagnostics.extend(self._namespace_tree_diagnostics(plan))
         diagnostics.extend(self._module_variable_publication_diagnostics(plan))
+        for variable in plan.variables:
+            diagnostics.extend(self._module_variable_diagnostics(variable))
 
-        # Validate every typed member against the shared records in its namespace.
+        # Validate every namespace-owned member against its shared records.
         for namespace in plan.namespaces:
             diagnostics.extend(self._namespace_diagnostics(namespace))
             for function in namespace.functions:
                 diagnostics.extend(self._function_diagnostics(function))
-            for variable in namespace.variables:
-                diagnostics.extend(self._module_variable_diagnostics(variable))
             for class_surface in namespace.classes:
                 diagnostics.extend(self._class_surface_diagnostics(namespace, class_surface))
             functions = {id(function) for function in namespace.functions}
@@ -405,7 +405,7 @@ class WrapperGenerator:
         for operation in operations:
             diagnostics.extend(self._generated_support_procedure_diagnostics(operation))
         try:
-            expected_projection = build_generated_support_procedure_projection(plan.namespaces)
+            expected_projection = build_generated_support_procedure_projection(plan.namespaces, plan.variables)
         except ValueError as error:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-auxiliary-entrypoint-inventory", str(error)))
             return tuple(diagnostics)
@@ -522,8 +522,14 @@ class WrapperGenerator:
         """Require module headers to equal the completed handle-plan union."""
         handles = tuple(
             handle
-            for namespace in plan.namespaces
-            for handle in self._namespace_native_array_handles(namespace)
+            for handle in (
+                *(variable.native_array_handle for variable in plan.variables),
+                *(
+                    handle
+                    for namespace in plan.namespaces
+                    for handle in self._namespace_native_array_handles(namespace)
+                ),
+            )
             if handle is not None
         )
         expected_headers = list(self._native_array_required_headers(handles))
@@ -583,7 +589,6 @@ class WrapperGenerator:
         return (
             *(argument.native_array_handle for function in namespace.functions for argument in function.arguments),
             *(result.native_array_handle for function in namespace.functions for result in function.results),
-            *(variable.native_array_handle for variable in namespace.variables),
             *(field.native_array_handle for derived in namespace.derived_types for field in derived.fields),
         )
 
@@ -1042,14 +1047,6 @@ class WrapperGenerator:
                 diagnostics.append(
                     self._diagnostic(function.owner_path, "inconsistent-function-export-owner", expected_owner)
                 )
-        for variable in plan.variables:
-            if not variable.binding.python_names:
-                continue
-            expected_owner = f"{plan.owner_path}.{variable.binding.python_names[0]}"
-            if variable.owner_path != expected_owner:
-                diagnostics.append(
-                    self._diagnostic(variable.owner_path, "inconsistent-variable-export-owner", expected_owner)
-                )
         for overload in plan.overloads:
             expected_owner = f"{plan.owner_path}.{overload.python_name}"
             if overload.owner_path != expected_owner:
@@ -1063,8 +1060,18 @@ class WrapperGenerator:
         plan: ModulePlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate that every publication references one canonical variable plan."""
-        owners = {variable.owner_path for namespace in plan.namespaces for variable in namespace.variables}
+        owners = {variable.owner_path for variable in plan.variables}
         diagnostics = []
+        namespace_paths = {namespace.python_path for namespace in plan.namespaces}
+        diagnostics.extend(
+            self._diagnostic(
+                variable.owner_path,
+                "missing-module-variable-support-namespace",
+                variable.binding.support_namespace,
+            )
+            for variable in plan.variables
+            if variable.binding.support_namespace not in namespace_paths
+        )
         for namespace in plan.namespaces:
             for publication in namespace.variable_publications:
                 if publication.variable_owner_path not in owners:
@@ -1090,11 +1097,18 @@ class WrapperGenerator:
         owners_by_symbol: dict[str, list[str]] = {}
         diagnostics = list(self._namespace_symbol_diagnostics(plan))
         for namespace in plan.namespaces:
-            for item in (*namespace.functions, *namespace.variables):
+            for item in namespace.functions:
                 if not item.symbol_name or not item.symbol_name.isidentifier():
                     diagnostics.append(self._diagnostic(item.owner_path, "invalid-generated-symbol", item.symbol_name))
                     continue
                 owners_by_symbol.setdefault(item.symbol_name.casefold(), []).append(item.owner_path)
+        for variable in plan.variables:
+            if not variable.symbol_name or not variable.symbol_name.isidentifier():
+                diagnostics.append(
+                    self._diagnostic(variable.owner_path, "invalid-generated-symbol", variable.symbol_name)
+                )
+                continue
+            owners_by_symbol.setdefault(variable.symbol_name.casefold(), []).append(variable.owner_path)
         diagnostics.extend(
             self._diagnostic(plan.owner_path, "duplicate-generated-symbol", f"{symbol}:{','.join(owners)}")
             for symbol, owners in owners_by_symbol.items()
@@ -1120,8 +1134,6 @@ class WrapperGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return getter, setter, and initialization consistency diagnostics."""
         diagnostics = []
-        if not plan.binding.python_names:
-            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-python-name", plan.owner_path))
         diagnostics.extend(self._module_variable_entrypoint_diagnostics(plan))
         diagnostics.extend(self._module_getter_diagnostics(plan))
         if plan.binding.getter_action is ModuleGetterAction.DERIVED_OBJECT:

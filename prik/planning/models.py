@@ -741,13 +741,9 @@ class BridgeModulePlan(StageRecord):
 
 @dataclass
 class BindingModuleVariablePlan(StageRecord):
-    """Describe Python module-attribute access and initialization for one value.
+    """Describe Python access and initialization for one native module value."""
 
-    ``python_names`` retains every public spelling. The binding consumes the
-    completed getter and setter actions plus the selected initializer/value.
-    """
-
-    python_names: tuple[str, ...]
+    support_namespace: tuple[str, ...]
     getter_action: ModuleGetterAction
     setter_action: SetterAction
     initializer: Any
@@ -783,7 +779,8 @@ class ModuleVariablePlan(StageRecord):
     """Join binding, entrypoint, and bridge views of one module-state value.
 
     Optional array, native-handle, and derived-object facets are attached only
-    when policy selected them. Namespace plans own these records for emission.
+    when policy selected them. ``ModulePlan`` owns these records by declaring
+    native identity; namespace plans contain publications only.
     """
 
     owner_path: str
@@ -1418,14 +1415,14 @@ class NamespacePlan(StageRecord):
     """Represent one Python namespace and its directly exported wrapper owners.
 
     ``python_path`` identifies the root or child module path; contained tuples
-    preserve planner order for functions, variables, types, classes, and
-    overloads. ``ModulePlan`` groups these namespaces into one generation unit.
+    preserve planner order for functions, variable publications, types,
+    classes, and overloads. ``ModulePlan`` groups these namespaces into one
+    generation unit.
     """
 
     owner_path: str
     python_path: tuple[str, ...]
     functions: tuple[FunctionPlan, ...] = ()
-    variables: tuple[ModuleVariablePlan, ...] = ()
     variable_publications: tuple[ModuleVariablePublicationPlan, ...] = ()
     derived_types: tuple[DerivedTypePlan, ...] = ()
     classes: tuple[ClassSurfacePlan, ...] = ()
@@ -1448,6 +1445,7 @@ class ModulePlan(StageRecord):
     binding: BindingModulePlan
     entrypoint: NativeEntrypointModulePlan
     bridge: BridgeModulePlan | None
+    variables: tuple[ModuleVariablePlan, ...]
     namespaces: tuple[NamespacePlan, ...]
     native_generated_code_groups: tuple[NativeGeneratedCodeGroupPlan, ...] = ()
     required_headers: tuple[str, ...] = ()
@@ -1506,6 +1504,7 @@ if __name__ == "__main__":
         binding=BindingModulePlan(owner_path="demo"),
         entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
         bridge=BridgeModulePlan(owner_path="demo"),
+        variables=(),
         namespaces=(NamespacePlan(owner_path="demo", python_path=(), functions=(function,)),),
     )
 

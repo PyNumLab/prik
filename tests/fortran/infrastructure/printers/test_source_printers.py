@@ -129,6 +129,7 @@ def test_source_printers_reject_wrapper_plan_models():
         binding=BindingModulePlan("demo", "demo"),
         entrypoint=NativeEntrypointModulePlan("demo"),
         bridge=BridgeModulePlan("demo"),
+        variables=(),
         namespaces=(NamespacePlan(owner_path="demo", python_path=()),),
     )
 

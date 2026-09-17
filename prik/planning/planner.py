@@ -380,7 +380,7 @@ class WrapperPlanner(ClassVisitor):
         if not any(
             (
                 *functions.values(),
-                *variables.values(),
+                variables,
                 *variable_publications.values(),
                 *derived_types.values(),
                 *classes.values(),
@@ -405,7 +405,7 @@ class WrapperPlanner(ClassVisitor):
             overloads,
             aliases,
         )
-        support_projection = build_generated_support_procedure_projection(namespaces)
+        support_projection = build_generated_support_procedure_projection(namespaces, variables)
         support_procedures = support_projection.support_procedures
         generated_code_groups = self._native_generated_code_groups(
             module.name,
@@ -436,9 +436,10 @@ class WrapperPlanner(ClassVisitor):
                 if generated_code_groups
                 else None
             ),
+            variables=variables,
             namespaces=namespaces,
             native_generated_code_groups=generated_code_groups,
-            required_headers=self._required_headers(namespaces),
+            required_headers=self._required_headers(namespaces, variables),
         )
 
     @staticmethod
@@ -494,14 +495,14 @@ class WrapperPlanner(ClassVisitor):
     ) -> tuple[dict, dict, dict, dict, dict, dict]:
         """Build namespace-owned plan maps from one shared class-policy catalog.
 
-        Direct functions and variables are projected first. The local catalog
+        Direct functions and canonical variables are projected first. The local catalog
         then organizes each public class once so derived-type and Python-class
         projections consume the same semantic declaration, completed policies,
         and callable owner-path maps.
         """
         # Project ordinary module members independently from class-owned surfaces.
         functions = self._functions_by_namespace(module)
-        variables, variable_publications = self._variables_by_namespace(module)
+        variables, variable_publications = self._module_variables_and_publications(module)
 
         return (
             functions,
@@ -529,7 +530,7 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         functions: dict,
-        variables: dict,
+        variables: tuple[ModuleVariablePlan, ...],
         variable_publications: dict,
         derived_types: dict,
         classes: dict,
@@ -539,14 +540,13 @@ class WrapperPlanner(ClassVisitor):
         """Freeze linked namespace members in dependency-safe path order."""
         self._complete_generated_symbols(functions, variables)
         namespace_paths = self._namespace_paths(
-            (*functions, *variables, *variable_publications, *derived_types, *classes, *overloads, *aliases)
+            (*functions, *variable_publications, *derived_types, *classes, *overloads, *aliases)
         )
-        return tuple(
+        namespaces = tuple(
             self._namespace_plan(
                 module_name,
                 path,
                 tuple(functions[path]),
-                tuple(variables[path]),
                 tuple(variable_publications[path]),
                 tuple(derived_types[path]),
                 tuple(classes[path]),
@@ -555,6 +555,33 @@ class WrapperPlanner(ClassVisitor):
             )
             for path in namespace_paths
         )
+        self._complete_variable_support_namespaces(module_name, variables, namespaces)
+        return namespaces
+
+    @staticmethod
+    def _complete_variable_support_namespaces(
+        module_name: str,
+        variables: tuple[ModuleVariablePlan, ...],
+        namespaces: tuple[NamespacePlan, ...],
+    ) -> None:
+        """Place private variable helpers without changing canonical ownership."""
+        type_paths: dict[tuple[str, str], list[tuple[str, ...]]] = defaultdict(list)
+        for namespace in namespaces:
+            for derived in namespace.derived_types:
+                type_paths[derived.type_identity].append(namespace.python_path)
+        for variable in variables:
+            if variable.derived is None:
+                variable.binding.support_namespace = ()
+                continue
+            identity = variable.derived.handoff.type_identity
+            candidates = type_paths.get(identity, [()])
+            native_scope = identity[0]
+            native_path = (
+                ()
+                if native_scope.casefold() == module_name.casefold()
+                else tuple(part.casefold() for part in native_scope.split(".") if part)
+            )
+            variable.binding.support_namespace = native_path if native_path in candidates else candidates[0]
 
     def _aliases_by_namespace(self, module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
         """Group each published re-export under the namespace that publishes it.
@@ -623,7 +650,6 @@ class WrapperPlanner(ClassVisitor):
         module_name: str,
         path: tuple[str, ...],
         functions: tuple[FunctionPlan, ...],
-        variables: tuple[ModuleVariablePlan, ...],
         variable_publications: tuple[ModuleVariablePublicationPlan, ...],
         derived_types: tuple[DerivedTypePlan, ...],
         classes: tuple[ClassSurfacePlan, ...],
@@ -635,7 +661,6 @@ class WrapperPlanner(ClassVisitor):
             owner_path=self._namespace_owner_path(module_name, path),
             python_path=path,
             functions=functions,
-            variables=variables,
             variable_publications=variable_publications,
             derived_types=derived_types,
             classes=classes,
@@ -1137,15 +1162,15 @@ class WrapperPlanner(ClassVisitor):
             return None
         return completed_function_wrapper_policy(function)
 
-    def _variables_by_namespace(
+    def _module_variables_and_publications(
         self,
         module: models.SemanticModule,
     ) -> tuple[
-        dict[tuple[str, ...], list[ModuleVariablePlan]],
+        tuple[ModuleVariablePlan, ...],
         dict[tuple[str, ...], list[ModuleVariablePublicationPlan]],
     ]:
-        """Plan each native variable once and group its Python publications."""
-        variables = defaultdict(list)
+        """Build the canonical native-variable registry and namespace publications."""
+        variables = []
         publications = defaultdict(list)
         for variable in module.variables:
             if variable.visibility != "public":
@@ -1154,15 +1179,8 @@ class WrapperPlanner(ClassVisitor):
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
-            declaring_namespace = self._canonical_variable_namespace(policy, module.name, set(exports_by_namespace))
-            declaring_names = tuple(exports_by_namespace.get(declaring_namespace, ())) or (policy.name,)
-            plan = self._module_variable_plan(
-                policy,
-                declaring_namespace,
-                declaring_names,
-                module.name,
-            )
-            variables[declaring_namespace].append(plan)
+            plan = self._module_variable_plan(policy)
+            variables.append(plan)
             for namespace, python_names in exports_by_namespace.items():
                 publications[namespace].append(
                     ModuleVariablePublicationPlan(
@@ -1170,39 +1188,16 @@ class WrapperPlanner(ClassVisitor):
                         python_names=tuple(python_names),
                     )
                 )
-        return variables, publications
-
-    @staticmethod
-    def _canonical_variable_namespace(
-        policy,
-        module_name: str,
-        exported: set[tuple[str, ...]],
-    ) -> tuple[str, ...]:
-        """Return the namespace the one native variable plan is owned by.
-
-        Ownership follows the namespace declaring the variable wherever that
-        namespace publishes it. A contract may publish a variable only through
-        a facade, though, and native ownership must not put the declaring
-        namespace into Python merely to hold the plan, so ownership moves to a
-        namespace that is published. The choice is the least path so one plan
-        owns the variable whichever order namespaces are walked in.
-        """
-        native_namespace = tuple(part.casefold() for part in str(policy.native_module).split(".") if part)
-        if native_namespace in exported:
-            return native_namespace
-        if () in exported and str(policy.native_module).casefold() == module_name.casefold():
-            return ()
-        if exported:
-            return min(exported)
-        return native_namespace
+        return tuple(variables), publications
 
     def _complete_generated_symbols(
         self,
         functions: dict[tuple[str, ...], list[FunctionPlan]],
-        variables: dict[tuple[str, ...], list[ModuleVariablePlan]],
+        variables: tuple[ModuleVariablePlan, ...],
     ) -> None:
-        """Keep unique symbols short and qualify only colliding local names."""
-        entries = (*self._planned_items(functions), *self._planned_items(variables))
+        """Keep unique symbols short and qualify from stable native identity."""
+        variable_entries = tuple((self._variable_native_namespace(item), item) for item in variables)
+        entries = (*self._planned_items(functions), *variable_entries)
         counts = Counter(item.symbol_name.casefold() for _namespace, item in entries)
         for namespace, item in entries:
             if counts[item.symbol_name.casefold()] > 1:
@@ -1245,24 +1240,22 @@ class WrapperPlanner(ClassVisitor):
     def _qualify_variable_bridge_collisions(
         self,
         functions: dict[tuple[str, ...], list[FunctionPlan]],
-        variables: dict[tuple[str, ...], list[ModuleVariablePlan]],
+        variables: tuple[ModuleVariablePlan, ...],
     ) -> None:
-        """Qualify a variable helper when its get/set spelling collides with a function."""
-        for namespace, namespace_variables in variables.items():
-            function_symbols = {function.symbol_name for function in functions[namespace]}
-            self._qualify_namespace_variable_helpers(namespace, namespace_variables, function_symbols)
-
-    def _qualify_namespace_variable_helpers(
-        self,
-        namespace: tuple[str, ...],
-        variables: list[ModuleVariablePlan],
-        function_symbols: set[str],
-    ) -> None:
-        """Resolve get/set helper collisions inside one Python namespace."""
+        """Qualify a native variable helper when it collides with any function."""
+        function_symbols = {function.symbol_name for items in functions.values() for function in items}
         for variable in variables:
             helper_symbols = {f"get_{variable.symbol_name}", f"set_{variable.symbol_name}"}
             if function_symbols & helper_symbols:
-                variable.symbol_name = self._symbol_name(namespace, variable.symbol_name)
+                variable.symbol_name = self._symbol_name(
+                    self._variable_native_namespace(variable),
+                    variable.symbol_name,
+                )
+
+    @staticmethod
+    def _variable_native_namespace(variable: ModuleVariablePlan) -> tuple[str, ...]:
+        """Return the declaring native path used only for generated-name qualification."""
+        return tuple(part.casefold() for part in variable.owner_path.rsplit(".", 1)[0].split(".") if part)
 
     def _planned_items(self, grouped: dict[tuple[str, ...], list]) -> tuple[tuple[tuple[str, ...], object], ...]:
         """Flatten namespace groups while retaining each item's namespace."""
@@ -1271,23 +1264,18 @@ class WrapperPlanner(ClassVisitor):
     def _module_variable_plan(
         self,
         policy: ModuleVariablePolicy,
-        namespace: tuple[str, ...],
-        python_names: tuple[str, ...],
-        module_name: str,
     ) -> ModuleVariablePlan:
         """Project one completed module-variable policy into its shared plan record.
 
-        ``policy`` supplies all accessor, setter, descriptor, and derived
-        object decisions.  ``namespace`` and ``python_names`` select the
-        exported owner path and binding aliases.  The result shares array and
-        derived-field projections with the rest of the module; no accessor or
-        ownership policy is selected here.
+        ``policy`` supplies the declaring native identity plus all accessor,
+        setter, descriptor, and derived-object decisions. Publications are
+        projected separately and cannot change this record's owner path.
         """
         # Roles are present only where the completed accessor policy requires them.
         getter_role = self._module_getter_role(policy)
         setter_role = f"{policy.owner_path}:setter" if policy.setter_action is SetterAction.WRITE_THROUGH else None
         return ModuleVariablePlan(
-            owner_path=self._export_owner_path(module_name, namespace, python_names[0]),
+            owner_path=policy.owner_path,
             symbol_name=policy.native_name.casefold(),
             semantic_type_name=policy.semantic_type_name,
             datatype_family=self._transfer_datatype_family(
@@ -1295,7 +1283,7 @@ class WrapperPlanner(ClassVisitor):
                 policy.derived.handoff if policy.derived is not None else None,
             ),
             binding=BindingModuleVariablePlan(
-                python_names=python_names,
+                support_namespace=(),
                 getter_action=policy.getter_action,
                 setter_action=policy.setter_action,
                 initializer=policy.initializer,
@@ -2716,12 +2704,18 @@ class WrapperPlanner(ClassVisitor):
         """Return bridge-resolved declaration-callable symbol roles."""
         return tuple(item.symbolic_role for item in declaration_callables)
 
-    def _required_headers(self, namespaces: tuple[NamespacePlan, ...]) -> tuple[str, ...]:
+    def _required_headers(
+        self,
+        namespaces: tuple[NamespacePlan, ...],
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> tuple[str, ...]:
         """Return the union of headers selected by completed handle plans."""
         handles = tuple(
             handle
-            for namespace in namespaces
-            for handle in self._namespace_native_array_handles(namespace)
+            for handle in (
+                *(item.native_array_handle for item in variables),
+                *(handle for namespace in namespaces for handle in self._namespace_native_array_handles(namespace)),
+            )
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
@@ -2779,10 +2773,9 @@ class WrapperPlanner(ClassVisitor):
         self,
         namespace: NamespacePlan,
     ) -> tuple[NativeArrayHandlePlan | None, ...]:
-        """Return argument, result, and module handle plans for one namespace."""
+        """Return argument, result, and derived-field handles for one namespace."""
         return (
             *(handle for function in namespace.functions for handle in self._function_native_array_handles(function)),
-            *(variable.native_array_handle for variable in namespace.variables),
             *self._derived_field_native_array_handles(namespace),
         )
 

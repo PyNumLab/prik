@@ -7,6 +7,16 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A module variable's canonical wrapper plan is now owned by its declaring
+  native module and name. Adding, removing, or renaming Python facades changes
+  only namespace publications, so support-operation and holder identities no
+  longer move between facades.
+
+- Generated Fortran contracts distinguish a module's dependencies from its
+  re-exports. An implicitly accessible imported name used by that module's own
+  declarations remains available to express them but is not published from the
+  importing module; naming it in a `public` statement still publishes it.
+
 - A contract may publish a module variable only through a facade, leaving the
   namespace declaring it out of Python entirely. Owning the one native variable
   plan used to put that namespace there anyway, so a package hiding its
@@ -60,7 +70,9 @@ release tags add a leading `v` to the package version.
   lost that name -- `BarBaz` reached Python as `barbaz` -- and invented
   collisions the source does not have: `Foo` and `foo` are two functions, and
   they arrived as `foo` and `foo_2` with nothing to say which was which. This
-  changes the published names of existing C wrappers.
+  changes the published names of existing C wrappers. Folded import lookup now
+  succeeds only when it identifies one declaration, rather than selecting an
+  ambiguous spelling by insertion order.
 
 - The contract a source build writes beside its artifacts states published
   Python names. It stated raw source spellings, so a Fortran build wrote
@@ -84,10 +96,11 @@ release tags add a leading `v` to the package version.
 - A contract states everything it publishes in a closing `__all__`. An import
   cannot say whether a name is needed to express a declaration or meant to be
   published, because a rename reads the same either way, so the list settles it.
-  PRIK writes what the source publishes -- the module's own public declarations
-  and any imported name a `public` statement names -- and the list is there to
-  be edited: remove a name to stop publishing it, add an imported one to publish
-  it, or remove the list to publish everything the contract reaches. Reading C
+  PRIK writes what the source publishes -- the module's own public declarations,
+  explicitly public imports, and implicitly accessible imports that are not
+  declaration dependencies -- and the list is there to be edited: remove a name
+  to stop publishing it, add an imported one to publish it, or remove the list
+  to publish everything the contract reaches. Reading C
   source states the same thing through `--export-symbols` /
   `build_c_extension(export_symbols=...)`, which selects the source-side public
   surface and writes the corresponding Python names into the generated
@@ -124,9 +137,9 @@ release tags add a leading `v` to the package version.
   rather than the Fortran spelling it was written with, so publishing an entity
   spelled in capitals no longer looks up an attribute that does not exist.
 
-- A name a module publishes after a plain `use` is now re-exported. The `use`
-  carries every public name of the module it reads, and the `public` statement
-  says which of them this module means to publish; an origin that two such
+- A plain `use` now re-exports the accessible names it carries unless a name is
+  only a dependency of the importing module's declarations. An explicit
+  `public` statement still publishes that dependency; an origin that two used
   modules could supply stays unresolved rather than guessed.
 
 - A generic interface built from several blocks merges within the scope

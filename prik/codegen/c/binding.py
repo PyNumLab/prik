@@ -344,7 +344,10 @@ class CBindingGenerator(ClassVisitor):
             identity[1].casefold(): name for identity, name in class_python_names.items()
         }
         # Stage 3: select support and assemble generated functions in dependency order.
-        functions = tuple(function for namespace in plan.namespaces for function in self.visit(namespace))
+        functions = (
+            *(function for namespace in plan.namespaces for function in self.visit(namespace)),
+            *(function for variable in plan.variables for function in self.visit(variable)),
+        )
         needs_native_support = self.requires_native_support(plan)
         needs_free = self._module_needs_allocator(plan)
         return CModule(
@@ -657,10 +660,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _visit_NamespacePlan(self, plan: NamespacePlan) -> tuple[CFunction, ...]:
         """Return binding functions directly owned by one Python namespace."""
-        return (
-            *(self.visit(function) for function in plan.functions),
-            *(function for variable in plan.variables for function in self.visit(variable)),
-        )
+        return tuple(self.visit(function) for function in plan.functions)
 
     def requires_native_support(self, plan: ModulePlan) -> bool:
         """Return whether module lowering consumes bundled native helpers."""
@@ -785,8 +785,7 @@ class CBindingGenerator(ClassVisitor):
             or self._module_uses_array_result_copy(plan)
             or any(
                 variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
-                for namespace in plan.namespaces
-                for variable in namespace.variables
+                for variable in plan.variables
             )
             or self._module_uses_derived_string_copy(plan)
             or self._module_uses_non_direct_derived_calls(plan)
@@ -6024,10 +6023,9 @@ class CBindingGenerator(ClassVisitor):
 
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Lower binding-owned getter and setter actions into C functions."""
-        # The binding facet names the Python attribute and the C symbols it
-        # calls; the native Fortran variable belongs to the bridge facet and is
-        # deliberately not read here.
-        name = plan.binding.python_names[0]
+        # One helper serves every Python publication, so its documentation uses
+        # the stable declaring native name rather than an arbitrary alias.
+        name = plan.owner_path.rsplit(".", 1)[-1]
         return (
             *self._documented(
                 self._lower_module_getter(plan),
@@ -6128,7 +6126,7 @@ class CBindingGenerator(ClassVisitor):
         attribute assignment is an ``int`` slot, not a returned object.
         """
         length = self._module_character_length(plan)
-        name = plan.binding.python_names[0]
+        name = plan.owner_path.rsplit(".", 1)[-1]
         return (
             CFunction(
                 self._module_setter_name(plan),
@@ -6666,7 +6664,7 @@ class CBindingGenerator(ClassVisitor):
             "value",
             (
                 f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
-                f"{scalar_type.python_type_name} for module variable {plan.binding.python_names[0]}. "
+                f"{scalar_type.python_type_name} for module variable {plan.owner_path.rsplit('.', 1)[-1]}. "
                 "Received <class '%s'>\", Py_TYPE(value_obj)->tp_name)"
             ),
             "-1",
@@ -14766,10 +14764,14 @@ class CBindingGenerator(ClassVisitor):
         """Build method table from the supplied completed binding records; emitted nodes only project completed binding actions."""
         return CMethodDefTable(
             f"{module.binding.owner_path}_{self._namespace_symbol(namespace)}_methods",
-            self._method_entries(namespace),
+            self._method_entries(module, namespace),
         )
 
-    def _method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+    def _method_entries(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CMethodDefEntry, ...]:
         """Return the exact callable definitions installed in one namespace."""
         return (
             *(
@@ -14792,7 +14794,7 @@ class CBindingGenerator(ClassVisitor):
                 for surface in namespace.classes
                 if surface.constructor.kind is not ClassConstructorKind.ABSENT
             ),
-            *self._derived_private_method_entries(namespace),
+            *self._derived_private_method_entries(module, namespace),
         )
 
     @staticmethod
@@ -15240,14 +15242,18 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _derived_private_method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+    def _derived_private_method_entries(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CMethodDefEntry, ...]:
         """Expose private field callables used by generated Python properties."""
         names = (
             *self._direct_field_method_names(namespace),
-            *self._module_member_method_names(namespace),
+            *self._module_member_method_names(module, namespace),
             *self._allocatable_holder_method_names(namespace),
             *self._pointer_holder_method_names(namespace),
-            *self._module_proxy_guard_method_names(namespace),
+            *self._module_proxy_guard_method_names(module, namespace),
         )
         return tuple(CMethodDefEntry(name, name, "METH_VARARGS", "") for name in names)
 
@@ -15261,11 +15267,15 @@ class CBindingGenerator(ClassVisitor):
             for action in self._field_method_actions(field)
         )
 
-    def _module_member_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_member_method_names(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[str, ...]:
         """Return the binding-local module member method names derived from the supplied completed binding records; this helper preserves completed policy."""
         return tuple(
             self._module_member_method_name(variable, member, action)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
             for member in variable.derived.member_paths
             for action in self._field_method_actions(member.field)
@@ -15309,16 +15319,20 @@ class CBindingGenerator(ClassVisitor):
         guards = tuple(self._pointer_holder_presence_method_name(derived.backend_symbol) for derived in holders)
         return (*fields, *guards)
 
-    def _module_proxy_guard_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_proxy_guard_method_names(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[str, ...]:
         """Return the binding-local module proxy guard method names derived from the supplied completed binding records; this helper preserves completed policy."""
         presence = tuple(
             self._module_derived_presence_method_name(variable)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if self._nullable_derived_module_proxy(variable)
         )
         native_ops = tuple(
             self._derived_origin_capsule_method_name(variable)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if variable.derived is not None
         )
         return (*presence, *native_ops)
@@ -15360,6 +15374,8 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(f"PyModule_Create(&{module_name}_{self._namespace_symbol(root_namespace)}_module)"),
                 ),
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
+                *self._module_initializer_nodes(plan),
+                *self._module_native_array_owner_nodes(plan, "mod"),
                 *self._namespace_configuration_nodes(
                     plan,
                     root_namespace,
@@ -15480,22 +15496,23 @@ class CBindingGenerator(ClassVisitor):
         return (
             *property_nodes,
             *self._namespace_python_initializer_nodes(
+                module,
                 namespace,
                 object_name,
             ),
-            *self._module_native_array_owner_nodes(namespace, object_name),
-            *self._derived_module_owner_nodes(namespace, object_name),
-            *self._module_initializer_nodes(namespace),
+            *self._derived_module_owner_nodes(module, namespace, object_name),
             *self._module_constant_nodes(module, namespace, object_name),
         )
 
     def _namespace_python_initializer_nodes(
         self,
+        module: ModulePlan,
         namespace: NamespacePlan,
         module_object: str,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Install exact overload dispatch plus generated opaque wrapper types."""
-        has_proxy = any(variable.derived is not None for variable in namespace.variables)
+        variables = self._support_variables(module, namespace)
+        has_proxy = any(variable.derived is not None for variable in variables)
         if not namespace.derived_types and not has_proxy:
             return ()
         allocatable_holders = self._namespace_binding_holder_types(
@@ -15510,10 +15527,10 @@ class CBindingGenerator(ClassVisitor):
             allocatable_holder_identities=frozenset(derived.type_identity for derived in allocatable_holders),
             pointer_holder_identities=frozenset(derived.type_identity for derived in pointer_holders),
             nullable_module_proxy_owner_paths=frozenset(
-                variable.owner_path for variable in namespace.variables if self._nullable_derived_module_proxy(variable)
+                variable.owner_path for variable in variables if self._nullable_derived_module_proxy(variable)
             ),
         )
-        source = PythonSurfaceEmitter(context).emit(namespace)
+        source = PythonSurfaceEmitter(context).emit(namespace, variables)
         literal = self._c_string_literal(source)
         result_name = f"{self._namespace_symbol(namespace)}_python_setup"
         dictionary = f"{self._namespace_symbol(namespace)}_python_dict"
@@ -15537,12 +15554,12 @@ class CBindingGenerator(ClassVisitor):
 
     def _module_native_array_owner_nodes(
         self,
-        namespace: NamespacePlan,
-        _module_object: str,
+        plan: ModulePlan,
+        module_object: str,
     ) -> tuple[CExpressionStatement, ...]:
         """Retain the root extension package for every borrowed native array."""
         nodes = []
-        for variable in namespace.variables:
+        for variable in plan.variables:
             if variable.binding.getter_action not in {
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
@@ -15551,32 +15568,36 @@ class CBindingGenerator(ClassVisitor):
             owner = self._module_native_array_owner_name(variable)
             nodes.extend(
                 (
-                    CExpressionStatement(CodeExpression("Py_INCREF(mod)")),
-                    CExpressionStatement(CodeExpression(f"{owner} = mod")),
-                )
-            )
-        return tuple(nodes)
-
-    def _derived_module_owner_nodes(
-        self,
-        namespace: NamespacePlan,
-        module_object: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Retain one module reference for each live borrowed derived object."""
-        nodes = []
-        for variable in namespace.variables:
-            if variable.derived is None:
-                continue
-            owner = self._derived_module_owner_name(variable)
-            nodes.extend(
-                (
                     CExpressionStatement(CodeExpression(f"Py_INCREF({module_object})")),
                     CExpressionStatement(CodeExpression(f"{owner} = {module_object}")),
                 )
             )
         return tuple(nodes)
 
-    def _module_initializer_nodes(self, namespace: NamespacePlan) -> tuple[CExpressionStatement, ...]:
+    def _derived_module_owner_nodes(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+        module_object: str,
+    ) -> tuple[CIf, ...]:
+        """Retain one module reference for each live borrowed derived object."""
+        nodes = []
+        for variable in self._support_variables(module, namespace):
+            if variable.derived is None:
+                continue
+            owner = self._derived_module_owner_name(variable)
+            nodes.append(
+                CIf(
+                    CodeExpression(f"{owner} == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression(f"Py_INCREF({module_object})")),
+                        CExpressionStatement(CodeExpression(f"{owner} = {module_object}")),
+                    ),
+                )
+            )
+        return tuple(nodes)
+
+    def _module_initializer_nodes(self, plan: ModulePlan) -> tuple[CExpressionStatement, ...]:
         """Return import-time native assignments selected by completed policy."""
         return tuple(
             CExpressionStatement(
@@ -15585,7 +15606,7 @@ class CBindingGenerator(ClassVisitor):
                     f"{self._module_literal(variable, variable.binding.initializer)})"
                 )
             )
-            for variable in namespace.variables
+            for variable in plan.variables
             if variable.binding.initializer is not None
         )
 
@@ -15606,11 +15627,7 @@ class CBindingGenerator(ClassVisitor):
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
                 continue
-            local_stem = (
-                variable.symbol_name
-                if any(item.owner_path == variable.owner_path for item in namespace.variables)
-                else f"{namespace_symbol}_{variable.symbol_name}"
-            )
+            local_stem = f"{namespace_symbol}_{variable.symbol_name}"
             for python_name in publication.python_names:
                 value_name = f"constant_{local_stem}_value_{index}"
                 object_name = f"constant_{local_stem}_object_{index}"
@@ -15821,8 +15838,8 @@ class CBindingGenerator(ClassVisitor):
         return tuple(function for namespace in plan.namespaces for function in namespace.functions)
 
     def _variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
-        """Return variables from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return tuple(variable for namespace in plan.namespaces for variable in namespace.variables)
+        """Return the canonical module-variable registry in planner order."""
+        return plan.variables
 
     def _variable_publications(
         self,
@@ -15840,6 +15857,16 @@ class CBindingGenerator(ClassVisitor):
                 )
             resolved.append((variable, publication))
         return tuple(resolved)
+
+    def _support_variables(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[ModuleVariablePlan, ...]:
+        """Read the planned namespace for private module-variable helpers."""
+        return tuple(
+            variable for variable in plan.variables if variable.binding.support_namespace == namespace.python_path
+        )
 
     def _namespace(self, plan: ModulePlan, python_path: tuple[str, ...]) -> NamespacePlan:
         """Return the binding-local namespace derived from the supplied completed binding records; this helper preserves completed policy."""

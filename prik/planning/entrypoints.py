@@ -89,9 +89,10 @@ class GeneratedSupportProcedureProjection:
 
 def build_generated_support_procedure_projection(
     namespaces: tuple[NamespacePlan, ...],
+    variables: tuple[ModuleVariablePlan, ...],
 ) -> GeneratedSupportProcedureProjection:
     """Return external and backend-local support membership in stable order."""
-    builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces)
+    builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces, variables)
     projection = builder.build()
     procedures = projection.support_procedures
     keys = [procedure.key for procedure in procedures]
@@ -112,7 +113,7 @@ def build_callback_support_procedure_entrypoint(
     result,
 ) -> GeneratedSupportProcedureEntrypointPlan:
     """Project the binding trampoline once while its callback site is planned."""
-    builder = _GeneratedSupportProcedureEntrypointBuilder(())
+    builder = _GeneratedSupportProcedureEntrypointBuilder((), ())
     parameters = tuple(
         parameter for transfer in arguments for parameter in builder._callback_transfer_parameters(transfer)
     )
@@ -129,10 +130,14 @@ def build_callback_support_procedure_entrypoint(
 class _GeneratedSupportProcedureEntrypointBuilder:
     """Project operation existence, symbols, and ABI signatures from completed plans."""
 
-    def __init__(self, namespaces: tuple[NamespacePlan, ...]) -> None:
+    def __init__(
+        self,
+        namespaces: tuple[NamespacePlan, ...],
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> None:
         self.namespaces = namespaces
         self.functions = tuple(function for namespace in namespaces for function in namespace.functions)
-        self.variables = tuple(variable for namespace in namespaces for variable in namespace.variables)
+        self.variables = variables
         # One native type may be exported through several Python namespaces.
         # Its support procedures belong to the native type, not each export.
         derived_by_identity = {}

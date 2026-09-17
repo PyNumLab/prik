@@ -761,7 +761,7 @@ def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_p
 
     The declaration is not repeated: the published name binds to the one
     wrapper its own module exposes, so both namespaces share a single callable.
-    A module that merely imports without publishing adds no name of its own.
+    A default-public module also republishes an accessible imported name.
     """
     source = tmp_path / "reexport.f90"
     source.write_text(REEXPORT_SOURCE, encoding="utf-8")
@@ -774,8 +774,7 @@ def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_p
     assert module.reexport_facade_mod.scale_value is module.reexport_home_mod.scale_value
     assert module.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
 
-    # A plain `use` states no intent to publish, so it adds nothing.
-    assert not hasattr(module, "reexport_default_mod") or "scale_value" not in dir(module.reexport_default_mod)
+    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
 
     # One wrapper defines the procedure; the facade only names it again.
     generated = (tmp_path / "build" / "reexport_wrapper.c").read_text(encoding="utf-8")
@@ -816,11 +815,11 @@ def test_renamed_published_import_shares_the_wrapper_it_renames(tmp_path: Path):
     assert module.reexport_renamed_mod.public_scale(np.int32(6)) == np.int32(12)
 
 
-def test_publishing_a_name_a_plain_use_brought_in_republishes_only_that_name(tmp_path: Path):
-    """A plain `use` publishes nothing until a name is named in `public`.
+def test_publishing_a_name_a_plain_use_brought_in_republishes_that_name(tmp_path: Path):
+    """A plain `use` carries public names that remain accessible by default.
 
-    Such a `use` carries every public name of the module it reads, so the
-    `public` statement is what says which of them this module means to publish.
+    An explicit `public` statement also publishes the named import; both routes
+    bind the one wrapper owned by the declaring module.
     """
     source = tmp_path / "reexport.f90"
     source.write_text(REEXPORT_SOURCE, encoding="utf-8")
@@ -832,8 +831,7 @@ def test_publishing_a_name_a_plain_use_brought_in_republishes_only_that_name(tmp
 
     assert module.reexport_wildcard_mod.scale_value is module.reexport_home_mod.scale_value
     assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
-    # The same plain `use` without a `public` statement publishes nothing.
-    assert not hasattr(module, "reexport_default_mod") or "scale_value" not in dir(module.reexport_default_mod)
+    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
 
 
 def test_publishing_an_already_published_import_follows_it_to_its_declaration(tmp_path: Path):

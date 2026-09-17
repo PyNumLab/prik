@@ -180,10 +180,10 @@ def test_exact_typed_value_is_not_restricted_to_bind_c_layout():
 
 
 def test_module_actual_declarations_keep_distinct_runtime_storage():
-    namespace = WrapperPlanner().build(_module()).namespaces[0]
+    plan = WrapperPlanner().build(_module())
     storages = {
         variable.symbol_name: variable.derived.handoff.storage
-        for variable in namespace.variables
+        for variable in plan.variables
         if variable.derived is not None
     }
     assert storages == {

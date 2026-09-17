@@ -1002,3 +1002,7 @@ def test_two_spellings_a_case_sensitive_source_keeps_apart_publish_separately():
     assert published_name(published, "scale") == "scale"
     assert published_name(published, "Scale") == "scale"
     assert published_name(published, "missing") is None
+    # `FOO` could mean either declaration, and which one a folded lookup found
+    # would depend on the order they were recorded in, so it names neither.
+    assert published_name(published, "FOO") is None
+    assert published_name({"foo": "foo", "Foo": "Foo"}, "FOO") is None

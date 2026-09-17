@@ -83,7 +83,7 @@ def test_planner_keeps_one_module_variable_plan_for_multiple_publications():
 
     plan = WrapperPlanner().build(module)
 
-    variables = [variable for namespace in plan.namespaces for variable in namespace.variables]
+    variables = list(plan.variables)
     publications = [
         (namespace.python_path, publication.variable_owner_path, publication.python_names)
         for namespace in plan.namespaces
@@ -94,6 +94,45 @@ def test_planner_keeps_one_module_variable_plan_for_multiple_publications():
         ((), variables[0].owner_path, ("counter",)),
         (("facade",), variables[0].owner_path, ("counter",)),
     ]
+
+
+def test_module_variable_owner_is_its_native_identity_not_a_publication_path():
+    """Adding a facade changes publications without moving native ownership."""
+
+    def planned_owner(*namespaces: str):
+        module = parse_pyi_text("values: Int32\n", module_name="package")
+        variable = module.variables[0]
+        variable.origin.native_scope = "home"
+        variable.origin.native_name = "values"
+        variable.metadata[PYTHON_EXPORTS_METADATA] = [
+            {"namespace": (namespace,), "name": "values"} for namespace in namespaces
+        ]
+        complete_semantic_policies(module)
+        return WrapperPlanner().build(module)
+
+    facade_only = planned_owner("facade")
+    facade_and_api = planned_owner("facade", "api")
+
+    assert [variable.owner_path for variable in facade_only.variables] == ["home.values"]
+    assert [variable.owner_path for variable in facade_and_api.variables] == ["home.values"]
+    assert [variable.binding.support_namespace for variable in facade_only.variables] == [()]
+    assert [variable.binding.support_namespace for variable in facade_and_api.variables] == [()]
+    assert facade_only.entrypoint.support_procedures
+    assert [
+        (procedure.owner_path, procedure.role, procedure.symbol_name)
+        for procedure in facade_only.entrypoint.support_procedures
+    ] == [
+        (procedure.owner_path, procedure.role, procedure.symbol_name)
+        for procedure in facade_and_api.entrypoint.support_procedures
+    ]
+    assert {
+        (namespace.python_path, publication.variable_owner_path)
+        for namespace in facade_and_api.namespaces
+        for publication in namespace.variable_publications
+    } == {
+        (("api",), "home.values"),
+        (("facade",), "home.values"),
+    }
 
 
 def test_two_python_names_one_folded_stem_get_separate_generated_symbols():
