@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from prik.utilities.declaration_expressions import outside_character_literals
+
 
 EXTERNAL_TYPE_REF_METADATA = "external_type_ref"
 PROTOTYPE_REF_METADATA = "prototype_ref"
@@ -612,12 +614,22 @@ def _canonical_expression(value: Any, name_map: dict[str, str]) -> Any:
 
 
 def _canonical_expression_text(text: str, name_map: dict[str, str]) -> str:
+    """Rename argument references so two procedures compare by shape, not naming.
+
+    A character literal's contents are its value, not a reference to anything,
+    so renaming stops at the quotes: two procedures whose string defaults spell
+    their own argument names -- ``f(n, label='n')`` and ``f(m, label='m')`` --
+    default to different text and must not compare equal.
+    """
     if not name_map:
         return text
-    result = text
-    for name, placeholder in name_map.items():
-        result = re.sub(rf"\b{re.escape(name)}\b", placeholder, result)
-    return result
+
+    def renamed(chunk: str) -> str:
+        for name, placeholder in name_map.items():
+            chunk = re.sub(rf"\b{re.escape(name)}\b", placeholder, chunk)
+        return chunk
+
+    return outside_character_literals(text, renamed)
 
 
 # ============================================================

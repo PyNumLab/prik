@@ -177,3 +177,46 @@ def test_semantic_function_projection_equality_and_placeholders():
     )
 
     assert left == right
+
+
+def test_semantic_function_equality_renames_references_not_literal_contents():
+    """Argument renaming compares shape; a string default states characters.
+
+    Two procedures whose string defaults happen to spell their own argument
+    names default to different text, so canonicalizing the reference must stop
+    at the quotes.
+    """
+
+    def report(extent: str, default_value: str) -> SemanticFunction:
+        return SemanticFunction(
+            name="report",
+            native_name="report",
+            arguments=[
+                SemanticArgument(extent, SemanticType("Int32", dtype="Int32")),
+                SemanticArgument(
+                    "label",
+                    SemanticType("String", dtype="String"),
+                    default_value=default_value,
+                ),
+            ],
+        )
+
+    assert report("n", "'n'") != report("m", "'m'")
+    # Renaming still makes two identically shaped procedures compare equal.
+    assert report("n", "'fixed'") == report("m", "'fixed'")
+
+
+def test_semantic_function_equality_still_canonicalizes_shape_references():
+    """A shape naming an argument compares by position, not by that name."""
+
+    def scale(extent: str, array: str) -> SemanticFunction:
+        return SemanticFunction(
+            name="scale",
+            native_name="scale",
+            arguments=[
+                SemanticArgument(extent, SemanticType("Int32", dtype="Int32")),
+                SemanticArgument(array, SemanticType("Float64", dtype="Float64", rank=1, shape=[f"1:{extent}"])),
+            ],
+        )
+
+    assert scale("n", "x") == scale("m", "y")
