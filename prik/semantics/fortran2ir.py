@@ -1695,6 +1695,18 @@ class FortranToIRConverter(ClassVisitor):
         )
 
     @staticmethod
+    def _module_enumerators(module: FortranModule):
+        """Return every enumerator one module's enum blocks declare.
+
+        An enumerator is a named constant the module declares, and PRIK models
+        it as one: a ``use`` carries it exactly as it carries a ``parameter``,
+        so this layer reads it wherever it reads the module's variables.
+        """
+        return tuple(
+            enumerator for enum in getattr(module, "enums", ()) for enumerator in getattr(enum, "enumerators", ())
+        )
+
+    @staticmethod
     def _module_declared_names(module: FortranModule) -> set[str]:
         """Return the names declared by one module for accessibility resolution.
 
@@ -1703,11 +1715,14 @@ class FortranToIRConverter(ClassVisitor):
         it, which is what another module imports to write a ``procedure(...)``
         declaration. A specific inside an ordinary generic is not separately
         declared here, because the generic is the name that block introduces.
+        An enumerator is a declared constant, so it is named here as a variable
+        is, which is what it becomes.
         """
         return {
             *(procedure.name.casefold() for procedure in module.procedures),
             *(derived.name.casefold() for derived in module.derived_types),
             *(variable.name.casefold() for variable in getattr(module, "variables", ())),
+            *(enumerator.name.casefold() for enumerator in FortranToIRConverter._module_enumerators(module)),
             *(
                 interface.name.casefold()
                 for interface in FortranToIRConverter._module_interfaces(module)
@@ -1779,6 +1794,10 @@ class FortranToIRConverter(ClassVisitor):
         for interface in module.interfaces:
             for procedure in interface.procedures:
                 add_procedure(procedure)
+        for enumerator in cls._module_enumerators(module):
+            declaration_text.extend(
+                str(value) for value in (enumerator.symbolic_value, enumerator.value) if value is not None
+            )
 
         return {
             identifier.casefold()
@@ -2008,6 +2027,10 @@ class FortranToIRConverter(ClassVisitor):
         if any(derived.name.casefold() == key for derived in declaring.derived_types):
             return "derived_type"
         if any(variable.name.casefold() == key for variable in getattr(declaring, "variables", ())):
+            return "variable"
+        # An enumerator is a named constant, which is the representation it
+        # already has downstream, so a route reaching one names a variable.
+        if any(enumerator.name.casefold() == key for enumerator in FortranToIRConverter._module_enumerators(declaring)):
             return "variable"
         return "unknown"
 

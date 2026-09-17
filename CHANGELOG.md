@@ -7,6 +7,14 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- An enum's enumerators are carried by `use` like the constants they are. A
+  plain `use` of a module declaring `enumerator :: red = 1` carried nothing for
+  `red`, and naming it in an `only` list produced a re-export of unknown kind,
+  which the module-variable publication machinery does not attach. Enumerators
+  are now read as variables wherever this layer reads a module's declarations,
+  including as declaration dependencies when an enumerator's value names an
+  imported constant.
+
 - Following a name through an intermediate module applies that module's own
   accessibility. A module importing `x` and declaring `private :: x` no longer
   passes a route to the declaration behind it, and a module reaching two

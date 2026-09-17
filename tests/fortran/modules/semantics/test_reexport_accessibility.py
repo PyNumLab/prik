@@ -714,3 +714,61 @@ end module outer_mod
         "a_mod",
         "x",
     )
+
+
+def test_an_enumerator_is_carried_and_classified_as_the_constant_it_is(tmp_path: Path):
+    """An enum names constants, which is how every later stage models them."""
+    modules = _project_modules(
+        tmp_path,
+        """\
+module colors_mod
+  implicit none
+  enum, bind(c)
+    enumerator :: red = 1
+    enumerator :: green = 2
+  end enum
+end module colors_mod
+
+module facade_mod
+  use colors_mod
+  implicit none
+end module facade_mod
+
+module named_facade_mod
+  use colors_mod, only : red
+  implicit none
+end module named_facade_mod
+""",
+    )
+
+    # A plain `use` carries every public name, enumerators included.
+    carried = {item.local_name: item.entity_kind for item in modules["facade_mod"].reexports}
+    assert carried == {"red": "variable", "green": "variable"}
+
+    named = {item.local_name: item for item in modules["named_facade_mod"].reexports}
+    assert named["red"].entity_kind == "variable"
+    assert (named["red"].origin_module, named["red"].source_name) == ("colors_mod", "red")
+
+
+def test_an_enumerator_initializer_is_a_declaration_dependency(tmp_path: Path):
+    """A name an enum's value reads expresses a declaration, so it is a dependency."""
+    modules = _project_modules(
+        tmp_path,
+        """\
+module constants_mod
+  implicit none
+  integer, parameter :: base = 10
+end module constants_mod
+
+module colors_mod
+  use constants_mod, only : base
+  implicit none
+  enum, bind(c)
+    enumerator :: red = base
+  end enum
+end module colors_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["colors_mod"].reexports}
+    assert reexports["base"].declaration_dependency is True
