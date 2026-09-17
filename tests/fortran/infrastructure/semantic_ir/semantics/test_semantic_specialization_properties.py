@@ -53,39 +53,52 @@ def test_generated_semantic_specialization_is_non_mutating_and_idempotent(n, m):
                     rank=2,
                     shape=["1:n", "m + 1"],
                     constraints=[SemanticConstraint("Extent", ["n", {"upper": "m"}])],
-                    metadata={"bounds": ("n", ["m"])},
+                    metadata={"fortran_character_length": "n", "enum_name": "n"},
                     storage=SemanticStorageContract(
                         kind="array",
-                        metadata={"extent": "n"},
+                        metadata={"address_role": "n"},
                         array=SemanticArrayContract(
                             rank=2,
                             shape=["1:n", "m + 1"],
                             lower_bounds=["1", "0"],
                             upper_bounds=["n", "m"],
                             source_shape=["1:n", "0:m"],
-                            metadata={"extent": {"first": "n", "second": "m"}},
+                            metadata={"representation": "m"},
                         ),
                     ),
                 ),
+                default_value="n + m",
+                metadata={"fortran_initializer": "m", "fortran_pointer_association": "n"},
             )
         ],
-        metadata={"shape": ["n", "m"]},
+        metadata={"import_scope": "n"},
     )
     original = asdict(module)
 
     resolved = resolve_semantic_compile_time_values(module, {"n": n, "m": m})
 
     assert asdict(module) == original
-    semantic_type = resolved.variables[0].semantic_type
+    variable = resolved.variables[0]
+    semantic_type = variable.semantic_type
     assert semantic_type.shape == [f"1:{n}", f"{m} + 1"]
-    assert semantic_type.constraints[0].arguments == [str(n), {"upper": str(m)}]
-    assert semantic_type.metadata == {"bounds": (str(n), [str(m)])}
     assert semantic_type.storage is not None
-    assert semantic_type.storage.metadata == {"extent": str(n)}
     assert semantic_type.storage.array is not None
     assert semantic_type.storage.array.shape == [f"1:{n}", f"{m} + 1"]
     assert semantic_type.storage.array.lower_bounds == ["1", "0"]
     assert semantic_type.storage.array.upper_bounds == [str(n), str(m)]
     assert semantic_type.storage.array.source_shape == [f"1:{n}", f"0:{m}"]
-    assert semantic_type.storage.array.metadata == {"extent": {"first": str(n), "second": str(m)}}
+
+    # Declared expression fields are specialized; the default value is one too.
+    assert semantic_type.metadata["fortran_character_length"] == str(n)
+    assert variable.metadata["fortran_initializer"] == str(m)
+    assert variable.default_value == f"{n} + {m}"
+
+    # Everything else is an opaque recorded decision, whatever it spells.
+    assert semantic_type.metadata["enum_name"] == "n"
+    assert semantic_type.constraints[0].arguments == ["n", {"upper": "m"}]
+    assert semantic_type.storage.metadata == {"address_role": "n"}
+    assert semantic_type.storage.array.metadata == {"representation": "m"}
+    assert variable.metadata["fortran_pointer_association"] == "n"
+    assert resolved.metadata == {"import_scope": "n"}
+
     assert asdict(resolve_semantic_compile_time_values(resolved, {"n": n, "m": m})) == asdict(resolved)

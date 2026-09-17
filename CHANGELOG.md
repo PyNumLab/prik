@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Compile-time specialization reaches only the fields that hold declaration
+  expressions. Every semantic metadata string was resolved as an expression,
+  so a recorded decision spelling a parameter's name -- a pointer's
+  `runtime` association in a module that also declares `integer, parameter ::
+  runtime` -- was replaced by that parameter's value. Shapes, bounds,
+  character lengths, initializers, and default values specialize as before.
+
 - A character declaration's kind is read whole, so
   `character(len=8, kind=max(c_char, 1))` states the kind it writes. The kind
   was found again inside the selector's joined spelling with a pattern that

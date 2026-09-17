@@ -4254,32 +4254,40 @@ def collect_semantic_compile_time_requirements(
     return requirements
 
 
-def _resolve_semantic_value(value, compile_time_values: dict[str, str]):
-    """Recursively resolve compile-time text inside a semantic metadata value."""
-    if isinstance(value, str):
-        return _resolve_compile_time_text(value, compile_time_values)
-    if isinstance(value, list):
-        return [_resolve_semantic_value(item, compile_time_values) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_semantic_value(item, compile_time_values) for item in value)
-    if isinstance(value, dict):
-        return {key: _resolve_semantic_value(item, compile_time_values) for key, item in value.items()}
-    return value
+#: Metadata keys whose value is declaration expression text, not an opaque tag.
+#:
+#: Compile-time specialization rewrites identifiers, so it may only reach a
+#: field the schema says holds an expression.  Every other metadata value --
+#: a policy tag, a native identity, an enumerated choice -- is opaque text
+#: that happens to look like an identifier, and resolving it would silently
+#: replace the recorded decision with a parameter's value.
+_EXPRESSION_METADATA_KEYS = frozenset({"fortran_character_length", "fortran_initializer"})
+
+
+def _resolve_metadata_expressions(
+    metadata: dict[str, object],
+    compile_time_values: dict[str, str],
+) -> dict[str, object]:
+    """Return ``metadata`` with only its declared expression fields resolved."""
+    resolved = dict(metadata)
+    for key in _EXPRESSION_METADATA_KEYS & resolved.keys():
+        value = resolved[key]
+        if isinstance(value, str):
+            resolved[key] = _resolve_compile_time_text(value, compile_time_values)
+    return resolved
 
 
 def _resolve_semantic_type_compile_time_values(
     semantic_type: SemanticType | None,
     compile_time_values: dict[str, str],
 ) -> None:
-    """Resolve shape, constraint, and storage text on one semantic type in place."""
+    """Resolve shape, storage, and expression metadata on one semantic type in place."""
     if semantic_type is None:
         return
     semantic_type.shape = [_resolve_compile_time_text(dim, compile_time_values) for dim in semantic_type.shape]
-    for constraint in semantic_type.constraints:
-        constraint.arguments = _resolve_semantic_value(constraint.arguments, compile_time_values)
-    semantic_type.metadata = _resolve_semantic_value(semantic_type.metadata, compile_time_values)
+    semantic_type.metadata = _resolve_metadata_expressions(semantic_type.metadata, compile_time_values)
     if semantic_type.storage is not None:
-        semantic_type.storage.metadata = _resolve_semantic_value(
+        semantic_type.storage.metadata = _resolve_metadata_expressions(
             semantic_type.storage.metadata,
             compile_time_values,
         )
@@ -4295,7 +4303,7 @@ def _resolve_semantic_type_compile_time_values(
                 None if dim is None else _resolve_compile_time_text(dim, compile_time_values)
                 for dim in array.upper_bounds
             ]
-            array.metadata = _resolve_semantic_value(array.metadata, compile_time_values)
+            array.metadata = _resolve_metadata_expressions(array.metadata, compile_time_values)
 
 
 def _resolve_semantic_argument_compile_time_values(
@@ -4304,23 +4312,22 @@ def _resolve_semantic_argument_compile_time_values(
 ) -> None:
     """Resolve type, default, and metadata text on one semantic argument in place."""
     _resolve_semantic_type_compile_time_values(arg.semantic_type, compile_time_values)
-    arg.default_value = _resolve_semantic_value(arg.default_value, compile_time_values)
-    arg.metadata = _resolve_semantic_value(arg.metadata, compile_time_values)
+    if isinstance(arg.default_value, str):
+        arg.default_value = _resolve_compile_time_text(arg.default_value, compile_time_values)
+    arg.metadata = _resolve_metadata_expressions(arg.metadata, compile_time_values)
 
 
 def _resolve_semantic_function_compile_time_values(
     func: SemanticFunction,
     compile_time_values: dict[str, str],
 ) -> None:
-    """Resolve all type-bearing fields and projection values on one function in place."""
+    """Resolve all type-bearing fields on one function and its locals in place."""
     for arg in func.arguments:
         _resolve_semantic_argument_compile_time_values(arg, compile_time_values)
     for local in func.locals:
         _resolve_semantic_argument_compile_time_values(local, compile_time_values)
     _resolve_semantic_type_compile_time_values(func.return_type, compile_time_values)
-    for mapping in func.projection:
-        mapping.value = _resolve_semantic_value(mapping.value, compile_time_values)
-    func.metadata = _resolve_semantic_value(func.metadata, compile_time_values)
+    func.metadata = _resolve_metadata_expressions(func.metadata, compile_time_values)
 
 
 def _resolve_semantic_module_compile_time_values(
@@ -4337,8 +4344,8 @@ def _resolve_semantic_module_compile_time_values(
             _resolve_semantic_argument_compile_time_values(field, compile_time_values)
         for method in declaration.methods:
             _resolve_semantic_function_compile_time_values(method, compile_time_values)
-        declaration.metadata = _resolve_semantic_value(declaration.metadata, compile_time_values)
-    module.metadata = _resolve_semantic_value(module.metadata, compile_time_values)
+        declaration.metadata = _resolve_metadata_expressions(declaration.metadata, compile_time_values)
+    module.metadata = _resolve_metadata_expressions(module.metadata, compile_time_values)
 
 
 def resolve_semantic_compile_time_values(
