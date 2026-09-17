@@ -20,7 +20,7 @@ from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
 from prik.naming.policy import normalize_public_name, preserves_source_case
-from prik.utilities.declaration_expressions import outside_character_literals
+from prik.utilities.declaration_expressions import fortran_character_value, outside_character_literals
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
@@ -1421,6 +1421,9 @@ class PyiPrinter(ClassVisitor):
         text = str(value).strip()
         if not text:
             return None
+        character = fortran_character_value(text)
+        if character is not None:
+            return repr(character)
         text = outside_character_literals(text, PyiPrinter._respelled_fortran_literal)
         try:
             return ast.unparse(ast.parse(text, mode="eval").body)

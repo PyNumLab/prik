@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A Fortran character constant reaches Python holding the characters it
+  declares. Fortran doubles a quote to hold one, which Python reads instead as
+  two literals written side by side and joins, so
+  `character(len=5), parameter :: word = 'don''t'` was published and returned
+  as `dont` -- four characters under a declared length of five. Both the
+  generated contract and the built extension now state `don't`.
+
 - A generated contract states a character constant's own contents. Respelling
   the Fortran spellings Python writes differently reached inside the literal
   too, so `character(len=6), parameter :: text = ".true."` was published as

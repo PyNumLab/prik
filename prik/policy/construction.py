@@ -21,6 +21,7 @@ from immutabledict import immutabledict
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
 from prik.naming import NamingPolicy, preserves_source_case
+from prik.utilities.declaration_expressions import fortran_character_value
 from prik.semantics import models
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
@@ -7140,7 +7141,10 @@ def _scalar_module_literal_value(value: object, semantic_type_name: str) -> obje
         if lowered in {".false.", "false"}:
             return False
     if semantic_type_name == "String":
-        return ast.literal_eval(text)
+        # Fortran doubles a quote to hold one, which Python reads as two
+        # literals side by side and joins, dropping the quote.
+        character = fortran_character_value(text)
+        return character if character is not None else ast.literal_eval(text)
     normalized = text.replace("D", "e").replace("d", "e")
     parsed = ast.literal_eval(normalized)
     if semantic_type_name in {"Complex64", "Complex128"} and isinstance(parsed, tuple):

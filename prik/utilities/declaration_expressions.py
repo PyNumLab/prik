@@ -452,6 +452,36 @@ def declaration_expression_identifiers(expression: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(names))
 
 
+def fortran_character_value(text: str) -> str | None:
+    """Return the value of one whole Fortran character literal, or ``None``.
+
+    Fortran doubles a quote to hold one, so ``'don''t'`` is five characters.
+    Python reads that same spelling as two literals written side by side and
+    joins them, losing the quote, so a Fortran literal is decoded here rather
+    than handed to a Python reader. Text that is not one whole literal returns
+    ``None`` for the caller to read as an expression.
+    """
+    stripped = text.strip()
+    if len(stripped) < 2 or stripped[0] != stripped[-1] or stripped[0] not in "\"'":
+        return None
+    quote = stripped[0]
+    body = stripped[1:-1]
+    index = 0
+    value: list[str] = []
+    while index < len(body):
+        character = body[index]
+        if character == quote:
+            # A lone quote ends the literal, so this is not one whole literal.
+            if index + 1 >= len(body) or body[index + 1] != quote:
+                return None
+            index += 2
+            value.append(quote)
+            continue
+        value.append(character)
+        index += 1
+    return "".join(value)
+
+
 def _selector_value(part: str) -> str:
     """Return the expression one declaration selector supplies.
 
