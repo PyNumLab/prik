@@ -7,6 +7,14 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A character constant may state its kind before the opening quote, so
+  `character(kind=c_char, len=3), parameter :: tagged = c_char_'abc'` is
+  published and returned as `abc`. The kind-prefixed spelling was not
+  recognized as a literal at all, leaving the parameter with no value and the
+  build refusing it as an unsupported module variable. One reader now decides
+  what a whole character literal is, so `'a' // 'b'` is recorded as the
+  expression it is rather than as a literal.
+
 - A character parser model records its selector through
   `FortranVariable.record_character_selector`, which reads the length, the
   kind, and whether the stored text is a length in one place. A model built by

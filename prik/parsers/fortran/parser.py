@@ -20,6 +20,7 @@ from typing import ClassVar, Literal
 from prik.utilities.declaration_expressions import (
     declaration_expression_identifiers,
     evaluate_integer_expression,
+    fortran_character_value,
     split_declaration_assignment,
     split_dimension_bounds,
     split_top_level_expression,
@@ -5585,7 +5586,10 @@ class FortranParser(ClassVisitor):
             return True
         if re.fullmatch(r"\.(?:true|false)\.", text, re.IGNORECASE):
             return True
-        if re.fullmatch(r"(['\"]).*\1", text):
+        # One reader decides what a whole character literal is, so the value a
+        # parameter records is the one later stages decode. Matching any text
+        # between two quotes also accepted `'a' // 'b'`, which is an expression.
+        if fortran_character_value(text) is not None:
             return True
         if text.startswith("[") and text.endswith("]"):
             return all(FortranParser._is_literal_parameter_value(part) for part in split_csv(text[1:-1]))

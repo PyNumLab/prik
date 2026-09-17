@@ -452,16 +452,23 @@ def declaration_expression_identifiers(expression: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(names))
 
 
+#: A character literal's optional kind, written before its opening quote.
+_CHARACTER_KIND_PREFIX = re.compile(r"^(?:[A-Za-z]\w*|\d+)_(?=[\"'])")
+
+
 def fortran_character_value(text: str) -> str | None:
     """Return the value of one whole Fortran character literal, or ``None``.
 
     Fortran doubles a quote to hold one, so ``'don''t'`` is five characters.
     Python reads that same spelling as two literals written side by side and
     joins them, losing the quote, so a Fortran literal is decoded here rather
-    than handed to a Python reader. Text that is not one whole literal returns
-    ``None`` for the caller to read as an expression.
+    than handed to a Python reader. A literal may also state its kind before
+    the opening quote, as ``c_char_'abc'`` does; the kind is a declared type
+    fact rather than part of the value, so only the characters are returned.
+    Text that is not one whole literal returns ``None`` for the caller to read
+    as an expression.
     """
-    stripped = text.strip()
+    stripped = _CHARACTER_KIND_PREFIX.sub("", text.strip(), count=1)
     if len(stripped) < 2 or stripped[0] != stripped[-1] or stripped[0] not in "\"'":
         return None
     quote = stripped[0]

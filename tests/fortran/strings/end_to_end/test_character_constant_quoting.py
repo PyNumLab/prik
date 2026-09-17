@@ -18,10 +18,14 @@ pytestmark = pytest.mark.fortran_end_to_end
 
 SOURCE = """\
 module quoting_mod
+  use iso_c_binding, only : c_char
   implicit none
   character(len=5), parameter :: word = 'don''t'
   character(len=3), parameter :: pair = "a""b"
   character(len=4), parameter :: plain = 'abcd'
+  character(kind=c_char, len=3), parameter :: tagged = c_char_'abc'
+  character(len=3), parameter :: numbered = 1_'xyz'
+  character(len=5), parameter :: tagged_quote = c_char_'don''t'
 end module quoting_mod
 """
 
@@ -43,6 +47,13 @@ def test_a_doubled_quote_reaches_python_as_one_quote(built):
     assert built.quoting_mod.plain == "abcd"
 
 
+def test_a_literal_states_its_kind_without_the_kind_joining_the_value(built):
+    """A literal's kind is a type fact, so only its characters are the value."""
+    assert built.quoting_mod.tagged == "abc"
+    assert built.quoting_mod.numbered == "xyz"
+    assert built.quoting_mod.tagged_quote == "don't"
+
+
 def test_a_generated_contract_states_the_declared_characters(tmp_path: Path):
     """The contract publishes the same value the extension returns."""
     source = tmp_path / "quoting.f90"
@@ -55,3 +66,6 @@ def test_a_generated_contract_states_the_declared_characters(tmp_path: Path):
     assert 'word: Final[String[5]] = "don\'t"' in contract
     assert "pair: Final[String[3]] = 'a\"b'" in contract
     assert "plain: Final[String[4]] = 'abcd'" in contract
+    assert "tagged: Final[String[3]] = 'abc'" in contract
+    assert "numbered: Final[String[3]] = 'xyz'" in contract
+    assert 'tagged_quote: Final[String[5]] = "don\'t"' in contract
