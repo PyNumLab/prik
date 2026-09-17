@@ -219,11 +219,6 @@ def published_name(published: dict[str, str] | None, source: object) -> str | No
     return matches[0] if len(matches) == 1 else None
 
 
-# Publication of these kinds has no runtime form yet, so a generated contract
-# does not claim it.
-_UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic"})
-
-
 class PyiPrinter(ClassVisitor):
     """Emit editable Python stub text from semantic IR models.
 
@@ -779,10 +774,6 @@ class PyiPrinter(ClassVisitor):
             if not reexport.publishes_to_python():
                 continue
             if self._is_source_kind_import(str(reexport.origin_module)):
-                continue
-            if reexport.entity_kind in _UNPUBLISHABLE_REEXPORT_KINDS:
-                # A generic dispatcher has no single object another namespace
-                # can bind, so a source build does not publish it here.
                 continue
             # A prototype keeps its declared spelling wherever it is written, so
             # the name published for it is the one its import binds.

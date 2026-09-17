@@ -69,6 +69,13 @@ def complete_python_export_policy(
     _complete_reexport_names(module, naming, contract_named=contract_named)
 
 
+#: Entity kinds a second namespace cannot publish, whatever it may reach.
+#:
+#: A generic dispatcher has no single object another namespace can bind, so it
+#: is published where it is declared and nowhere else.
+UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic"})
+
+
 def complete_reexport_publication_policy(
     module: models.SemanticModule,
     *,
@@ -81,11 +88,19 @@ def complete_reexport_publication_policy(
     ``public`` statement names them. A loaded contract has already stated its
     export surface, so every re-export record constructed from that surface is
     published.
+
+    A generic is reachable through the importing module like any other name,
+    but it dispatches rather than naming one object, so PRIK publishes it in
+    its declaring namespace alone. That is a publication decision, settled here
+    once, rather than an accessibility one.
     """
     if contract_named is None:
         contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
     for reexport in module.reexports:
         if reexport.python_exported is not None:
+            continue
+        if reexport.entity_kind in UNPUBLISHABLE_REEXPORT_KINDS:
+            reexport.python_exported = False
             continue
         reexport.python_exported = bool(
             contract_named or not reexport.declaration_dependency or reexport.explicitly_public
