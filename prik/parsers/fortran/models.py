@@ -17,6 +17,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from prik.parsers.fortran.type_resolver import extract_character_selector
 from prik.utilities.declaration_expressions import split_dimension_bounds, split_top_level_expression
 
 
@@ -268,6 +269,20 @@ class FortranVariable:
         a later stage to split one joined spelling.
         """
         return getattr(self, "_character_length_expression", None)
+
+    def record_character_selector(self, type_spec: str) -> None:
+        """Record what one character declaration's parenthesized selector states.
+
+        This is the only supported way to give a character model its selector
+        facts, so every producer -- the parser, the type-mapping report, a test
+        -- reaches them through one reading of the source text. A model built
+        without it states no length and no kind, which is what a bare
+        ``character`` declaration means.
+        """
+        selector = extract_character_selector(type_spec)
+        self._character_length_expression = selector.length
+        self._character_kind_expression = selector.kind
+        self._character_length_syntax = selector.length_syntax
 
     @property
     def polymorphic(self) -> bool:

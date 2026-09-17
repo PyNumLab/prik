@@ -14,6 +14,13 @@ from prik.semantics.fortran2ir import (
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
+def _character_variable(name: str, selector: str) -> FortranVariable:
+    """Build one character model stating the selector a declaration writes."""
+    variable = FortranVariable(name=name, base_type="character", kind=selector[1:-1])
+    variable.record_character_selector(selector)
+    return variable
+
+
 def test_intrinsic_builtin_kinds_map_to_semantic_types():
     converter = FortranToIRConverter()
     cases = [
@@ -164,7 +171,7 @@ def test_fortran_storage_requirements_follow_resolved_kinds_and_actual_source_ty
             FortranVariable(name="default_real", base_type="real"),
             FortranVariable(name="selected", base_type="real", kind="rk"),
             FortranVariable(name="flag", base_type="logical", kind="8"),
-            FortranVariable(name="text", base_type="character", kind="len=12, kind=c_char"),
+            _character_variable("text", "(len=12, kind=c_char)"),
         ]
     )
 

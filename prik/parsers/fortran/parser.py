@@ -371,6 +371,13 @@ class _Declaration:
     character_kind_expression: str | None = None
     declared_storage_bits: int | None = None
 
+    def record_character_selector(self, type_spec: str) -> None:
+        """Record what one character declaration's parenthesized selector states."""
+        selector = extract_character_selector(type_spec)
+        self.character_length_expression = selector.length
+        self.character_kind_expression = selector.kind
+        self.character_length_syntax = selector.length_syntax
+
 
 @dataclass
 class _ProcedureState:
@@ -4288,15 +4295,9 @@ class FortranParser(ClassVisitor):
             extract_kind_from_type_spec(base_type, type_spec),
         )
         if base_type == "character" and type_spec:
-            # The selector's two expressions are separated while the top-level
-            # items are known, so no later stage has to split them back apart.
-            length, kind = extract_character_selector(type_spec)
-            if length is not None:
-                declaration.character_length_expression = length
-            if kind is not None:
-                declaration.character_kind_expression = kind
-            if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-                declaration.character_length_syntax = True
+            # The selector is read once here, while its top-level items are
+            # known, so no later stage has to split a joined spelling again.
+            declaration.record_character_selector(type_spec)
         return declaration
 
     @staticmethod
@@ -4321,13 +4322,7 @@ class FortranParser(ClassVisitor):
         if base_type in {"double precision", "double complex"}:
             var._target_kind_expression = "kind(1.0d0)"
         elif base_type == "character" and type_spec:
-            length, kind = extract_character_selector(type_spec)
-            if length is not None:
-                var._character_length_expression = length
-            if kind is not None:
-                var._character_kind_expression = kind
-            if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-                var._character_length_syntax = True
+            var.record_character_selector(type_spec)
 
     @staticmethod
     def _apply_declaration_attributes(

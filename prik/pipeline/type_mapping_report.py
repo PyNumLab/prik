@@ -84,19 +84,24 @@ def _fortran_type(
     kind: str | None = None,
     *,
     target_kind_expression: str | None = None,
+    character_selector: str | None = None,
     character_length_syntax: bool = False,
     declared_storage_bits: int | None = None,
 ) -> tuple[str, FortranVariable]:
     """Build one report-only Fortran variable and its displayed spelling.
 
     The helper records metadata that the existing Fortran converter consumes
-    when deriving a target type key. It returns the spelling and configured
-    variable without mutating any caller-owned object; the private attributes
-    intentionally distinguish legacy storage and character-length forms.
+    when deriving a target type key. A parenthesized character declaration
+    records its selector the way the parser does, so a report row states the
+    same length and kind a parsed declaration would; the legacy ``character*n``
+    forms carry no selector and state length syntax directly. It returns the
+    spelling and configured variable without mutating any caller-owned object.
     """
     variable = FortranVariable(name="value", base_type=base_type, kind=kind or "")
     if target_kind_expression:
         variable._target_kind_expression = target_kind_expression
+    if character_selector is not None:
+        variable.record_character_selector(character_selector)
     if character_length_syntax:
         variable._character_length_syntax = True
     if declared_storage_bits is not None:
@@ -143,9 +148,9 @@ _FORTRAN_MODERN_TYPES = (
     *(_fortran_type(f"logical(kind={kind})", "logical", kind) for kind in ("1", "2", "4", "8")),
     _fortran_type("logical(c_bool)", "logical", "c_bool"),
     _fortran_type("character", "character"),
-    _fortran_type("character(len=n)", "character", "n", character_length_syntax=True),
-    _fortran_type("character(kind=1)", "character", "kind=1"),
-    _fortran_type("character(kind=c_char)", "character", "kind=c_char"),
+    _fortran_type("character(len=n)", "character", "n", character_selector="(len=n)"),
+    _fortran_type("character(kind=1)", "character", "kind=1", character_selector="(kind=1)"),
+    _fortran_type("character(kind=c_char)", "character", "kind=c_char", character_selector="(kind=c_char)"),
 )
 
 _FORTRAN_LEGACY_TYPES = (

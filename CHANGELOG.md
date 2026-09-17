@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A character parser model records its selector through
+  `FortranVariable.record_character_selector`, which reads the length, the
+  kind, and whether the stored text is a length in one place. A model built by
+  hand -- the type-mapping report's rows, a test -- now states the same facts a
+  parsed declaration does instead of leaving them to a second reader of the
+  joined `kind` text.
+
 - Compile-time specialization reaches only the fields that hold declaration
   expressions. Every semantic metadata string was resolved as an expression,
   so a recorded decision spelling a parameter's name -- a pointer's

@@ -8,6 +8,8 @@ make semantic datatype decisions.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from prik.parsers.fortran.utils import split_csv
 
 
@@ -49,7 +51,25 @@ def extract_kind_from_type_spec(base_type: str, type_spec: str) -> str | None:
     return None
 
 
-def extract_character_selector(type_spec: str) -> tuple[str | None, str | None]:
+class CharacterSelector(NamedTuple):
+    """What one character declaration's selector states.
+
+    ``length_syntax`` records that the declaration's stored ``kind`` text is a
+    length rather than a kind, which is what ``character(8)``, ``character(*)``
+    and ``character(len=n)`` all mean. It is read from the same split as the
+    two expressions, so a selector is interpreted once.
+    """
+
+    length: str | None = None
+    kind: str | None = None
+
+    @property
+    def length_syntax(self) -> bool:
+        """Whether the selector names no kind, leaving its text a length."""
+        return self.kind is None
+
+
+def extract_character_selector(type_spec: str) -> CharacterSelector:
     """Return one character declaration's length and kind expressions.
 
     The selector carries two independent expressions, either of which may
@@ -59,10 +79,10 @@ def extract_character_selector(type_spec: str) -> tuple[str | None, str | None]:
     and ``character(*)`` mean.
     """
     if not type_spec:
-        return (None, None)
+        return CharacterSelector()
     inside = type_spec[1:-1].strip()
     if not inside:
-        return (None, None)
+        return CharacterSelector()
     length: str | None = None
     kind: str | None = None
     for item in split_csv(inside):
@@ -75,7 +95,7 @@ def extract_character_selector(type_spec: str) -> tuple[str | None, str | None]:
             length = value.strip() or None
         elif keyword == "kind":
             kind = value.strip() or None
-    return (length, kind)
+    return CharacterSelector(length, kind)
 
 
 if __name__ == "__main__":
