@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated Fortran continuation never breaks a line inside a character
+  literal. A long call was split at every comma, so an argument such as
+  `'alpha, beta'` continued mid-literal and compiled to `alpha,  beta` -- a
+  different string, with no diagnostic. Lines now break at the call's own
+  arguments, which also keeps a nested call whole.
+
 - A character constant may state its kind before the opening quote, so
   `character(kind=c_char, len=3), parameter :: tagged = c_char_'abc'` is
   published and returned as `abc`. The kind-prefixed spelling was not
