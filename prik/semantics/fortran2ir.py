@@ -2406,13 +2406,13 @@ class FortranToIRConverter(ClassVisitor):
 
     def _semantic_kind_key(self, var: FortranVariable) -> str | None:
         """Normalize the declaration's kind text for semantic type-map lookup."""
-        raw_kind = var.target_kind_expression or var.kind
-        if not raw_kind:
-            return None
-
         base_type = var.base_type.lower()
         if base_type == "character":
             return self._character_kind_expression(var)
+
+        raw_kind = var.target_kind_expression or var.kind
+        if not raw_kind:
+            return None
         kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         if base_type == "logical":
             return "c_bool" if kind == "c_bool" else kind
@@ -2428,22 +2428,24 @@ class FortranToIRConverter(ClassVisitor):
         storage key, while explicit character kind clauses retain their kind.
         """
         base_type = var.base_type.lower()
+        if base_type == "character":
+            return base_type, self._character_kind_expression(var)
+
         raw_kind = var.target_kind_expression or var.kind
         if not raw_kind:
             return base_type, None
-
-        if base_type == "character":
-            return base_type, self._character_kind_expression(var)
         kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         return base_type, kind
 
     def _character_kind_expression(self, var: FortranVariable) -> str | None:
         """Return the kind a character declaration states, or ``None`` for the default.
 
-        The parser separates the selector's kind from its length, so the kind
-        is read from that fact rather than found again inside a joined
-        spelling, where an expression holding a comma of its own -- a
-        ``kind=max(c_char, 1)`` -- would be cut short.
+        A character model records its selector apart from the legacy ``kind``
+        field, which carries a length for some spellings and nothing at all for
+        a model built through ``record_character_selector``. The recorded fact
+        is therefore the authority, read before that field is consulted and in
+        place of searching a joined spelling, where an expression holding a
+        comma of its own -- a ``kind=max(c_char, 1)`` -- would be cut short.
         """
         declared = getattr(var, "character_kind_expression", None)
         if not declared:
@@ -4175,6 +4177,20 @@ def collect_fortran_type_storage_requirements(
     return requirements
 
 
+def _declared_kind_expression(var: FortranVariable) -> str | None:
+    """Return the kind text one declaration states, as its model records it.
+
+    A character model records its selector apart from the legacy ``kind``
+    field, which carries a length for some spellings and nothing at all for a
+    model built through ``record_character_selector``, so the character kind is
+    read from that recorded fact. Every other base type states its kind in the
+    field itself.
+    """
+    if str(var.base_type or "").lower() == "character":
+        return var.character_kind_expression
+    return var.kind or None
+
+
 def collect_semantic_compile_time_requirements(
     parsed,
     *,
@@ -4238,11 +4254,12 @@ def collect_semantic_compile_time_requirements(
                 add_requirement("parameter_value", ctx, expression=expression)
 
         base_type = parameter_base_type
-        if base_type not in {"integer", "real", "complex", "logical", "character"} or not var.kind:
+        declared_kind = _declared_kind_expression(var)
+        if base_type not in {"integer", "real", "complex", "logical", "character"} or not declared_kind:
             continue
         kind_key = converter._semantic_kind_key(var)
         if converter.type_map.get((base_type, kind_key)) is None:
-            expression = _resolve_compile_time_text(str(var.kind), values)
+            expression = _resolve_compile_time_text(str(declared_kind), values)
             add_requirement(
                 "unsupported_kind",
                 ctx,

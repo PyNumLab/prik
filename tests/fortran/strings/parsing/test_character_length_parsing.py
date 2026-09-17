@@ -1,7 +1,8 @@
 """Declaration parsing, interfaces, and less common scope edges."""
 
 from prik.parsers.fortran import parse_fortran_file
-from prik.parsers.fortran.models import FortranVariable
+from prik.parsers.fortran.models import FortranFile, FortranVariable
+from prik.semantics.fortran2ir import FortranToIRConverter, collect_semantic_compile_time_requirements
 
 
 def test_character_entity_lengths_and_assumed_bounds_are_preserved():
@@ -69,3 +70,26 @@ def test_a_character_model_states_only_the_selector_it_records():
     assert positional.character_length_expression == "8"
     assert positional.character_kind_expression is None
     assert positional.character_length_syntax is True
+
+
+def test_a_recorded_selector_is_what_semantics_reads_for_a_character_kind():
+    """The recorded selector is the authority, not the legacy `kind` field.
+
+    A model built through the recorder alone leaves that field empty, so
+    consulting it first would report the default character kind while the
+    model plainly states another one.
+    """
+    converter = FortranToIRConverter()
+
+    recorded = FortranVariable(name="x", base_type="character")
+    recorded.record_character_selector("(kind=c_char)")
+
+    assert recorded.kind == ""
+    assert converter._semantic_kind_key(recorded) == "c_char"
+    assert converter._target_type_key(recorded) == ("character", "c_char")
+
+    unsupported = FortranVariable(name="x", base_type="character")
+    unsupported.record_character_selector("(kind=bad)")
+    requirements = collect_semantic_compile_time_requirements(FortranFile(variables=[unsupported]))
+
+    assert [(item["symbol"], item["kind"], item["expression"]) for item in requirements] == [("x", "bad", "bad")]

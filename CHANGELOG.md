@@ -20,7 +20,9 @@ release tags add a leading `v` to the package version.
   kind, and whether the stored text is a length in one place. A model built by
   hand -- the type-mapping report's rows, a test -- now states the same facts a
   parsed declaration does instead of leaving them to a second reader of the
-  joined `kind` text.
+  joined `kind` text. Semantic conversion reads that recorded selector as the
+  authority for a character kind, so a model carrying only the selector is not
+  reported as the default character kind.
 
 - Compile-time specialization reaches only the fields that hold declaration
   expressions. Every semantic metadata string was resolved as an expression,
