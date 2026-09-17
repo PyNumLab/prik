@@ -396,6 +396,14 @@ class ProcedureOverloadSet:
     native_scope: str | None = None
     """Module declaring the generic, which need not own every specific."""
 
+    visibility: str = "public"
+    """Accessibility the declaring module gives the generic name itself.
+
+    A generic follows its module's accessibility like any other declaration, so
+    a `private` one names a dispatcher the module keeps to itself. Publication
+    reads this rather than assuming a generic is public.
+    """
+
 
 FORTRAN_GENERIC_NAME_METADATA = "fortran_generic_name"
 OVERLOAD_KIND_METADATA = "overload_kind"

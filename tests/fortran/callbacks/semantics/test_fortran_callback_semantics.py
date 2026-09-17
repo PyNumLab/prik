@@ -95,7 +95,10 @@ end module callbacks
     )
 
     explicit_callback = get_function(module, "explicit_case").arguments[0].semantic_type
-    assert explicit_callback.name == "callback"
+    # A block written inside a procedure names a signature only that procedure
+    # can reach, so its contract identity is qualified by the owning scope.
+    assert explicit_callback.name == "explicit_case_callback"
+    assert explicit_callback.metadata["prototype_ref"]["name"] == "callback"
     assert [argument.name for argument in explicit_callback.metadata["arguments"]] == ["Int32"]
     assert explicit_callback.metadata["return"].name == "Int32"
 

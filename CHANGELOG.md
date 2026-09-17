@@ -7,6 +7,16 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generated contract publishes a prototype or a generic only where the
+  module makes it reachable. A `private` abstract interface and a `private`
+  generic were written into `__all__` although the module keeps both to
+  itself, and an interface block written inside a contained procedure was
+  promoted to a module publication -- so two procedures each declaring
+  `abstract interface ... cb` shared one prototype, and the second was given
+  the first's signature. Such a block now takes its own scope-qualified
+  contract name, stays out of `__all__`, and each procedure's callback is
+  typed by the interface its own scope declares.
+
 - Generated Fortran continuation never breaks a line inside a character
   literal. A long call was split at every comma, so an argument such as
   `'alpha, beta'` continued mid-literal and compiled to `alpha,  beta` -- a

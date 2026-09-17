@@ -193,6 +193,9 @@ class _CallbackInterface:
     local_name: str | None = None
     """Spelling the importing scope binds, when a ``use`` renamed the interface."""
 
+    declaring_scope: tuple[str, ...] = ()
+    """Contained procedure declaring the block, empty for a module's own block."""
+
     @property
     def native_name(self) -> str:
         """Return the name the declaring module gives this interface."""
@@ -202,6 +205,19 @@ class _CallbackInterface:
     def visible_name(self) -> str:
         """Return the canonical spelling visible where the interface was resolved."""
         return self.local_name or self.signature.name
+
+    @property
+    def contract_name(self) -> str:
+        """Return the spelling a contract writes for this interface.
+
+        Two contained procedures may each declare an interface of the same
+        name meaning different signatures, so a procedure-local block is named
+        for the scope that owns it. A module's own block keeps its name, which
+        is the one another module imports.
+        """
+        if not self.declaring_scope:
+            return self.visible_name
+        return "_".join((*self.declaring_scope, self.visible_name))
 
 
 @dataclass(frozen=True)
@@ -806,13 +822,29 @@ class FortranToIRConverter(ClassVisitor):
         which is why the enclosing module contributes only its own blocks.
         """
         visible = dict(base)
+        scope = (str(scope_name),) if scope_name else ()
         for interface in cls._procedure_interfaces(owner, scope_name):
             for signature in interface.procedures:
-                visible[signature.name.casefold()] = _CallbackInterface(signature, owner)
+                visible[signature.name.casefold()] = _CallbackInterface(signature, owner, declaring_scope=scope)
             if interface.name and len(interface.procedures) == 1:
-                visible[interface.name.casefold()] = _CallbackInterface(interface.procedures[0], owner)
+                visible[interface.name.casefold()] = _CallbackInterface(
+                    interface.procedures[0],
+                    owner,
+                    declaring_scope=scope,
+                )
         cls._merge_imported_callback_interfaces(visible, modules, uses, seen=frozenset(), override=True)
         return visible
+
+    @staticmethod
+    def _interface_declaring_scope(interface) -> tuple[str, ...]:
+        """Return the contained procedure declaring one interface block, if any.
+
+        A module's own block returns the empty scope, which is what makes its
+        name reachable through a ``use`` of the module.
+        """
+        if str(getattr(interface, "declaring_scope_kind", "module")).casefold() != "procedure":
+            return ()
+        return tuple(str(part) for part in getattr(interface, "declaring_scope_path", ()))[-1:]
 
     @staticmethod
     def _procedure_interfaces(owner: FortranModule | None, scope_name: str | None):
@@ -951,7 +983,7 @@ class FortranToIRConverter(ClassVisitor):
         # a different spelling. Both are source facts, and a contract needs each
         # of them to import the right name under the right alias.
         native_name = resolved.native_name if resolved is not None else interface_name
-        local_name = resolved.visible_name if resolved is not None else interface_name
+        local_name = resolved.contract_name if resolved is not None else interface_name
         return SemanticType(
             local_name,
             dtype="Prototype",
@@ -1096,13 +1128,26 @@ class FortranToIRConverter(ClassVisitor):
         referenced: set[str],
         called: set[str],
     ) -> list[SemanticPrototype]:
-        """Convert every referenced interface into one exact prototype signature."""
+        """Convert every referenced interface into one exact prototype signature.
+
+        A block written inside a contained procedure declares a signature that
+        procedure alone can name, and two procedures may spell different
+        signatures the same way. Such a block therefore takes its own
+        scope-qualified contract identity and stays private: the contract needs
+        it to annotate that procedure's callback, but a ``use`` of this module
+        cannot reach it, so the module does not publish it.
+        """
         prototypes: list[SemanticPrototype] = []
         seen: set[str] = set()
         for interface in module.interfaces:
+            scope = self._interface_declaring_scope(interface)
             for signature in interface.procedures:
-                name = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
-                if not (interface.abstract or name.casefold() in referenced or name.casefold() in called):
+                declared = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
+                name = "_".join((*scope, declared))
+                # A callback argument records the contract identity, which for
+                # a procedure-local block is the scope-qualified one; a shape
+                # calling the name still spells it as the source declares it.
+                if not (interface.abstract or name.casefold() in referenced or declared.casefold() in called):
                     continue
                 if name in seen:
                     continue
@@ -1119,14 +1164,14 @@ class FortranToIRConverter(ClassVisitor):
                 prototypes.append(
                     SemanticPrototype(
                         name=name,
-                        native_name=name,
+                        native_name=declared,
                         arguments=arguments,
                         return_type=return_type,
                         metadata=self._procedure_metadata(signature),
-                        visibility=self._symbol_visibility(module, name),
+                        visibility="private" if scope else self._symbol_visibility(module, declared),
                         origin=SemanticOrigin(
                             source_language="fortran",
-                            native_name=name,
+                            native_name=declared,
                             native_abi=self._procedure_native_abi(signature),
                             native_symbol=self._procedure_native_symbol(signature),
                             native_scope=module.name,
@@ -3001,7 +3046,12 @@ class FortranToIRConverter(ClassVisitor):
             )
             if missing or not procedures:
                 if self._is_procedure_generic_name(interface.name):
-                    overload_sets.append(ProcedureOverloadSet(interface.name))
+                    overload_sets.append(
+                        ProcedureOverloadSet(
+                            interface.name,
+                            visibility=self._symbol_visibility(module, interface.name),
+                        )
+                    )
                 continue
             if self._is_procedure_generic_name(interface.name):
                 constructor_class = class_map.get(interface.name.casefold())
@@ -3026,6 +3076,7 @@ class FortranToIRConverter(ClassVisitor):
                     native_scope=str(module.origin.native_name or module.name)
                     if hasattr(module, "origin")
                     else module.name,
+                    visibility=self._symbol_visibility(module, interface.name),
                 )
                 target_lookup = procedure_lookup | inline_lookup | inherited_lookup
                 for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
@@ -3152,6 +3203,7 @@ class FortranToIRConverter(ClassVisitor):
         procedures: list[SemanticFunction],
         *,
         native_scope: str | None = None,
+        visibility: str = "public",
     ) -> ProcedureOverloadSet:
         """Copy regular generic candidates and attach generic dispatch metadata.
 
@@ -3184,7 +3236,7 @@ class FortranToIRConverter(ClassVisitor):
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             candidate.metadata[OVERLOAD_TARGET_METADATA] = candidate.native_name or candidate.name
             candidates.append(candidate)
-        return ProcedureOverloadSet(name, candidates, native_scope=native_scope)
+        return ProcedureOverloadSet(name, candidates, native_scope=native_scope, visibility=visibility)
 
     def _defined_overload_sets(
         self,

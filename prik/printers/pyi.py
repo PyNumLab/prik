@@ -288,6 +288,8 @@ class PyiPrinter(ClassVisitor):
         self._visit(module, context)
         names = dict(context.published_names)
         for prototype in module.prototypes:
+            if self._is_private(prototype):
+                continue
             names[str(prototype.name)] = str(prototype.name)
         for reexport in module.reexports:
             if reexport.entity_kind == "prototype" and reexport.publishes_to_python():
@@ -758,14 +760,21 @@ class PyiPrinter(ClassVisitor):
         for semantic_class in self._contract_items(module.classes):
             if not self._is_private(semantic_class):
                 names.append(self._class_name(semantic_class, context))
-        names.extend(str(prototype.name) for prototype in module.prototypes)
+        # A prototype the contract needs for typing is not thereby published:
+        # a private one names a signature the module keeps to itself, and the
+        # annotations referring to it still resolve inside this file.
+        names.extend(str(prototype.name) for prototype in module.prototypes if not self._is_private(prototype))
         for variable in self._contract_items(module.variables):
             if getattr(variable, "visibility", "public") != "private":
                 names.append(self._module_variable_name(variable, context))
         for function in self._contract_items(module.functions, keep_names=overload_targets):
             if not self._is_private(function):
                 names.append(self._callable_name(function, context))
-        names.extend(self._overload_set_name(overload_set, context) for overload_set in module.overload_sets)
+        names.extend(
+            self._overload_set_name(overload_set, context)
+            for overload_set in module.overload_sets
+            if not self._is_private(overload_set)
+        )
         for reexport in module.reexports:
             if not reexport.publishes_to_python():
                 continue
@@ -2496,7 +2505,10 @@ class PyiPrinter(ClassVisitor):
         settled = context.settled("function", overload_set.name)
         if settled is not None:
             return context.publish(overload_set.name, settled)
-        return context.public_name(overload_set.name, category="function", owner=overload_set)
+        # The dispatcher and the name written for it are one declaration, so
+        # both reserve under the identity the emission uses. Asking as two
+        # owners would hand the definition a second, deduplicated spelling.
+        return context.public_name(overload_set.name, category="function", owner=("overload", overload_set.name))
 
     @staticmethod
     def _data_member_name(

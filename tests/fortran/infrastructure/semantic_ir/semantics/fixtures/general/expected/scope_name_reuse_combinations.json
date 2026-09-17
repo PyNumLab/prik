@@ -1475,7 +1475,8 @@
               "return_type": null,
               "visibility": "public"
             }
-          ]
+          ],
+          "visibility": "public"
         }
       ],
       "prototypes": [],
