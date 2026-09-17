@@ -368,6 +368,7 @@ class _Declaration:
     target_kind_expression: str | None = None
     character_length_syntax: bool = False
     character_length_expression: str | None = None
+    character_kind_expression: str | None = None
     declared_storage_bits: int | None = None
 
 
@@ -4289,9 +4290,11 @@ class FortranParser(ClassVisitor):
         if base_type == "character" and type_spec:
             # The selector's two expressions are separated while the top-level
             # items are known, so no later stage has to split them back apart.
-            length, _kind = extract_character_selector(type_spec)
+            length, kind = extract_character_selector(type_spec)
             if length is not None:
                 declaration.character_length_expression = length
+            if kind is not None:
+                declaration.character_kind_expression = kind
             if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
                 declaration.character_length_syntax = True
         return declaration
@@ -4318,9 +4321,11 @@ class FortranParser(ClassVisitor):
         if base_type in {"double precision", "double complex"}:
             var._target_kind_expression = "kind(1.0d0)"
         elif base_type == "character" and type_spec:
-            length, _kind = extract_character_selector(type_spec)
+            length, kind = extract_character_selector(type_spec)
             if length is not None:
                 var._character_length_expression = length
+            if kind is not None:
+                var._character_kind_expression = kind
             if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
                 var._character_length_syntax = True
 
@@ -4421,6 +4426,8 @@ class FortranParser(ClassVisitor):
             arg._character_length_syntax = True
         if declaration.character_length_expression is not None:
             arg._character_length_expression = declaration.character_length_expression
+        if declaration.character_kind_expression is not None:
+            arg._character_kind_expression = declaration.character_kind_expression
         if declaration.declared_storage_bits is not None:
             arg._declared_storage_bits = declaration.declared_storage_bits
         if declaration.polymorphic:
@@ -5478,13 +5485,16 @@ class FortranParser(ClassVisitor):
         the kind is: a declaration written ``character(len=fixed)`` states the
         value ``fixed`` names, the same as one written ``character(fixed)``.
         """
-        declared = getattr(variable, "_character_length_expression", None)
-        if not declared:
-            return
         active_resolver = resolver or _CompileTimeResolver(symbols)
-        variable._character_length_expression = active_resolver.resolve(
-            FortranParser._resolve_symbol_reference(str(declared), symbols)
-        )
+        for attribute in ("_character_length_expression", "_character_kind_expression"):
+            declared = getattr(variable, attribute, None)
+            if not declared:
+                continue
+            setattr(
+                variable,
+                attribute,
+                active_resolver.resolve(FortranParser._resolve_symbol_reference(str(declared), symbols)),
+            )
 
     @staticmethod
     def _resolve_kind_expression(

@@ -255,6 +255,11 @@ class FortranVariable:
         return bool(getattr(self, "_character_length_syntax", False))
 
     @property
+    def character_kind_expression(self) -> str | None:
+        """The kind a character declaration states, separated from its length."""
+        return getattr(self, "_character_kind_expression", None)
+
+    @property
     def character_length_expression(self) -> str | None:
         """The length a character declaration states, separated from its kind.
 

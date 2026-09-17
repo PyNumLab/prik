@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A character declaration's kind is read whole, so
+  `character(len=8, kind=max(c_char, 1))` states the kind it writes. The kind
+  was found again inside the selector's joined spelling with a pattern that
+  stops at the first comma, cutting a kind expression holding a comma of its
+  own down to `max(c_char`.
+
 - A Fortran character constant reaches Python holding the characters it
   declares. Fortran doubles a quote to hold one, which Python reads instead as
   two literals written side by side and joins, so

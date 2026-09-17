@@ -352,6 +352,9 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
         )
         == []
     )
+    # A character selector's kind is a parser fact separate from its length.
+    bad_character = FortranVariable(name="bad_character", base_type="character", kind="bad")
+    bad_character._character_kind_expression = "bad"
     unsupported = collect_semantic_compile_time_requirements(
         FortranFile(
             variables=[
@@ -359,7 +362,7 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
                 FortranVariable(name="bad_real", base_type="real", kind="bad"),
                 FortranVariable(name="bad_complex", base_type="complex", kind="bad"),
                 FortranVariable(name="bad_logical", base_type="logical", kind="bad"),
-                FortranVariable(name="bad_character", base_type="character", kind="bad"),
+                bad_character,
                 FortranVariable(name="callback", base_type="procedure", kind="f_iface"),
             ]
         )

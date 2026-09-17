@@ -2411,9 +2411,9 @@ class FortranToIRConverter(ClassVisitor):
             return None
 
         base_type = var.base_type.lower()
-        kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         if base_type == "character":
-            return FortranToIRConverter._character_kind_key(kind, character_length_syntax=var.character_length_syntax)
+            return self._character_kind_expression(var)
+        kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         if base_type == "logical":
             return "c_bool" if kind == "c_bool" else kind
         literal_kind = FortranToIRConverter._literal_kind_key(kind)
@@ -2432,28 +2432,23 @@ class FortranToIRConverter(ClassVisitor):
         if not raw_kind:
             return base_type, None
 
-        kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         if base_type == "character":
-            if var.character_length_syntax:
-                return base_type, None
-            kind_match = re.search(r"(?:^|,)\s*kind\s*=\s*([^,]+)", kind)
-            if kind_match is not None:
-                kind = kind_match.group(1).strip()
-            elif kind.startswith("len="):
-                return base_type, None
+            return base_type, self._character_kind_expression(var)
+        kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
         return base_type, kind
 
-    @staticmethod
-    def _character_kind_key(kind: str, *, character_length_syntax: bool = False) -> str | None:
-        """Extract a character-kind key while ignoring length-only spellings."""
-        if character_length_syntax:
+    def _character_kind_expression(self, var: FortranVariable) -> str | None:
+        """Return the kind a character declaration states, or ``None`` for the default.
+
+        The parser separates the selector's kind from its length, so the kind
+        is read from that fact rather than found again inside a joined
+        spelling, where an expression holding a comma of its own -- a
+        ``kind=max(c_char, 1)`` -- would be cut short.
+        """
+        declared = getattr(var, "character_kind_expression", None)
+        if not declared:
             return None
-        kind_match = re.search(r"(?:^|,)\s*kind\s*=\s*([^,]+)", kind)
-        if kind_match is not None:
-            kind = kind_match.group(1).strip()
-        elif re.match(r"^len\s*=", kind):
-            return None
-        return kind or None
+        return self._resolve_compile_time_text(str(declared)).strip().lower() or None
 
     def _target_type_fact(self, var: FortranVariable) -> dict[str, object] | None:
         """Return legacy fixed-width or configured compiler facts for ``var``."""
