@@ -1893,6 +1893,14 @@ class FortranToIRConverter(ClassVisitor):
         the entity. Following the chain reports the declaration itself: its
         kind, the module holding it, and the name it is declared under. A name
         reached through no declaration, or through a cycle, stays unknown.
+
+        Each hop applies the rule a direct import does. A module that does not
+        declare the name has it only through its own ``use`` statements, so the
+        chain continues only while Fortran accessibility keeps the name public
+        there -- a `private` statement in an intermediate module ends it -- and
+        only while every route through that module names one entity. Two routes
+        naming different declarations leave the origin genuinely ambiguous
+        there, exactly as they would in the importing module.
         """
         key = (module_name.casefold(), source_name.casefold())
         declaring = index.get(module_name.casefold())
@@ -1902,20 +1910,26 @@ class FortranToIRConverter(ClassVisitor):
         if kind != "unknown":
             return kind, declaring.name, source_name
         seen = seen | {key}
-        for used_name, mappings in declaring.uses.items():
-            for mapping in mappings:
-                if mapping.local_name.casefold() == source_name.casefold():
-                    return cls._resolve_reexport_origin(index, used_name, mapping.source, seen)
-        # A `use` naming no list carries every public name of what it reads.
-        resolved = [
-            origin
+        named = [
+            (used_name, mapping.source)
             for used_name, mappings in declaring.uses.items()
-            if not mappings
-            for origin in (cls._resolve_reexport_origin(index, used_name, source_name, seen),)
-            if origin[0] != "unknown"
+            for mapping in mappings
+            if mapping.local_name.casefold() == source_name.casefold()
         ]
-        if len(resolved) == 1:
-            return resolved[0]
+        # A `use` naming no list carries every public name of what it reads.
+        wildcard = [(used_name, source_name) for used_name, mappings in declaring.uses.items() if not mappings]
+        routes = named or wildcard
+        route_names = tuple(dict.fromkeys(used_name for used_name, _source in routes))
+        if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
+            return "unknown", module_name, source_name
+        origins = {cls._resolve_reexport_origin(index, used_name, name, seen) for used_name, name in routes}
+        if named:
+            # A named route states the entity it carries, so an unreadable one
+            # beside a resolved one still means the name reaches two things.
+            return next(iter(origins)) if len(origins) == 1 else ("unknown", module_name, source_name)
+        known = [origin for origin in origins if origin[0] != "unknown"]
+        if len(known) == 1:
+            return known[0]
         return "unknown", module_name, source_name
 
     @classmethod

@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Following a name through an intermediate module applies that module's own
+  accessibility. A module importing `x` and declaring `private :: x` no longer
+  passes a route to the declaration behind it, and a module reaching two
+  different `x` no longer resolves to whichever route was read first. Both
+  cases are now reported unresolved, as a direct import of two disagreeing
+  routes already was.
+
 - A generated contract publishes a prototype or a generic only where the
   module makes it reachable. A `private` abstract interface and a `private`
   generic were written into `__all__` although the module keeps both to

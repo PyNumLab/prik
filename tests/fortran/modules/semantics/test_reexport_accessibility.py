@@ -612,3 +612,105 @@ def test_a_compile_time_symbol_is_not_substituted_inside_a_character_literal():
     # A reference outside the literal is still resolved.
     assert _resolve_compile_time_text("runtime + 1", values) == "4 + 1"
     assert _resolve_compile_time_text('len("runtime") + runtime', values) == 'len("runtime") + 4'
+
+
+TRANSITIVE_DECLARING = """\
+module a_mod
+  implicit none
+  integer :: x = 1
+end module a_mod
+"""
+
+TRANSITIVE_OTHER = """\
+module c_mod
+  implicit none
+  real :: x = 2.0
+end module c_mod
+"""
+
+
+def _project_modules(tmp_path: Path, *sources: str):
+    """Parse one throwaway project and return its semantic modules by name."""
+    (tmp_path / "project.f90").write_text("\n".join(sources), encoding="utf-8")
+    modules = fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
+    return {module.name: module for module in modules}
+
+
+def test_a_private_name_in_an_intermediate_module_ends_the_chain(tmp_path: Path):
+    """Each hop applies the accessibility rule, so a `private` stops the walk.
+
+    `middle` imports `x` and makes it private, so `outer` cannot reach the
+    declaration behind it however `middle` got there.
+    """
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        """\
+module middle_mod
+  use a_mod, only : x
+  implicit none
+  private :: x
+end module middle_mod
+
+module outer_mod
+  use middle_mod, only : x
+  implicit none
+end module outer_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
+    assert reexports["x"].entity_kind == "unknown"
+    assert reexports["x"].origin_module == "middle_mod"
+
+
+def test_routes_disagreeing_inside_an_intermediate_module_stay_unresolved(tmp_path: Path):
+    """`middle` reaches two different `x`, so no hop through it names one."""
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        TRANSITIVE_OTHER,
+        """\
+module middle_mod
+  use a_mod, only : x
+  use c_mod, only : x
+  implicit none
+end module middle_mod
+
+module outer_mod
+  use middle_mod, only : x
+  implicit none
+end module outer_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
+    assert reexports["x"].entity_kind == "unknown"
+    assert reexports["x"].origin_module == "middle_mod"
+
+
+def test_an_ordinary_chain_still_reaches_the_declaring_module(tmp_path: Path):
+    """One accessible, unambiguous route per hop resolves to the declaration."""
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        """\
+module middle_mod
+  use a_mod, only : x
+  implicit none
+  public :: x
+end module middle_mod
+
+module outer_mod
+  use middle_mod, only : x
+  implicit none
+end module outer_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
+    assert (reexports["x"].entity_kind, reexports["x"].origin_module, reexports["x"].source_name) == (
+        "variable",
+        "a_mod",
+        "x",
+    )
