@@ -459,3 +459,144 @@ module b_mod
 end module b_mod
 """,
     ) == [("y", "y", "external_mod")]
+
+
+def test_a_procedure_local_abstract_interface_stays_inside_its_procedure(tmp_path: Path):
+    """A block written inside a contained procedure declares a name only there.
+
+    Those blocks are stored beside the module's own, so nothing but the
+    declaring scope distinguishes them.
+    """
+    assert _reexports(
+        tmp_path,
+        """\
+module local_home
+  implicit none
+contains
+  subroutine work()
+    abstract interface
+      subroutine local_callback()
+      end subroutine local_callback
+    end interface
+  end subroutine work
+end module local_home
+
+module b_mod
+  use local_home
+  implicit none
+end module b_mod
+""",
+    ) == [("work", "work", "local_home")]
+
+
+def test_a_procedure_local_generic_stays_inside_its_procedure(tmp_path: Path):
+    """A named generic declared inside a procedure is that procedure's, too."""
+    carried = _reexports(
+        tmp_path,
+        """\
+module local_home
+  implicit none
+contains
+  subroutine work()
+    interface local_generic
+      module procedure work
+    end interface local_generic
+  end subroutine work
+end module local_home
+
+module b_mod
+  use local_home
+  implicit none
+end module b_mod
+""",
+    )
+
+    assert [local for local, _source, _origin in carried] == ["work"]
+
+
+def test_a_wildcard_route_beside_an_unreadable_one_is_not_guessed(tmp_path: Path):
+    """A plain `use` compares routes the way a named import does.
+
+    Discarding the unreadable route would leave the readable one standing
+    alone and answer for a module this project never read.
+    """
+    assert (
+        _reexports(
+            tmp_path,
+            """\
+module left_mod
+  use a_mod, only : x
+  implicit none
+end module left_mod
+
+module right_mod
+  use external_mod, only : x
+  implicit none
+end module right_mod
+
+module b_mod
+  use left_mod
+  use right_mod
+  implicit none
+end module b_mod
+""",
+        )
+        == []
+    )
+
+
+def test_wildcard_routes_that_agree_on_one_entity_publish_it(tmp_path: Path):
+    """Repeating a route to the same declaration names one entity."""
+    assert _reexports(
+        tmp_path,
+        """\
+module left_mod
+  use a_mod, only : x
+  implicit none
+end module left_mod
+
+module b_mod
+  use left_mod
+  use a_mod, only : x
+  implicit none
+end module b_mod
+""",
+    ) == [("x", "x", "a_mod")]
+
+
+def test_a_name_spelled_inside_a_character_literal_is_not_a_dependency(tmp_path: Path):
+    """A literal's contents are its value, not a reference to what they spell."""
+    source = tmp_path / "project.f90"
+    source.write_text(
+        f"""{DECLARING}
+module b_mod
+  use a_mod, only : box
+  implicit none
+  character(len=3), parameter :: label = "box"
+end module b_mod
+""",
+        encoding="utf-8",
+    )
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    importing = next(module for module in modules if module.name == "b_mod")
+
+    assert [(item.local_name, item.declaration_dependency) for item in importing.reexports] == [("box", False)]
+
+
+def test_a_type_a_declaration_names_is_a_dependency(tmp_path: Path):
+    """Declaring with an imported type is what makes it a dependency."""
+    source = tmp_path / "project.f90"
+    source.write_text(
+        f"""{DECLARING}
+module b_mod
+  use a_mod, only : box
+  implicit none
+  type(box) :: item
+end module b_mod
+""",
+        encoding="utf-8",
+    )
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    importing = next(module for module in modules if module.name == "b_mod")
+
+    assert [(item.local_name, item.declaration_dependency) for item in importing.reexports] == [("box", True)]

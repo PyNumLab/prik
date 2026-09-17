@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from prik.utilities.declaration_expressions import (
+    declaration_expression_identifiers,
     ArrayExpressionSource,
     DeclarationExpressionCall,
     ResolvedDeclarationExtent,
@@ -320,3 +321,22 @@ def test_backend_renderer_rejects_invalid_target_and_unrenderable_syntax() -> No
         render_declaration_extent("not valid (", {}, target="c")
     with pytest.raises(ValueError, match="unsupported completed declaration-expression node"):
         render_declaration_extent("[n]", {}, target="c")
+
+
+def test_a_character_literal_references_no_name_it_happens_to_spell():
+    """Parsing decides what is a reference, so a literal's contents are its value."""
+    assert declaration_expression_identifiers('"box"') == ()
+    assert declaration_expression_identifiers("'box'") == ()
+
+
+def test_an_expression_reports_the_names_it_reads():
+    """A name used in a declaration is a reference wherever it appears."""
+    assert declaration_expression_identifiers("crate") == ("crate",)
+    assert set(declaration_expression_identifiers("n * 2 + other")) == {"n", "other"}
+    assert set(declaration_expression_identifiers("size(values)")) == {"size", "values"}
+
+
+def test_unparseable_declaration_text_still_reports_names_outside_literals():
+    """A kind selector is not an expression, so the names are scanned instead."""
+    assert declaration_expression_identifiers("len=3") == ("len",)
+    assert declaration_expression_identifiers('kind="box"') == ("kind",)

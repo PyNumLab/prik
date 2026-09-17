@@ -42,6 +42,7 @@ from prik.utilities.declaration_expressions import (
     ArrayExpressionSource,
     canonicalize_declaration_extent,
     declaration_expression_calls,
+    declaration_expression_identifiers,
     fortran_extent_to_python,
     is_declaration_expression_helper,
     split_dimension_bounds,
@@ -794,10 +795,23 @@ class FortranToIRConverter(ClassVisitor):
         seen: frozenset[str],
         override: bool,
     ) -> None:
-        """Merge every interface one ``use`` list makes visible into ``visible``."""
+        """Merge every interface one ``use`` list makes visible into ``visible``.
+
+        A name reached by several ``use`` statements has to name one interface.
+        Routes are compared by the declaration they reach, so repeating a route
+        to the same interface is harmless while two different ones leave the
+        name meaning nothing here. A ``use`` of a module this project never
+        read is a route as well: it offers whatever it names, which nothing
+        here can compare, so it makes the name unresolved rather than letting a
+        readable route answer for it.
+        """
+        declared_here = set(visible)
+        candidates: dict[str, set[tuple[str | None, str] | None]] = {}
         for module_name, mappings in uses.items():
             source_module = modules.get(module_name.casefold())
             if source_module is None:
+                for mapping in mappings:
+                    candidates.setdefault(mapping.local_name.casefold(), set()).add(None)
                 continue
             source_lookup = cls._module_callback_interfaces(
                 modules,
@@ -815,10 +829,20 @@ class FortranToIRConverter(ClassVisitor):
                 }
             )
             for name, resolved in imported.items():
+                candidates.setdefault(name, set()).add(cls._callback_identity(resolved))
                 if override:
                     visible[name] = resolved
                 else:
                     visible.setdefault(name, resolved)
+        for name, identities in candidates.items():
+            if name not in declared_here and len(identities) > 1:
+                visible.pop(name, None)
+
+    @staticmethod
+    def _callback_identity(resolved: _CallbackInterface) -> tuple[str | None, str]:
+        """Return the declaration one resolved interface names."""
+        owner = resolved.module.name.casefold() if resolved.module is not None else None
+        return (owner, resolved.native_name.casefold())
 
     def _callback_semantic_type(
         self,
@@ -1563,6 +1587,21 @@ class FortranToIRConverter(ClassVisitor):
         return is_public
 
     @staticmethod
+    def _module_interfaces(module: FortranModule):
+        """Return the interface blocks declared by the module itself.
+
+        A block written inside a contained procedure belongs to that procedure,
+        so what it declares is reachable only there. Those blocks are stored
+        alongside the module's own, and including them would put a local name
+        into everything a ``use`` of this module can reach.
+        """
+        return tuple(
+            interface
+            for interface in module.interfaces
+            if str(getattr(interface, "declaring_scope_kind", "module")).casefold() == "module"
+        )
+
+    @staticmethod
     def _module_declared_names(module: FortranModule) -> set[str]:
         """Return the names declared by one module for accessibility resolution.
 
@@ -1576,10 +1615,14 @@ class FortranToIRConverter(ClassVisitor):
             *(procedure.name.casefold() for procedure in module.procedures),
             *(derived.name.casefold() for derived in module.derived_types),
             *(variable.name.casefold() for variable in getattr(module, "variables", ())),
-            *(interface.name.casefold() for interface in module.interfaces if interface.name is not None),
+            *(
+                interface.name.casefold()
+                for interface in FortranToIRConverter._module_interfaces(module)
+                if interface.name is not None
+            ),
             *(
                 signature.name.casefold()
-                for interface in module.interfaces
+                for interface in FortranToIRConverter._module_interfaces(module)
                 if interface.name is None
                 for signature in interface.procedures
                 if signature.name
@@ -1593,8 +1636,12 @@ class FortranToIRConverter(ClassVisitor):
         The parser models retain declaration expressions but not executable
         statements here, so intersecting their identifiers with names visible
         through ``use`` distinguishes a dependency from an otherwise implicit
-        default-public re-export. An explicit ``public`` statement remains the
-        module's authoritative request to publish the name.
+        default-public re-export. Those identifiers come from parsing each
+        expression rather than scanning its text, so a name spelled inside a
+        character literal is read as part of that literal's value and not as a
+        reference to whatever it happens to spell. An explicit ``public``
+        statement remains the module's authoritative request to publish the
+        name.
         """
 
         declaration_text: list[str] = []
@@ -1641,7 +1688,9 @@ class FortranToIRConverter(ClassVisitor):
                 add_procedure(procedure)
 
         return {
-            identifier.casefold() for text in declaration_text for identifier in re.findall(r"\b[A-Za-z_]\w*\b", text)
+            identifier.casefold()
+            for text in declaration_text
+            for identifier in declaration_expression_identifiers(text)
         }
 
     @classmethod
@@ -1812,12 +1861,11 @@ class FortranToIRConverter(ClassVisitor):
             route_names = tuple(dict.fromkeys(used.name for used in routes))
             if name in declared or name in named or not is_public(name, route_names):
                 continue
-            origins = {
-                origin
-                for used in routes
-                for origin in (cls._resolve_reexport_origin(index, used.name, name),)
-                if origin[0] != "unknown"
-            }
+            # Every route has to name one entity, the way a named import does.
+            # An unresolved route is kept in the comparison rather than
+            # discarded: dropping it would leave a readable route standing
+            # alone and answer for a module this project never read.
+            origins = {cls._resolve_reexport_origin(index, used.name, name) for used in routes}
             if len(origins) != 1:
                 continue
             kind, origin_module, origin_name = next(iter(origins))
@@ -1843,7 +1891,7 @@ class FortranToIRConverter(ClassVisitor):
         key = source_name.casefold()
         if any(procedure.name.casefold() == key for procedure in declaring.procedures):
             return "procedure"
-        for interface in declaring.interfaces:
+        for interface in FortranToIRConverter._module_interfaces(declaring):
             if interface.abstract and any(signature.name.casefold() == key for signature in interface.procedures):
                 return "prototype"
             if interface.name and interface.name.casefold() == key:

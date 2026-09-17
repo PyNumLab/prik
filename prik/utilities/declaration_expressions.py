@@ -61,6 +61,8 @@ def is_strided_extent(expression: str) -> bool:
 
 
 _ASSUMED_RANK_MARKER = "..."
+_QUOTED_LITERAL = re.compile(r"'[^']*'|\"[^\"]*\"")
+_IDENTIFIER_PATTERN = r"\b[A-Za-z_]\w*\b"
 # Every extent whose value only exists at run time, assumed rank included.
 RUNTIME_DIMENSION_MARKERS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
@@ -431,6 +433,23 @@ def declaration_extent_references(expression: str) -> tuple[str, ...]:
             node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id not in function_names
         )
     )
+
+
+def declaration_expression_identifiers(expression: str) -> tuple[str, ...]:
+    """Return the names one declaration expression references.
+
+    Parsing decides what is a reference: an identifier spelled inside a
+    character literal is part of the literal's value and names nothing, so
+    ``"box"`` references no ``box``. Text this stage cannot parse -- a kind
+    selector such as ``len=3``, for instance -- falls back to scanning
+    identifiers with the literals removed, so a quoted spelling stays out
+    either way.
+    """
+    text = _python_parseable_fortran_expression(expression)
+    tree = _parse_expression(text)
+    if tree is not None:
+        return tuple(dict.fromkeys(node.id for node in ast.walk(tree) if isinstance(node, ast.Name)))
+    return tuple(dict.fromkeys(re.findall(_IDENTIFIER_PATTERN, _QUOTED_LITERAL.sub(" ", expression))))
 
 
 def declaration_expression_calls(expression: str) -> tuple[str, ...]:
