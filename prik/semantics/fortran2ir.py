@@ -746,6 +746,9 @@ class FortranToIRConverter(ClassVisitor):
         ``exported_only`` applies the module's accessibility to the result, for
         a caller reaching the names from outside through ``use``.  A module
         still sees its own private interfaces, so it is left off in that case.
+        The accessibility is the one every other stage reads, so a name reached
+        through an explicitly public or private ``use`` route is judged the same
+        way here as anywhere else rather than by a separate calculation.
         """
         key = module.name.casefold()
         if key in seen:
@@ -760,11 +763,8 @@ class FortranToIRConverter(ClassVisitor):
         )
         if not exported_only:
             return visible
-        return {
-            name: resolved
-            for name, resolved in visible.items()
-            if cls._symbol_visibility(module, resolved.visible_name) == "public"
-        }
+        public = cls._module_public_names(module, modules)
+        return {name: resolved for name, resolved in visible.items() if resolved.visible_name.casefold() in public}
 
     @classmethod
     def _scope_callback_interfaces(
@@ -1564,12 +1564,26 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _module_declared_names(module: FortranModule) -> set[str]:
-        """Return the names declared by one module for accessibility resolution."""
+        """Return the names declared by one module for accessibility resolution.
+
+        A named interface block declares its generic. An abstract block names
+        no generic, and what it declares are the procedure signatures inside
+        it, which is what another module imports to write a ``procedure(...)``
+        declaration. A specific inside an ordinary generic is not separately
+        declared here, because the generic is the name that block introduces.
+        """
         return {
             *(procedure.name.casefold() for procedure in module.procedures),
             *(derived.name.casefold() for derived in module.derived_types),
             *(variable.name.casefold() for variable in getattr(module, "variables", ())),
             *(interface.name.casefold() for interface in module.interfaces if interface.name is not None),
+            *(
+                signature.name.casefold()
+                for interface in module.interfaces
+                if interface.name is None
+                for signature in interface.procedures
+                if signature.name
+            ),
         }
 
     @classmethod
@@ -1689,10 +1703,15 @@ class FortranToIRConverter(ClassVisitor):
             origins = {
                 cls._resolve_reexport_origin(index, module_name, mapping.source) for module_name, mapping in routes
             }
-            known_origins = {origin for origin in origins if origin[0] != "unknown"}
-            if len(known_origins) > 1 or (not known_origins and len(origins) > 1):
+            # Every route has to name one entity. Routes that all resolve the
+            # same way name it; a single unresolved route still names whatever
+            # the ``use`` reached. Where routes disagree, or a resolved route
+            # sits beside one this project cannot read, the name means more
+            # than one thing here and choosing the readable one would be a
+            # guess about the module that was never parsed.
+            if len(origins) > 1:
                 continue
-            kind, origin_module, origin_name = next(iter(known_origins or origins))
+            kind, origin_module, origin_name = next(iter(origins))
             reexports.append(
                 SemanticReexport(
                     local_name,

@@ -314,3 +314,148 @@ end module b_mod
     )
 
     assert published == [(name, name, "a_mod")]
+
+
+CALLBACK_HOME = """\
+module callback_types
+  implicit none
+  abstract interface
+    integer function unary(x)
+      integer, intent(in) :: x
+    end function unary
+  end interface
+end module callback_types
+"""
+
+
+def _callback_reexports(tmp_path: Path, importer: str, *, module_name: str) -> list[tuple[str, str, str]]:
+    """Return one module's public use associations over an abstract-interface home."""
+    source = tmp_path / "callbacks.f90"
+    source.write_text(f"{CALLBACK_HOME}\n{importer}", encoding="utf-8")
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    importing = next(module for module in modules if module.name == module_name)
+    return [(item.local_name, item.source_name, item.origin_module) for item in importing.reexports]
+
+
+def test_a_plain_use_carries_an_abstract_interface_procedure(tmp_path: Path):
+    """An abstract block names no generic; what it declares are its procedures."""
+    assert _callback_reexports(
+        tmp_path,
+        """\
+module middle_mod
+  use callback_types
+  implicit none
+end module middle_mod
+""",
+        module_name="middle_mod",
+    ) == [("unary", "unary", "callback_types")]
+
+
+def test_an_abstract_interface_procedure_survives_a_further_hop(tmp_path: Path):
+    """Carrying it once makes it importable by name from the carrying module."""
+    assert _callback_reexports(
+        tmp_path,
+        """\
+module middle_mod
+  use callback_types
+  implicit none
+end module middle_mod
+
+module user_mod
+  use middle_mod, only : unary
+  implicit none
+end module user_mod
+""",
+        module_name="user_mod",
+    ) == [("unary", "unary", "callback_types")]
+
+
+def test_a_callback_reached_through_a_public_route_stays_public(tmp_path: Path):
+    """Callback accessibility is the module's accessibility, routes included.
+
+    A bare `private` would hide the name were the used module not named public,
+    so judging it by the symbol statements alone reaches the wrong answer.
+    """
+    assert _callback_reexports(
+        tmp_path,
+        """\
+module facade_mod
+  use callback_types
+  implicit none
+  private
+  public :: callback_types
+end module facade_mod
+""",
+        module_name="facade_mod",
+    ) == [("unary", "unary", "callback_types")]
+
+
+def test_a_callback_reached_through_a_private_route_is_withheld(tmp_path: Path):
+    """Naming the used module private withholds what it carried, default aside."""
+    assert (
+        _callback_reexports(
+            tmp_path,
+            """\
+module facade_mod
+  use callback_types
+  implicit none
+  private :: callback_types
+end module facade_mod
+""",
+            module_name="facade_mod",
+        )
+        == []
+    )
+
+
+def test_routes_that_agree_on_one_entity_publish_it(tmp_path: Path):
+    """Two `use` statements naming the same declaration name one entity."""
+    assert _reexports(
+        tmp_path,
+        """\
+module middle_mod
+  use a_mod, only : x
+  implicit none
+end module middle_mod
+
+module b_mod
+  use a_mod, only : x
+  use middle_mod, only : x
+  implicit none
+end module b_mod
+""",
+    ) == [("x", "x", "a_mod")]
+
+
+def test_a_readable_route_beside_an_unreadable_one_is_not_guessed(tmp_path: Path):
+    """An unparsed module may carry the same entity or another one.
+
+    Choosing the readable route would be a guess about the one this project
+    cannot read, so the name is left out rather than resolved to either.
+    """
+    assert (
+        _reexports(
+            tmp_path,
+            """\
+module b_mod
+  use a_mod, only : x
+  use external_mod, only : x
+  implicit none
+end module b_mod
+""",
+        )
+        == []
+    )
+
+
+def test_a_single_unreadable_route_still_names_what_it_reached(tmp_path: Path):
+    """One route names one entity, whether or not this project can read it."""
+    assert _reexports(
+        tmp_path,
+        """\
+module b_mod
+  use external_mod, only : y
+  implicit none
+end module b_mod
+""",
+    ) == [("y", "y", "external_mod")]
