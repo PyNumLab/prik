@@ -289,7 +289,7 @@ class PyiPrinter(ClassVisitor):
         for prototype in module.prototypes:
             names[str(prototype.name)] = str(prototype.name)
         for reexport in module.reexports:
-            if reexport.entity_kind == "prototype":
+            if reexport.entity_kind == "prototype" and reexport.publishes_to_python():
                 names[str(reexport.local_name)] = str(reexport.local_name)
         return names
 
@@ -766,6 +766,8 @@ class PyiPrinter(ClassVisitor):
                 names.append(self._callable_name(function, context))
         names.extend(self._overload_set_name(overload_set, context) for overload_set in module.overload_sets)
         for reexport in module.reexports:
+            if not reexport.publishes_to_python():
+                continue
             if self._is_source_kind_import(str(reexport.origin_module)):
                 continue
             if reexport.entity_kind in _UNPUBLISHABLE_REEXPORT_KINDS:

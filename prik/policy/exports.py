@@ -42,6 +42,7 @@ def complete_python_export_policy(
     choose, and only where the source language has no spelling of its own.
     """
     contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
+    complete_reexport_publication_policy(module, contract_named=contract_named)
     naming = NamingPolicy(
         strict_public_names=strict_wrapper_names,
         preserve_case=contract_named or preserves_source_case(module.origin.source_language),
@@ -68,31 +69,60 @@ def complete_python_export_policy(
     _complete_reexport_names(module, naming, contract_named=contract_named)
 
 
+def complete_reexport_publication_policy(
+    module: models.SemanticModule,
+    *,
+    contract_named: bool | None = None,
+) -> None:
+    """Complete which public use associations become Python publications.
+
+    Native Fortran keeps declaration dependencies semantically accessible but
+    does not expose them in the generated Python namespace unless an explicit
+    ``public`` statement names them. A loaded contract has already stated its
+    export surface, so every re-export record constructed from that surface is
+    published.
+    """
+    if contract_named is None:
+        contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
+    for reexport in module.reexports:
+        if reexport.python_exported is not None:
+            continue
+        reexport.python_exported = bool(
+            contract_named or not reexport.declaration_dependency or reexport.explicitly_public
+        )
+
+
 def _complete_reexport_names(
     module: models.SemanticModule,
     naming: NamingPolicy,
     *,
     contract_named: bool,
 ) -> None:
-    """Name each re-export in the namespace that publishes it.
+    """Name each use-associated binding in its importing namespace.
 
-    A re-export adds no declaration, but it does add a Python attribute, so it
-    competes for a name with everything the publishing module declares. It is
-    reserved after those declarations: a module's own declaration keeps the
-    name it would have had, and an imported alias is the one moved aside.
+    Published associations add runtime attributes; dependency-only associations
+    still add contract imports. Both compete with declarations for a Python
+    spelling, so the same ledger names them after the module's declarations. A
+    dependency keeps an ordinary import-binding spelling even when the entity
+    is a type; only a published type receives class-style capitalization.
     """
     for reexport in module.reexports:
         if reexport.python_name:
             continue
-        if reexport.entity_kind == "variable":
+        published = reexport.publishes_to_python()
+        if published and reexport.entity_kind == "variable":
             completed_name = _completed_variable_reexport_name(module, reexport)
             if completed_name is not None:
                 reexport.python_name = completed_name
                 continue
-        category = {
-            "derived_type": "class",
-            "variable": "variable",
-        }.get(reexport.entity_kind, "function")
+        category = (
+            {
+                "derived_type": "class",
+                "variable": "variable",
+            }.get(reexport.entity_kind, "function")
+            if published
+            else "function"
+        )
         reexport.python_name = naming.reserve_public_name(
             _reexport_namespace(module, reexport),
             reexport.local_name,

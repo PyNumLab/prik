@@ -20,6 +20,7 @@ from prik.semantics.models import (
 )
 
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.exports import complete_python_export_policy
 from tests.fortran._support.paths import FORTRAN_ROOT
 
 OPERATOR_F90_SOURCE = FORTRAN_ROOT / "generic_interfaces" / "end_to_end" / "fixtures" / "native" / "foperators_f90.f90"
@@ -37,6 +38,7 @@ def generate_pyi(source: str) -> str:
     fmod = parse_fortran_source(source)
 
     smod = fortran_module_to_semantic_module(fmod)
+    complete_python_export_policy(smod)
 
     return emit_module(smod)
 

@@ -1535,27 +1535,42 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _effective_accessibility(module: FortranModule):
-        """Return whether one name is public in this module, by Fortran's rules.
+        """Return whether one name is public through its use-association routes.
 
         Accessibility is settled by precedence: an access statement naming the
-        entity decides it, otherwise the module's bare ``public``/``private``
-        default does, and the default is itself ``public``. A use-associated
-        entity is covered by those same rules, so an ordinary default-public
-        module publishes what it imports without naming it anywhere.
+        entity decides it; otherwise any explicitly public module route makes
+        it public, while routes make it private only when every one is named
+        private. The module's bare default applies next and is itself public
+        when no bare statement appears.
         """
         default_public = str(getattr(module, "default_visibility", "public")).casefold() != "private"
         explicit_public = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
         explicit_private = {str(name).casefold() for name in getattr(module, "private_symbols", ())}
 
-        def is_public(name: object) -> bool:
+        def is_public(name: object, routes: Iterable[object] = ()) -> bool:
             folded = str(name).casefold()
             if folded in explicit_private:
                 return False
             if folded in explicit_public:
                 return True
+            route_names = {str(route).casefold() for route in routes}
+            if route_names & explicit_public:
+                return True
+            if route_names and route_names <= explicit_private:
+                return False
             return default_public
 
         return is_public
+
+    @staticmethod
+    def _module_declared_names(module: FortranModule) -> set[str]:
+        """Return the names declared by one module for accessibility resolution."""
+        return {
+            *(procedure.name.casefold() for procedure in module.procedures),
+            *(derived.name.casefold() for derived in module.derived_types),
+            *(variable.name.casefold() for variable in getattr(module, "variables", ())),
+            *(interface.name.casefold() for interface in module.interfaces if interface.name is not None),
+        }
 
     @classmethod
     def _module_declaration_dependencies(cls, module: FortranModule) -> set[str]:
@@ -1628,71 +1643,68 @@ class FortranToIRConverter(ClassVisitor):
             return set()
         seen = seen | {key}
         is_public = cls._effective_accessibility(module)
-        dependencies = cls._module_declaration_dependencies(module)
-        explicit_public = {str(name).casefold() for name in module.public_symbols}
-        offered = {
-            *(procedure.name for procedure in module.procedures),
-            *(derived.name for derived in module.derived_types),
-            *(variable.name for variable in getattr(module, "variables", ())),
-            *(mapping.local_name for mappings in module.uses.values() for mapping in mappings),
-        }
-        offered.update(
-            name
-            for module_name, mappings in module.uses.items()
-            if not mappings and module_name.casefold() in index
-            for name in cls._module_public_names(index[module_name.casefold()], index, seen)
-        )
-        return {
-            str(name).casefold()
-            for name in offered
-            if is_public(name) and (str(name).casefold() not in dependencies or str(name).casefold() in explicit_public)
-        }
+        offered: dict[str, set[str]] = {name: set() for name in cls._module_declared_names(module)}
+        for module_name, mappings in module.uses.items():
+            if mappings:
+                for mapping in mappings:
+                    offered.setdefault(mapping.local_name.casefold(), set()).add(module_name)
+                continue
+            used = index.get(module_name.casefold())
+            if used is None:
+                continue
+            for name in cls._module_public_names(used, index, seen):
+                offered.setdefault(name, set()).add(module_name)
+        return {name for name, routes in offered.items() if is_public(name, routes)}
 
     def _module_reexports(
         cls,
         module: FortranModule,
         module_index: dict[str, FortranModule] | None = None,
     ) -> list[SemanticReexport]:
-        """Return the imported names this module publishes.
+        """Return the public names this module accesses through ``use``.
 
         A use-associated entity belongs to this module's interface when the
         module's effective accessibility makes it public, which an ordinary
         default-public module does without any access statement naming it.
-        Each record also states what the name declares where it comes from,
-        because only some kinds reach Python as one object to alias.
+        Declaration use is recorded for later Python publication policy but
+        does not change this Fortran accessibility decision.
         """
-        declared = {
-            *(procedure.name.casefold() for procedure in module.procedures),
-            *(derived.name.casefold() for derived in module.derived_types),
-            *(variable.name.casefold() for variable in getattr(module, "variables", ())),
-        }
+        declared = cls._module_declared_names(module)
         is_public = cls._effective_accessibility(module)
         dependencies = cls._module_declaration_dependencies(module)
         explicit_public = {str(name).casefold() for name in module.public_symbols}
         index = module_index or {}
         reexports: list[SemanticReexport] = []
         named: set[str] = set()
+        named_mappings: dict[str, list[tuple[str, FortranUseMapping]]] = {}
         for module_name, mappings in module.uses.items():
             for mapping in mappings:
-                local_name = mapping.local_name
-                named.add(local_name.casefold())
-                local_key = local_name.casefold()
-                if (
-                    local_key in declared
-                    or not is_public(local_name)
-                    or (local_key in dependencies and local_key not in explicit_public)
-                ):
-                    continue
-                kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, mapping.source)
-                reexports.append(
-                    SemanticReexport(
-                        local_name,
-                        origin_module,
-                        origin_name,
-                        module.name,
-                        entity_kind=kind,
-                    )
+                named_mappings.setdefault(mapping.local_name.casefold(), []).append((module_name, mapping))
+        for local_key, routes in named_mappings.items():
+            named.add(local_key)
+            local_name = routes[0][1].local_name
+            route_names = tuple(dict.fromkeys(module_name for module_name, _mapping in routes))
+            if local_key in declared or not is_public(local_name, route_names):
+                continue
+            origins = {
+                cls._resolve_reexport_origin(index, module_name, mapping.source) for module_name, mapping in routes
+            }
+            known_origins = {origin for origin in origins if origin[0] != "unknown"}
+            if len(known_origins) > 1 or (not known_origins and len(origins) > 1):
+                continue
+            kind, origin_module, origin_name = next(iter(known_origins or origins))
+            reexports.append(
+                SemanticReexport(
+                    local_name,
+                    origin_module,
+                    origin_name,
+                    module.name,
+                    entity_kind=kind,
+                    access_modules=list(route_names),
+                    declaration_dependency=local_key in dependencies,
+                    explicitly_public=local_key in explicit_public,
                 )
+            )
         reexports.extend(
             cls._wildcard_reexports(
                 module,
@@ -1772,26 +1784,36 @@ class FortranToIRConverter(ClassVisitor):
         if not wildcard:
             return []
         is_public = cls._effective_accessibility(module)
-        carried = {name for used in wildcard for name in cls._module_public_names(used, index)}
+        carried: dict[str, list[FortranModule]] = {}
+        for used in wildcard:
+            for name in cls._module_public_names(used, index):
+                carried.setdefault(name, []).append(used)
         reexports: list[SemanticReexport] = []
-        for name in sorted(carried):
-            if (
-                name in declared
-                or name in named
-                or not is_public(name)
-                or (name in dependencies and name not in explicit_public)
-            ):
+        for name, routes in sorted(carried.items()):
+            route_names = tuple(dict.fromkeys(used.name for used in routes))
+            if name in declared or name in named or not is_public(name, route_names):
                 continue
-            origins = [
+            origins = {
                 origin
-                for used in wildcard
+                for used in routes
                 for origin in (cls._resolve_reexport_origin(index, used.name, name),)
                 if origin[0] != "unknown"
-            ]
+            }
             if len(origins) != 1:
                 continue
-            kind, origin_module, origin_name = origins[0]
-            reexports.append(SemanticReexport(name, origin_module, origin_name, module.name, entity_kind=kind))
+            kind, origin_module, origin_name = next(iter(origins))
+            reexports.append(
+                SemanticReexport(
+                    name,
+                    origin_module,
+                    origin_name,
+                    module.name,
+                    entity_kind=kind,
+                    access_modules=list(route_names),
+                    declaration_dependency=name in dependencies,
+                    explicitly_public=name in explicit_public,
+                )
+            )
         return reexports
 
     @staticmethod

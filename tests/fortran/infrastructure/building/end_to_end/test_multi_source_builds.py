@@ -180,6 +180,7 @@ def _build_contract(
 
 def _assert_combined_runtime(module) -> None:
     assert module.first_math.add_one(np.int32(4)) == np.int32(5)
+    assert module.second_math.add_one is module.first_math.add_one
     assert module.second_math.double_after_add(np.int32(4)) == np.int32(10)
     box = module.shared_types.make_box(np.int32(7))
     assert module.box_ops.box_value(box) == np.int32(7)

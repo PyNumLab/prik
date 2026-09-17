@@ -684,10 +684,11 @@ class SemanticImport:
 
 @dataclass
 class SemanticReexport:
-    """Record one name a module publishes on behalf of the module it imports.
+    """Record one public use-associated name and its declaring entity.
 
-    A re-export names an existing declaration rather than adding one, so it
-    carries only where the declaration lives and what this module calls it.
+    Fortran accessibility determines whether the association exists here.
+    Python export policy separately decides whether the importing namespace
+    publishes it; declaration use must not erase the Fortran association.
     """
 
     local_name: str
@@ -714,6 +715,27 @@ class SemanticReexport:
     that already carry it, and records its kind here rather than an alias that
     would misrepresent it.
     """
+
+    access_modules: list[str] = field(default_factory=list)
+    """Immediate used-module routes through which the local name is accessible."""
+
+    declaration_dependency: bool = False
+    """Whether this module uses the local name to express a declaration."""
+
+    explicitly_public: bool = False
+    """Whether an entity-list ``public`` statement names the local name."""
+
+    python_exported: bool | None = None
+    """Completed post-IR decision to publish this association to Python."""
+
+    def publishes_to_python(self) -> bool:
+        """Return the completed Python publication decision."""
+        if self.python_exported is None:
+            raise ValueError(
+                f"Python re-export policy for {self.module}.{self.local_name} is incomplete; "
+                "run complete_python_export_policy before consuming it"
+            )
+        return self.python_exported
 
 
 @dataclass

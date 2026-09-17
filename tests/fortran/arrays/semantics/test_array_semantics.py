@@ -9,6 +9,7 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
 )
 from prik.semantics.models import SemanticExpressionCallable
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import PyiPrinter
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
@@ -171,6 +172,7 @@ end module inquiry_mod
         "2 if source.shape[1] > 0 else 1",
         "2 + source.shape[1] - 1 if source.shape[1] > 0 else 0",
     ]
+    complete_python_export_policy(module)
     generated = PyiPrinter().emit(module)
     assert "source.shape[0], max(1, source.shape[1]), source.size, 2 ** source.ndim" in generated
     assert "2 if source.shape[1] > 0 else 1" in generated
@@ -226,6 +228,7 @@ end module expression_owner
         ],
     ]
 
+    complete_python_export_policy(module)
     generated = PyiPrinter().emit(module)
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array
@@ -267,6 +270,7 @@ end module expression_owner
 
     assert array.expression_callables[0][0].native_scope == "extent_helpers"
 
+    complete_python_export_policy(module)
     generated = PyiPrinter().emit(module)
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array

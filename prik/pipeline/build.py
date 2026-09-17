@@ -77,6 +77,7 @@ from prik.policy.native_array_handles import (
 )
 from prik.policy.completion import _DEFERRED_C_DIRECT_DIAGNOSTIC_CODES, complete_semantic_policies
 from prik.policy.models import FunctionWrapperPolicy, NativeEntrypointAction
+from prik.policy.exports import complete_reexport_publication_policy
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.planning import NativeGeneratedCodeGroupPlan, WrapperPlanner
@@ -2362,6 +2363,7 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
     procedures receive the root namespace; private declarations receive none.
     """
     for module in modules:
+        complete_reexport_publication_policy(module, contract_named=False)
         module.metadata[PYTHON_EXPORTS_PREPARED_METADATA] = True
         namespace = (module.name.casefold(),) if module.origin.source_kind == "module" else ()
         for declaration in _module_declarations(module):
@@ -2381,6 +2383,8 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
     }
     for module in modules:
         for reexport in module.reexports:
+            if not reexport.publishes_to_python():
+                continue
             if reexport.entity_kind != "variable":
                 continue
             variable = variables_by_identity.get(

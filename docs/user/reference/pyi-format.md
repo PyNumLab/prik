@@ -220,12 +220,16 @@ object state remain shared. A `Final[...]` parameter is published with the same
 constant semantics in every namespace. A generic is a dispatch surface rather
 than one object and remains publishable only by its declaring namespace.
 
-PRIK writes the list into every generated contract, holding what the Fortran
-source publishes: the module's own public declarations, explicitly public
-imports, and other accessible imported names that are not dependencies of its
-own declarations. For example, a type imported only to declare an argument
-stays available as an import in the contract but is not published unless the
-module names it in a `public` statement. Edit the list freely.
+PRIK writes the list into every generated contract. It includes the module's
+own public declarations, explicitly public imports, and accessible imported
+names that are not dependencies of its own declarations. For example, a type
+imported only to declare an argument stays available as an import in the
+contract but is not published to Python unless the module names it in a
+`public` statement. This Python publication choice does not change the name's
+Fortran accessibility through the importing module. Fortran accessibility may
+also name an imported module itself: making every route to an entity private
+withholds it, while any explicitly public route keeps it accessible. Edit the
+list freely.
 
 | Edit | Effect |
 | --- | --- |

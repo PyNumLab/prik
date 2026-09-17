@@ -34,7 +34,36 @@
       },
       "overload_sets": [],
       "prototypes": [],
-      "reexports": [],
+      "reexports": [
+        {
+          "access_modules": [
+            "iso_c_binding"
+          ],
+          "declaration_dependency": true,
+          "entity_kind": "unknown",
+          "explicitly_public": false,
+          "local_name": "c_int",
+          "module": "constants_mod",
+          "origin_module": "iso_c_binding",
+          "python_exported": null,
+          "python_name": "",
+          "source_name": "c_int"
+        },
+        {
+          "access_modules": [
+            "iso_c_binding"
+          ],
+          "declaration_dependency": true,
+          "entity_kind": "unknown",
+          "explicitly_public": false,
+          "local_name": "c_double",
+          "module": "constants_mod",
+          "origin_module": "iso_c_binding",
+          "python_exported": null,
+          "python_name": "",
+          "source_name": "c_double"
+        }
+      ],
       "variables": [
         {
           "default_value": "100",

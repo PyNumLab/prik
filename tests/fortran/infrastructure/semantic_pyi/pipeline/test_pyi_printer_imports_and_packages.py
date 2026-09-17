@@ -13,6 +13,7 @@ from prik.pipeline.pyi import (
     opaque_dependency_modules,
     pyi_text_to_semantic_module as _parse_pyi_text,
 )
+from prik.policy.exports import complete_python_export_policy
 from prik.semantics import fortran_file_to_semantic_modules
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
@@ -929,6 +930,35 @@ end module surface_consumer
     assert '__all__ = ["Box", "scale_value"]' in stubs["surface_home"]
 
 
+def test_generated_contract_honors_used_module_accessibility_routes():
+    """A module-name access statement controls names carried through that route."""
+    modules = fortran_file_to_semantic_modules(
+        parse_fortran_source("""
+module route_home
+integer :: x
+end module route_home
+
+module route_hidden
+use route_home
+private :: route_home
+end module route_hidden
+
+module route_visible
+use route_home
+private
+public :: route_home
+end module route_visible
+""")
+    )
+
+    stubs = emit_module_stubs(modules, normalize_public_names=True)
+
+    assert stubs["route_hidden"].rstrip().endswith("__all__ = []")
+    assert "from .route_home import x" not in stubs["route_hidden"]
+    assert "from .route_home import x" in stubs["route_visible"]
+    assert stubs["route_visible"].rstrip().endswith('__all__ = ["x"]')
+
+
 def test_a_published_intrinsic_name_states_no_contract_import():
     """Publishing a name from an intrinsic module publishes nothing here.
 
@@ -948,6 +978,7 @@ end module kinds_mod
 """
 
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
+    complete_python_export_policy(module)
     code = emit_module(module, normalize_public_names=True)
 
     assert [reexport.origin_module for reexport in module.reexports] == ["iso_fortran_env", "iso_fortran_env"]

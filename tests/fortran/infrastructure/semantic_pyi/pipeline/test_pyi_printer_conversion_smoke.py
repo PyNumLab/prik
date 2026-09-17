@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import emit_module
 
 from tests.fortran._support.fixture_outputs import parse_fixture
@@ -24,4 +25,5 @@ def test_pyi_printer_conversion_smoke(fixture: Path):
 
     for module in parsed.modules:
         semantic_module = fortran_module_to_semantic_module(module)
+        complete_python_export_policy(semantic_module)
         emit_module(semantic_module)

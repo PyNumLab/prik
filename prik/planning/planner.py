@@ -596,6 +596,8 @@ class WrapperPlanner(ClassVisitor):
         """
         grouped = defaultdict(list)
         for reexport in module.reexports:
+            if not reexport.publishes_to_python():
+                continue
             if reexport.entity_kind not in _ALIASABLE_REEXPORT_KINDS:
                 continue
             source_namespace = tuple(part.casefold() for part in reexport.origin_module.split(".") if part)

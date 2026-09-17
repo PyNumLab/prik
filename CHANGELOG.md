@@ -17,9 +17,15 @@ release tags add a leading `v` to the package version.
   longer move between facades.
 
 - Generated Fortran contracts distinguish a module's dependencies from its
-  re-exports. An implicitly accessible imported name used by that module's own
-  declarations remains available to express them but is not published from the
-  importing module; naming it in a `public` statement still publishes it.
+  Python publications without changing Fortran accessibility. An implicitly
+  public imported name used by that module's own declarations remains
+  semantically reachable through the module and available to express the
+  contract, but reaches Python there only when named in a `public` statement.
+
+- Fortran use-association accessibility now honors `public` and `private`
+  statements that name an imported module, including entities reached through
+  multiple routes. Plain `use` discovery also carries named generic and
+  abstract interfaces through the semantic accessibility graph.
 
 - A contract may publish a module variable only through a facade, leaving the
   namespace declaring it out of Python entirely. Owning the one native variable

@@ -6,4 +6,4 @@ def double_after_add(
     value: Int32
 ) -> Int32: ...
 
-__all__ = ["double_after_add"]
+__all__ = ["double_after_add", "add_one"]
