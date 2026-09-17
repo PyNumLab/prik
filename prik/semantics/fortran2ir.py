@@ -43,6 +43,7 @@ from prik.utilities.declaration_expressions import (
     canonicalize_declaration_extent,
     declaration_expression_calls,
     declaration_expression_identifiers,
+    outside_character_literals,
     fortran_extent_to_python,
     is_declaration_expression_helper,
     split_dimension_bounds,
@@ -288,7 +289,13 @@ def _resolve_compile_time_text(text: str, compile_time_values: dict[str, str]) -
         token = match.group(0)
         return compile_time_values.get(token.lower(), token)
 
-    return re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*\b", replace_symbol, raw)
+    def substitute(fragment: str) -> str:
+        return re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*\b", replace_symbol, fragment)
+
+    # A character literal's contents are data, so a symbol spelled inside one
+    # is not a reference to substitute: ``len("runtime")`` measures seven
+    # characters whatever value ``runtime`` names.
+    return outside_character_literals(raw, substitute)
 
 
 # Language-owned modules are contract vocabulary, not sibling contract leaves.

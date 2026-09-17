@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generated contract states a character constant's own contents. Respelling
+  the Fortran spellings Python writes differently reached inside the literal
+  too, so `character(len=6), parameter :: text = ".true."` was published as
+  `Final[String[6]] = 'True'` -- a different value, and one contradicting its
+  own declared length. A logical or a real written the same way outside quotes
+  is respelled as before.
+
 - A raw address contract accepts an extent built from the declaration calls
   PRIK supports, so `Addr(Float64[max(n, m)])` and `Addr(Float64[abs(n)])` are
   no longer refused as unresolved. Deciding that by scanning the extent's text

@@ -600,3 +600,15 @@ end module b_mod
     importing = next(module for module in modules if module.name == "b_mod")
 
     assert [(item.local_name, item.declaration_dependency) for item in importing.reexports] == [("box", True)]
+
+
+def test_a_compile_time_symbol_is_not_substituted_inside_a_character_literal():
+    """A literal's contents are data, so a symbol spelled there is not a reference."""
+    from prik.semantics.fortran2ir import _resolve_compile_time_text
+
+    values = {"runtime": "4"}
+
+    assert _resolve_compile_time_text('len("runtime")', values) == 'len("runtime")'
+    # A reference outside the literal is still resolved.
+    assert _resolve_compile_time_text("runtime + 1", values) == "4 + 1"
+    assert _resolve_compile_time_text('len("runtime") + runtime', values) == 'len("runtime") + 4'

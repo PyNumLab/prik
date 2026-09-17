@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 __all__ = (
@@ -61,7 +61,7 @@ def is_strided_extent(expression: str) -> bool:
 
 
 _ASSUMED_RANK_MARKER = "..."
-_QUOTED_LITERAL = re.compile(r"'[^']*'|\"[^\"]*\"")
+_QUOTED_LITERAL = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
 _IDENTIFIER_PATTERN = r"\b[A-Za-z_]\w*\b"
 _SELECTOR_KEYWORD = re.compile(r"\s*[A-Za-z_]\w*\s*=(?!=)")
 # Every extent whose value only exists at run time, assumed rank included.
@@ -655,8 +655,29 @@ def _python_parseable_fortran_expression(expression: str) -> str:
     translation. Unknown names and calls are intentionally retained for later
     provenance or policy diagnostics.
     """
-    text = expression.strip()
-    text = _replace_fortran_array_constructors(text)
+    text = _replace_fortran_array_constructors(expression.strip())
+    return outside_character_literals(text, _normalized_fortran_lexemes)
+
+
+def outside_character_literals(text: str, transform: Callable[[str], str]) -> str:
+    """Apply one text transform to everything but the character literals.
+
+    A literal's contents are its value, so lexical translation has to leave
+    them alone: ``len(".true.")`` measures six characters whatever ``.true.``
+    means outside quotes.
+    """
+    pieces: list[str] = []
+    position = 0
+    for literal in _QUOTED_LITERAL.finditer(text):
+        pieces.append(transform(text[position : literal.start()]))
+        pieces.append(literal.group(0))
+        position = literal.end()
+    pieces.append(transform(text[position:]))
+    return "".join(pieces)
+
+
+def _normalized_fortran_lexemes(text: str) -> str:
+    """Rewrite Fortran spellings that Python spells differently."""
     text = re.sub(r"(?i)(?<=\d)_[A-Za-z]\w*\b", "", text)
     text = re.sub(r"(?i)(?<=\d)_[0-9]+\b", "", text)
     text = re.sub(r"(?i)\b(\d+(?:\.\d*)?)[dD]([+-]?\d+)\b", r"\1e\2", text)
@@ -666,8 +687,7 @@ def _python_parseable_fortran_expression(expression: str) -> str:
         text = re.sub(re.escape(source), replacement, text, flags=re.IGNORECASE)
     for source, replacement in _FORTRAN_LOGICAL_OPERATORS.items():
         text = re.sub(re.escape(source), replacement, text, flags=re.IGNORECASE)
-    text = text.replace("/=", "!=")
-    return text.replace("%", ".")
+    return text.replace("/=", "!=").replace("%", ".")
 
 
 def _qualified_call_name(node: ast.AST) -> str | None:

@@ -353,3 +353,15 @@ def test_each_selector_in_one_declaration_is_read_separately():
 def test_a_comparison_is_not_read_as_a_selector():
     """`==` is an operator, so both sides are part of the expression."""
     assert set(declaration_expression_identifiers("a == b")) == {"a", "b"}
+
+
+def test_lexical_translation_leaves_character_literals_alone():
+    """A literal's contents are its value, whatever they spell outside quotes."""
+    from prik.utilities.declaration_expressions import _python_parseable_fortran_expression
+
+    assert _python_parseable_fortran_expression('len(".true.")') == 'len(".true.")'
+    assert _python_parseable_fortran_expression('len("a%b")') == 'len("a%b")'
+    assert _python_parseable_fortran_expression('len("1d2")') == 'len("1d2")'
+    # Everything outside the literal is still translated.
+    assert _python_parseable_fortran_expression('obj%field + len("a%b")') == 'obj.field + len("a%b")'
+    assert _python_parseable_fortran_expression(".true.") == "True"

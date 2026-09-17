@@ -20,6 +20,7 @@ from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
 from prik.naming.policy import normalize_public_name, preserves_source_case
+from prik.utilities.declaration_expressions import outside_character_literals
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
@@ -1407,19 +1408,31 @@ class PyiPrinter(ClassVisitor):
 
     @staticmethod
     def _python_literal_text(value: str | None) -> str | None:
-        """Handle python literal text for the current generation context."""
+        """Return the Python spelling of one Fortran initializer.
+
+        Only the text outside character literals is respelled. A literal's
+        contents are the constant's value, so a character parameter holding
+        ``".true."`` keeps six characters and one holding ``"1d2"`` keeps the
+        ``d`` it was written with, while a logical or a real written the same
+        way outside quotes is respelled as Python writes it.
+        """
         if value is None:
             return None
         text = str(value).strip()
         if not text:
             return None
-        text = re.sub(r"\.true\.", "True", text, flags=re.IGNORECASE)
-        text = re.sub(r"\.false\.", "False", text, flags=re.IGNORECASE)
-        text = re.sub(r"(?<=\d)[dD](?=[+-]?\d)", "e", text)
+        text = outside_character_literals(text, PyiPrinter._respelled_fortran_literal)
         try:
             return ast.unparse(ast.parse(text, mode="eval").body)
         except SyntaxError:
             return None
+
+    @staticmethod
+    def _respelled_fortran_literal(text: str) -> str:
+        """Rewrite the Fortran literal spellings Python spells differently."""
+        text = re.sub(r"\.true\.", "True", text, flags=re.IGNORECASE)
+        text = re.sub(r"\.false\.", "False", text, flags=re.IGNORECASE)
+        return re.sub(r"(?<=\d)[dD](?=[+-]?\d)", "e", text)
 
     @staticmethod
     def _fortran_literal_text(value: str | None) -> str | None:
