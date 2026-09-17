@@ -44,7 +44,7 @@ from prik.parsers.fortran.models import (
     FortranUseMapping,
     FortranVariable,
 )
-from prik.parsers.fortran.type_resolver import extract_kind_from_type_spec
+from prik.parsers.fortran.type_resolver import extract_character_selector, extract_kind_from_type_spec
 from prik.parsers.fortran.utils import split_csv
 
 _PARSER_ARCHITECTURE_GUIDE = """
@@ -367,6 +367,7 @@ class _Declaration:
     explicit_visibility: str | None = None
     target_kind_expression: str | None = None
     character_length_syntax: bool = False
+    character_length_expression: str | None = None
     declared_storage_bits: int | None = None
 
 
@@ -4285,8 +4286,14 @@ class FortranParser(ClassVisitor):
             base_type,
             extract_kind_from_type_spec(base_type, type_spec),
         )
-        if base_type == "character" and type_spec and re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-            declaration.character_length_syntax = True
+        if base_type == "character" and type_spec:
+            # The selector's two expressions are separated while the top-level
+            # items are known, so no later stage has to split them back apart.
+            length, _kind = extract_character_selector(type_spec)
+            if length is not None:
+                declaration.character_length_expression = length
+            if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
+                declaration.character_length_syntax = True
         return declaration
 
     @staticmethod
@@ -4310,8 +4317,12 @@ class FortranParser(ClassVisitor):
         base_type, type_spec, _tail = intrinsic
         if base_type in {"double precision", "double complex"}:
             var._target_kind_expression = "kind(1.0d0)"
-        elif base_type == "character" and type_spec and re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-            var._character_length_syntax = True
+        elif base_type == "character" and type_spec:
+            length, _kind = extract_character_selector(type_spec)
+            if length is not None:
+                var._character_length_expression = length
+            if re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
+                var._character_length_syntax = True
 
     @staticmethod
     def _apply_declaration_attributes(
@@ -4408,6 +4419,8 @@ class FortranParser(ClassVisitor):
             arg._target_kind_expression = declaration.target_kind_expression
         if declaration.character_length_syntax:
             arg._character_length_syntax = True
+        if declaration.character_length_expression is not None:
+            arg._character_length_expression = declaration.character_length_expression
         if declaration.declared_storage_bits is not None:
             arg._declared_storage_bits = declaration.declared_storage_bits
         if declaration.polymorphic:
@@ -4778,12 +4791,15 @@ class FortranParser(ClassVisitor):
         for arg in sig.arguments:
             if arg.kind:
                 arg.kind = self._resolve_kind_expression(arg.kind, local_params, resolver=local_resolver)
+            self._resolve_character_length(arg, local_params, resolver=local_resolver)
             if arg.shape:
                 arg.shape = [local_resolver.resolve(dim) for dim in arg.shape]
             if arg.base_type == "unknown" and not state.implicit_none:
                 arg.base_type = self._infer_implicit_base_type(arg.name)
         if sig.result and sig.result.kind:
             sig.result.kind = self._resolve_kind_expression(sig.result.kind, local_params, resolver=local_resolver)
+        if sig.result is not None:
+            self._resolve_character_length(sig.result, local_params, resolver=local_resolver)
         return self._collect_relevant_local_params(sig, local_params)
 
     def _reconcile_procedure_local_declarations(
@@ -5340,6 +5356,7 @@ class FortranParser(ClassVisitor):
                     visible_symbols,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(argument, visible_symbols, resolver=resolver)
             if resolve_shapes and argument.shape:
                 argument.shape = [resolver.resolve(dimension) for dimension in argument.shape]
         if signature.result and signature.result.kind:
@@ -5410,6 +5427,7 @@ class FortranParser(ClassVisitor):
                     visible,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(variable, visible, resolver=resolver)
             if variable.shape:
                 variable.shape = [resolver.resolve(dimension) for dimension in variable.shape]
                 variable.lbound, variable.ubound = FortranParser._extract_bounds(variable.shape)
@@ -5442,9 +5460,31 @@ class FortranParser(ClassVisitor):
                     visible,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(field, visible, resolver=resolver)
             if field.shape:
                 field.shape = [resolver.resolve(dimension) for dimension in field.shape]
                 field.lbound, field.ubound = FortranParser._extract_bounds(field.shape)
+
+    @staticmethod
+    def _resolve_character_length(
+        variable: FortranVariable,
+        symbols: Mapping[str, str],
+        *,
+        resolver: _CompileTimeResolver | None = None,
+    ) -> None:
+        """Resolve a separated character length against the kind's own symbols.
+
+        The length is recorded apart from the kind, so it is resolved wherever
+        the kind is: a declaration written ``character(len=fixed)`` states the
+        value ``fixed`` names, the same as one written ``character(fixed)``.
+        """
+        declared = getattr(variable, "_character_length_expression", None)
+        if not declared:
+            return
+        active_resolver = resolver or _CompileTimeResolver(symbols)
+        variable._character_length_expression = active_resolver.resolve(
+            FortranParser._resolve_symbol_reference(str(declared), symbols)
+        )
 
     @staticmethod
     def _resolve_kind_expression(

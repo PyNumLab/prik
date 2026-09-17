@@ -255,6 +255,16 @@ class FortranVariable:
         return bool(getattr(self, "_character_length_syntax", False))
 
     @property
+    def character_length_expression(self) -> str | None:
+        """The length a character declaration states, separated from its kind.
+
+        A character selector carries two expressions, either of which may hold
+        commas of its own, so the parser records them apart rather than leaving
+        a later stage to split one joined spelling.
+        """
+        return getattr(self, "_character_length_expression", None)
+
+    @property
     def polymorphic(self) -> bool:
         """Whether this variable was declared with Fortran ``class(...)``."""
         return bool(getattr(self, "_fortran_polymorphic", False))

@@ -541,14 +541,16 @@ class FortranToIRConverter(ClassVisitor):
     def _character_length(self, var: FortranVariable) -> str:
         """Return the resolved character length recorded by a parsed declaration.
 
-        The helper reads the parser's mixed kind/length spelling, preferring an
-        explicit ``len=`` fragment and otherwise preserving legacy length syntax;
-        declarations with neither continue to use Fortran's length-one default.
+        The parser separates a character selector's length from its kind, so
+        the length is read from that fact rather than found again inside a
+        joined spelling, where an expression holding a comma of its own -- a
+        ``len=max(4, n)`` -- would be cut short. A declaration stating no
+        length continues to use Fortran's length-one default.
         """
+        declared = getattr(var, "character_length_expression", None)
+        if declared:
+            return self._resolve_compile_time_text(str(declared)).strip()
         raw = self._resolve_compile_time_text(str(var.kind or "")).strip()
-        length_match = re.search(r"(?:^|,)\s*len\s*=\s*([^,]+)", raw, re.IGNORECASE)
-        if length_match is not None:
-            return length_match.group(1).strip()
         if var.character_length_syntax and raw:
             return raw
         return "1"

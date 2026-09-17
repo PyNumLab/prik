@@ -49,6 +49,35 @@ def extract_kind_from_type_spec(base_type: str, type_spec: str) -> str | None:
     return None
 
 
+def extract_character_selector(type_spec: str) -> tuple[str | None, str | None]:
+    """Return one character declaration's length and kind expressions.
+
+    The selector carries two independent expressions, either of which may
+    contain commas of its own, so they are separated here where the top-level
+    items are already known rather than rediscovered from a joined spelling.
+    A positional specifier states the length, which is what ``character(8)``
+    and ``character(*)`` mean.
+    """
+    if not type_spec:
+        return (None, None)
+    inside = type_spec[1:-1].strip()
+    if not inside:
+        return (None, None)
+    length: str | None = None
+    kind: str | None = None
+    for item in split_csv(inside):
+        key, separator, value = item.partition("=")
+        if not separator:
+            length = length or item.strip() or None
+            continue
+        keyword = key.strip().lower()
+        if keyword == "len":
+            length = value.strip() or None
+        elif keyword == "kind":
+            kind = value.strip() or None
+    return (length, kind)
+
+
 if __name__ == "__main__":
     examples = [
         ("integer", "(4)"),
