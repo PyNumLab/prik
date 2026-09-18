@@ -863,3 +863,71 @@ end module outer_mod
     reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
     assert reexports["x"].entity_kind == "unknown"
     assert reexports["x"].origin_module == "middle_mod"
+
+
+def test_a_rename_without_only_still_carries_the_rest_of_the_module(tmp_path: Path):
+    """Only an `only` list narrows a `use`; a rename just binds another name.
+
+    `use a_mod, p => q` accesses that entity as `p` and still carries whatever
+    else `a_mod` offers. Reading a non-empty mapping list as an `only` list
+    dropped every other name the module publishes.
+    """
+    modules = _project_modules(
+        tmp_path,
+        """\
+module a_mod
+  implicit none
+  integer :: q = 1
+  integer :: other = 2
+end module a_mod
+
+module b_mod
+  use a_mod, p => q
+  implicit none
+end module b_mod
+""",
+    )
+
+    reexports = {item.local_name: (item.origin_module, item.source_name) for item in modules["b_mod"].reexports}
+    assert reexports == {"p": ("a_mod", "q"), "other": ("a_mod", "other")}
+
+
+def test_an_only_list_still_carries_nothing_else(tmp_path: Path):
+    """The narrowing form keeps narrowing."""
+    modules = _project_modules(
+        tmp_path,
+        """\
+module a_mod
+  implicit none
+  integer :: q = 1
+  integer :: other = 2
+end module a_mod
+
+module b_mod
+  use a_mod, only : q
+  implicit none
+end module b_mod
+""",
+    )
+
+    assert {item.local_name for item in modules["b_mod"].reexports} == {"q"}
+
+
+def test_a_renamed_entity_is_not_also_carried_under_its_own_name(tmp_path: Path):
+    """`use m, p => q` accesses the entity as `p`, so `q` names nothing here."""
+    modules = _project_modules(
+        tmp_path,
+        """\
+module a_mod
+  implicit none
+  integer :: q = 1
+end module a_mod
+
+module b_mod
+  use a_mod, p => q
+  implicit none
+end module b_mod
+""",
+    )
+
+    assert {item.local_name for item in modules["b_mod"].reexports} == {"p"}

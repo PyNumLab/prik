@@ -347,6 +347,15 @@ class FortranUseMapping:
     source: str
     target: str | None = None
 
+    only: bool = True
+    """Whether the ``use`` listing this name narrowed to an ``only`` list.
+
+    ``use m, only : x`` brings in ``x`` alone, while ``use m, p => q`` renames
+    one entity and still carries everything else the module offers. Both record
+    a mapping, so what separates them is kept here rather than inferred from a
+    list being non-empty.
+    """
+
     def __eq__(self, other: object) -> bool:
         if isinstance(other, str):
             return self.local_name == other

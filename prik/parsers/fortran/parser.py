@@ -5868,7 +5868,7 @@ class FortranParser(ClassVisitor):
             else:
                 source = token
                 target = None
-            mappings.append(FortranUseMapping(source=source, target=target))
+            mappings.append(FortranUseMapping(source=source, target=target, only=only_match is not None))
         return match.group("module"), mappings
 
 

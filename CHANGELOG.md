@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A `use` that only renames still carries the rest of its module. The parser
+  recorded `use m, p => q` exactly as `use m, only : p => q`, so everything
+  else `m` publishes was dropped, and the renamed entity was also still
+  reachable under its own spelling. A mapping now records whether its statement
+  narrowed to an `only` list, which is what separates the two forms.
+
 - A contract's `__all__` decides what it publishes when it is read back. A
   prototype and a generic are written into the body so annotations and dispatch
   resolve, and both read back public by default, so a contract that withheld

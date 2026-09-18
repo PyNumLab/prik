@@ -11,11 +11,13 @@
         "iso_c_binding": [
           {
             "source": "c_int",
-            "target": null
+            "target": null,
+            "only": true
           },
           {
             "source": "c_double",
-            "target": null
+            "target": null,
+            "only": true
           }
         ]
       },
@@ -96,11 +98,13 @@
         "iso_c_binding": [
           {
             "source": "c_int",
-            "target": null
+            "target": null,
+            "only": true
           },
           {
             "source": "c_double",
-            "target": null
+            "target": null,
+            "only": true
           }
         ]
       },

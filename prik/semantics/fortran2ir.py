@@ -1932,15 +1932,17 @@ class FortranToIRConverter(ClassVisitor):
         is_public = cls._effective_accessibility(module)
         offered: dict[str, set[str]] = {name: set() for name in cls._module_declared_names(module)}
         for module_name, mappings in module.uses.items():
-            if mappings:
-                for mapping in mappings:
-                    offered.setdefault(mapping.local_name.casefold(), set()).add(module_name)
+            for mapping in mappings:
+                offered.setdefault(mapping.local_name.casefold(), set()).add(module_name)
+            if not cls._carries_every_public_name(mappings):
                 continue
             used = index.get(module_name.casefold())
             if used is None:
                 continue
+            renamed_away = cls._renamed_away_names(mappings)
             for name in cls._module_public_names(used, index, seen):
-                offered.setdefault(name, set()).add(module_name)
+                if name not in renamed_away:
+                    offered.setdefault(name, set()).add(module_name)
         return {name for name, routes in offered.items() if is_public(name, routes)}
 
     @staticmethod
@@ -1965,6 +1967,25 @@ class FortranToIRConverter(ClassVisitor):
         if distinct and all(kind == "generic" for kind, _module, _name in distinct):
             return distinct[0]
         return None
+
+    @staticmethod
+    def _carries_every_public_name(mappings: list[FortranUseMapping]) -> bool:
+        """Return whether one ``use`` brings in more than the names it lists.
+
+        Only an ``only`` list narrows a ``use``. A bare ``use`` carries every
+        public name, and so does one that merely renames: ``use m, p => q``
+        binds ``p`` and still carries everything else ``m`` offers.
+        """
+        return not mappings or any(not mapping.only for mapping in mappings)
+
+    @staticmethod
+    def _renamed_away_names(mappings: list[FortranUseMapping]) -> set[str]:
+        """Return the names a rename makes unreachable under their own spelling.
+
+        ``use m, p => q`` accesses that entity as ``p``; ``q`` does not name it
+        here, so the carried set excludes it.
+        """
+        return {mapping.source.casefold() for mapping in mappings if mapping.target}
 
     @classmethod
     def _name_routes(
@@ -1991,7 +2012,7 @@ class FortranToIRConverter(ClassVisitor):
             if mapping.local_name.casefold() == folded
         ]
         for used_name, mappings in module.uses.items():
-            if mappings:
+            if not cls._carries_every_public_name(mappings) or folded in cls._renamed_away_names(mappings):
                 continue
             used = index.get(used_name.casefold())
             if used is not None and folded in cls._module_public_names(used, index):
@@ -2016,13 +2037,15 @@ class FortranToIRConverter(ClassVisitor):
             for mapping in mappings:
                 names.setdefault(mapping.local_name.casefold(), mapping.local_name)
         for used_name, mappings in module.uses.items():
-            if mappings:
+            if not cls._carries_every_public_name(mappings):
                 continue
             used = index.get(used_name.casefold())
             if used is None:
                 continue
+            renamed_away = cls._renamed_away_names(mappings)
             for name in sorted(cls._module_public_names(used, index)):
-                names.setdefault(name, name)
+                if name not in renamed_away:
+                    names.setdefault(name, name)
         return tuple(names.values())
 
     def _module_reexports(
