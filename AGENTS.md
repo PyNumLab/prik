@@ -118,6 +118,33 @@ when the derivation keeps a ledger: two allocators fed the same declarations in
 a different order produce the same set of names attached to different
 declarations, which every per-stage test still passes.
 
+A fix removes an interpretation path or it does not land. "The regression is
+fixed and the tests pass" is half an answer; the other half is **did this delete
+a way of deciding, or add one?** A representation that has to mean several
+things is the usual source of these bugs, and widening it with another flag or
+another fallback leaves every existing reader intact and adds a reader. So when
+a record cannot express a case, replace the record; when a lookup is reached by
+two key shapes, finish the migration to one; when a completed decision is
+ambiguous with an absent one, make completion record it; when a consumer
+special-cases what a plan should have decided, move the decision into the plan.
+Introducing a record, a small class, or a named reading is the preferred move
+when it lets a reader see the rule in one place, and it does not need a separate
+mandate: reach for it whenever it fixes the bug in fewer lines than another
+branch would, and change an existing structure freely when replacing it is what
+makes the code read more simply. Prefer that to a new condition threaded through
+existing paths, which each reader then has to hold in mind. The one condition is
+that the new thing is accepted only if it deletes the branches and helpers it
+replaces — moving them to another module, or wrapping them behind a new name,
+does not count. The practical test before committing: the file you changed
+should be no harder to read than before, and the count of places that answer
+your question should have gone down.
+
+Keep the regressions while doing it. The tests that pin bare, `only`, renamed
+and repeated `use` forms, route accessibility, transitive re-exports, merged
+generics, prototype collisions, exact `__all__`, and source-build versus
+generated-`.pyi` replay are the specification of what PRIK supports; simplify
+what sits under them, never by dropping the cases they cover.
+
 Where one decision reaches users through two artifacts, a test must compare
 those artifacts rather than only check each one. A built extension and the
 `.pyi` contract describing it are one such pair: each had passing tests while
