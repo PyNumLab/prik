@@ -108,6 +108,21 @@ class ScopeUses:
                     names.setdefault(name.casefold(), name)
         return tuple(names.values())
 
+    def unresolved_routes_for(self, local_name: str, offered: OfferedNames) -> tuple[UseRoute, ...]:
+        """Return possible whole-module routes whose names cannot be enumerated.
+
+        A plain ``use`` of a module this project never read carries names none
+        of which can be listed. The route stays possible unless a rename took
+        this spelling away; the consuming entity category decides whether that
+        uncertainty makes the name ambiguous or permits an opaque fallback.
+        """
+        folded = local_name.casefold()
+        return tuple(
+            UseRoute(module, local_name)
+            for module in self.modules()
+            if self.imports_all(module) and offered(module) is None and folded not in self._renamed_away(module)
+        )
+
     def _renamed_away(self, module: str) -> frozenset[str]:
         """Return the names a rename reaches, which are not reachable as written."""
         return frozenset(item.source.casefold() for item in self.mappings(module) if item.target)

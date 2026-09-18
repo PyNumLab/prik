@@ -14,7 +14,9 @@ release tags add a leading `v` to the package version.
   statements spelling one module differently (`use DEP` beside `use dep`) were
   also held apart, and a local name reached by two entities -- `use dep, x => y`
   where `dep` also publishes `x` -- silently resolved to one of them instead of
-  being reported ambiguous.
+  being reported ambiguous. Callback interfaces, declaration-expression
+  procedures, and derived types now reconcile the same candidate routes rather
+  than interpreting renames independently.
 
 - A type-bound defined assignment updates the method it names. Making a
   specific's identity structural left two helpers looking the original up by

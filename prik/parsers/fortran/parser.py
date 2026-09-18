@@ -5273,7 +5273,7 @@ class FortranParser(ClassVisitor):
     @staticmethod
     def _compile_time_symbols_for_scope(
         owner_name: str | None,
-        uses: Mapping[str, list[FortranUseMapping]],
+        uses: Iterable[FortranUseStatement],
         symbols: _CompileTimeSymbols,
     ) -> dict[str, str]:
         """Return a mutable flat symbol map visible to one parsed scope.

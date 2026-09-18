@@ -361,6 +361,7 @@ class FortranToIRConverter(ClassVisitor):
         self.wrapped_derived_types = {
             (str(module).lower(), str(name).lower()) for module, name in (wrapped_derived_types or [])
         }
+        self._known_modules: set[str] = {module for module, _name in self.wrapped_derived_types}
         self._known_procedures: set[tuple[str, str]] = set()
         self.type_facts = {
             (str(base_type).lower(), None if kind is None else str(kind).lower()): dict(fact)
@@ -419,10 +420,12 @@ class FortranToIRConverter(ClassVisitor):
         supplies modules parsed from other files so that an abstract interface
         imported across files resolves the same way it does for a project.
         """
-        converter = self._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
+        siblings = tuple(sibling_modules)
+        converter = self._with_additional_known_modules(module.name for module in (*siblings, *parsed_file.modules))
+        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
         converter = converter._with_additional_abstract_types(self._abstract_types_from_file(parsed_file))
-        index = self._callback_module_index(sibling_modules, parsed_file.modules)
+        index = self._callback_module_index(siblings, parsed_file.modules)
         modules = [converter.visit(module, module_index=index) for module in parsed_file.modules]
         if parsed_file.procedures:
             modules.append(
@@ -442,13 +445,14 @@ class FortranToIRConverter(ClassVisitor):
         while imported callback interfaces are resolved against the project.
         The returned module ordering matches the input file and parser order.
         """
-        converter = self._with_additional_wrapped_types(self._wrapped_types_from_project(project))
-        converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
-        converter = converter._with_additional_abstract_types(self._abstract_types_from_project(project))
         index = self._callback_module_index(
             project.modules.values(),
             (module for parsed_file in project.files for module in parsed_file.modules),
         )
+        converter = self._with_additional_known_modules(module.name for module in index.values())
+        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_project(project))
+        converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
+        converter = converter._with_additional_abstract_types(self._abstract_types_from_project(project))
         semantic_modules = []
         for parsed_file in project.files:
             file_converter = converter._with_additional_wrapped_types(converter._wrapped_types_from_file(parsed_file))
@@ -887,39 +891,58 @@ class FortranToIRConverter(ClassVisitor):
         readable route answer for it.
         """
         declared_here = set(visible)
-        candidates: dict[str, set[tuple[str | None, str] | None]] = {}
         scope = ScopeUses(uses)
-        for module_name in scope.modules():
-            source_module = modules.get(module_name.casefold())
-            if source_module is None:
-                for mapping in scope.mappings(module_name):
-                    candidates.setdefault(mapping.local_name.casefold(), set()).add(None)
+        exported = {
+            module_name: cls._module_callback_interfaces(modules, source, seen=seen, exported_only=True)
+            for module_name in scope.modules()
+            if (source := modules.get(module_name.casefold())) is not None
+        }
+        for name in scope.accessible_names(lambda module: exported.get(module)):
+            reached = [
+                cls._reached_callback_interface(route, exported)
+                for route in scope.routes_for(name, lambda module: exported.get(module))
+            ]
+            resolved = cls._one_reached_interface(reached, local_name=name)
+            if resolved is None:
+                if name.casefold() not in declared_here:
+                    visible.pop(name.casefold(), None)
                 continue
-            source_lookup = cls._module_callback_interfaces(
-                modules,
-                source_module,
-                seen=seen,
-                exported_only=True,
-            )
-            imported: dict[str, _CallbackInterface] = {}
-            for mapping in scope.mappings(module_name):
-                resolved = source_lookup.get(mapping.source.casefold())
-                if resolved is not None:
-                    # A rename binds the interface under the name the importing
-                    # scope gives it, which a contract here has to state.
-                    imported[mapping.local_name.casefold()] = replace(resolved, local_name=mapping.local_name)
-            if scope.imports_all(module_name):
-                for name, resolved in source_lookup.items():
-                    imported.setdefault(name, resolved)
-            for name, resolved in imported.items():
-                candidates.setdefault(name, set()).add(cls._callback_identity(resolved))
-                if override:
-                    visible[name] = resolved
-                else:
-                    visible.setdefault(name, resolved)
-        for name, identities in candidates.items():
-            if name not in declared_here and len(identities) > 1:
-                visible.pop(name, None)
+            if override:
+                visible[name.casefold()] = resolved
+            else:
+                visible.setdefault(name.casefold(), resolved)
+
+    @staticmethod
+    def _reached_callback_interface(
+        route: UseRoute,
+        exported: dict[str, dict[str, _CallbackInterface]],
+    ) -> _CallbackInterface | None:
+        """Return the interface one route reaches, or ``None`` for an unread module."""
+        lookup = exported.get(route.module)
+        return None if lookup is None else lookup.get(route.source_name.casefold())
+
+    @classmethod
+    def _one_reached_interface(
+        cls,
+        reached: list[_CallbackInterface | None],
+        *,
+        local_name: str,
+    ) -> _CallbackInterface | None:
+        """Return the one interface a local name reaches, or ``None``.
+
+        Routes are compared by the declaration they reach, so repeating a route
+        to one interface is harmless while two different ones leave the name
+        meaning nothing here. A route into a module this project never read
+        offers whatever it names, which nothing here can compare, so it makes
+        the name unresolved rather than letting a readable route answer for it.
+        """
+        identities = {None if item is None else cls._callback_identity(item) for item in reached}
+        if len(identities) != 1:
+            return None
+        resolved = next((item for item in reached if item is not None), None)
+        # The importing scope may bind the interface under another spelling,
+        # which a contract written here has to state.
+        return None if resolved is None else replace(resolved, local_name=local_name)
 
     @staticmethod
     def _callback_identity(resolved: _CallbackInterface) -> tuple[str | None, str]:
@@ -2248,36 +2271,31 @@ class FortranToIRConverter(ClassVisitor):
             )
 
         scope = ScopeUses(context.uses)
-        explicit = [
-            (module_name, mapping.source)
-            for module_name in scope.modules()
-            for mapping in scope.mappings(module_name)
-            if mapping.local_name.casefold() == key
-        ]
-        if len(explicit) == 1:
-            return SemanticExpressionCallable(
-                name=name,
-                native_name=explicit[0][1],
-                native_scope=explicit[0][0],
-                source_language="fortran",
-                placement="module",
-            )
-        if explicit:
-            return None
-
-        wildcard_modules = [name for name in scope.modules() if scope.imports_all(name)]
-        known_origins = [
-            module_name for module_name in wildcard_modules if (module_name.casefold(), key) in self._known_procedures
-        ]
-        if len(known_origins) != 1:
+        offered = self._known_procedure_names()
+        routes = scope.routes_for(name, offered)
+        if len({route.key for route in routes}) != 1:
             return None
         return SemanticExpressionCallable(
             name=name,
-            native_name=name,
-            native_scope=known_origins[0],
+            native_name=routes[0].source_name,
+            native_scope=routes[0].module,
             source_language="fortran",
             placement="module",
         )
+
+    def _known_procedure_names(self):
+        """Return the procedure names each module declares, or ``None``."""
+        by_module: dict[str, set[str]] = {}
+        for module_name, procedure_name in self._known_procedures:
+            by_module.setdefault(module_name.casefold(), set()).add(procedure_name.casefold())
+
+        def offered(module_name: str):
+            key = module_name.casefold()
+            if key in self._known_modules:
+                return by_module.get(key, set())
+            return None
+
+        return offered
 
     def _with_additional_wrapped_types(
         self,
@@ -2302,6 +2320,24 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = set(self._known_procedures)
         converter._abstract_derived_types = set(self._abstract_derived_types)
+        converter._known_modules |= self._known_modules
+        return converter
+
+    def _with_additional_known_modules(self, modules: Iterable[str]) -> FortranToIRConverter:
+        """Return this converter or a clone that also knows parsed modules."""
+        merged = self._known_modules | {str(module).casefold() for module in modules}
+        if merged == self._known_modules:
+            return self
+        converter = FortranToIRConverter(
+            type_map=self.type_map,
+            compile_time_values=self.compile_time_values,
+            wrapped_derived_types=self.wrapped_derived_types,
+            type_facts=self.type_facts,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
+        )
+        converter._known_modules = merged
+        converter._known_procedures = set(self._known_procedures)
+        converter._abstract_derived_types = set(self._abstract_derived_types)
         return converter
 
     def _with_additional_known_procedures(
@@ -2323,6 +2359,7 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = merged
         converter._abstract_derived_types = set(self._abstract_derived_types)
+        converter._known_modules = self._known_modules | {module for module, _name in merged}
         return converter
 
     def _with_additional_abstract_types(
@@ -2344,6 +2381,7 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = set(self._known_procedures)
         converter._abstract_derived_types = merged
+        converter._known_modules = self._known_modules | {module for module, _name in merged}
         return converter
 
     @staticmethod
@@ -2527,32 +2565,32 @@ class FortranToIRConverter(ClassVisitor):
         imports intentionally remain unresolved so this conversion stage does
         not invent a native identity.
         """
-        lname = local_name.lower()
-        explicit: list[tuple[str, str]] = []
-        wildcard_modules: list[str] = []
         scope = ScopeUses(uses or ())
-        for module_name in scope.modules():
-            if scope.imports_all(module_name):
-                wildcard_modules.append(module_name)
-            for mapping in scope.mappings(module_name):
-                if mapping.local_name.lower() == lname:
-                    explicit.append((module_name, mapping.source))
-
-        if len(explicit) == 1:
-            return _ResolvedDerivedTypeOrigin(explicit[0][0], explicit[0][1])
-        if len(explicit) > 1:
+        offered = self._wrapped_type_names()
+        routes = scope.routes_for(local_name, offered)
+        identities = {route.key for route in routes}
+        if len(identities) == 1:
+            return _ResolvedDerivedTypeOrigin(routes[0].module, routes[0].source_name)
+        if identities:
             return _ResolvedDerivedTypeOrigin(None, local_name)
-
-        wrapped_wildcards = [
-            module_name
-            for module_name in wildcard_modules
-            if (module_name.lower(), lname) in self.wrapped_derived_types
-        ]
-        if len(wrapped_wildcards) == 1:
-            return _ResolvedDerivedTypeOrigin(wrapped_wildcards[0], local_name)
-        if len(wildcard_modules) == 1:
-            return _ResolvedDerivedTypeOrigin(wildcard_modules[0], local_name)
+        unresolved = scope.unresolved_routes_for(local_name, offered)
+        if len({route.key for route in unresolved}) == 1:
+            return _ResolvedDerivedTypeOrigin(unresolved[0].module, unresolved[0].source_name)
         return _ResolvedDerivedTypeOrigin(None, local_name)
+
+    def _wrapped_type_names(self):
+        """Return the wrapped type names each module declares, or ``None``."""
+        by_module: dict[str, set[str]] = {}
+        for module_name, type_name in self.wrapped_derived_types:
+            by_module.setdefault(module_name.casefold(), set()).add(type_name.casefold())
+
+        def offered(module_name: str):
+            key = module_name.casefold()
+            if key in self._known_modules:
+                return by_module.get(key, set())
+            return None
+
+        return offered
 
     def _semantic_type_name(self, var: FortranVariable) -> str:
         """Map a parsed intrinsic, derived, or procedure declaration to its dtype name.

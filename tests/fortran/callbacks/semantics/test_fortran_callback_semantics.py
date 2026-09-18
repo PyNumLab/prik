@@ -458,6 +458,42 @@ end module ren_consumer
     }
 
 
+def test_non_only_rename_does_not_choose_between_callback_routes():
+    """A renamed interface and the same local spelling remain ambiguous."""
+    source = """
+module callback_types
+  abstract interface
+    subroutine x(value)
+      real, intent(in) :: value
+    end subroutine x
+    subroutine y(value)
+      integer, intent(in) :: value
+    end subroutine y
+  end interface
+end module callback_types
+
+module callback_user
+  use callback_types, x => y
+contains
+  subroutine apply_x(callback)
+    procedure(x) :: callback
+  end subroutine apply_x
+  subroutine apply_y(callback)
+    procedure(y) :: callback
+  end subroutine apply_y
+end module callback_user
+"""
+    modules = {module.name: module for module in FortranToIRConverter().visit(parse_fortran_source(source))}
+
+    callback_x = get_function(modules["callback_user"], "apply_x").arguments[0].semantic_type
+    callback_y = get_function(modules["callback_user"], "apply_y").arguments[0].semantic_type
+
+    assert callback_x.name == "Procedure"
+    assert callback_x.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] == "x"
+    assert callback_y.name == "Procedure"
+    assert callback_y.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] == "y"
+
+
 def test_interface_reference_uses_the_declared_spelling():
     """Fortran matches names case-insensitively; Python contracts do not.
 

@@ -316,3 +316,20 @@ end module consumer_mod
 
     routes = ScopeUses(module.uses).routes_for("x", lambda name: {"x", "y"})
     assert sorted(route.source_name for route in routes) == ["x", "y"]
+
+
+def test_unread_whole_module_routes_still_apply_rename_semantics():
+    """Unknown offered names stay possible except under a renamed-away spelling."""
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use dep_mod, x => y
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+    scope = ScopeUses(module.uses)
+
+    assert [route.source_name for route in scope.unresolved_routes_for("x", lambda name: None)] == ["x"]
+    assert scope.unresolved_routes_for("y", lambda name: None) == ()
+    assert [route.source_name for route in scope.unresolved_routes_for("z", lambda name: None)] == ["z"]

@@ -249,9 +249,7 @@ end function extent_for
 end module extent_helpers
 
 module unrelated_helpers
-contains
-subroutine unrelated()
-end subroutine unrelated
+  integer, parameter :: unrelated = 1
 end module unrelated_helpers
 
 module expression_owner
@@ -277,6 +275,40 @@ end module expression_owner
 
     assert "from .extent_helpers import extent_for" in generated
     assert reloaded_array.expression_callables == array.expression_callables
+
+
+def test_non_only_rename_does_not_choose_between_specification_function_routes():
+    """Ambiguous and renamed-away procedure names keep no invented origin."""
+    source = """
+module extent_helpers
+contains
+integer function x(n) result(extent)
+  integer, intent(in) :: n
+  extent = n
+end function x
+integer function y(n) result(extent)
+  integer, intent(in) :: n
+  extent = n
+end function y
+end module extent_helpers
+
+module expression_owner
+  use extent_helpers, x => y
+contains
+function values(n) result(output)
+  integer, intent(in) :: n
+  real(8) :: output(x(n), y(n))
+end function values
+end module expression_owner
+"""
+    modules = fortran_file_to_semantic_modules(parse_fortran_source(source))
+    module = next(item for item in modules if item.name == "expression_owner")
+    callables = get_function(module, "values").return_type.storage.array.expression_callables
+
+    assert callables == [
+        [SemanticExpressionCallable(name="x", native_name="x", source_language="fortran")],
+        [SemanticExpressionCallable(name="y", native_name="y", source_language="fortran")],
+    ]
 
 
 def test_unindexed_wildcard_specification_function_origin_is_not_guessed():
