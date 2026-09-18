@@ -7,6 +7,14 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Every legal `use` form is now represented, and several statements naming one
+  module are read together. `use m, only :` is valid and imports nothing, yet
+  was indistinguishable from a bare `use m`; `use m, only : p => q` followed by
+  `use m` discarded the first statement entirely; and a rename without `only`
+  still dropped every other name its module offered -- losing imported
+  compile-time symbols, callback interfaces and derived types along with them.
+  The parser keeps each statement as written and one reading interprets them.
+
 - A contract's `__all__` selects declarations by exact spelling, and a
   declaration already projected to no Python namespace keeps that projection.
   Names were compared case-insensitively, so `__all__ = ["Foo"]` published a

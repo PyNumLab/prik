@@ -2,6 +2,7 @@ import pytest
 
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran import parse_fortran_file
+from prik.parsers.fortran.models import FortranUseAssociation
 
 
 def test_same_argument_name_in_different_procedures_is_allowed():
@@ -208,7 +209,8 @@ end module consumer_mod
 """
     ).modules[0]
 
-    assert [(item.source, item.target) for item in module.uses["iso_fortran_env"]] == [
+    association = FortranUseAssociation.of(module.uses["iso_fortran_env"])
+    assert [(item.source, item.target) for item in association.mappings] == [
         ("INT32", None),
         ("REAL32", "SP"),
         ("REAL64", "DP"),
@@ -217,8 +219,12 @@ end module consumer_mod
     ]
 
 
-def test_a_bare_use_absorbs_the_named_imports_of_the_same_module():
-    """Importing everything subsumes any list beside it."""
+def test_a_bare_use_is_read_beside_the_named_imports_of_the_same_module():
+    """Importing everything does not erase what another statement listed.
+
+    Both statements are source facts, and the language reads them together: the
+    module's public names are accessible, and `rk` is bound as well.
+    """
     module = parse_fortran_file(
         """
 module wide_mod
@@ -229,4 +235,21 @@ end module wide_mod
 """
     ).modules[0]
 
-    assert module.uses["kinds_mod"] == []
+    association = FortranUseAssociation.of(module.uses["kinds_mod"])
+    assert association.imports_all is True
+    assert [(item.source, item.target) for item in association.mappings] == [("rk", None)]
+
+
+def test_an_empty_only_list_imports_nothing():
+    """`use m, only :` is valid and narrows to no names at all."""
+    module = parse_fortran_file(
+        """
+module narrow_mod
+  use kinds_mod, only :
+  implicit none
+end module narrow_mod
+"""
+    ).modules[0]
+
+    association = FortranUseAssociation.of(module.uses["kinds_mod"])
+    assert (association.imports_all, association.mappings) == (False, ())

@@ -10,6 +10,7 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
     FortranProject,
     FortranUseMapping,
+    FortranUseStatement,
     FortranVariable,
 )
 from prik.semantics.fortran2ir import (
@@ -47,8 +48,10 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     module = FortranModule(
         name="consumer",
         uses={
-            "plain_mod": [],
-            "types_mod": [FortranUseMapping(source="state_t", target="local_state")],
+            "plain_mod": [FortranUseStatement("plain_mod")],
+            "types_mod": [
+                FortranUseStatement("types_mod", True, [FortranUseMapping(source="state_t", target="local_state")])
+            ],
         },
         variables=[FortranVariable(name="module_state", base_type="derived", kind="local_state")],
         procedures=[proc],
@@ -142,7 +145,7 @@ def test_abstract_type_identity_is_module_qualified_and_available_project_wide()
     )
     consumer = FortranModule(
         name="consumer",
-        uses={"abstract_owner": [FortranUseMapping(source="item_t")]},
+        uses={"abstract_owner": [FortranUseStatement("abstract_owner", True, [FortranUseMapping(source="item_t")])]},
         procedures=[
             FortranProcedureSignature(
                 name="consume",

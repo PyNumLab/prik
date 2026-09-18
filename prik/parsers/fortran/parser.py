@@ -42,6 +42,8 @@ from prik.parsers.fortran.models import (
     FortranProgram,
     FortranProject,
     FortranSubmodule,
+    FortranUseStatement,
+    use_associations,
     FortranUseMapping,
     FortranVariable,
 )
@@ -3493,8 +3495,7 @@ class FortranParser(ClassVisitor):
 
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use and hasattr(target, "uses"):
-            module_name, mappings = parsed_use
-            self._record_use_mappings(target.uses, module_name, mappings)
+            self._record_use_mappings(target.uses, parsed_use)
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3661,9 +3662,8 @@ class FortranParser(ClassVisitor):
             return
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
-            module_name, mappings = parsed_use
-            self._record_use_mappings(proc_state.uses, module_name, mappings)
-            self._record_use_mappings(proc_state.local_uses, module_name, mappings)
+            self._record_use_mappings(proc_state.uses, parsed_use)
+            self._record_use_mappings(proc_state.local_uses, parsed_use)
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -5231,7 +5231,7 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _imported_compile_time_symbols(
-        uses: Mapping[str, list[FortranUseMapping]],
+        uses: Mapping[str, list[FortranUseStatement]],
         symbols: _CompileTimeSymbols,
         *,
         include_intrinsic_aliases: bool,
@@ -5247,23 +5247,16 @@ class FortranParser(ClassVisitor):
         lookup leaves that target-dependent spelling untouched.
         """
         imported: dict[str, str] = {}
-        for dependency, mappings in uses.items():
+        for dependency, association in use_associations(uses).items():
             dependency_name = dependency.casefold()
             dependency_symbols = symbols.in_module(dependency_name)
-            if not mappings:
-                imported.update(dependency_symbols)
+            imported.update(association.carried(dependency_symbols))
+            if not include_intrinsic_aliases or dependency_name not in _INTRINSIC_COMPILE_TIME_MODULES:
                 continue
-            for mapping in mappings:
-                source_name = mapping.source.casefold()
-                expression = dependency_symbols.get(source_name)
-                if (
-                    expression is None
-                    and include_intrinsic_aliases
-                    and dependency_name in _INTRINSIC_COMPILE_TIME_MODULES
-                ):
-                    expression = mapping.source
-                if expression is not None:
-                    imported[mapping.local_name.casefold()] = expression
+            # An intrinsic module has no parsed symbols, so a name imported
+            # from one stands for its own target-dependent spelling.
+            for mapping in association.mappings:
+                imported.setdefault(mapping.local_name.casefold(), mapping.source)
         return imported
 
     @staticmethod
@@ -5823,37 +5816,31 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _record_use_mappings(
-        uses: dict[str, list[FortranUseMapping]],
-        module_name: str,
-        mappings: list[FortranUseMapping],
+        uses: dict[str, list[FortranUseStatement]],
+        statement: FortranUseStatement,
     ) -> None:
-        """Accumulate one ``use`` statement into a scope's import table.
+        """Append one ``use`` statement to a scope's import table.
 
-        A scope may name the same module more than once, each statement adding
-        what it lists, so a later statement extends the imports rather than
-        replacing them.  A bare ``use`` imports everything, which the empty
-        mapping list already means, and absorbs any list beside it.
+        A scope may name the same module more than once, and what each
+        statement said is a source fact, so they are kept apart here and read
+        together by ``FortranUseAssociation``.
         """
-        existing = uses.get(module_name)
-        if existing is None or not mappings:
-            uses[module_name] = mappings
-            return
-        if not existing:
-            return
-        known = {(item.source.casefold(), (item.target or item.source).casefold()) for item in existing}
-        existing.extend(
-            item for item in mappings if (item.source.casefold(), (item.target or item.source).casefold()) not in known
-        )
+        uses.setdefault(statement.module, []).append(statement)
 
     @staticmethod
-    def _parse_use_statement(line: str) -> tuple[str, list[FortranUseMapping]] | None:
-        """Parse a ``use`` statement into its module and explicit mappings."""
+    def _parse_use_statement(line: str) -> FortranUseStatement | None:
+        """Parse one ``use`` statement into the facts the source states.
+
+        Whether the statement narrowed to an ``only`` list is separate from
+        what it listed: ``use m, only :`` lists nothing and brings in nothing,
+        while ``use m`` also lists nothing and brings in everything.
+        """
         match = _REGEX["use"].match(line)
         if not match:
             return None
         rest = (match.group("rest") or "").strip()
         if not rest:
-            return match.group("module"), []
+            return FortranUseStatement(match.group("module"))
         payload = rest.lstrip(",").strip()
         only_match = re.match(r"^only\s*:\s*(?P<symbols>.*)$", payload, re.IGNORECASE)
         if only_match:
@@ -5868,8 +5855,8 @@ class FortranParser(ClassVisitor):
             else:
                 source = token
                 target = None
-            mappings.append(FortranUseMapping(source=source, target=target, only=only_match is not None))
-        return match.group("module"), mappings
+            mappings.append(FortranUseMapping(source=source, target=target))
+        return FortranUseStatement(match.group("module"), only_match is not None, mappings)
 
 
 # -----------------------------------------------------------------------------

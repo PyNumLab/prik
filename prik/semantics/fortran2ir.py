@@ -35,7 +35,8 @@ from prik.parsers.fortran.models import (
     FortranProgram,
     FortranProcedureSignature,
     FortranSubmodule,
-    FortranUseMapping,
+    FortranUseStatement,
+    use_associations,
     FortranVariable,
 )
 from prik.utilities.declaration_expressions import (
@@ -243,8 +244,8 @@ class _DerivedTypeContext:
     """
 
     module: str | None = None
-    uses: dict[str, list[FortranUseMapping]] | None = None
-    procedure_uses: dict[str, list[FortranUseMapping]] | None = None
+    uses: dict[str, list[FortranUseStatement]] | None = None
+    procedure_uses: dict[str, list[FortranUseStatement]] | None = None
     local_types: frozenset[str] = frozenset()
 
 
@@ -268,7 +269,7 @@ class _DeclarationCallableContext:
     module: str | None
     local_procedures: dict[str, SemanticFunction]
     local_interfaces: dict[str, SemanticPrototype]
-    uses: dict[str, list[FortranUseMapping]]
+    uses: dict[str, list[FortranUseStatement]]
 
 
 def _normalize_compile_time_values(
@@ -820,7 +821,7 @@ class FortranToIRConverter(ClassVisitor):
     def _scope_callback_interfaces(
         cls,
         modules: dict[str, FortranModule],
-        uses: dict[str, list[FortranUseMapping]],
+        uses: dict[str, list[FortranUseStatement]],
         *,
         base: dict[str, _CallbackInterface],
         owner: FortranModule | None = None,
@@ -877,7 +878,7 @@ class FortranToIRConverter(ClassVisitor):
         cls,
         visible: dict[str, _CallbackInterface],
         modules: dict[str, FortranModule],
-        uses: dict[str, list[FortranUseMapping]],
+        uses: dict[str, list[FortranUseStatement]],
         *,
         seen: frozenset[str],
         override: bool,
@@ -894,10 +895,10 @@ class FortranToIRConverter(ClassVisitor):
         """
         declared_here = set(visible)
         candidates: dict[str, set[tuple[str | None, str] | None]] = {}
-        for module_name, mappings in uses.items():
+        for module_name, association in use_associations(uses).items():
             source_module = modules.get(module_name.casefold())
             if source_module is None:
-                for mapping in mappings:
+                for mapping in association.mappings:
                     candidates.setdefault(mapping.local_name.casefold(), set()).add(None)
                 continue
             source_lookup = cls._module_callback_interfaces(
@@ -906,15 +907,13 @@ class FortranToIRConverter(ClassVisitor):
                 seen=seen,
                 exported_only=True,
             )
-            imported = (
-                source_lookup
-                if not mappings
-                else {
-                    mapping.local_name.casefold(): replace(resolved, local_name=mapping.local_name)
-                    for mapping in mappings
-                    if (resolved := source_lookup.get(mapping.source.casefold())) is not None
-                }
-            )
+            imported = association.carried(source_lookup)
+            # A rename binds the interface under the name the importing scope
+            # gives it, which a contract written here has to state.
+            for mapping in association.mappings:
+                local = mapping.local_name.casefold()
+                if local in imported:
+                    imported[local] = replace(imported[local], local_name=mapping.local_name)
             for name, resolved in imported.items():
                 candidates.setdefault(name, set()).add(cls._callback_identity(resolved))
                 if override:
@@ -1954,18 +1953,15 @@ class FortranToIRConverter(ClassVisitor):
         seen = seen | {key}
         is_public = cls._effective_accessibility(module)
         offered: dict[str, set[str]] = {name: set() for name in cls._module_declared_names(module)}
-        for module_name, mappings in module.uses.items():
-            for mapping in mappings:
+        for module_name, association in use_associations(module.uses).items():
+            for mapping in association.mappings:
                 offered.setdefault(mapping.local_name.casefold(), set()).add(module_name)
-            if not cls._carries_every_public_name(mappings):
-                continue
             used = index.get(module_name.casefold())
             if used is None:
                 continue
-            renamed_away = cls._renamed_away_names(mappings)
-            for name in cls._module_public_names(used, index, seen):
-                if name not in renamed_away:
-                    offered.setdefault(name, set()).add(module_name)
+            reachable = dict.fromkeys(cls._module_public_names(used, index, seen), True)
+            for name in association.carried(reachable):
+                offered.setdefault(name, set()).add(module_name)
         return {name for name, routes in offered.items() if is_public(name, routes)}
 
     @staticmethod
@@ -1991,25 +1987,6 @@ class FortranToIRConverter(ClassVisitor):
             return distinct[0]
         return None
 
-    @staticmethod
-    def _carries_every_public_name(mappings: list[FortranUseMapping]) -> bool:
-        """Return whether one ``use`` brings in more than the names it lists.
-
-        Only an ``only`` list narrows a ``use``. A bare ``use`` carries every
-        public name, and so does one that merely renames: ``use m, p => q``
-        binds ``p`` and still carries everything else ``m`` offers.
-        """
-        return not mappings or any(not mapping.only for mapping in mappings)
-
-    @staticmethod
-    def _renamed_away_names(mappings: list[FortranUseMapping]) -> set[str]:
-        """Return the names a rename makes unreachable under their own spelling.
-
-        ``use m, p => q`` accesses that entity as ``p``; ``q`` does not name it
-        here, so the carried set excludes it.
-        """
-        return {mapping.source.casefold() for mapping in mappings if mapping.target}
-
     @classmethod
     def _name_routes(
         cls,
@@ -2030,12 +2007,12 @@ class FortranToIRConverter(ClassVisitor):
         folded = local_name.casefold()
         routes: list[_NameRoute] = [
             _NameRoute(used_name, mapping.source)
-            for used_name, mappings in module.uses.items()
-            for mapping in mappings
+            for used_name, association in use_associations(module.uses).items()
+            for mapping in association.mappings
             if mapping.local_name.casefold() == folded
         ]
-        for used_name, mappings in module.uses.items():
-            if not cls._carries_every_public_name(mappings) or folded in cls._renamed_away_names(mappings):
+        for used_name, association in use_associations(module.uses).items():
+            if not association.imports_all or folded in association.renamed_sources:
                 continue
             used = index.get(used_name.casefold())
             if used is not None and folded in cls._module_public_names(used, index):
@@ -2056,19 +2033,17 @@ class FortranToIRConverter(ClassVisitor):
         ways keeps the case its ``use`` statement wrote.
         """
         names: dict[str, str] = {}
-        for mappings in module.uses.values():
-            for mapping in mappings:
+        associations = use_associations(module.uses)
+        for association in associations.values():
+            for mapping in association.mappings:
                 names.setdefault(mapping.local_name.casefold(), mapping.local_name)
-        for used_name, mappings in module.uses.items():
-            if not cls._carries_every_public_name(mappings):
-                continue
+        for used_name, association in associations.items():
             used = index.get(used_name.casefold())
             if used is None:
                 continue
-            renamed_away = cls._renamed_away_names(mappings)
-            for name in sorted(cls._module_public_names(used, index)):
-                if name not in renamed_away:
-                    names.setdefault(name, name)
+            offered = dict.fromkeys(sorted(cls._module_public_names(used, index)), True)
+            for name in association.carried(offered):
+                names.setdefault(name, name)
         return tuple(names.values())
 
     def _module_reexports(
@@ -2184,16 +2159,23 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _module_imports(module: FortranModule) -> list[str | SemanticImport]:
-        """Translate parser ``use`` mappings while preserving parser declaration order."""
+        """Translate each ``use`` association while preserving declaration order.
+
+        An association that lists names records them; one that also imports all
+        records the module itself beside them, which is what a bare ``use``
+        means on its own.
+        """
         imports: list[str | SemanticImport] = []
-        for module_name, mappings in module.uses.items():
-            if not mappings:
+        for module_name, association in use_associations(module.uses).items():
+            if association.imports_all:
                 imports.append(module_name)
-            else:
+            if association.mappings:
                 imports.append(
                     SemanticImport(
                         module=module_name,
-                        items=[SemanticImportItem(source=item.source, target=item.target) for item in mappings],
+                        items=[
+                            SemanticImportItem(source=item.source, target=item.target) for item in association.mappings
+                        ],
                     )
                 )
         return imports
@@ -2204,7 +2186,7 @@ class FortranToIRConverter(ClassVisitor):
         functions: Iterable[SemanticFunction] = (),
         prototypes: Iterable[SemanticPrototype] = (),
         *,
-        uses: dict[str, list[FortranUseMapping]] | None = None,
+        uses: dict[str, list[FortranUseStatement]] | None = None,
     ) -> _DeclarationCallableContext:
         """Build lexical procedure facts for one module-owned declaration."""
         return _DeclarationCallableContext(
@@ -2289,8 +2271,8 @@ class FortranToIRConverter(ClassVisitor):
 
         explicit = [
             (module_name, mapping.source)
-            for module_name, mappings in context.uses.items()
-            for mapping in mappings
+            for module_name, association in use_associations(context.uses).items()
+            for mapping in association.mappings
             if mapping.local_name.casefold() == key
         ]
         if len(explicit) == 1:
@@ -2304,7 +2286,9 @@ class FortranToIRConverter(ClassVisitor):
         if explicit:
             return None
 
-        wildcard_modules = [module_name for module_name, mappings in context.uses.items() if not mappings]
+        wildcard_modules = [
+            name for name, association in use_associations(context.uses).items() if association.imports_all
+        ]
         known_origins = [
             module_name for module_name in wildcard_modules if (module_name.casefold(), key) in self._known_procedures
         ]
@@ -2487,7 +2471,7 @@ class FortranToIRConverter(ClassVisitor):
     def _procedure_local_uses(
         proc: FortranProcedureSignature,
         parent: _DerivedTypeContext | None,
-    ) -> dict[str, list[FortranUseMapping]]:
+    ) -> dict[str, list[FortranUseStatement]]:
         """Return imports introduced locally by ``proc`` relative to its parent.
 
         A parser-preserved ``_local_uses`` mapping takes precedence; otherwise
@@ -2564,7 +2548,7 @@ class FortranToIRConverter(ClassVisitor):
     def _resolve_derived_type_origin_from_uses(
         self,
         local_name: str,
-        uses: dict[str, list[FortranUseMapping]] | None,
+        uses: dict[str, list[FortranUseStatement]] | None,
     ) -> _ResolvedDerivedTypeOrigin:
         """Resolve one derived-type spelling from explicit or wildcard ``use`` maps.
 
@@ -2575,11 +2559,10 @@ class FortranToIRConverter(ClassVisitor):
         lname = local_name.lower()
         explicit: list[tuple[str, str]] = []
         wildcard_modules: list[str] = []
-        for module_name, mappings in (uses or {}).items():
-            if not mappings:
+        for module_name, association in use_associations(uses or {}).items():
+            if association.imports_all:
                 wildcard_modules.append(module_name)
-                continue
-            for mapping in mappings:
+            for mapping in association.mappings:
                 if mapping.local_name.lower() == lname:
                     explicit.append((module_name, mapping.source))
 

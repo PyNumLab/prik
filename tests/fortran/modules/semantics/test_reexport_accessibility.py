@@ -931,3 +931,80 @@ end module b_mod
     )
 
     assert {item.local_name for item in modules["b_mod"].reexports} == {"p"}
+
+
+def test_an_empty_only_list_carries_no_name(tmp_path: Path):
+    """`use m, only :` is valid syntax that narrows to nothing.
+
+    It lists no names, exactly as a bare `use` does, so a model that cannot
+    tell the two apart reads one of them wrongly.
+    """
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        """\
+module b_mod
+  use a_mod, only :
+  implicit none
+end module b_mod
+""",
+    )
+
+    assert modules["b_mod"].reexports == []
+
+
+def test_statements_naming_one_module_are_read_together(tmp_path: Path):
+    """The language combines them, so neither statement erases the other."""
+    modules = _project_modules(
+        tmp_path,
+        """\
+module a_mod
+  implicit none
+  integer :: q = 1
+  integer :: other = 2
+end module a_mod
+
+module b_mod
+  use a_mod, only : p => q
+  use a_mod
+  implicit none
+end module b_mod
+""",
+    )
+
+    reexports = {item.local_name: (item.origin_module, item.source_name) for item in modules["b_mod"].reexports}
+    assert reexports == {"p": ("a_mod", "q"), "other": ("a_mod", "other")}
+
+
+def test_a_non_only_rename_still_carries_imported_compile_time_symbols(tmp_path: Path):
+    """Every consumer reads the same association, not just route resolution.
+
+    `use kinds_mod, wp => rk` binds `wp` and still imports `nmax`, which a
+    declaration's extent needs resolved.
+    """
+    (tmp_path / "project.f90").write_text(
+        """\
+module kinds_mod
+  implicit none
+  integer, parameter :: rk = 8
+  integer, parameter :: nmax = 4
+end module kinds_mod
+
+module use_mod
+  use kinds_mod, wp => rk
+  implicit none
+  real(wp) :: values(nmax)
+end module use_mod
+""",
+        encoding="utf-8",
+    )
+    project = parse_fortran_project(str(tmp_path))
+    declared = next(
+        variable
+        for parsed in project.files
+        for module in parsed.modules
+        if module.name == "use_mod"
+        for variable in module.variables
+    )
+
+    assert (declared.kind, declared.shape) == ("8", ["4"])

@@ -10,6 +10,7 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
     FortranProject,
     FortranUseMapping,
+    FortranUseStatement,
     FortranVariable,
 )
 from prik.semantics.fortran2ir import (
@@ -44,8 +45,10 @@ def test_converter_visitor_and_compatibility_methods_cover_public_paths():
     module = FortranModule(
         name="m",
         uses={
-            "iso_c_binding": [FortranUseMapping(source="c_int", target="i32")],
-            "plain_import": [],
+            "iso_c_binding": [
+                FortranUseStatement("iso_c_binding", True, [FortranUseMapping(source="c_int", target="i32")])
+            ],
+            "plain_import": [FortranUseStatement("plain_import")],
         },
         variables=[scale],
         procedures=[proc],

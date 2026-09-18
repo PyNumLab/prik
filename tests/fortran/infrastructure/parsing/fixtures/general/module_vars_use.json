@@ -10,14 +10,18 @@
       "uses": {
         "iso_c_binding": [
           {
-            "source": "c_int",
-            "target": null,
-            "only": true
-          },
-          {
-            "source": "c_double",
-            "target": null,
-            "only": true
+            "module": "iso_c_binding",
+            "only": true,
+            "mappings": [
+              {
+                "source": "c_int",
+                "target": null
+              },
+              {
+                "source": "c_double",
+                "target": null
+              }
+            ]
           }
         ]
       },
@@ -97,14 +101,18 @@
       "uses": {
         "iso_c_binding": [
           {
-            "source": "c_int",
-            "target": null,
-            "only": true
-          },
-          {
-            "source": "c_double",
-            "target": null,
-            "only": true
+            "module": "iso_c_binding",
+            "only": true,
+            "mappings": [
+              {
+                "source": "c_int",
+                "target": null
+              },
+              {
+                "source": "c_double",
+                "target": null
+              }
+            ]
           }
         ]
       },

@@ -1,6 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
 from prik.parsers.fortran.models import (
+    FortranUseStatement,
     FortranArgument,
     FortranModule,
 )
@@ -24,14 +25,22 @@ from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():
     converter = FortranToIRConverter(wrapped_derived_types={("types_mod", "state_t")})
-    module = FortranModule(name="consumer", uses={"OTHER_MOD": [], "TYPES_MOD": []})
+    module = FortranModule(
+        name="consumer",
+        uses={
+            "OTHER_MOD": [FortranUseStatement("OTHER_MOD")],
+            "TYPES_MOD": [FortranUseStatement("TYPES_MOD")],
+        },
+    )
     context = converter._module_derived_type_context(module)
 
     state = converter.visit(
         FortranArgument(name="state", base_type="derived", kind="state_t"),
         derived_type_context=context,
     ).semantic_type
-    opaque_context = converter._module_derived_type_context(FortranModule(name="consumer", uses={"OPAQUE_MOD": []}))
+    opaque_context = converter._module_derived_type_context(
+        FortranModule(name="consumer", uses={"OPAQUE_MOD": [FortranUseStatement("OPAQUE_MOD")]})
+    )
     opaque = converter.visit(
         FortranArgument(name="opaque", base_type="derived", kind="opaque_t"),
         derived_type_context=opaque_context,
