@@ -452,6 +452,9 @@ end module ren_consumer
         "name": "OBJ",
         "local_name": "LOCAL_OBJ",
         "origin_module": "ren_types",
+        # The block is the declaring module's own, so no contained procedure
+        # owns it and the identity carries an empty scope.
+        "declaring_scope": (),
     }
 
 

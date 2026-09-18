@@ -375,6 +375,16 @@ class SemanticPrototype(SemanticFunction):
 
     pure: bool = False
 
+    declaring_scope: tuple[str, ...] = ()
+    """Contained procedure declaring the interface, empty for a module's own.
+
+    A prototype's identity is structural -- the scope that declares it together
+    with the name that scope gives it -- because two procedures may each declare
+    a different signature under one spelling. ``name`` carries the contract
+    spelling settled for that identity, which is allocated once and read
+    everywhere rather than rebuilt from the scope.
+    """
+
 
 # ============================================================
 # Semantic Methods

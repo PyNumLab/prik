@@ -7,6 +7,16 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A prototype is identified by the scope declaring it, and its contract
+  spelling is allocated against the names the module already holds. Joining the
+  scope to the name produced a spelling that could collide with a real
+  declaration -- a module-level `first_cb` beside `first`'s own `cb` -- so the
+  two became one prototype and a callback was typed by the other's signature.
+  Two scopes whose joined spellings coincided (`a_b` declaring `c`, `a`
+  declaring `b_c`) collided the same way. Each now keeps a distinct contract
+  name, and a module's own block still publishes the spelling another module
+  imports it by.
+
 - A generic assembles the specifics of every accessible interface that
   contributes to it. A module importing `convert` from two modules that each
   declare a generic of that name kept only the first, silently losing the

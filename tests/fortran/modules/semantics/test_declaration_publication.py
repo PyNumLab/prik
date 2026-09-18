@@ -124,3 +124,116 @@ def test_a_procedure_local_interface_is_never_a_module_publication(tmp_path: Pat
     assert "f: first_cb" in contract
     assert "f: second_cb" in contract
     assert '__all__ = ["first", "second"]' in contract
+
+
+MODULE_AND_LOCAL_SOURCE = """\
+module m
+  implicit none
+  abstract interface
+    subroutine first_cb(x)
+      integer :: x
+    end subroutine
+  end interface
+contains
+  subroutine first(f)
+    abstract interface
+      subroutine cb(x)
+        real :: x
+      end subroutine
+    end interface
+    procedure(cb) :: f
+    call f(1.0)
+  end subroutine first
+
+  subroutine uses_module_one(g)
+    procedure(first_cb) :: g
+    call g(1)
+  end subroutine uses_module_one
+end module m
+"""
+
+JOINED_COLLISION_SOURCE = """\
+module m
+  implicit none
+contains
+  subroutine a_b(f)
+    abstract interface
+      subroutine c(x)
+        integer :: x
+      end subroutine
+    end interface
+    procedure(c) :: f
+    call f(1)
+  end subroutine a_b
+
+  subroutine a(f)
+    abstract interface
+      subroutine b_c(x)
+        real :: x
+      end subroutine
+    end interface
+    procedure(b_c) :: f
+    call f(1.0)
+  end subroutine a
+end module m
+"""
+
+
+def _callback_annotations(module) -> dict[str, tuple[str, str]]:
+    """Return each callback argument's contract name and first argument type."""
+    return {
+        f"{function.name}.{argument.name}": (
+            argument.semantic_type.name,
+            argument.semantic_type.metadata["arguments"][0].name,
+        )
+        for function in module.functions
+        for argument in function.arguments
+        if argument.semantic_type.storage is not None and argument.semantic_type.storage.kind == "callback"
+    }
+
+
+def test_a_prototype_is_identified_by_its_scope_rather_than_its_spelling(tmp_path: Path):
+    """A module block and a procedure block are different declarations.
+
+    Naming the procedure-local one by joining its scope to its name produces
+    the module block's own spelling, so the two would be one prototype and one
+    of the callbacks would be given the other's signature.
+    """
+    module = _module(MODULE_AND_LOCAL_SOURCE, tmp_path)
+
+    identities = [(item.native_name, item.declaring_scope, item.visibility) for item in module.prototypes]
+    assert identities == [("first_cb", (), "public"), ("cb", ("first",), "private")]
+
+    # The module's own block keeps the spelling another module imports it by.
+    names = [item.name for item in module.prototypes]
+    assert names[0] == "first_cb"
+    assert names[1] != "first_cb"
+
+    annotations = _callback_annotations(module)
+    assert annotations["uses_module_one.g"] == ("first_cb", "Int32")
+    assert annotations["first.f"] == (names[1], "Float32")
+
+
+def test_scopes_whose_joined_spellings_collide_keep_distinct_contract_names(tmp_path: Path):
+    """`a_b` declaring `c` and `a` declaring `b_c` are different prototypes."""
+    module = _module(JOINED_COLLISION_SOURCE, tmp_path)
+
+    names = [item.name for item in module.prototypes]
+    assert len(set(names)) == 2
+
+    annotations = _callback_annotations(module)
+    assert annotations["a_b.f"] == (names[0], "Int32")
+    assert annotations["a.f"] == (names[1], "Float32")
+
+
+def test_a_contract_writes_one_prototype_for_each_scope(tmp_path: Path):
+    """Both prototypes are written, and only the module's own is published."""
+    module = _module(MODULE_AND_LOCAL_SOURCE, tmp_path)
+    contract = PyiPrinter().emit(module)
+    local_name = module.prototypes[1].name
+
+    assert "def first_cb(\n    x: Int32[()]\n) -> None: ..." in contract
+    assert f"def {local_name}(\n    x: Float32[()]\n) -> None: ..." in contract
+    assert f"f: {local_name}" in contract
+    assert "g: first_cb" in contract
+    assert '__all__ = ["first_cb", "first", "uses_module_one"]' in contract

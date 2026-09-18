@@ -64,6 +64,7 @@ from prik.semantics.scalar_types import (
     SEMANTIC_SCALAR_TYPE_NAMES,
     is_boolean_semantic_type_name,
 )
+from prik.naming import NamingPolicy
 from prik.utilities.visitor import ClassVisitor
 
 from prik.semantics.models import (
@@ -206,19 +207,6 @@ class _CallbackInterface:
     def visible_name(self) -> str:
         """Return the canonical spelling visible where the interface was resolved."""
         return self.local_name or self.signature.name
-
-    @property
-    def contract_name(self) -> str:
-        """Return the spelling a contract writes for this interface.
-
-        Two contained procedures may each declare an interface of the same
-        name meaning different signatures, so a procedure-local block is named
-        for the scope that owns it. A module's own block keeps its name, which
-        is the one another module imports.
-        """
-        if not self.declaring_scope:
-            return self.visible_name
-        return "_".join((*self.declaring_scope, self.visible_name))
 
 
 class _NameRoute(NamedTuple):
@@ -991,7 +979,8 @@ class FortranToIRConverter(ClassVisitor):
         # a different spelling. Both are source facts, and a contract needs each
         # of them to import the right name under the right alias.
         native_name = resolved.native_name if resolved is not None else interface_name
-        local_name = resolved.contract_name if resolved is not None else interface_name
+        local_name = resolved.visible_name if resolved is not None else interface_name
+        declaring_scope = resolved.declaring_scope if resolved is not None else ()
         return SemanticType(
             local_name,
             dtype="Prototype",
@@ -1003,6 +992,11 @@ class FortranToIRConverter(ClassVisitor):
                     "name": native_name,
                     "local_name": local_name,
                     "origin_module": prototype_module,
+                    # The scope declaring the interface completes its identity:
+                    # two procedures may each declare a `cb` meaning different
+                    # signatures, and the contract spelling is settled from this
+                    # identity once, then read here.
+                    "declaring_scope": tuple(declaring_scope),
                 },
                 "native_callback_kind": signature.kind,
                 "callback_lifetime": "call",
@@ -1129,11 +1123,116 @@ class FortranToIRConverter(ClassVisitor):
         if intent is not None:
             argument.origin.metadata[PROTOTYPE_INTENT_METADATA] = intent
 
+    def _settle_prototype_contract_names(
+        self,
+        module: FortranModule,
+        prototypes: list[SemanticPrototype],
+        functions: list[SemanticFunction],
+        classes: list[SemanticClass],
+    ) -> None:
+        """Give each prototype identity one contract spelling, read by both sides.
+
+        A prototype's identity is its declaring scope and the name that scope
+        gives it, which two contained procedures may spell the same. The Python
+        spelling is therefore allocated here, once, against the names this
+        module already holds -- a procedure-local block suggests its scope and
+        name, and the allocator settles any collision with a module-level
+        declaration or another scope. Every annotation naming the prototype then
+        reads the settled spelling rather than rebuilding one.
+        """
+        if not prototypes:
+            return
+        # A prototype is written as it is declared, so the spelling is kept and
+        # only a collision moves one aside; case folding belongs to the public
+        # names a build publishes, which a prototype is not.
+        naming = NamingPolicy(preserve_case=True)
+        # A module's own block declares the name another module imports, so it
+        # keeps it; every other declared name is held first so no prototype can
+        # be handed a spelling that already belongs to one.
+        module_scope = {
+            str(prototype.native_name or prototype.name).casefold()
+            for prototype in prototypes
+            if not prototype.declaring_scope
+        }
+        for name in sorted(self._module_declared_names(module)):
+            if name in module_scope:
+                continue
+            naming.reserve_public_name((), name, category="function", owner=("declared", name))
+        settled: dict[tuple[str, tuple[str, ...], str], str] = {}
+        for prototype in sorted(prototypes, key=lambda item: bool(item.declaring_scope)):
+            identity = (
+                module.name.casefold(),
+                tuple(prototype.declaring_scope),
+                str(prototype.native_name or prototype.name).casefold(),
+            )
+            suggestion = "_".join((*prototype.declaring_scope, str(prototype.native_name or prototype.name)))
+            prototype.name = naming.reserve_public_name(
+                (),
+                suggestion,
+                category="function",
+                owner=("prototype", identity),
+            )
+            settled[identity] = prototype.name
+        for semantic_type in self._module_semantic_types(prototypes, functions, classes):
+            identity = self._prototype_reference_identity(semantic_type)
+            contract_name = settled.get(identity) if identity is not None else None
+            if contract_name is None:
+                continue
+            semantic_type.name = contract_name
+            semantic_type.metadata[PROTOTYPE_REF_METADATA]["local_name"] = contract_name
+
+    @classmethod
+    def _module_semantic_types(
+        cls,
+        prototypes: list[SemanticPrototype],
+        functions: list[SemanticFunction],
+        classes: list[SemanticClass],
+    ) -> Iterable[SemanticType]:
+        """Yield every semantic type one module's declarations carry."""
+        callables: list[SemanticFunction] = [*prototypes, *functions]
+        pending = list(classes)
+        while pending:
+            declaration = pending.pop()
+            callables.extend(declaration.methods)
+            pending.extend(declaration.classes)
+            for field in declaration.fields:
+                if field.semantic_type is not None:
+                    yield field.semantic_type
+        for callable_item in callables:
+            for argument in (*callable_item.arguments, *callable_item.locals):
+                if argument.semantic_type is not None:
+                    yield argument.semantic_type
+            if callable_item.return_type is not None:
+                yield callable_item.return_type
+
+    @staticmethod
+    def _prototype_reference_identity(
+        semantic_type: SemanticType | None,
+    ) -> tuple[str, tuple[str, ...], str] | None:
+        """Return the prototype identity one callback annotation refers to.
+
+        A prototype is identified by the module declaring it, the contained
+        procedure owning the block if any, and the name that scope gives it.
+        The module matters because another one may declare its own prototype
+        under the same spelling, and the two are different signatures.
+        """
+        if semantic_type is None or semantic_type.storage is None or semantic_type.storage.kind != "callback":
+            return None
+        reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
+        if not isinstance(reference, dict):
+            return None
+        scope = tuple(str(part) for part in reference.get("declaring_scope", ()))
+        return (
+            str(reference.get("origin_module", "")).casefold(),
+            scope,
+            str(reference.get("name", "")).casefold(),
+        )
+
     def _module_prototypes(
         self,
         module: FortranModule,
         context: _DerivedTypeContext,
-        referenced: set[str],
+        referenced: set[tuple[str, tuple[str, ...], str]],
         called: set[str],
     ) -> list[SemanticPrototype]:
         """Convert every referenced interface into one exact prototype signature.
@@ -1146,20 +1245,19 @@ class FortranToIRConverter(ClassVisitor):
         cannot reach it, so the module does not publish it.
         """
         prototypes: list[SemanticPrototype] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, tuple[str, ...], str]] = set()
         for interface in module.interfaces:
             scope = self._interface_declaring_scope(interface)
             for signature in interface.procedures:
                 declared = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
-                name = "_".join((*scope, declared))
-                # A callback argument records the contract identity, which for
-                # a procedure-local block is the scope-qualified one; a shape
-                # calling the name still spells it as the source declares it.
-                if not (interface.abstract or name.casefold() in referenced or declared.casefold() in called):
+                # Identity is the declaring scope with the name that scope
+                # gives; the contract spelling for it is settled afterwards.
+                identity = (module.name.casefold(), scope, declared.casefold())
+                if not (interface.abstract or identity in referenced or declared.casefold() in called):
                     continue
-                if name in seen:
+                if identity in seen:
                     continue
-                seen.add(name)
+                seen.add(identity)
                 arguments = [self.visit(item, derived_type_context=context) for item in signature.arguments]
                 for source_argument, argument in zip(signature.arguments, arguments, strict=True):
                     self._normalize_callback_reference_storage(argument, source_argument)
@@ -1171,8 +1269,9 @@ class FortranToIRConverter(ClassVisitor):
                 )
                 prototypes.append(
                     SemanticPrototype(
-                        name=name,
+                        name=declared,
                         native_name=declared,
+                        declaring_scope=scope,
                         arguments=arguments,
                         return_type=return_type,
                         metadata=self._procedure_metadata(signature),
@@ -1469,11 +1568,15 @@ class FortranToIRConverter(ClassVisitor):
             )
             for proc in source_procedures
         ]
+        # A callback argument names the prototype identity it resolved to, so
+        # the prototypes to convert are read from those identities rather than
+        # rediscovered from the spellings the annotations happen to use.
         callback_prototypes = {
-            argument.semantic_type.name.casefold()
+            identity
             for function in semantic_functions
             for argument in function.arguments
-            if argument.semantic_type.storage is not None and argument.semantic_type.storage.kind == "callback"
+            for identity in (self._prototype_reference_identity(argument.semantic_type),)
+            if identity is not None
         }
         prototypes = self._module_prototypes(
             module,
@@ -1553,6 +1656,7 @@ class FortranToIRConverter(ClassVisitor):
                     prototypes=prototypes,
                 ),
             )
+        self._settle_prototype_contract_names(module, prototypes, semantic_functions, semantic_classes)
         return SemanticModule(
             name=module.name,
             functions=semantic_functions,
