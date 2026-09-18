@@ -47,7 +47,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []
@@ -91,7 +91,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []
@@ -126,7 +126,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []
@@ -177,7 +177,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []
@@ -221,7 +221,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []
@@ -256,7 +256,7 @@
       "result": null,
       "attributes": [],
       "bind_name": null,
-      "uses": {},
+      "uses": [],
       "in_interface": false,
       "variables": {},
       "common_variables": []

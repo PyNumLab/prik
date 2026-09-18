@@ -7,7 +7,7 @@
     {
       "name": "modern_math_physics",
       "filename": "modern_pyi_example.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "counter",
@@ -188,7 +188,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -306,7 +306,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -368,7 +368,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -456,7 +456,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -500,7 +500,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -535,7 +535,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -570,7 +570,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -768,7 +768,7 @@
     "modern_math_physics": {
       "name": "modern_math_physics",
       "filename": "modern_pyi_example.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "counter",
@@ -949,7 +949,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1067,7 +1067,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1129,7 +1129,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1217,7 +1217,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1261,7 +1261,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1296,7 +1296,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1331,7 +1331,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []

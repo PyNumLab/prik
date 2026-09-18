@@ -47,12 +47,10 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     )
     module = FortranModule(
         name="consumer",
-        uses={
-            "plain_mod": [FortranUseStatement("plain_mod")],
-            "types_mod": [
-                FortranUseStatement("types_mod", True, [FortranUseMapping(source="state_t", target="local_state")])
-            ],
-        },
+        uses=[
+            FortranUseStatement("plain_mod"),
+            FortranUseStatement("types_mod", True, (FortranUseMapping(source="state_t", target="local_state"),)),
+        ],
         variables=[FortranVariable(name="module_state", base_type="derived", kind="local_state")],
         procedures=[proc],
         derived_types=[dtype],
@@ -145,7 +143,7 @@ def test_abstract_type_identity_is_module_qualified_and_available_project_wide()
     )
     consumer = FortranModule(
         name="consumer",
-        uses={"abstract_owner": [FortranUseStatement("abstract_owner", True, [FortranUseMapping(source="item_t")])]},
+        uses=[FortranUseStatement("abstract_owner", True, (FortranUseMapping(source="item_t"),))],
         procedures=[
             FortranProcedureSignature(
                 name="consume",

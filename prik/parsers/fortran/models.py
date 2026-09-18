@@ -15,7 +15,6 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from collections.abc import Iterable, Mapping
 from typing import Any
 
 from prik.parsers.fortran.type_resolver import extract_character_selector
@@ -369,7 +368,7 @@ class FortranProcedureSignature:
     result: FortranArgument | None = None
     attributes: list[str] = field(default_factory=list)
     bind_name: str | None = None
-    uses: dict[str, list[FortranUseStatement]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     in_interface: bool = False
     variables: dict[str, FortranVariable] = field(default_factory=dict)
     common_variables: list[str] = field(default_factory=list)
@@ -427,86 +426,28 @@ class FortranEnum:
     visibility: str = "public"
 
 
-@dataclass
+@dataclass(frozen=True)
 class FortranUseStatement:
     """One ``use`` statement exactly as the source writes it.
 
     ``only`` records whether the statement narrowed to an ``only`` list, which
     is independent of what it listed: ``use m`` lists nothing and narrows
     nothing, ``use m, only :`` lists nothing and narrows to nothing. Statements
-    are kept apart because the language reads several for one module together,
-    and combining them while parsing would lose what each one said.
+    are kept apart and immutable because the language reads several for one
+    module together, and a scope that inherits another's imports must not be
+    able to add to them.
     """
 
     module: str
     only: bool = False
-    mappings: list[FortranUseMapping] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class FortranUseAssociation:
-    """What one scope's ``use`` statements of a single module make visible.
-
-    This is the one reading of those statements. Every consumer asks it what a
-    scope sees, rather than deciding for itself what an empty mapping list or a
-    rename means.
-    """
-
-    imports_all: bool = False
     mappings: tuple[FortranUseMapping, ...] = ()
-
-    @classmethod
-    def of(cls, statements: Iterable[FortranUseStatement]) -> FortranUseAssociation:
-        """Combine every ``use`` statement naming one module into one reading.
-
-        Each statement adds the names it lists, and any statement without
-        ``only`` makes the module's remaining public names accessible too.
-        """
-        mappings: dict[tuple[str, str], FortranUseMapping] = {}
-        imports_all = False
-        for statement in statements:
-            imports_all = imports_all or not statement.only
-            for mapping in statement.mappings:
-                mappings.setdefault((mapping.source.casefold(), mapping.local_name.casefold()), mapping)
-        return cls(imports_all, tuple(mappings.values()))
-
-    @property
-    def renamed_sources(self) -> frozenset[str]:
-        """Return the names a rename reaches, which are not reachable as written.
-
-        ``use m, p => q`` accesses that entity as ``p``; ``q`` names nothing in
-        the importing scope.
-        """
-        return frozenset(item.source.casefold() for item in self.mappings if item.target)
-
-    def carried(self, offered: Mapping[str, Any]) -> dict[str, Any]:
-        """Return what this association brings in, keyed by its local name.
-
-        ``offered`` maps each name the used module publishes to whatever the
-        caller tracks for it. A listed name arrives under the spelling it binds;
-        the rest arrive unchanged when the association imports all.
-        """
-        carried: dict[str, Any] = {}
-        if self.imports_all:
-            renamed = self.renamed_sources
-            carried.update((name, value) for name, value in offered.items() if name not in renamed)
-        for mapping in self.mappings:
-            source = mapping.source.casefold()
-            if source in offered:
-                carried[mapping.local_name.casefold()] = offered[source]
-        return carried
-
-
-def use_associations(uses: Mapping[str, Iterable[FortranUseStatement]]) -> dict[str, FortranUseAssociation]:
-    """Read one scope's whole import table as an association per used module."""
-    return {module: FortranUseAssociation.of(statements) for module, statements in uses.items()}
 
 
 @dataclass
 class FortranModule:
     name: str
     filename: str | None = None
-    uses: dict[str, list[FortranUseStatement]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     derived_types: list[FortranDerivedType] = field(default_factory=list)
@@ -524,7 +465,7 @@ class FortranSubmodule:
     parent: str
     ancestor: str | None = None
     filename: str | None = None
-    uses: dict[str, list[FortranUseStatement]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     derived_types: list[FortranDerivedType] = field(default_factory=list)
@@ -537,7 +478,7 @@ class FortranSubmodule:
 class FortranProgram:
     name: str | None = None
     filename: str | None = None
-    uses: dict[str, list[FortranUseStatement]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     enums: list[FortranEnum] = field(default_factory=list)

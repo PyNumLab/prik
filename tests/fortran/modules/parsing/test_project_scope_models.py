@@ -3,7 +3,7 @@
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
-from prik.parsers.fortran.models import FortranUseAssociation
+from prik.parsers.fortran.scope import ScopeUses
 from prik.parsers.fortran.parser import FortranParser
 
 
@@ -191,7 +191,7 @@ end
 
     parsed = parse_fortran_file(code, filename="units.f90")
 
-    assert FortranUseAssociation.of(parsed.programs[0].uses["callback_mod"]).imports_all is True
+    assert ScopeUses(parsed.programs[0].uses).imports_all("callback_mod") is True
     assert [var.name for var in parsed.programs[0].variables] == ["ierr"]
     assert parsed.block_data_units[0].name is None
     assert [var.name for var in parsed.block_data_units[0].variables] == ["seed"]
@@ -321,9 +321,7 @@ end module solver_mod
     assert args["x"].kind == "8"
     assert args["x"].shape == ["1:stride"]
     assert args["y"].kind == "16"
-    assert [
-        (mapping.source, mapping.target) for mapping in FortranUseAssociation.of(proc.uses["precision_mod"]).mappings
-    ] == [
+    assert [(mapping.source, mapping.target) for mapping in ScopeUses(proc.uses).mappings("precision_mod")] == [
         ("wp", "local_wp"),
         ("stride", None),
         ("wide", "local_wide"),
@@ -570,7 +568,7 @@ end subroutine file_level_worker
     assert args["x"].kind == "selected_real_kind(12)"
     assert args["x"].shape == ["1:n"]
     assert args["y"].kind == "selected_real_kind(6)"
-    assert [mapping.local_name for mapping in FortranUseAssociation.of(proc.uses["public_params_mod"]).mappings] == [
+    assert [mapping.local_name for mapping in ScopeUses(proc.uses).mappings("public_params_mod")] == [
         "rk",
         "n",
     ]

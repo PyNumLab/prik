@@ -39,6 +39,7 @@ from prik.naming.generated_files import stub_identifier
 from prik.parsers.c import parse_c_file
 from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.parsers.fortran.parser import parse_fortran_project
+from prik.parsers.fortran.scope import used_module_names
 from prik.preprocessing.probes.fortran_types import (
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
@@ -1640,22 +1641,6 @@ def _serial_compile_batches(object_files: Iterable[ObjectFile]) -> tuple[tuple[O
     return tuple((object_file,) for object_file in object_files)
 
 
-def _fortran_owner_used_modules(owner: object) -> set[str]:
-    """Return lowercased modules used directly or indirectly by one owner.
-
-    ``owner`` may be a parsed module, program, procedure, or submodule.  The
-    helper reads its ``uses`` mappings and the uses of contained procedures and
-    interface procedures, returning a new set without changing the parsed AST.
-    """
-    used = {str(name).lower() for name in getattr(owner, "uses", {})}
-    for procedure in getattr(owner, "procedures", ()):
-        used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
-    for interface in getattr(owner, "interfaces", ()):
-        for procedure in getattr(interface, "procedures", ()):
-            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
-    return used
-
-
 def _fortran_file_used_modules(parsed_file: object) -> set[str]:
     """Return lowercased module dependencies declared by one parsed file.
 
@@ -1671,10 +1656,9 @@ def _fortran_file_used_modules(parsed_file: object) -> set[str]:
     )
     used = set()
     for owner in owners:
-        used.update(_fortran_owner_used_modules(owner))
+        used.update(used_module_names(owner))
     for interface in getattr(parsed_file, "interfaces", ()):
-        for procedure in getattr(interface, "procedures", ()):
-            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
+        used.update(used_module_names(interface))
     for submodule in getattr(parsed_file, "submodules", ()):
         used.add(str(submodule.parent).lower())
         if submodule.ancestor:

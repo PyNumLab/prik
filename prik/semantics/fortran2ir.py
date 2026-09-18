@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 import re
 from pathlib import Path
 
+from prik.parsers.fortran.scope import ScopeUses, UseRoute
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
@@ -36,7 +37,6 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
     FortranSubmodule,
     FortranUseStatement,
-    use_associations,
     FortranVariable,
 )
 from prik.utilities.declaration_expressions import (
@@ -227,13 +227,6 @@ class _SpecificProcedure(NamedTuple):
         return self.module.casefold(), self.name.casefold()
 
 
-class _NameRoute(NamedTuple):
-    """One way a module reaches a name: the module used, and the name there."""
-
-    used_module: str
-    source_name: str
-
-
 @dataclass(frozen=True)
 class _DerivedTypeContext:
     """Keep lexical derived-type lookup facts while one parser node is converted.
@@ -244,8 +237,8 @@ class _DerivedTypeContext:
     """
 
     module: str | None = None
-    uses: dict[str, list[FortranUseStatement]] | None = None
-    procedure_uses: dict[str, list[FortranUseStatement]] | None = None
+    uses: list[FortranUseStatement] | None = None
+    procedure_uses: list[FortranUseStatement] | None = None
     local_types: frozenset[str] = frozenset()
 
 
@@ -269,7 +262,7 @@ class _DeclarationCallableContext:
     module: str | None
     local_procedures: dict[str, SemanticFunction]
     local_interfaces: dict[str, SemanticPrototype]
-    uses: dict[str, list[FortranUseStatement]]
+    uses: list[FortranUseStatement]
 
 
 def _normalize_compile_time_values(
@@ -821,7 +814,7 @@ class FortranToIRConverter(ClassVisitor):
     def _scope_callback_interfaces(
         cls,
         modules: dict[str, FortranModule],
-        uses: dict[str, list[FortranUseStatement]],
+        uses: list[FortranUseStatement],
         *,
         base: dict[str, _CallbackInterface],
         owner: FortranModule | None = None,
@@ -878,7 +871,7 @@ class FortranToIRConverter(ClassVisitor):
         cls,
         visible: dict[str, _CallbackInterface],
         modules: dict[str, FortranModule],
-        uses: dict[str, list[FortranUseStatement]],
+        uses: list[FortranUseStatement],
         *,
         seen: frozenset[str],
         override: bool,
@@ -895,10 +888,11 @@ class FortranToIRConverter(ClassVisitor):
         """
         declared_here = set(visible)
         candidates: dict[str, set[tuple[str | None, str] | None]] = {}
-        for module_name, association in use_associations(uses).items():
+        scope = ScopeUses(uses)
+        for module_name in scope.modules():
             source_module = modules.get(module_name.casefold())
             if source_module is None:
-                for mapping in association.mappings:
+                for mapping in scope.mappings(module_name):
                     candidates.setdefault(mapping.local_name.casefold(), set()).add(None)
                 continue
             source_lookup = cls._module_callback_interfaces(
@@ -907,13 +901,16 @@ class FortranToIRConverter(ClassVisitor):
                 seen=seen,
                 exported_only=True,
             )
-            imported = association.carried(source_lookup)
-            # A rename binds the interface under the name the importing scope
-            # gives it, which a contract written here has to state.
-            for mapping in association.mappings:
-                local = mapping.local_name.casefold()
-                if local in imported:
-                    imported[local] = replace(imported[local], local_name=mapping.local_name)
+            imported: dict[str, _CallbackInterface] = {}
+            for mapping in scope.mappings(module_name):
+                resolved = source_lookup.get(mapping.source.casefold())
+                if resolved is not None:
+                    # A rename binds the interface under the name the importing
+                    # scope gives it, which a contract here has to state.
+                    imported[mapping.local_name.casefold()] = replace(resolved, local_name=mapping.local_name)
+            if scope.imports_all(module_name):
+                for name, resolved in source_lookup.items():
+                    imported.setdefault(name, resolved)
             for name, resolved in imported.items():
                 candidates.setdefault(name, set()).add(cls._callback_identity(resolved))
                 if override:
@@ -1612,7 +1609,7 @@ class FortranToIRConverter(ClassVisitor):
                 module,
                 functions=semantic_functions,
                 prototypes=prototypes,
-                uses={**module.uses, **procedure.uses},
+                uses=[*module.uses, *procedure.uses],
             )
             self._record_function_declaration_callables(function, callable_context)
 
@@ -1772,7 +1769,7 @@ class FortranToIRConverter(ClassVisitor):
                     module=None,
                     local_procedures=function_lookup,
                     local_interfaces={},
-                    uses=dict(procedure.uses),
+                    uses=list(procedure.uses),
                 ),
             )
         return SemanticModule(
@@ -1953,15 +1950,11 @@ class FortranToIRConverter(ClassVisitor):
         seen = seen | {key}
         is_public = cls._effective_accessibility(module)
         offered: dict[str, set[str]] = {name: set() for name in cls._module_declared_names(module)}
-        for module_name, association in use_associations(module.uses).items():
-            for mapping in association.mappings:
-                offered.setdefault(mapping.local_name.casefold(), set()).add(module_name)
-            used = index.get(module_name.casefold())
-            if used is None:
-                continue
-            reachable = dict.fromkeys(cls._module_public_names(used, index, seen), True)
-            for name in association.carried(reachable):
-                offered.setdefault(name, set()).add(module_name)
+        scope = ScopeUses(module.uses)
+        reachable = cls._offered_names(index, seen)
+        for name in scope.accessible_names(reachable):
+            folded = name.casefold()
+            offered.setdefault(folded, set()).update(route.module for route in scope.routes_for(name, reachable))
         return {name for name, routes in offered.items() if is_public(name, routes)}
 
     @staticmethod
@@ -1988,12 +1981,22 @@ class FortranToIRConverter(ClassVisitor):
         return None
 
     @classmethod
+    def _offered_names(cls, index: dict[str, FortranModule], seen: frozenset[str] = frozenset()):
+        """Return what each used module publishes, or ``None`` when unparsed."""
+
+        def offered(module_name: str):
+            used = index.get(module_name.casefold())
+            return None if used is None else cls._module_public_names(used, index, seen)
+
+        return offered
+
+    @classmethod
     def _name_routes(
         cls,
         module: FortranModule,
         index: dict[str, FortranModule],
         local_name: str,
-    ) -> tuple[_NameRoute, ...]:
+    ) -> tuple[UseRoute, ...]:
         """Return every route by which one module reaches one local name.
 
         A named mapping states the name it carries. A plain ``use`` carries
@@ -2004,20 +2007,7 @@ class FortranToIRConverter(ClassVisitor):
         ``use``, says nothing about what it carries, so both kinds are collected
         together and weighed the same way afterwards.
         """
-        folded = local_name.casefold()
-        routes: list[_NameRoute] = [
-            _NameRoute(used_name, mapping.source)
-            for used_name, association in use_associations(module.uses).items()
-            for mapping in association.mappings
-            if mapping.local_name.casefold() == folded
-        ]
-        for used_name, association in use_associations(module.uses).items():
-            if not association.imports_all or folded in association.renamed_sources:
-                continue
-            used = index.get(used_name.casefold())
-            if used is not None and folded in cls._module_public_names(used, index):
-                routes.append(_NameRoute(used_name, local_name))
-        return tuple(routes)
+        return ScopeUses(module.uses).routes_for(local_name, cls._offered_names(index))
 
     @classmethod
     def _use_associated_names(
@@ -2032,19 +2022,7 @@ class FortranToIRConverter(ClassVisitor):
         for a parsed one. Named spellings come first, so a name reached both
         ways keeps the case its ``use`` statement wrote.
         """
-        names: dict[str, str] = {}
-        associations = use_associations(module.uses)
-        for association in associations.values():
-            for mapping in association.mappings:
-                names.setdefault(mapping.local_name.casefold(), mapping.local_name)
-        for used_name, association in associations.items():
-            used = index.get(used_name.casefold())
-            if used is None:
-                continue
-            offered = dict.fromkeys(sorted(cls._module_public_names(used, index)), True)
-            for name in association.carried(offered):
-                names.setdefault(name, name)
-        return tuple(names.values())
+        return ScopeUses(module.uses).accessible_names(cls._offered_names(index))
 
     def _module_reexports(
         cls,
@@ -2068,11 +2046,11 @@ class FortranToIRConverter(ClassVisitor):
         for local_name in cls._use_associated_names(module, index):
             local_key = local_name.casefold()
             routes = cls._name_routes(module, index, local_name)
-            route_names = tuple(dict.fromkeys(route.used_module for route in routes))
+            route_names = tuple(dict.fromkeys(route.module for route in routes))
             if local_key in declared or not routes or not is_public(local_name, route_names):
                 continue
             origin = cls._reconcile_routes(
-                [cls._resolve_reexport_origin(index, route.used_module, route.source_name) for route in routes]
+                [cls._resolve_reexport_origin(index, route.module, route.source_name) for route in routes]
             )
             if origin is None:
                 continue
@@ -2124,11 +2102,11 @@ class FortranToIRConverter(ClassVisitor):
             return kind, declaring.name, source_name
         seen = seen | {key}
         routes = cls._name_routes(declaring, index, source_name)
-        route_names = tuple(dict.fromkeys(route.used_module for route in routes))
+        route_names = tuple(dict.fromkeys(route.module for route in routes))
         if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
             return "unknown", module_name, source_name
         origin = cls._reconcile_routes(
-            [cls._resolve_reexport_origin(index, route.used_module, route.source_name, seen) for route in routes]
+            [cls._resolve_reexport_origin(index, route.module, route.source_name, seen) for route in routes]
         )
         return origin if origin is not None else ("unknown", module_name, source_name)
 
@@ -2166,16 +2144,16 @@ class FortranToIRConverter(ClassVisitor):
         means on its own.
         """
         imports: list[str | SemanticImport] = []
-        for module_name, association in use_associations(module.uses).items():
-            if association.imports_all:
+        scope = ScopeUses(module.uses)
+        for module_name in scope.modules():
+            if scope.imports_all(module_name):
                 imports.append(module_name)
-            if association.mappings:
+            mappings = scope.mappings(module_name)
+            if mappings:
                 imports.append(
                     SemanticImport(
                         module=module_name,
-                        items=[
-                            SemanticImportItem(source=item.source, target=item.target) for item in association.mappings
-                        ],
+                        items=[SemanticImportItem(source=item.source, target=item.target) for item in mappings],
                     )
                 )
         return imports
@@ -2186,14 +2164,14 @@ class FortranToIRConverter(ClassVisitor):
         functions: Iterable[SemanticFunction] = (),
         prototypes: Iterable[SemanticPrototype] = (),
         *,
-        uses: dict[str, list[FortranUseStatement]] | None = None,
+        uses: list[FortranUseStatement] | None = None,
     ) -> _DeclarationCallableContext:
         """Build lexical procedure facts for one module-owned declaration."""
         return _DeclarationCallableContext(
             module=module.name,
             local_procedures={function.name.casefold(): function for function in functions},
             local_interfaces={prototype.name.casefold(): prototype for prototype in prototypes},
-            uses=dict(module.uses if uses is None else uses),
+            uses=list(module.uses if uses is None else uses),
         )
 
     def _record_declaration_callables(
@@ -2269,10 +2247,11 @@ class FortranToIRConverter(ClassVisitor):
                 declaration=local,
             )
 
+        scope = ScopeUses(context.uses)
         explicit = [
             (module_name, mapping.source)
-            for module_name, association in use_associations(context.uses).items()
-            for mapping in association.mappings
+            for module_name in scope.modules()
+            for mapping in scope.mappings(module_name)
             if mapping.local_name.casefold() == key
         ]
         if len(explicit) == 1:
@@ -2286,9 +2265,7 @@ class FortranToIRConverter(ClassVisitor):
         if explicit:
             return None
 
-        wildcard_modules = [
-            name for name, association in use_associations(context.uses).items() if association.imports_all
-        ]
+        wildcard_modules = [name for name in scope.modules() if scope.imports_all(name)]
         known_origins = [
             module_name for module_name in wildcard_modules if (module_name.casefold(), key) in self._known_procedures
         ]
@@ -2458,31 +2435,25 @@ class FortranToIRConverter(ClassVisitor):
         The new context keeps enclosing local types while separating procedure-
         local imports, which later controls imported type qualification.
         """
-        uses = dict(parent.uses or {}) if parent is not None else {}
-        uses.update(proc.uses)
+        inherited = (parent.uses or ()) if parent is not None else ()
+        uses = [*inherited, *proc.uses]
         return _DerivedTypeContext(
             module=proc.module or (parent.module if parent is not None else None),
             uses=uses,
-            procedure_uses=FortranToIRConverter._procedure_local_uses(proc, parent),
+            procedure_uses=FortranToIRConverter._procedure_local_uses(proc),
             local_types=parent.local_types if parent is not None else frozenset(),
         )
 
     @staticmethod
-    def _procedure_local_uses(
-        proc: FortranProcedureSignature,
-        parent: _DerivedTypeContext | None,
-    ) -> dict[str, list[FortranUseStatement]]:
-        """Return imports introduced locally by ``proc`` relative to its parent.
+    def _procedure_local_uses(proc: FortranProcedureSignature) -> list[FortranUseStatement]:
+        """Return the ``use`` statements ``proc`` writes itself.
 
-        A parser-preserved ``_local_uses`` mapping takes precedence; otherwise
-        only imports differing from the parent context are returned.
+        The parser records them apart from the ones it inherits, so a
+        procedure's own imports are read rather than recovered by comparing its
+        table with its parent's.
         """
         local_uses = getattr(proc, "_local_uses", None)
-        if isinstance(local_uses, dict):
-            return dict(local_uses)
-        if parent is None or parent.uses is None:
-            return dict(proc.uses)
-        return {module: mappings for module, mappings in proc.uses.items() if parent.uses.get(module) != mappings}
+        return list(proc.uses if local_uses is None else local_uses)
 
     def _derived_type_ref(
         self,
@@ -2548,7 +2519,7 @@ class FortranToIRConverter(ClassVisitor):
     def _resolve_derived_type_origin_from_uses(
         self,
         local_name: str,
-        uses: dict[str, list[FortranUseStatement]] | None,
+        uses: list[FortranUseStatement] | None,
     ) -> _ResolvedDerivedTypeOrigin:
         """Resolve one derived-type spelling from explicit or wildcard ``use`` maps.
 
@@ -2559,10 +2530,11 @@ class FortranToIRConverter(ClassVisitor):
         lname = local_name.lower()
         explicit: list[tuple[str, str]] = []
         wildcard_modules: list[str] = []
-        for module_name, association in use_associations(uses or {}).items():
-            if association.imports_all:
+        scope = ScopeUses(uses or ())
+        for module_name in scope.modules():
+            if scope.imports_all(module_name):
                 wildcard_modules.append(module_name)
-            for mapping in association.mappings:
+            for mapping in scope.mappings(module_name):
                 if mapping.local_name.lower() == lname:
                     explicit.append((module_name, mapping.source))
 
@@ -3787,14 +3759,14 @@ class FortranToIRConverter(ClassVisitor):
         """
         contributors: list[tuple[FortranModule, FortranInterface]] = []
         for route in cls._name_routes(module, modules, generic_name):
-            source_module = modules.get(route.used_module.casefold())
+            source_module = modules.get(route.module.casefold())
             if source_module is None:
                 continue
             key = (source_module.name.casefold(), route.source_name.casefold())
             if key in seen:
                 continue
             onward = cls._name_routes(source_module, modules, route.source_name)
-            route_names = tuple(dict.fromkeys(item.used_module for item in onward))
+            route_names = tuple(dict.fromkeys(item.module for item in onward))
             if not cls._effective_accessibility(source_module)(route.source_name, route_names):
                 continue
             declared = cls._module_generic_interface(source_module, route.source_name)

@@ -3,7 +3,7 @@
 import pytest
 
 from prik.parsers.fortran.models import FortranModule
-from prik.parsers.fortran.models import FortranUseAssociation
+from prik.parsers.fortran.scope import ScopeUses
 from prik.parsers.fortran.parser import FortranParser, _ParserScope
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 
@@ -138,15 +138,18 @@ end module use_forms
 
     module = parse_fortran_file(code).modules[0]
 
-    renamed = FortranUseAssociation.of(module.uses["list_input"])
+    scope = ScopeUses(module.uses)
     # A rename without `only` binds the new name and still imports the rest.
-    assert renamed.imports_all is True
-    assert list(renamed.mappings) == ["delete_input"]
-    assert (renamed.mappings[0].source, renamed.mappings[0].target) == ("delete_input_list", "delete_input")
-    intrinsic = FortranUseAssociation.of(module.uses["iso_c_binding"])
-    assert intrinsic.imports_all is False
-    assert list(intrinsic.mappings) == ["c_int", "c_double"]
-    assert [(item.source, item.target) for item in intrinsic.mappings] == [
+    assert scope.imports_all("list_input") is True
+    assert list(scope.mappings("list_input")) == ["delete_input"]
+    assert (scope.mappings("list_input")[0].source, scope.mappings("list_input")[0].target) == (
+        "delete_input_list",
+        "delete_input",
+    )
+
+    assert scope.imports_all("iso_c_binding") is False
+    assert list(scope.mappings("iso_c_binding")) == ["c_int", "c_double"]
+    assert [(item.source, item.target) for item in scope.mappings("iso_c_binding")] == [
         ("c_int", None),
         ("c_double", None),
     ]
@@ -324,7 +327,7 @@ end module use_empty_items_mod
 
     module = parse_fortran_file(code, filename="use_empty_items.f90").modules[0]
 
-    assert [item.local_name for item in FortranUseAssociation.of(module.uses["constants_mod"]).mappings] == ["rk", "ik"]
+    assert [item.local_name for item in ScopeUses(module.uses).mappings("constants_mod")] == ["rk", "ik"]
 
 
 def test_type_field_spec_variants_and_empty_entities_from_public_source():

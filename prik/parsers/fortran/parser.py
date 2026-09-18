@@ -10,7 +10,7 @@ maintainer guide below documents the same control flow.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field as dataclass_field, replace
 from pathlib import Path
@@ -28,6 +28,7 @@ from prik.utilities.declaration_expressions import (
 from prik.utilities.visitor import ClassVisitor
 
 from prik.parsers.fortran.lexer import preprocess_lines
+from prik.parsers.fortran.scope import ScopeUses, used_module_names
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
@@ -43,7 +44,6 @@ from prik.parsers.fortran.models import (
     FortranProject,
     FortranSubmodule,
     FortranUseStatement,
-    use_associations,
     FortranUseMapping,
     FortranVariable,
 )
@@ -395,8 +395,8 @@ class _ProcedureState:
     signature: FortranProcedureSignature
     symbols: dict[str, FortranArgument]
     typed_symbols: set[str] = dataclass_field(default_factory=set)
-    uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
-    local_uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
+    uses: list[FortranUseStatement] = dataclass_field(default_factory=list)
+    local_uses: list[FortranUseStatement] = dataclass_field(default_factory=list)
     local_params: dict[str, str] = dataclass_field(default_factory=dict)
     legacy_local_params: set[str] = dataclass_field(default_factory=set)
     implicit_typed_symbols: dict[str, str] = dataclass_field(default_factory=dict)
@@ -1873,7 +1873,7 @@ class FortranParser(ClassVisitor):
         proc_state.filename = filename
         proc_state.header_lineno = header[1]
         proc_state.header_source_line = header[2]
-        proc_state.uses.update(getattr(parent_scope.model, "uses", {}))
+        proc_state.uses.extend(getattr(parent_scope.model, "uses", ()))
         scope = self._helper_scope_for_model("procedure", proc_state.signature, parent=parent_scope, state=proc_state)
         self._parse_specification_part(scope, unit.specification, filename=filename)
         child_units = unit.children
@@ -2154,9 +2154,9 @@ class FortranParser(ClassVisitor):
         """
         requirements: set[str] = set()
         for module in parsed_file.modules:
-            requirements.update(name.lower() for name in module.uses)
+            requirements.update(used_module_names(module))
         for submodule in parsed_file.submodules:
-            requirements.update(name.lower() for name in submodule.uses)
+            requirements.update(used_module_names(submodule))
             requirements.add(submodule.parent.lower())
             if submodule.ancestor:
                 requirements.add(submodule.ancestor.lower())
@@ -2305,7 +2305,7 @@ class FortranParser(ClassVisitor):
         """Index one module and its owned public models."""
         module_key = module.name.lower()
         self._insert_unique_scope_symbol(project.modules, module_key, module, label="project module scope")
-        project.dependencies[module_key] = {name.lower() for name in module.uses}
+        project.dependencies[module_key] = used_module_names(module)
         self._helper_index_project_owner_members(project, module, module_key)
 
     def _helper_index_project_submodule(self, project: FortranProject, submodule: FortranSubmodule) -> None:
@@ -2317,7 +2317,7 @@ class FortranParser(ClassVisitor):
             submodule,
             label="project submodule scope",
         )
-        dependencies = {submodule.parent.lower(), *(name.lower() for name in submodule.uses)}
+        dependencies = {submodule.parent.lower(), *used_module_names(submodule)}
         if submodule.ancestor:
             dependencies.add(submodule.ancestor.lower())
         project.dependencies[submodule_key] = dependencies
@@ -2375,7 +2375,7 @@ class FortranParser(ClassVisitor):
             return
         program_key = program.name.lower()
         self._insert_unique_scope_symbol(project.programs, program_key, program, label="project program scope")
-        project.dependencies[program_key] = {name.lower() for name in program.uses}
+        project.dependencies[program_key] = used_module_names(program)
 
     def _helper_index_project_interface(
         self,
@@ -3495,7 +3495,7 @@ class FortranParser(ClassVisitor):
 
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use and hasattr(target, "uses"):
-            self._record_use_mappings(target.uses, parsed_use)
+            target.uses.append(parsed_use)
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3662,8 +3662,8 @@ class FortranParser(ClassVisitor):
             return
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
-            self._record_use_mappings(proc_state.uses, parsed_use)
-            self._record_use_mappings(proc_state.local_uses, parsed_use)
+            proc_state.uses.append(parsed_use)
+            proc_state.local_uses.append(parsed_use)
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -4931,7 +4931,7 @@ class FortranParser(ClassVisitor):
             attr = f"import({symbol})"
             if attr not in sig.attributes:
                 sig.attributes.append(attr)
-        sig.uses = dict(state.uses)
+        sig.uses = list(state.uses)
         sig.common_variables = list(state.common_variables)
 
     @staticmethod
@@ -4948,7 +4948,7 @@ class FortranParser(ClassVisitor):
         not deep-copy arguments or other signature members.
         """
         finalized = replace(sig)
-        finalized._local_uses = dict(state.local_uses)
+        finalized._local_uses = list(state.local_uses)
         return finalized
 
     @staticmethod
@@ -5231,7 +5231,7 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _imported_compile_time_symbols(
-        uses: Mapping[str, list[FortranUseStatement]],
+        uses: Iterable[FortranUseStatement],
         symbols: _CompileTimeSymbols,
         *,
         include_intrinsic_aliases: bool,
@@ -5246,16 +5246,27 @@ class FortranParser(ClassVisitor):
         when the intrinsic module has no parsed model; ordinary procedure scope
         lookup leaves that target-dependent spelling untouched.
         """
+        scope = ScopeUses(uses)
+        offered = {module: symbols.in_module(module.casefold()) for module in scope.modules()}
         imported: dict[str, str] = {}
-        for dependency, association in use_associations(uses).items():
-            dependency_name = dependency.casefold()
-            dependency_symbols = symbols.in_module(dependency_name)
-            imported.update(association.carried(dependency_symbols))
-            if not include_intrinsic_aliases or dependency_name not in _INTRINSIC_COMPILE_TIME_MODULES:
+        for name in scope.accessible_names(lambda module: offered[module]):
+            expressions = {
+                offered[route.module][route.source_name.casefold()]
+                for route in scope.routes_for(name, lambda module: offered[module])
+                if route.source_name.casefold() in offered[route.module]
+            }
+            # Routes that disagree leave the name meaning more than one value,
+            # which is not something to choose between.
+            if len(expressions) == 1:
+                imported[name.casefold()] = next(iter(expressions))
+        if not include_intrinsic_aliases:
+            return imported
+        # An intrinsic module has no parsed symbols, so a name imported from
+        # one stands for its own target-dependent spelling.
+        for module in scope.modules():
+            if module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES:
                 continue
-            # An intrinsic module has no parsed symbols, so a name imported
-            # from one stands for its own target-dependent spelling.
-            for mapping in association.mappings:
+            for mapping in scope.mappings(module):
                 imported.setdefault(mapping.local_name.casefold(), mapping.source)
         return imported
 
@@ -5815,19 +5826,6 @@ class FortranParser(ClassVisitor):
         return name if name else None
 
     @staticmethod
-    def _record_use_mappings(
-        uses: dict[str, list[FortranUseStatement]],
-        statement: FortranUseStatement,
-    ) -> None:
-        """Append one ``use`` statement to a scope's import table.
-
-        A scope may name the same module more than once, and what each
-        statement said is a source fact, so they are kept apart here and read
-        together by ``FortranUseAssociation``.
-        """
-        uses.setdefault(statement.module, []).append(statement)
-
-    @staticmethod
     def _parse_use_statement(line: str) -> FortranUseStatement | None:
         """Parse one ``use`` statement into the facts the source states.
 
@@ -5856,7 +5854,7 @@ class FortranParser(ClassVisitor):
                 source = token
                 target = None
             mappings.append(FortranUseMapping(source=source, target=target))
-        return FortranUseStatement(match.group("module"), only_match is not None, mappings)
+        return FortranUseStatement(match.group("module"), only_match is not None, tuple(mappings))
 
 
 # -----------------------------------------------------------------------------

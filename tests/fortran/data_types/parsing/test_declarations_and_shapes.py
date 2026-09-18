@@ -2,7 +2,7 @@
 
 import pytest
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
-from prik.parsers.fortran.models import FortranUseAssociation
+from prik.parsers.fortran.scope import ScopeUses
 from tests.fortran._support.parser_procedures import (
     COMPILE_TIME_EXPRESSION_SOURCE,
     collect_project_procedure_signatures,
@@ -137,7 +137,7 @@ end module cfg
     assert len(modules) == 1
     mod = modules[0]
     assert mod.name == "cfg"
-    assert list(FortranUseAssociation.of(mod.uses["iso_c_binding"]).mappings) == ["c_int"]
+    assert list(ScopeUses(mod.uses).mappings("iso_c_binding")) == ["c_int"]
     assert [v.name for v in mod.variables] == ["nmax", "origin"]
     assert mod.variables[0].is_parameter is True
     assert mod.variables[1].is_parameter is False

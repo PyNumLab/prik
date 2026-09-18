@@ -7,7 +7,7 @@
     {
       "name": "dims_mod",
       "filename": "compile_time_shape_exprs.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "n0",
@@ -116,7 +116,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -144,7 +144,7 @@
     "dims_mod": {
       "name": "dims_mod",
       "filename": "compile_time_shape_exprs.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "n0",
@@ -253,7 +253,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []

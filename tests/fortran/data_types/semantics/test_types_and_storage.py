@@ -44,12 +44,10 @@ def test_converter_visitor_and_compatibility_methods_cover_public_paths():
     )
     module = FortranModule(
         name="m",
-        uses={
-            "iso_c_binding": [
-                FortranUseStatement("iso_c_binding", True, [FortranUseMapping(source="c_int", target="i32")])
-            ],
-            "plain_import": [FortranUseStatement("plain_import")],
-        },
+        uses=[
+            FortranUseStatement("iso_c_binding", True, (FortranUseMapping(source="c_int", target="i32"),)),
+            FortranUseStatement("plain_import"),
+        ],
         variables=[scale],
         procedures=[proc],
         derived_types=[dtype],

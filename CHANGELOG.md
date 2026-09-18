@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A scope's `use` statements are kept as a flat, immutable list and read by one
+  resolver. A procedure inheriting its module's imports could previously append
+  to the very list the module held, so `use dep, only : y` written inside a
+  contained procedure reached module accessibility and re-export analysis. Two
+  statements spelling one module differently (`use DEP` beside `use dep`) were
+  also held apart, and a local name reached by two entities -- `use dep, x => y`
+  where `dep` also publishes `x` -- silently resolved to one of them instead of
+  being reported ambiguous.
+
 - A type-bound defined assignment updates the method it names. Making a
   specific's identity structural left two helpers looking the original up by
   bare name, so `generic :: assignment(=) => assign_value` projected its bound

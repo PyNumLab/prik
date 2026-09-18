@@ -1,6 +1,7 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
 from prik.parsers.fortran import parse_fortran_file
+from prik.parsers.fortran.models import FortranUseStatement
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranProcedureSignature,
@@ -91,7 +92,7 @@ def test_finalize_proc_resolves_signature_arguments_imports_and_uses_without_exp
         signature,
         symbols={argument.name.lower(): argument for argument in signature.arguments},
     )
-    state.uses = {"precision_mod": []}
+    state.uses = [FortranUseStatement("precision_mod")]
     state.local_params = {"rk": "8", "count": "4"}
     state.imports = {"state_t", "callback"}
     state.filename = "finalize_contract.f90"
@@ -104,5 +105,5 @@ def test_finalize_proc_resolves_signature_arguments_imports_and_uses_without_exp
         ("values", "real", "8", ["4"]),
     ]
     assert finalized.attributes == ["import(callback)", "import(state_t)"]
-    assert finalized.uses == {"precision_mod": []}
+    assert [statement.module for statement in finalized.uses] == ["precision_mod"]
     assert finalized.variables == {}

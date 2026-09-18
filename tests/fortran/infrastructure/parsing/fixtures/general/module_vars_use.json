@@ -7,24 +7,22 @@
     {
       "name": "constants_mod",
       "filename": "module_vars_use.f90",
-      "uses": {
-        "iso_c_binding": [
-          {
-            "module": "iso_c_binding",
-            "only": true,
-            "mappings": [
-              {
-                "source": "c_int",
-                "target": null
-              },
-              {
-                "source": "c_double",
-                "target": null
-              }
-            ]
-          }
-        ]
-      },
+      "uses": [
+        {
+          "module": "iso_c_binding",
+          "only": true,
+          "mappings": [
+            {
+              "source": "c_int",
+              "target": null
+            },
+            {
+              "source": "c_double",
+              "target": null
+            }
+          ]
+        }
+      ],
       "variables": [
         {
           "name": "nmax",
@@ -98,24 +96,22 @@
     "constants_mod": {
       "name": "constants_mod",
       "filename": "module_vars_use.f90",
-      "uses": {
-        "iso_c_binding": [
-          {
-            "module": "iso_c_binding",
-            "only": true,
-            "mappings": [
-              {
-                "source": "c_int",
-                "target": null
-              },
-              {
-                "source": "c_double",
-                "target": null
-              }
-            ]
-          }
-        ]
-      },
+      "uses": [
+        {
+          "module": "iso_c_binding",
+          "only": true,
+          "mappings": [
+            {
+              "source": "c_int",
+              "target": null
+            },
+            {
+              "source": "c_double",
+              "target": null
+            }
+          ]
+        }
+      ],
       "variables": [
         {
           "name": "nmax",
