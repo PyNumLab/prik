@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.printers import emit_module
+from prik.pipeline.pyi import emit_module_stubs
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from tests.fortran._support.generated_contracts import (
     GeneratedContractCase,
@@ -66,10 +66,12 @@ end subroutine qradd_Rdiag
 end module powalg_mod
 """
 
-    code = emit_module(
+    # Contract names are completed by policy, never by the printer, so the
+    # module is emitted through the stage that completes them first.
+    code = emit_module_stubs(
         fortran_module_to_semantic_module(parse_fortran_source(source)),
         normalize_public_names=True,
-    )
+    )["powalg_mod"]
 
     assert "def qradd_rdiag(" in code
     assert '@overload("qradd_rdiag")' in code

@@ -18,8 +18,7 @@ import re
 
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
-from prik.naming import NamingPolicy
-from prik.naming.policy import normalize_public_name, preserves_source_case
+from prik.naming.policy import normalize_public_name
 from prik.utilities.declaration_expressions import fortran_character_value, outside_character_literals
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
@@ -41,14 +40,15 @@ from prik.semantics.metadata import (
     USER_PRIVATE_METADATA,
 )
 from prik.semantics.models import (
+    CONTRACT_BASE_NAMES_METADATA,
+    CONTRACT_NAME_METADATA,
+    CONTRACT_TARGET_NAME_METADATA,
     EXTERNAL_TYPE_REF_METADATA,
     FORTRAN_GENERIC_NAME_METADATA,
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
     NATIVE_BY_VALUE_METADATA,
     PYTHON_BOUND_POSITION_METADATA,
-    PYTHON_EXPORTS_METADATA,
-    export_namespace,
     PYTHON_METHOD_NAME_METADATA,
     PYTHON_STATIC_METADATA,
     PYTHON_VALUE_IMMUTABLE,
@@ -68,6 +68,7 @@ from prik.semantics.models import (
     SemanticDestructor,
     SemanticFunction,
     SemanticImport,
+    completed_contract_name,
     SemanticImportItem,
     SemanticMethod,
     SemanticModule,
@@ -97,43 +98,7 @@ class _PyiEmissionContext:
     semantic_class_names: frozenset[str] = frozenset()
     contract_aliases: dict[str, str] = field(default_factory=dict)
     contract_imports: set[str] = field(default_factory=set)
-    naming_policy: NamingPolicy = field(default_factory=NamingPolicy)
-    reserved_public_names: dict[tuple[tuple[str, ...], str, object], str] = field(default_factory=dict)
     public_namespace: tuple[str, ...] = ()
-    reexport_names: dict[str, str] = field(default_factory=dict)
-    """Each re-exported source name, casefolded, to the name policy completed.
-
-    An import binding a re-exported name writes what export policy settled, so
-    the import cannot bind a name one of this module's declarations holds.
-    """
-    class_python_names: dict[str, str] = field(default_factory=dict)
-    """Each wrapped type's source name to the spelling this contract declares it under.
-
-    A declaration and every annotation naming it read the same entry, so an
-    annotation cannot refer to a class the contract never declares.
-    """
-    settled_names: dict[tuple[str, str], str] = field(default_factory=dict)
-    """Module-level names post-IR policy completed, keyed by category and source name.
-
-    Policy owns every public name a build publishes, and a contract describing
-    that build states the same ones. The emission reads them from here rather
-    than allocating a second set, whose ordering and collision suffixes would
-    be its own and could attach the same names to different declarations.
-    """
-    published_names: dict[str, str] = field(default_factory=dict)
-    """Source name, casefolded, to the spelling this contract published it under.
-
-    Collision handling can move a name aside, so what a declaration is finally
-    called is knowable only from the emission that named it. A module reading
-    from this one asks for the published spelling rather than deriving one.
-    """
-    published_specifics: dict[tuple[str, str], str] = field(default_factory=dict)
-    """Declaring scope and native name to the spelling this contract wrote.
-
-    A merged generic dispatches over specifics from more than one module, which
-    may spell one the same way, so an overload target naming only that spelling
-    names no single declaration. The scope completes the identity.
-    """
 
     def contract(self, name: str) -> str:
         """Return one local contract spelling and record its required import."""
@@ -146,46 +111,11 @@ class _PyiEmissionContext:
         """Return the local spelling for one contract type name."""
         if name in CONTRACT_TYPE_NAMES:
             return self.contract(name)
-        return self.class_python_names.get(str(name), name)
+        return name
 
     def inside_class(self, name: str) -> _PyiEmissionContext:
         """Return a child namespace view sharing this emission's accumulators."""
         return replace(self, public_namespace=(*self.public_namespace, name))
-
-    def public_name(self, raw_name: str, *, category: str, owner: object) -> str:
-        """Reserve and return one normalized name inside the current namespace."""
-        key = (self.public_namespace, category, self._public_owner_key(owner))
-        reserved = self.reserved_public_names.get(key)
-        if reserved is not None:
-            return reserved
-        public_name = self.naming_policy.reserve_public_name(
-            self.public_namespace,
-            raw_name,
-            category=category,
-            owner=raw_name,
-        )
-        self.reserved_public_names[key] = public_name
-        return self.publish(raw_name, public_name)
-
-    def settled(self, category: str, raw_name: object) -> str | None:
-        """Return the completed name for one module-level declaration, if any.
-
-        A class member is named by class-surface policy, which only a build
-        request completes, so inside a class there is nothing to read here.
-        """
-        if self.public_namespace:
-            return None
-        return self.settled_names.get((category, str(raw_name)))
-
-    def publish(self, raw_name: object, public_name: str) -> str:
-        """Record the spelling this contract published one name under."""
-        if not self.public_namespace:
-            self.published_names.setdefault(str(raw_name), public_name)
-        return public_name
-
-    def normalized(self, raw_name: object) -> str:
-        """Return one name under this emission's naming rule, reserving nothing."""
-        return normalize_public_name(raw_name, preserve_case=self.naming_policy.preserve_case).name
 
     def contract_import(self) -> str:
         """Return the direct import for contract symbols used by this emission."""
@@ -197,16 +127,9 @@ class _PyiEmissionContext:
             items.append(f"{name} as {alias}" if alias else name)
         return f"from {_CONTRACT_MODULE} import {', '.join(items)}"
 
-    @staticmethod
-    def _public_owner_key(owner: object) -> object:
-        """Return a stable cache key for one emitted public declaration."""
-        if isinstance(owner, str | int | tuple):
-            return owner
-        return id(owner)
 
-
-def published_name(published: dict[str, str] | None, source: object) -> str | None:
-    """Return the spelling a contract published one source name under.
+def contract_name_for_source(completed: dict[str, str] | None, source: object) -> str | None:
+    """Return the completed contract spelling for one source name.
 
     A contract records each name exactly as its source spells it, so two
     declarations a case-sensitive language keeps apart keep separate entries.
@@ -215,14 +138,14 @@ def published_name(published: dict[str, str] | None, source: object) -> str | No
     names no single declaration, and guessing one would depend on the order
     they happened to be recorded in.
     """
-    if not published:
+    if not completed:
         return None
     wanted = str(source)
-    exact = published.get(wanted)
+    exact = completed.get(wanted)
     if exact is not None:
         return exact
     folded = wanted.casefold()
-    matches = [value for key, value in published.items() if key.casefold() == folded]
+    matches = [value for key, value in completed.items() if key.casefold() == folded]
     return matches[0] if len(matches) == 1 else None
 
 
@@ -246,7 +169,7 @@ class PyiPrinter(ClassVisitor):
         *,
         normalize_public_names: bool = False,
         declared_prototype_names: Iterable[tuple[str, str]] = (),
-        published_names_by_module: dict[str, dict[str, str]] | None = None,
+        contract_names_by_module: dict[str, dict[str, str]] | None = None,
     ):
         """Configure public-name normalization for independent emissions.
 
@@ -258,14 +181,16 @@ class PyiPrinter(ClassVisitor):
         module alongside others, so an import naming a prototype another
         contract declares is written under the spelling that contract keeps.
         The declaring module is part of that identity because an unrelated
-        module may spell an ordinary declaration the same way.
+        module may spell an ordinary declaration the same way. Pass
+        contract_names_by_module when imports must read contract spellings
+        completed for modules rendered in the same operation.
         """
         self._normalize_public_names = normalize_public_names
         self._declared_prototype_names = {
             (str(module).casefold(), str(name).casefold()): str(name) for module, name in declared_prototype_names
         }
-        self._published_names_by_module = {
-            str(module).casefold(): dict(names) for module, names in (published_names_by_module or {}).items()
+        self._contract_names_by_module = {
+            str(module).casefold(): dict(names) for module, names in (contract_names_by_module or {}).items()
         }
 
     def emit(self, node) -> str:
@@ -279,59 +204,14 @@ class PyiPrinter(ClassVisitor):
         context = self._emission_context(node)
         return self._visit(node, context)
 
-    def published_names(self, module: SemanticModule) -> dict[str, str]:
-        """Return the spelling this module's contract publishes each name under.
-
-        Rendering is what settles a name, because a collision can move one
-        aside, so the module is rendered and only its naming kept. A prototype
-        is published as it is declared and never renamed.
-        """
-        context = self._emission_context(module)
-        self._visit(module, context)
-        names = dict(context.published_names)
-        for prototype in module.prototypes:
-            if self._is_private(prototype):
-                continue
-            names[str(prototype.name)] = str(prototype.name)
-        for reexport in module.reexports:
-            if reexport.entity_kind == "prototype" and reexport.publishes_to_python():
-                names[str(reexport.local_name)] = str(reexport.local_name)
-        return names
-
     def _emission_context(self, node) -> _PyiEmissionContext:
         """Build isolated state for one public emission call."""
         if not isinstance(node, SemanticModule):
             return _PyiEmissionContext(
                 normalize_public_names=self._normalize_public_names,
             )
-        # Post-IR policy owns every module-level public name; the emission reads
-        # them. The allocator below names only what policy does not reach: the
-        # members of a class, whose names class-surface policy completes for a
-        # build request alone.
-        naming_policy = NamingPolicy(preserve_case=preserves_source_case(node.origin.source_language))
-        settled_names = self._completed_public_names(node)
-        for (category, _source_name), public_name in settled_names.items():
-            # Hold every completed name in the allocator as well, so a
-            # declaration policy never named -- a private one, which no build
-            # publishes -- cannot be handed a name that is already spoken for.
-            naming_policy.reserve_public_name((), public_name, category=category, owner=public_name)
         return _PyiEmissionContext(
             normalize_public_names=self._normalize_public_names,
-            naming_policy=naming_policy,
-            settled_names=settled_names,
-            # A contract read back from .pyi keeps every spelling verbatim, so
-            # there is nothing to map and both the declaration and every
-            # annotation naming it fall through to the source name.
-            class_python_names=(
-                {str(cls.name): settled_names.get(("class", str(cls.name)), str(cls.name)) for cls in node.classes}
-                if self._normalize_public_names
-                else {}
-            ),
-            reexport_names={
-                str(reexport.local_name).casefold(): reexport.python_name
-                for reexport in node.reexports
-                if reexport.python_name
-            },
             default_array_order=self._native_default_array_order(node.origin.source_language),
             semantic_class_names=frozenset(
                 str(cls.name)
@@ -340,44 +220,6 @@ class PyiPrinter(ClassVisitor):
             ),
             contract_aliases=self._contract_aliases_for_module(node),
         )
-
-    @staticmethod
-    def _completed_public_names(module: SemanticModule) -> dict[tuple[str, str], str]:
-        """Return the module-level names post-IR policy completed.
-
-        The categories and the metadata location match
-        ``prik.policy.exports``, which is the owner: an overload set records
-        its export on its first procedure. Only an export that publishes a
-        declaration as this module's own names what is written here -- a build
-        gives a Fortran module's members that module's namespace and a
-        standalone procedure the root one, while a re-export elsewhere names a
-        different namespace and is not what this file declares.
-        """
-        own_namespaces = {(), (str(module.name).casefold(),)}
-        owners = (
-            *((cls, "class") for cls in module.classes),
-            *((func, "function") for func in module.functions),
-            *((overload_set, "function") for overload_set in module.overload_sets),
-            *((variable, "variable") for variable in module.variables),
-        )
-        settled: dict[tuple[str, str], str] = {}
-        for owner, category in owners:
-            for export in PyiPrinter._owner_exports(owner):
-                namespace = tuple(part.casefold() for part in export_namespace(export))
-                if export.get("name") is None or namespace not in own_namespaces:
-                    continue
-                settled[(category, str(owner.name))] = str(export["name"])
-                break
-        return settled
-
-    @staticmethod
-    def _owner_exports(owner: object) -> tuple[dict, ...]:
-        """Return one declaration's completed Python export records."""
-        if isinstance(owner, ProcedureOverloadSet):
-            metadata = owner.procedures[0].metadata if owner.procedures else {}
-        else:
-            metadata = getattr(owner, "metadata", {}) or {}
-        return tuple(item for item in metadata.get(PYTHON_EXPORTS_METADATA, ()) or () if isinstance(item, dict))
 
     @staticmethod
     def _visit_not_supported(node):
@@ -564,19 +406,13 @@ class PyiPrinter(ClassVisitor):
         target = str(candidate.metadata.get(OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name)
         if not context.normalize_public_names:
             return target
-        # The specific was named while this same contract was rendered, and a
-        # collision may have moved that name aside, so the naming it settled on
-        # is what the target has to state. A merged generic may dispatch over
-        # specifics two modules spell alike, so the scope declaring this one
-        # picks out which declaration the target means.
-        scope = str(getattr(candidate.origin, "native_scope", "") or "").casefold()
-        by_identity = (
-            context.published_specifics.get((scope, target.casefold())) if not context.public_namespace else None
-        )
-        if by_identity is not None:
-            return by_identity
-        published = published_name(context.published_names, target)
-        return published or context.normalized(target)
+        completed = candidate.metadata.get(CONTRACT_TARGET_NAME_METADATA)
+        if completed is None:
+            raise ValueError(
+                f"Contract overload target for {target!r} is incomplete; "
+                "run complete_python_export_policy before emission"
+            )
+        return str(completed)
 
     def _visit_ProcedureOverloadSet(
         self,
@@ -600,6 +436,7 @@ class PyiPrinter(ClassVisitor):
                 indent = "    "
             else:
                 candidate.name = self._overload_set_name(overload_set, context)
+                candidate.metadata[CONTRACT_NAME_METADATA] = candidate.name
                 definition = self._emit_function(
                     candidate,
                     context,
@@ -637,7 +474,7 @@ class PyiPrinter(ClassVisitor):
     ) -> str:
         """Emit class syntax."""
         bases = (
-            f"({', '.join(self._class_base_text(base, context) for base in cls.base_classes)})"
+            f"({', '.join(self._class_base_text(cls, base, context) for base in cls.base_classes)})"
             if cls.base_classes
             else ""
         )
@@ -668,9 +505,11 @@ class PyiPrinter(ClassVisitor):
 """.strip()
 
     @staticmethod
-    def _class_base_text(base: str, context: _PyiEmissionContext) -> str:
+    def _class_base_text(cls: SemanticClass, base: str, context: _PyiEmissionContext) -> str:
         """Return an imported contract base name or a user base name."""
-        return context.contract_type(base)
+        completed = cls.metadata.get(CONTRACT_BASE_NAMES_METADATA, {}) if context.normalize_public_names else {}
+        name = completed.get(base, base) if isinstance(completed, dict) else base
+        return context.contract_type(str(name))
 
     @staticmethod
     def _is_abstract(cls: SemanticClass) -> bool:
@@ -841,7 +680,13 @@ class PyiPrinter(ClassVisitor):
         is always spelled so the two are never confused.
         """
         if semantic_type.name != "String":
-            return context.contract_type(semantic_type.name)
+            completed = semantic_type.metadata.get(CONTRACT_NAME_METADATA) if context.normalize_public_names else None
+            if completed is not None:
+                # The type names a declaration this contract writes, which is
+                # that declaration even when it is spelled like a contract
+                # symbol: a user class `Vector` is not `prik.contracts.Vector`.
+                return str(completed)
+            return context.contract_type(str(semantic_type.name))
         length = semantic_type.metadata.get("fortran_character_length")
         string = context.contract("String")
         if length is None or str(length) in {"", "*"}:
@@ -1700,6 +1545,9 @@ class PyiPrinter(ClassVisitor):
     @classmethod
     def _collect_reserved_item_names(cls, item: object, names: set[str]) -> None:
         """Collect emitted declaration names that can shadow imports."""
+        metadata = getattr(item, "metadata", None)
+        if isinstance(metadata, dict) and metadata.get(CONTRACT_NAME_METADATA):
+            names.add(str(metadata[CONTRACT_NAME_METADATA]))
         for attr in ("name", "native_name"):
             value = getattr(item, attr, None)
             if isinstance(value, str) and value:
@@ -1749,6 +1597,11 @@ class PyiPrinter(ClassVisitor):
             sections.append(contract_import)
         imports = self._effective_imports(module)
         verbatim = self._verbatim_import_names(module)
+        reexport_names = {
+            str(reexport.local_name).casefold(): str(reexport.python_name)
+            for reexport in module.reexports
+            if reexport.python_name
+        }
         for imp in imports:
             sections.append(
                 self._emit_import(
@@ -1756,8 +1609,8 @@ class PyiPrinter(ClassVisitor):
                     native_source=not module.metadata.get(PYI_LOADED_METADATA),
                     public_names=context.normalize_public_names,
                     verbatim_names=verbatim,
-                    published_names_by_module=self._published_names_by_module,
-                    reexport_names=context.reexport_names,
+                    contract_names_by_module=self._contract_names_by_module,
+                    reexport_names=reexport_names,
                 )
             )
         if contract_import or imports:
@@ -2023,7 +1876,7 @@ class PyiPrinter(ClassVisitor):
     def _top_level_declaration_names(module: SemanticModule) -> set[str]:
         """Return names emitted in a module-level stub namespace."""
         return {
-            str(item.name)
+            str(getattr(item, "metadata", {}).get(CONTRACT_NAME_METADATA, item.name))
             for item in [
                 *module.classes,
                 *module.prototypes,
@@ -2092,7 +1945,7 @@ class PyiPrinter(ClassVisitor):
         native_source: bool = False,
         public_names: bool = False,
         verbatim_names: dict[tuple[str, str], str] | None = None,
-        published_names_by_module: dict[str, dict[str, str]] | None = None,
+        contract_names_by_module: dict[str, dict[str, str]] | None = None,
         reexport_names: dict[str, str] | None = None,
     ) -> str:
         """Emit import syntax."""
@@ -2101,14 +1954,14 @@ class PyiPrinter(ClassVisitor):
         if not imp.items:
             return f"import {imp.module}"
         source_module = imp.module.lstrip(".").casefold()
-        published_names = (published_names_by_module or {}).get(source_module)
+        contract_names = (contract_names_by_module or {}).get(source_module)
         items = ", ".join(
             PyiPrinter._emit_import_item(
                 item,
                 public_names=public_names,
                 verbatim_names=verbatim_names,
                 source_module=source_module,
-                published_names=published_names,
+                contract_names=contract_names,
                 reexport_names=reexport_names,
             )
             for item in imp.items
@@ -2123,7 +1976,7 @@ class PyiPrinter(ClassVisitor):
         public_names: bool = False,
         verbatim_names: dict[tuple[str, str], str] | None = None,
         source_module: str = "",
-        published_names: dict[str, str] | None = None,
+        contract_names: dict[str, str] | None = None,
         reexport_names: dict[str, str] | None = None,
     ) -> str:
         """Emit import item syntax.
@@ -2153,8 +2006,8 @@ class PyiPrinter(ClassVisitor):
         # company when a rename says so, and also when a collision moved the
         # published name aside.
         source = PyiPrinter._public_import_name(item.source, public_names=public_names)
-        if public_names and published_names:
-            source = published_name(published_names, item.source) or source
+        if public_names and contract_names:
+            source = contract_name_for_source(contract_names, item.source) or source
         # A name this module publishes is bound under the name export policy
         # completed for it, which a collision with one of this module's own
         # declarations may have moved aside.
@@ -2473,33 +2326,9 @@ class PyiPrinter(ClassVisitor):
         owner: object | None = None,
     ) -> str:
         """Return the Python-visible callable name to write in the contract."""
-        if not context.normalize_public_names or func.name.startswith("__"):
+        if not context.normalize_public_names:
             return func.name
-        settled = context.settled("function", func.name)
-        name = (
-            context.publish(func.name, settled)
-            if settled is not None
-            else context.public_name(
-                func.name,
-                category="method" if isinstance(func, SemanticMethod) else "function",
-                owner=owner if owner is not None else func,
-            )
-        )
-        # Only a module-level declaration is named this way, exactly as
-        # `publish` records one: a class member is named inside its class.
-        identity = PyiPrinter._specific_identity(func) if not context.public_namespace else None
-        if identity is not None:
-            context.published_specifics.setdefault(identity, name)
-        return name
-
-    @staticmethod
-    def _specific_identity(func: SemanticFunction) -> tuple[str, str] | None:
-        """Return the scope and native name identifying one declaration, if known."""
-        scope = str(getattr(func.origin, "native_scope", "") or "")
-        native = str(func.native_name or func.name)
-        if not scope or not native:
-            return None
-        return scope.casefold(), native.casefold()
+        return completed_contract_name(func)
 
     @staticmethod
     def _reexport_name(reexport: SemanticReexport, context: _PyiEmissionContext) -> str:
@@ -2512,26 +2341,24 @@ class PyiPrinter(ClassVisitor):
         local = str(reexport.local_name)
         if not context.normalize_public_names:
             return local
-        return context.publish(local, reexport.python_name or local)
+        if not reexport.python_name:
+            raise ValueError(
+                f"Contract name for re-export {local!r} is incomplete; "
+                "run complete_python_export_policy before emission"
+            )
+        return str(reexport.python_name)
 
     @staticmethod
     def _class_name(cls: SemanticClass, context: _PyiEmissionContext) -> str:
         """Return the Python-visible class name to write in the contract."""
-        emitted = context.class_python_names.get(str(cls.name), str(cls.name))
-        return context.publish(cls.name, emitted)
+        return completed_contract_name(cls) if context.normalize_public_names else str(cls.name)
 
     @staticmethod
     def _overload_set_name(overload_set: ProcedureOverloadSet, context: _PyiEmissionContext) -> str:
         """Return the Python-visible name of one module-level overload set."""
         if not context.normalize_public_names:
             return str(overload_set.name)
-        settled = context.settled("function", overload_set.name)
-        if settled is not None:
-            return context.publish(overload_set.name, settled)
-        # The dispatcher and the name written for it are one declaration, so
-        # both reserve under the identity the emission uses. Asking as two
-        # owners would hand the definition a second, deduplicated spelling.
-        return context.public_name(overload_set.name, category="function", owner=("overload", overload_set.name))
+        return completed_contract_name(overload_set)
 
     @staticmethod
     def _data_member_name(
@@ -2541,7 +2368,7 @@ class PyiPrinter(ClassVisitor):
         """Return the Python-visible class data-member name."""
         if not context.normalize_public_names:
             return variable.name
-        return context.public_name(variable.name, category="field", owner=variable)
+        return completed_contract_name(variable)
 
     @staticmethod
     def _module_variable_name(
@@ -2551,10 +2378,7 @@ class PyiPrinter(ClassVisitor):
         """Return the Python-visible module variable name."""
         if not context.normalize_public_names:
             return variable.name
-        settled = context.settled("variable", variable.name)
-        if settled is not None:
-            return context.publish(variable.name, settled)
-        return context.public_name(variable.name, category="variable", owner=variable)
+        return completed_contract_name(variable)
 
     def _decorators(
         self,
@@ -3114,22 +2938,22 @@ def emit_module(
     *,
     normalize_public_names: bool = False,
     declared_prototype_names: Iterable[tuple[str, str]] = (),
-    published_names_by_module: dict[str, dict[str, str]] | None = None,
+    contract_names_by_module: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render one semantic module through the shared default printer.
 
     Use this convenience entrypoint for ordinary one-module emission. Set
     normalize_public_names when the module is named in its own source language
     rather than in Python, declared_prototype_names to name the prototypes the
-    modules rendered alongside this one declare, and published_names_by_module
+    modules rendered alongside this one declare, and contract_names_by_module
     to state the spelling each of those modules published its names under.
     Every path creates a fresh module emission context.
     """
-    if normalize_public_names or declared_prototype_names or published_names_by_module:
+    if normalize_public_names or declared_prototype_names or contract_names_by_module:
         return PyiPrinter(
             normalize_public_names=normalize_public_names,
             declared_prototype_names=declared_prototype_names,
-            published_names_by_module=published_names_by_module,
+            contract_names_by_module=contract_names_by_module,
         ).emit(module)
     return _DEFAULT_PRINTER.emit(module)
 

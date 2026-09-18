@@ -95,7 +95,6 @@ def test_a_private_prototype_and_generic_are_written_but_not_published(tmp_path:
     assert "def cb() -> None: ..." in contract
     assert "def hidden_generic(" in contract
     assert '__all__ = ["run"]' in contract
-    assert "cb" not in PyiPrinter().published_names(module)
 
 
 def test_two_procedures_may_name_different_interfaces_the_same_way(tmp_path: Path):

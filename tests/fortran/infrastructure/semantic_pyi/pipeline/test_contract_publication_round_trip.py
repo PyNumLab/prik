@@ -11,14 +11,17 @@ from pathlib import Path
 import pytest
 
 from prik.pipeline.pyi import pyi_paths_to_semantic_modules
-from prik.policy.exports import complete_python_export_policy
+from prik.policy.exports import complete_python_export_policy, contract_names_by_source
 from prik.printers.pyi import PyiPrinter
 from prik.semantics.models import (
     PYTHON_EXPORTS_METADATA,
     ProcedureOverloadSet,
+    SemanticArgument,
+    SemanticClass,
     SemanticFunction,
     SemanticModule,
     SemanticOrigin,
+    SemanticType,
 )
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.parsers.fortran import parse_fortran_file
@@ -114,8 +117,9 @@ def test_a_withheld_declaration_is_still_reachable_for_naming(generated_contract
     whether the module publishes it, which completed export policy settles.
     """
     reloaded = pyi_paths_to_semantic_modules([generated_contract])[0]
+    complete_python_export_policy(reloaded)
 
-    assert PyiPrinter().published_names(reloaded)["cb"] == "cb"
+    assert contract_names_by_source(reloaded)["cb"] == "cb"
 
 
 def test_a_stated_name_selects_a_declaration_by_exact_spelling(tmp_path: Path):
@@ -158,3 +162,29 @@ def test_a_declaration_already_projected_to_nothing_keeps_that_decision():
     assert withheld.metadata[PYTHON_EXPORTS_METADATA] == []
     # A declaration no stage has projected still publishes itself.
     assert fresh.metadata[PYTHON_EXPORTS_METADATA] == [{"namespace": (), "name": "fresh"}]
+
+
+def test_a_withheld_class_keeps_one_contract_identity_for_its_annotations():
+    """Publication does not own the spelling needed by contract references."""
+    origin = SemanticOrigin(source_language="fortran", native_scope="hidden_types")
+    hidden = SemanticClass(name="box_t", origin=origin)
+    hidden.metadata[PYTHON_EXPORTS_METADATA] = []
+    inspect = SemanticFunction(
+        name="inspect_box",
+        arguments=[SemanticArgument("value", SemanticType("box_t"))],
+        origin=origin,
+    )
+    module = SemanticModule(
+        name="hidden_types",
+        classes=[hidden],
+        functions=[inspect],
+        exported_names=["inspect_box"],
+        origin=origin,
+    )
+
+    complete_python_export_policy(module)
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+
+    assert "class Box_T:" in contract
+    assert "value: Box_T" in contract
+    assert '__all__ = ["inspect_box"]' in contract

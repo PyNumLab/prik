@@ -151,6 +151,28 @@ class NamingPolicy:
         reserved[name] = PublicNameRecord(raw_text, category, str(owner or raw_name))
         return name
 
+    def hold_completed_public_name(
+        self,
+        namespace: tuple[str, ...],
+        name: object,
+        *,
+        category: str,
+        owner: object | None = None,
+    ) -> str:
+        """Hold an already-completed spelling without interpreting it again."""
+        completed = str(name)
+        namespace_key = tuple(str(part) for part in namespace)
+        reserved = self._public_names.setdefault(namespace_key, {})
+        existing = reserved.get(completed)
+        if existing is not None:
+            namespace_text = ".".join(namespace_key) or "<module>"
+            raise ValueError(
+                f"Completed public {category} name {completed!r} in {namespace_text} collides with "
+                f"{existing.category} {existing.raw_name!r} ({existing.owner})"
+            )
+        reserved[completed] = PublicNameRecord(completed, category, str(owner or name))
+        return completed
+
     def has_generated_symbol_clash(self, name: object, symbols: set[object], *, language: str) -> bool:
         """Return whether ``name`` is unusable in the selected language."""
         return generated_symbol_rules(language).has_clash(name, symbols)

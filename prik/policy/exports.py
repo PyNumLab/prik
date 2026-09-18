@@ -1,14 +1,14 @@
-"""Resolve Python export names for later wrapper-policy construction.
+"""Resolve contract spellings and Python exports before later stages run.
 
-``complete_python_export_policy`` walks public semantic declarations in their
-lowering order, normalizes their requested names, and reserves one name in each
-Python namespace. It writes the completed names back to semantic metadata so
-all policy constructors see the same collision-checked result.
+``complete_python_export_policy`` walks semantic declarations in lowering
+order, completes public placement, then records the collision-checked spelling
+the generated contract declares for every owner. Withheld declarations and
+class members still need a contract identity even when they publish nothing.
 
 ``completed_python_exports`` retrieves that metadata as immutable
 ``PythonExportPolicy`` records while wrapper policy is assembled. This module
-decides Python placement only: it does not choose a wrapper mechanism or emit
-the namespace.
+decides Python placement and contract spelling only: it does not choose a
+wrapper mechanism or emit the namespace.
 """
 
 from __future__ import annotations
@@ -98,6 +98,11 @@ def complete_python_export_policy(
             )
             export["name"] = resolved_name
     _complete_reexport_names(module, naming, contract_named=contract_named)
+    _complete_contract_names(
+        module,
+        strict_wrapper_names=strict_wrapper_names,
+        contract_named=contract_named,
+    )
 
 
 #: Entity kinds a second namespace cannot publish, whatever it may reach.
@@ -202,23 +207,288 @@ def _completed_variable_reexport_name(
     return None
 
 
-def _reexport_namespace(module: models.SemanticModule, reexport: models.SemanticReexport) -> tuple[str, ...]:
-    """Return the Python namespace one re-export publishes into.
+def _placement_namespace(module: models.SemanticModule, scope: object) -> tuple[str, ...]:
+    """Return the namespace a name written by module ``scope`` is placed in.
 
-    A re-export names the module publishing it. Completing that same module
-    names it against the module's own root, which is where its declarations
-    are; completing a merged package instead names it inside the namespace
-    that module occupies there, beside the declarations it sits with.
+    Completing that same module places it at the module's own root. Completing
+    a merged package -- a build folds every source module into one -- places it
+    inside the namespace that module occupies there, beside the declarations it
+    sits with, so names from two modules never compete for one spelling.
     """
-    publisher = str(reexport.module or "")
-    if not publisher or publisher.casefold() == str(module.name).casefold():
+    declaring = str(scope or "")
+    if not declaring or declaring.casefold() == str(module.name).casefold():
         return ()
-    return tuple(part.casefold() for part in publisher.split(".") if part)
+    return tuple(part.casefold() for part in declaring.split(".") if part)
+
+
+def _reexport_namespace(module: models.SemanticModule, reexport: models.SemanticReexport) -> tuple[str, ...]:
+    """Return the Python namespace one re-export publishes into: its publisher's."""
+    return _placement_namespace(module, reexport.module)
+
+
+def _declaring_namespace(module: models.SemanticModule, owner) -> tuple[str, ...]:
+    """Return the namespace of the module one declaration is written in."""
+    scope = owner.native_scope if isinstance(owner, models.ProcedureOverloadSet) else owner.origin.native_scope
+    return _placement_namespace(module, scope)
 
 
 def _module_export_owners(module: models.SemanticModule):
     """Return public-name owners in the same order as semantic lowering."""
     return (*module.classes, *module.functions, *module.overload_sets, *module.variables)
+
+
+def _complete_contract_names(
+    module: models.SemanticModule,
+    *,
+    strict_wrapper_names: bool,
+    contract_named: bool,
+) -> None:
+    """Record every declaration spelling consumed by contract emission.
+
+    A name has to be unique among the names written in one contract, so each
+    is held where it is placed: a published declaration in the namespace its
+    export completed, a re-export in its publisher's, a withheld declaration
+    in the file being completed. A build folds every source module into one,
+    and placing by those authorities keeps two modules' names apart there.
+    Published spellings are held first, so a withheld helper cannot move a
+    public API aside; each class then gets one member ledger, shared with
+    class-surface policy.
+    """
+    preserve_case = contract_named or preserves_source_case(module.origin.source_language)
+    naming = NamingPolicy(strict_public_names=strict_wrapper_names, preserve_case=preserve_case)
+    owners = _module_export_owners(module)
+
+    for owner in owners:
+        placed = _own_export(module, owner)
+        if placed is None:
+            continue
+        namespace, completed = placed
+        naming.hold_completed_public_name(
+            namespace,
+            completed,
+            category=_owner_category(owner),
+            owner=f"{_owner_category(owner)} {owner.name}",
+        )
+        owner.metadata[models.CONTRACT_NAME_METADATA] = completed
+
+    # Imports bind names in the same contract namespace as declarations. Their
+    # export spelling was already settled against public declarations; holding
+    # it here prevents a withheld declaration from taking the binding.
+    for reexport in module.reexports:
+        if reexport.python_name:
+            naming.hold_completed_public_name(
+                _reexport_namespace(module, reexport),
+                reexport.python_name,
+                category="function",
+                owner=f"re-export {reexport.local_name}",
+            )
+
+    for prototype in module.prototypes:
+        completed = str(prototype.name)
+        naming.hold_completed_public_name(
+            _declaring_namespace(module, prototype),
+            completed,
+            category="function",
+            owner=f"prototype {prototype.native_name or prototype.name}",
+        )
+        prototype.metadata[models.CONTRACT_NAME_METADATA] = completed
+
+    # A withheld declaration is written in the file being completed, whatever
+    # module declared it natively: a generic's inherited specifics are carried
+    # into the facade that extends it, beside each other.
+    for owner in owners:
+        if owner.metadata.get(models.CONTRACT_NAME_METADATA) is not None:
+            continue
+        owner.metadata[models.CONTRACT_NAME_METADATA] = naming.reserve_public_name(
+            (),
+            owner.name,
+            category=_owner_category(owner),
+            owner=f"{_owner_category(owner)} {owner.name}",
+        )
+
+    for semantic_class in module.classes:
+        _complete_class_member_contract_names(
+            semantic_class,
+            (*_declaring_namespace(module, semantic_class), models.completed_contract_name(semantic_class)),
+            strict_wrapper_names=strict_wrapper_names,
+            preserve_case=preserve_case,
+        )
+
+    _complete_local_type_contract_names(module)
+    _complete_overload_target_contract_names(module, preserve_case=preserve_case)
+
+
+def _own_export(module: models.SemanticModule, owner) -> tuple[tuple[str, ...], str] | None:
+    """Return the namespace and spelling one declaration is published under at home.
+
+    Its home is the namespace of the module it is written in, or the root of
+    the file being completed; an export elsewhere is a second publication of
+    it, which names nothing in its own contract.
+    """
+    home = {(), _declaring_namespace(module, owner)}
+    for export in _owner_metadata(owner).get(models.PYTHON_EXPORTS_METADATA, ()) or ():
+        if not isinstance(export, dict) or export.get("name") is None:
+            continue
+        namespace = tuple(part.casefold() for part in export_namespace(export))
+        if namespace in home:
+            return namespace, str(export["name"])
+    return None
+
+
+def _all_classes(classes: list[models.SemanticClass]):
+    """Yield every class, each followed by the classes nested inside it."""
+    for semantic_class in classes:
+        yield semantic_class
+        yield from _all_classes(semantic_class.classes)
+
+
+def _complete_class_member_contract_names(
+    semantic_class: models.SemanticClass,
+    namespace: tuple[str, ...],
+    *,
+    strict_wrapper_names: bool,
+    preserve_case: bool,
+) -> None:
+    """Complete one class's field, method, and overload spellings once."""
+    naming = NamingPolicy(strict_public_names=strict_wrapper_names, preserve_case=preserve_case)
+    for field in semantic_class.fields:
+        field.metadata[models.CONTRACT_NAME_METADATA] = naming.reserve_public_name(
+            namespace,
+            field.name,
+            category="field",
+            owner=field.name,
+        )
+    for method in semantic_class.methods:
+        if method.name.startswith("__"):
+            method.metadata[models.CONTRACT_NAME_METADATA] = method.name
+            continue
+        method.metadata[models.CONTRACT_NAME_METADATA] = naming.reserve_public_name(
+            namespace,
+            method.name,
+            category="function",
+            owner=method.name,
+        )
+    for overload in semantic_class.overload_sets:
+        source_names = tuple(
+            dict.fromkeys(
+                str(procedure.metadata.get(models.PYTHON_METHOD_NAME_METADATA, overload.name))
+                for procedure in overload.procedures
+            )
+        ) or (str(overload.name),)
+        for source_name in source_names:
+            completed = naming.reserve_public_name(
+                namespace,
+                source_name,
+                category="function",
+                owner=source_name,
+            )
+            overload.metadata.setdefault(models.CONTRACT_NAME_METADATA, completed)
+            for procedure in overload.procedures:
+                procedure_name = str(procedure.metadata.get(models.PYTHON_METHOD_NAME_METADATA, overload.name))
+                if procedure_name == source_name:
+                    procedure.metadata[models.CONTRACT_NAME_METADATA] = completed
+    # A nested class is written inside its parent, so it is named among the
+    # parent's members and its own members get a ledger beneath that name.
+    for nested in semantic_class.classes:
+        nested.metadata[models.CONTRACT_NAME_METADATA] = naming.reserve_public_name(
+            namespace,
+            nested.name,
+            category="class",
+            owner=nested.name,
+        )
+        _complete_class_member_contract_names(
+            nested,
+            (*namespace, models.completed_contract_name(nested)),
+            strict_wrapper_names=strict_wrapper_names,
+            preserve_case=preserve_case,
+        )
+
+
+def _complete_local_type_contract_names(module: models.SemanticModule) -> None:
+    """Attach local class spellings to every semantic type that names one."""
+    by_exact = {str(cls.name): models.completed_contract_name(cls) for cls in _all_classes(module.classes)}
+    by_folded: dict[str, list[str]] = {}
+    for source, completed in by_exact.items():
+        by_folded.setdefault(source.casefold(), []).append(completed)
+    for semantic_type in models._module_semantic_types(module):
+        completed = by_exact.get(str(semantic_type.name))
+        if completed is None:
+            matches = by_folded.get(str(semantic_type.name).casefold(), ())
+            completed = matches[0] if len(matches) == 1 else None
+        if completed is not None:
+            semantic_type.metadata[models.CONTRACT_NAME_METADATA] = completed
+    for semantic_class in _all_classes(module.classes):
+        semantic_class.metadata[models.CONTRACT_BASE_NAMES_METADATA] = {
+            base: by_exact.get(base, base) for base in semantic_class.base_classes
+        }
+
+
+def _complete_overload_target_contract_names(
+    module: models.SemanticModule,
+    *,
+    preserve_case: bool,
+) -> None:
+    """Resolve overload targets to the contract spelling of their specific.
+
+    A target is written the way the contract's reader resolves it: against the
+    module's own procedures first, then the methods of the type whose generic
+    it is. One procedure can be declared both ways -- ``counter_add_integer``
+    at module level, ``add_integer`` as the method binding it -- and they are
+    reached differently, so the contract has to name the one its reader finds.
+    """
+    _name_overload_targets(module.overload_sets, (module.functions,), preserve_case=preserve_case)
+    for semantic_class in _all_classes(module.classes):
+        _name_overload_targets(
+            semantic_class.overload_sets,
+            (module.functions, semantic_class.methods),
+            preserve_case=preserve_case,
+        )
+
+
+def _name_overload_targets(
+    overloads: list[models.ProcedureOverloadSet],
+    specific_groups: tuple[list[models.SemanticFunction], ...],
+    *,
+    preserve_case: bool,
+) -> None:
+    """Record, on each candidate, the spelling its specific is declared under."""
+    by_identity: dict[tuple[str, str], str] = {}
+    by_source: dict[str, str] = {}
+    for specifics in specific_groups:
+        for specific in specifics:
+            identity = _specific_identity(specific)
+            if identity is not None:
+                by_identity.setdefault(identity, models.completed_contract_name(specific))
+            by_source.setdefault(str(specific.name), models.completed_contract_name(specific))
+    for overload in overloads:
+        for candidate in overload.procedures:
+            target = str(
+                candidate.metadata.get(models.OVERLOAD_TARGET_METADATA) or candidate.native_name or candidate.name
+            )
+            scope = str(candidate.origin.native_scope or "").casefold()
+            completed = by_identity.get((scope, target.casefold())) or by_source.get(target)
+            if completed is None:
+                completed = normalize_public_name(target, preserve_case=preserve_case).name
+            candidate.metadata[models.CONTRACT_TARGET_NAME_METADATA] = completed
+
+
+def _specific_identity(function: models.SemanticFunction) -> tuple[str, str] | None:
+    """Return the native declaration identity used by an overload target."""
+    scope = str(function.origin.native_scope or "")
+    native = str(function.native_name or function.name)
+    if not scope or not native:
+        return None
+    return scope.casefold(), native.casefold()
+
+
+def contract_names_by_source(module: models.SemanticModule) -> dict[str, str]:
+    """Return source spellings mapped to the names this contract declares."""
+    names = {str(owner.name): models.completed_contract_name(owner) for owner in _module_export_owners(module)}
+    names.update((str(prototype.name), models.completed_contract_name(prototype)) for prototype in module.prototypes)
+    names.update(
+        (str(reexport.local_name), str(reexport.python_name or reexport.local_name)) for reexport in module.reexports
+    )
+    return names
 
 
 def _owner_metadata(owner) -> dict[str, object]:

@@ -414,6 +414,8 @@ class ProcedureOverloadSet:
     reads this rather than assuming a generic is public.
     """
 
+    metadata: dict[str, Any] = field(default_factory=dict)
+
 
 FORTRAN_GENERIC_NAME_METADATA = "fortran_generic_name"
 OVERLOAD_KIND_METADATA = "overload_kind"
@@ -421,6 +423,22 @@ OVERLOAD_TARGET_METADATA = "overload_target"
 PYTHON_BOUND_POSITION_METADATA = "python_bound_position"
 PYTHON_METHOD_NAME_METADATA = "python_method_name"
 PYTHON_EXPORTS_METADATA = "python_exports"
+CONTRACT_NAME_METADATA = "contract_name"
+CONTRACT_TARGET_NAME_METADATA = "contract_target_name"
+CONTRACT_BASE_NAMES_METADATA = "contract_base_names"
+
+
+def completed_contract_name(owner, default_name: str | None = None) -> str:
+    """Return the spelling contract-name completion recorded for one declaration.
+
+    This reads the decision and never makes it: an owner completion did not
+    reach is an error, because naming it here would be a second authority.
+    """
+    completed = owner.metadata.get(CONTRACT_NAME_METADATA)
+    if completed is None:
+        name = default_name if default_name is not None else getattr(owner, "name", None)
+        raise ValueError(f"Contract name for {name!r} is incomplete; run complete_python_export_policy before emission")
+    return str(completed)
 
 
 def export_namespace(export: dict[str, object]) -> tuple[str, ...]:

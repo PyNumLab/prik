@@ -41,7 +41,7 @@ SemanticModule graph          -> PyiPrinter             -> editable .pyi
 | [`prik/printers/__init__.py`](../../../prik/printers/__init__.py) | Re-exports `CSourcePrinter`, `FortranSourcePrinter`, `PyiPrinter`, and `emit_module()`. | The supported printer import surface changes. |
 | [`prik/printers/c.py`](../../../prik/printers/c.py) | `CSourcePrinter` serializes C translation units, headers, declarations, functions, tables, and statements. | C syntax layout, escaping, or formatting changes. |
 | [`prik/printers/fortran.py`](../../../prik/printers/fortran.py) | `FortranSourcePrinter` serializes bridge modules, interfaces, declarations, procedures, and free-form wrapped statements. | Fortran source layout or line-wrapping changes. |
-| [`prik/printers/pyi.py`](../../../prik/printers/pyi.py) | `PyiPrinter`, `emit_module()`, and `_PyiEmissionContext` serialize semantic modules and scope imports, aliases, namespaces, and defaults for one emission. | Editable contract spelling or emission-context behavior changes. |
+| [`prik/printers/pyi.py`](../../../prik/printers/pyi.py) | `PyiPrinter`, `emit_module()`, and `_PyiEmissionContext` serialize semantic modules and scope imports, aliases, namespaces, and defaults for one emission. | Editable contract rendering or emission-context behavior changes. |
 
 The fact that code generation calls a printer at the end of wrapper rendering
 does not make printing part of codegen ownership. `pipeline/wrapper.py`
@@ -77,9 +77,10 @@ unsplittable line that remains above the 132-column compiler-safe limit.
 ### `pyi.py`: semantic IR to an editable contract
 
 `PyiPrinter.emit()` creates a fresh `_PyiEmissionContext` for every call. The
-context records contract imports, aliases, public-name reservations, source
-array defaults, and nested namespaces without mutating a reusable printer or
-the semantic IR.
+context records contract imports, aliases, source array defaults, and nested
+namespaces without mutating a reusable printer or the semantic IR. Contract
+spellings and overload-target spellings must already be completed on semantic
+owners by post-IR policy; the printer reads them and keeps no naming allocator.
 
 For a module, the printer first renders public classes, prototypes, variables,
 functions, and overload sets into body sections. As visitors use contract

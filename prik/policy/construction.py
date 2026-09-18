@@ -20,7 +20,6 @@ import numpy
 from immutabledict import immutabledict
 
 from prik.contracts import NATIVE_C_SCALAR_IDENTITIES
-from prik.naming import NamingPolicy, preserves_source_case
 from prik.utilities.declaration_expressions import fortran_character_value
 from prik.semantics import models
 from prik.semantics.metadata import (
@@ -480,17 +479,15 @@ def build_class_surface_policy(
     owner_path: str,
     derived: DerivedTypePolicy,
     class_identities: dict[str, tuple[str, str]],
-    strict_wrapper_names: bool = False,
 ) -> ClassSurfacePolicy:
     """Complete constructor, method, inheritance, and registration decisions."""
-    naming = NamingPolicy(
-        strict_public_names=strict_wrapper_names,
-        preserve_case=preserves_source_case(semantic_class.origin.source_language),
-    )
-    fields = _python_named_class_fields(derived.fields, naming, owner_path)
+    # Contract-name completion already applied strict naming and one shared
+    # member ledger. Class policy reads those spellings rather than allocating
+    # a second surface whose collision order could disagree with the contract.
+    fields = _python_named_class_fields(semantic_class, derived.fields, owner_path)
     named_derived = replace(derived, fields=fields)
-    methods = _python_named_class_methods(semantic_class, naming, owner_path)
-    overloads = _python_named_class_overloads(semantic_class, naming, owner_path)
+    methods = _python_named_class_methods(semantic_class, owner_path)
+    overloads = _python_named_class_overloads(semantic_class, owner_path)
     constructor, constructor_blockers = _class_constructor_policy(
         semantic_class,
         owner_path=owner_path,
@@ -527,21 +524,16 @@ def build_class_surface_policy(
 
 
 def _python_named_class_fields(
+    semantic_class: models.SemanticClass,
     fields: tuple[DerivedFieldPolicy, ...],
-    naming: NamingPolicy,
     owner_path: str,
 ) -> tuple[DerivedFieldPolicy, ...]:
-    """Reserve readable Python field names while retaining native spellings."""
-    namespace = (owner_path,)
+    """Read completed field names while retaining native owner identities."""
+    completed = {f"{owner_path}.{field.name}": models.completed_contract_name(field) for field in semantic_class.fields}
     return tuple(
         replace(
             field,
-            name=naming.reserve_public_name(
-                namespace,
-                field.name,
-                category="field",
-                owner=field.owner_path,
-            ),
+            name=completed[field.owner_path],
         )
         for field in fields
     )
@@ -549,11 +541,9 @@ def _python_named_class_fields(
 
 def _python_named_class_methods(
     semantic_class: models.SemanticClass,
-    naming: NamingPolicy,
     owner_path: str,
 ) -> tuple[ClassMethodPolicy, ...]:
-    """Reserve method names in the same Python namespace as public fields."""
-    namespace = (owner_path,)
+    """Read method names completed in the same namespace as public fields."""
     methods = []
     for method in semantic_class.methods:
         if method.name == "__init__":
@@ -562,12 +552,7 @@ def _python_named_class_methods(
         if policy.public:
             policy = replace(
                 policy,
-                python_name=naming.reserve_public_name(
-                    namespace,
-                    policy.python_name,
-                    category="function",
-                    owner=policy.owner_path,
-                ),
+                python_name=models.completed_contract_name(method),
             )
         methods.append(policy)
     return tuple(methods)
@@ -575,11 +560,9 @@ def _python_named_class_methods(
 
 def _python_named_class_overloads(
     semantic_class: models.SemanticClass,
-    naming: NamingPolicy,
     owner_path: str,
 ) -> tuple[OverloadPolicy, ...]:
-    """Split reflected operators, then reserve every public overload name."""
-    namespace = (owner_path,)
+    """Split reflected operators and read every completed overload name."""
     policies = []
     for overload in semantic_class.overload_sets:
         names = tuple(
@@ -598,12 +581,7 @@ def _python_named_class_overloads(
             policies.append(
                 replace(
                     policy,
-                    python_name=naming.reserve_public_name(
-                        namespace,
-                        policy.python_name,
-                        category="function",
-                        owner=policy.owner_path,
-                    ),
+                    python_name=models.completed_contract_name(procedures[0]),
                 )
             )
     return tuple(policies)

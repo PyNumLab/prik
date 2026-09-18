@@ -3,7 +3,7 @@
 import pytest
 import prik.pipeline.pyi as pyi_pipeline
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.printers.pyi import published_name
+from prik.printers.pyi import contract_name_for_source
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -75,6 +75,7 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
         ],
         origin=origin,
     )
+    complete_python_export_policy(module)
 
     code = emit_module(module, normalize_public_names=True)
 
@@ -662,10 +663,9 @@ end subroutine SCALE_VALUE
 end module consts_mod
 """
 
-    code = emit_module(
-        fortran_module_to_semantic_module(parse_fortran_source(source)),
-        normalize_public_names=True,
-    )
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+    complete_python_export_policy(module)
+    code = emit_module(module, normalize_public_names=True)
 
     assert "ik: Final[Int32]" in code
     assert "def scale_value(" in code
@@ -687,10 +687,9 @@ end subroutine ASSERT
 end module naming_mod
 """
 
-    code = emit_module(
-        fortran_module_to_semantic_module(parse_fortran_source(source)),
-        normalize_public_names=True,
-    )
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+    complete_python_export_policy(module)
+    code = emit_module(module, normalize_public_names=True)
 
     assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
     assert 'lambda__2: Annotated[Int32, SourceName("LAMBDA_")]' in code
@@ -712,6 +711,7 @@ def test_non_fortran_declaration_compares_its_native_spelling_exactly():
         ],
         origin=origin,
     )
+    complete_python_export_policy(module)
 
     code = emit_module(module, normalize_public_names=True)
 
@@ -733,10 +733,11 @@ def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
         ],
         origin=origin,
     )
+    complete_python_export_policy(module)
 
     code = emit_module(module, normalize_public_names=True)
 
-    assert '@bind("POINT_T")\nclass PointType:' in code
+    assert '@bind("POINT_T")\nclass Pointtype:' in code
 
 
 def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
@@ -754,10 +755,11 @@ def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
         ],
         origin=origin,
     )
+    complete_python_export_policy(module)
 
     code = emit_module(module, normalize_public_names=True)
 
-    assert "class point_t:" in code
+    assert "class Point_T:" in code
     assert "@bind(" not in code
 
 
@@ -1018,22 +1020,22 @@ end module state_facade
     assert stubs["state_facade"].rstrip().endswith('__all__ = ["counter", "bump"]')
 
 
-def test_two_spellings_a_case_sensitive_source_keeps_apart_publish_separately():
+def test_two_spellings_a_case_sensitive_source_keep_distinct_contract_names():
     """A contract records each source name as written, so neither displaces the other.
 
-    Keying what a contract published by a folded name loses one of a pair only
+    Keying contract spellings by a folded source name loses one of a pair only
     a case-sensitive source distinguishes, and an importer then binds whichever
     was recorded first.
     """
-    published = {"Foo": "Foo", "foo": "foo", "SCALE": "scale"}
+    completed = {"Foo": "Foo", "foo": "foo", "SCALE": "scale"}
 
-    assert published_name(published, "Foo") == "Foo"
-    assert published_name(published, "foo") == "foo"
+    assert contract_name_for_source(completed, "Foo") == "Foo"
+    assert contract_name_for_source(completed, "foo") == "foo"
     # A case-insensitive source still reaches its name under any spelling.
-    assert published_name(published, "scale") == "scale"
-    assert published_name(published, "Scale") == "scale"
-    assert published_name(published, "missing") is None
+    assert contract_name_for_source(completed, "scale") == "scale"
+    assert contract_name_for_source(completed, "Scale") == "scale"
+    assert contract_name_for_source(completed, "missing") is None
     # `FOO` could mean either declaration, and which one a folded lookup found
     # would depend on the order they were recorded in, so it names neither.
-    assert published_name(published, "FOO") is None
-    assert published_name({"foo": "foo", "Foo": "Foo"}, "FOO") is None
+    assert contract_name_for_source(completed, "FOO") is None
+    assert contract_name_for_source({"foo": "foo", "Foo": "Foo"}, "FOO") is None

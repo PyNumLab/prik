@@ -2,6 +2,7 @@
 
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -74,6 +75,7 @@ def test_fortran_generated_contracts_emit_python_name_without_binding_the_same_n
         ],
         origin=SemanticOrigin(source_language="fortran", source_kind="module"),
     )
+    complete_python_export_policy(module)
 
     code = emit_module(module, normalize_public_names=True)
 

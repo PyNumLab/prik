@@ -547,7 +547,6 @@ def _complete_class_surface_policies(
             owner_path=derived.owner_path,
             derived=derived,
             class_identities=identities,
-            strict_wrapper_names=strict_wrapper_names,
         )
         completed_derived = replace(derived, fields=surface.effective_fields)
         semantic_class.metadata[models.RESOLVED_DERIVED_TYPE_POLICY_METADATA] = completed_derived

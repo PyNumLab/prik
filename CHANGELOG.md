@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Contract spelling is now completed once in post-IR policy for every
+  declaration, including withheld helpers and class members. Generated
+  contracts, cross-module import spelling, and class-surface policy read that
+  decision directly; contract emission no longer allocates names or renders a
+  module to discover them.
+
 - A scope's `use` statements are kept as a flat, immutable list and read by one
   resolver. A procedure inheriting its module's imports could previously append
   to the very list the module held, so `use dep, only : y` written inside a

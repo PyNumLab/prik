@@ -1128,6 +1128,7 @@
       },
       "overload_sets": [
         {
+          "metadata": {},
           "name": "do_work",
           "native_scope": "scope_name_reuse_combinations",
           "procedures": [
