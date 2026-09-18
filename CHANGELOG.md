@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generic assembles the specifics of every accessible interface that
+  contributes to it. A module importing `convert` from two modules that each
+  declare a generic of that name kept only the first, silently losing the
+  other's specific procedures, and importing both without declaring one locally
+  dropped the name entirely as an ambiguity. Contributors are now gathered in
+  source order through every route, transitively, with one declaration counted
+  once; accessibility still applies at each hop, and a generic is still not
+  published into a second Python namespace.
+
 - A use-associated name is resolved from every route carrying it, whichever
   way each route entered. A module writing `use a_mod, only : x` beside a plain
   `use c_mod` that also offers `x` reaches two different entities, and the

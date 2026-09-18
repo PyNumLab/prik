@@ -1848,9 +1848,17 @@ class FortranToIRConverter(ClassVisitor):
         local name reaches more than one thing, and choosing between them would
         be a guess rather than a reading.
 
+        A generic is the exception the language makes. Several accessible
+        generic interfaces spelled the same contribute their specific procedures
+        to one generic, so generic routes are contributors rather than rivals.
+        The merged specifics belong to the overload set assembled from them;
+        this record names the first contributor in source order, which is the
+        route the association is reported through.
         """
         distinct = list(dict.fromkeys(origins))
         if len(distinct) == 1:
+            return distinct[0]
+        if distinct and all(kind == "generic" for kind, _module, _name in distinct):
             return distinct[0]
         return None
 
@@ -3543,60 +3551,87 @@ class FortranToIRConverter(ClassVisitor):
         generic_name: str,
         modules: dict[str, FortranModule],
     ) -> tuple[list[str], dict[str, SemanticFunction]]:
-        """Return the specifics one generic inherits from the generic it extends.
+        """Return the specifics one generic inherits from the generics it extends.
 
         A local interface block repeating a ``use``-associated generic name
-        extends that generic rather than replacing it, so this scope resolves
-        every specific that reached it through the import as well as its own.
-        Accumulation runs one way: the declaring module never sees what a later
-        module adds.
+        extends that generic rather than replacing it, and the language lets
+        several accessible generics of one name contribute at once, so every
+        contributor is read rather than the first route that matches. One
+        declaration reached by two routes contributes once. Accumulation runs
+        one way: a declaring module never sees what a later module adds.
         """
-        source_module, source_generic = self._imported_generic_interface(module, generic_name, modules)
-        if source_module is None or source_generic is None:
-            return [], {}
-        inherited, lookup = self._inherited_generic_specifics(source_module, source_generic.name, modules)
-        signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
-        source_context = self._module_derived_type_context(source_module)
-        names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
-        for name in names:
-            signature = signatures.get(name.casefold())
-            if signature is None or name.casefold() in lookup:
-                continue
-            function = self.visit(signature, visibility="private", derived_type_context=source_context)
-            lookup[name.casefold()] = function
-            inherited.append(name)
+        inherited: list[str] = []
+        lookup: dict[str, SemanticFunction] = {}
+        for source_module, source_generic in self._imported_generic_interfaces(module, generic_name, modules):
+            signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
+            source_context = self._module_derived_type_context(source_module)
+            names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
+            for name in names:
+                signature = signatures.get(name.casefold())
+                if signature is None or name.casefold() in lookup:
+                    continue
+                function = self.visit(signature, visibility="private", derived_type_context=source_context)
+                lookup[name.casefold()] = function
+                inherited.append(name)
         return inherited, lookup
 
     @staticmethod
-    def _imported_generic_interface(
+    def _module_generic_interface(module: FortranModule, name: str) -> FortranInterface | None:
+        """Return the module-scope generic one module declares under ``name``.
+
+        A block written inside a contained procedure belongs to that procedure,
+        so it never contributes to what a ``use`` of the module reaches, and an
+        abstract block declares prototypes rather than a generic.
+        """
+        return next(
+            (
+                item
+                for item in FortranToIRConverter._module_interfaces(module)
+                if item.name and not item.abstract and item.name.casefold() == name.casefold()
+            ),
+            None,
+        )
+
+    @classmethod
+    def _imported_generic_interfaces(
+        cls,
         module: FortranModule,
         generic_name: str,
         modules: dict[str, FortranModule],
-    ) -> tuple[FortranModule | None, FortranInterface | None]:
-        """Find the generic one module imports under ``generic_name``, if any."""
-        for module_name, mappings in module.uses.items():
-            source_module = modules.get(module_name.casefold())
+        seen: frozenset[tuple[str, str]] = frozenset(),
+    ) -> tuple[tuple[FortranModule, FortranInterface], ...]:
+        """Return every accessible generic one module imports under one name.
+
+        A generic is not a single-origin entity: accessible generic interfaces
+        sharing an identifier all contribute their specifics to it. Every route
+        carrying the name is therefore followed, in source order, and a module
+        that re-exports the name rather than declaring a generic is walked
+        through to its own contributors. Fortran accessibility applies at each
+        hop, so a route a module makes private carries nothing onward.
+        """
+        contributors: list[tuple[FortranModule, FortranInterface]] = []
+        for route in cls._name_routes(module, modules, generic_name):
+            source_module = modules.get(route.used_module.casefold())
             if source_module is None:
                 continue
-            sources = (
-                [generic_name]
-                if not mappings
-                else [
-                    mapping.source for mapping in mappings if mapping.local_name.casefold() == generic_name.casefold()
-                ]
+            key = (source_module.name.casefold(), route.source_name.casefold())
+            if key in seen:
+                continue
+            onward = cls._name_routes(source_module, modules, route.source_name)
+            route_names = tuple(dict.fromkeys(item.used_module for item in onward))
+            if not cls._effective_accessibility(source_module)(route.source_name, route_names):
+                continue
+            declared = cls._module_generic_interface(source_module, route.source_name)
+            if declared is not None:
+                contributors.append((source_module, declared))
+            contributors.extend(
+                cls._imported_generic_interfaces(source_module, route.source_name, modules, seen | {key})
             )
-            for source_name in sources:
-                generic = next(
-                    (
-                        item
-                        for item in source_module.interfaces
-                        if item.name and not item.abstract and item.name.casefold() == source_name.casefold()
-                    ),
-                    None,
-                )
-                if generic is not None:
-                    return source_module, generic
-        return None, None
+        # The same declaration reached by more than one route contributes once.
+        unique: dict[int, tuple[FortranModule, FortranInterface]] = {}
+        for contributor in contributors:
+            unique.setdefault(id(contributor[1]), contributor)
+        return tuple(unique.values())
 
     @staticmethod
     def _resolve_overload_targets(
