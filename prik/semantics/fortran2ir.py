@@ -3185,6 +3185,24 @@ class FortranToIRConverter(ClassVisitor):
             )
         return methods
 
+    @staticmethod
+    def _bind_private_specifics_through_generic(
+        overload_set: ProcedureOverloadSet,
+        targets: list[_SpecificProcedure],
+        lookup: dict[tuple[str, str], SemanticFunction],
+        generic_name: str,
+    ) -> None:
+        """Bind each private specific through the generic name that reaches it.
+
+        A specific its declaring module keeps private is unreachable by its own
+        name, while the generic -- or, for a constructor, the type name -- is
+        public and resolves to the same procedure.
+        """
+        for target, candidate in zip(targets, overload_set.procedures, strict=True):
+            if lookup[target.key].visibility == "private":
+                candidate.native_name = generic_name
+                candidate.metadata[BIND_TARGET_METADATA] = generic_name
+
     def _module_overload_sets(
         self,
         module: FortranModule,
@@ -3251,13 +3269,12 @@ class FortranToIRConverter(ClassVisitor):
                     # constructor, so its specifics become the class's own
                     # `__init__` overload set rather than a module generic.
                     constructor_set = self._normal_overload_set("__init__", procedures)
-                    target_lookup = own_lookup | inline_lookup | inherited_lookup
-                    for target, candidate in zip(target_names, constructor_set.procedures, strict=True):
-                        if target_lookup[target.key].visibility == "private":
-                            # A private specific is unreachable by name; the type
-                            # name is public and resolves to the same procedure.
-                            candidate.native_name = interface.name
-                            candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                    self._bind_private_specifics_through_generic(
+                        constructor_set,
+                        target_names,
+                        own_lookup | inline_lookup | inherited_lookup,
+                        interface.name,
+                    )
                     self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
                     self._mark_constructor_specifics(procedures, procedure_lookup, interface.name)
                     continue
@@ -3269,11 +3286,12 @@ class FortranToIRConverter(ClassVisitor):
                     else module.name,
                     visibility=self._symbol_visibility(module, interface.name),
                 )
-                target_lookup = own_lookup | inline_lookup | inherited_lookup
-                for target, candidate in zip(target_names, overload_set.procedures, strict=True):
-                    if target_lookup[target.key].visibility == "private":
-                        candidate.native_name = interface.name
-                        candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                self._bind_private_specifics_through_generic(
+                    overload_set,
+                    target_names,
+                    own_lookup | inline_lookup | inherited_lookup,
+                    interface.name,
+                )
                 overload_sets.append(overload_set)
                 continue
             defined_sets = self._defined_overload_sets(
@@ -3704,9 +3722,7 @@ class FortranToIRConverter(ClassVisitor):
             (str(item.origin.native_scope or "").casefold(), str(item.native_name or item.name).casefold())
             for item in inherited_functions
         }
-        inherited_functions.extend(
-            inherited_lookup[target.key] for target in inherited if target.key not in known
-        )
+        inherited_functions.extend(inherited_lookup[target.key] for target in inherited if target.key not in known)
         own = [
             _SpecificProcedure(module.name, name)
             for name in (interface.specific_procedures or [signature.name for signature in interface.procedures])
