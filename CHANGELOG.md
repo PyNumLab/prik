@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract's `__all__` decides what it publishes when it is read back. A
+  prototype and a generic are written into the body so annotations and dispatch
+  resolve, and both read back public by default, so a contract that withheld
+  them from `__all__` still had a public export completed for them. Export
+  policy now names only the surface the contract states; the declarations stay
+  written and reachable for naming and import resolution.
+
 - A prototype is identified by the scope declaring it, and its contract
   spelling is allocated against the names the module already holds. Joining the
   scope to the name produced a spelling that could collide with a real

@@ -29,6 +29,17 @@ class PythonExportPolicy:
     name: str
 
 
+def _stated_export_names(module: models.SemanticModule) -> set[str] | None:
+    """Return the surface one contract states, or ``None`` when it states none.
+
+    A contract that writes no ``__all__`` publishes what it declares, so there
+    is nothing stated to read and every declaration is completed as before.
+    """
+    if module.exported_names is None:
+        return None
+    return {str(name).casefold() for name in module.exported_names}
+
+
 def complete_python_export_policy(
     module: models.SemanticModule,
     *,
@@ -40,15 +51,24 @@ def complete_python_export_policy(
     contract states the names it publishes -- so those spellings are kept
     exactly. Only a module converted from native source has names PRIK must
     choose, and only where the source language has no spelling of its own.
+
+    Such a contract also states its whole surface in ``__all__``, which is the
+    authority on what it publishes. A declaration it leaves out stays written
+    and reachable, because annotations and imports resolve against it, and no
+    export is completed for it -- a prototype or a generic reads back public by
+    default, and completing one would publish what the contract declined to.
     """
     contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
     complete_reexport_publication_policy(module, contract_named=contract_named)
+    stated = _stated_export_names(module)
     naming = NamingPolicy(
         strict_public_names=strict_wrapper_names,
         preserve_case=contract_named or preserves_source_case(module.origin.source_language),
     )
     for owner in _module_export_owners(module):
         if getattr(owner, "visibility", "public") == "private":
+            continue
+        if stated is not None and str(owner.name).casefold() not in stated:
             continue
         metadata = _owner_metadata(owner)
         exports = metadata.get(models.PYTHON_EXPORTS_METADATA)
