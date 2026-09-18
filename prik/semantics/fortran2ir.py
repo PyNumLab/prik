@@ -209,6 +209,23 @@ class _CallbackInterface:
         return self.local_name or self.signature.name
 
 
+class _SpecificProcedure(NamedTuple):
+    """One generic's specific: the module declaring it, and the name it gives it.
+
+    Two modules may each declare a specific of the same name and contribute
+    both to one merged generic, so a specific is identified by where it is
+    declared rather than by its spelling alone.
+    """
+
+    module: str
+    name: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """Return the case-folded identity this specific is looked up by."""
+        return self.module.casefold(), self.name.casefold()
+
+
 class _NameRoute(NamedTuple):
     """One way a module reaches a name: the module used, and the name there."""
 
@@ -3187,13 +3204,19 @@ class FortranToIRConverter(ClassVisitor):
                 # A generic written inside a procedure belongs to that
                 # procedure, so it is never part of the module's own interface.
                 continue
+            # A specific this module declares is identified by this module, so
+            # its own and its inline candidates are keyed the same way the
+            # inherited ones are.
             inline_lookup = {
-                signature.name.casefold(): self.visit(
+                _SpecificProcedure(module.name, signature.name).key: self.visit(
                     signature,
                     visibility=self._symbol_visibility(module, signature.name),
                     derived_type_context=context,
                 )
                 for signature in interface.procedures
+            }
+            own_lookup = {
+                _SpecificProcedure(module.name, name).key: function for name, function in procedure_lookup.items()
             }
             target_names, inherited_lookup = self._generic_target_names(
                 module,
@@ -3203,7 +3226,7 @@ class FortranToIRConverter(ClassVisitor):
             )
             procedures, missing = self._resolve_overload_targets(
                 target_names,
-                procedure_lookup | inline_lookup | inherited_lookup,
+                own_lookup | inline_lookup | inherited_lookup,
                 visibility=self._symbol_visibility(module, interface.name),
             )
             if missing or not procedures:
@@ -3222,9 +3245,9 @@ class FortranToIRConverter(ClassVisitor):
                     # constructor, so its specifics become the class's own
                     # `__init__` overload set rather than a module generic.
                     constructor_set = self._normal_overload_set("__init__", procedures)
-                    target_lookup = procedure_lookup | inline_lookup | inherited_lookup
-                    for target_name, candidate in zip(target_names, constructor_set.procedures, strict=True):
-                        if target_lookup[target_name.casefold()].visibility == "private":
+                    target_lookup = own_lookup | inline_lookup | inherited_lookup
+                    for target, candidate in zip(target_names, constructor_set.procedures, strict=True):
+                        if target_lookup[target.key].visibility == "private":
                             # A private specific is unreachable by name; the type
                             # name is public and resolves to the same procedure.
                             candidate.native_name = interface.name
@@ -3240,9 +3263,9 @@ class FortranToIRConverter(ClassVisitor):
                     else module.name,
                     visibility=self._symbol_visibility(module, interface.name),
                 )
-                target_lookup = procedure_lookup | inline_lookup | inherited_lookup
-                for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
-                    if target_lookup[target_name.casefold()].visibility == "private":
+                target_lookup = own_lookup | inline_lookup | inherited_lookup
+                for target, candidate in zip(target_names, overload_set.procedures, strict=True):
+                    if target_lookup[target.key].visibility == "private":
                         candidate.native_name = interface.name
                         candidate.metadata[BIND_TARGET_METADATA] = interface.name
                 overload_sets.append(overload_set)
@@ -3268,14 +3291,18 @@ class FortranToIRConverter(ClassVisitor):
         generic targets preserve the previous empty-placeholder behavior for
         ordinary procedure names and are otherwise omitted.
         """
-        lookup = {method.name.casefold(): method for method in methods}
+        # A type-bound generic's specifics are this type's own methods, so
+        # they are identified by the module declaring the type.
+        owner_module = str(getattr(dtype, "module", "") or "")
+        lookup = {_SpecificProcedure(owner_module, method.name).key: method for method in methods}
         overload_sets: list[ProcedureOverloadSet] = []
         for binding in dtype.generic_bindings:
             name = str(binding["name"])
             attrs = {str(attr).casefold() for attr in binding.get("attrs", ())}
             visibility = "private" if "private" in attrs else "public" if "public" in attrs else None
+            targets = [_SpecificProcedure(owner_module, str(item)) for item in binding.get("targets", ())]
             procedures, missing = self._resolve_overload_targets(
-                list(binding.get("targets", ())),
+                targets,
                 lookup,
                 visibility=visibility,
             )
@@ -3285,8 +3312,8 @@ class FortranToIRConverter(ClassVisitor):
                 continue
             if self._is_procedure_generic_name(name):
                 overload_set = self._normal_overload_set(name, procedures)
-                for target_name, candidate in zip(binding.get("targets", ()), overload_set.procedures, strict=True):
-                    if lookup[target_name.casefold()].visibility == "private":
+                for target, candidate in zip(targets, overload_set.procedures, strict=True):
+                    if lookup[target.key].visibility == "private":
                         candidate.native_name = name
                         candidate.metadata[BIND_TARGET_METADATA] = name
                 overload_sets.append(overload_set)
@@ -3658,26 +3685,34 @@ class FortranToIRConverter(ClassVisitor):
         interface: FortranInterface,
         modules: dict[str, FortranModule],
         inherited_functions: list[SemanticFunction],
-    ) -> tuple[list[str], dict[str, SemanticFunction]]:
+    ) -> tuple[list[_SpecificProcedure], dict[tuple[str, str], SemanticFunction]]:
         """Order one generic's specifics, inherited before locally declared.
 
         ``inherited_functions`` collects each specific this module gained from
-        the generic it extends, so the module can carry them for dispatch.
+        the generics it extends, so the module can carry them for dispatch. A
+        specific is identified by its declaring module, so two contributors
+        that spell one the same way both survive.
         """
-        inherited_names, inherited_lookup = self._inherited_generic_specifics(module, interface.name, modules)
-        known = {item.name.casefold() for item in inherited_functions}
+        inherited, inherited_lookup = self._inherited_generic_specifics(module, interface.name, modules)
+        known = {
+            (str(item.origin.native_scope or "").casefold(), str(item.native_name or item.name).casefold())
+            for item in inherited_functions
+        }
         inherited_functions.extend(
-            inherited_lookup[name.casefold()] for name in inherited_names if name.casefold() not in known
+            inherited_lookup[target.key] for target in inherited if target.key not in known
         )
-        own_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
-        return [*inherited_names, *own_names], inherited_lookup
+        own = [
+            _SpecificProcedure(module.name, name)
+            for name in (interface.specific_procedures or [signature.name for signature in interface.procedures])
+        ]
+        return [*inherited, *own], inherited_lookup
 
     def _inherited_generic_specifics(
         self,
         module: FortranModule,
         generic_name: str,
         modules: dict[str, FortranModule],
-    ) -> tuple[list[str], dict[str, SemanticFunction]]:
+    ) -> tuple[list[_SpecificProcedure], dict[tuple[str, str], SemanticFunction]]:
         """Return the specifics one generic inherits from the generics it extends.
 
         A local interface block repeating a ``use``-associated generic name
@@ -3687,19 +3722,20 @@ class FortranToIRConverter(ClassVisitor):
         declaration reached by two routes contributes once. Accumulation runs
         one way: a declaring module never sees what a later module adds.
         """
-        inherited: list[str] = []
-        lookup: dict[str, SemanticFunction] = {}
+        inherited: list[_SpecificProcedure] = []
+        lookup: dict[tuple[str, str], SemanticFunction] = {}
         for source_module, source_generic in self._imported_generic_interfaces(module, generic_name, modules):
             signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
             source_context = self._module_derived_type_context(source_module)
             names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
             for name in names:
+                target = _SpecificProcedure(source_module.name, name)
                 signature = signatures.get(name.casefold())
-                if signature is None or name.casefold() in lookup:
+                if signature is None or target.key in lookup:
                     continue
                 function = self.visit(signature, visibility="private", derived_type_context=source_context)
-                lookup[name.casefold()] = function
-                inherited.append(name)
+                lookup[target.key] = function
+                inherited.append(target)
         return inherited, lookup
 
     @staticmethod
@@ -3762,18 +3798,22 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _resolve_overload_targets(
-        target_names: list[str],
-        procedure_lookup: dict[str, SemanticFunction],
+        targets: list[_SpecificProcedure],
+        procedure_lookup: dict[tuple[str, str], SemanticFunction],
         *,
         visibility: str | None,
     ) -> tuple[list[SemanticFunction], list[str]]:
-        """Copy resolved generic targets and list target names absent from ``procedure_lookup``."""
+        """Copy resolved generic targets and name those absent from ``procedure_lookup``.
+
+        A target is identified by the module declaring it, so two contributors
+        that spell a specific the same way stay two procedures.
+        """
         procedures: list[SemanticFunction] = []
         missing: list[str] = []
-        for target_name in target_names:
-            procedure = procedure_lookup.get(target_name.casefold())
+        for target in targets:
+            procedure = procedure_lookup.get(target.key)
             if procedure is None:
-                missing.append(target_name)
+                missing.append(target.name)
                 continue
             candidate = deepcopy(procedure)
             if visibility is not None:

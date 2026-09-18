@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A merged generic keeps specifics that two contributing modules spell alike.
+  Specific procedures were looked up by name alone, so a second contributor's
+  `to_value` looked like the first and was dropped, losing a signature the
+  generic must dispatch over. A specific is now identified by the module
+  declaring it, and a contract writing two of them gives each its own Python
+  name and names it in the matching `@overload(...)`.
+
 - A `use` that only renames still carries the rest of its module. The parser
   recorded `use m, p => q` exactly as `use m, only : p => q`, so everything
   else `m` publishes was dropped, and the renamed entity was also still

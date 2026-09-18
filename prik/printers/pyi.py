@@ -127,6 +127,13 @@ class _PyiEmissionContext:
     called is knowable only from the emission that named it. A module reading
     from this one asks for the published spelling rather than deriving one.
     """
+    published_specifics: dict[tuple[str, str], str] = field(default_factory=dict)
+    """Declaring scope and native name to the spelling this contract wrote.
+
+    A merged generic dispatches over specifics from more than one module, which
+    may spell one the same way, so an overload target naming only that spelling
+    names no single declaration. The scope completes the identity.
+    """
 
     def contract(self, name: str) -> str:
         """Return one local contract spelling and record its required import."""
@@ -559,7 +566,15 @@ class PyiPrinter(ClassVisitor):
             return target
         # The specific was named while this same contract was rendered, and a
         # collision may have moved that name aside, so the naming it settled on
-        # is what the target has to state.
+        # is what the target has to state. A merged generic may dispatch over
+        # specifics two modules spell alike, so the scope declaring this one
+        # picks out which declaration the target means.
+        scope = str(getattr(candidate.origin, "native_scope", "") or "").casefold()
+        by_identity = (
+            context.published_specifics.get((scope, target.casefold())) if not context.public_namespace else None
+        )
+        if by_identity is not None:
+            return by_identity
         published = published_name(context.published_names, target)
         return published or context.normalized(target)
 
@@ -2461,13 +2476,30 @@ class PyiPrinter(ClassVisitor):
         if not context.normalize_public_names or func.name.startswith("__"):
             return func.name
         settled = context.settled("function", func.name)
-        if settled is not None:
-            return context.publish(func.name, settled)
-        return context.public_name(
-            func.name,
-            category="method" if isinstance(func, SemanticMethod) else "function",
-            owner=owner if owner is not None else func,
+        name = (
+            context.publish(func.name, settled)
+            if settled is not None
+            else context.public_name(
+                func.name,
+                category="method" if isinstance(func, SemanticMethod) else "function",
+                owner=owner if owner is not None else func,
+            )
         )
+        # Only a module-level declaration is named this way, exactly as
+        # `publish` records one: a class member is named inside its class.
+        identity = PyiPrinter._specific_identity(func) if not context.public_namespace else None
+        if identity is not None:
+            context.published_specifics.setdefault(identity, name)
+        return name
+
+    @staticmethod
+    def _specific_identity(func: SemanticFunction) -> tuple[str, str] | None:
+        """Return the scope and native name identifying one declaration, if known."""
+        scope = str(getattr(func.origin, "native_scope", "") or "")
+        native = str(func.native_name or func.name)
+        if not scope or not native:
+            return None
+        return scope.casefold(), native.casefold()
 
     @staticmethod
     def _reexport_name(reexport: SemanticReexport, context: _PyiEmissionContext) -> str:

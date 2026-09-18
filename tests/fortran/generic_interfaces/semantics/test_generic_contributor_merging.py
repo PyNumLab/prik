@@ -234,3 +234,78 @@ end module facade_mod
     )
 
     assert [item.entity_kind for item in modules["facade_mod"].reexports if item.local_name == "convert"] == ["unknown"]
+
+
+SAME_NAMED_SPECIFICS = """\
+module ints_mod
+  implicit none
+  interface convert
+    module procedure to_value
+  end interface
+contains
+  integer function to_value(x)
+    integer, intent(in) :: x
+    to_value = x
+  end function to_value
+end module ints_mod
+
+module reals_mod
+  implicit none
+  interface convert
+    module procedure to_value
+  end interface
+contains
+  real function to_value(x)
+    real, intent(in) :: x
+    to_value = x
+  end function to_value
+end module reals_mod
+
+module facade_mod
+  use ints_mod,  only : convert
+  use reals_mod, only : convert
+  implicit none
+  interface convert
+    module procedure to_value_l
+  end interface
+contains
+  logical function to_value_l(x)
+    logical, intent(in) :: x
+    to_value_l = x
+  end function to_value_l
+end module facade_mod
+"""
+
+
+def test_contributors_spelling_a_specific_alike_stay_two_procedures(tmp_path: Path):
+    """A specific is identified by the module declaring it, not by its spelling.
+
+    Two contributors each declare `to_value`. Keying them by name alone made
+    the second look like the first and dropped it, so the merged generic lost a
+    signature it must dispatch over.
+    """
+    modules = _modules(tmp_path, SAME_NAMED_SPECIFICS)
+    overload_set = next(item for item in modules["facade_mod"].overload_sets if item.name == "convert")
+
+    identities = [
+        (procedure.origin.native_scope, procedure.arguments[0].semantic_type.name)
+        for procedure in overload_set.procedures
+    ]
+    assert identities == [("ints_mod", "Int32"), ("reals_mod", "Float32"), ("facade_mod", "Bool")]
+
+
+def test_a_contract_names_each_merged_specific_distinctly(tmp_path: Path):
+    """Two specifics spelled alike need two Python names and two targets."""
+    from prik.policy.exports import complete_python_export_policy
+    from prik.printers.pyi import PyiPrinter
+
+    modules = _modules(tmp_path, SAME_NAMED_SPECIFICS)
+    facade = modules["facade_mod"]
+    complete_python_export_policy(facade)
+    contract = PyiPrinter(normalize_public_names=True).emit(facade)
+
+    assert contract.count("def to_value(") == 1
+    assert contract.count("def to_value_2(") == 1
+    # Each dispatcher names the declaration this contract actually writes.
+    assert '@overload("to_value")' in contract
+    assert '@overload("to_value_2")' in contract
