@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A use-associated name is resolved from every route carrying it, whichever
+  way each route entered. A module writing `use a_mod, only : x` beside a plain
+  `use c_mod` that also offers `x` reaches two different entities, and the
+  named route was examined first and published `a_mod::x` as the canonical
+  owner -- which a re-exported module variable then generates native access to
+  directly, so the Fortran compiler never diagnoses the ambiguity. Routes that
+  name one entity still resolve, and a plain `use` of a module PRIK never read
+  carries no assumed name.
+
 - An enum's enumerators are carried by `use` like the constants they are. A
   plain `use` of a module declaring `enumerator :: red = 1` carried nothing for
   `red`, and naming it in an `only` list produced a re-export of unknown kind,

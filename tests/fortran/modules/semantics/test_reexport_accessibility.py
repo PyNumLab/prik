@@ -772,3 +772,94 @@ end module colors_mod
 
     reexports = {item.local_name: item for item in modules["colors_mod"].reexports}
     assert reexports["base"].declaration_dependency is True
+
+
+def test_a_named_and_a_wildcard_route_to_different_entities_stay_unresolved(tmp_path: Path):
+    """How a route entered says nothing about what it carries.
+
+    `b_mod` reaches two different `x`, one through an `only` list and one
+    through a plain `use`. Examining the named route first would publish
+    `a_mod::x` as the canonical one, and a re-exported module variable
+    generates native access to that owner directly, so the Fortran compiler
+    never gets to diagnose the ambiguity.
+    """
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        TRANSITIVE_OTHER,
+        """\
+module b_mod
+  use a_mod, only : x
+  use c_mod
+  implicit none
+end module b_mod
+""",
+    )
+
+    assert [item.local_name for item in modules["b_mod"].reexports] == []
+
+
+def test_a_named_and_a_wildcard_route_to_one_entity_resolve_together(tmp_path: Path):
+    """Two routes naming one declaration are not a disagreement."""
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        """\
+module pass_mod
+  use a_mod
+  implicit none
+end module pass_mod
+
+module b_mod
+  use a_mod, only : x
+  use pass_mod
+  implicit none
+end module b_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["b_mod"].reexports}
+    assert (reexports["x"].entity_kind, reexports["x"].origin_module) == ("variable", "a_mod")
+
+
+def test_an_unparsed_plain_use_carries_no_assumed_name(tmp_path: Path):
+    """PRIK cannot enumerate an unread module, so it is not a route for a name."""
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        """\
+module b_mod
+  use a_mod, only : x
+  use external_mod
+  implicit none
+end module b_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["b_mod"].reexports}
+    assert (reexports["x"].entity_kind, reexports["x"].origin_module) == ("variable", "a_mod")
+
+
+def test_mixed_routes_through_an_intermediate_module_stay_unresolved(tmp_path: Path):
+    """The rule is the same at every hop, whichever way each route entered."""
+    modules = _project_modules(
+        tmp_path,
+        TRANSITIVE_DECLARING,
+        TRANSITIVE_OTHER,
+        """\
+module middle_mod
+  use a_mod, only : x
+  use c_mod
+  implicit none
+end module middle_mod
+
+module outer_mod
+  use middle_mod, only : x
+  implicit none
+end module outer_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
+    assert reexports["x"].entity_kind == "unknown"
+    assert reexports["x"].origin_module == "middle_mod"

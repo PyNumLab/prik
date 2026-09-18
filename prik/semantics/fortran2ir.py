@@ -16,6 +16,7 @@ compile-time requirement utilities at the end of the module.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NamedTuple
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
@@ -218,6 +219,13 @@ class _CallbackInterface:
         if not self.declaring_scope:
             return self.visible_name
         return "_".join((*self.declaring_scope, self.visible_name))
+
+
+class _NameRoute(NamedTuple):
+    """One way a module reaches a name: the module used, and the name there."""
+
+    used_module: str
+    source_name: str
 
 
 @dataclass(frozen=True)
@@ -1831,6 +1839,80 @@ class FortranToIRConverter(ClassVisitor):
                 offered.setdefault(name, set()).add(module_name)
         return {name for name, routes in offered.items() if is_public(name, routes)}
 
+    @staticmethod
+    def _reconcile_routes(origins: list[tuple[str, str, str]]) -> tuple[str, str, str] | None:
+        """Return the one entity a local name's routes reach, or ``None``.
+
+        An ordinary entity has one declaration, so routes that disagree -- or a
+        readable route standing beside one this project never parsed -- mean the
+        local name reaches more than one thing, and choosing between them would
+        be a guess rather than a reading.
+
+        """
+        distinct = list(dict.fromkeys(origins))
+        if len(distinct) == 1:
+            return distinct[0]
+        return None
+
+    @classmethod
+    def _name_routes(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        local_name: str,
+    ) -> tuple[_NameRoute, ...]:
+        """Return every route by which one module reaches one local name.
+
+        A named mapping states the name it carries. A plain ``use`` carries
+        every public name of what it reads, so it is a route for this name only
+        when that module is parsed and offers it -- an unparsed module cannot be
+        enumerated, and assuming it carries the name would refuse resolutions
+        PRIK can make. How a route entered, through ``only`` or through a plain
+        ``use``, says nothing about what it carries, so both kinds are collected
+        together and weighed the same way afterwards.
+        """
+        folded = local_name.casefold()
+        routes: list[_NameRoute] = [
+            _NameRoute(used_name, mapping.source)
+            for used_name, mappings in module.uses.items()
+            for mapping in mappings
+            if mapping.local_name.casefold() == folded
+        ]
+        for used_name, mappings in module.uses.items():
+            if mappings:
+                continue
+            used = index.get(used_name.casefold())
+            if used is not None and folded in cls._module_public_names(used, index):
+                routes.append(_NameRoute(used_name, local_name))
+        return tuple(routes)
+
+    @classmethod
+    def _use_associated_names(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> tuple[str, ...]:
+        """Return every local name one module reaches through ``use``, in order.
+
+        A named mapping contributes the spelling it binds; a plain ``use``
+        contributes the names the module it reads offers, which are known only
+        for a parsed one. Named spellings come first, so a name reached both
+        ways keeps the case its ``use`` statement wrote.
+        """
+        names: dict[str, str] = {}
+        for mappings in module.uses.values():
+            for mapping in mappings:
+                names.setdefault(mapping.local_name.casefold(), mapping.local_name)
+        for used_name, mappings in module.uses.items():
+            if mappings:
+                continue
+            used = index.get(used_name.casefold())
+            if used is None:
+                continue
+            for name in sorted(cls._module_public_names(used, index)):
+                names.setdefault(name, name)
+        return tuple(names.values())
+
     def _module_reexports(
         cls,
         module: FortranModule,
@@ -1850,29 +1932,18 @@ class FortranToIRConverter(ClassVisitor):
         explicit_public = {str(name).casefold() for name in module.public_symbols}
         index = module_index or {}
         reexports: list[SemanticReexport] = []
-        named: set[str] = set()
-        named_mappings: dict[str, list[tuple[str, FortranUseMapping]]] = {}
-        for module_name, mappings in module.uses.items():
-            for mapping in mappings:
-                named_mappings.setdefault(mapping.local_name.casefold(), []).append((module_name, mapping))
-        for local_key, routes in named_mappings.items():
-            named.add(local_key)
-            local_name = routes[0][1].local_name
-            route_names = tuple(dict.fromkeys(module_name for module_name, _mapping in routes))
-            if local_key in declared or not is_public(local_name, route_names):
+        for local_name in cls._use_associated_names(module, index):
+            local_key = local_name.casefold()
+            routes = cls._name_routes(module, index, local_name)
+            route_names = tuple(dict.fromkeys(route.used_module for route in routes))
+            if local_key in declared or not routes or not is_public(local_name, route_names):
                 continue
-            origins = {
-                cls._resolve_reexport_origin(index, module_name, mapping.source) for module_name, mapping in routes
-            }
-            # Every route has to name one entity. Routes that all resolve the
-            # same way name it; a single unresolved route still names whatever
-            # the ``use`` reached. Where routes disagree, or a resolved route
-            # sits beside one this project cannot read, the name means more
-            # than one thing here and choosing the readable one would be a
-            # guess about the module that was never parsed.
-            if len(origins) > 1:
+            origin = cls._reconcile_routes(
+                [cls._resolve_reexport_origin(index, route.used_module, route.source_name) for route in routes]
+            )
+            if origin is None:
                 continue
-            kind, origin_module, origin_name = next(iter(origins))
+            kind, origin_module, origin_name = origin
             reexports.append(
                 SemanticReexport(
                     local_name,
@@ -1885,16 +1956,6 @@ class FortranToIRConverter(ClassVisitor):
                     explicitly_public=local_key in explicit_public,
                 )
             )
-        reexports.extend(
-            cls._wildcard_reexports(
-                module,
-                index,
-                declared=declared,
-                dependencies=dependencies,
-                explicit_public=explicit_public,
-                named=named,
-            )
-        )
         return reexports
 
     @classmethod
@@ -1929,85 +1990,14 @@ class FortranToIRConverter(ClassVisitor):
         if kind != "unknown":
             return kind, declaring.name, source_name
         seen = seen | {key}
-        named = [
-            (used_name, mapping.source)
-            for used_name, mappings in declaring.uses.items()
-            for mapping in mappings
-            if mapping.local_name.casefold() == source_name.casefold()
-        ]
-        # A `use` naming no list carries every public name of what it reads.
-        wildcard = [(used_name, source_name) for used_name, mappings in declaring.uses.items() if not mappings]
-        routes = named or wildcard
-        route_names = tuple(dict.fromkeys(used_name for used_name, _source in routes))
+        routes = cls._name_routes(declaring, index, source_name)
+        route_names = tuple(dict.fromkeys(route.used_module for route in routes))
         if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
             return "unknown", module_name, source_name
-        origins = {cls._resolve_reexport_origin(index, used_name, name, seen) for used_name, name in routes}
-        if named:
-            # A named route states the entity it carries, so an unreadable one
-            # beside a resolved one still means the name reaches two things.
-            return next(iter(origins)) if len(origins) == 1 else ("unknown", module_name, source_name)
-        known = [origin for origin in origins if origin[0] != "unknown"]
-        if len(known) == 1:
-            return known[0]
-        return "unknown", module_name, source_name
-
-    @classmethod
-    def _wildcard_reexports(
-        cls,
-        module: FortranModule,
-        index: dict[str, FortranModule],
-        *,
-        declared: set[str],
-        dependencies: set[str],
-        explicit_public: set[str],
-        named: set[str],
-    ) -> list[SemanticReexport]:
-        """Return the names a plain ``use`` carried into this module and it publishes.
-
-        A ``use`` naming no list carries every public name of the module it
-        reads, and this module's effective accessibility then decides which of
-        those it publishes in turn. A carried name is resolved only when one
-        such module declares it: two that do leave the origin genuinely
-        ambiguous, which is not something to guess at.
-        """
-        wildcard = [
-            index[module_name.casefold()]
-            for module_name, mappings in module.uses.items()
-            if not mappings and module_name.casefold() in index
-        ]
-        if not wildcard:
-            return []
-        is_public = cls._effective_accessibility(module)
-        carried: dict[str, list[FortranModule]] = {}
-        for used in wildcard:
-            for name in cls._module_public_names(used, index):
-                carried.setdefault(name, []).append(used)
-        reexports: list[SemanticReexport] = []
-        for name, routes in sorted(carried.items()):
-            route_names = tuple(dict.fromkeys(used.name for used in routes))
-            if name in declared or name in named or not is_public(name, route_names):
-                continue
-            # Every route has to name one entity, the way a named import does.
-            # An unresolved route is kept in the comparison rather than
-            # discarded: dropping it would leave a readable route standing
-            # alone and answer for a module this project never read.
-            origins = {cls._resolve_reexport_origin(index, used.name, name) for used in routes}
-            if len(origins) != 1:
-                continue
-            kind, origin_module, origin_name = next(iter(origins))
-            reexports.append(
-                SemanticReexport(
-                    name,
-                    origin_module,
-                    origin_name,
-                    module.name,
-                    entity_kind=kind,
-                    access_modules=list(route_names),
-                    declaration_dependency=name in dependencies,
-                    explicitly_public=name in explicit_public,
-                )
-            )
-        return reexports
+        origin = cls._reconcile_routes(
+            [cls._resolve_reexport_origin(index, route.used_module, route.source_name, seen) for route in routes]
+        )
+        return origin if origin is not None else ("unknown", module_name, source_name)
 
     @staticmethod
     def _declared_entity_kind(declaring: FortranModule | None, source_name: str) -> str:
