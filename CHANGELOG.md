@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A procedure-local prototype cannot take a name its module imports. Allocating
+  its contract spelling held only the module's declared names, so a module
+  importing `first_cb` and declaring `cb` inside `first` wrote a prototype that
+  shadowed the import the contract also writes.
+
 - A merged generic keeps specifics that two contributing modules spell alike.
   Specific procedures were looked up by name alone, so a second contributor's
   `to_value` looked like the first and was dropped, losing a signature the

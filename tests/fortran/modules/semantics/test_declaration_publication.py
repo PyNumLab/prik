@@ -9,10 +9,10 @@ module publication at all.
 
 from pathlib import Path
 
-from prik.parsers.fortran import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 from prik.printers.pyi import PyiPrinter
 from prik.policy.exports import complete_python_export_policy
-from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules, fortran_project_to_semantic_modules
 
 PRIVATE_SOURCE = """\
 module m
@@ -237,3 +237,49 @@ def test_a_contract_writes_one_prototype_for_each_scope(tmp_path: Path):
     assert f"f: {local_name}" in contract
     assert "g: first_cb" in contract
     assert '__all__ = ["first_cb", "first", "uses_module_one"]' in contract
+
+
+IMPORT_COLLISION_SOURCE = """\
+module helper_mod
+  implicit none
+  integer :: first_cb = 7
+end module helper_mod
+
+module m_mod
+  use helper_mod, only : first_cb
+  implicit none
+contains
+  subroutine first(f)
+    abstract interface
+      subroutine cb(x)
+        real :: x
+      end subroutine
+    end interface
+    procedure(cb) :: f
+    call f(1.0)
+  end subroutine first
+end module m_mod
+"""
+
+
+def test_a_prototype_does_not_take_a_name_the_module_imports(tmp_path: Path):
+    """A use-associated name binds here too, so a prototype cannot be given it.
+
+    `m_mod` imports `first_cb`, and its contained procedure declares `cb`,
+    whose suggested spelling is the same. Allocating against the declared names
+    alone let the prototype shadow the import the contract writes.
+    """
+    (tmp_path / "project.f90").write_text(IMPORT_COLLISION_SOURCE, encoding="utf-8")
+    modules = {
+        module.name: module for module in fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
+    }
+    module = modules["m_mod"]
+    complete_python_export_policy(module)
+
+    assert [(item.native_name, item.declaring_scope) for item in module.prototypes] == [("cb", ("first",))]
+    assert module.prototypes[0].name != "first_cb"
+
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+    assert "from .helper_mod import first_cb" in contract
+    assert f"def {module.prototypes[0].name}(" in contract
+    assert f"f: {module.prototypes[0].name}" in contract

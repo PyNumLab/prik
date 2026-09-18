@@ -1143,6 +1143,7 @@ class FortranToIRConverter(ClassVisitor):
     def _settle_prototype_contract_names(
         self,
         module: FortranModule,
+        index: dict[str, FortranModule],
         prototypes: list[SemanticPrototype],
         functions: list[SemanticFunction],
         classes: list[SemanticClass],
@@ -1164,14 +1165,19 @@ class FortranToIRConverter(ClassVisitor):
         # names a build publishes, which a prototype is not.
         naming = NamingPolicy(preserve_case=True)
         # A module's own block declares the name another module imports, so it
-        # keeps it; every other declared name is held first so no prototype can
-        # be handed a spelling that already belongs to one.
+        # keeps it; every other name the contract binds is held first so no
+        # prototype can be handed a spelling that already belongs to one. A
+        # use-associated name binds in this module too, and the contract writes
+        # an import for it, so it is held alongside the declared names.
         module_scope = {
             str(prototype.native_name or prototype.name).casefold()
             for prototype in prototypes
             if not prototype.declaring_scope
         }
-        for name in sorted(self._module_declared_names(module)):
+        held = self._module_declared_names(module) | {
+            name.casefold() for name in self._use_associated_names(module, index)
+        }
+        for name in sorted(held):
             if name in module_scope:
                 continue
             naming.reserve_public_name((), name, category="function", owner=("declared", name))
@@ -1673,7 +1679,7 @@ class FortranToIRConverter(ClassVisitor):
                     prototypes=prototypes,
                 ),
             )
-        self._settle_prototype_contract_names(module, prototypes, semantic_functions, semantic_classes)
+        self._settle_prototype_contract_names(module, index, prototypes, semantic_functions, semantic_classes)
         return SemanticModule(
             name=module.name,
             functions=semantic_functions,
