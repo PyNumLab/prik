@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A type-bound defined assignment updates the method it names. Making a
+  specific's identity structural left two helpers looking the original up by
+  bare name, so `generic :: assignment(=) => assign_value` projected its bound
+  object on the generic's candidate while the method itself kept the
+  unprojected signature.
+
 - Every legal `use` form is now represented, and several statements naming one
   module are read together. `use m, only :` is valid and imports nothing, yet
   was indistinguishable from a bare `use m`; `use m, only : p => q` followed by

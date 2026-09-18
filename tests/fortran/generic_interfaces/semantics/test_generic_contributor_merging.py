@@ -309,3 +309,39 @@ def test_a_contract_names_each_merged_specific_distinctly(tmp_path: Path):
     # Each dispatcher names the declaration this contract actually writes.
     assert '@overload("to_value")' in contract
     assert '@overload("to_value_2")' in contract
+
+
+def test_a_type_bound_assignment_reaches_the_method_it_projects(tmp_path: Path):
+    """The generic's candidate and the method it names are one declaration.
+
+    A defined assignment projects its bound object as the result. The original
+    method has to carry that projection too, so both the generic call and a
+    direct call behave the same way.
+    """
+    modules = _modules(
+        tmp_path,
+        """\
+module asg_mod
+  implicit none
+  type :: box_t
+    integer :: value = 0
+  contains
+    procedure :: assign_value
+    generic :: assignment(=) => assign_value
+  end type box_t
+contains
+  subroutine assign_value(self, other)
+    class(box_t), intent(inout) :: self
+    integer, intent(in) :: other
+    self%value = other
+  end subroutine assign_value
+end module asg_mod
+""",
+    )
+    declared = modules["asg_mod"].classes[0]
+    method = next(item for item in declared.methods if item.name == "assign_value")
+
+    assert [(item.python_name, item.result_position) for item in method.projection] == [
+        ("self", 0),
+        ("other", None),
+    ]

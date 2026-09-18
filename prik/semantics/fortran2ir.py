@@ -3169,6 +3169,14 @@ class FortranToIRConverter(ClassVisitor):
         return methods
 
     @staticmethod
+    def _declared_specific(procedure: SemanticFunction) -> tuple[str, str]:
+        """Return the identity of the declaration one specific was taken from."""
+        return _SpecificProcedure(
+            str(procedure.origin.native_scope or ""),
+            str(procedure.native_name or procedure.name),
+        ).key
+
+    @staticmethod
     def _bind_private_specifics_through_generic(
         overload_set: ProcedureOverloadSet,
         targets: list[_SpecificProcedure],
@@ -3259,7 +3267,7 @@ class FortranToIRConverter(ClassVisitor):
                         interface.name,
                     )
                     self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
-                    self._mark_constructor_specifics(procedures, procedure_lookup, interface.name)
+                    self._mark_constructor_specifics(procedures, own_lookup, interface.name)
                     continue
                 overload_set = self._normal_overload_set(
                     interface.name,
@@ -3282,7 +3290,7 @@ class FortranToIRConverter(ClassVisitor):
                 procedures,
                 class_map,
             )
-            self._apply_assignment_projection_to_originals(interface.name, procedures, procedure_lookup, class_map)
+            self._apply_assignment_projection_to_originals(interface.name, procedures, own_lookup, class_map)
             for semantic_class, class_sets in defined_sets:
                 self._merge_overload_sets(semantic_class.overload_sets, class_sets)
         return overload_sets, inherited_functions
@@ -3344,7 +3352,7 @@ class FortranToIRConverter(ClassVisitor):
         self,
         generic_name: str,
         procedures: list[SemanticFunction],
-        lookup: dict[str, SemanticFunction],
+        lookup: dict[tuple[str, str], SemanticFunction],
         classes: dict[str, SemanticClass],
     ) -> None:
         """Replace valid defined-assignment projections on their original procedures.
@@ -3359,14 +3367,14 @@ class FortranToIRConverter(ClassVisitor):
         for procedure in procedures:
             if self._defined_procedure_error(kind, token, procedure, classes) is not None:
                 continue
-            original = lookup.get((procedure.native_name or procedure.name).casefold())
+            original = lookup.get(self._declared_specific(procedure))
             if original is not None:
                 original.projection = self._assignment_projection(original, 0)
 
     @staticmethod
     def _mark_constructor_specifics(
         procedures: list[SemanticFunction],
-        procedure_lookup: dict[str, SemanticFunction],
+        procedure_lookup: dict[tuple[str, str], SemanticFunction],
         type_name: str,
     ) -> None:
         """Hide the module functions a generic constructor selects between.
@@ -3376,7 +3384,7 @@ class FortranToIRConverter(ClassVisitor):
         the public spelling the source chose for it.
         """
         for procedure in procedures:
-            original = procedure_lookup.get((procedure.native_name or procedure.name).casefold())
+            original = procedure_lookup.get(FortranToIRConverter._declared_specific(procedure))
             if original is not None:
                 original.metadata[CONSTRUCTOR_SPECIFIC_METADATA] = type_name
 
