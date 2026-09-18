@@ -13,7 +13,13 @@ import pytest
 from prik.pipeline.pyi import pyi_paths_to_semantic_modules
 from prik.policy.exports import complete_python_export_policy
 from prik.printers.pyi import PyiPrinter
-from prik.semantics.models import PYTHON_EXPORTS_METADATA, ProcedureOverloadSet
+from prik.semantics.models import (
+    PYTHON_EXPORTS_METADATA,
+    ProcedureOverloadSet,
+    SemanticFunction,
+    SemanticModule,
+    SemanticOrigin,
+)
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.parsers.fortran import parse_fortran_file
 
@@ -110,3 +116,45 @@ def test_a_withheld_declaration_is_still_reachable_for_naming(generated_contract
     reloaded = pyi_paths_to_semantic_modules([generated_contract])[0]
 
     assert PyiPrinter().published_names(reloaded)["cb"] == "cb"
+
+
+def test_a_stated_name_selects_a_declaration_by_exact_spelling(tmp_path: Path):
+    """A contract is Python, where `Foo` and `foo` are different names.
+
+    A list naming `Foo` beside a declaration written `foo` names something the
+    module does not define, so it publishes nothing.
+    """
+    contract = tmp_path / "cased_mod.pyi"
+    contract.write_text(
+        'from prik.contracts import Int32\n\ndef foo(\n    a: Int32\n) -> None: ...\n\n__all__ = ["Foo"]\n',
+        encoding="utf-8",
+    )
+    module = pyi_paths_to_semantic_modules([contract])[0]
+
+    complete_python_export_policy(module)
+
+    assert [item.name for item in module.functions] == ["foo"]
+    assert module.functions[0].metadata.get(PYTHON_EXPORTS_METADATA) is None
+
+
+def test_a_declaration_already_projected_to_nothing_keeps_that_decision():
+    """An empty export list is a decision taken, not a missing one.
+
+    A stage that has projected a declaration to no Python namespace records an
+    empty list. Reading that as "nothing decided yet" and substituting a
+    default publication would reverse it.
+    """
+    withheld = SemanticFunction(name="withheld", native_name="withheld")
+    withheld.metadata[PYTHON_EXPORTS_METADATA] = []
+    fresh = SemanticFunction(name="fresh", native_name="fresh")
+    module = SemanticModule(
+        name="mod",
+        functions=[withheld, fresh],
+        origin=SemanticOrigin(source_language="fortran", source_kind="module"),
+    )
+
+    complete_python_export_policy(module)
+
+    assert withheld.metadata[PYTHON_EXPORTS_METADATA] == []
+    # A declaration no stage has projected still publishes itself.
+    assert fresh.metadata[PYTHON_EXPORTS_METADATA] == [{"namespace": (), "name": "fresh"}]

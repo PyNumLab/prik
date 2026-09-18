@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract's `__all__` selects declarations by exact spelling, and a
+  declaration already projected to no Python namespace keeps that projection.
+  Names were compared case-insensitively, so `__all__ = ["Foo"]` published a
+  declaration written `foo` although Python names are case-sensitive; and an
+  empty export list read as "nothing decided yet", so a default publication
+  replaced a decision an earlier stage had taken.
+
 - A procedure-local prototype cannot take a name its module imports. Allocating
   its contract spelling held only the module's declared names, so a module
   importing `first_cb` and declaring `cb` inside `first` wrote a prototype that

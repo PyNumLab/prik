@@ -33,11 +33,18 @@ def _stated_export_names(module: models.SemanticModule) -> set[str] | None:
     """Return the surface one contract states, or ``None`` when it states none.
 
     A contract that writes no ``__all__`` publishes what it declares, so there
-    is nothing stated to read and every declaration is completed as before.
+    is nothing stated to read and every declaration is completed as before. An
+    empty list is a statement, not the absence of one: it says the module
+    publishes nothing.
+
+    The names are compared exactly. A contract is Python, where ``Foo`` and
+    ``foo`` are different names, so a list naming ``Foo`` does not publish a
+    declaration written ``foo`` -- it names something the module does not
+    define.
     """
     if module.exported_names is None:
         return None
-    return {str(name).casefold() for name in module.exported_names}
+    return {str(name) for name in module.exported_names}
 
 
 def complete_python_export_policy(
@@ -68,11 +75,15 @@ def complete_python_export_policy(
     for owner in _module_export_owners(module):
         if getattr(owner, "visibility", "public") == "private":
             continue
-        if stated is not None and str(owner.name).casefold() not in stated:
+        if stated is not None and str(owner.name) not in stated:
             continue
         metadata = _owner_metadata(owner)
         exports = metadata.get(models.PYTHON_EXPORTS_METADATA)
-        if not exports:
+        if exports is None:
+            # No stage has projected this declaration yet, so it publishes
+            # itself in its own namespace. An empty list is not that: it is a
+            # stage having decided the declaration publishes nothing, and
+            # replacing it here would reverse that decision.
             exports = [{"namespace": (), "name": None}]
             metadata[models.PYTHON_EXPORTS_METADATA] = exports
         category = _owner_category(owner)
