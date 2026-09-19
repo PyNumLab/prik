@@ -15357,12 +15357,19 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
                 *self._module_initializer_nodes(plan),
                 *self._module_native_array_owner_nodes(plan, "mod"),
-                *self._namespace_configuration_nodes(
-                    plan,
-                    root_namespace,
-                    "mod",
-                ),
                 *(node for namespace in child_namespaces for node in self._child_namespace_nodes(plan, namespace)),
+                # Every namespace exists before any is set up, and they are set
+                # up in plan order, which puts a namespace defining a base class
+                # before one whose classes extend it.
+                *(
+                    node
+                    for namespace in plan.namespaces
+                    for node in self._namespace_configuration_nodes(
+                        plan,
+                        namespace,
+                        self._namespace_object_name(namespace),
+                    )
+                ),
                 *(
                     node
                     for namespace in child_namespaces
@@ -15417,7 +15424,7 @@ class CBindingGenerator(ClassVisitor):
         module: ModulePlan,
         namespace: NamespacePlan,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Create, attach, and configure one child Python module."""
+        """Create one child Python module and attach it to its parent."""
         object_name = self._namespace_object_name(namespace)
         parent = self._namespace_object_name(self._namespace(module, namespace.python_path[:-1]))
         definition = f"{module.binding.owner_path}_{self._namespace_symbol(namespace)}_module"
@@ -15430,11 +15437,6 @@ class CBindingGenerator(ClassVisitor):
                     f'if (PyModule_AddObject({parent}, "{local_name}", {object_name}) < 0) '
                     f"{{ Py_DECREF({object_name}); Py_DECREF(mod); return NULL; }}"
                 )
-            ),
-            *self._namespace_configuration_nodes(
-                module,
-                namespace,
-                object_name,
             ),
         )
 
@@ -15510,14 +15512,28 @@ class CBindingGenerator(ClassVisitor):
             nullable_module_proxy_owner_paths=frozenset(
                 variable.owner_path for variable in variables if self._nullable_derived_module_proxy(variable)
             ),
+            type_homes=self._type_homes,
         )
-        source = PythonSurfaceEmitter(context).emit(namespace, variables)
+        emitter = PythonSurfaceEmitter(context)
+        source = emitter.emit(namespace, variables)
         literal = self._c_string_literal(source)
         result_name = f"{self._namespace_symbol(namespace)}_python_setup"
         dictionary = f"{self._namespace_symbol(namespace)}_python_dict"
         return (
             CDeclaration(dictionary, "PyObject *", CodeExpression(f"PyModule_GetDict({module_object})")),
             CIf(CodeExpression(f"{dictionary} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+            # A class extending a type another namespace defines reaches its base
+            # through that namespace, which planning set up before this one.
+            *(
+                CIf(
+                    CodeExpression(
+                        f'PyDict_SetItemString({dictionary}, "{CBindingNames.namespace_reference(path)}", '
+                        f"{self._namespace_owner_name(path)}) < 0"
+                    ),
+                    body=(CReturn(CodeExpression("NULL")),),
+                )
+                for path in emitter.referenced_namespaces(namespace)
+            ),
             CDeclaration(
                 result_name,
                 "PyObject *",
@@ -15860,7 +15876,7 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _path_symbol(python_path: tuple[str, ...]) -> str:
         """Return the C symbol fragment naming one namespace path."""
-        return "_".join(python_path).casefold() if python_path else "root"
+        return CBindingNames.namespace_symbol(python_path)
 
     def _namespace_object_name(self, plan: NamespacePlan) -> str:
         """Return the binding-local namespace object name derived from the supplied completed binding records; this helper preserves completed policy."""

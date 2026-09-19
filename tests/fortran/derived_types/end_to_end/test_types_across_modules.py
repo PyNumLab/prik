@@ -137,6 +137,38 @@ end module second_mod
 """
 
 
+BASE_SOURCE = """\
+module zeta_base
+  implicit none
+  type :: shape
+    integer :: sides = 0
+  end type shape
+contains
+  integer function sides_of(item)
+    class(shape), intent(in) :: item
+    sides_of = item%sides
+  end function sides_of
+end module zeta_base
+"""
+
+EXTENSION_SOURCE = """\
+module alpha_child
+  use zeta_base, only: shape
+  implicit none
+  type, extends(shape) :: square
+    integer :: edge = 1
+  end type square
+contains
+  function make_square(edge) result(out)
+    integer, intent(in) :: edge
+    type(square) :: out
+    out%sides = 4
+    out%edge = edge
+  end function make_square
+end module alpha_child
+"""
+
+
 @pytest.fixture(scope="module")
 def modules(tmp_path_factory: pytest.TempPathFactory):
     """Build `shapes` and the `ops` module using its types once."""
@@ -220,3 +252,25 @@ def test_two_modules_may_each_declare_a_type_spelled_alike(tmp_path: Path):
     assert type(made) is first.Box
     assert made.value == 10
     assert second.weigh(lambda: second.Box(weight=np.float64(3.5))) == 3.5
+
+
+def test_a_type_may_extend_one_another_module_declares(tmp_path: Path):
+    """The extension is a subclass of the base where the base is defined.
+
+    `alpha_child` sorts before `zeta_base`, so its namespace is set up after
+    the base's only because inheritance orders them. Its class names the base
+    there instead of looking for it among its own.
+    """
+    module, _ = _build_sources_and_import(
+        [("zeta_base.f90", BASE_SOURCE), ("alpha_child.f90", EXTENSION_SOURCE)],
+        tmp_path,
+    )
+    base, child = module.zeta_base, module.alpha_child
+
+    square = child.make_square(np.int32(3))
+
+    assert type(square) is child.Square
+    assert issubclass(child.Square, base.Shape)
+    assert (square.sides, square.edge) == (4, 3)
+    assert base.sides_of(square) == 4
+    assert base.sides_of(base.Shape(sides=np.int32(2))) == 2

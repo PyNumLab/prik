@@ -169,7 +169,9 @@ helpers are placed in that same namespace.
 The planner attaches class and overload callables to the function collections
 that need their native entrypoints. It completes generated symbols, adds every
 required parent namespace, and creates namespace plans in root-first path
-order. Finally it collects headers selected by completed descriptor-handle
+order, except that a namespace whose classes extend a type another namespace
+defines comes after that namespace. A namespace's classes are created when it
+is set up, in plan order, so the base has to exist first. Finally it collects headers selected by completed descriptor-handle
 plans and returns one editable `ModulePlan`.
 
 ### `models.py`: shared plans and three lowering views

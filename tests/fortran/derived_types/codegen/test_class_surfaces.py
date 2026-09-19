@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from prik.parsers.fortran import parse_fortran_project
+from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
 from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
@@ -67,3 +70,38 @@ def test_a_type_defined_in_two_namespaces_fails_before_emission():
 
     with pytest.raises(ValueError, match="duplicate-derived-type-identity"):
         WrapperGenerator().generate(plan)
+
+
+EXTENDING_ANOTHER_MODULE = """\
+module zeta_base
+  implicit none
+  type :: shape
+    integer :: sides = 0
+  end type shape
+end module zeta_base
+
+module alpha_child
+  use zeta_base, only: shape
+  implicit none
+  type, extends(shape) :: square
+    integer :: edge = 1
+  end type square
+end module alpha_child
+"""
+
+
+def test_a_namespace_is_planned_after_the_one_defining_its_base(tmp_path: Path):
+    """A class extending another namespace's type is created once its base exists.
+
+    Path order would put `alpha_child` first; inheritance overrides it only
+    where it has to.
+    """
+    (tmp_path / "project.f90").write_text(EXTENDING_ANOTHER_MODULE, encoding="utf-8")
+    modules = fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="package")
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner().build(module)
+
+    assert [namespace.python_path for namespace in plan.namespaces] == [(), ("zeta_base",), ("alpha_child",)]

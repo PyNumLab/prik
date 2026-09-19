@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A type may extend a type another module declares. The generated class
+  looked its base up among its own namespace's classes, so such a build failed
+  with a `KeyError`; it now names the base through the namespace defining it.
+  Planning orders namespaces so the one defining a base is set up first, and
+  module initialization creates every namespace before setting any up.
+
+- The derived-types guide states that an `allocatable` derived function
+  result must be allocated when the function returns, as Fortran requires of
+  every non-pointer result. The compiler reads the result before the wrapper
+  can, so an unallocated one is a native error rather than `None`.
+
 - A type is usable from every module whose procedures take or return it.
   Generated code looked a type's class and wrapper helper up in the namespace
   of the calling procedure, so `box_ops.boxed()` returning a `shared_types`

@@ -217,6 +217,11 @@ print(points.Point.__init__.__doc__)
 - **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
 - **Nested types**: Appear as generated objects tied to their parent.
 - **Results**: Derived-type function results create new independent objects.
+  An `allocatable` result must be allocated when the function returns, as
+  Fortran requires of every non-pointer function result; the compiler reads it
+  before the wrapper can, so returning it unallocated is a native error PRIK
+  cannot turn into `None`. A `pointer` result may be disassociated: the
+  returned object then raises `ReferenceError` when its value is read.
 - **Default constructor**: Automatically generated from public, writable
   primitive scalar fields.
 - **Constructor fields**: Passed by keyword (`logical`, `integer`, `real`, and

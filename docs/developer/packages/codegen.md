@@ -234,7 +234,10 @@ may live in any other. The binding therefore retains the module object of each
 namespace that defines a type, and fetches the class, its wrapper helper, and
 its operation maps from there rather than from the calling namespace. A
 derived module variable's helpers live beside its type, so its getter reaches
-them the same way.
+them the same way. A class extending a type another namespace defines names its
+base through that namespace too: module initialization creates every namespace
+first, then sets them up in plan order, and binds each namespace a setup script
+reaches into its dictionary before the script runs.
 
 ## Tests And Evidence
 

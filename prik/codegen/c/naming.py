@@ -102,6 +102,16 @@ class CBindingNames:
         return f"_prik_module_{variable.symbol_name.casefold()}_require_present"
 
     @staticmethod
+    def namespace_symbol(python_path: tuple[str, ...]) -> str:
+        """Return the symbol fragment naming one namespace path."""
+        return "_".join(python_path).casefold() if python_path else "root"
+
+    @classmethod
+    def namespace_reference(cls, python_path: tuple[str, ...]) -> str:
+        """Return the name one namespace's Python source reaches another by."""
+        return f"_prik_namespace_{cls.namespace_symbol(python_path)}"
+
+    @staticmethod
     def type_ops(backend_symbol: str) -> str:
         """Return the Python operation-map name for a type's direct storage."""
         return f"_prik_ops_{backend_symbol.casefold()}"

@@ -567,7 +567,41 @@ class WrapperPlanner(ClassVisitor):
             for path in namespace_paths
         )
         self._complete_variable_support_namespaces(variables, namespaces)
-        return namespaces
+        return self._bases_first(namespaces)
+
+    @staticmethod
+    def _bases_first(namespaces: tuple[NamespacePlan, ...]) -> tuple[NamespacePlan, ...]:
+        """Order namespaces so each comes after those defining the bases it extends.
+
+        A namespace's classes are created when it is set up, and a class
+        extending one another module declares needs that base to exist. Path
+        order is kept wherever inheritance does not decide; namespaces whose
+        classes extend each other's are left in path order for validation to
+        reject.
+        """
+        defined_in = {
+            surface.type_identity: namespace.python_path for namespace in namespaces for surface in namespace.classes
+        }
+        needs = {
+            namespace.python_path: {
+                defined_in[base]
+                for surface in namespace.classes
+                for base in surface.base_identities
+                if base in defined_in
+            }
+            - {namespace.python_path}
+            for namespace in namespaces
+        }
+        ordered: list[NamespacePlan] = []
+        remaining = list(namespaces)
+        while remaining:
+            placed = {namespace.python_path for namespace in ordered}
+            ready = next((namespace for namespace in remaining if needs[namespace.python_path] <= placed), None)
+            if ready is None:
+                return (*ordered, *remaining)
+            ordered.append(ready)
+            remaining.remove(ready)
+        return tuple(ordered)
 
     @staticmethod
     def _complete_variable_support_namespaces(
