@@ -558,7 +558,7 @@ Python declaration and native callable names differ.
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |
 | `@overload("specific", generic=...)` | Function or method | Shared: add one exact candidate to a generated Python overload set. |
 | `@prototype` | Module-level function declaration | Fortran exact procedure interface used by callbacks or declaration expressions. |
-| `@pure` | `@prototype` declaration | Fortran: preserve the native pure characteristic. |
+| `@pure` | Module-level function or `@prototype` declaration | Fortran: preserve the native pure characteristic. |
 | `@raises(status=..., message=..., success=...)` | Function or method | Shared: consume named status outputs and raise on non-success. |
 | `@nogil` | Function or method | Shared: request GIL release around the completed native call. |
 | `@abstractmethod` | Method | Fortran deferred binding. |
@@ -566,8 +566,8 @@ Python declaration and native callable names differ.
 | `@staticmethod` | Method | Python stub marker for a method without `self`. |
 
 Decorators are validated in context. `@prototype` cannot combine with wrapper
-decorators, `@overload` cannot combine with `@native_call`, and `@pure` requires
-`@prototype`.
+decorators, `@overload` cannot combine with `@native_call`, and `@pure` applies
+to a module-level native procedure, not a method or an `@overload` dispatcher.
 
 A status projection can hide its consumed output from the Python return:
 
@@ -628,8 +628,10 @@ def update_values(
 def apply_update(callback: update_values) -> None: ...
 ```
 
-`@pure` is valid only with `@prototype`. Calling a pure prototype name inside a
-declaration expression identifies a standalone specification function. Current
+`@pure` states that a native procedure is pure, which a function called in a
+declaration expression must be: a module function the expression imports
+carries it, and calling a pure prototype name identifies a standalone
+specification function. Current
 callback wrapper support is Fortran-specific; C function pointers can be
 inspected but are not buildable C callbacks.
 
@@ -1130,7 +1132,7 @@ The loader rejects malformed language forms before wrapper planning:
 - Python enum classes instead of `Final[...]` integer constants;
 - `typing.overload` instead of PRIK `@overload("specific")`;
 - `@overload` combined with `@native_call`;
-- `@pure` without `@prototype`;
+- `@pure` on a method or an `@overload` dispatcher;
 - `@native_abi(...)` outside Fortran or with a value other than `"c"`;
 - incomplete, duplicated, or out-of-range `@native_call` entries;
 - untyped hidden literals inside `@native_call`;

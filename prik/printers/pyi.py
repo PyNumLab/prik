@@ -1927,6 +1927,12 @@ class PyiPrinter(ClassVisitor):
             and not func.metadata.get(OVERLOAD_TARGET_METADATA)
         ):
             decorators.append(f"{indent}@{context.contract('standalone')}")
+        if (
+            not isinstance(func, SemanticMethod)
+            and not func.metadata.get(OVERLOAD_TARGET_METADATA)
+            and any(str(attribute).casefold() == "pure" for attribute in func.metadata.get("fortran_attributes", ()))
+        ):
+            decorators.append(f"{indent}@{context.contract('pure')}")
         if not func.metadata.get(OVERLOAD_TARGET_METADATA) and self._requires_native_call(func):
             decorators.append(
                 f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func), func)}"

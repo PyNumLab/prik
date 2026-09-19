@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generated contract states `@pure` on a pure module function, and a
+  contract may write it there. A declaration expression may call only a pure
+  function, and `@pure` was accepted only on prototypes, so any generated
+  contract whose array extents call an imported function failed to build with
+  "must be pure" while the source it came from built.
+
 - A call in a declaration expression is spelled the way the contract binds its
   callee. A Fortran specification function named `lambda`, or one whose name
   collides once escaped, was imported under its completed name (`lambda_`,

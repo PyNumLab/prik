@@ -127,7 +127,7 @@ def values(n: Int32) -> Float64[extent_for(n)]: ...
 @pytest.mark.parametrize(
     ("decorators", "message"),
     [
-        ("@pure", "pure requires prototype"),
+        ('@pure\n@overload("declared_impl")', "an overload dispatcher names none"),
         ("@standalone\n@prototype", "prototype cannot be combined with standalone"),
     ],
 )
@@ -140,6 +140,20 @@ def declared(value: Int32) -> Int32: ...
 """,
             module_name="invalid_prototype_decorators",
         )
+
+
+def test_a_pure_module_function_states_the_purity_its_native_procedure_has():
+    """A specification function has to be pure, and its contract says that it is."""
+    module = parse_pyi_text(
+        """
+@pure
+@native_call([Addr(Arg(0))])
+def extent_for(n: Int32) -> Int32: ...
+""",
+        module_name="pure_function",
+    )
+
+    assert module.functions[0].metadata["fortran_attributes"] == ["pure"]
 
 
 def test_imported_prototype_resolves_as_module_interface_definition(tmp_path):

@@ -862,8 +862,8 @@ class _PyiAstParser:
             raise ValueError("destroy can only be combined with bind")
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
-        if parsed.pure and not parsed.prototype:
-            raise ValueError("pure requires prototype")
+        if parsed.pure and parsed.overload_target is not None:
+            raise ValueError("pure describes a native procedure; an overload dispatcher names none")
         if parsed.prototype:
             if parsed.standalone:
                 raise ValueError(
@@ -966,11 +966,11 @@ class _PyiAstParser:
 
     @staticmethod
     def _apply_pure_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Mark an exact interface with the native pure characteristic."""
+        """Mark a module-level native procedure with the Fortran pure characteristic."""
         if isinstance(node, ast.Call):
             raise ValueError("pure does not accept arguments")
         if context != ".pyi":
-            raise ValueError("pure is only valid for module-level prototype declarations")
+            raise ValueError("pure is only valid for module-level declarations")
         if parsed.pure:
             raise ValueError("Duplicate pure decorator")
         parsed.pure = True
@@ -3840,6 +3840,10 @@ class _ModuleVisitor(ClassVisitor):
             error_status_policy=decorators.error_status_policy,
             restates_projected_result=decorators.overload_target is not None,
         )
+        if decorators.pure:
+            # The same fact a Fortran source records, which a specification
+            # function in a declaration expression is required to carry.
+            function.metadata["fortran_attributes"] = [*function.metadata.get("fortran_attributes", ()), "pure"]
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
                 _PendingOverload(

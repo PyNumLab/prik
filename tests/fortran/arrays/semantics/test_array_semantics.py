@@ -362,3 +362,35 @@ end module expression_owner
     assert (
         get_function(reloaded, "values").return_type.storage.array.expression_callables[0][0].placement == "standalone"
     )
+
+
+def test_a_pure_function_contract_states_its_purity_and_reads_it_back():
+    """A specification function must be pure, so its contract has to say it is.
+
+    The contract wrote `@pure` only on prototypes, so a pure module function
+    read back impure and a contract calling it in a declaration expression
+    could not be built.
+    """
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source("""
+module extent_provider
+contains
+pure integer function extent_for(n)
+  integer, intent(in) :: n
+  extent_for = n + 1
+end function extent_for
+integer function plain(n)
+  integer, intent(in) :: n
+  plain = n
+end function plain
+end module extent_provider
+""")
+    )
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+
+    assert "@pure\n@native_call([Addr(Arg(0))])\ndef extent_for(" in contract
+    assert "@pure\n@native_call([Addr(Arg(0))])\ndef plain(" not in contract
+    reloaded = parse_pyi_text(contract, module_name="extent_provider")
+    assert [function.metadata.get("fortran_attributes") for function in reloaded.functions] == [["pure"], None]
