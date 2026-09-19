@@ -217,6 +217,22 @@ def test_a_polymorphic_argument_accepts_each_declaring_module_class(modules):
 
     assert ops.describe(shapes.Box()) == 1
     assert ops.describe(shapes.Tagged_Box()) == 2
+    # A rejection names each accepted class the way its contract declares it.
+    with pytest.raises(TypeError, match=r"wrapper type: Tagged_Box, Box$"):
+        ops.describe(ops.Holder())
+
+
+def test_documentation_names_another_module_type_as_it_is_published(modules):
+    """The build is named after its first source, `shapes`, like that module.
+
+    Completing the merged build counted `ops`'s use of `box` as an import even
+    though the build declares `box`, so the class took `Box_2` and every
+    docstring naming it disagreed with the published `Box`.
+    """
+    shapes, ops = modules
+
+    assert ops.boxed.__doc__.splitlines()[0] == "boxed(v) -> Box"
+    assert shapes.Box.__doc__.splitlines()[0] == "Box"
 
 
 def test_a_generic_dispatches_on_the_declaring_module_class(modules):

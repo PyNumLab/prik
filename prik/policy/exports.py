@@ -519,7 +519,11 @@ def _imported_local_names(module: models.SemanticModule, declared: set[tuple[str
     """Yield ``(local name, category)`` for each name a declaration reads from another module."""
     for semantic_type in models._module_semantic_types(module):
         reference = imported_type_reference(semantic_type)
-        if reference is not None and not reference.procedure_local:
+        if (
+            reference is not None
+            and not reference.procedure_local
+            and declaration_identity(reference.module, reference.name) not in declared
+        ):
             yield reference.local, "class"
         for callable_reference in _expression_callables(semantic_type):
             identity = _callable_identity(callable_reference)
@@ -609,15 +613,25 @@ def _complete_type_reference_names(module: models.SemanticModule, imported: dict
     imported one under the name the module imports it by, so an annotation, the
     import binding its name, and ``__all__`` write one spelling.
     """
-    declared = {str(cls.name): models.completed_contract_name(cls) for cls in _all_classes(module.classes)}
+    classes = tuple(_all_classes(module.classes))
+    declared = {str(cls.name): models.completed_contract_name(cls) for cls in classes}
+    # A build merges modules, so a type one of them imports can be declared here.
+    declared_by_identity = {
+        declaration_identity(cls.origin.native_scope or module.name, cls.native_name or cls.name): (
+            models.completed_contract_name(cls)
+        )
+        for cls in classes
+    }
     for semantic_type in models._module_semantic_types(module):
         reference = imported_type_reference(semantic_type)
         if reference is None:
             completed = contract_name_for_source(declared, semantic_type.name)
-        elif not reference.procedure_local:
-            completed = contract_name_for_source(imported, reference.local)
-        else:
+        elif reference.procedure_local:
             continue
+        elif declaration_identity(reference.module, reference.name) in declared_by_identity:
+            completed = declared_by_identity[declaration_identity(reference.module, reference.name)]
+        else:
+            completed = contract_name_for_source(imported, reference.local)
         if completed is not None:
             semantic_type.metadata[models.CONTRACT_NAME_METADATA] = completed
     # A base is named, not annotated: the class it names is declared here or imported.

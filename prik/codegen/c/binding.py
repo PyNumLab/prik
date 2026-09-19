@@ -977,6 +977,14 @@ class CBindingGenerator(ClassVisitor):
         """Return the name a type's class is defined under in its home."""
         return self._type_homes[type_identity][1].definition_name
 
+    def _type_display_name(self, type_identity: tuple[str, str]) -> str:
+        """Return the name a message calls a type by: the one its contract declares.
+
+        A type bound under no public name is defined under a private one, which
+        a message should not show.
+        """
+        return self._type_homes[type_identity][1].contract_name
+
     def _type_attribute(self, type_identity: tuple[str, str], attribute: str) -> str:
         """Return a new reference to one attribute of a type's home namespace."""
         return f'PyObject_GetAttrString({self._type_namespace(type_identity)}, "{attribute}")'
@@ -3531,7 +3539,7 @@ class CBindingGenerator(ClassVisitor):
             return None
         body = (
             *self._derived_owner_and_value_nodes(derived),
-            *self._exact_derived_type_check_nodes(field.derived.type_identity, "value_obj", field.name),
+            *self._exact_derived_type_check_nodes(field.derived, "value_obj", field.name),
             *self._derived_address_from_object_nodes(field.derived.backend_symbol, "value_obj", "value"),
             CExpressionStatement(
                 CodeExpression(
@@ -3579,7 +3587,7 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(
                 CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
             ),
-            *self._exact_derived_type_check_nodes(field.derived.type_identity, "value_obj", field.name),
+            *self._exact_derived_type_check_nodes(field.derived, "value_obj", field.name),
             *self._derived_address_from_object_nodes(field.derived.backend_symbol, "value_obj", "value"),
             CExpressionStatement(
                 CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value_address)")
@@ -3709,12 +3717,16 @@ class CBindingGenerator(ClassVisitor):
             CIf(CodeExpression(f"{address} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
         )
 
-    def _exact_derived_type_check_nodes(self, type_identity: tuple[str, str], object_name: str, label: str) -> tuple:
-        """Require the exact exported opaque class before a concrete field copy."""
+    def _exact_derived_type_check_nodes(self, handoff: DerivedHandoffPlan, object_name: str, label: str) -> tuple:
+        """Require the exact exported opaque class before a concrete field copy.
+
+        The message names the type the way the declaration being set refers to
+        it, which tells apart two types spelled alike where they are declared.
+        """
         expected = f"{label}_expected_type"
-        type_name = self._type_class_name(type_identity)
+        type_name = handoff.type_name
         return (
-            CDeclaration(expected, "PyObject *", CodeExpression(self._type_class(type_identity))),
+            CDeclaration(expected, "PyObject *", CodeExpression(self._type_class(handoff.type_identity))),
             CIf(CodeExpression(f"{expected} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CIf(
                 CodeExpression(f"Py_TYPE({object_name}) != (PyTypeObject *){expected}"),
@@ -7144,7 +7156,7 @@ class CBindingGenerator(ClassVisitor):
                             CExpressionStatement(
                                 CodeExpression(
                                     f"{type_name} = "
-                                    f"{self._c_string_literal(self._type_class_name(variant.type_identity))}"
+                                    f"{self._c_string_literal(self._type_display_name(variant.type_identity))}"
                                 )
                             ),
                             CExpressionStatement(
@@ -7161,7 +7173,7 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression(f"Py_DECREF({expected})")),
                 )
             )
-        accepted = ", ".join(self._type_class_name(variant.type_identity) for variant in dispatch.variants)
+        accepted = ", ".join(self._type_display_name(variant.type_identity) for variant in dispatch.variants)
         nodes.append(
             CIf(
                 CodeExpression(f"{code} == 0"),

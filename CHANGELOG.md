@@ -7,6 +7,19 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A build named after one of its source modules -- the CLI's default, taken
+  from the first source -- no longer renames a type another of its modules
+  uses privately. Completing the merged build counted that use as an import,
+  although the build declares the type, so the class took `Box_2` in every
+  docstring while Python and the contracts published `Box`. A type the merged
+  module declares is now never one of its imports.
+
+- A rejected polymorphic argument names each accepted class the way its
+  contract declares it, rather than by a private name when the class is bound
+  under none; a rejected component value names its type the way the
+  component's declaration refers to it, as an argument's rejection already
+  did.
+
 - A type may extend a type another module declares. The generated class
   looked its base up among its own namespace's classes, so such a build failed
   with a `KeyError`; it now names the base through the namespace defining it.

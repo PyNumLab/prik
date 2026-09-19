@@ -246,7 +246,7 @@ class outer:
     generated = WrapperGenerator().generate(plan)
 
     planned_outer, planned_inner = plan.namespaces[0].derived_types
-    assert (planned_outer.type_name, planned_inner.type_name) == ("outer", "inner")
+    assert (planned_outer.native_type_name, planned_inner.native_type_name) == ("outer", "inner")
     # The nested type is defined beside its parent and bound on it, not here.
     assert planned_outer.python_names == ("outer",)
     assert planned_inner.python_names == ()

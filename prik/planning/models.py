@@ -343,7 +343,6 @@ class DerivedTypePlan(StageRecord):
     """
 
     owner_path: str
-    type_name: str
     type_identity: tuple[str, str]
     backend_symbol: str
     native_type_name: str

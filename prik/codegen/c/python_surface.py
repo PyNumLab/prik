@@ -605,7 +605,6 @@ if __name__ == "__main__":
     example_identity = ("state", "state_t")
     example_derived = DerivedTypePlan(
         owner_path="state.State",
-        type_name="State",
         type_identity=example_identity,
         backend_symbol="state_t",
         native_type_name="state_t",

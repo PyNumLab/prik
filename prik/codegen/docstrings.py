@@ -941,13 +941,14 @@ class WrapperDocstringBuilder:
         """Return the name a namespace publishes one wrapped type under.
 
         The type is found by its identity: two modules may each declare a type
-        spelled alike, and each is published under its own name.
+        spelled alike, and each is published under its own name. Rendering runs
+        before the plan is validated, so a reference to a type the plan does not
+        define keeps its semantic name here and is rejected by validation.
         """
         derived = getattr(transfer, "derived", None)
         handoff = getattr(derived, "handoff", derived)
         identity = handoff.type_identity if handoff is not None else transfer.derived_type_identity
-        index = getattr(self, "_published_class_names", {})
-        return index.get(identity, str(transfer.semantic_type_name))
+        return self._published_class_names.get(identity, str(transfer.semantic_type_name))
 
     def _base_type(self, transfer) -> str:
         """Map one completed transfer family and storage facet to public type text.

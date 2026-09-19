@@ -890,8 +890,7 @@ class WrapperGenerator:
         identity = (
             (self._diagnostic(derived.owner_path, "incomplete-derived-type-identity", derived),)
             if (
-                not derived.type_name
-                or not derived.native_type_name
+                not derived.native_type_name
                 or not derived.native_scope
                 or derived.type_identity != (derived.native_scope, derived.native_type_name)
             )

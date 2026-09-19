@@ -810,7 +810,6 @@ class WrapperPlanner(ClassVisitor):
         planned_fields = tuple(self._derived_field_plan(field) for field in (fields or policy.fields))
         return DerivedTypePlan(
             owner_path=policy.owner_path,
-            type_name=policy.type_name,
             type_identity=policy.type_identity,
             backend_symbol=self._derived_backend_symbol(policy.type_identity),
             native_type_name=policy.native_type_name,
