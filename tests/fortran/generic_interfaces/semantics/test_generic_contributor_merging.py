@@ -345,3 +345,29 @@ end module asg_mod
         ("self", 0),
         ("other", None),
     ]
+
+
+def test_a_contract_binds_a_merged_generic_only_by_declaring_it(tmp_path: Path):
+    """The facade writes the merged generic, so no `use` of a contributor is imported.
+
+    Mirroring each `use` bound `convert` once per contributor as well as by the
+    facade's own declaration, and a package binding one name three ways cannot
+    be read back.
+    """
+    from prik.pipeline.pyi import emit_module_stubs
+
+    modules = _modules(
+        tmp_path,
+        CONTRIBUTORS,
+        """\
+module facade_mod
+  use ints_mod,  only : convert
+  use reals_mod, only : convert
+  implicit none
+"""
+        + LOCAL_EXTENSION,
+    )
+    contract = emit_module_stubs(list(modules.values()), normalize_public_names=True)["facade_mod"]
+
+    assert [line for line in contract.splitlines() if line.startswith("from .")] == []
+    assert contract.count("def convert(") == 3

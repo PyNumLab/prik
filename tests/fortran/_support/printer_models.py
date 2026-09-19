@@ -20,6 +20,7 @@ from prik.semantics.models import (
 )
 
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
 from tests.fortran._support.paths import FORTRAN_ROOT
 
@@ -39,6 +40,7 @@ def generate_pyi(source: str) -> str:
 
     smod = fortran_module_to_semantic_module(fmod)
     complete_python_export_policy(smod)
+    complete_contract_imports([smod])
 
     return emit_module(smod)
 

@@ -39,7 +39,7 @@ boundary; the modules are where the change lands.
 | Prepared source, provenance, and target facts | [`prik.preprocessing`](packages/preprocessing.md) | `source.py`, `fortran.py`, `c.py`, `probes/fortran_types.py`, `probes/c_types.py` |
 | Parsed language facts | [`prik.parsers`](packages/parsers.md) | `fortran/parser.py`, `pyi/parser.py`, `c/` |
 | Shared language-neutral meaning | [`prik.semantics`](packages/semantics.md) | `models.py`, `fortran2ir.py`, `pyi2ir.py`, `c2ir.py`, `scalar_types.py` |
-| Completed interoperability policy | [`prik.policy`](packages/policy.md) | `completion.py`, `construction.py`, `ownership.py`, `exports.py`, `native_array_handles.py` |
+| Completed interoperability policy | [`prik.policy`](packages/policy.md) | `completion.py`, `construction.py`, `ownership.py`, `exports.py`, `contract_imports.py`, `native_array_handles.py` |
 | Deterministic wrapper planning | [`prik.planning`](packages/planning.md) | `models.py`, `planner.py`, `entrypoints.py` |
 | Binding, bridge, and Python-facade lowering | [`prik.codegen`](packages/codegen.md) | `c/binding.py`, `c/python_surface.py`, `fortran/bridge.py`, `primitive_scalar_types.py` |
 | Generated-text serialization | [`prik.printers`](packages/printers.md) | `c.py`, `fortran.py`, `pyi.py` |

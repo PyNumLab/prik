@@ -114,8 +114,9 @@ def complete_python_export_policy(
 #: Entity kinds a second namespace cannot publish, whatever it may reach.
 #:
 #: A generic dispatcher has no single object another namespace can bind, so it
-#: is published where it is declared and nowhere else.
-UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic"})
+#: is published where it is declared and nowhere else. An intrinsic module's
+#: name has no declaration at all, so nothing is there to publish.
+UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic", "intrinsic"})
 
 
 def complete_reexport_publication_policy(

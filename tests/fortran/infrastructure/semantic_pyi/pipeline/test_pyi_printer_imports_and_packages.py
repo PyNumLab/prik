@@ -3,7 +3,7 @@
 import pytest
 import prik.pipeline.pyi as pyi_pipeline
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.printers.pyi import contract_name_for_source
+from prik.policy.contract_imports import complete_contract_imports, contract_name_for_source
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -132,10 +132,10 @@ def test_printer_validation_and_opaque_dependency_edge_cases():
             }
         },
     )
-    assert (
-        printer._effective_imports(SemanticModule(name="api", variables=[SemanticArgument("value", malformed_import)]))
-        == []
-    )
+    malformed_module = SemanticModule(name="api", variables=[SemanticVariable("value", malformed_import)])
+    complete_python_export_policy(malformed_module)
+    complete_contract_imports([malformed_module])
+    assert malformed_module.imports == []
 
     invalid_opaque_ref = SemanticType(
         "external_type",
@@ -370,8 +370,7 @@ end module physics
 """
     )
 
-    module = fortran_module_to_semantic_module(parsed)
-    code = emit_module(module)
+    code = emit_module_stubs(fortran_module_to_semantic_module(parsed))["physics"]
 
     assert "from . import a_types, b_types" in code
     assert "p: a_types.state" in code
@@ -400,9 +399,10 @@ end module physics
     )
 
     module = fortran_module_to_semantic_module(parsed)
+    complete_python_export_policy(module)
 
-    with pytest.raises(ValueError, match="Procedure-local Fortran import namespace collides"):
-        emit_module(module)
+    with pytest.raises(ValueError, match="cannot bind 'a_types'"):
+        complete_contract_imports([module])
 
 
 def test_emit_procedure_local_import_namespace_collision_with_synthetic_import_fails():
@@ -439,8 +439,10 @@ def test_emit_procedure_local_import_namespace_collision_with_synthetic_import_f
         ],
     )
 
-    with pytest.raises(ValueError, match="Procedure-local Fortran import namespace collides"):
-        emit_module(module)
+    complete_python_export_policy(module)
+
+    with pytest.raises(ValueError, match="cannot bind 'a_types'"):
+        complete_contract_imports([module])
 
 
 def test_emit_bare_use_adds_import_for_opaque_dependency_type():
@@ -457,20 +459,10 @@ end module physics
     )
     stubs = emit_module_stubs(fortran_module_to_semantic_module(parsed))
 
-    assert "import types_mod" in stubs["physics"]
+    # The contract binds the type a declaration names, not the `use` itself.
+    assert "import types_mod" not in stubs["physics"].splitlines()
     assert "from .types_mod import particle" in stubs["physics"]
     assert stubs["types_mod"].endswith('class particle(Opaque):\n    pass\n\n__all__ = ["particle"]')
-
-
-def test_emit_omits_structured_source_kind_import_without_items():
-    module = SemanticModule(
-        name="imports",
-        imports=[SemanticImport(module="iso_c_binding")],
-    )
-
-    code = emit_module(module)
-
-    assert code == ""
 
 
 def test_emit_module_aliases_contract_import_when_user_name_collides():
@@ -955,8 +947,9 @@ end module route_visible
 
     stubs = emit_module_stubs(modules, normalize_public_names=True)
 
-    assert stubs["route_hidden"].rstrip().endswith("__all__ = []")
-    assert "from .route_home import x" not in stubs["route_hidden"]
+    # The route carries nothing a declaration uses or the module publishes, so
+    # its contract has nothing to write.
+    assert stubs["route_hidden"] == ""
     assert "from .route_home import x" in stubs["route_visible"]
     assert stubs["route_visible"].rstrip().endswith('__all__ = ["x"]')
 
@@ -1039,3 +1032,38 @@ def test_two_spellings_a_case_sensitive_source_keep_distinct_contract_names():
     # would depend on the order they were recorded in, so it names neither.
     assert contract_name_for_source(completed, "FOO") is None
     assert contract_name_for_source({"foo": "foo", "Foo": "Foo"}, "FOO") is None
+
+
+def test_a_renamed_import_binds_the_name_its_annotations_write():
+    """An import binds a name for the declarations that use it, spelled as they do.
+
+    Fortran keeps the case a `use` rename is written in, and the annotation
+    naming the type writes it that way. Binding the name export policy would
+    publish it under instead left the annotation naming nothing.
+    """
+    home = parse_fortran_source("""
+module shapes
+implicit none
+type :: point
+  integer :: x
+end type point
+end module shapes
+""")
+    user = parse_fortran_source("""
+module user_mod
+use shapes, only : MyPoint => point
+implicit none
+contains
+subroutine move(p)
+type(MyPoint), intent(inout) :: p
+end subroutine move
+end module user_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (home, user)],
+        normalize_public_names=True,
+    )
+
+    assert "from .shapes import Point as MyPoint" in stubs["user_mod"]
+    assert "p: MyPoint" in stubs["user_mod"]

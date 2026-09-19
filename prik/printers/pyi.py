@@ -18,7 +18,6 @@ import re
 
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
-from prik.naming.policy import normalize_public_name
 from prik.utilities.declaration_expressions import fortran_character_value, outside_character_literals
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
@@ -43,7 +42,6 @@ from prik.semantics.models import (
     CONTRACT_BASE_NAMES_METADATA,
     CONTRACT_NAME_METADATA,
     CONTRACT_TARGET_NAME_METADATA,
-    EXTERNAL_TYPE_REF_METADATA,
     FORTRAN_GENERIC_NAME_METADATA,
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
@@ -128,27 +126,6 @@ class _PyiEmissionContext:
         return f"from {_CONTRACT_MODULE} import {', '.join(items)}"
 
 
-def contract_name_for_source(completed: dict[str, str] | None, source: object) -> str | None:
-    """Return the completed contract spelling for one source name.
-
-    A contract records each name exactly as its source spells it, so two
-    declarations a case-sensitive language keeps apart keep separate entries.
-    A case-insensitive source may ask under any spelling, which is answered
-    only when one entry can mean it: where several fold together the request
-    names no single declaration, and guessing one would depend on the order
-    they happened to be recorded in.
-    """
-    if not completed:
-        return None
-    wanted = str(source)
-    exact = completed.get(wanted)
-    if exact is not None:
-        return exact
-    folded = wanted.casefold()
-    matches = [value for key, value in completed.items() if key.casefold() == folded]
-    return matches[0] if len(matches) == 1 else None
-
-
 class PyiPrinter(ClassVisitor):
     """Emit editable Python stub text from semantic IR models.
 
@@ -164,34 +141,15 @@ class PyiPrinter(ClassVisitor):
     # Public entrypoints and state
     # ------------------------------------------------------------------
 
-    def __init__(
-        self,
-        *,
-        normalize_public_names: bool = False,
-        declared_prototype_names: Iterable[tuple[str, str]] = (),
-        contract_names_by_module: dict[str, dict[str, str]] | None = None,
-    ):
+    def __init__(self, *, normalize_public_names: bool = False):
         """Configure public-name normalization for independent emissions.
 
         Set normalize_public_names when emitting a contract extracted from
         native source, whose declarations are named in that language rather
         than in Python. A contract read back from .pyi is already named in
-        Python and keeps every spelling verbatim. Pass
-        declared_prototype_names, as ``(module, name)`` pairs, when rendering one
-        module alongside others, so an import naming a prototype another
-        contract declares is written under the spelling that contract keeps.
-        The declaring module is part of that identity because an unrelated
-        module may spell an ordinary declaration the same way. Pass
-        contract_names_by_module when imports must read contract spellings
-        completed for modules rendered in the same operation.
+        Python and keeps every spelling verbatim.
         """
         self._normalize_public_names = normalize_public_names
-        self._declared_prototype_names = {
-            (str(module).casefold(), str(name).casefold()): str(name) for module, name in declared_prototype_names
-        }
-        self._contract_names_by_module = {
-            str(module).casefold(): dict(names) for module, names in (contract_names_by_module or {}).items()
-        }
 
     def emit(self, node) -> str:
         """Render one supported semantic model to semantic .pyi text.
@@ -626,8 +584,6 @@ class PyiPrinter(ClassVisitor):
         )
         for reexport in module.reexports:
             if not reexport.publishes_to_python():
-                continue
-            if self._is_source_kind_import(str(reexport.origin_module)):
                 continue
             # A prototype keeps its declared spelling wherever it is written, so
             # the name published for it is the one its import binds.
@@ -1533,7 +1489,6 @@ class PyiPrinter(ClassVisitor):
     def _module_reserved_names(cls, module: SemanticModule) -> set[str]:
         """Return user/import names that cannot be reused by contract imports."""
         names: set[str] = set()
-        names.update(cls._required_procedure_namespace_import_names(module))
         for imp in module.imports:
             names.update(cls._import_local_names(imp))
         for item in [*module.classes, *module.prototypes, *module.variables, *module.functions, *module.overload_sets]:
@@ -1578,7 +1533,12 @@ class PyiPrinter(ClassVisitor):
         if isinstance(imp, SemanticImport):
             if not imp.items:
                 return {imp.module.split(".", 1)[0]}
-            return {item.target or item.source for item in imp.items}
+            return {
+                name
+                for item in imp.items
+                for name in (item.target or item.source, item.contract_target or item.contract_source)
+                if name
+            }
         names = set()
         for item in str(imp).split(","):
             module_name, _, alias = item.strip().partition(" as ")
@@ -1591,341 +1551,13 @@ class PyiPrinter(ClassVisitor):
         module: SemanticModule,
         context: _PyiEmissionContext,
     ) -> None:
-        """Append imports."""
+        """Append the contract vocabulary import, then each completed import."""
         contract_import = context.contract_import()
         if contract_import:
             sections.append(contract_import)
-        imports = self._effective_imports(module)
-        verbatim = self._verbatim_import_names(module)
-        reexport_names = {
-            str(reexport.local_name).casefold(): str(reexport.python_name)
-            for reexport in module.reexports
-            if reexport.python_name
-        }
-        for imp in imports:
-            sections.append(
-                self._emit_import(
-                    imp,
-                    native_source=not module.metadata.get(PYI_LOADED_METADATA),
-                    public_names=context.normalize_public_names,
-                    verbatim_names=verbatim,
-                    contract_names_by_module=self._contract_names_by_module,
-                    reexport_names=reexport_names,
-                )
-            )
-        if contract_import or imports:
+        sections.extend(self._emit_import(imp, context) for imp in module.imports)
+        if contract_import or module.imports:
             sections.append("")
-
-    @classmethod
-    def _effective_imports(cls, module: SemanticModule) -> list[str | SemanticImport]:
-        """Handle effective imports for the current generation context."""
-        imports = [
-            imp
-            for imp in module.imports
-            if not PyiPrinter._is_source_kind_import(imp) and not PyiPrinter._is_contract_import(imp)
-        ]
-        procedure_namespaces = cls._required_procedure_namespace_import_names(module)
-        cls._validate_procedure_namespace_imports(module, procedure_namespaces, imports)
-        satisfied_namespaces = cls._satisfied_procedure_namespace_import_names(imports, procedure_namespaces)
-        imports.extend(cls._synthetic_flat_external_type_imports(module, imports, procedure_namespaces))
-        imports.extend(cls._missing_expression_callable_imports(module, imports))
-        imports.extend(cls._missing_prototype_imports(module, imports))
-        imports.extend(cls._missing_reexport_imports(module, imports))
-        imports.extend(cls._missing_procedure_namespace_imports(procedure_namespaces, satisfied_namespaces))
-        return imports
-
-    @classmethod
-    def _missing_reexport_imports(
-        cls,
-        module: SemanticModule,
-        imports: list[str | SemanticImport],
-    ) -> list[SemanticImport]:
-        """Return imports binding published names no import already names.
-
-        A plain ``use`` carries every public name of the module it reads, so a
-        name published through one is not written in any import list. The
-        contract has to name it explicitly, because a published name must be
-        one the contract itself reaches.
-        """
-        bound = {
-            (item.target or item.source).casefold()
-            for imported in imports
-            if isinstance(imported, SemanticImport)
-            for item in imported.items
-        }
-        required: dict[str, list[SemanticImportItem]] = {}
-        for reexport in module.reexports:
-            local = str(reexport.local_name)
-            # An intrinsic module has no contract to read a name from, so a
-            # name published out of one states nothing this contract can bind.
-            if cls._is_source_kind_import(str(reexport.origin_module)):
-                continue
-            if local.casefold() in bound or not reexport.origin_module:
-                continue
-            source = str(reexport.source_name) or local
-            required.setdefault(str(reexport.origin_module), []).append(
-                SemanticImportItem(source=source, target=local if local != source else None)
-            )
-            bound.add(local.casefold())
-        return [SemanticImport(module=name, items=items) for name, items in required.items()]
-
-    @classmethod
-    def _missing_prototype_imports(
-        cls,
-        module: SemanticModule,
-        imports: list[str | SemanticImport],
-    ) -> list[SemanticImport]:
-        """Return imports for prototypes this module references but never declares.
-
-        A ``use`` inside one procedure names an interface without appearing in
-        the module's own imports, so the annotation would reference a name the
-        contract never binds.  The prototype reference records where it came
-        from, which is enough to bind it explicitly.
-        """
-        bound = {
-            (item.target or item.source).casefold()
-            for imported in imports
-            if isinstance(imported, SemanticImport)
-            for item in imported.items
-        }
-        bound.update(prototype.name.casefold() for prototype in module.prototypes)
-        required: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _module_semantic_types(module):
-            reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
-            if not isinstance(reference, dict):
-                continue
-            local_name = str(reference.get("local_name") or reference.get("name") or "")
-            origin = str(reference.get("origin_module") or "")
-            if not local_name or not origin or local_name.casefold() in bound:
-                continue
-            native_name = str(reference.get("name") or local_name)
-            required.setdefault(origin, []).append(
-                SemanticImportItem(
-                    source=native_name,
-                    target=local_name if local_name != native_name else None,
-                )
-            )
-            bound.add(local_name.casefold())
-        return [SemanticImport(module=name, items=items) for name, items in required.items()]
-
-    @classmethod
-    def _missing_expression_callable_imports(
-        cls,
-        module: SemanticModule,
-        imports: list[str | SemanticImport],
-    ) -> list[SemanticImport]:
-        """Return explicit imports needed to preserve declaration-call origins.
-
-        The semantic array provenance is consumed without changing its call
-        expression. Existing explicit imports win; wildcard-like native module
-        imports gain only the specific callable names needed by the generated
-        contract, which makes a later `.pyi` load unambiguous.
-        """
-        existing = {
-            (item.target or item.source).casefold(): (imported.module, item.source)
-            for imported in imports
-            if isinstance(imported, SemanticImport)
-            for item in imported.items
-        }
-        local_names = {function.name.casefold() for function in module.functions}
-        required: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _module_semantic_types(module):
-            storage = semantic_type.storage
-            array = storage.array if storage is not None else None
-            if array is None:
-                continue
-            for axis_references in array.expression_callables:
-                for reference in axis_references:
-                    if reference.native_scope is None or reference.name.casefold() in local_names:
-                        continue
-                    local_name = reference.name.rsplit(".", 1)[-1]
-                    native_name = reference.native_name or local_name
-                    previous = existing.get(local_name.casefold())
-                    if previous is not None:
-                        if previous != (reference.native_scope, native_name):
-                            raise ValueError(
-                                f"Declaration-expression callable import collides with existing name: {local_name!r}"
-                            )
-                        continue
-                    required.setdefault(reference.native_scope, []).append(
-                        SemanticImportItem(
-                            source=native_name,
-                            target=local_name if local_name != native_name else None,
-                        )
-                    )
-                    existing[local_name.casefold()] = (reference.native_scope, native_name)
-        return [SemanticImport(module=module_name, items=items) for module_name, items in required.items()]
-
-    @classmethod
-    def _synthetic_flat_external_type_imports(
-        cls,
-        module: SemanticModule,
-        imports: list[str | SemanticImport],
-        procedure_namespaces: set[str],
-    ) -> list[SemanticImport]:
-        """Return synthetic flattened imports needed by external type refs."""
-        imported_items = {
-            (imp.module, item.source, item.target or item.source)
-            for imp in imports
-            if isinstance(imp, SemanticImport)
-            for item in imp.items
-        }
-        synthetic: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _module_semantic_types(module):
-            ref = cls._flat_external_type_import_ref(semantic_type)
-            if ref is None:
-                continue
-            origin_module, source_name, local_name = ref
-            key = (origin_module, source_name, local_name)
-            if key in imported_items:
-                continue
-            if local_name in procedure_namespaces:
-                raise ValueError(
-                    f"Procedure-local Fortran import namespace collides with generated .pyi name: {local_name!r}"
-                )
-            synthetic.setdefault(origin_module, []).append(
-                SemanticImportItem(
-                    source=source_name,
-                    target=local_name if local_name != source_name else None,
-                )
-            )
-            imported_items.add(key)
-        return [
-            SemanticImport(
-                module=module_name,
-                items=sorted(items, key=lambda item: (item.source, item.target or "")),
-            )
-            for module_name, items in sorted(synthetic.items())
-        ]
-
-    @classmethod
-    def _flat_external_type_import_ref(cls, semantic_type: SemanticType) -> tuple[str, str, str] | None:
-        """Return flattened external type import fields, or None for qualified refs."""
-        ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
-        if not isinstance(ref, dict) or cls._is_procedure_local_external_ref(ref):
-            return None
-        origin_module = ref.get("origin_module")
-        source_name = ref.get("name")
-        local_name = ref.get("local_name") or source_name
-        if not all(isinstance(value, str) and value for value in (origin_module, source_name, local_name)):
-            return None
-        if "." in local_name:
-            return None
-        return origin_module, source_name, local_name
-
-    @staticmethod
-    def _missing_procedure_namespace_imports(
-        procedure_namespaces: set[str],
-        satisfied_namespaces: set[str],
-    ) -> list[SemanticImport]:
-        """Return missing namespace imports for procedure-local external refs."""
-        missing_namespaces = sorted(procedure_namespaces - satisfied_namespaces)
-        if not missing_namespaces:
-            return []
-        return [
-            SemanticImport(
-                module=".",
-                items=[SemanticImportItem(source=name) for name in missing_namespaces],
-            )
-        ]
-
-    @staticmethod
-    def _is_procedure_local_external_ref(ref: dict[object, object]) -> bool:
-        """Return whether an external ref came from a procedure-local Fortran use."""
-        return ref.get("import_scope") == "procedure"
-
-    @classmethod
-    def _required_procedure_namespace_import_names(cls, module: SemanticModule) -> set[str]:
-        """Return module namespaces required by procedure-local imported types."""
-        names: set[str] = set()
-        for semantic_type in _module_semantic_types(module):
-            ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
-            if not isinstance(ref, dict) or not cls._is_procedure_local_external_ref(ref):
-                continue
-            origin_module = ref.get("origin_module")
-            source_name = ref.get("name")
-            local_name = ref.get("local_name")
-            if not all(isinstance(value, str) and value for value in (origin_module, source_name, local_name)):
-                continue
-            names.add(origin_module)
-        return names
-
-    @classmethod
-    def _validate_procedure_namespace_imports(
-        cls,
-        module: SemanticModule,
-        procedure_namespaces: set[str],
-        imports: list[str | SemanticImport],
-    ) -> None:
-        """Reject namespace imports that would collide with emitted public names."""
-        if not procedure_namespaces:
-            return
-        declaration_collisions = procedure_namespaces & cls._top_level_declaration_names(module)
-        import_collisions = {
-            name
-            for imp in imports
-            for name in cls._import_local_names(imp) & procedure_namespaces
-            if not cls._import_satisfies_procedure_namespace(imp, name)
-        }
-        collisions = sorted(declaration_collisions | import_collisions)
-        if collisions:
-            joined = ", ".join(repr(name) for name in collisions)
-            raise ValueError(f"Procedure-local Fortran import namespace collides with generated .pyi name: {joined}")
-
-    @staticmethod
-    def _top_level_declaration_names(module: SemanticModule) -> set[str]:
-        """Return names emitted in a module-level stub namespace."""
-        return {
-            str(getattr(item, "metadata", {}).get(CONTRACT_NAME_METADATA, item.name))
-            for item in [
-                *module.classes,
-                *module.prototypes,
-                *module.variables,
-                *module.functions,
-                *module.overload_sets,
-            ]
-            if getattr(item, "name", None)
-        }
-
-    @classmethod
-    def _satisfied_procedure_namespace_import_names(
-        cls,
-        imports: list[str | SemanticImport],
-        procedure_namespaces: set[str],
-    ) -> set[str]:
-        """Return procedure namespace imports already provided by module imports."""
-        return {
-            name
-            for name in procedure_namespaces
-            if any(cls._import_satisfies_procedure_namespace(imp, name) for imp in imports)
-        }
-
-    @staticmethod
-    def _import_satisfies_procedure_namespace(imp: str | SemanticImport, name: str) -> bool:
-        """Return whether an import binds exactly the required module namespace."""
-        if isinstance(imp, SemanticImport):
-            if not imp.items:
-                return imp.module == name
-            return imp.module == "." and any(item.source == name and item.target is None for item in imp.items)
-        for item in str(imp).split(","):
-            module_name, _, alias = item.strip().partition(" as ")
-            if alias:
-                continue
-            if module_name == name:
-                return True
-        return False
-
-    @staticmethod
-    def _is_source_kind_import(imp: str | SemanticImport) -> bool:
-        """Return whether an import only names a source-language kind module."""
-        module = imp.module if isinstance(imp, SemanticImport) else str(imp).split()[0]
-        return module.casefold().lstrip(".") in {"iso_c_binding", "iso_fortran_env"}
-
-    @staticmethod
-    def _is_contract_import(imp: str | SemanticImport) -> bool:
-        """Return whether an import names the generated contract namespace."""
-        module = imp.module if isinstance(imp, SemanticImport) else str(imp).split()[0]
-        return module == _CONTRACT_MODULE
 
     @staticmethod
     def _has_overload_sets(module: SemanticModule) -> bool:
@@ -1938,123 +1570,27 @@ class PyiPrinter(ClassVisitor):
             class_has_overloads(cls) for cls in module.classes if isinstance(cls, SemanticClass)
         )
 
-    @staticmethod
-    def _emit_import(
-        imp: str | SemanticImport,
-        *,
-        native_source: bool = False,
-        public_names: bool = False,
-        verbatim_names: dict[tuple[str, str], str] | None = None,
-        contract_names_by_module: dict[str, dict[str, str]] | None = None,
-        reexport_names: dict[str, str] | None = None,
-    ) -> str:
-        """Emit import syntax."""
+    @classmethod
+    def _emit_import(cls, imp: str | SemanticImport, context: _PyiEmissionContext) -> str:
+        """Emit one import statement as completion spelled it."""
         if isinstance(imp, str):
             return f"import {imp}"
         if not imp.items:
             return f"import {imp.module}"
-        source_module = imp.module.lstrip(".").casefold()
-        contract_names = (contract_names_by_module or {}).get(source_module)
-        items = ", ".join(
-            PyiPrinter._emit_import_item(
-                item,
-                public_names=public_names,
-                verbatim_names=verbatim_names,
-                source_module=source_module,
-                contract_names=contract_names,
-                reexport_names=reexport_names,
+        return f"from {imp.module} import {', '.join(cls._emit_import_item(item, context) for item in imp.items)}"
+
+    @staticmethod
+    def _emit_import_item(item: SemanticImportItem, context: _PyiEmissionContext) -> str:
+        """Emit one imported name, as the sources or the completed contracts spell it."""
+        if not context.normalize_public_names:
+            source, bound = item.source, item.target
+        elif item.contract_source is None:
+            raise ValueError(
+                f"Contract import of {item.source!r} is incomplete; run complete_contract_imports before emission"
             )
-            for item in imp.items
-        )
-        module_name = f".{imp.module}" if native_source and not imp.module.startswith(".") else imp.module
-        return f"from {module_name} import {items}"
-
-    @staticmethod
-    def _emit_import_item(
-        item: SemanticImportItem,
-        *,
-        public_names: bool = False,
-        verbatim_names: dict[tuple[str, str], str] | None = None,
-        source_module: str = "",
-        contract_names: dict[str, str] | None = None,
-        reexport_names: dict[str, str] | None = None,
-    ) -> str:
-        """Emit import item syntax.
-
-        An import names what the module it reads from publishes. Where a
-        source-derived contract writes its declarations under Python names, the
-        names it imports are spelled that way too -- a source keeping a Fortran
-        entity in capitals declares it lower case, and an importer asking for
-        the source spelling asks for a name no contract defines. A prototype is
-        the exception: it keeps its declared spelling wherever it is written,
-        because an annotation naming it is written the same way.
-        """
-        # The source names what the module read from declares and the target
-        # what this contract calls it; either spelling identifies a prototype
-        # of that module, and a same-named declaration elsewhere does not.
-        declared = verbatim_names or {}
-        local = item.target or item.source
-        prototype = declared.get((source_module, item.source.casefold())) or declared.get(
-            (source_module, local.casefold())
-        )
-        if prototype is not None:
-            # A prototype keeps its declared spelling on both sides, because an
-            # annotation naming it is written exactly that way.
-            return prototype if local == prototype else f"{prototype} as {local}"
-        # The name read from the other contract is the one it published; the
-        # name bound here is what this contract calls the entity. They part
-        # company when a rename says so, and also when a collision moved the
-        # published name aside.
-        source = PyiPrinter._public_import_name(item.source, public_names=public_names)
-        if public_names and contract_names:
-            source = contract_name_for_source(contract_names, item.source) or source
-        # A name this module publishes is bound under the name export policy
-        # completed for it, which a collision with one of this module's own
-        # declarations may have moved aside.
-        bound = (reexport_names or {}).get(local.casefold()) if public_names else None
-        bound = bound or PyiPrinter._public_import_name(local, public_names=public_names)
-        if bound and bound != source:
-            return f"{source} as {bound}"
-        return source
-
-    @staticmethod
-    def _public_import_name(name: str | None, *, public_names: bool) -> str | None:
-        """Return one imported name as the contract that defines it spells it."""
-        if not public_names or not name or name == "*":
-            return name
-        return normalize_public_name(name).name
-
-    def _verbatim_import_names(self, module: SemanticModule) -> dict[tuple[str, str], str]:
-        """Map prototype identities to the spelling their contract declares.
-
-        A prototype keeps the spelling its own contract declares, and an
-        annotation naming one is written the same way, so an import binding it
-        keeps that spelling too. Each identity names the module declaring the
-        prototype as well as the prototype, because another module may spell an
-        ordinary declaration the same way and that one follows Python naming.
-        Fortran reaches a name without regard to case, so the identity is
-        matched that way and the declared spelling is what the mapping returns.
-        The modules rendered together with this one supply the identities; a
-        prototype this module declares itself and one an annotation here already
-        resolved are known without them.
-        """
-        names = dict(self._declared_prototype_names)
-        for prototype in module.prototypes:
-            names[(module.name.casefold(), str(prototype.name).casefold())] = str(prototype.name)
-        for semantic_type in _module_semantic_types(module):
-            reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
-            if not isinstance(reference, dict):
-                continue
-            local_name = reference.get("local_name") or reference.get("name")
-            declared_name = reference.get("name") or local_name
-            origin = reference.get("origin_module")
-            if local_name and origin:
-                # Both spellings identify the same prototype, and each maps to
-                # the one its declaring contract writes.
-                scope = str(origin).casefold()
-                names.setdefault((scope, str(local_name).casefold()), str(declared_name))
-                names.setdefault((scope, str(declared_name).casefold()), str(declared_name))
-        return names
+        else:
+            source, bound = item.contract_source, item.contract_target
+        return f"{source} as {bound}" if bound and bound != source else source
 
     def _append_items(self, sections: list[str], items: list, emit_item) -> None:
         """Append items."""
@@ -2933,28 +2469,15 @@ class PyiPrinter(ClassVisitor):
 _DEFAULT_PRINTER = PyiPrinter()
 
 
-def emit_module(
-    module: SemanticModule,
-    *,
-    normalize_public_names: bool = False,
-    declared_prototype_names: Iterable[tuple[str, str]] = (),
-    contract_names_by_module: dict[str, dict[str, str]] | None = None,
-) -> str:
+def emit_module(module: SemanticModule, *, normalize_public_names: bool = False) -> str:
     """Render one semantic module through the shared default printer.
 
-    Use this convenience entrypoint for ordinary one-module emission. Set
-    normalize_public_names when the module is named in its own source language
-    rather than in Python, declared_prototype_names to name the prototypes the
-    modules rendered alongside this one declare, and contract_names_by_module
-    to state the spelling each of those modules published its names under.
-    Every path creates a fresh module emission context.
+    Set normalize_public_names when the module is named in its own source
+    language rather than in Python. Every path creates a fresh module emission
+    context.
     """
-    if normalize_public_names or declared_prototype_names or contract_names_by_module:
-        return PyiPrinter(
-            normalize_public_names=normalize_public_names,
-            declared_prototype_names=declared_prototype_names,
-            contract_names_by_module=contract_names_by_module,
-        ).emit(module)
+    if normalize_public_names:
+        return PyiPrinter(normalize_public_names=True).emit(module)
     return _DEFAULT_PRINTER.emit(module)
 
 

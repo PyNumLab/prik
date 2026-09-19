@@ -30,6 +30,7 @@ prik/policy/
 ├── models.py
 ├── ownership.py
 ├── exports.py
+├── contract_imports.py
 ├── construction.py
 ├── completion.py
 └── native_array_handles.py
@@ -58,6 +59,7 @@ downstream fallback.
 | [`prik/policy/models.py`](../../../prik/policy/models.py) | Immutable records and enums for function, argument, result, slot, lifecycle, class, overload, callback, array, descriptor, status, and transformation policy. | A completed decision needs a durable backend-neutral representation. |
 | [`prik/policy/ownership.py`](../../../prik/policy/ownership.py) | Ownership vocabulary, `OwnershipContext`, `OwnershipDecision`, `OwnershipPolicyResolver`, and action dispatchers resolve lifetime triples and fail-closed lowering actions. | Object kind, owner, transfer, destruction, storage, barrier, assignment, or setter selection changes. |
 | [`prik/policy/exports.py`](../../../prik/policy/exports.py) | `complete_python_export_policy()` completes collision-checked contract spellings and Python placement; focused readers expose those recorded decisions. | Contract naming, export namespace, visibility, or collision behavior changes. |
+| [`prik/policy/contract_imports.py`](../../../prik/policy/contract_imports.py) | `complete_contract_imports()` replaces each module's imports with the names its contract binds from other modules, spelled as the sources and the completed contracts write them. | What a generated contract imports, or how an imported name is spelled, changes. |
 | [`prik/policy/construction.py`](../../../prik/policy/construction.py) | Feature constructors build coherent function, result, native-slot, callback, class, overload, and module-variable policies from completed ownership decisions. | A supported feature needs different completed policy composition. |
 | [`prik/policy/completion.py`](../../../prik/policy/completion.py) | `complete_semantic_policies()` runs the dependency-ordered completion pass, attaches outcomes, and validates blockers. | Completion order, cross-declaration completion, or the stage boundary changes. |
 | [`prik/policy/native_array_handles.py`](../../../prik/policy/native_array_handles.py) | `NativeArrayHandlePolicy`, ABI selectors and dispatchers, and `native_array_handle_build_requirements()` describe already-completed descriptor handles and their build requirements. | Descriptor-backed array ABI selection, allowed operations, dispatch, or build headers change. |
@@ -167,6 +169,14 @@ spelling is read with `completed_contract_name()`, which lives beside
 `CONTRACT_NAME_METADATA` in `prik/semantics/models.py` so contract emission can
 read the decision without importing policy; class-surface construction reads it
 the same way.
+
+`complete_contract_imports()` runs once names are complete, over the modules
+written together. A contract binds what its declarations name and what it
+publishes, never a `use` statement as written: a `use` that only extends a
+generic the module declares binds nothing. Every binding passes one table keyed
+by local name, so an entity reached twice binds once and a name meaning two
+entities is refused. It replaces `SemanticModule.imports` with the result, and
+the printer renders those statements without deciding any of them.
 
 `completion.py` creates native-array handle policies for descriptor-backed
 arrays. `native_array_handles.py` carries those records through the rest of

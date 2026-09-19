@@ -4,21 +4,7 @@
       "classes": [],
       "exported_names": null,
       "functions": [],
-      "imports": [
-        {
-          "items": [
-            {
-              "source": "c_int",
-              "target": null
-            },
-            {
-              "source": "c_double",
-              "target": null
-            }
-          ],
-          "module": "iso_c_binding"
-        }
-      ],
+      "imports": [],
       "metadata": {},
       "name": "constants_mod",
       "origin": {
@@ -40,7 +26,7 @@
             "iso_c_binding"
           ],
           "declaration_dependency": true,
-          "entity_kind": "unknown",
+          "entity_kind": "intrinsic",
           "explicitly_public": false,
           "local_name": "c_int",
           "module": "constants_mod",
@@ -54,7 +40,7 @@
             "iso_c_binding"
           ],
           "declaration_dependency": true,
-          "entity_kind": "unknown",
+          "entity_kind": "intrinsic",
           "explicitly_public": false,
           "local_name": "c_double",
           "module": "constants_mod",

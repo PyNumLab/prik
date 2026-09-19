@@ -306,7 +306,9 @@ end module m
     assert array_contract(semantic_arg.semantic_type).allocatable is True
     assert semantic_proc.projection[0].python_position == 0
     assert semantic_dtype.base_classes == ["base"]
-    assert semantic_module.imports == ["iso_c_binding"]
+    # No declaration is written with a name `use iso_c_binding` supplies, and a
+    # compiler-supplied module has no contract to read one from.
+    assert semantic_module.imports == []
     assert semantic_dtype.visibility == "private"
     assert semantic_proc.visibility == "public"
     assert semantic_file_modules[0].name == "m"

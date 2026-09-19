@@ -75,7 +75,9 @@ def test_converter_visitor_and_compatibility_methods_cover_public_paths():
     assert converter.visit(proc).name == "work"
     assert converter.visit(proc).visibility == "public"
     assert converter.visit(dtype, procedure_lookup={}).base_classes == ["base_t"]
-    assert converter.visit(module).imports[0].items[0].target == "i32"
+    # No declaration is written with `i32`, and the compiler supplies
+    # `iso_c_binding`, so the module states no import for its contract.
+    assert converter.visit(module).imports == []
 
     modules = converter.visit(parsed)
     assert [module.name for module in modules] == ["m", "standalone_source"]

@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generated contract imports what it needs to bind, not the `use`
+  statements its source wrote. A facade extending a generic it `use`s from two
+  modules imported `convert` from each of them beside declaring the merged
+  generic itself, so the package it generated could not be read back and only
+  the source build worked. Imports are now completed once, before emission, by
+  `complete_contract_imports()`: a contract binds the names its declarations use
+  and the names it publishes, each from the module declaring it, and a name
+  reached twice through re-exporting modules binds once. The `.pyi` printer
+  renders those statements and no longer chooses or spells an import. A renamed
+  import written with capitals (`use shapes, only : MyPoint => point`) now binds
+  the name its annotations use. A `use` whose names no declaration mentions and
+  the module does not publish, such as a bare `use types_mod`, is no longer
+  written into the contract.
+
 - A contract publishes exactly its `__all__`. A type it left out -- such as
   the sibling type a leaf contract imports for its signatures -- was still
   bound in the built module under its own name, because export completion left

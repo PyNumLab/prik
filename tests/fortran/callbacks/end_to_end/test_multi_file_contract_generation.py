@@ -311,12 +311,13 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
         capture_output=True,
     )
 
-    # Each contract mirrors the `use` its own module wrote.
+    # Each contract binds the interface where it is declared, under the name
+    # its own module calls it, however many modules it passed through.
     assert "from .chain_declares_mod import OBJ as MID" in (contracts / "chain_middle_mod.pyi").read_text(
         encoding="utf-8"
     )
     consuming = (contracts / "chain_consumer_mod.pyi").read_text(encoding="utf-8")
-    assert "from .chain_middle_mod import MID as LOCAL" in consuming
+    assert "from .chain_declares_mod import OBJ as LOCAL" in consuming
     assert "calfun: LOCAL" in consuming
 
     result = build_pyi_extension(

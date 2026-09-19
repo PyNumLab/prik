@@ -81,6 +81,10 @@ context records contract imports, aliases, source array defaults, and nested
 namespaces without mutating a reusable printer or the semantic IR. Contract
 spellings and overload-target spellings must already be completed on semantic
 owners by post-IR policy; the printer reads them and keeps no naming allocator.
+Imports from other modules are the statements `complete_contract_imports()`
+recorded in `SemanticModule.imports`, each item spelled both ways; the printer
+writes the source spellings or the completed ones and never chooses which names
+to bind.
 
 For a module, the printer first renders public classes, prototypes, variables,
 functions, and overload sets into body sections. As visitors use contract

@@ -720,8 +720,18 @@ class SemanticClass:
 
 @dataclass
 class SemanticImportItem:
+    """One name an import binds, spelled as the sources and the contracts write it.
+
+    ``source`` names the entity the way the module it is read from spells it,
+    and ``target`` the name bound here when that differs. Contract-import
+    completion adds the spellings the completed contracts use, which a
+    source-derived contract writes instead; they stay unset until then.
+    """
+
     source: str
     target: str | None = None
+    contract_source: str | None = None
+    contract_target: str | None = None
 
 
 @dataclass
@@ -761,7 +771,8 @@ class SemanticReexport:
     Every other kind -- a callback prototype, a module variable whose state
     stays live, a generic -- keeps to the semantic and contract-import paths
     that already carry it, and records its kind here rather than an alias that
-    would misrepresent it.
+    would misrepresent it. An ``intrinsic`` name comes from a module the
+    compiler supplies, which declares nothing a contract could read.
     """
 
     access_modules: list[str] = field(default_factory=list)

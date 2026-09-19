@@ -16,7 +16,8 @@ from pathlib import Path
 
 from prik.parsers.pyi import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
-from prik.policy.exports import complete_python_export_policy, contract_names_by_source
+from prik.policy.contract_imports import complete_contract_imports
+from prik.policy.exports import complete_python_export_policy
 from prik.printers.pyi import emit_module
 from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _module_semantic_types
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
@@ -145,33 +146,14 @@ def emit_module_stubs(
     for module in naming_modules.values():
         complete_python_export_policy(module)
     complete_semantic_policies(module for module in emitted_modules.values() if module.origin.source_language != "c")
-    # A prototype keeps the spelling its own contract declares, so every module
-    # rendered here is told which names those are before any of them writes an
-    # import binding one.
-    # A module binds a prototype name by declaring one or by publishing one it
-    # imported; either way a contract reading from it names it that way.
-    declared_prototype_names = {
-        (module_name, str(prototype.name))
-        for module_name, module in naming_modules.items()
-        for prototype in module.prototypes
-    } | {
-        (module_name, str(reexport.local_name))
-        for module_name, module in naming_modules.items()
-        for reexport in module.reexports
-        if reexport.entity_kind == "prototype"
-    }
-    # Import emission reads the spelling post-IR policy completed for every
-    # declaration, including withheld helpers another contract may reference.
-    contract_names_by_module = {
-        module_name: contract_names_by_source(module) for module_name, module in naming_modules.items()
-    }
+    # Each import asks the module it reads from for the name that module's
+    # contract declares, emitted here or not.
+    complete_contract_imports(
+        emitted_modules.values(),
+        dependencies=(module for name, module in naming_modules.items() if name not in emitted_modules),
+    )
     return {
-        module_name: emit_module(
-            module,
-            normalize_public_names=normalize_public_names,
-            declared_prototype_names=declared_prototype_names,
-            contract_names_by_module=contract_names_by_module,
-        ).strip()
+        module_name: emit_module(module, normalize_public_names=normalize_public_names).strip()
         for module_name, module in emitted_modules.items()
     }
 

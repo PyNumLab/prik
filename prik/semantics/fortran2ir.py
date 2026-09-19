@@ -15,7 +15,7 @@ compile-time requirement utilities at the end of the module.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import NamedTuple
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -1706,7 +1706,7 @@ class FortranToIRConverter(ClassVisitor):
             overload_sets=overload_sets,
             classes=semantic_classes,
             variables=module_variables + enum_constants,
-            imports=self._module_imports(module),
+            imports=self._module_imports(module, index),
             reexports=self._module_reexports(module, index),
             metadata=metadata,
             origin=SemanticOrigin(
@@ -2047,6 +2047,54 @@ class FortranToIRConverter(ClassVisitor):
         """
         return ScopeUses(module.uses).accessible_names(cls._offered_names(index))
 
+    @classmethod
+    def _use_associations(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> Iterator[tuple[str, tuple[str, ...], tuple[str, str, str]]]:
+        """Yield each use-associated name, the modules routing it, and what it names.
+
+        The entity is ``(kind, declaring module, declared name)``, followed back
+        through every module re-exporting it. A name this module declares as
+        well, or one naming two entities, has no single association to report.
+        """
+        declared = cls._module_declared_names(module)
+        for local_name in cls._use_associated_names(module, index):
+            routes = cls._name_routes(module, index, local_name)
+            if local_name.casefold() in declared or not routes:
+                continue
+            origin = cls._reconcile_routes(
+                [cls._resolve_reexport_origin(index, route.module, route.source_name) for route in routes]
+            )
+            if origin is not None:
+                yield local_name, tuple(dict.fromkeys(route.module for route in routes)), origin
+
+    @classmethod
+    def _module_imports(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> list[SemanticImport]:
+        """Return the use associations this module's declarations are written with.
+
+        A contract binds the names its declarations use, and only those. A
+        ``use`` that extends a generic the module declares, or reaches a name no
+        declaration mentions, binds nothing a contract writes, and a name from a
+        module the compiler supplies has no contract to be read from. Each name
+        is read from the module declaring it, however many modules it passed
+        through, so every reference to one entity binds it the same way.
+        """
+        dependencies = cls._module_declaration_dependencies(module)
+        imports: dict[str, SemanticImport] = {}
+        for local_name, _routes, (kind, origin_module, origin_name) in cls._use_associations(module, index):
+            if local_name.casefold() not in dependencies or kind == "intrinsic":
+                continue
+            imports.setdefault(origin_module.casefold(), SemanticImport(module=origin_module)).items.append(
+                SemanticImportItem(source=origin_name, target=None if origin_name == local_name else local_name)
+            )
+        return list(imports.values())
+
     def _module_reexports(
         cls,
         module: FortranModule,
@@ -2060,37 +2108,25 @@ class FortranToIRConverter(ClassVisitor):
         Declaration use is recorded for later Python publication policy but
         does not change this Fortran accessibility decision.
         """
-        declared = cls._module_declared_names(module)
         is_public = cls._effective_accessibility(module)
         dependencies = cls._module_declaration_dependencies(module)
         explicit_public = {str(name).casefold() for name in module.public_symbols}
-        index = module_index or {}
-        reexports: list[SemanticReexport] = []
-        for local_name in cls._use_associated_names(module, index):
-            local_key = local_name.casefold()
-            routes = cls._name_routes(module, index, local_name)
-            route_names = tuple(dict.fromkeys(route.module for route in routes))
-            if local_key in declared or not routes or not is_public(local_name, route_names):
-                continue
-            origin = cls._reconcile_routes(
-                [cls._resolve_reexport_origin(index, route.module, route.source_name) for route in routes]
+        return [
+            SemanticReexport(
+                local_name,
+                origin_module,
+                origin_name,
+                module.name,
+                entity_kind=kind,
+                access_modules=list(route_names),
+                declaration_dependency=local_name.casefold() in dependencies,
+                explicitly_public=local_name.casefold() in explicit_public,
             )
-            if origin is None:
-                continue
-            kind, origin_module, origin_name = origin
-            reexports.append(
-                SemanticReexport(
-                    local_name,
-                    origin_module,
-                    origin_name,
-                    module.name,
-                    entity_kind=kind,
-                    access_modules=list(route_names),
-                    declaration_dependency=local_key in dependencies,
-                    explicitly_public=local_key in explicit_public,
-                )
+            for local_name, route_names, (kind, origin_module, origin_name) in cls._use_associations(
+                module, module_index or {}
             )
-        return reexports
+            if is_public(local_name, route_names)
+        ]
 
     @classmethod
     def _resolve_reexport_origin(
@@ -2116,6 +2152,10 @@ class FortranToIRConverter(ClassVisitor):
         naming different declarations leave the origin genuinely ambiguous
         there, exactly as they would in the importing module.
         """
+        if module_name.casefold() in _INTRINSIC_FORTRAN_MODULES:
+            # The compiler supplies it: there is no declaration to name, and no
+            # contract a name could be read from.
+            return "intrinsic", module_name, source_name
         key = (module_name.casefold(), source_name.casefold())
         declaring = index.get(module_name.casefold())
         if declaring is None or key in seen:
@@ -2157,29 +2197,6 @@ class FortranToIRConverter(ClassVisitor):
         if any(enumerator.name.casefold() == key for enumerator in FortranToIRConverter._module_enumerators(declaring)):
             return "variable"
         return "unknown"
-
-    @staticmethod
-    def _module_imports(module: FortranModule) -> list[str | SemanticImport]:
-        """Translate each ``use`` association while preserving declaration order.
-
-        An association that lists names records them; one that also imports all
-        records the module itself beside them, which is what a bare ``use``
-        means on its own.
-        """
-        imports: list[str | SemanticImport] = []
-        scope = ScopeUses(module.uses)
-        for module_name in scope.modules():
-            if scope.imports_all(module_name):
-                imports.append(module_name)
-            mappings = scope.mappings(module_name)
-            if mappings:
-                imports.append(
-                    SemanticImport(
-                        module=module_name,
-                        items=[SemanticImportItem(source=item.source, target=item.target) for item in mappings],
-                    )
-                )
-        return imports
 
     def _declaration_callable_context(
         self,

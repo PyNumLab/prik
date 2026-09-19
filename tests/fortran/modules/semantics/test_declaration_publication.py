@@ -11,6 +11,7 @@ from pathlib import Path
 
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 from prik.printers.pyi import PyiPrinter
+from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules, fortran_project_to_semantic_modules
 
@@ -278,6 +279,7 @@ def test_a_prototype_does_not_take_a_name_the_module_imports(tmp_path: Path):
     assert [(item.native_name, item.declaring_scope) for item in module.prototypes] == [("cb", ("first",))]
     assert module.prototypes[0].name != "first_cb"
 
+    complete_contract_imports([module])
     contract = PyiPrinter(normalize_public_names=True).emit(module)
     assert "from .helper_mod import first_cb" in contract
     assert f"def {module.prototypes[0].name}(" in contract
