@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
     _build_inline_pyi_contract_module,
     _build_sources_and_import,
     _build_text_and_import,
@@ -426,3 +427,70 @@ def test_specification_functions_python_must_rename_still_size_their_results(tmp
     contract = (tmp_path / "contracts" / "reserved_extent_owner.pyi").read_text(encoding="utf-8")
     assert "-> Float64[lambda_(n)]" in contract
     assert "-> Float64[2 * lambda__2(n) + n]" in contract
+
+
+CHECKED_EXTENT_SOURCE = """
+module checked_extent_provider
+  implicit none
+contains
+  pure integer function extent_for(n)
+    integer, intent(in) :: n
+    extent_for = n + 1
+  end function extent_for
+end module checked_extent_provider
+
+module checked_extent_owner
+  use, intrinsic :: iso_c_binding, only: c_double
+  use checked_extent_provider, only: extent_for
+  implicit none
+contains
+  subroutine fill(n, values)
+    integer, intent(in) :: n
+    real(c_double), intent(out) :: values(extent_for(n))
+    values = 2.0_c_double
+  end subroutine fill
+  real(c_double) function total(n, values)
+    integer, intent(in) :: n
+    real(c_double), intent(in) :: values(extent_for(n))
+    total = sum(values)
+  end function total
+  subroutine maybe_fill(n, values)
+    integer, intent(in) :: n
+    real(c_double), intent(inout), optional :: values(extent_for(n))
+    if (present(values)) values = 5.0_c_double
+  end subroutine maybe_fill
+end module checked_extent_owner
+"""
+
+
+@pytest.mark.parametrize("lane", ["source", "generated_pyi"])
+def test_an_actual_is_checked_against_the_extent_a_specification_function_declares(tmp_path: Path, lane: str):
+    """An explicit-shape dummy is as long as its declaration says, whoever sizes it.
+
+    Only the Fortran bridge can evaluate a specification function, so the
+    binding skipped the check it makes for every other extent. A shorter
+    `intent(out)` actual was then written past its end and a shorter
+    `intent(in)` one read past it. The contract states the function is pure,
+    so the generated contract builds and checks the same way the source does.
+    """
+    if lane == "source":
+        package, _payload = _build_sources_and_import([("checked_extent.f90", CHECKED_EXTENT_SOURCE)], tmp_path)
+    else:
+        source = tmp_path / "checked_extent.f90"
+        source.write_text(CHECKED_EXTENT_SOURCE, encoding="utf-8")
+        package = _build_generated_pyi_and_import(source, tmp_path / "replay")
+    owner = package.checked_extent_owner
+
+    values = np.zeros(4)
+    owner.fill(np.int32(3), values)
+    np.testing.assert_array_equal(values, np.full(4, 2.0))
+    assert owner.total(np.int32(3), np.ones(4)) == 4.0
+    owner.maybe_fill(np.int32(3))
+    for call in (
+        lambda: owner.fill(np.int32(3), np.zeros(3)),
+        lambda: owner.fill(np.int32(3), np.zeros(5)),
+        lambda: owner.total(np.int32(3), np.ones(3)),
+        lambda: owner.maybe_fill(np.int32(3), np.zeros(3)),
+    ):
+        with pytest.raises(TypeError, match="has incompatible shape at axis 0"):
+            call()

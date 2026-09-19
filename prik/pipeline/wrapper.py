@@ -1716,6 +1716,11 @@ class WrapperGenerator:
             for result in plan.results
             if result.array is not None and "bridge" in result.array.extent_evaluation
         )
+        groups.extend(
+            (argument.owner_path, "argument_extent")
+            for argument in plan.arguments
+            if argument.array is not None and "bridge" in argument.array.extent_evaluation
+        )
         return tuple(groups)
 
     def _entrypoint_parameter_name_diagnostics(

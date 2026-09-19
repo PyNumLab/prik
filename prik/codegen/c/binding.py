@@ -6689,6 +6689,7 @@ class CBindingGenerator(ClassVisitor):
                 *alias_declarations,
                 *self._callback_context_declarations(plan),
                 *self._declaration_extent_result_declarations(plan),
+                *self._argument_extent_declarations(plan),
                 *self._direct_result_declaration(plan, context),
                 *self._native_output_declarations(plan, context),
                 self._parse_statement(plan, context),
@@ -12269,6 +12270,7 @@ class CBindingGenerator(ClassVisitor):
             *self._derived_after_native_failure_nodes(plan, context),
             *self._derived_result_allocation_failure_nodes(plan, context),
             *self._binding_transformation_post_call_nodes(plan, context),
+            *self._argument_extent_rejection_nodes(plan, context),
             *self._lower_status_error(plan, context),
         ]
         if plan.results or plan.writeback_actions:
@@ -13294,6 +13296,69 @@ class CBindingGenerator(ClassVisitor):
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
         return (CDeclaration(context.result_name, scalar_type.c_spelling),)
 
+    def _argument_extent_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
+        """Declare storage for each argument extent a specification function declares."""
+        return tuple(
+            CDeclaration(self._argument_extent_name(argument, axis), "int64_t", CodeExpression("0"))
+            for argument in plan.arguments
+            for axis in self._bridge_extent_axes(argument)
+        )
+
+    def _argument_extent_rejection_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CIf, ...]:
+        """Reject an actual shorter or longer than the extent its dummy declares.
+
+        Only the bridge can evaluate a specification function. It returned the
+        extent the dummy declares and ran the native procedure only when every
+        actual matched, so a mismatch arrives here with nothing called, and is
+        reported the way a binding-checked extent is.
+        """
+        cleanup = (
+            *self._string_replacement_cleanup_nodes(plan, context),
+            *self._binding_transformation_cleanup_nodes(plan, context),
+            *self._native_result_failure_cleanup_nodes(plan.results, context),
+        )
+        return tuple(
+            CIf(
+                CodeExpression(self._argument_extent_mismatch(argument, axis, context.arguments[argument.owner_path])),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {argument.binding.python_name} has '
+                            f'incompatible shape at axis {axis}")'
+                        )
+                    ),
+                    *cleanup,
+                    CReturn(CodeExpression("NULL")),
+                ),
+            )
+            for argument in plan.arguments
+            for axis in self._bridge_extent_axes(argument)
+        )
+
+    def _argument_extent_mismatch(self, argument: ArgumentTransferPlan, axis: int, names: _CArgumentNames) -> str:
+        """Return when one actual disagrees with the extent its dummy declares."""
+        mismatch = f"{self._argument_extent_name(argument, axis)} != {names.extent_names[axis]}"
+        if argument.entrypoint.optional_mode is OptionalMode.REQUIRED:
+            return mismatch
+        # An omitted actual has no extent to disagree with.
+        return f"{names.object_name} != Py_None && {mismatch}"
+
+    @staticmethod
+    def _bridge_extent_axes(argument: ArgumentTransferPlan) -> tuple[int, ...]:
+        """Return the axes of one argument that only the bridge can evaluate."""
+        if argument.array is None:
+            return ()
+        return tuple(axis for axis, evaluation in enumerate(argument.array.extent_evaluation) if evaluation == "bridge")
+
+    @staticmethod
+    def _argument_extent_name(argument: ArgumentTransferPlan, axis: int) -> str:
+        """Return the shared entrypoint ABI name for one declared argument extent."""
+        return f"{argument.entrypoint.parameter_name}_declared_extent_{axis}"
+
     def _declaration_extent_result_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
         """Declare storage populated by native-dependent main-bridge extent outputs."""
         return tuple(
@@ -13790,6 +13855,11 @@ class CBindingGenerator(ClassVisitor):
             if slot.native_scalar_c_type is not None and slot.passing is EntrypointPassingConvention.C_VALUE:
                 values[0] = f"({slot.native_scalar_c_type}){values[0]}"
             return tuple(values)
+        if parameter.source_kind == "argument_extent":
+            argument = self._argument_by_owner(plan, parameter.owner_path)
+            return tuple(
+                f"&{self._argument_extent_name(argument, axis)}" for axis in self._bridge_extent_axes(argument)
+            )
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_values(
                 plan,
@@ -14127,6 +14197,12 @@ class CBindingGenerator(ClassVisitor):
             return self._entrypoint_argument_parameters(
                 self._argument_by_owner(plan, parameter.owner_path),
                 passing=slot.passing,
+            )
+        if parameter.source_kind == "argument_extent":
+            argument = self._argument_by_owner(plan, parameter.owner_path)
+            return tuple(
+                CParameter(self._argument_extent_name(argument, axis), "int64_t *")
+                for axis in self._bridge_extent_axes(argument)
             )
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))

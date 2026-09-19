@@ -637,6 +637,11 @@ class FortranBridgeGenerator(ClassVisitor):
         is_subroutine = plan.bridge.native_is_subroutine or owned_direct_result is not None
         # Stage 2: assemble the native invocation and its ordered finalizers.
         function_body, optional_procedures = self._function_body(plan, result_name)
+        extents_match = self._argument_extents_match(plan)
+        if extents_match is not None:
+            # An explicit-shape dummy is as long as its own declaration says, so
+            # the native procedure runs only when the actual is that long too.
+            function_body = (FortranIf(CodeExpression(extents_match), body=tuple(function_body)),)
         native_body = (
             *self._derived_pointer_call_initializers(plan),
             *function_body,
@@ -693,6 +698,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._string_value_initializers(plan),
                 *self._string_address_initializers(plan),
                 *self._declaration_extent_result_assignments(plan),
+                *self._argument_extent_assignments(plan),
                 *self._direct_array_result_initializers(plan),
                 *derived_body,
             ),
@@ -712,6 +718,8 @@ class FortranBridgeGenerator(ClassVisitor):
         """Lower one shared C-ABI parameter group into a bind(C) declaration."""
         if parameter.source_kind == "argument":
             return self.visit(self._argument_by_owner(plan, parameter.owner_path))
+        if parameter.source_kind == "argument_extent":
+            return self._argument_extent_parameters(self._argument_by_owner(plan, parameter.owner_path))
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))
         result = self._result_by_owner(plan, parameter.owner_path)
@@ -806,6 +814,56 @@ class FortranBridgeGenerator(ClassVisitor):
     def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
         """Return the shared entrypoint ABI name for one evaluated result axis."""
         return f"prik_decl_extent_{result.result_position}_{axis}"
+
+    def _argument_extent_parameters(self, argument: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
+        """Return the declared extents a specification function sets for one argument."""
+        return tuple(
+            FortranParameter(self._argument_extent_name(argument, axis), "integer(c_int64_t)", ("intent(out)",))
+            for axis in self._bridge_extent_axes(argument)
+        )
+
+    def _argument_extent_assignments(self, plan: FunctionPlan) -> tuple[FortranAssignment, ...]:
+        """Evaluate every argument extent a specification function declares."""
+        assignments = []
+        for argument in plan.arguments:
+            axes = self._bridge_extent_axes(argument)
+            if not axes:
+                continue
+            shape = self._array_shape_from_roles(argument.array, plan)
+            assignments.extend(
+                FortranAssignment(
+                    self._argument_extent_name(argument, axis), CodeExpression(f"int({shape[axis]}, c_int64_t)")
+                )
+                for axis in axes
+            )
+        return tuple(assignments)
+
+    def _argument_extents_match(self, plan: FunctionPlan) -> str | None:
+        """Return when every declared argument extent equals the actual one, or ``None``."""
+        role_names = self._array_shape_role_names(plan)
+        conditions = []
+        for argument in plan.arguments:
+            for axis in self._bridge_extent_axes(argument):
+                matches = (
+                    f"{self._argument_extent_name(argument, axis)} == {role_names[argument.array.extent_roles[axis]]}"
+                )
+                if argument.entrypoint.optional_mode is not OptionalMode.REQUIRED:
+                    # An omitted actual has no extent to disagree with.
+                    matches = f"(.not. {self._presence_condition(argument)} .or. {matches})"
+                conditions.append(matches)
+        return " .and. ".join(conditions) or None
+
+    @staticmethod
+    def _bridge_extent_axes(argument: ArgumentTransferPlan) -> tuple[int, ...]:
+        """Return the axes of one argument that only the bridge can evaluate."""
+        if argument.array is None:
+            return ()
+        return tuple(axis for axis, evaluation in enumerate(argument.array.extent_evaluation) if evaluation == "bridge")
+
+    @staticmethod
+    def _argument_extent_name(argument: ArgumentTransferPlan, axis: int) -> str:
+        """Return the shared entrypoint ABI name for one declared argument extent."""
+        return f"{argument.entrypoint.parameter_name}_declared_extent_{axis}"
 
     # Immediate callback adapters.
     def _callback_standalone_adapter_procedure(

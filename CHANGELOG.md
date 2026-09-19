@@ -7,6 +7,16 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- An array argument sized by a specification function is checked against the
+  extent its dummy declares. The binding checks every other declared extent,
+  but only the Fortran bridge can evaluate a specification function, so a
+  shorter `intent(out)` actual such as `y(extent_for(n))` was written past its
+  end and corrupted the heap, and a shorter `intent(in)` one was read past it.
+  The bridge now evaluates the declared extent, runs the native procedure only
+  when the actual matches, and returns the extent for the binding to raise the
+  same `TypeError` a mismatched extent always raises. An omitted optional
+  actual is not checked.
+
 - A generated contract states `@pure` on a pure module function, and a
   contract may write it there. A declaration expression may call only a pure
   function, and `@pure` was accepted only on prototypes, so any generated

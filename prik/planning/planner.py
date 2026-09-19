@@ -1549,6 +1549,13 @@ class WrapperPlanner(ClassVisitor):
             for result in results
             if result.array is not None and "bridge" in result.array.extent_evaluation
         )
+        # Only the bridge can evaluate a specification function, so it hands
+        # back the extent one declares for the binding to check the actual by.
+        groups.extend(
+            (argument.owner_path, "argument_extent", None)
+            for argument in arguments
+            if argument.array is not None and "bridge" in argument.array.extent_evaluation
+        )
         return tuple(
             NativeEntrypointParameterPlan(
                 owner_path=owner,
