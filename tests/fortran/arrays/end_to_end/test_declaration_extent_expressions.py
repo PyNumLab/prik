@@ -369,3 +369,60 @@ def test_prototype_entity_is_visible_inside_a_standalone_target_interface(tmp_pa
     assert f"procedure({interface_symbol}) :: external_extent" in bridge
     assert "import :: c_int32_t, external_extent, c_double" in bridge
     assert "real(c_double), dimension(external_extent(n)) :: native_result" in bridge
+
+
+RESERVED_EXTENT_PROVIDER = """
+module reserved_extent_provider
+  implicit none
+contains
+  pure integer function lambda(n)
+    integer, intent(in) :: n
+    lambda = n
+  end function lambda
+  pure integer function lambda_(n)
+    integer, intent(in) :: n
+    lambda_ = n + 1
+  end function lambda_
+end module reserved_extent_provider
+"""
+
+
+RESERVED_EXTENT_OWNER = """
+module reserved_extent_owner
+  use, intrinsic :: iso_c_binding, only: c_double
+  use reserved_extent_provider, only: lambda, lambda_
+  implicit none
+contains
+  function keyword_values(n) result(output)
+    integer, intent(in) :: n
+    real(c_double) :: output(lambda(n))
+    output = 1.0_c_double
+  end function keyword_values
+  function collided_values(n) result(output)
+    integer, intent(in) :: n
+    real(c_double) :: output(2*lambda_(n) + n)
+    output = 2.0_c_double
+  end function collided_values
+end module reserved_extent_owner
+"""
+
+
+def test_specification_functions_python_must_rename_still_size_their_results(tmp_path: Path):
+    """`lambda` is a Python keyword and `lambda_` then collides with its escape.
+
+    The contract calls them `lambda_` and `lambda__2`, while the native calls
+    still reach the Fortran functions spelled `lambda` and `lambda_`.
+    """
+    module, _payload = _build_sources_and_import(
+        [
+            ("reserved_extent_provider.f90", RESERVED_EXTENT_PROVIDER),
+            ("reserved_extent_owner.f90", RESERVED_EXTENT_OWNER),
+        ],
+        tmp_path,
+    )
+
+    np.testing.assert_array_equal(module.reserved_extent_owner.keyword_values(np.int32(3)), np.full(3, 1.0))
+    np.testing.assert_array_equal(module.reserved_extent_owner.collided_values(np.int32(3)), np.full(11, 2.0))
+    contract = (tmp_path / "contracts" / "reserved_extent_owner.pyi").read_text(encoding="utf-8")
+    assert "-> Float64[lambda_(n)]" in contract
+    assert "-> Float64[2 * lambda__2(n) + n]" in contract

@@ -19,6 +19,7 @@ from prik.utilities.declaration_expressions import (
     fortran_extent_to_python,
     is_declaration_expression_helper,
     is_public_declaration_expression,
+    rename_declaration_expression_calls,
     render_declaration_extent,
     resolve_declaration_extent,
     split_declaration_assignment,
@@ -365,3 +366,20 @@ def test_lexical_translation_leaves_character_literals_alone():
     # Everything outside the literal is still translated.
     assert _python_parseable_fortran_expression('obj%field + len("a%b")') == 'obj.field + len("a%b")'
     assert _python_parseable_fortran_expression(".true.") == "True"
+
+
+def test_a_native_name_python_reserves_is_still_read_as_a_call():
+    """A Fortran function may be called `lambda`; the call is not invalid syntax."""
+    assert declaration_expression_calls("lambda(n) + class(2)") == ("lambda", "class")
+    assert declaration_expression_identifiers("lambda(n) + 1") == ("lambda", "n")
+
+
+def test_respelling_changes_call_targets_and_nothing_else():
+    """A variable or a literal spelled like the callee keeps its spelling."""
+    assert rename_declaration_expression_calls("lambda(n)", {"lambda": "lambda_"}) == "lambda_(n)"
+    assert (
+        rename_declaration_expression_calls("helper(n) + helper + len('helper(')", {"helper": "helper_2"})
+        == "helper_2(n) + helper + len('helper(')"
+    )
+    # Nothing to respell leaves the text exactly as written.
+    assert rename_declaration_expression_calls("2*n", {"helper": "helper_2"}) == "2*n"

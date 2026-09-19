@@ -16,7 +16,10 @@ completed role maps to :func:`resolve_declaration_extent`.
 from __future__ import annotations
 
 import ast
+import io
 import re
+import tokenize
+from keyword import iskeyword
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -678,11 +681,79 @@ def _parse_expression(expression: str) -> ast.Expression | None:
     returns an ``eval``-mode tree. It returns ``None`` only for syntax that the
     public caller must preserve, block, or reframe with its own diagnostic; it
     never modifies the supplied text.
+
+    A native name may be one Python reserves -- a Fortran function can be
+    called ``lambda`` -- and it is still a name. Such a name is set aside while
+    Python parses the rest and restored in the tree, so the call is read as a
+    call rather than the whole expression as invalid.
     """
     try:
         return ast.parse(expression, mode="eval")
     except SyntaxError:
+        pass
+    escaped = _escape_reserved_names(expression)
+    if escaped is None:
         return None
+    try:
+        tree = ast.parse(escaped, mode="eval")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id.startswith(_RESERVED_NAME_ESCAPE):
+            node.id = node.id.removeprefix(_RESERVED_NAME_ESCAPE)
+        elif isinstance(node, ast.Attribute) and node.attr.startswith(_RESERVED_NAME_ESCAPE):
+            node.attr = node.attr.removeprefix(_RESERVED_NAME_ESCAPE)
+    return tree
+
+
+#: Keywords the lexical translation writes itself; any other one is a native name.
+_TRANSLATED_KEYWORDS = frozenset({"and", "or", "not", "True", "False"})
+_RESERVED_NAME_ESCAPE = "_prik_reserved_"
+
+
+def _escape_reserved_names(expression: str) -> str | None:
+    """Return the text with each reserved native name escaped, or ``None``.
+
+    Python's own tokenizer finds the names, so a literal or an operator is
+    never mistaken for one. ``None`` means no name needed escaping, or the text
+    does not tokenize.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(expression).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return None
+    reserved = [
+        token.type == tokenize.NAME and iskeyword(token.string) and token.string not in _TRANSLATED_KEYWORDS
+        for token in tokens
+    ]
+    if not any(reserved):
+        return None
+    return tokenize.untokenize(
+        (token.type, _RESERVED_NAME_ESCAPE + token.string if escape else token.string)
+        for token, escape in zip(tokens, reserved, strict=True)
+    )
+
+
+def rename_declaration_expression_calls(expression: str, names: Mapping[str, str]) -> str:
+    """Return one expression with its call targets respelled, and nothing else.
+
+    ``names`` maps a call target as the expression writes it to the spelling
+    that replaces it. Only a called name changes: an argument, a variable, an
+    attribute, or a literal spelled the same way is left alone. An expression
+    with nothing to respell, or one that does not parse, is returned unchanged.
+    """
+    tree = _parse_expression(expression)
+    if tree is None:
+        return expression
+    changed = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        spelled = names.get(node.func.id, node.func.id)
+        if spelled != node.func.id:
+            node.func.id = spelled
+            changed = True
+    return ast.unparse(tree) if changed else expression
 
 
 def _python_parseable_fortran_expression(expression: str) -> str:

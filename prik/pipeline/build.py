@@ -3177,9 +3177,14 @@ def _merge_wrapper_modules(modules: list[SemanticModule], *, name: str | None = 
     Concatenates every declaration category while preserving list order and
     derives combined metadata and the origin from the first module.  An empty
     input cannot produce a wrapper and raises ``ValueError``.
+
+    The merged module is completed for this build as one namespace, which is
+    not how each source module's own contract is completed, so it owns copies:
+    completing it leaves the source modules describing their own contracts.
     """
     if not modules:
         raise ValueError("wrapper build found no Fortran modules or standalone procedures")
+    modules = deepcopy(modules)
 
     return SemanticModule(
         name=name or modules[0].name,

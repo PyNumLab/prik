@@ -171,7 +171,11 @@ read the decision without importing policy; class-surface construction reads it
 the same way. A name the module imports is completed in the same ledger, as the
 module publishes it or, for a type it does not publish, as a class, and
 recorded under `CONTRACT_IMPORT_NAMES_METADATA`; its annotations, its import,
-and `__all__` all read that one spelling.
+and `__all__` all read that one spelling. A callable a declaration expression
+calls is spelled the same way: completion sets `SemanticExpressionCallable.name`
+to the contract spelling and respells that call in the shape expression through
+the parsed expression, so only call targets change; `native_name` and
+`native_scope` keep the native identity.
 
 `complete_contract_imports()` runs once names are complete, over the modules
 written together. A contract binds what its declarations name and what it

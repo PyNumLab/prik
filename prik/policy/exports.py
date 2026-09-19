@@ -13,6 +13,7 @@ wrapper mechanism or emit the namespace.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -20,6 +21,7 @@ from prik.naming import NamingPolicy, normalize_public_name, preserves_source_ca
 from prik.semantics import models
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.semantics.models import export_namespace
+from prik.utilities.declaration_expressions import rename_declaration_expression_calls
 
 
 @dataclass(frozen=True)
@@ -333,6 +335,7 @@ def _complete_contract_names(
         )
 
     _complete_type_reference_names(module, imported)
+    _complete_declared_callable_names(module, contract_named=contract_named)
     _complete_overload_target_contract_names(module, preserve_case=preserve_case)
 
 
@@ -432,22 +435,122 @@ def _complete_imported_names(
 
     A re-export is already named: the name the module publishes it under is the
     name the contract binds and writes. A type the module imports without
-    re-exporting it takes the class spelling a published type would, held
-    beside the module's own names. A contract that was read already names what
-    it imports and keeps every spelling.
+    re-exporting it takes the class spelling a published type would, and a
+    callable a declaration expression calls the spelling a function would, each
+    held beside the module's own names. A contract that was read already names
+    what it imports and keeps every spelling.
+
+    The record is read back when completion runs again: by then the calls it
+    spelled carry their completed names, which are not names to import.
     """
+    recorded = module.metadata.get(models.CONTRACT_IMPORT_NAMES_METADATA)
+    if recorded is not None:
+        return recorded
     completed = {str(reexport.local_name): str(reexport.python_name) for reexport in module.reexports}
     if not contract_named:
-        for semantic_type in models._module_semantic_types(module):
-            reference = imported_type_reference(semantic_type)
-            if reference is None or reference.procedure_local:
-                continue
-            if contract_name_for_source(completed, reference.local) is None:
-                completed[reference.local] = naming.reserve_public_name(
-                    (), reference.local, category="class", owner=f"import {reference.local}"
-                )
+        declared = declared_identities(module)
+        for local, category in _imported_local_names(module, declared):
+            if contract_name_for_source(completed, local) is None:
+                completed[local] = naming.reserve_public_name((), local, category=category, owner=f"import {local}")
+
+        def imported_spelling(reference: models.SemanticExpressionCallable) -> str | None:
+            identity = _callable_identity(reference)
+            if identity is None or identity in declared:
+                return None
+            return contract_name_for_source(completed, reference.name)
+
+        # A call to an imported callable is spelled now, once: afterwards its
+        # reference carries the completed name, which is not a name it imports.
+        _respell_expression_calls(module, imported_spelling)
     module.metadata[models.CONTRACT_IMPORT_NAMES_METADATA] = completed
     return completed
+
+
+def _imported_local_names(module: models.SemanticModule, declared: set[tuple[str, str]]):
+    """Yield ``(local name, category)`` for each name a declaration reads from another module."""
+    for semantic_type in models._module_semantic_types(module):
+        reference = imported_type_reference(semantic_type)
+        if reference is not None and not reference.procedure_local:
+            yield reference.local, "class"
+        for callable_reference in _expression_callables(semantic_type):
+            identity = _callable_identity(callable_reference)
+            if identity is not None and identity not in declared:
+                yield callable_reference.name, "function"
+
+
+def _complete_declared_callable_names(module: models.SemanticModule, *, contract_named: bool) -> None:
+    """Spell each call to a callable the module declares under that callable's contract name.
+
+    The reference and the call in the public shape change together, so the
+    expression and the declaration it calls agree; the native identity stays
+    beside them. Imported calls were spelled with the names the module imports
+    them by, and every name a read contract writes is kept.
+    """
+    if contract_named:
+        return
+    declared = {
+        declaration_identity(item.origin.native_scope or module.name, item.native_name or item.name): (
+            models.completed_contract_name(item)
+        )
+        for item in (*module.functions, *module.prototypes)
+    }
+    _respell_expression_calls(module, lambda reference: declared.get(_callable_identity(reference)))
+
+
+def _respell_expression_calls(
+    module: models.SemanticModule,
+    spelling: Callable[[models.SemanticExpressionCallable], str | None],
+) -> None:
+    """Give each call a declaration expression makes the spelling ``spelling`` returns.
+
+    A reference and its call sites change together; ``None`` keeps a call as it
+    is written. Only call targets change in the expression text.
+    """
+    for semantic_type in models._module_semantic_types(module):
+        array = semantic_type.storage.array if semantic_type.storage is not None else None
+        for axis, references in enumerate(array.expression_callables if array is not None else ()):
+            names: dict[str, str] = {}
+            for reference in references:
+                completed = spelling(reference)
+                if completed is not None and completed != reference.name:
+                    names[reference.name] = completed
+                    reference.name = completed
+            if names:
+                for shape in (semantic_type.shape, array.shape):
+                    if axis < len(shape):
+                        shape[axis] = rename_declaration_expression_calls(str(shape[axis]), names)
+
+
+def _expression_callables(semantic_type: models.SemanticType):
+    """Yield every callable one type's declaration expressions call."""
+    array = semantic_type.storage.array if semantic_type.storage is not None else None
+    for references in array.expression_callables if array is not None else ():
+        yield from references
+
+
+def _callable_identity(reference: models.SemanticExpressionCallable) -> tuple[str, str] | None:
+    """Return the declaration one call reaches, or ``None`` for a call with no module."""
+    if reference.native_scope is None:
+        return None
+    return declaration_identity(reference.native_scope, reference.native_name or reference.name.rsplit(".", 1)[-1])
+
+
+def declared_identities(module: models.SemanticModule) -> set[tuple[str, str]]:
+    """Return the ``(module, name)`` identity of every declaration the module carries."""
+    return {
+        *(
+            declaration_identity(
+                item.origin.native_scope or module.name, getattr(item, "native_name", None) or item.name
+            )
+            for item in (*module.functions, *module.classes, *module.variables, *module.prototypes)
+        ),
+        *(declaration_identity(item.native_scope or module.name, item.name) for item in module.overload_sets),
+    }
+
+
+def declaration_identity(scope: object, name: object) -> tuple[str, str]:
+    """Return the case-folded ``(module, name)`` identity of one declaration."""
+    return str(scope).casefold(), str(name).casefold()
 
 
 def _complete_type_reference_names(module: models.SemanticModule, imported: dict[str, str]) -> None:

@@ -18,7 +18,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 
 from prik.naming import normalize_public_name, preserves_source_case
-from prik.policy.exports import contract_name_for_source, contract_names_by_source, imported_type_reference
+from prik.policy.exports import (
+    contract_name_for_source,
+    contract_names_by_source,
+    declaration_identity,
+    declared_identities,
+    imported_type_reference,
+)
 from prik.semantics import models
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 
@@ -59,15 +65,15 @@ class _ContractImports:
         self._key = str if self._preserve_case else str.casefold
         # The one spelling naming completed for each name this contract imports.
         self._imported = module.metadata.get(models.CONTRACT_IMPORT_NAMES_METADATA, {}) if self._native else {}
-        declarations = (*module.functions, *module.classes, *module.variables, *module.prototypes)
-        self._declared_names = {self._key(str(item.name)) for item in (*declarations, *module.overload_sets)}
-        self._declared = {
-            *(
-                _identity(item.origin.native_scope or module.name, getattr(item, "native_name", None) or item.name)
-                for item in declarations
-            ),
-            *(_identity(item.native_scope or module.name, item.name) for item in module.overload_sets),
-        }
+        declarations = (
+            *module.functions,
+            *module.classes,
+            *module.variables,
+            *module.prototypes,
+            *module.overload_sets,
+        )
+        self._declared_names = {self._key(models.completed_contract_name(item)) for item in declarations}
+        self._declared = declared_identities(module)
         self._bound: dict[str, tuple[str, str]] = {}
         self._statements: list[str | models.SemanticImport] = []
         self._from: dict[str, models.SemanticImport] = {}
@@ -91,8 +97,8 @@ class _ContractImports:
                     str(reexport.local_name),
                     verbatim=reexport.entity_kind == "prototype",
                 )
-        for origin, source, local, kind in sorted(set(self._references())):
-            self._bind(origin, source, local, verbatim=kind in {"prototype", "namespace"})
+        for origin, source, local, written, kind in sorted(set(self._references())):
+            self._bind(origin, source, local, written=written, verbatim=kind in {"prototype", "namespace"})
         return self._statements
 
     def _stated(self, statement: str | models.SemanticImport) -> None:
@@ -103,25 +109,37 @@ class _ContractImports:
         for item in statement.items:
             self._bind(statement.module, item.source, item.target or item.source)
 
-    def _references(self) -> Iterator[tuple[str, str, str, str]]:
-        """Yield ``(module, source, local, kind)`` for each name a declaration names."""
+    def _references(self) -> Iterator[tuple[str, str, str, str, str]]:
+        """Yield ``(module, source, local, written, kind)`` for each name a declaration names.
+
+        ``written`` is the spelling the declaration writes, which completion
+        recorded on the reference itself.
+        """
         for semantic_type in models._module_semantic_types(self._module):
             yield from _type_reference(semantic_type)
             yield from _prototype_reference(semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA))
             yield from _callable_references(semantic_type)
 
-    def _bind(self, origin: str, source: str, local: str, *, verbatim: bool = False) -> None:
+    def _bind(
+        self,
+        origin: str,
+        source: str,
+        local: str,
+        *,
+        written: str | None = None,
+        verbatim: bool = False,
+    ) -> None:
         """Bind ``local`` to ``source`` read from ``origin``, or refuse a second meaning.
 
-        The contract binds the spelling naming completed for ``local``, which is
-        the one its annotations and ``__all__`` write. A name completion did not
-        spell -- a prototype, or a callable a declaration expression writes --
-        keeps the spelling it is written with.
+        The contract binds the name as it writes it: ``written`` for a
+        reference completion already spelled, and otherwise the spelling
+        completion recorded for ``local``, which ``__all__`` writes too.
         """
         origin_key = origin.lstrip(".").casefold()
-        if origin_key == self._module.name.casefold() or _identity(origin_key, source) in self._declared:
+        if origin_key == self._module.name.casefold() or declaration_identity(origin_key, source) in self._declared:
             return
-        key = self._key(local)
+        contract_target = written or contract_name_for_source(self._imported, local) or local
+        key = self._key(contract_target)
         identity = (origin_key, self._key(source))
         existing = self._bound.get(key)
         if existing == identity:
@@ -132,13 +150,12 @@ class _ContractImports:
                 "the name already means something else there"
             )
         self._bound[key] = identity
-        written = f".{origin}" if self._native and not origin.startswith(".") else origin
-        statement = self._from.get(written)
+        module_text = f".{origin}" if self._native and not origin.startswith(".") else origin
+        statement = self._from.get(module_text)
         if statement is None:
-            statement = self._from[written] = models.SemanticImport(module=written)
+            statement = self._from[module_text] = models.SemanticImport(module=module_text)
             self._statements.append(statement)
         contract_source = self._contract_source(origin_key, source, verbatim)
-        contract_target = contract_name_for_source(self._imported, local) or local
         statement.items.append(
             models.SemanticImportItem(
                 source=source,
@@ -164,38 +181,34 @@ class _ContractImports:
         return source if verbatim else normalize_public_name(source, preserve_case=self._preserve_case).name
 
 
-def _identity(scope: str, name: str) -> tuple[str, str]:
-    """Return the case-folded ``(module, name)`` identity of one declaration."""
-    return str(scope).casefold(), str(name).casefold()
-
-
-def _type_reference(semantic_type: models.SemanticType) -> Iterator[tuple[str, str, str, str]]:
+def _type_reference(semantic_type: models.SemanticType) -> Iterator[tuple[str, str, str, str, str]]:
     """Yield the binding one annotation naming an imported type needs."""
     reference = imported_type_reference(semantic_type)
     if reference is None:
         return
     if reference.procedure_local:
         # A procedure-local type is written qualified by its module.
-        yield ".", reference.module, reference.module, "namespace"
+        yield ".", reference.module, reference.module, reference.module, "namespace"
     else:
-        yield reference.module, reference.name, reference.local, "type"
+        written = str(semantic_type.metadata.get(models.CONTRACT_NAME_METADATA) or reference.local)
+        yield reference.module, reference.name, reference.local, written, "type"
 
 
-def _prototype_reference(ref: object) -> Iterator[tuple[str, str, str, str]]:
+def _prototype_reference(ref: object) -> Iterator[tuple[str, str, str, str, str]]:
     """Yield the binding one callback annotation naming a prototype needs."""
     if not isinstance(ref, dict):
         return
     origin = str(ref.get("origin_module") or "")
     local = str(ref.get("local_name") or ref.get("name") or "")
     if origin and local:
-        yield origin, str(ref.get("name") or local), local, "prototype"
+        yield origin, str(ref.get("name") or local), local, local, "prototype"
 
 
-def _callable_references(semantic_type: models.SemanticType) -> Iterator[tuple[str, str, str, str]]:
+def _callable_references(semantic_type: models.SemanticType) -> Iterator[tuple[str, str, str, str, str]]:
     """Yield the binding each callable a declaration expression calls needs."""
     array = semantic_type.storage.array if semantic_type.storage is not None else None
     for axis in array.expression_callables if array is not None else ():
         for reference in axis:
             if reference.native_scope is not None:
                 local = reference.name.rsplit(".", 1)[-1]
-                yield reference.native_scope, reference.native_name or local, local, "procedure"
+                yield reference.native_scope, reference.native_name or local, local, local, "procedure"

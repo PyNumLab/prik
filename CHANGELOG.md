@@ -7,6 +7,18 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A call in a declaration expression is spelled the way the contract binds its
+  callee. A Fortran specification function named `lambda`, or one whose name
+  collides once escaped, was imported under its completed name (`lambda_`,
+  `lambda__2`) while the shape still called `lambda(n)`, which is not Python;
+  such a function could not size an array at all, from source or from its
+  contract. Contract-name completion now sets the callable reference's name to
+  that spelling and respells the call in the shape expression through the
+  parsed expression, changing call targets only, while the native identity
+  still reaches the Fortran function. A build's merged wrapper module now owns
+  copies of its source modules, so completing it no longer changes the
+  contracts written beside the build.
+
 - A generated contract imports what it needs to bind, not the `use`
   statements its source wrote. A facade extending a generic it `use`s from two
   modules imported `convert` from each of them beside declaring the merged

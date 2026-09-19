@@ -1091,3 +1091,59 @@ end module user_mod
     assert f"p: {spelling}\n" in contract
     expected_all = ["move", spelling] if published else ["move"]
     assert contract.rstrip().endswith(f"__all__ = {json.dumps(expected_all)}")
+
+
+def test_a_declaration_expression_calls_its_callee_by_the_name_the_contract_binds(tmp_path):
+    """The call in a shape and the import binding its callee are one spelling.
+
+    `lambda` is a Python keyword and `lambda_` then collides with its escaped
+    spelling, so the helpers contract writes `lambda_` and `lambda__2`. The
+    expression kept the Fortran spelling while the import bound the completed
+    one, leaving a call that was unbound or not Python at all.
+    """
+    helpers = parse_fortran_source("""
+module helpers
+implicit none
+contains
+pure integer function lambda(n)
+  integer, intent(in) :: n
+  lambda = n
+end function lambda
+pure integer function lambda_(n)
+  integer, intent(in) :: n
+  lambda_ = n + 1
+end function lambda_
+end module helpers
+""")
+    user = parse_fortran_source("""
+module user_mod
+use helpers, only : lambda, lambda_
+implicit none
+contains
+subroutine fill(n, x, y)
+  integer, intent(in) :: n
+  real(8), intent(out) :: x(lambda(n))
+  real(8), intent(out) :: y(2*lambda_(n) + n)
+end subroutine fill
+end module user_mod
+""")
+
+    stubs = emit_module_stubs(
+        [fortran_module_to_semantic_module(item) for item in (helpers, user)],
+        normalize_public_names=True,
+    )
+    contract = stubs["user_mod"]
+
+    assert "from .helpers import lambda_, lambda__2\n" in contract
+    assert "x: Float64[lambda_(n)]" in contract
+    assert "y: Float64[2 * lambda__2(n) + n]" in contract
+    # Read back as a package, each call reaches the native function it names.
+    for name, text in stubs.items():
+        (tmp_path / f"{name}.pyi").write_text(text, encoding="utf-8")
+    reloaded = {module.name: module for module in pyi_pipeline.pyi_paths_to_semantic_modules(tmp_path)}
+    assert [
+        (reference.name, reference.native_scope, reference.native_name)
+        for argument in reloaded["user_mod"].functions[0].arguments[1:]
+        for axis in argument.semantic_type.storage.array.expression_callables
+        for reference in axis
+    ] == [("lambda_", "helpers", "lambda"), ("lambda__2", "helpers", "lambda_")]
