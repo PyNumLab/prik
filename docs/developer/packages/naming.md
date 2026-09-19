@@ -60,8 +60,10 @@ prik/naming/
 `NamingPolicy` retains contract-namespace reservations for one policy
 completion operation. Post-IR policy records the selected spelling on semantic
 owners; contract emission and class-surface construction read that result and
-do not create their own reservation ledgers. Publication is separate: a
-withheld declaration still has a contract spelling so annotations can name it.
+do not create their own reservation ledgers, and neither does semantic
+conversion: a prototype, too, is spelled in that ledger, keeping the case it is
+declared in. Publication is separate: a withheld declaration still has a
+contract spelling so annotations can name it.
 `NativeSymbolNames` is stateless: the same owner, preferred spelling, and
 limit always produce the same result.
 

@@ -303,15 +303,9 @@ def _complete_contract_names(
 
     imported = _complete_imported_names(module, naming, contract_named=contract_named)
 
-    for prototype in module.prototypes:
-        completed = str(prototype.name)
-        naming.hold_completed_public_name(
-            _declaring_namespace(module, prototype),
-            completed,
-            category="function",
-            owner=f"prototype {prototype.native_name or prototype.name}",
-        )
-        prototype.metadata[models.CONTRACT_NAME_METADATA] = completed
+    # A module's own prototype declares the name other modules import, so it
+    # is spelled before any withheld declaration takes a name.
+    _complete_prototype_contract_names(module, naming, (item for item in module.prototypes if not item.declaring_scope))
 
     # A withheld declaration is written in the file being completed, whatever
     # module declared it natively: a generic's inherited specifics are carried
@@ -326,6 +320,11 @@ def _complete_contract_names(
             owner=f"{_owner_category(owner)} {owner.name}",
         )
 
+    # A block inside a procedure is that procedure's alone, spelled after the
+    # module's own declarations and qualified by its scope.
+    _complete_prototype_contract_names(module, naming, (item for item in module.prototypes if item.declaring_scope))
+    _complete_prototype_reference_names(module)
+
     for semantic_class in module.classes:
         _complete_class_member_contract_names(
             semantic_class,
@@ -337,6 +336,56 @@ def _complete_contract_names(
     _complete_type_reference_names(module, imported)
     _complete_declared_callable_names(module, contract_named=contract_named)
     _complete_overload_target_contract_names(module, preserve_case=preserve_case)
+
+
+def _complete_prototype_contract_names(module: models.SemanticModule, naming: NamingPolicy, prototypes) -> None:
+    """Spell each prototype in the module's contract ledger, as it is declared.
+
+    A prototype is identified by its declaring scope and the name that scope
+    gives it, and two contained procedures may give theirs the same name, so a
+    procedure-local one suggests its scope with its name. The spelling keeps
+    the case it is declared in, wherever the prototype is written.
+    """
+    for prototype in prototypes:
+        suggestion = "_".join((*prototype.declaring_scope, str(prototype.native_name or prototype.name)))
+        prototype.metadata[models.CONTRACT_NAME_METADATA] = naming.reserve_public_name(
+            _declaring_namespace(module, prototype),
+            suggestion,
+            category="function",
+            owner=f"prototype {suggestion}",
+            preserve_case=True,
+        )
+
+
+def _complete_prototype_reference_names(module: models.SemanticModule) -> None:
+    """Spell each callback annotation the way the contract names its prototype.
+
+    A prototype the module declares is named by its completed spelling. One it
+    imports keeps the name this module binds it under, which a prototype keeps
+    wherever it is written.
+    """
+    declared = {
+        _prototype_identity(
+            prototype.origin.native_scope or module.name,
+            prototype.declaring_scope,
+            prototype.native_name or prototype.name,
+        ): models.completed_contract_name(prototype)
+        for prototype in module.prototypes
+    }
+    for semantic_type in models._module_semantic_types(module):
+        reference = semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA)
+        if not isinstance(reference, dict):
+            continue
+        identity = _prototype_identity(
+            reference.get("origin_module", ""), reference.get("declaring_scope", ()), reference.get("name", "")
+        )
+        written = str(reference.get("local_name") or semantic_type.name)
+        semantic_type.metadata[models.CONTRACT_NAME_METADATA] = declared.get(identity, written)
+
+
+def _prototype_identity(module_name: object, scope, name: object) -> tuple[str, tuple[str, ...], str]:
+    """Return one prototype's ``(module, declaring scope, name)`` identity."""
+    return str(module_name).casefold(), tuple(str(part) for part in scope), str(name).casefold()
 
 
 def _own_export(module: models.SemanticModule, owner) -> tuple[tuple[str, ...], str] | None:
@@ -690,7 +739,11 @@ def _specific_identity(function: models.SemanticFunction) -> tuple[str, str] | N
 def contract_names_by_source(module: models.SemanticModule) -> dict[str, str]:
     """Return source spellings mapped to the names this contract declares."""
     names = {str(owner.name): models.completed_contract_name(owner) for owner in _module_export_owners(module)}
-    names.update((str(prototype.name), models.completed_contract_name(prototype)) for prototype in module.prototypes)
+    names.update(
+        (str(prototype.name), models.completed_contract_name(prototype))
+        for prototype in module.prototypes
+        if not prototype.declaring_scope
+    )
     names.update(
         (str(reexport.local_name), str(reexport.python_name or reexport.local_name)) for reexport in module.reexports
     )

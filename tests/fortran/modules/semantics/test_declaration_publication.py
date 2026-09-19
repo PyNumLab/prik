@@ -11,6 +11,7 @@ from pathlib import Path
 
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 from prik.printers.pyi import PyiPrinter
+from prik.semantics.models import CONTRACT_NAME_METADATA, completed_contract_name
 from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules, fortran_project_to_semantic_modules
@@ -102,7 +103,7 @@ def test_two_procedures_may_name_different_interfaces_the_same_way(tmp_path: Pat
     """A block inside a procedure is that procedure's, so each keeps its own."""
     module = _module(LOCAL_INTERFACE_SOURCE, tmp_path)
 
-    assert [(item.name, item.native_name, item.visibility) for item in module.prototypes] == [
+    assert [(completed_contract_name(item), item.native_name, item.visibility) for item in module.prototypes] == [
         ("first_cb", "cb", "private"),
         ("second_cb", "cb", "private"),
     ]
@@ -117,7 +118,7 @@ def test_two_procedures_may_name_different_interfaces_the_same_way(tmp_path: Pat
 def test_a_procedure_local_interface_is_never_a_module_publication(tmp_path: Path):
     """A `use` of the module cannot reach it, so the contract does not publish it."""
     module = _module(LOCAL_INTERFACE_SOURCE, tmp_path)
-    contract = PyiPrinter().emit(module)
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
 
     assert "def first_cb(" in contract
     assert "def second_cb(" in contract
@@ -183,7 +184,7 @@ def _callback_annotations(module) -> dict[str, tuple[str, str]]:
     """Return each callback argument's contract name and first argument type."""
     return {
         f"{function.name}.{argument.name}": (
-            argument.semantic_type.name,
+            argument.semantic_type.metadata[CONTRACT_NAME_METADATA],
             argument.semantic_type.metadata["arguments"][0].name,
         )
         for function in module.functions
@@ -205,7 +206,7 @@ def test_a_prototype_is_identified_by_its_scope_rather_than_its_spelling(tmp_pat
     assert identities == [("first_cb", (), "public"), ("cb", ("first",), "private")]
 
     # The module's own block keeps the spelling another module imports it by.
-    names = [item.name for item in module.prototypes]
+    names = [completed_contract_name(item) for item in module.prototypes]
     assert names[0] == "first_cb"
     assert names[1] != "first_cb"
 
@@ -218,7 +219,7 @@ def test_scopes_whose_joined_spellings_collide_keep_distinct_contract_names(tmp_
     """`a_b` declaring `c` and `a` declaring `b_c` are different prototypes."""
     module = _module(JOINED_COLLISION_SOURCE, tmp_path)
 
-    names = [item.name for item in module.prototypes]
+    names = [completed_contract_name(item) for item in module.prototypes]
     assert len(set(names)) == 2
 
     annotations = _callback_annotations(module)
@@ -229,8 +230,8 @@ def test_scopes_whose_joined_spellings_collide_keep_distinct_contract_names(tmp_
 def test_a_contract_writes_one_prototype_for_each_scope(tmp_path: Path):
     """Both prototypes are written, and only the module's own is published."""
     module = _module(MODULE_AND_LOCAL_SOURCE, tmp_path)
-    contract = PyiPrinter().emit(module)
-    local_name = module.prototypes[1].name
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+    local_name = completed_contract_name(module.prototypes[1])
 
     assert "def first_cb(\n    x: Int32[()]\n) -> None: ..." in contract
     assert f"def {local_name}(\n    x: Float32[()]\n) -> None: ..." in contract
@@ -277,10 +278,56 @@ def test_a_prototype_does_not_take_a_name_the_module_imports(tmp_path: Path):
     complete_python_export_policy(module)
 
     assert [(item.native_name, item.declaring_scope) for item in module.prototypes] == [("cb", ("first",))]
-    assert module.prototypes[0].name != "first_cb"
+    spelled = completed_contract_name(module.prototypes[0])
+    assert spelled != "first_cb"
 
     complete_contract_imports([module])
     contract = PyiPrinter(normalize_public_names=True).emit(module)
     assert "from .helper_mod import first_cb" in contract
-    assert f"def {module.prototypes[0].name}(" in contract
-    assert f"f: {module.prototypes[0].name}" in contract
+    assert f"def {spelled}(" in contract
+    assert f"f: {spelled}" in contract
+
+
+UNBOUND_USE_SOURCE = """\
+module helper_mod
+  implicit none
+  integer :: first_cb = 7
+end module helper_mod
+
+module m_mod
+  use helper_mod, only : first_cb
+  implicit none
+  private
+  public :: first
+contains
+  subroutine first(f)
+    abstract interface
+      subroutine cb(x)
+        real :: x
+      end subroutine
+    end interface
+    procedure(cb) :: f
+    call f(real(first_cb))
+  end subroutine first
+end module m_mod
+"""
+
+
+def test_a_prototype_is_spelled_against_what_the_contract_binds(tmp_path: Path):
+    """A name the module reaches but its contract never binds does not move a prototype.
+
+    `m_mod` uses `first_cb` only in executable code and publishes nothing but
+    `first`, so its contract imports no `first_cb`. Spelling prototypes while
+    converting source held every use-associated name and suffixed this one.
+    """
+    (tmp_path / "project.f90").write_text(UNBOUND_USE_SOURCE, encoding="utf-8")
+    module = {
+        module.name: module for module in fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
+    }["m_mod"]
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+
+    assert completed_contract_name(module.prototypes[0]) == "first_cb"
+    assert "from .helper_mod" not in contract
+    assert "f: first_cb\n" in contract

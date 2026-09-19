@@ -119,9 +119,18 @@ class NamingPolicy:
         *,
         category: str,
         owner: object | None = None,
+        preserve_case: bool | None = None,
     ) -> str:
-        """Reserve one public Python name within its namespace."""
-        normalized = normalize_public_name(raw_name, preserve_case=self.preserve_case, category=category)
+        """Reserve one public Python name within its namespace.
+
+        ``preserve_case`` overrides the policy's rule for a name written as it
+        is declared wherever it appears, such as a prototype's.
+        """
+        normalized = normalize_public_name(
+            raw_name,
+            preserve_case=self.preserve_case if preserve_case is None else preserve_case,
+            category=category,
+        )
         raw_text = str(raw_name)
         namespace_key = tuple(str(part) for part in namespace)
         namespace_text = ".".join(namespace_key) or "<module>"

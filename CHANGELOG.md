@@ -7,6 +7,15 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A prototype's contract spelling is completed in post-IR policy, in the same
+  ledger as every other name, rather than allocated while Fortran source is
+  converted. Conversion keeps a prototype's identity -- its module, declaring
+  procedure, and native name -- and a callback reference to it; completion
+  spells both, and a callback's generated interface is identified by that
+  structure rather than by its spelling. A procedure-local interface is no
+  longer suffixed for a name the module reaches through `use` but whose
+  contract never binds it (`first_cb` rather than `first_cb_2`).
+
 - An array argument sized by a specification function is checked against the
   extent its dummy declares. The binding checks every other declared extent,
   but only the Fortran bridge can evaluate a specification function, so a

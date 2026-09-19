@@ -1398,18 +1398,24 @@ def build_callback_handoff_policy(
     blockers.extend(_callback_result_blockers(return_type, result))
     # Complete the shared exact signature after argument and result ABI facts exist.
     prototype_ref = semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA)
-    source_name = prototype_ref.get("name") if isinstance(prototype_ref, dict) else None
-    local_name = prototype_ref.get("local_name") if isinstance(prototype_ref, dict) else None
-    origin_module = prototype_ref.get("origin_module") if isinstance(prototype_ref, dict) else None
+    reference = prototype_ref if isinstance(prototype_ref, dict) else {}
+    source_name = reference.get("name")
     if not isinstance(source_name, str) or not source_name:
         blockers.append("callback argument requires a resolved named prototype")
         source_name = semantic_type.name
-    if not isinstance(local_name, str) or not local_name:
-        local_name = semantic_type.name
+    # A prototype is its declaring module and scope with the name that scope
+    # gives it; the contract spelling only names it.
+    identity = ".".join(
+        (reference.get("origin_module") or owner_path, *reference.get("declaring_scope", ()), source_name)
+    )
+    written = semantic_type.metadata.get(models.CONTRACT_NAME_METADATA)
+    if not isinstance(written, str) or not written:
+        blockers.append("callback prototype has no completed contract spelling")
+        written = semantic_type.name
     prototype = _procedure_prototype_policy(
         owner_path=owner_path,
-        name=local_name,
-        identity=f"{origin_module or owner_path}.{source_name}",
+        name=written,
+        identity=identity,
         pure=_prototype_metadata_is_pure(semantic_type.metadata.get("prototype_metadata")),
         source_language=semantic_type.metadata.get("prototype_source_language"),
         native_abi=semantic_type.metadata.get("prototype_native_abi"),

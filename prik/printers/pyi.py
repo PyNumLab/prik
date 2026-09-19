@@ -220,7 +220,7 @@ class PyiPrinter(ClassVisitor):
             # with the import already emitted for it.
             text = str(unresolved_interface)
         elif PROTOTYPE_REF_METADATA in semantic_type.metadata:
-            text = semantic_type.name
+            text = self._prototype_reference_name(semantic_type, context)
         elif array_descriptor is not None:
             wrapper = "Allocatable" if array_descriptor == "allocatable" else "Pointer"
             text = f"{context.contract(wrapper)}[{self._visit(native_array_data_type(semantic_type), context)}]"
@@ -293,7 +293,7 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"@{context.contract('pure')}")
         decorators.append(f"@{context.contract('prototype')}")
         return self._emit_callable(
-            name=prototype.name,
+            name=self._prototype_name(prototype, context),
             arguments=arguments,
             return_type=self._visit(return_type, context),
             decorator="\n".join(decorators) + "\n",
@@ -570,7 +570,11 @@ class PyiPrinter(ClassVisitor):
         # A prototype the contract needs for typing is not thereby published:
         # a private one names a signature the module keeps to itself, and the
         # annotations referring to it still resolve inside this file.
-        names.extend(str(prototype.name) for prototype in module.prototypes if not self._is_private(prototype))
+        names.extend(
+            self._prototype_name(prototype, context)
+            for prototype in module.prototypes
+            if not self._is_private(prototype)
+        )
         for variable in self._contract_items(module.variables):
             if getattr(variable, "visibility", "public") != "private":
                 names.append(self._module_variable_name(variable, context))
@@ -1876,6 +1880,24 @@ class PyiPrinter(ClassVisitor):
                 "run complete_python_export_policy before emission"
             )
         return str(reexport.python_name)
+
+    @staticmethod
+    def _prototype_name(prototype: SemanticPrototype, context: _PyiEmissionContext) -> str:
+        """Return the spelling a prototype is declared under in the contract."""
+        return completed_contract_name(prototype) if context.normalize_public_names else str(prototype.name)
+
+    @staticmethod
+    def _prototype_reference_name(semantic_type: SemanticType, context: _PyiEmissionContext) -> str:
+        """Return the spelling a callback annotation names its prototype by."""
+        if not context.normalize_public_names:
+            return str(semantic_type.name)
+        completed = semantic_type.metadata.get(CONTRACT_NAME_METADATA)
+        if completed is None:
+            raise ValueError(
+                f"Contract name for prototype reference {semantic_type.name!r} is incomplete; "
+                "run complete_python_export_policy before emission"
+            )
+        return str(completed)
 
     @staticmethod
     def _class_name(cls: SemanticClass, context: _PyiEmissionContext) -> str:

@@ -1,9 +1,11 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
 from prik.parsers.fortran import parse_fortran_project
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import FortranToIRConverter
 from prik.semantics.models import (
+    CONTRACT_NAME_METADATA,
     EXTERNAL_TYPE_REF_METADATA,
     PROTOTYPE_REF_METADATA,
     UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
@@ -96,9 +98,12 @@ end module callbacks
 
     explicit_callback = get_function(module, "explicit_case").arguments[0].semantic_type
     # A block written inside a procedure names a signature only that procedure
-    # can reach, so its contract identity is qualified by the owning scope.
-    assert explicit_callback.name == "explicit_case_callback"
+    # can reach, so its identity is qualified by the owning scope, and so is the
+    # contract spelling completion gives it.
     assert explicit_callback.metadata["prototype_ref"]["name"] == "callback"
+    assert explicit_callback.metadata["prototype_ref"]["declaring_scope"] == ("explicit_case",)
+    complete_python_export_policy(module)
+    assert explicit_callback.metadata[CONTRACT_NAME_METADATA] == "explicit_case_callback"
     assert [argument.name for argument in explicit_callback.metadata["arguments"]] == ["Int32"]
     assert explicit_callback.metadata["return"].name == "Int32"
 
