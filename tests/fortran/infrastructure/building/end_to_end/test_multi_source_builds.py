@@ -64,6 +64,11 @@ integer function box_value(item) result(out)
   type(box), intent(in) :: item
   out = item%value
 end function box_value
+function boxed(value) result(out)
+  integer, intent(in) :: value
+  type(box) :: out
+  out%value = value
+end function boxed
 end module box_ops
 """
 
@@ -358,8 +363,13 @@ def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
         str(entry.parent / "box_ops.pyi"),
         str(entry.parent / "shared_types.pyi"),
     ]
-    box = module.Box()
-    box.value = np.int32(7)
+    # The leaf publishes what its `__all__` states. The sibling type it
+    # imports for its signatures is bound under no name of its own, yet it is
+    # a real class its procedures return and accept.
+    assert not hasattr(module, "Box")
+    assert not hasattr(module, "box")
+    box = module.boxed(np.int32(7))
+    assert type(box).__name__ == "Box"
     assert module.box_value(box) == np.int32(7)
 
 

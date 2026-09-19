@@ -369,6 +369,7 @@ def _complete_ownership_policies(
                 procedure,
                 f"{procedure_scope}.{overload_set.name}.{procedure.name}",
                 derived_types=derived_types,
+                module_export=False,
             )
     # Build resolved module overload tables after every candidate is complete.
     overload_functions = {
@@ -718,6 +719,7 @@ def _complete_concrete_class_methods(
             method,
             function_owner_path,
             derived_types=derived_types,
+            module_export=False,
             class_call=calls.get(owner_path),
             polymorphic_variants=polymorphic_variants,
         )
@@ -805,6 +807,7 @@ def _complete_one_class_overload_method(
         owner_path,
         derived_types=derived_types,
         class_call=call,
+        module_export=False,
         polymorphic_variants=polymorphic_variants,
         native_dispatch_name=native_dispatch_name,
     )
@@ -1097,7 +1100,7 @@ def _complete_function(
     *,
     derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
     class_call: ClassMethodPolicy | None = None,
-    module_export: bool | None = None,
+    module_export: bool,
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> None:

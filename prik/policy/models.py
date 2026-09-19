@@ -1007,6 +1007,9 @@ class LifecyclePolicy:
     semantic_type_name: str
     result_position: int
     object_kind: ObjectKind
+    # The handoff of the transfer this action belongs to, which is what makes
+    # the value a derived object; its type's spelling does not.
+    derived: DerivedHandoffPolicy | None
     operation: LifecycleOperation = LifecycleOperation.WRITEBACK
 
 
@@ -1500,6 +1503,7 @@ if __name__ == "__main__":
         semantic_type_name="Float64",
         result_position=0,
         object_kind=ObjectKind.NUMPY_ARRAY,
+        derived=None,
     )
 
     print(f"Array policy: rank={example_array.rank}, shape={example_array.shape}, order={example_array.order}")

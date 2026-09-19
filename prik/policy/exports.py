@@ -73,17 +73,19 @@ def complete_python_export_policy(
         preserve_case=contract_named or preserves_source_case(module.origin.source_language),
     )
     for owner in _module_export_owners(module):
-        if getattr(owner, "visibility", "public") == "private":
-            continue
-        if stated is not None and str(owner.name) not in stated:
-            continue
         metadata = _owner_metadata(owner)
+        if getattr(owner, "visibility", "public") == "private" or (
+            stated is not None and str(owner.name) not in stated
+        ):
+            # Completion states every owner's decision, publishing nowhere
+            # included, so no later reader is left to answer it differently.
+            metadata.setdefault(models.PYTHON_EXPORTS_METADATA, [])
+            continue
         exports = metadata.get(models.PYTHON_EXPORTS_METADATA)
         if exports is None:
-            # No stage has projected this declaration yet, so it publishes
-            # itself in its own namespace. An empty list is not that: it is a
-            # stage having decided the declaration publishes nothing, and
-            # replacing it here would reverse that decision.
+            # No earlier stage placed this declaration, so it publishes itself
+            # in its own namespace. An empty list is not that: it is a stage
+            # having decided the declaration publishes nothing.
             exports = [{"namespace": (), "name": None}]
             metadata[models.PYTHON_EXPORTS_METADATA] = exports
         category = _owner_category(owner)
@@ -97,6 +99,10 @@ def complete_python_export_policy(
                 owner=f"{category} {owner.name}",
             )
             export["name"] = resolved_name
+    # A nested class is bound on its parent class, never in a namespace.
+    for parent in _all_classes(module.classes):
+        for nested in parent.classes:
+            nested.metadata.setdefault(models.PYTHON_EXPORTS_METADATA, [])
     _complete_reexport_names(module, naming, contract_named=contract_named)
     _complete_contract_names(
         module,
@@ -507,13 +513,21 @@ def _owner_category(owner) -> str:
     return "function"
 
 
-def completed_python_exports(
-    owner: models.SemanticFunction | models.SemanticVariable,
-    default_name: str,
-) -> tuple[PythonExportPolicy, ...]:
-    """Return stable local names grouped by their completed namespace path."""
+def completed_python_exports(owner) -> tuple[PythonExportPolicy, ...]:
+    """Return the placements completion recorded for one declaration.
+
+    This reads the decision and never makes it. Completion records one for
+    every declaration it reaches, publishing nowhere included, so an empty
+    result is an answer; a missing one means completion never ran.
+    """
+    recorded = owner.metadata.get(models.PYTHON_EXPORTS_METADATA)
+    if recorded is None:
+        raise ValueError(
+            f"Python export policy for {owner.name!r} is incomplete; "
+            "run complete_semantic_policies before wrapper planning"
+        )
     exports = []
-    for item in owner.metadata.get(models.PYTHON_EXPORTS_METADATA, ()):
+    for item in recorded:
         if not isinstance(item, dict):
             continue
         name = item.get("name")
@@ -522,19 +536,7 @@ def completed_python_exports(
                 f"Python export policy for {owner.name!r} is incomplete; "
                 "run complete_semantic_policies before wrapper planning"
             )
-        exports.append(
-            PythonExportPolicy(
-                namespace=export_namespace(item),
-                name=str(name),
-            )
-        )
-    if not exports and getattr(owner, "visibility", "public") != "private":
-        fallback = normalize_public_name(
-            default_name,
-            preserve_case=preserves_source_case(owner.origin.source_language),
-            category=_owner_category(owner),
-        )
-        exports.append(PythonExportPolicy((), fallback.name))
+        exports.append(PythonExportPolicy(namespace=export_namespace(item), name=str(name)))
     return tuple(dict.fromkeys(exports))
 
 
@@ -550,7 +552,7 @@ if __name__ == "__main__":
     )
     example_module = models.SemanticModule("math", functions=[example_function])
     complete_python_export_policy(example_module)
-    example_export = completed_python_exports(example_function, example_function.name)[0]
+    example_export = completed_python_exports(example_function)[0]
 
     print(f"Native semantic owner: {example_module.name}.{example_function.native_name}")
     print(f"Python export: {'.'.join((*example_export.namespace, example_export.name))}")

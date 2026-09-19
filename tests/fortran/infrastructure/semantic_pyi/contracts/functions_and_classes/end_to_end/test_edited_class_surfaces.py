@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_inline_pyi_contract_module,
     _compile_native_object,
     _import_from_build_dir,
     _sole_native_module,
@@ -127,3 +128,41 @@ def test_private_native_specific_without_overload_bind_fails_at_build(
     for target in missing_targets:
         assert target in error
     assert "not found in module" in error
+
+
+def test_nested_class_is_bound_on_its_parent_not_the_namespace(tmp_path: Path):
+    module, _ = _build_inline_pyi_contract_module(
+        tmp_path,
+        module_name="nesting",
+        source_text="""\
+module nesting
+  type :: outer
+    integer :: value
+  end type outer
+  type :: inner
+    integer :: value
+  end type inner
+end module nesting
+""",
+        contract_text="""\
+from prik.contracts import Int32
+
+class outer:
+    value: Int32
+
+    class inner:
+        def __init__(
+            self,
+            *,
+            value: Int32 = ...
+        ) -> None: ...
+
+        value: Int32
+""",
+    )
+
+    assert not hasattr(module, "inner")
+    assert module.outer.inner.__qualname__ == "outer.inner"
+    item = module.outer.inner(value=np.int32(3))
+    assert type(item) is module.outer.inner
+    assert item.value == np.int32(3)

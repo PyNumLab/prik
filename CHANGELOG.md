@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A contract publishes exactly its `__all__`. A type it left out -- such as
+  the sibling type a leaf contract imports for its signatures -- was still
+  bound in the built module under its own name, because export completion left
+  it undecided and wrapper policy defaulted an undecided declaration to
+  publishing itself. Completion now records every declaration's decision,
+  publishing nowhere included, and wrapper policy fails on one it never
+  completed. A type published nowhere still exists natively and as a Python
+  class, so the procedures taking and returning it work. A class written inside
+  another is bound on its parent (`module.outer.inner`) rather than in the
+  module namespace. A cleanup action on a returned derived object reads its
+  family from the transfer's derived handoff, so a result type written through
+  an import alias (`-> box` for `from .shared_types import Box as box`) no
+  longer fails planning.
+
 - Contract spelling is now completed once in post-IR policy for every
   declaration, including withheld helpers and class members. Generated
   contracts, cross-module import spelling, and class-surface policy read that

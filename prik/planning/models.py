@@ -332,6 +332,11 @@ class DerivedTypePlan(StageRecord):
 
     The planner supplies identity, native naming, fields, and abstractness;
     generated class assembly uses this record as the authoritative type shape.
+
+    A type exists whether or not it is published: a published signature may
+    take or return one. ``python_names`` are the names this namespace binds it
+    under, possibly none; ``contract_name`` is what the contract calls it; and
+    ``nested_in`` names the class it is bound on instead of a namespace.
     """
 
     owner_path: str
@@ -341,9 +346,27 @@ class DerivedTypePlan(StageRecord):
     native_type_name: str
     native_scope: str
     python_names: tuple[str, ...]
+    contract_name: str
     fields: tuple[DerivedFieldPlan, ...]
     bind_c: bool
     abstract: bool = False
+    nested_in: tuple[str, str] | None = None
+
+    @property
+    def definition_name(self) -> str:
+        """Return the name generated code defines and reaches this type by here."""
+        return type_definition_name(self.python_names, self.backend_symbol)
+
+
+def type_definition_name(python_names: tuple[str, ...], backend_symbol: str) -> str:
+    """Return the name generated code defines a type under and reaches it by.
+
+    A bound type is defined under the first name it is bound as. A type bound
+    under no public name is still defined -- generated code has to reach the
+    class to wrap a returned instance, subclass it, or check an argument -- so
+    it takes a private name no contract publishes.
+    """
+    return python_names[0] if python_names else f"_prik_type_{backend_symbol}"
 
 
 @dataclass

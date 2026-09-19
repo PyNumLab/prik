@@ -331,12 +331,7 @@ class CBindingGenerator(ClassVisitor):
         self._binding_allocatable_holder_owner_paths = frozenset(plan.binding.allocatable_holder_type_owner_paths)
         self._binding_pointer_holder_owner_paths = frozenset(plan.binding.pointer_holder_type_owner_paths)
         # Stage 2: complete the immutable name index consumed by Python-surface emission.
-        class_python_names = {
-            surface.type_identity: surface.python_names[0]
-            for namespace in plan.namespaces
-            for surface in namespace.classes
-            if surface.python_names
-        }
+        class_python_names = {derived.type_identity: derived.definition_name for derived in self._derived_types(plan)}
         # Generated code fetching a wrapped type out of its namespace needs the
         # name that namespace published it under. That is planned once, here,
         # so no emission site re-derives it from the native type name.

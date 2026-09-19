@@ -441,7 +441,7 @@ def build_derived_type_policy(
             else []
         )
     )
-    exports = completed_python_exports(semantic_class, semantic_class.name)
+    exports = completed_python_exports(semantic_class)
     native_type_name = str(semantic_class.native_name or semantic_class.name)
     native_scope = str(semantic_class.origin.native_scope or owner_path.split(".", 1)[0])
     return DerivedTypePolicy(
@@ -790,7 +790,7 @@ def build_module_overload_policy(
     return _overload_policy(
         native_scope,
         overload,
-        python_exports=completed_python_exports(first, overload.name),
+        python_exports=completed_python_exports(first),
         module_generic=True,
     )
 
@@ -1068,7 +1068,7 @@ def _module_variable_policy_base(
     return {
         "owner_path": owner_path,
         "name": variable.name,
-        "python_exports": completed_python_exports(variable, variable.name),
+        "python_exports": completed_python_exports(variable),
         "native_name": str(variable.origin.native_name or variable.name),
         "native_module": str(variable.origin.native_scope or module_name),
         "semantic_type_name": variable.semantic_type.name,
@@ -1703,7 +1703,7 @@ def build_function_wrapper_policy(
     owner_path: str,
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy] | None = None,
     class_call: ClassMethodPolicy | None = None,
-    module_export: bool | None = None,
+    module_export: bool,
     polymorphic_variants: Mapping[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> FunctionWrapperPolicy:
@@ -1802,7 +1802,10 @@ def build_function_wrapper_policy(
         blockers = (*blockers, *entrypoint_diagnostics)
     return FunctionWrapperPolicy(
         owner_path=owner_path,
-        python_exports=completed_python_exports(function, function.name),
+        # Only a module-level publication has module exports: a method is
+        # reached through its class and an overload candidate through its
+        # generic, whose own policies carry their placement.
+        python_exports=completed_python_exports(function) if module_export else (),
         native_name=native_name,
         native_invocation=native_invocation,
         native_operator=native_operator,
@@ -1819,9 +1822,7 @@ def build_function_wrapper_policy(
         release_gil=bool(function.metadata.get(models.RUNTIME_RELEASE_GIL_METADATA)),
         status_error=status_error,
         class_call=class_call,
-        module_export=(
-            not bool(function.metadata.get("fortran_type_bound_target")) if module_export is None else module_export
-        ),
+        module_export=module_export,
         supported=not blockers,
         arguments=tuple(arguments),
         results=results,
@@ -6101,6 +6102,7 @@ def _lifecycle_policies(
                 semantic_type_name=argument.semantic_type_name,
                 result_position=argument.result_position,
                 object_kind=argument.ownership.kind,
+                derived=argument.derived,
             )
             for phase in phases
         )
@@ -6126,6 +6128,7 @@ def _derived_result_lifecycle_policies(
             semantic_type_name=result.semantic_type_name,
             result_position=result.result_position,
             object_kind=result.ownership.kind,
+            derived=result.derived,
             operation=operation,
         )
 
@@ -8242,8 +8245,9 @@ if __name__ == "__main__":
         python_barrier_action=PythonBarrierAction.NONE,
         native_barrier_action=NativeBarrierAction.NONE,
     )
+    semantic_function.metadata[models.PYTHON_EXPORTS_METADATA] = [{"namespace": (), "name": "scale"}]
     print(f"before: math.scale({semantic_argument.name}): {semantic_argument.semantic_type.name} semantic IR")
-    policy = build_function_wrapper_policy(semantic_function, owner_path="math.scale")
+    policy = build_function_wrapper_policy(semantic_function, owner_path="math.scale", module_export=True)
     print(
         f"after: {policy.arguments[0].bridge_data_action.value}; "
         f"result={policy.results[0].direct_result_abi.value}; "

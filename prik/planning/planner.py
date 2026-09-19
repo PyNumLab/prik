@@ -146,6 +146,7 @@ from prik.planning.models import (
     CharacterLocalPlan,
     ScalarDescriptorResultPlan,
     TransformationPlan,
+    type_definition_name,
 )
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
@@ -234,6 +235,16 @@ class _ClassPolicyEntry:
                 }
             ),
         )
+
+
+@dataclass(frozen=True)
+class _TypePlacement:
+    """One namespace a type is defined in, the names binding it, and its parent."""
+
+    entry: _ClassPolicyEntry
+    namespace: tuple[str, ...]
+    python_names: tuple[str, ...]
+    nested_in: tuple[str, str] | None
 
 
 @dataclass(frozen=True)
@@ -367,7 +378,6 @@ class WrapperPlanner(ClassVisitor):
         # Initialize every class-backed index from one complete ordered collection.
         semantic_classes = _ClassPolicyCatalog.ordered_semantic_classes(module.classes)
         class_policies = _ClassPolicyCatalog.from_semantic_classes(semantic_classes)
-        self._derived_type_names = {semantic_class.name for semantic_class in semantic_classes}
         self._derived_field_plans: dict[str, DerivedFieldPlan] = {}
         self._complete_derived_backend_symbols(semantic_classes)
 
@@ -503,13 +513,14 @@ class WrapperPlanner(ClassVisitor):
         # Project ordinary module members independently from class-owned surfaces.
         functions = self._functions_by_namespace(module)
         variables, variable_publications = self._module_variables_and_publications(module)
+        placements = self._type_placements(class_policies)
 
         return (
             functions,
             variables,
             variable_publications,
-            self._derived_types_by_namespace(class_policies),
-            self._classes_by_namespace(module.name, class_policies),
+            self._derived_types_by_namespace(placements),
+            self._classes_by_namespace(module.name, placements),
             self._module_overloads_by_namespace(module),
         )
 
@@ -680,12 +691,12 @@ class WrapperPlanner(ClassVisitor):
         self._derived_backend_symbols = {
             policy.type_identity: self._derived_backend_symbol_for_policy(policy, counts) for policy in policies
         }
-        self._class_python_names = self._completed_class_python_names(policies)
-
-    @staticmethod
-    def _completed_class_python_names(policies: tuple[DerivedTypePolicy, ...]) -> dict[tuple[str, str], str]:
-        """Index the primary completed Python export for each native type."""
-        return {policy.type_identity: policy.python_names[0] for policy in policies if policy.python_names}
+        self._class_definition_names = {
+            policy.type_identity: type_definition_name(
+                policy.python_names, self._derived_backend_symbols[policy.type_identity]
+            )
+            for policy in policies
+        }
 
     @staticmethod
     def _derived_backend_symbol_for_policy(policy: DerivedTypePolicy, counts: Counter) -> str:
@@ -709,25 +720,56 @@ class WrapperPlanner(ClassVisitor):
     # Derived-type definitions, fields, and class surfaces.
     def _derived_types_by_namespace(
         self,
-        class_policies: _ClassPolicyCatalog,
+        placements: tuple[_TypePlacement, ...],
     ) -> dict[tuple[str, ...], list[DerivedTypePlan]]:
         """Project opaque types from completed class and field policies."""
         grouped = defaultdict(list)
-        for entry in class_policies.entries:
-            policy = entry.derived_policy
-            surface = entry.surface_policy
-            exports_by_namespace = defaultdict(list)
-            for export in policy.python_exports:
-                exports_by_namespace[export.namespace].append(export.name)
-            for namespace, python_names in exports_by_namespace.items():
-                grouped[namespace].append(
-                    self._derived_type_plan(
-                        policy,
-                        tuple(python_names),
-                        fields=surface.effective_fields,
-                    )
+        for placement in placements:
+            entry = placement.entry
+            grouped[placement.namespace].append(
+                self._derived_type_plan(
+                    entry.derived_policy,
+                    placement.python_names,
+                    fields=entry.surface_policy.effective_fields,
+                    contract_name=models.completed_contract_name(entry.semantic_class),
+                    nested_in=placement.nested_in,
                 )
+            )
         return grouped
+
+    @staticmethod
+    def _type_placements(class_policies: _ClassPolicyCatalog) -> tuple[_TypePlacement, ...]:
+        """Return each namespace a type is defined in, and the names bound there.
+
+        A type is defined in every namespace that publishes it, under the names
+        it is published as. A type that publishes nowhere still exists -- a
+        published signature may take or return one -- so it is defined once
+        without a public name: beside its parent class, which binds it, when it
+        is nested, and at the root otherwise.
+        """
+        parents = {id(child): entry for entry in class_policies.entries for child in entry.semantic_class.classes}
+        homes: dict[int, tuple[tuple[str, ...], ...]] = {}
+        placements: list[_TypePlacement] = []
+        # Entries arrive parents first, so a nested type finds its parent's home.
+        for entry in class_policies.entries:
+            published: dict[tuple[str, ...], list[str]] = defaultdict(list)
+            for export in entry.derived_policy.python_exports:
+                published[export.namespace].append(export.name)
+            parent = parents.get(id(entry.semantic_class))
+            if published:
+                found = tuple(
+                    _TypePlacement(entry, namespace, tuple(names), None) for namespace, names in published.items()
+                )
+            elif parent is not None:
+                found = tuple(
+                    _TypePlacement(entry, namespace, (), parent.derived_policy.type_identity)
+                    for namespace in homes[id(parent.semantic_class)]
+                )
+            else:
+                found = (_TypePlacement(entry, (), (), None),)
+            homes[id(entry.semantic_class)] = tuple(item.namespace for item in found)
+            placements.extend(found)
+        return tuple(placements)
 
     def _derived_type_plan(
         self,
@@ -735,6 +777,8 @@ class WrapperPlanner(ClassVisitor):
         python_names: tuple[str, ...],
         *,
         fields: tuple[DerivedFieldPolicy, ...] | None = None,
+        contract_name: str,
+        nested_in: tuple[str, str] | None,
     ) -> DerivedTypePlan:
         """Mechanically project one completed derived type and its public fields."""
         planned_fields = tuple(self._derived_field_plan(field) for field in (fields or policy.fields))
@@ -749,30 +793,27 @@ class WrapperPlanner(ClassVisitor):
             fields=planned_fields,
             bind_c=policy.bind_c,
             abstract=policy.abstract,
+            contract_name=contract_name,
+            nested_in=nested_in,
         )
 
     # Generated class surfaces compose Phase 8 types and ordinary function plans.
     def _classes_by_namespace(
         self,
         module_name: str,
-        class_policies: _ClassPolicyCatalog,
+        placements: tuple[_TypePlacement, ...],
     ) -> dict[tuple[str, ...], list[ClassSurfacePlan]]:
-        """Project completed class surfaces into their public namespaces."""
+        """Project each class surface beside the type it is defined with."""
         grouped = defaultdict(list)
-        for entry in class_policies.entries:
-            policy = entry.surface_policy
-            exports_by_namespace = defaultdict(list)
-            for export in policy.python_exports:
-                exports_by_namespace[export.namespace].append(export.name)
-            for namespace, python_names in exports_by_namespace.items():
-                grouped[namespace].append(
-                    self._class_surface_plan(
-                        module_name,
-                        namespace,
-                        entry,
-                        tuple(python_names),
-                    )
+        for placement in placements:
+            grouped[placement.namespace].append(
+                self._class_surface_plan(
+                    module_name,
+                    placement.namespace,
+                    placement.entry,
+                    placement.python_names,
                 )
+            )
         return grouped
 
     def _class_surface_plan(
@@ -1977,7 +2018,7 @@ class WrapperPlanner(ClassVisitor):
                 PolymorphicVariantPlan(
                     type_identity=identity,
                     backend_symbol=self._derived_backend_symbol(identity),
-                    python_name=self._class_python_names[identity],
+                    python_name=self._class_definition_names[identity],
                     abi_code=index,
                 )
                 for index, identity in enumerate(policy.variants, start=1)
@@ -2096,7 +2137,7 @@ class WrapperPlanner(ClassVisitor):
         policy: LifecyclePolicy,
     ) -> LifecycleActionPlan:
         """Return one transfer-owned action for function-wide ordering."""
-        family = self._datatype_family(policy.semantic_type_name)
+        family = self._transfer_datatype_family(policy.semantic_type_name, policy.derived)
         binding = None
         bridge = None
         if policy.phase is WritebackPhase.NATIVE_MUTATION:
@@ -2820,8 +2861,6 @@ class WrapperPlanner(ClassVisitor):
         try:
             return _DATATYPE_FAMILIES[semantic_type_name]
         except KeyError:
-            if semantic_type_name in getattr(self, "_derived_type_names", set()):
-                return DatatypeFamily.DERIVED
             raise ValueError(f"Unsupported first-lane scalar type {semantic_type_name!r}") from None
 
     def _transfer_datatype_family(

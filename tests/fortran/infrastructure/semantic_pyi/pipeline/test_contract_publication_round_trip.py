@@ -97,8 +97,9 @@ def test_reloading_a_contract_does_not_publish_what_all_leaves_out(generated_con
         for owner in (*reloaded.functions, *reloaded.overload_sets)
     }
     assert published["run"] == [{"namespace": (), "name": "run"}]
-    assert published["hidden_generic"] is None
-    assert published["hidden_one"] is None
+    # Completion records the decision to publish nowhere, not an absence.
+    assert published["hidden_generic"] == []
+    assert published["hidden_one"] == []
 
 
 def test_a_contract_read_back_and_written_again_states_the_same_surface(generated_contract: Path):
@@ -138,7 +139,7 @@ def test_a_stated_name_selects_a_declaration_by_exact_spelling(tmp_path: Path):
     complete_python_export_policy(module)
 
     assert [item.name for item in module.functions] == ["foo"]
-    assert module.functions[0].metadata.get(PYTHON_EXPORTS_METADATA) is None
+    assert module.functions[0].metadata.get(PYTHON_EXPORTS_METADATA) == []
 
 
 def test_a_declaration_already_projected_to_nothing_keeps_that_decision():

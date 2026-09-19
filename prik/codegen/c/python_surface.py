@@ -93,8 +93,8 @@ class PythonSurfaceEmitter(ClassVisitor):
 
     @staticmethod
     def _class_names(namespace: NamespacePlan) -> dict[tuple[str, str], str]:
-        """Index visible class names needed for inheritance rendering."""
-        return {surface.type_identity: surface.python_names[0] for surface in namespace.classes if surface.python_names}
+        """Index the names this namespace defines its classes under."""
+        return {derived.type_identity: derived.definition_name for derived in namespace.derived_types}
 
     def _direct_ops_names(self, namespace: NamespacePlan) -> dict[tuple[str, str], str]:
         """Index operation dictionaries inherited by generated subclasses."""
@@ -132,7 +132,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         ops_names: dict[tuple[str, str], str],
     ) -> str:
         """Return one opaque wrapper assembled from its completed class surface."""
-        name = derived.python_names[0]
+        name = derived.definition_name
         ops_name = self._direct_type_ops_name(derived)
         base = self._class_base_name(surface, class_names)
         base_ops = self._class_base_ops_name(surface, ops_names)
@@ -148,7 +148,32 @@ class PythonSurfaceEmitter(ClassVisitor):
         lines.extend(self._class_constructor_python_lines(surface))
         lines.extend(self._derived_class_member_python_lines(derived, surface))
         lines.extend(self._class_wrap_helper_python_lines(surface, name, ops_name))
+        lines.extend(self._unbound_class_python_lines(derived, class_names))
         return "\n".join(lines)
+
+    @staticmethod
+    def _unbound_class_python_lines(
+        derived: DerivedTypePlan,
+        class_names: dict[tuple[str, str], str],
+    ) -> tuple[str, ...]:
+        """Name a class bound under no public name, and bind it on its parent.
+
+        Such a class is defined under a private name, so it takes the name its
+        contract calls it by. A nested one is then reached through its parent
+        and qualified by it, as a class written inside another is in Python.
+        """
+        if derived.python_names:
+            return ()
+        name = derived.definition_name
+        contract = derived.contract_name
+        if derived.nested_in is None:
+            return (f"{name}.__name__ = {name}.__qualname__ = {contract!r}",)
+        parent = class_names[derived.nested_in]
+        return (
+            f"{name}.__name__ = {contract!r}",
+            f"{name}.__qualname__ = {parent}.__qualname__ + {'.' + contract!r}",
+            f"{parent}.{contract} = {name}",
+        )
 
     @staticmethod
     def _class_base_ops_name(
@@ -591,6 +616,7 @@ if __name__ == "__main__":
         native_type_name="state_t",
         native_scope="state",
         python_names=("State",),
+        contract_name="State",
         fields=(),
         bind_c=False,
     )

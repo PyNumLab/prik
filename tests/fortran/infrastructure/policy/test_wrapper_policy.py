@@ -122,6 +122,7 @@ def hidden_status() -> Int32: ...
     policy = build_function_wrapper_policy(
         function,
         owner_path="missing_hidden_projection.hidden_status",
+        module_export=True,
     )
 
     assert policy.results == ()

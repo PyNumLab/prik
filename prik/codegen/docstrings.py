@@ -31,6 +31,7 @@ from prik.planning.models import (
     ConstructorPlan,
     DatatypeFamily,
     DerivedFieldPlan,
+    DerivedTypePlan,
     FunctionPlan,
     ModulePlan,
     ModuleVariablePlan,
@@ -94,10 +95,9 @@ class WrapperDocstringBuilder:
         # way its namespace publishes it. Planning settled that name; indexing
         # it here keeps every rendered signature reading the same one.
         self._published_class_names = {
-            surface.type_identity[1].casefold(): surface.python_names[0]
+            derived.type_identity[1].casefold(): derived.contract_name
             for namespace in plan.namespaces
-            for surface in namespace.classes
-            if surface.python_names
+            for derived in namespace.derived_types
         }
         self._module_variables_by_owner = {variable.owner_path: variable for variable in plan.variables}
         # A publication can sort before the namespace that owns its canonical
@@ -121,8 +121,7 @@ class WrapperDocstringBuilder:
 
         derived_types = {item.type_identity: item for item in namespace.derived_types}
         for surface in namespace.classes:
-            derived_type = derived_types.get(surface.type_identity)
-            self._render_class_surface(surface, () if derived_type is None else derived_type.fields)
+            self._render_class_surface(surface, derived_types[surface.type_identity])
 
         if namespace.docstring is None:
             variable_publications = tuple(
@@ -168,9 +167,10 @@ class WrapperDocstringBuilder:
     def _render_class_surface(
         self,
         surface: ClassSurfacePlan,
-        fields: tuple[DerivedFieldPlan, ...],
+        derived_type: DerivedTypePlan,
     ) -> None:
         """Render one class's dependent records before its aggregate summary."""
+        fields = derived_type.fields
         for field in fields:
             self._render_field(field)
         for method in surface.methods:
@@ -186,10 +186,10 @@ class WrapperDocstringBuilder:
         if constructor.overload is not None:
             self._render_overload(constructor.overload)
         if constructor.docstring is None:
-            constructor.docstring = self.constructor(surface.python_names[0], constructor, fields)
+            constructor.docstring = self.constructor(derived_type.contract_name, constructor, fields)
         if surface.docstring is None:
             surface.docstring = self.class_surface(
-                surface.python_names[0],
+                derived_type.contract_name,
                 surface.type_identity[1],
                 constructor,
                 fields,

@@ -245,7 +245,13 @@ class outer:
     plan = WrapperPlanner().build(module)
     generated = WrapperGenerator().generate(plan)
 
-    assert tuple(derived.type_name for derived in plan.namespaces[0].derived_types) == ("outer", "inner")
+    planned_outer, planned_inner = plan.namespaces[0].derived_types
+    assert (planned_outer.type_name, planned_inner.type_name) == ("outer", "inner")
+    # The nested type is defined beside its parent and bound on it, not here.
+    assert planned_outer.python_names == ("outer",)
+    assert planned_inner.python_names == ()
+    assert planned_inner.nested_in == planned_outer.type_identity
+    assert planned_inner.contract_name == "inner"
     assert {source.path.suffix for source in generated.sources} == {".c", ".h", ".f90"}
 
 
