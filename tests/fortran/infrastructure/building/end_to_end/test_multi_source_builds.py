@@ -189,6 +189,9 @@ def _assert_combined_runtime(module) -> None:
     assert module.second_math.double_after_add(np.int32(4)) == np.int32(10)
     box = module.shared_types.make_box(np.int32(7))
     assert module.box_ops.box_value(box) == np.int32(7)
+    # `box_ops` returns a type `shared_types` defines, so the result is built
+    # from that namespace's class rather than looked for in its own.
+    assert type(module.box_ops.boxed(np.int32(8))) is module.shared_types.Box
 
 
 def test_multi_file_modules_build_one_merged_extension(tmp_path: Path):

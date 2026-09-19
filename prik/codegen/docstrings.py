@@ -95,7 +95,7 @@ class WrapperDocstringBuilder:
         # way its namespace publishes it. Planning settled that name; indexing
         # it here keeps every rendered signature reading the same one.
         self._published_class_names = {
-            derived.type_identity[1].casefold(): derived.contract_name
+            derived.type_identity: derived.contract_name
             for namespace in plan.namespaces
             for derived in namespace.derived_types
         }
@@ -937,10 +937,17 @@ class WrapperDocstringBuilder:
             return type_name
         return f"{type_name} | None" if signature else f"{type_name} or None"
 
-    def _published_class_name(self, semantic_type_name: object) -> str:
-        """Return the name a namespace publishes one wrapped type under."""
+    def _published_class_name(self, transfer) -> str:
+        """Return the name a namespace publishes one wrapped type under.
+
+        The type is found by its identity: two modules may each declare a type
+        spelled alike, and each is published under its own name.
+        """
+        derived = getattr(transfer, "derived", None)
+        handoff = getattr(derived, "handoff", derived)
+        identity = handoff.type_identity if handoff is not None else transfer.derived_type_identity
         index = getattr(self, "_published_class_names", {})
-        return index.get(str(semantic_type_name).casefold(), str(semantic_type_name))
+        return index.get(identity, str(transfer.semantic_type_name))
 
     def _base_type(self, transfer) -> str:
         """Map one completed transfer family and storage facet to public type text.
@@ -952,7 +959,7 @@ class WrapperDocstringBuilder:
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.CALLBACK:
             return self._callback_type(transfer.callback)
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.DERIVED:
-            return self._published_class_name(transfer.semantic_type_name)
+            return self._published_class_name(transfer)
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
         array_element = _ARRAY_ELEMENT_TYPES.get(transfer.semantic_type_name, scalar)
         handle = getattr(transfer, "native_array_handle", None)

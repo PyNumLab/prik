@@ -159,6 +159,13 @@ the catalogue to join each public class to its completed derived-type, surface,
 method, and overload policies. The catalogue is read-only: it maps existing
 owner paths to their semantic declarations without deciding policy again.
 
+Each type is defined in one namespace: the one publishing it, beside its
+parent class when it is nested and unpublished, and the root otherwise.
+Generated code taking or returning the type reaches its class and helpers
+there, so `WrapperGenerator` rejects a plan defining one type twice
+(`duplicate-derived-type-identity`). A derived module variable's private
+helpers are placed in that same namespace.
+
 The planner attaches class and overload callables to the function collections
 that need their native entrypoints. It completes generated symbols, adds every
 required parent namespace, and creates namespace plans in root-first path

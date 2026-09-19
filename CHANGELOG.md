@@ -7,6 +7,24 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A type is usable from every module whose procedures take or return it.
+  Generated code looked a type's class and wrapper helper up in the namespace
+  of the calling procedure, so `box_ops.boxed()` returning a `shared_types`
+  type raised `AttributeError`, and a callback result, a polymorphic or
+  generic argument, or a component of another module's type failed the same
+  way. The binding now retains the module object of each namespace defining a
+  type and fetches its class, wrapper helper, and operation maps there; a
+  derived module variable, which already worked this way, uses the same
+  mechanism. A plan that defines one type in two namespaces is rejected
+  (`duplicate-derived-type-identity`).
+
+- Two modules may each declare a type spelled alike. A type's constructor,
+  wrapper helper, and operation map were named after its native spelling, so
+  such a build failed with `Generated support procedure entrypoint symbols
+  are not unique`; they are now named after its backend symbol, which is
+  already qualified where native names collide. Docstrings find a type's
+  published name by its identity for the same reason.
+
 - The retired Boolean-array copy is removed. Policy stopped selecting a
   native-kind copy or a post-call low-bit normalization for logical arrays
   once a NumPy integer of the element's own width became their buffer, but

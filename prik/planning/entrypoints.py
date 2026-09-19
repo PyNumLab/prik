@@ -420,7 +420,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             self._operation(
                 surface.owner_path,
                 "class:create",
-                f"bind_c_prik_create_{surface.type_identity[1].casefold()}",
+                f"bind_c_prik_create_{surface.backend_symbol.casefold()}",
                 result=self._opaque_result(),
             )
             for surface in self.classes

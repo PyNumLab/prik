@@ -336,6 +336,10 @@ class DerivedTypePlan(StageRecord):
     take or return one. ``python_names`` are the names this namespace binds it
     under, possibly none; ``contract_name`` is what the contract calls it; and
     ``nested_in`` names the class it is bound on instead of a namespace.
+
+    A type is defined in one namespace only. Code taking or returning it can
+    live in any namespace, so generated code reaches the class and its helpers
+    in the namespace defining it rather than in its own.
     """
 
     owner_path: str
@@ -353,19 +357,14 @@ class DerivedTypePlan(StageRecord):
 
     @property
     def definition_name(self) -> str:
-        """Return the name generated code defines and reaches this type by here."""
-        return type_definition_name(self.python_names, self.backend_symbol)
+        """Return the name generated code defines and reaches this type by here.
 
-
-def type_definition_name(python_names: tuple[str, ...], backend_symbol: str) -> str:
-    """Return the name generated code defines a type under and reaches it by.
-
-    A bound type is defined under the first name it is bound as. A type bound
-    under no public name is still defined -- generated code has to reach the
-    class to wrap a returned instance, subclass it, or check an argument -- so
-    it takes a private name no contract publishes.
-    """
-    return python_names[0] if python_names else f"_prik_type_{backend_symbol}"
+        A bound type is defined under the first name it is bound as. A type
+        bound under no public name is still defined -- generated code has to
+        reach the class to wrap a returned instance, subclass it, or check an
+        argument -- so it takes a private name no contract publishes.
+        """
+        return self.python_names[0] if self.python_names else f"_prik_type_{self.backend_symbol}"
 
 
 @dataclass
@@ -464,6 +463,7 @@ class ClassSurfacePlan(StageRecord):
 
     owner_path: str
     type_identity: tuple[str, str]
+    backend_symbol: str
     python_names: tuple[str, ...]
     base_identities: tuple[tuple[str, str], ...]
     constructor: ConstructorPlan
@@ -1113,7 +1113,6 @@ class PolymorphicVariantPlan(StageRecord):
 
     type_identity: tuple[str, str]
     backend_symbol: str
-    python_name: str
     abi_code: int
 
 

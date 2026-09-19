@@ -340,6 +340,7 @@ class WrapperGenerator:
 
         # Validate graph-wide ordering, generated spellings, and header dependencies.
         diagnostics.extend(self._class_graph_diagnostics(plan))
+        diagnostics.extend(self._derived_type_identity_diagnostics(plan))
         diagnostics.extend(self._generated_symbol_diagnostics(plan))
         diagnostics.extend(self._required_header_diagnostics(plan))
         return tuple(diagnostics)
@@ -857,6 +858,15 @@ class WrapperGenerator:
                     )
                 seen.add(surface.type_identity)
         return tuple(diagnostics)
+
+    def _derived_type_identity_diagnostics(self, plan: ModulePlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require each type to be defined once, where generated code reaches it."""
+        counts = Counter(derived.type_identity for namespace in plan.namespaces for derived in namespace.derived_types)
+        return tuple(
+            self._diagnostic(plan.owner_path, "duplicate-derived-type-identity", identity)
+            for identity, count in counts.items()
+            if count > 1
+        )
 
     # Derived-type definition, field, and module validation.
     def _derived_type_diagnostics(self, plan: NamespacePlan) -> tuple[WrapperPlanDiagnostic, ...]:

@@ -44,10 +44,10 @@ def test_inheritance_and_polymorphism_are_completed_before_planning():
 
     assert circle.base_identities == (base.type_identity,)
     assert [field.name for field in derived.fields] == ["size", "radius"]
-    assert tuple(variant.python_name for variant in describe.arguments[0].polymorphic.variants) == (
-        "Box",
-        "Circle",
-        "Base_Shape",
+    assert tuple(variant.type_identity for variant in describe.arguments[0].polymorphic.variants) == (
+        _surface(plan, "Box").type_identity,
+        circle.type_identity,
+        base.type_identity,
     )
 
 
@@ -56,4 +56,14 @@ def test_invalid_class_graph_fails_before_emission():
     _surface(plan, "Circle").base_identities = (("missing", "base"),)
 
     with pytest.raises(ValueError, match="missing-or-late-class-base"):
+        WrapperGenerator().generate(plan)
+
+
+def test_a_type_defined_in_two_namespaces_fails_before_emission():
+    """Generated code reaches a type in the one namespace defining it."""
+    plan = _plan(INHERITANCE)
+    namespace = next(item for item in plan.namespaces if item.derived_types)
+    namespace.derived_types = (*namespace.derived_types, namespace.derived_types[0])
+
+    with pytest.raises(ValueError, match="duplicate-derived-type-identity"):
         WrapperGenerator().generate(plan)

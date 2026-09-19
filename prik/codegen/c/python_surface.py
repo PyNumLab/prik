@@ -147,7 +147,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         ]
         lines.extend(self._class_constructor_python_lines(surface))
         lines.extend(self._derived_class_member_python_lines(derived, surface))
-        lines.extend(self._class_wrap_helper_python_lines(surface, name, ops_name))
+        lines.extend(self._class_wrap_helper_python_lines(derived, ops_name))
         lines.extend(self._unbound_class_python_lines(derived, class_names))
         return "\n".join(lines)
 
@@ -226,16 +226,12 @@ class PythonSurfaceEmitter(ClassVisitor):
         """Flatten overload descriptors while preserving plan order."""
         return tuple(line for overload in overloads for line in self._class_overload_python_lines(overload))
 
-    def _class_wrap_helper_python_lines(
-        self,
-        surface: ClassSurfacePlan | None,
-        name: str,
-        ops_name: str,
-    ) -> tuple[str, ...]:
+    @staticmethod
+    def _class_wrap_helper_python_lines(derived: DerivedTypePlan, ops_name: str) -> tuple[str, ...]:
         """Render the sole helper that attaches existing opaque native storage."""
         return (
-            f"def {CBindingNames.class_wrap_helper(surface, fallback=name)}(capsule, owner=None, ops=None, origin='direct'):",
-            f"    value = object.__new__({name})",
+            f"def {CBindingNames.class_wrap_helper(derived.backend_symbol)}(capsule, owner=None, ops=None, origin='direct'):",
+            f"    value = object.__new__({derived.definition_name})",
             "    value._prik_capsule = capsule",
             "    value._prik_owner = owner",
             f"    value._prik_ops = {ops_name} if ops is None else ops",
@@ -278,7 +274,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         signature = f", *, {parameters}" if parameters else ""
         lines = [
             "    def __new__(cls, *args, **kwargs):",
-            f"        return {CBindingNames.class_create_method(surface)}()",
+            f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
             f"    def __init__(self{signature}):",
             f"        {surface.constructor.docstring!r}",
         ]
@@ -301,7 +297,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         parameters = self._callable_public_arguments(target)
         lines = [
             "    def __new__(cls, *args, **kwargs):",
-            f"        return {CBindingNames.class_create_method(surface)}()",
+            f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
             f"    def __init__(self{self._python_parameter_suffix(parameters)}):",
             f"        {surface.constructor.docstring!r}",
             "        _prik_arguments = {'self': self}",
@@ -324,7 +320,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         if overload.candidate_passed_objects and overload.candidate_passed_objects[0]:
             return (
                 "    def __new__(cls, *args, **kwargs):",
-                f"        return {CBindingNames.class_create_method(surface)}()",
+                f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
                 *self._class_overload_python_lines(
                     overload,
                     constructor=True,
@@ -565,14 +561,14 @@ class PythonSurfaceEmitter(ClassVisitor):
     @staticmethod
     def _direct_type_ops_name(derived: DerivedTypePlan) -> str:
         """Return the Python operation-map name for direct storage."""
-        return f"_prik_ops_{derived.type_name.casefold()}"
+        return CBindingNames.type_ops(derived.backend_symbol)
 
     def _module_proxy_ops_python_source(self, variable: ModuleVariablePlan) -> str:
         """Return one operation dictionary per reachable plain-module object path."""
         if variable.derived is None:
             return ""
         if variable.derived.access is ModuleObjectAccessMechanism.DIRECT_ADDRESS:
-            direct = f"_prik_ops_{variable.derived.handoff.type_name.casefold()}"
+            direct = CBindingNames.type_ops(variable.derived.handoff.backend_symbol)
             native_ops = CBindingNames.derived_origin_capsule_method(variable)
             return f"{CBindingNames.module_member_ops(variable, ())} = dict({direct}, _native_ops={native_ops}())"
         grouped: dict[tuple[str, ...], list[DerivedMemberPathPlan]] = {}
@@ -623,6 +619,7 @@ if __name__ == "__main__":
     example_surface = ClassSurfacePlan(
         owner_path="state.State",
         type_identity=example_identity,
+        backend_symbol="state_t",
         python_names=("State",),
         base_identities=(),
         constructor=ConstructorPlan(

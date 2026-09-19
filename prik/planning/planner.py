@@ -147,7 +147,6 @@ from prik.planning.models import (
     CharacterLocalPlan,
     ScalarDescriptorResultPlan,
     TransformationPlan,
-    type_definition_name,
 )
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
@@ -567,33 +566,29 @@ class WrapperPlanner(ClassVisitor):
             )
             for path in namespace_paths
         )
-        self._complete_variable_support_namespaces(module_name, variables, namespaces)
+        self._complete_variable_support_namespaces(variables, namespaces)
         return namespaces
 
     @staticmethod
     def _complete_variable_support_namespaces(
-        module_name: str,
         variables: tuple[ModuleVariablePlan, ...],
         namespaces: tuple[NamespacePlan, ...],
     ) -> None:
-        """Place private variable helpers without changing canonical ownership."""
-        type_paths: dict[tuple[str, str], list[tuple[str, ...]]] = defaultdict(list)
-        for namespace in namespaces:
-            for derived in namespace.derived_types:
-                type_paths[derived.type_identity].append(namespace.python_path)
+        """Place a derived variable's private helpers beside its type's own.
+
+        They wrap the variable with that type's class and extend its operation
+        map, so they live in the one namespace defining the type. Canonical
+        ownership does not move.
+        """
+        defined_in = {
+            derived.type_identity: namespace.python_path
+            for namespace in namespaces
+            for derived in namespace.derived_types
+        }
         for variable in variables:
-            if variable.derived is None:
-                variable.binding.support_namespace = ()
-                continue
-            identity = variable.derived.handoff.type_identity
-            candidates = type_paths.get(identity, [()])
-            native_scope = identity[0]
-            native_path = (
-                ()
-                if native_scope.casefold() == module_name.casefold()
-                else tuple(part.casefold() for part in native_scope.split(".") if part)
+            variable.binding.support_namespace = (
+                () if variable.derived is None else defined_in.get(variable.derived.handoff.type_identity, ())
             )
-            variable.binding.support_namespace = native_path if native_path in candidates else candidates[0]
 
     def _aliases_by_namespace(self, module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
         """Group each published re-export under the namespace that publishes it.
@@ -692,12 +687,6 @@ class WrapperPlanner(ClassVisitor):
         self._derived_backend_symbols = {
             policy.type_identity: self._derived_backend_symbol_for_policy(policy, counts) for policy in policies
         }
-        self._class_definition_names = {
-            policy.type_identity: type_definition_name(
-                policy.python_names, self._derived_backend_symbols[policy.type_identity]
-            )
-            for policy in policies
-        }
 
     @staticmethod
     def _derived_backend_symbol_for_policy(policy: DerivedTypePolicy, counts: Counter) -> str:
@@ -742,8 +731,10 @@ class WrapperPlanner(ClassVisitor):
     def _type_placements(class_policies: _ClassPolicyCatalog) -> tuple[_TypePlacement, ...]:
         """Return each namespace a type is defined in, and the names bound there.
 
-        A type is defined in every namespace that publishes it, under the names
-        it is published as. A type that publishes nowhere still exists -- a
+        A type is defined in the namespace that publishes it, under the names
+        it is published as. Generated code reaches a type in the one namespace
+        defining it, so a plan defining it in two is rejected. A type that
+        publishes nowhere still exists -- a
         published signature may take or return one -- so it is defined once
         without a public name: beside its parent class, which binds it, when it
         is nested, and at the root otherwise.
@@ -843,6 +834,7 @@ class WrapperPlanner(ClassVisitor):
         return ClassSurfacePlan(
             owner_path=policy.owner_path,
             type_identity=policy.type_identity,
+            backend_symbol=self._derived_backend_symbol(policy.type_identity),
             python_names=python_names,
             base_identities=policy.base_identities,
             constructor=constructor,
@@ -2045,7 +2037,6 @@ class WrapperPlanner(ClassVisitor):
                 PolymorphicVariantPlan(
                     type_identity=identity,
                     backend_symbol=self._derived_backend_symbol(identity),
-                    python_name=self._class_definition_names[identity],
                     abi_code=index,
                 )
                 for index, identity in enumerate(policy.variants, start=1)
