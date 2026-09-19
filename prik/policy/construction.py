@@ -66,7 +66,6 @@ from prik.policy.models import (
     RAW_STRING_ADDRESS_COPY_REASON,
     DERIVED_VALUE_COPY_REASON,
     LOGICAL_SCALAR_KIND_COPY_REASON,
-    LOGICAL_ARRAY_KIND_COPY_REASON,
     NativeEntrypointAction,
     DirectCABITypePolicy,
     DirectCABIPolicy,
@@ -78,7 +77,6 @@ from prik.policy.models import (
     ArgumentConversionPhase,
     BridgeDataAction,
     DirectResultABI,
-    ArrayWritebackABI,
     ScalarLogicalABI,
     ArrayLogicalABI,
     ArrayPythonLayout,
@@ -2477,7 +2475,7 @@ def _argument_declares_nullable_c_pointer(argument: ArgumentPolicy, semantic_typ
 
 def _argument_requests_native_write(argument: ArgumentPolicy) -> bool:
     """Return whether a completed contract expects native writes to be visible."""
-    return bool(argument.writable or argument.projects_result or argument.array_copy_out)
+    return bool(argument.writable or argument.projects_result)
 
 
 def _c_direct_scalar_name(semantic_type: models.SemanticType | None) -> str | None:
@@ -3065,10 +3063,7 @@ def _argument_policy(
     function = context.function
     argument_path = f"{context.owner_path}.{argument.name}"
     scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
-    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
-        argument,
-        decision,
-    )
+    array_logical_abi, array_native_type = _array_logical_argument_abi(argument)
     optional_mode = _optional_mode(argument, decision)
     callback = _callback_handoff_policy(argument)
     array_policy = _array_handoff_policy(
@@ -3147,15 +3142,6 @@ def _argument_policy(
             scalar_native_type=scalar_native_type,
             array_logical_abi=array_logical_abi,
             array_native_type=array_native_type,
-            array_copy_in=array_copy_in,
-            array_copy_out=array_copy_out,
-            array_writeback_abi=_array_writeback_abi(
-                argument.semantic_type,
-                decision,
-                boundary.handoff_mode,
-                array_policy,
-                array_logical_abi,
-            ),
             optional=argument.optional,
             optional_mode=boundary.optional_mode,
             conversion_phase=boundary.conversion_phase,
@@ -3272,7 +3258,7 @@ def _completed_argument_bridge_action(
         native_slot.value_kind if native_slot is not None else None,
     )
     action, reason = _derived_argument_bridge_data_action(derived, action, reason)
-    return _logical_argument_bridge_action(argument, decision, action, reason)
+    return _logical_argument_bridge_action(argument, action, reason)
 
 
 def _argument_boundary_policy(
@@ -3663,7 +3649,6 @@ def _hidden_result_candidate(
     )
     bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
         argument,
-        decision,
         bridge_data_action,
         bridge_copy_reason,
     )
@@ -3972,10 +3957,7 @@ def _projected_argument_slot(
     value_kind = _native_argument_value_kind(argument, mapping.value_kind or "arg")
     callback = _callback_handoff_policy(argument)
     scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
-    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
-        argument,
-        decision,
-    )
+    array_logical_abi, array_native_type = _array_logical_argument_abi(argument)
     derived = _argument_derived_handoff(argument, decision, callback, argument_path, derived_types)
     bridge_data_action, bridge_copy_reason = _completed_projected_bridge_action(
         argument,
@@ -4009,8 +3991,6 @@ def _projected_argument_slot(
             scalar_native_type=scalar_native_type,
             array_logical_abi=array_logical_abi,
             array_native_type=array_native_type,
-            array_copy_in=array_copy_in,
-            array_copy_out=array_copy_out,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -4046,7 +4026,7 @@ def _completed_projected_bridge_action(
         value_kind,
     )
     action, reason = _derived_argument_bridge_data_action(derived, action, reason)
-    return _logical_argument_bridge_action(argument, decision, action, reason)
+    return _logical_argument_bridge_action(argument, action, reason)
 
 
 def _native_slot_barrier_actions(
@@ -4138,15 +4118,11 @@ def _hidden_result_native_call_slot_policy(
     )
     bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
         argument,
-        decision,
         bridge_data_action,
         bridge_copy_reason,
     )
     scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
-    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
-        argument,
-        decision,
-    )
+    array_logical_abi, array_native_type = _array_logical_argument_abi(argument)
     blockers = (
         (f"native-call result slot {native_position} has no completed bridge data action",)
         if bridge_data_action is BridgeDataAction.BLOCKED
@@ -4171,8 +4147,6 @@ def _hidden_result_native_call_slot_policy(
             scalar_native_type=scalar_native_type,
             array_logical_abi=array_logical_abi,
             array_native_type=array_native_type,
-            array_copy_in=array_copy_in,
-            array_copy_out=array_copy_out,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -4296,10 +4270,7 @@ def _implicit_native_call_slot_policies(
             continue
         value_kind = _native_argument_value_kind(argument, "arg")
         scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
-        array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
-            argument,
-            decision,
-        )
+        array_logical_abi, array_native_type = _array_logical_argument_abi(argument)
         callback = argument.semantic_type.metadata.get(models.RESOLVED_CALLBACK_POLICY_METADATA)
         callback = callback if isinstance(callback, CallbackHandoffPolicy) else None
         derived = (
@@ -4329,7 +4300,6 @@ def _implicit_native_call_slot_policies(
             )
             bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
                 argument,
-                decision,
                 bridge_data_action,
                 bridge_copy_reason,
             )
@@ -4356,8 +4326,6 @@ def _implicit_native_call_slot_policies(
                 scalar_native_type=scalar_native_type,
                 array_logical_abi=array_logical_abi,
                 array_native_type=array_native_type,
-                array_copy_in=array_copy_in,
-                array_copy_out=array_copy_out,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
                 array=_array_handoff_policy(
@@ -7337,29 +7305,22 @@ def _scalar_logical_argument_abi(
 
 def _array_logical_argument_abi(
     argument: models.SemanticArgument,
-    decision: OwnershipDecision,
-) -> tuple[ArrayLogicalABI, str | None, bool, bool]:
-    """Complete native storage and directional copies for a Boolean array.
+) -> tuple[ArrayLogicalABI, str | None]:
+    """Complete the native storage one Boolean array is viewed as.
 
-    The helper consumes semantic type/origin facts and completed ownership.  It
-    returns the ABI selector, exact native spelling, and independent copy-in
-    and copy-out flags.  Exact ``c_bool`` arrays borrow the NumPy buffer; other
-    Fortran logical kinds require a bridge-local representation.
+    The buffer is a NumPy integer of the element's own width, so the native
+    pointer describes the caller's storage exactly for every logical kind, and
+    nothing is copied either way. A spelling the source did not record is left
+    unset; backend lowering then resolves the width from the semantic type.
     """
     semantic_type = argument.semantic_type
     if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) <= 0:
-        return ArrayLogicalABI.NOT_APPLICABLE, None, False, False
-    # The buffer is a NumPy integer of the element's own width, so the native
-    # pointer describes the caller's storage exactly and no directional copy is
-    # required for any logical kind.
-    # A spelling the source did not record is left unset; backend lowering then
-    # resolves the width from the semantic type itself.
-    return ArrayLogicalABI.C_BOOL_VIEW, _fortran_logical_native_type(argument), False, False
+        return ArrayLogicalABI.NOT_APPLICABLE, None
+    return ArrayLogicalABI.C_BOOL_VIEW, _fortran_logical_native_type(argument)
 
 
 def _logical_argument_bridge_action(
     argument: models.SemanticArgument,
-    decision: OwnershipDecision,
     action: BridgeDataAction,
     reason: str | None,
 ) -> tuple[BridgeDataAction, str | None]:
@@ -7367,9 +7328,6 @@ def _logical_argument_bridge_action(
     abi, _native_type = _scalar_logical_argument_abi(argument)
     if abi is ScalarLogicalABI.NATIVE_KIND_COPY:
         return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_SCALAR_KIND_COPY_REASON
-    array_abi, _native_type, _copy_in, _copy_out = _array_logical_argument_abi(argument, decision)
-    if array_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-        return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_ARRAY_KIND_COPY_REASON
     return action, reason
 
 
@@ -7515,28 +7473,6 @@ def _argument_handoff_mode(decision: OwnershipDecision) -> ArgumentHandoffMode:
 
 
 # Ordinary-array handoff policy.
-def _array_writeback_abi(
-    semantic_type: models.SemanticType,
-    decision: OwnershipDecision,
-    handoff_mode: ArgumentHandoffMode,
-    array: ArrayHandoffPolicy | None,
-    logical_abi: ArrayLogicalABI,
-) -> ArrayWritebackABI:
-    """Complete mutable ordinary-array byte normalization before planning.
-
-    A Boolean array needs no more than any other kind.  Its elements already
-    hold the zero or one a C ``_Bool`` is defined to hold, because the compiler
-    profiles request the option that guarantees it, so there is nothing left to
-    reduce.  Reducing anyway could not help a translation unit built without
-    that option either: such a compiler represents false as the complement of
-    true, which no test applied here could tell from a true value.
-    """
-    del logical_abi
-    if array is None or handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or not decision.mutates_native:
-        return ArrayWritebackABI.NOT_APPLICABLE
-    return ArrayWritebackABI.NATIVE_ARRAY
-
-
 def _array_handoff_policy(
     semantic_type: models.SemanticType,
     *,

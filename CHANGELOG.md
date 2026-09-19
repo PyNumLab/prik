@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The retired Boolean-array copy is removed. Policy stopped selecting a
+  native-kind copy or a post-call low-bit normalization for logical arrays
+  once a NumPy integer of the element's own width became their buffer, but
+  the `NATIVE_KIND_COPY` array ABI, the `array_copy_in`/`array_copy_out`
+  plan fields, the array writeback ABI, and the bridge code lowering them
+  remained, reachable from no completed plan.
+
 - A generic owns its Python export decision the way every other declaration
   does, in its own metadata. It was stored on the generic's first specific,
   so three readers each reached through that specific and a generic without

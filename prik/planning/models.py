@@ -36,7 +36,6 @@ from prik.policy.models import (
     ArrayLogicalABI,
     ArrayEntrypointABI,
     ArrayPythonLayout,
-    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
@@ -1092,8 +1091,6 @@ class NativeEntrypointProjectedSlotPlan(StageRecord):
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
     array_native_type: str | None = None
-    array_copy_in: bool = False
-    array_copy_out: bool = False
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -1284,9 +1281,6 @@ class ArgumentTransferPlan(StageRecord):
     scalar_native_type: str | None
     array_logical_abi: ArrayLogicalABI
     array_native_type: str | None
-    array_copy_in: bool
-    array_copy_out: bool
-    array_writeback_abi: ArrayWritebackABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
     transfer_mode: TransferMode

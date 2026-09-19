@@ -26,8 +26,6 @@ from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayEntrypointABI,
-    ArrayLogicalABI,
-    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackResultAction,
@@ -645,8 +643,6 @@ class FortranBridgeGenerator(ClassVisitor):
             *self._derived_pointer_call_initializers(plan),
             *function_body,
             *self._logical_scalar_argument_finalizers(plan),
-            *self._logical_array_argument_finalizers(plan),
-            *self._array_writeback_finalizers(plan),
             *self._derived_pointer_call_finalizers(plan),
             *self._required_descriptor_finalizers(plan),
             *self._string_value_finalizers(plan),
@@ -696,7 +692,6 @@ class FortranBridgeGenerator(ClassVisitor):
                     *self._logical_scalar_argument_initializers(plan),
                     *self._opaque_address_initializers(plan),
                     *self._array_initializers(plan),
-                    *self._logical_array_argument_initializers(plan),
                     *self._raw_array_address_initializers(plan),
                     *self._string_value_initializers(plan),
                     *self._string_address_initializers(plan),
@@ -4662,7 +4657,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 return f"{name}_call_pointer"
             return name
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
-            return self._array_native_argument_expression(plan)
+            return self._array_boundary_argument_expression(plan)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             handle = plan.native_array_handle
             if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
@@ -4770,16 +4765,6 @@ class FortranBridgeGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
     ) -> tuple[FortranCall | FortranAssignment | FortranIf, ...]:
         """Copy only when completed policy requires a different native representation."""
-        if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-            nodes: list[FortranCall | FortranAssignment | FortranIf] = list(self._array_pointer_initializer_nodes(plan))
-            if plan.array_copy_in:
-                nodes.append(
-                    FortranAssignment(
-                        self._logical_array_native_name(plan),
-                        CodeExpression(self._array_boundary_argument_expression(plan)),
-                    )
-                )
-            return tuple(nodes)
         if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
             name = plan.entrypoint.parameter_name
             return (FortranAssignment(f"{name}_native", CodeExpression(name)),)
@@ -5043,193 +5028,7 @@ class FortranBridgeGenerator(ClassVisitor):
                             ("pointer", self._array_dimension_attribute(array.rank)),
                         )
                     )
-                if argument.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-                    if not argument.array_native_type:
-                        raise ValueError(f"Logical array {argument.owner_path!r} has no native type spelling")
-                    declarations.append(
-                        FortranDeclaration(
-                            self._logical_array_native_name(argument),
-                            argument.array_native_type,
-                            (self._logical_array_dimension_attribute(argument),),
-                        )
-                    )
-            if argument.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8:
-                declarations.append(
-                    FortranDeclaration(
-                        self._logical_array_byte_pointer_name(argument),
-                        self._logical_array_integer_type(argument.semantic_type_name),
-                        ("pointer", "dimension(:)"),
-                    )
-                )
         return tuple(declarations)
-
-    def _logical_array_argument_initializers(
-        self,
-        plan: FunctionPlan,
-    ) -> tuple[FortranAssignment, ...]:
-        """Copy required one-byte Boolean inputs into exact-kind native arrays."""
-        return tuple(
-            FortranAssignment(
-                self._logical_array_native_name(argument),
-                CodeExpression(self._array_boundary_argument_expression(argument)),
-            )
-            for argument in plan.arguments
-            if argument.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY
-            and argument.array_copy_in
-            and argument.entrypoint.optional_mode is OptionalMode.REQUIRED
-        )
-
-    def _logical_array_argument_finalizers(
-        self,
-        plan: FunctionPlan,
-    ) -> tuple[FortranAssignment | FortranIf, ...]:
-        """Copy exact-kind logical outputs into canonical one-byte storage.
-
-        ``merge`` converts truth values while assigning them to the original
-        ``logical(c_bool)`` view, so copy-out and canonicalization share one
-        array traversal.  Optional buffers are written only when present.
-        """
-        finalizers = []
-        for argument in plan.arguments:
-            if argument.array_logical_abi is not ArrayLogicalABI.NATIVE_KIND_COPY or not argument.array_copy_out:
-                continue
-            target = self._array_boundary_argument_expression(argument)
-            native = self._logical_array_native_name(argument)
-            assignment = FortranAssignment(
-                target,
-                CodeExpression(f"merge(.true._c_bool, .false._c_bool, {native})"),
-            )
-            if argument.entrypoint.optional_mode is OptionalMode.REQUIRED:
-                finalizers.append(assignment)
-            else:
-                finalizers.append(FortranIf(CodeExpression(self._presence_condition(argument)), body=(assignment,)))
-        return tuple(finalizers)
-
-    @staticmethod
-    def _logical_array_native_name(argument: ArgumentTransferPlan) -> str:
-        """Return the bridge-local exact-kind array name for ``argument``."""
-        return f"{argument.entrypoint.parameter_name}_native"
-
-    def _logical_array_dimension_attribute(self, argument: ArgumentTransferPlan) -> str:
-        """Render automatic-array extents in the completed native orientation."""
-        array = argument.array
-        if array is None or array.rank is None:
-            raise ValueError(f"Logical array {argument.owner_path!r} requires a concrete rank")
-        name = argument.entrypoint.parameter_name
-        extents = [f"{name}_extent_{axis}" for axis in range(array.rank)]
-        if array.native_order == "ORDER_C":
-            extents.reverse()
-        return f"dimension({', '.join(extents)})"
-
-    def _array_writeback_finalizers(
-        self,
-        plan: FunctionPlan,
-    ) -> tuple[FortranAssignment | FortranCall | FortranIf | FortranSelectCase, ...]:
-        """Normalize mutable array bytes through their completed writeback ABI."""
-        finalizers = []
-        for argument in plan.arguments:
-            match argument.array_writeback_abi:
-                case ArrayWritebackABI.NOT_APPLICABLE | ArrayWritebackABI.NATIVE_ARRAY:
-                    continue
-                case ArrayWritebackABI.LOGICAL_LOW_BIT_INT8:
-                    nodes = self._logical_array_writeback_nodes(argument)
-                case _:
-                    raise ValueError(
-                        f"Unsupported array writeback ABI for {argument.owner_path!r}: {argument.array_writeback_abi!r}"
-                    )
-            if argument.entrypoint.optional_mode is OptionalMode.REQUIRED:
-                finalizers.extend(nodes)
-            else:
-                finalizers.append(FortranIf(CodeExpression(self._presence_condition(argument)), body=nodes))
-        return tuple(finalizers)
-
-    def _logical_array_writeback_nodes(
-        self,
-        argument: ArgumentTransferPlan,
-    ) -> tuple[FortranAssignment | FortranCall | FortranSelectCase, ...]:
-        """Associate raw Boolean storage and retain only each element's truth bit."""
-        array = argument.array
-        if array is None:
-            raise ValueError(f"Logical array {argument.owner_path!r} has no handoff")
-        if array.rank is not None:
-            return self._logical_array_writeback_for_rank(argument, array.rank)
-        name = argument.entrypoint.parameter_name
-        cases = tuple(
-            FortranCase(
-                rank,
-                self._logical_array_writeback_for_rank(argument, rank),
-            )
-            for rank in range(1, 16)
-        )
-        return (FortranSelectCase(CodeExpression(f"{name}_rank"), (*cases, FortranCase(None, ()))),)
-
-    def _logical_array_writeback_for_rank(
-        self,
-        argument: ArgumentTransferPlan,
-        rank: int,
-    ) -> tuple[FortranCall | FortranAssignment, ...]:
-        """Return logical-array writeback nodes for one rank using the completed ABI conversion action."""
-        name = argument.entrypoint.parameter_name
-        byte_pointer = self._logical_array_byte_pointer_name(argument)
-        byte_count = " * ".join(f"{name}_extent_{axis}" for axis in range(rank))
-        return (
-            FortranCall(
-                "c_f_pointer",
-                (
-                    CodeExpression(f"bound_{name}"),
-                    CodeExpression(byte_pointer),
-                    CodeExpression(f"[{byte_count}]"),
-                ),
-            ),
-            FortranAssignment(
-                byte_pointer,
-                CodeExpression(self._logical_array_canonical_expression(argument.semantic_type_name, byte_pointer)),
-            ),
-        )
-
-    @staticmethod
-    def _logical_array_integer_type(semantic_type_name: str) -> str:
-        """Return the integer type covering one Boolean element's own width.
-
-        The mask reinterprets the caller's buffer, so it has to step by the
-        element width rather than by bytes: a `logical(4)` array is four-byte
-        integers, not four times as many one-byte ones.
-        """
-        return {
-            "Bool": "integer(c_int8_t)",
-            "Bool8": "integer(c_int8_t)",
-            "Bool16": "integer(c_int16_t)",
-            "Bool32": "integer(c_int32_t)",
-            "Bool64": "integer(c_int64_t)",
-        }[semantic_type_name]
-
-    @staticmethod
-    def _logical_array_kind_suffix(semantic_type_name: str) -> str:
-        """Return the integer kind suffix matching one Boolean element's width."""
-        return {
-            "Bool": "c_int8_t",
-            "Bool8": "c_int8_t",
-            "Bool16": "c_int16_t",
-            "Bool32": "c_int32_t",
-            "Bool64": "c_int64_t",
-        }[semantic_type_name]
-
-    def _logical_array_canonical_expression(self, semantic_type_name: str, target: str) -> str:
-        """Return the expression reducing Boolean storage to zero and one.
-
-        The rule is C's: any non-zero value is true, which is what converting to
-        ``_Bool`` produces and what NumPy, Python and C all read back. It is not
-        a low-bit test -- that would call ``2`` false, disagreeing with every one
-        of them -- and it maps both representations compilers emit, ``1`` and
-        ``-1``, onto the single value the interoperable type is defined to hold.
-        """
-        kind = self._logical_array_kind_suffix(semantic_type_name)
-        return f"merge(1_{kind}, 0_{kind}, {target} /= 0_{kind})"
-
-    @staticmethod
-    def _logical_array_byte_pointer_name(argument: ArgumentTransferPlan) -> str:
-        """Return the bridge-local byte-pointer name for one logical-array rank conversion."""
-        return f"{argument.entrypoint.parameter_name}_logical_bytes"
 
     def _array_initializers(self, plan: FunctionPlan) -> tuple[FortranCall | FortranIf, ...]:
         """Associate each completed ordinary array data/extent handoff."""
@@ -5382,12 +5181,6 @@ class FortranBridgeGenerator(ClassVisitor):
         """Name the bridge pointer, separating the buffer a section is cut from."""
         name = argument.entrypoint.parameter_name
         return f"{name}_base" if argument.array is not None and argument.array.contiguous is False else name
-
-    def _array_native_argument_expression(self, argument: ArgumentTransferPlan) -> str:
-        """Pass exact-kind logical storage or the planned boundary array view."""
-        if argument.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-            return self._logical_array_native_name(argument)
-        return self._array_boundary_argument_expression(argument)
 
     def _array_boundary_argument_expression(self, argument: ArgumentTransferPlan) -> str:
         """Return the array the native call receives: a buffer or a section of one."""

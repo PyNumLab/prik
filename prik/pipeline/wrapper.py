@@ -38,9 +38,7 @@ from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayEntrypointABI,
-    ArrayLogicalABI,
     ArrayPythonLayout,
-    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
@@ -2015,7 +2013,6 @@ class WrapperGenerator:
             *self._optional_argument_diagnostics(plan),
             *self._argument_family_diagnostics(plan, available_roles),
             *self._argument_transformation_diagnostics(plan),
-            *self._array_writeback_abi_diagnostics(plan),
             *self._argument_data_action_diagnostics(plan),
             *self._bridge_data_diagnostics(
                 plan.owner_path,
@@ -2024,28 +2021,6 @@ class WrapperGenerator:
             ),
         ]
         return tuple(diagnostics)
-
-    def _array_writeback_abi_diagnostics(
-        self,
-        plan: ArgumentTransferPlan,
-    ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate completed mutable-array normalization without selecting it."""
-        expected = ArrayWritebackABI.NOT_APPLICABLE
-        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER and (
-            plan.mutates_native or self._publishes_array_replacement(plan)
-        ):
-            # Every element type is written back the same way: a Boolean one
-            # already holds the zero or one its interoperable form requires.
-            expected = ArrayWritebackABI.NATIVE_ARRAY
-        if plan.array_writeback_abi is expected:
-            return ()
-        return (
-            self._diagnostic(
-                plan.owner_path,
-                "invalid-array-writeback-abi",
-                f"{plan.array_writeback_abi.value}; expected {expected.value}",
-            ),
-        )
 
     # Layer-owned representation transformation validation.
     def _argument_transformation_diagnostics(
@@ -2827,16 +2802,6 @@ class WrapperGenerator:
                     slot.array_native_type,
                 )
             )
-        if slot.array_copy_in != plan.array_copy_in:
-            diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-array-copy-in", slot.array_copy_in))
-        if slot.array_copy_out != plan.array_copy_out:
-            diagnostics.append(
-                self._diagnostic(
-                    plan.owner_path,
-                    "inconsistent-array-copy-out",
-                    slot.array_copy_out,
-                )
-            )
         return tuple(diagnostics)
 
     def _argument_slot_consistency_diagnostics(
@@ -2879,8 +2844,6 @@ class WrapperGenerator:
         """Return the data action implied by completed orthogonal selectors."""
         if plan.callback is not None:
             return BridgeDataAction.DIRECT_TRANSFER
-        if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-            return BridgeDataAction.COPY_REPRESENTATION
         if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
             return BridgeDataAction.COPY_REPRESENTATION
         if self._uses_typed_derived_value(plan):
@@ -3601,12 +3564,7 @@ class WrapperGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-array-handoff-mode", plan.entrypoint.handoff_mode.value)
             )
-        expected_data_action = (
-            BridgeDataAction.COPY_REPRESENTATION
-            if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY
-            else BridgeDataAction.ASSOCIATE_VIEW
-        )
-        if plan.bridge.data_action is not expected_data_action:
+        if plan.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-array-data-action", plan.bridge.data_action.value)
             )
