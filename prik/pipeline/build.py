@@ -62,13 +62,11 @@ from prik.semantics.models import (
     PYTHON_EXPORTS_PREPARED_METADATA,
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     ProcedureOverloadSet,
-    SemanticClass,
     SemanticFunction,
     SemanticImport,
     SemanticModule,
     SemanticPrototype,
     SemanticReexport,
-    SemanticVariable,
     _module_semantic_types,
 )
 from prik.semantics.native_contract import NATIVE_CONTRACT_PREPARED_METADATA, validate_pyi_native_contract
@@ -2311,32 +2309,14 @@ def _module_declarations(module: SemanticModule) -> tuple[object, ...]:
     return (*module.variables, *module.functions, *module.overload_sets, *module.classes)
 
 
-def _declaration_metadata(declaration: object) -> dict[str, object]:
-    """Return the mutable metadata dictionary for one supported declaration.
-
-    Overload sets use their first candidate's metadata because that is where
-    their shared export projection is stored.  Unsupported objects raise
-    ``TypeError`` rather than silently lose metadata.
-    """
-    if isinstance(declaration, ProcedureOverloadSet):
-        if not declaration.procedures:
-            return {}
-        return declaration.procedures[0].metadata
-    if isinstance(declaration, SemanticVariable | SemanticFunction | SemanticClass):
-        return declaration.metadata
-    raise TypeError(f"Unsupported semantic declaration: {type(declaration).__name__}")
-
-
 def _declaration_exports(declaration: object) -> list[dict[str, object]]:
     """Return and initialize the declaration's mutable Python export list."""
-    metadata = _declaration_metadata(declaration)
-    return metadata.setdefault(PYTHON_EXPORTS_METADATA, [])
+    return declaration.metadata.setdefault(PYTHON_EXPORTS_METADATA, [])
 
 
 def _set_declaration_exports(declaration: object, exports: list[dict[str, object]]) -> None:
     """Replace one declaration's stored Python export projection in place."""
-    metadata = _declaration_metadata(declaration)
-    metadata[PYTHON_EXPORTS_METADATA] = exports
+    declaration.metadata[PYTHON_EXPORTS_METADATA] = exports
 
 
 def _apply_source_python_exports(modules: list[SemanticModule]) -> None:

@@ -289,18 +289,7 @@ def _is_entry_export_reachable(declaration: object) -> bool:
     """Keep private declarations and public declarations selected by entry exports."""
     if getattr(declaration, "visibility", "public") == "private":
         return True
-    return bool(_entry_exports(declaration))
-
-
-def _entry_exports(declaration: object) -> object:
-    """Return a declaration's entry-export metadata, with overloads using their first procedure."""
-    if isinstance(declaration, models.ProcedureOverloadSet):
-        if not declaration.procedures:
-            return ()
-        return declaration.procedures[0].metadata.get(models.PYTHON_EXPORTS_METADATA, ())
-    if isinstance(declaration, models.SemanticVariable | models.SemanticFunction | models.SemanticClass):
-        return declaration.metadata.get(models.PYTHON_EXPORTS_METADATA, ())
-    raise TypeError(f"Unsupported semantic declaration: {type(declaration).__name__}")
+    return bool(declaration.metadata.get(models.PYTHON_EXPORTS_METADATA, ()))
 
 
 def _complete_ownership_policies(

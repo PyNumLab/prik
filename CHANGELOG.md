@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- A generic owns its Python export decision the way every other declaration
+  does, in its own metadata. It was stored on the generic's first specific,
+  so three readers each reached through that specific and a generic without
+  specifics could not record a decision at all.
+
 - A prototype's contract spelling is completed in post-IR policy, in the same
   ledger as every other name, rather than allocated while Fortran source is
   converted. Conversion keeps a prototype's identity -- its module, declaring

@@ -76,7 +76,7 @@ def complete_python_export_policy(
         preserve_case=contract_named or preserves_source_case(module.origin.source_language),
     )
     for owner in _module_export_owners(module):
-        metadata = _owner_metadata(owner)
+        metadata = owner.metadata
         if getattr(owner, "visibility", "public") == "private" or (
             stated is not None and str(owner.name) not in stated
         ):
@@ -396,7 +396,7 @@ def _own_export(module: models.SemanticModule, owner) -> tuple[tuple[str, ...], 
     it, which names nothing in its own contract.
     """
     home = {(), _declaring_namespace(module, owner)}
-    for export in _owner_metadata(owner).get(models.PYTHON_EXPORTS_METADATA, ()) or ():
+    for export in owner.metadata.get(models.PYTHON_EXPORTS_METADATA, ()) or ():
         if not isinstance(export, dict) or export.get("name") is None:
             continue
         namespace = tuple(part.casefold() for part in export_namespace(export))
@@ -748,13 +748,6 @@ def contract_names_by_source(module: models.SemanticModule) -> dict[str, str]:
         (str(reexport.local_name), str(reexport.python_name or reexport.local_name)) for reexport in module.reexports
     )
     return names
-
-
-def _owner_metadata(owner) -> dict[str, object]:
-    """Return the metadata mapping that owns one export policy."""
-    if isinstance(owner, models.ProcedureOverloadSet):
-        return owner.procedures[0].metadata if owner.procedures else {}
-    return owner.metadata
 
 
 def _owner_category(owner) -> str:

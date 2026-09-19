@@ -781,16 +781,13 @@ def build_module_overload_policy(
     overload: models.ProcedureOverloadSet,
 ) -> OverloadPolicy:
     """Complete the stable owner and Python exports for one module generic."""
-    if not overload.procedures:
-        return _overload_policy(overload.native_scope or module.name, overload, module_generic=True)
-    first = overload.procedures[0]
     # A generic extending an imported one holds specifics from another module,
     # so the declared scope names the owner rather than the first specific.
-    native_scope = str(overload.native_scope or first.origin.native_scope or module.name)
+    first_scope = overload.procedures[0].origin.native_scope if overload.procedures else None
     return _overload_policy(
-        native_scope,
+        str(overload.native_scope or first_scope or module.name),
         overload,
-        python_exports=completed_python_exports(first),
+        python_exports=completed_python_exports(overload),
         module_generic=True,
     )
 

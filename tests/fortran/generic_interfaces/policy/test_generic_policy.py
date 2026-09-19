@@ -51,3 +51,35 @@ def convert(value: Float64) -> Float64: ...
         for procedure in module.overload_sets[0].procedures
     ]
     assert [policy.native_name for policy in policies] == ["convert_integer", "convert"]
+
+
+def test_a_generic_owns_its_export_decision_like_every_declaration():
+    """The decision lives on the generic, not on whichever specific came first.
+
+    Keeping it on the first candidate made a generic without candidates unable
+    to record one at all, and left the generic's own metadata empty.
+    """
+    from prik.policy.exports import complete_python_export_policy
+    from prik.semantics.models import PYTHON_EXPORTS_METADATA, ProcedureOverloadSet, SemanticModule
+
+    module = parse_pyi_text(
+        """
+from prik.contracts import Addr, Arg, Int32, native_call, overload
+
+@native_call([Addr(Arg(0))])
+def convert_i(x: Int32) -> Int32: ...
+
+@overload("convert_i")
+def convert(x: Int32) -> Int32: ...
+""",
+        module_name="owned_generic",
+    )
+    complete_python_export_policy(module)
+    generic = module.overload_sets[0]
+
+    assert generic.metadata[PYTHON_EXPORTS_METADATA] == [{"namespace": (), "name": "convert"}]
+    assert module.functions[0].metadata[PYTHON_EXPORTS_METADATA] == [{"namespace": (), "name": "convert_i"}]
+
+    empty = SemanticModule(name="placeholder", overload_sets=[ProcedureOverloadSet(name="later", procedures=[])])
+    complete_python_export_policy(empty)
+    assert empty.overload_sets[0].metadata[PYTHON_EXPORTS_METADATA] == [{"namespace": (), "name": "later"}]

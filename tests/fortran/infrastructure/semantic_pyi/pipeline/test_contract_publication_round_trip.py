@@ -15,7 +15,6 @@ from prik.policy.exports import complete_python_export_policy, contract_names_by
 from prik.printers.pyi import PyiPrinter
 from prik.semantics.models import (
     PYTHON_EXPORTS_METADATA,
-    ProcedureOverloadSet,
     SemanticArgument,
     SemanticClass,
     SemanticFunction,
@@ -90,10 +89,9 @@ def test_reloading_a_contract_does_not_publish_what_all_leaves_out(generated_con
     assert [item.name for item in reloaded.prototypes] == ["cb"]
     assert [item.name for item in reloaded.overload_sets] == ["hidden_generic"]
 
+    # A generic owns its decision the way every other declaration does.
     published = {
-        str(owner.name): (owner.procedures[0] if isinstance(owner, ProcedureOverloadSet) else owner).metadata.get(
-            PYTHON_EXPORTS_METADATA
-        )
+        str(owner.name): owner.metadata.get(PYTHON_EXPORTS_METADATA)
         for owner in (*reloaded.functions, *reloaded.overload_sets)
     }
     assert published["run"] == [{"namespace": (), "name": "run"}]
