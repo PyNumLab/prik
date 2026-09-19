@@ -637,11 +637,6 @@ class FortranBridgeGenerator(ClassVisitor):
         is_subroutine = plan.bridge.native_is_subroutine or owned_direct_result is not None
         # Stage 2: assemble the native invocation and its ordered finalizers.
         function_body, optional_procedures = self._function_body(plan, result_name)
-        extents_match = self._argument_extents_match(plan)
-        if extents_match is not None:
-            # An explicit-shape dummy is as long as its own declaration says, so
-            # the native procedure runs only when the actual is that long too.
-            function_body = (FortranIf(CodeExpression(extents_match), body=tuple(function_body)),)
         native_body = (
             *self._derived_pointer_call_initializers(plan),
             *function_body,
@@ -685,22 +680,26 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._native_output_declarations(plan),
                 *self._derived_result_allocation_declarations(plan),
             ),
-            body=(
-                *self._character_local_initializers(plan),
-                *self._native_array_owner_initializers(plan),
-                *self._descriptor_initializers(plan),
-                *self._required_descriptor_initializers(plan),
-                *self._logical_scalar_argument_initializers(plan),
-                *self._opaque_address_initializers(plan),
-                *self._array_initializers(plan),
-                *self._logical_array_argument_initializers(plan),
-                *self._raw_array_address_initializers(plan),
-                *self._string_value_initializers(plan),
-                *self._string_address_initializers(plan),
-                *self._declaration_extent_result_assignments(plan),
-                *self._argument_extent_assignments(plan),
-                *self._direct_array_result_initializers(plan),
-                *derived_body,
+            body=self._extent_checked_body(
+                plan,
+                result_name,
+                result_type,
+                (
+                    *self._character_local_initializers(plan),
+                    *self._native_array_owner_initializers(plan),
+                    *self._descriptor_initializers(plan),
+                    *self._required_descriptor_initializers(plan),
+                    *self._logical_scalar_argument_initializers(plan),
+                    *self._opaque_address_initializers(plan),
+                    *self._array_initializers(plan),
+                    *self._logical_array_argument_initializers(plan),
+                    *self._raw_array_address_initializers(plan),
+                    *self._string_value_initializers(plan),
+                    *self._string_address_initializers(plan),
+                    *self._declaration_extent_result_assignments(plan),
+                    *self._direct_array_result_initializers(plan),
+                    *derived_body,
+                ),
             ),
             is_subroutine=is_subroutine,
             internal_procedures=(
@@ -814,6 +813,32 @@ class FortranBridgeGenerator(ClassVisitor):
     def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
         """Return the shared entrypoint ABI name for one evaluated result axis."""
         return f"prik_decl_extent_{result.result_position}_{axis}"
+
+    def _extent_checked_body(
+        self,
+        plan: FunctionPlan,
+        result_name: str | None,
+        result_type: str | None,
+        body: tuple,
+    ) -> tuple:
+        """Run the whole procedure only when every checked actual has its declared extent.
+
+        A dummy a specification function sizes is as long as that function
+        says, and only Fortran can evaluate it. The extents are read from the
+        parameters alone, before anything is prepared, so an actual of another
+        length leaves nothing converted, called, allocated, or produced; a
+        pointer result is null, and the binding reports the declared extent.
+        """
+        extents_match = self._argument_extents_match(plan)
+        if extents_match is None:
+            return body
+        unproduced = (
+            (FortranAssignment(result_name, CodeExpression("c_null_ptr")),) if result_type == "type(c_ptr)" else ()
+        )
+        return (
+            *self._argument_extent_assignments(plan),
+            FortranIf(CodeExpression(extents_match), body=body, else_body=unproduced),
+        )
 
     def _argument_extent_parameters(self, argument: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Return the declared extents a specification function sets for one argument."""

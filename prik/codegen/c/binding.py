@@ -12266,11 +12266,11 @@ class CBindingGenerator(ClassVisitor):
             *self._callback_context_push_nodes(plan, context),
             *self._lower_entrypoint_call(plan, context),
             *self._callback_context_pop_nodes(plan),
+            *self._argument_extent_rejection_nodes(plan, context),
             *self._derived_call_failure_nodes(plan, context),
             *self._derived_after_native_failure_nodes(plan, context),
             *self._derived_result_allocation_failure_nodes(plan, context),
             *self._binding_transformation_post_call_nodes(plan, context),
-            *self._argument_extent_rejection_nodes(plan, context),
             *self._lower_status_error(plan, context),
         ]
         if plan.results or plan.writeback_actions:
@@ -12481,9 +12481,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{fault} != NULL && {fault}[0] != '\\0' && {fault}[0] != '0'"),
                 body=(
-                    *self._string_replacement_cleanup_nodes(plan, context),
-                    *self._binding_transformation_cleanup_nodes(plan, context),
-                    *self._native_result_failure_cleanup_nodes(plan.results, context),
+                    *self._post_call_failure_cleanup_nodes(plan, context),
                     CExpressionStatement(
                         CodeExpression(
                             'PyErr_SetString(PyExc_RuntimeError, "injected derived failure after native return")'
@@ -12505,9 +12503,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{self._derived_status_name(context.arguments[argument.owner_path])} != 0"),
                 body=(
-                    *self._string_replacement_cleanup_nodes(plan, context),
-                    *self._binding_transformation_cleanup_nodes(plan, context),
-                    *self._native_result_failure_cleanup_nodes(plan.results, context),
+                    *self._post_call_failure_cleanup_nodes(plan, context),
                     *self._one_derived_call_error_nodes(argument, context),
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -12559,11 +12555,7 @@ class CBindingGenerator(ClassVisitor):
         if not derived:
             return ()
         native_names = tuple(self._result_native_name(result, context) for result in derived)
-        cleanup = [
-            *self._string_replacement_cleanup_nodes(plan, context),
-            *self._binding_transformation_cleanup_nodes(plan, context),
-            *self._native_result_failure_cleanup_nodes(plan.results, context),
-        ]
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         return (
             CIf(
                 CodeExpression(" || ".join(f"{name} == NULL" for name in native_names)),
@@ -12761,9 +12753,7 @@ class CBindingGenerator(ClassVisitor):
         policy = plan.binding.status_error
         status_name = context.native_outputs[policy.status_role]
         condition = CodeExpression(f"{status_name} != {policy.success}")
-        transformation_cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
-        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         if policy.message_role is None and policy.message_argument is None:
             return (
                 CIf(
@@ -12775,9 +12765,7 @@ class CBindingGenerator(ClassVisitor):
                                 f"(int){status_name})"
                             )
                         ),
-                        *string_cleanup,
-                        *transformation_cleanup,
-                        *native_result_cleanup,
+                        *cleanup,
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
@@ -12837,17 +12825,13 @@ class CBindingGenerator(ClassVisitor):
                         CIf(
                             CodeExpression(f"{message_object} == NULL"),
                             body=(
-                                *string_cleanup,
-                                *transformation_cleanup,
-                                *native_result_cleanup,
+                                *cleanup,
                                 CReturn(CodeExpression("NULL")),
                             ),
                         ),
                         CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
                         CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
-                        *string_cleanup,
-                        *transformation_cleanup,
-                        *native_result_cleanup,
+                        *cleanup,
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
@@ -12861,9 +12845,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"{message_name} == NULL"),
                         body=(
                             CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
-                            *string_cleanup,
-                            *transformation_cleanup,
-                            *native_result_cleanup,
+                            *cleanup,
                             CReturn(CodeExpression("NULL")),
                         ),
                     ),
@@ -12883,9 +12865,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{message_object} == NULL"),
                 body=(
-                    *string_cleanup,
-                    *transformation_cleanup,
-                    *native_result_cleanup,
+                    *cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
@@ -12894,9 +12874,7 @@ class CBindingGenerator(ClassVisitor):
                 body=(
                     CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
-                    *string_cleanup,
-                    *transformation_cleanup,
-                    *native_result_cleanup,
+                    *cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
@@ -13316,11 +13294,7 @@ class CBindingGenerator(ClassVisitor):
         actual matched, so a mismatch arrives here with nothing called, and is
         reported the way a binding-checked extent is.
         """
-        cleanup = (
-            *self._string_replacement_cleanup_nodes(plan, context),
-            *self._binding_transformation_cleanup_nodes(plan, context),
-            *self._native_result_failure_cleanup_nodes(plan.results, context),
-        )
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         return tuple(
             CIf(
                 CodeExpression(self._argument_extent_mismatch(argument, axis, context.arguments[argument.owner_path])),
@@ -13337,6 +13311,23 @@ class CBindingGenerator(ClassVisitor):
             )
             for argument in plan.arguments
             for axis in self._bridge_extent_axes(argument)
+        )
+
+    def _post_call_failure_cleanup_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Release what the call path holds when it fails after the entrypoint returns.
+
+        That is the string buffers and array temporaries taken before the call
+        and any native result storage; every release is safe for storage the
+        call did not produce.
+        """
+        return (
+            *self._string_replacement_cleanup_nodes(plan, context),
+            *self._binding_transformation_cleanup_nodes(plan, context),
+            *self._native_result_failure_cleanup_nodes(plan.results, context),
         )
 
     def _argument_extent_mismatch(self, argument: ArgumentTransferPlan, axis: int, names: _CArgumentNames) -> str:
@@ -13667,9 +13658,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CExpressionStatement | CIf, ...]:
         """Copy back ordinary temporaries and retain published replacements."""
         nodes = []
-        cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
-        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         for argument in plan.arguments:
             action = self._transformation_action(argument, WritebackPhase.COPY_OUT)
             if action is not TransformationAction.COPY_ARRAY_REPRESENTATION:
@@ -13681,12 +13670,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(
                         f"PyArray_CopyInto((PyArrayObject *){names.object_name}, (PyArrayObject *){temporary}) < 0"
                     ),
-                    body=(
-                        *string_cleanup,
-                        *cleanup,
-                        *native_result_cleanup,
-                        CReturn(CodeExpression("NULL")),
-                    ),
+                    body=(*cleanup, CReturn(CodeExpression("NULL"))),
                 )
             )
         nodes.extend(self._binding_transformation_success_cleanup_nodes(plan, context))
