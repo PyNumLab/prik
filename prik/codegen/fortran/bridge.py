@@ -189,6 +189,10 @@ def _plan_semantic_type_names(node: object, _seen: set[int] | None = None) -> fr
     return frozenset(names)
 
 
+#: Entrypoint groups carrying extents the bridge evaluates and hands back.
+_EXTENT_GROUPS = frozenset({"declaration_extent", "argument_extent"})
+
+
 class FortranBridgeGenerator(ClassVisitor):
     """Build the Fortran half of a wrapper from validated bridge-plan views.
 
@@ -696,7 +700,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     *self._raw_array_address_initializers(plan),
                     *self._string_value_initializers(plan),
                     *self._string_address_initializers(plan),
-                    *self._declaration_extent_result_assignments(plan),
+                    *self._extent_assignments(plan, "declaration_extent"),
                     *self._direct_array_result_initializers(plan),
                     *derived_body,
                 ),
@@ -717,8 +721,11 @@ class FortranBridgeGenerator(ClassVisitor):
         """Lower one shared C-ABI parameter group into a bind(C) declaration."""
         if parameter.source_kind == "argument":
             return self.visit(self._argument_by_owner(plan, parameter.owner_path))
-        if parameter.source_kind == "argument_extent":
-            return self._argument_extent_parameters(self._argument_by_owner(plan, parameter.owner_path))
+        if parameter.source_kind in _EXTENT_GROUPS:
+            return tuple(
+                FortranParameter(extent.parameter_name, "integer(c_int64_t)", ("intent(out)",))
+                for extent in parameter.extents
+            )
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))
         result = self._result_by_owner(plan, parameter.owner_path)
@@ -729,8 +736,6 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._owned_direct_result_parameters(result),
                 *self._scalar_descriptor_direct_result_parameters_for_result(result),
             )
-        if parameter.source_kind == "declaration_extent":
-            return self._declaration_extent_result_parameters_for_result(result)
         raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
 
     @staticmethod
@@ -775,45 +780,6 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Unsupported projected Fortran parameter passing {slot.passing.value!r}")
         return (FortranParameter(slot.native_name.casefold(), type_name, attributes),)
 
-    def _declaration_extent_result_parameters_for_result(
-        self,
-        result: NativeEntrypointResultPlan,
-    ) -> tuple[FortranParameter, ...]:
-        """Expose bridge-evaluated extents for one entrypoint result group."""
-        if result.array is None:
-            return ()
-        return tuple(
-            FortranParameter(
-                self._declaration_extent_result_name(result, axis),
-                "integer(c_int64_t)",
-                ("intent(out)",),
-            )
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
-        )
-
-    def _declaration_extent_result_assignments(self, plan: FunctionPlan) -> tuple[FortranAssignment, ...]:
-        """Evaluate native-dependent result axes inside the Fortran bridge."""
-        assignments = []
-        for result in plan.results:
-            if result.array is None or "bridge" not in result.array.extent_evaluation:
-                continue
-            shape = self._array_shape_from_roles(result.array, plan)
-            assignments.extend(
-                FortranAssignment(
-                    self._declaration_extent_result_name(result, axis),
-                    CodeExpression(f"int({shape[axis]}, c_int64_t)"),
-                )
-                for axis, evaluation in enumerate(result.array.extent_evaluation)
-                if evaluation == "bridge"
-            )
-        return tuple(assignments)
-
-    @staticmethod
-    def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
-        """Return the shared entrypoint ABI name for one evaluated result axis."""
-        return f"prik_decl_extent_{result.result_position}_{axis}"
-
     def _extent_checked_body(
         self,
         plan: FunctionPlan,
@@ -836,59 +802,43 @@ class FortranBridgeGenerator(ClassVisitor):
             (FortranAssignment(result_name, CodeExpression("c_null_ptr")),) if result_type == "type(c_ptr)" else ()
         )
         return (
-            *self._argument_extent_assignments(plan),
+            *self._extent_assignments(plan, "argument_extent"),
             FortranIf(CodeExpression(extents_match), body=body, else_body=unproduced),
         )
-
-    def _argument_extent_parameters(self, argument: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
-        """Return the declared extents a specification function sets for one argument."""
-        return tuple(
-            FortranParameter(self._argument_extent_name(argument, axis), "integer(c_int64_t)", ("intent(out)",))
-            for axis in self._bridge_extent_axes(argument)
-        )
-
-    def _argument_extent_assignments(self, plan: FunctionPlan) -> tuple[FortranAssignment, ...]:
-        """Evaluate every argument extent a specification function declares."""
-        assignments = []
-        for argument in plan.arguments:
-            axes = self._bridge_extent_axes(argument)
-            if not axes:
-                continue
-            shape = self._array_shape_from_roles(argument.array, plan)
-            assignments.extend(
-                FortranAssignment(
-                    self._argument_extent_name(argument, axis), CodeExpression(f"int({shape[axis]}, c_int64_t)")
-                )
-                for axis in axes
-            )
-        return tuple(assignments)
 
     def _argument_extents_match(self, plan: FunctionPlan) -> str | None:
         """Return when every declared argument extent equals the actual one, or ``None``."""
         role_names = self._array_shape_role_names(plan)
         conditions = []
-        for argument in plan.arguments:
-            for axis in self._bridge_extent_axes(argument):
-                matches = (
-                    f"{self._argument_extent_name(argument, axis)} == {role_names[argument.array.extent_roles[axis]]}"
-                )
+        for parameter in plan.entrypoint.parameters:
+            if parameter.source_kind != "argument_extent":
+                continue
+            argument = self._argument_by_owner(plan, parameter.owner_path)
+            for extent in parameter.extents:
+                matches = f"{extent.parameter_name} == {role_names[argument.array.extent_roles[extent.axis]]}"
                 if argument.entrypoint.optional_mode is not OptionalMode.REQUIRED:
                     # An omitted actual has no extent to disagree with.
                     matches = f"(.not. {self._presence_condition(argument)} .or. {matches})"
                 conditions.append(matches)
         return " .and. ".join(conditions) or None
 
-    @staticmethod
-    def _bridge_extent_axes(argument: ArgumentTransferPlan) -> tuple[int, ...]:
-        """Return the axes of one argument that only the bridge can evaluate."""
-        if argument.array is None:
-            return ()
-        return tuple(axis for axis, evaluation in enumerate(argument.array.extent_evaluation) if evaluation == "bridge")
-
-    @staticmethod
-    def _argument_extent_name(argument: ArgumentTransferPlan, axis: int) -> str:
-        """Return the shared entrypoint ABI name for one declared argument extent."""
-        return f"{argument.entrypoint.parameter_name}_declared_extent_{axis}"
+    def _extent_assignments(self, plan: FunctionPlan, source_kind: str) -> tuple[FortranAssignment, ...]:
+        """Evaluate each extent one kind of group hands back, from its owner's declared shape."""
+        assignments = []
+        for parameter in plan.entrypoint.parameters:
+            if parameter.source_kind != source_kind:
+                continue
+            owner = (
+                self._argument_by_owner(plan, parameter.owner_path)
+                if source_kind == "argument_extent"
+                else self._result_by_owner(plan, parameter.owner_path)
+            )
+            shape = self._array_shape_from_roles(owner.array, plan)
+            assignments.extend(
+                FortranAssignment(extent.parameter_name, CodeExpression(f"int({shape[extent.axis]}, c_int64_t)"))
+                for extent in parameter.extents
+            )
+        return tuple(assignments)
 
     # Immediate callback adapters.
     def _callback_standalone_adapter_procedure(
@@ -6315,9 +6265,8 @@ class FortranBridgeGenerator(ClassVisitor):
         ):
             return ()
         shape = list(self._array_result_shape(plan, result))
-        for axis, evaluation in enumerate(result.array.extent_evaluation):
-            if evaluation == "bridge":
-                shape[axis] = self._declaration_extent_result_name(result, axis)
+        for axis, evaluated in plan.entrypoint.extent_names(result.owner_path).items():
+            shape[axis] = evaluated
         return (FortranAllocate(f"result_value({', '.join(shape)})"),)
 
     def _array_result_depends_on_descriptor(

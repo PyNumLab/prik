@@ -858,17 +858,28 @@ class BindingFunctionPlan(StageRecord):
 
 
 @dataclass
+class NativeEntrypointExtentPlan(StageRecord):
+    """One extent only the bridge can evaluate, and the C-ABI output carrying it."""
+
+    axis: int
+    parameter_name: str
+
+
+@dataclass
 class NativeEntrypointParameterPlan(StageRecord):
     """Order one argument or result parameter group in the shared C ABI.
 
     The referenced argument or result entrypoint facet owns the group's exact
     transport. ``position`` orders groups after any direct function return.
+    ``extents`` are the outputs an extent group carries, one per axis a
+    specification function sizes, so neither backend enumerates them again.
     """
 
     owner_path: str
     position: int
     source_kind: str
     native_position: int | None = None
+    extents: tuple[NativeEntrypointExtentPlan, ...] = ()
 
 
 @dataclass
@@ -885,6 +896,15 @@ class NativeEntrypointFunctionPlan(StageRecord):
     # translation unit that never includes Python.h, so the binding's own
     # declaration of ``symbol_name`` cannot collide with a header declaration.
     collision_adapter_symbol: str | None = None
+
+    def extent_names(self, owner_path: str) -> dict[int, str]:
+        """Return the output name of each bridge-evaluated axis one owner has."""
+        return {
+            extent.axis: extent.parameter_name
+            for parameter in self.parameters
+            if parameter.owner_path == owner_path
+            for extent in parameter.extents
+        }
 
 
 @dataclass

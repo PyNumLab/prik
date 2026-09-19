@@ -494,3 +494,79 @@ def test_an_actual_is_checked_against_the_extent_a_specification_function_declar
     ):
         with pytest.raises(TypeError, match="has incompatible shape at axis 0"):
             call()
+
+
+EXTENT_BOUNDARY_SOURCE = """
+module extent_boundary
+  use, intrinsic :: iso_c_binding, only: c_double
+  implicit none
+  type :: box
+    integer :: value = 0
+  end type box
+contains
+  pure integer function extent_for(n)
+    integer, intent(in) :: n
+    extent_for = n + 1
+  end function extent_for
+  subroutine pair(n, grid, values)
+    integer, intent(in) :: n
+    real(c_double), intent(inout) :: grid(n, n)
+    real(c_double), intent(in) :: values(extent_for(n))
+    grid = sum(values)
+  end subroutine pair
+  function boxed(n, values) result(out)
+    integer, intent(in) :: n
+    real(c_double), intent(in) :: values(extent_for(n))
+    type(box) :: out
+    out%value = size(values)
+  end function boxed
+end module extent_boundary
+"""
+
+
+EXTENT_BOUNDARY_CONTRACT = """
+from prik.contracts import Addr, Annotated, Arg, COPY_F, Float64, Int32, ORDER_C, native_call, pure
+
+class Box:
+    def __init__(self, *, value: Int32 = ...) -> None: ...
+
+    value: Int32
+
+@pure
+@native_call([Addr(Arg(0))])
+def extent_for(n: Int32) -> Int32: ...
+
+@native_call([Addr(Arg(0)), Arg(1), Arg(2)])
+def pair(n: Int32, grid: Annotated[Float64[n, n], ORDER_C, COPY_F], values: Float64[extent_for(n)]) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def boxed(n: Int32, values: Float64[extent_for(n)]) -> Box: ...
+"""
+
+
+def test_a_rejected_extent_runs_nothing_that_follows_the_call(tmp_path: Path):
+    """A mismatch ends the call where the extent is found: no copy-back, no result.
+
+    `grid` crosses through a Fortran-order temporary whose copy-back follows a
+    successful call, and `boxed` returns an object only a call produces. A
+    rejected call must reach neither, so the caller's array is untouched and
+    the shape error is what surfaces, not a missing result.
+    """
+    module, _ = _build_inline_pyi_contract_module(
+        tmp_path,
+        module_name="extent_boundary",
+        source_text=EXTENT_BOUNDARY_SOURCE,
+        contract_text=EXTENT_BOUNDARY_CONTRACT,
+    )
+
+    grid = np.full((3, 3), 7.0, order="C")
+    module.pair(np.int32(3), grid, np.ones(4))
+    np.testing.assert_array_equal(grid, np.full((3, 3), 4.0))
+    grid = np.full((3, 3), 7.0, order="C")
+    with pytest.raises(TypeError, match="Argument values has incompatible shape at axis 0"):
+        module.pair(np.int32(3), grid, np.ones(3))
+    np.testing.assert_array_equal(grid, np.full((3, 3), 7.0))
+
+    assert module.boxed(np.int32(3), np.ones(4)).value == 4
+    with pytest.raises(TypeError, match="Argument values has incompatible shape at axis 0"):
+        module.boxed(np.int32(3), np.ones(3))

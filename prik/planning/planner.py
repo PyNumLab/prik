@@ -122,6 +122,7 @@ from prik.planning.models import (
     NativeGeneratedCodeGroupPlan,
     GeneratedSupportProcedureImplementationOwner,
     NativeEntrypointArgumentPlan,
+    NativeEntrypointExtentPlan,
     NativeEntrypointCallbackPlan,
     NativeEntrypointFunctionPlan,
     DirectCABIPlan,
@@ -1544,26 +1545,50 @@ class WrapperPlanner(ClassVisitor):
                 )
             )
         )
-        groups.extend(
-            (result.owner_path, "declaration_extent", None)
-            for result in results
-            if result.array is not None and "bridge" in result.array.extent_evaluation
-        )
-        # Only the bridge can evaluate a specification function, so it hands
-        # back the extent one declares for the binding to check the actual by.
-        groups.extend(
-            (argument.owner_path, "argument_extent", None)
-            for argument in arguments
-            if argument.array is not None and "bridge" in argument.array.extent_evaluation
-        )
+        extents = WrapperPlanner._entrypoint_extent_groups(arguments, results)
+        groups.extend((owner, kind, None) for owner, kind in extents)
         return tuple(
             NativeEntrypointParameterPlan(
                 owner_path=owner,
                 position=position,
                 source_kind=source_kind,
                 native_position=native_position,
+                extents=extents.get((owner, source_kind), ()),
             )
             for position, (owner, source_kind, native_position) in enumerate(groups)
+        )
+
+    @staticmethod
+    def _entrypoint_extent_groups(
+        arguments: tuple[ArgumentTransferPlan, ...],
+        results: tuple[NativeEntrypointResultPlan, ...],
+    ) -> dict[tuple[str, str], tuple[NativeEntrypointExtentPlan, ...]]:
+        """Return the extents each owner's group hands back, keyed by owner and group kind.
+
+        Only the bridge can evaluate a specification function, so it hands back
+        each extent one sizes: a result's to allocate by, an argument's for the
+        binding to check the actual by.
+        """
+        extents: dict[tuple[str, str], tuple[NativeEntrypointExtentPlan, ...]] = {}
+        for result in results:
+            if result.array is not None and "bridge" in result.array.extent_evaluation:
+                extents[(result.owner_path, "declaration_extent")] = WrapperPlanner._bridge_extents(
+                    result.array, f"prik_decl_extent_{result.result_position}"
+                )
+        for argument in arguments:
+            if argument.array is not None and "bridge" in argument.array.extent_evaluation:
+                extents[(argument.owner_path, "argument_extent")] = WrapperPlanner._bridge_extents(
+                    argument.array, f"{argument.entrypoint.parameter_name}_declared_extent"
+                )
+        return extents
+
+    @staticmethod
+    def _bridge_extents(array, prefix: str) -> tuple[NativeEntrypointExtentPlan, ...]:
+        """Name the output carrying each axis of one array the bridge evaluates."""
+        return tuple(
+            NativeEntrypointExtentPlan(axis=axis, parameter_name=f"{prefix}_{axis}")
+            for axis, evaluation in enumerate(array.extent_evaluation)
+            if evaluation == "bridge"
         )
 
     def _entrypoint_result_plans(

@@ -120,6 +120,7 @@ from prik.planning.models import (
     NativeEntrypointABIValuePlan,
     GeneratedSupportProcedureImplementationOwner,
     GeneratedSupportProcedureEntrypointPlan,
+    NativeEntrypointExtentPlan,
     NativeEntrypointParameterPlan,
     NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
@@ -159,6 +160,10 @@ class _CArgumentNames:
     runtime_rank_name: str
     itemsize_name: str
     polymorphic_name: str
+
+
+#: Entrypoint groups carrying extents the bridge evaluates and hands back.
+_EXTENT_GROUPS = frozenset({"declaration_extent", "argument_extent"})
 
 
 @dataclass
@@ -6688,8 +6693,7 @@ class CBindingGenerator(ClassVisitor):
                 *argument_declarations,
                 *alias_declarations,
                 *self._callback_context_declarations(plan),
-                *self._declaration_extent_result_declarations(plan),
-                *self._argument_extent_declarations(plan),
+                *self._entrypoint_extent_declarations(plan),
                 *self._direct_result_declaration(plan, context),
                 *self._native_output_declarations(plan, context),
                 self._parse_statement(plan, context),
@@ -9908,9 +9912,10 @@ class CBindingGenerator(ClassVisitor):
         expression: str,
         context: _CFunctionContext,
     ) -> str:
-        """Use the entrypoint result for native axes and local roles for all others."""
-        if handoff.extent_evaluation[axis] == "bridge":
-            return self._declaration_extent_result_name(result, axis)
+        """Use the extent the bridge returned for its axes and local roles for all others."""
+        evaluated = context.function.entrypoint.extent_names(result.owner_path).get(axis)
+        if evaluated is not None:
+            return evaluated
         return self._array_extent_expression(handoff, axis, expression, context)
 
     def _array_result_creation_expression(
@@ -13274,12 +13279,13 @@ class CBindingGenerator(ClassVisitor):
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
         return (CDeclaration(context.result_name, scalar_type.c_spelling),)
 
-    def _argument_extent_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
-        """Declare storage for each argument extent a specification function declares."""
+    @staticmethod
+    def _entrypoint_extent_declarations(plan: FunctionPlan) -> tuple[CDeclaration, ...]:
+        """Declare storage for every extent the bridge evaluates and hands back."""
         return tuple(
-            CDeclaration(self._argument_extent_name(argument, axis), "int64_t", CodeExpression("0"))
-            for argument in plan.arguments
-            for axis in self._bridge_extent_axes(argument)
+            CDeclaration(extent.parameter_name, "int64_t", CodeExpression("0"))
+            for parameter in plan.entrypoint.parameters
+            for extent in parameter.extents
         )
 
     def _argument_extent_rejection_nodes(
@@ -13297,20 +13303,24 @@ class CBindingGenerator(ClassVisitor):
         cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         return tuple(
             CIf(
-                CodeExpression(self._argument_extent_mismatch(argument, axis, context.arguments[argument.owner_path])),
+                CodeExpression(
+                    self._argument_extent_mismatch(argument, extent, context.arguments[argument.owner_path])
+                ),
                 body=(
                     CExpressionStatement(
                         CodeExpression(
                             f'PyErr_SetString(PyExc_TypeError, "Argument {argument.binding.python_name} has '
-                            f'incompatible shape at axis {axis}")'
+                            f'incompatible shape at axis {extent.axis}")'
                         )
                     ),
                     *cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             )
-            for argument in plan.arguments
-            for axis in self._bridge_extent_axes(argument)
+            for parameter in plan.entrypoint.parameters
+            if parameter.source_kind == "argument_extent"
+            for argument in (self._argument_by_owner(plan, parameter.owner_path),)
+            for extent in parameter.extents
         )
 
     def _post_call_failure_cleanup_nodes(
@@ -13330,39 +13340,18 @@ class CBindingGenerator(ClassVisitor):
             *self._native_result_failure_cleanup_nodes(plan.results, context),
         )
 
-    def _argument_extent_mismatch(self, argument: ArgumentTransferPlan, axis: int, names: _CArgumentNames) -> str:
+    @staticmethod
+    def _argument_extent_mismatch(
+        argument: ArgumentTransferPlan,
+        extent: NativeEntrypointExtentPlan,
+        names: _CArgumentNames,
+    ) -> str:
         """Return when one actual disagrees with the extent its dummy declares."""
-        mismatch = f"{self._argument_extent_name(argument, axis)} != {names.extent_names[axis]}"
+        mismatch = f"{extent.parameter_name} != {names.extent_names[extent.axis]}"
         if argument.entrypoint.optional_mode is OptionalMode.REQUIRED:
             return mismatch
         # An omitted actual has no extent to disagree with.
         return f"{names.object_name} != Py_None && {mismatch}"
-
-    @staticmethod
-    def _bridge_extent_axes(argument: ArgumentTransferPlan) -> tuple[int, ...]:
-        """Return the axes of one argument that only the bridge can evaluate."""
-        if argument.array is None:
-            return ()
-        return tuple(axis for axis, evaluation in enumerate(argument.array.extent_evaluation) if evaluation == "bridge")
-
-    @staticmethod
-    def _argument_extent_name(argument: ArgumentTransferPlan, axis: int) -> str:
-        """Return the shared entrypoint ABI name for one declared argument extent."""
-        return f"{argument.entrypoint.parameter_name}_declared_extent_{axis}"
-
-    def _declaration_extent_result_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
-        """Declare storage populated by native-dependent main-bridge extent outputs."""
-        return tuple(
-            CDeclaration(
-                self._declaration_extent_result_name(result, axis),
-                "int64_t",
-                CodeExpression("0"),
-            )
-            for result in plan.results
-            if result.array is not None
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
-        )
 
     def _native_output_declarations(
         self,
@@ -13839,11 +13828,8 @@ class CBindingGenerator(ClassVisitor):
             if slot.native_scalar_c_type is not None and slot.passing is EntrypointPassingConvention.C_VALUE:
                 values[0] = f"({slot.native_scalar_c_type}){values[0]}"
             return tuple(values)
-        if parameter.source_kind == "argument_extent":
-            argument = self._argument_by_owner(plan, parameter.owner_path)
-            return tuple(
-                f"&{self._argument_extent_name(argument, axis)}" for axis in self._bridge_extent_axes(argument)
-            )
+        if parameter.source_kind in _EXTENT_GROUPS:
+            return tuple(f"&{extent.parameter_name}" for extent in parameter.extents)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_values(
                 plan,
@@ -13856,8 +13842,6 @@ class CBindingGenerator(ClassVisitor):
             return self._entrypoint_hidden_result_values(result, name)
         if parameter.source_kind == "direct_result":
             return self._entrypoint_direct_result_values(result, context)
-        if parameter.source_kind == "declaration_extent":
-            return self._declaration_extent_result_values_for_result(result)
         raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
 
     @staticmethod
@@ -13975,19 +13959,6 @@ class CBindingGenerator(ClassVisitor):
             self._entrypoint_result_by_owner(plan, parameter.owner_path)
             for parameter in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
             if parameter.source_kind == "hidden_result"
-        )
-
-    def _declaration_extent_result_values_for_result(
-        self,
-        result: NativeEntrypointResultPlan,
-    ) -> tuple[str, ...]:
-        """Return extent output actuals for one planned result group."""
-        if result.array is None:
-            return ()
-        return tuple(
-            f"&{self._declaration_extent_result_name(result, axis)}"
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
         )
 
     def _entrypoint_hidden_result_values(
@@ -14182,12 +14153,8 @@ class CBindingGenerator(ClassVisitor):
                 self._argument_by_owner(plan, parameter.owner_path),
                 passing=slot.passing,
             )
-        if parameter.source_kind == "argument_extent":
-            argument = self._argument_by_owner(plan, parameter.owner_path)
-            return tuple(
-                CParameter(self._argument_extent_name(argument, axis), "int64_t *")
-                for axis in self._bridge_extent_axes(argument)
-            )
+        if parameter.source_kind in _EXTENT_GROUPS:
+            return tuple(CParameter(extent.parameter_name, "int64_t *") for extent in parameter.extents)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))
         result = self._entrypoint_result_by_owner(plan, parameter.owner_path)
@@ -14195,27 +14162,7 @@ class CBindingGenerator(ClassVisitor):
             return self._entrypoint_result_parameters(result)
         if parameter.source_kind == "direct_result":
             return self._direct_entrypoint_result_parameters(result)
-        if parameter.source_kind == "declaration_extent":
-            return self._declaration_extent_result_parameters_for_result(result)
         raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
-
-    def _declaration_extent_result_parameters_for_result(
-        self,
-        result: NativeEntrypointResultPlan,
-    ) -> tuple[CParameter, ...]:
-        """Declare native-dependent extent outputs for one result group."""
-        if result.array is None:
-            return ()
-        return tuple(
-            CParameter(self._declaration_extent_result_name(result, axis), "int64_t *")
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
-        )
-
-    @staticmethod
-    def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
-        """Return the shared entrypoint ABI name for one evaluated result axis."""
-        return f"prik_decl_extent_{result.result_position}_{axis}"
 
     def _owned_native_array_bridge_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
         """Declare typed Fortran operations over binding-owned result descriptors."""
