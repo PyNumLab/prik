@@ -583,15 +583,8 @@ class PyiPrinter(ClassVisitor):
             if not self._is_private(overload_set)
         )
         for reexport in module.reexports:
-            if not reexport.publishes_to_python():
-                continue
-            # A prototype keeps its declared spelling wherever it is written, so
-            # the name published for it is the one its import binds.
-            local = str(reexport.local_name)
-            if reexport.entity_kind == "prototype":
-                names.append(local)
-                continue
-            names.append(self._reexport_name(reexport, context))
+            if reexport.publishes_to_python():
+                names.append(self._reexport_name(reexport, context))
         return list(dict.fromkeys(names))
 
     # ------------------------------------------------------------------

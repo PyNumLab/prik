@@ -1,9 +1,11 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
+import json
 import pytest
 import prik.pipeline.pyi as pyi_pipeline
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.policy.contract_imports import complete_contract_imports, contract_name_for_source
+from prik.policy.contract_imports import complete_contract_imports
+from prik.policy.exports import contract_name_for_source
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -920,7 +922,7 @@ end module surface_consumer
     # The publishing module names the import; the consuming one does not.
     assert stubs["surface_facade"].rstrip().endswith('__all__ = ["scale_value"]')
     assert stubs["surface_consumer"].rstrip().endswith('__all__ = ["crate_value"]')
-    assert "from .surface_home import Box as crate" in stubs["surface_consumer"]
+    assert "from .surface_home import Box as Crate" in stubs["surface_consumer"]
     assert '__all__ = ["Box", "scale_value"]' in stubs["surface_home"]
 
 
@@ -1034,36 +1036,58 @@ def test_two_spellings_a_case_sensitive_source_keep_distinct_contract_names():
     assert contract_name_for_source({"foo": "foo", "Foo": "Foo"}, "FOO") is None
 
 
-def test_a_renamed_import_binds_the_name_its_annotations_write():
-    """An import binds a name for the declarations that use it, spelled as they do.
-
-    Fortran keeps the case a `use` rename is written in, and the annotation
-    naming the type writes it that way. Binding the name export policy would
-    publish it under instead left the annotation naming nothing.
-    """
-    home = parse_fortran_source("""
+SHAPES_SOURCE = """
 module shapes
 implicit none
 type :: point
   integer :: x
 end type point
 end module shapes
-""")
-    user = parse_fortran_source("""
+"""
+
+
+@pytest.mark.parametrize(
+    ("association", "published", "spelling"),
+    [
+        ("point", True, "Point"),
+        ("MyPoint => point", True, "Mypoint"),
+        ("MyPoint => point", False, "Mypoint"),
+    ],
+    ids=["published", "renamed-published", "renamed-dependency"],
+)
+def test_an_imported_type_is_spelled_one_way_throughout_its_contract(association, published, spelling):
+    """The import, the annotation, and `__all__` write the name the module publishes.
+
+    Naming completion spelled a published type as a class for `__all__` while
+    the annotation wrote the `use` statement's spelling, so one of them always
+    named something the contract never bound. A type is spelled as a class
+    whether or not the module publishes it, and every place reads that name.
+    """
+    local = association.split(" => ")[0]
+    user = parse_fortran_source(f"""
 module user_mod
-use shapes, only : MyPoint => point
+use shapes, only : {association}
 implicit none
+private
+public :: {f"{local}, " if published else ""}move
 contains
 subroutine move(p)
-type(MyPoint), intent(inout) :: p
+type({local}), intent(inout) :: p
 end subroutine move
 end module user_mod
 """)
 
     stubs = emit_module_stubs(
-        [fortran_module_to_semantic_module(item) for item in (home, user)],
+        [
+            fortran_module_to_semantic_module(parse_fortran_source(SHAPES_SOURCE)),
+            fortran_module_to_semantic_module(user),
+        ],
         normalize_public_names=True,
     )
+    contract = stubs["user_mod"]
 
-    assert "from .shapes import Point as MyPoint" in stubs["user_mod"]
-    assert "p: MyPoint" in stubs["user_mod"]
+    bound = "Point" if spelling == "Point" else f"Point as {spelling}"
+    assert f"from .shapes import {bound}\n" in contract
+    assert f"p: {spelling}\n" in contract
+    expected_all = ["move", spelling] if published else ["move"]
+    assert contract.rstrip().endswith(f"__all__ = {json.dumps(expected_all)}")

@@ -80,7 +80,10 @@ def test_declaration_dependency_accessibility_and_python_publication_are_separat
     )
 
     consumer_contract = stubs["dependency_consumer"]
-    assert "from .dependency_home import Box as crate" in consumer_contract
+    # A renamed type is still a class, spelled as one wherever the contract
+    # writes it: in its import and in the annotations naming it.
+    assert "from .dependency_home import Box as Crate" in consumer_contract
+    assert "item: Crate" in consumer_contract
     assert consumer_contract.rstrip().endswith('__all__ = ["crate_value"]')
     assert not any(name.casefold() == "crate" for name in vars(module.dependency_consumer))
 

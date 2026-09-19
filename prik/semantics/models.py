@@ -426,6 +426,9 @@ PYTHON_EXPORTS_METADATA = "python_exports"
 CONTRACT_NAME_METADATA = "contract_name"
 CONTRACT_TARGET_NAME_METADATA = "contract_target_name"
 CONTRACT_BASE_NAMES_METADATA = "contract_base_names"
+#: The one spelling a module's contract writes for each name it imports, keyed
+#: by the name its source binds; annotations, imports, and ``__all__`` read it.
+CONTRACT_IMPORT_NAMES_METADATA = "contract_import_names"
 
 
 def completed_contract_name(owner, default_name: str | None = None) -> str:

@@ -15,11 +15,19 @@ release tags add a leading `v` to the package version.
   `complete_contract_imports()`: a contract binds the names its declarations use
   and the names it publishes, each from the module declaring it, and a name
   reached twice through re-exporting modules binds once. The `.pyi` printer
-  renders those statements and no longer chooses or spells an import. A renamed
-  import written with capitals (`use shapes, only : MyPoint => point`) now binds
-  the name its annotations use. A `use` whose names no declaration mentions and
-  the module does not publish, such as a bare `use types_mod`, is no longer
-  written into the contract.
+  renders those statements and no longer chooses or spells an import. A `use`
+  whose names no declaration mentions and the module does not publish, such as
+  a bare `use types_mod`, is no longer written into the contract.
+
+- An imported name is spelled one way throughout a contract: the way the module
+  publishes it. A type the module used in a signature and also published was
+  imported under one spelling while `__all__` or the annotation wrote another
+  (`from .shapes import Point` beside `p: point`), so the generated package
+  could not be read back. The import, the annotation, and `__all__` now read
+  one completed name, and a type is spelled as a class whether or not the
+  module publishes it: `from .shapes import Point` and `p: Point`, or
+  `from .shapes import Point as Mypoint` for `use shapes, only : MyPoint =>
+  point`. A prototype keeps the spelling it is declared with everywhere.
 
 - A contract publishes exactly its `__all__`. A type it left out -- such as
   the sibling type a leaf contract imports for its signatures -- was still

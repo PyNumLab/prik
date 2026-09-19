@@ -14,6 +14,7 @@ wrapper mechanism or emit the namespace.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from prik.naming import NamingPolicy, normalize_public_name, preserves_source_case
 from prik.semantics import models
@@ -160,10 +161,17 @@ def _complete_reexport_names(
 
     Published associations add runtime attributes; dependency-only associations
     still add contract imports. Both compete with declarations for a Python
-    spelling, so the same ledger names them after the module's declarations. A
-    dependency keeps an ordinary import-binding spelling even when the entity
-    is a type; only a published type receives class-style capitalization.
+    spelling, so the same ledger names them after the module's declarations.
+    The spelling follows the entity, whether or not it is published: a type is
+    spelled as a class wherever it is written, and a prototype keeps the
+    spelling it is declared with. A name the module's own declarations use as a
+    type is one, even where the module declaring it was not read.
     """
+    types = {
+        reference.local.casefold()
+        for reference in map(imported_type_reference, models._module_semantic_types(module))
+        if reference is not None and not reference.procedure_local
+    }
     for reexport in module.reexports:
         if reexport.python_name:
             continue
@@ -173,19 +181,20 @@ def _complete_reexport_names(
             if completed_name is not None:
                 reexport.python_name = completed_name
                 continue
-        category = (
-            {
-                "derived_type": "class",
-                "variable": "variable",
-            }.get(reexport.entity_kind, "function")
-            if published
-            else "function"
-        )
+        namespace = _reexport_namespace(module, reexport)
+        owner = f"re-export {reexport.local_name}"
+        if reexport.entity_kind == "prototype":
+            reexport.python_name = naming.hold_completed_public_name(
+                namespace, reexport.local_name, category="function", owner=owner
+            )
+            continue
+        kind = "derived_type" if str(reexport.local_name).casefold() in types else reexport.entity_kind
+        category = {"derived_type": "class", "variable": "variable"}.get(kind, "function")
         reexport.python_name = naming.reserve_public_name(
-            _reexport_namespace(module, reexport),
+            namespace,
             reexport.local_name,
             category="function" if contract_named else category,
-            owner=f"re-export {reexport.local_name}",
+            owner=owner,
         )
 
 
@@ -290,6 +299,8 @@ def _complete_contract_names(
                 owner=f"re-export {reexport.local_name}",
             )
 
+    imported = _complete_imported_names(module, naming, contract_named=contract_named)
+
     for prototype in module.prototypes:
         completed = str(prototype.name)
         naming.hold_completed_public_name(
@@ -321,7 +332,7 @@ def _complete_contract_names(
             preserve_case=preserve_case,
         )
 
-    _complete_local_type_contract_names(module)
+    _complete_type_reference_names(module, imported)
     _complete_overload_target_contract_names(module, preserve_case=preserve_case)
 
 
@@ -411,23 +422,108 @@ def _complete_class_member_contract_names(
         )
 
 
-def _complete_local_type_contract_names(module: models.SemanticModule) -> None:
-    """Attach local class spellings to every semantic type that names one."""
-    by_exact = {str(cls.name): models.completed_contract_name(cls) for cls in _all_classes(module.classes)}
-    by_folded: dict[str, list[str]] = {}
-    for source, completed in by_exact.items():
-        by_folded.setdefault(source.casefold(), []).append(completed)
+def _complete_imported_names(
+    module: models.SemanticModule,
+    naming: NamingPolicy,
+    *,
+    contract_named: bool,
+) -> dict[str, str]:
+    """Record the one spelling the contract writes for each name it imports.
+
+    A re-export is already named: the name the module publishes it under is the
+    name the contract binds and writes. A type the module imports without
+    re-exporting it takes the class spelling a published type would, held
+    beside the module's own names. A contract that was read already names what
+    it imports and keeps every spelling.
+    """
+    completed = {str(reexport.local_name): str(reexport.python_name) for reexport in module.reexports}
+    if not contract_named:
+        for semantic_type in models._module_semantic_types(module):
+            reference = imported_type_reference(semantic_type)
+            if reference is None or reference.procedure_local:
+                continue
+            if contract_name_for_source(completed, reference.local) is None:
+                completed[reference.local] = naming.reserve_public_name(
+                    (), reference.local, category="class", owner=f"import {reference.local}"
+                )
+    module.metadata[models.CONTRACT_IMPORT_NAMES_METADATA] = completed
+    return completed
+
+
+def _complete_type_reference_names(module: models.SemanticModule, imported: dict[str, str]) -> None:
+    """Spell every type a declaration names the way the contract binds it.
+
+    A class the module declares is written under its contract name, and an
+    imported one under the name the module imports it by, so an annotation, the
+    import binding its name, and ``__all__`` write one spelling.
+    """
+    declared = {str(cls.name): models.completed_contract_name(cls) for cls in _all_classes(module.classes)}
     for semantic_type in models._module_semantic_types(module):
-        completed = by_exact.get(str(semantic_type.name))
-        if completed is None:
-            matches = by_folded.get(str(semantic_type.name).casefold(), ())
-            completed = matches[0] if len(matches) == 1 else None
+        reference = imported_type_reference(semantic_type)
+        if reference is None:
+            completed = contract_name_for_source(declared, semantic_type.name)
+        elif not reference.procedure_local:
+            completed = contract_name_for_source(imported, reference.local)
+        else:
+            continue
         if completed is not None:
             semantic_type.metadata[models.CONTRACT_NAME_METADATA] = completed
+    # A base is named, not annotated: the class it names is declared here or imported.
     for semantic_class in _all_classes(module.classes):
         semantic_class.metadata[models.CONTRACT_BASE_NAMES_METADATA] = {
-            base: by_exact.get(base, base) for base in semantic_class.base_classes
+            base: contract_name_for_source(declared, base) or contract_name_for_source(imported, base) or base
+            for base in semantic_class.base_classes
         }
+
+
+class ImportedTypeReference(NamedTuple):
+    """One annotation naming a type another module declares."""
+
+    module: str
+    name: str
+    local: str
+    procedure_local: bool
+
+
+def imported_type_reference(semantic_type: models.SemanticType) -> ImportedTypeReference | None:
+    """Return the imported type one annotation names, or ``None``.
+
+    A procedure-local type is written qualified by its module, so only the
+    module is bound for it; a type whose local name is already qualified names
+    a module the contract imports itself.
+    """
+    ref = semantic_type.metadata.get(models.EXTERNAL_TYPE_REF_METADATA)
+    if not isinstance(ref, dict):
+        return None
+    module, name = ref.get("origin_module"), ref.get("name")
+    local = ref.get("local_name") or name
+    if not all(isinstance(value, str) and value for value in (module, name, local)):
+        return None
+    procedure_local = ref.get("import_scope") == "procedure"
+    if not procedure_local and "." in local:
+        return None
+    return ImportedTypeReference(module, name, local, procedure_local)
+
+
+def contract_name_for_source(completed: dict[str, str] | None, source: object) -> str | None:
+    """Return the completed contract spelling for one source name.
+
+    A contract records each name exactly as its source spells it, so two
+    declarations a case-sensitive language keeps apart keep separate entries.
+    A case-insensitive source may ask under any spelling, which is answered
+    only when one entry can mean it: where several fold together the request
+    names no single declaration, and guessing one would depend on the order
+    they happened to be recorded in.
+    """
+    if not completed:
+        return None
+    wanted = str(source)
+    exact = completed.get(wanted)
+    if exact is not None:
+        return exact
+    folded = wanted.casefold()
+    matches = [value for key, value in completed.items() if key.casefold() == folded]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _complete_overload_target_contract_names(

@@ -305,7 +305,7 @@ def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
         "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n\n"
         '__all__ = ["first_math", "shared_types", "second_math", "box_ops"]\n'
     )
-    assert "from .shared_types import Box as box" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .shared_types import Box\n" in (package / "box_ops.pyi").read_text(encoding="utf-8")
     assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
 
 

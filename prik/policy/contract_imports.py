@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 
 from prik.naming import normalize_public_name, preserves_source_case
-from prik.policy.exports import contract_names_by_source
+from prik.policy.exports import contract_name_for_source, contract_names_by_source, imported_type_reference
 from prik.semantics import models
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 
@@ -41,27 +41,6 @@ def complete_contract_imports(
         module.imports = _ContractImports(module, completed).bindings()
 
 
-def contract_name_for_source(completed: dict[str, str] | None, source: object) -> str | None:
-    """Return the completed contract spelling for one source name.
-
-    A contract records each name exactly as its source spells it, so two
-    declarations a case-sensitive language keeps apart keep separate entries.
-    A case-insensitive source may ask under any spelling, which is answered
-    only when one entry can mean it: where several fold together the request
-    names no single declaration, and guessing one would depend on the order
-    they happened to be recorded in.
-    """
-    if not completed:
-        return None
-    wanted = str(source)
-    exact = completed.get(wanted)
-    if exact is not None:
-        return exact
-    folded = wanted.casefold()
-    matches = [value for key, value in completed.items() if key.casefold() == folded]
-    return matches[0] if len(matches) == 1 else None
-
-
 class _ContractImports:
     """Bind each name one contract needs, once, from the one entity it names.
 
@@ -78,6 +57,8 @@ class _ContractImports:
         self._native = not module.metadata.get(PYI_LOADED_METADATA)
         self._preserve_case = not self._native or preserves_source_case(module.origin.source_language)
         self._key = str if self._preserve_case else str.casefold
+        # The one spelling naming completed for each name this contract imports.
+        self._imported = module.metadata.get(models.CONTRACT_IMPORT_NAMES_METADATA, {}) if self._native else {}
         declarations = (*module.functions, *module.classes, *module.variables, *module.prototypes)
         self._declared_names = {self._key(str(item.name)) for item in (*declarations, *module.overload_sets)}
         self._declared = {
@@ -102,16 +83,13 @@ class _ContractImports:
         for statement in self._module.imports:
             self._stated(statement)
         for reexport in self._module.reexports:
-            # A name published out of another module is bound under the name
-            # the contract publishes it by; a prototype keeps its spelling.
+            # A name published out of another module is bound to be published.
             if reexport.publishes_to_python() and reexport.origin_module:
-                prototype = reexport.entity_kind == "prototype"
                 self._bind(
                     str(reexport.origin_module),
                     str(reexport.source_name or reexport.local_name),
                     str(reexport.local_name),
-                    verbatim=prototype,
-                    published_as=None if prototype else str(reexport.python_name),
+                    verbatim=reexport.entity_kind == "prototype",
                 )
         for origin, source, local, kind in sorted(set(self._references())):
             self._bind(origin, source, local, verbatim=kind in {"prototype", "namespace"})
@@ -128,24 +106,17 @@ class _ContractImports:
     def _references(self) -> Iterator[tuple[str, str, str, str]]:
         """Yield ``(module, source, local, kind)`` for each name a declaration names."""
         for semantic_type in models._module_semantic_types(self._module):
-            yield from _type_reference(semantic_type.metadata.get(models.EXTERNAL_TYPE_REF_METADATA))
+            yield from _type_reference(semantic_type)
             yield from _prototype_reference(semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA))
             yield from _callable_references(semantic_type)
 
-    def _bind(
-        self,
-        origin: str,
-        source: str,
-        local: str,
-        *,
-        verbatim: bool = False,
-        published_as: str | None = None,
-    ) -> None:
+    def _bind(self, origin: str, source: str, local: str, *, verbatim: bool = False) -> None:
         """Bind ``local`` to ``source`` read from ``origin``, or refuse a second meaning.
 
-        ``published_as`` is the name ``__all__`` writes for a published
-        re-export; any other binding is written the way the declarations using
-        it already write it.
+        The contract binds the spelling naming completed for ``local``, which is
+        the one its annotations and ``__all__`` write. A name completion did not
+        spell -- a prototype, or a callable a declaration expression writes --
+        keeps the spelling it is written with.
         """
         origin_key = origin.lstrip(".").casefold()
         if origin_key == self._module.name.casefold() or _identity(origin_key, source) in self._declared:
@@ -167,7 +138,7 @@ class _ContractImports:
             statement = self._from[written] = models.SemanticImport(module=written)
             self._statements.append(statement)
         contract_source = self._contract_source(origin_key, source, verbatim)
-        contract_target = published_as or local
+        contract_target = contract_name_for_source(self._imported, local) or local
         statement.items.append(
             models.SemanticImportItem(
                 source=source,
@@ -198,19 +169,16 @@ def _identity(scope: str, name: str) -> tuple[str, str]:
     return str(scope).casefold(), str(name).casefold()
 
 
-def _type_reference(ref: object) -> Iterator[tuple[str, str, str, str]]:
-    """Yield the binding one external type annotation needs."""
-    if not isinstance(ref, dict):
+def _type_reference(semantic_type: models.SemanticType) -> Iterator[tuple[str, str, str, str]]:
+    """Yield the binding one annotation naming an imported type needs."""
+    reference = imported_type_reference(semantic_type)
+    if reference is None:
         return
-    origin, source = ref.get("origin_module"), ref.get("name")
-    local = ref.get("local_name") or source
-    if not all(isinstance(value, str) and value for value in (origin, source, local)):
-        return
-    if ref.get("import_scope") == "procedure":
+    if reference.procedure_local:
         # A procedure-local type is written qualified by its module.
-        yield ".", origin, origin, "namespace"
-    elif "." not in local:
-        yield origin, source, local, "type"
+        yield ".", reference.module, reference.module, "namespace"
+    else:
+        yield reference.module, reference.name, reference.local, "type"
 
 
 def _prototype_reference(ref: object) -> Iterator[tuple[str, str, str, str]]:

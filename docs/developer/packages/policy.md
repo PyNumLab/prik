@@ -168,7 +168,10 @@ then records zero or more public placements independently.
 spelling is read with `completed_contract_name()`, which lives beside
 `CONTRACT_NAME_METADATA` in `prik/semantics/models.py` so contract emission can
 read the decision without importing policy; class-surface construction reads it
-the same way.
+the same way. A name the module imports is completed in the same ledger, as the
+module publishes it or, for a type it does not publish, as a class, and
+recorded under `CONTRACT_IMPORT_NAMES_METADATA`; its annotations, its import,
+and `__all__` all read that one spelling.
 
 `complete_contract_imports()` runs once names are complete, over the modules
 written together. A contract binds what its declarations name and what it
