@@ -89,24 +89,38 @@ def _parse_paths(paths: list[str]) -> dict[str, dict]:
 
 
 def _semantic_report(paths: list[str]) -> dict[str, dict]:
-    """Generate semantic IR and pyi text per parsed file."""
-    from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-    from prik.printers import emit_module
+    """Generate semantic IR and the generated .pyi per parsed file.
 
-    parsed = _parse_paths(paths)
-    semantic_out: dict[str, dict] = {}
+    Every module read is converted together and its contract emitted the way
+    ``prik generate --pyi`` emits it, so an import names what the module it
+    reads from declares and the report shows the contract a build would use.
+    """
+    from prik.parsers.fortran.models import FortranProject
+    from prik.pipeline.pyi import emit_module_stubs
+    from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+
     parser = FortranParser()
-
-    for fname in parsed:
-        code = Path(fname).read_text(encoding="utf-8")
-        fobj = parser.parse_file(code, filename=fname)
-        modules = [fortran_module_to_semantic_module(m) for m in fobj.modules]
-        semantic_out[fname] = {
-            "semantic_modules": [asdict(m) for m in modules],
-            "pyi": "\n\n".join(emit_module(m) for m in modules).strip(),
+    files = {
+        fname: parser.parse_file(Path(fname).read_text(encoding="utf-8"), filename=fname)
+        for fname in _parse_paths(paths)
+    }
+    converted = {
+        module.name.casefold(): module
+        for module in fortran_project_to_semantic_modules(FortranProject(files=list(files.values())))
+    }
+    modules_by_file = {
+        fname: [converted[module.name.casefold()] for module in parsed.modules if module.name.casefold() in converted]
+        for fname, parsed in files.items()
+    }
+    modules = [module for file_modules in modules_by_file.values() for module in file_modules]
+    stubs = emit_module_stubs(modules, normalize_public_names=True) if modules else {}
+    return {
+        fname: {
+            "semantic_modules": [asdict(module) for module in file_modules],
+            "pyi": "\n\n".join(stubs[module.name] for module in file_modules).strip(),
         }
-
-    return semantic_out
+        for fname, file_modules in modules_by_file.items()
+    }
 
 
 def _format_pyi_report(semantic_report: dict[str, dict]) -> str:

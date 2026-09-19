@@ -19,6 +19,10 @@ release tags add a leading `v` to the package version.
   copies of its source modules, so completing it no longer changes the
   contracts written beside the build.
 
+- The Fortran parser CLI's `--pyi` report emits every inspected module together
+  through the contract pipeline, so it shows the contract `prik generate --pyi`
+  writes rather than an unplanned rendering of each module alone.
+
 - A generated contract imports what it needs to bind, not the `use`
   statements its source wrote. A facade extending a generic it `use`s from two
   modules imported `convert` from each of them beside declaring the merged

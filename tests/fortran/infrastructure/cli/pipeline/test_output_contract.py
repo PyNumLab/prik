@@ -1026,3 +1026,38 @@ def test_assume_intent_in_scalars_removes_them_from_the_generated_contract(tmp_p
 
     assert "Returns" not in text
     assert "-> Float64: ..." in text
+
+
+def test_fortran_parser_cli_pyi_is_the_contract_generate_writes(tmp_path: Path):
+    """The parser CLI shows the generated contract, not an unplanned rendering of its own.
+
+    Its report converted and printed each module alone, so a module importing
+    from another file lost the import completion plans and the spelling
+    completion gives each name.
+    """
+    helpers = tmp_path / "helpers.f90"
+    helpers.write_text(
+        "module helpers\ncontains\n"
+        "pure integer function lambda(n)\ninteger, intent(in) :: n\nlambda = n\nend function lambda\n"
+        "end module helpers\n",
+        encoding="utf-8",
+    )
+    user = tmp_path / "user.f90"
+    user.write_text(
+        "module user_mod\nuse helpers, only : lambda\ncontains\n"
+        "subroutine fill(n, x)\ninteger, intent(in) :: n\nreal(8), intent(out) :: x(lambda(n))\nend subroutine fill\n"
+        "end module user_mod\n",
+        encoding="utf-8",
+    )
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(helpers), str(user), "--out", str(contracts)],
+        check=True,
+        capture_output=True,
+    )
+
+    report = fortran_parser_cli._semantic_report([str(helpers), str(user)])
+
+    assert report[str(helpers)]["pyi"] == (contracts / "helpers.pyi").read_text(encoding="utf-8").strip()
+    assert report[str(user)]["pyi"] == (contracts / "user_mod.pyi").read_text(encoding="utf-8").strip()
+    assert "from .helpers import lambda_" in report[str(user)]["pyi"]
