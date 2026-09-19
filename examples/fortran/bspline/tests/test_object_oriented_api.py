@@ -19,7 +19,7 @@ CUBIC = np.int32(4)
 
 def _sine_spline(bspline_oo, points=25):
     x = np.linspace(0.0, 2.0 * np.pi, points)
-    spline = bspline_oo.bspline_1d(x, np.sin(x), CUBIC)
+    spline = bspline_oo.Bspline_1d(x, np.sin(x), CUBIC)
     assert spline.status_ok()
     return spline
 
@@ -43,11 +43,11 @@ def test_every_reviewed_class_is_exported(bspline_oo):
 def test_abstract_base_cannot_be_instantiated(bspline_oo):
     """`bspline_class` is declared abstract, so only its extensions have instances."""
     with pytest.raises(TypeError, match="abstract native type and cannot be instantiated"):
-        bspline_oo.bspline_class()
+        bspline_oo.Bspline_Class()
 
 
 def test_every_class_extends_the_abstract_base(bspline_oo):
-    base = bspline_oo.bspline_class
+    base = bspline_oo.Bspline_Class
     for name in CLASSES:
         assert issubclass(getattr(bspline_oo, name), base), name
 
@@ -56,7 +56,7 @@ def test_every_class_extends_the_abstract_base(bspline_oo):
 def test_every_concrete_class_interpolates_an_affine_grid(bspline_oo, dimension):
     """Every dimension-specific constructor and evaluator works end to end."""
     axes, values = _affine_grid(dimension)
-    spline = getattr(bspline_oo, f"bspline_{dimension}d")(*axes, values, *(CUBIC,) * dimension)
+    spline = getattr(bspline_oo, f"Bspline_{dimension}d")(*axes, values, *(CUBIC,) * dimension)
 
     value, iflag = spline.evaluate(*(np.float64(0.3),) * dimension, *(np.int32(0),) * dimension)
 
@@ -74,7 +74,7 @@ def test_every_class_answers_the_deferred_and_inherited_bindings(bspline_oo):
 
 def test_generic_constructor_accepts_each_declared_signature(bspline_oo):
     """`interface bspline_1d` publishes an empty and a data-driven constructor."""
-    empty = bspline_oo.bspline_1d()
+    empty = bspline_oo.Bspline_1d()
     assert empty.status_ok() is False
 
     spline = _sine_spline(bspline_oo)
@@ -112,7 +112,7 @@ def test_two_dimensional_interpolation_matches_the_sampled_surface(bspline_oo):
     y = np.linspace(0.0, 1.0, 20)
     samples = np.asfortranarray(np.exp(-(x[:, None] ** 2 + y[None, :] ** 2)))
 
-    spline = bspline_oo.bspline_2d(x, y, samples, CUBIC, CUBIC)
+    spline = bspline_oo.Bspline_2d(x, y, samples, CUBIC, CUBIC)
     assert spline.status_ok()
 
     value, iflag = spline.evaluate(np.float64(0.33), np.float64(0.47), np.int32(0), np.int32(0))
@@ -124,7 +124,7 @@ def test_deferred_bindings_dispatch_through_the_abstract_base(bspline_oo):
     """The base declares `size_of` and `destroy`; the object's own type answers."""
     spline = _sine_spline(bspline_oo)
 
-    assert bspline_oo.bspline_class.size_of(spline) == spline.size_of()
+    assert bspline_oo.Bspline_Class.size_of(spline) == spline.size_of()
     assert spline.size_of() > np.int32(0)
 
     spline.destroy()

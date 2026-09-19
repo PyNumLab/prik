@@ -122,6 +122,7 @@ def hidden_status() -> Int32: ...
     policy = build_function_wrapper_policy(
         function,
         owner_path="missing_hidden_projection.hidden_status",
+        module_export=True,
     )
 
     assert policy.results == ()
@@ -243,7 +244,9 @@ def test_fmath_scalar_policy_records_address_projected_call_slots():
 
     assert policy.owner_path == "fmath.add_r8"
     assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
-    assert policy.native_name == "ADD_R8"
+    # The contract states no separate native name: `add_r8` reaches Fortran's
+    # `ADD_R8`, which is named without regard to case.
+    assert policy.native_name == "add_r8"
     assert policy.standalone is True
 
     assert [argument.name for argument in policy.arguments] == ["X", "Y"]

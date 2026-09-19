@@ -1,1 +1,3 @@
 def ping() -> None: ...
+
+__all__ = ["ping"]

@@ -445,7 +445,7 @@ def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Pa
     assert source_module.update_point(source_point) is None
     assert source_point.x == np.float64(11.0)
     assert source_point.y == np.float64(22.0)
-    source_filled = source_module.point()
+    source_filled = source_module.Point()
     assert source_module.fill_point(source_filled) is None
     assert source_filled.x == np.float64(31.0)
     assert source_filled.y == np.float64(32.0)

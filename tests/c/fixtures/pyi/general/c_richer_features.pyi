@@ -43,3 +43,17 @@ def prik_fill_matrix(
     cols: SizeT,
     matrix: Float64[rows, cols]
 ) -> None: ...
+
+__all__ = [
+    "prik_flags",
+    "prik_context",
+    "prik_scalar",
+    "PRIK_STATUS_OK",
+    "PRIK_STATUS_RETRY",
+    "PRIK_STATUS_ERROR",
+    "prik_slow_path",
+    "prik_sort",
+    "prik_register_callback",
+    "prik_status_message",
+    "prik_fill_matrix",
+]

@@ -1406,6 +1406,22 @@ static inline PyObject *prik_float32_to_numpy(const float *value)
     return result;
 }
 
+/* Bind one name in a namespace to a callable another namespace owns, so a
+ * re-exported procedure resolves to the single wrapper that defines it. */
+static inline int prik_bind_namespace_alias(PyObject *target, const char *name, PyObject *source,
+                                            const char *source_name)
+{
+    PyObject *value = PyObject_GetAttrString(source, source_name);
+    int status;
+
+    if (value == NULL) {
+        return -1;
+    }
+    status = PyObject_SetAttrString(target, name, value);
+    Py_DECREF(value);
+    return status;
+}
+
 static inline PyObject *prik_float64_to_numpy(const double *value)
 {
     PyObject *result = PyArrayScalar_New(Double);

@@ -80,6 +80,25 @@ native_math = build.import_module()
 print(native_math.add(np.float64(3.0), np.float64(2.5)))
 ```
 
+Pass `export_symbols` to restrict the build to an exact reviewed set of
+reachable C functions. That set is the source-side public surface: it selects
+which C declarations are converted, and the matching stub emission records the
+corresponding Python public names in the module's `__all__`.
+
+```python
+from prik import build_c_extension
+
+build = build_c_extension(
+    "vendor.h",
+    output_dir="build",
+    export_symbols=["vendor_open", "vendor_close"],
+)
+```
+
+Unknown names fail the build rather than silently producing a smaller module.
+Once you author or generate a semantic `.pyi` contract, that contract's own
+`__all__` states the public surface and `export_symbols` no longer applies.
+
 For an authored C semantic contract, use `build_pyi_extension` with
 `native_language="c"` and `native_c_sources=[...]`. [C Pointers, Arrays, and
 Strings](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays)

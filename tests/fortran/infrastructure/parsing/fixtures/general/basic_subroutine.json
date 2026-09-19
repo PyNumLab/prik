@@ -7,7 +7,7 @@
     {
       "name": "m1",
       "filename": "basic_subroutine.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -67,7 +67,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -95,7 +95,7 @@
     "m1": {
       "name": "m1",
       "filename": "basic_subroutine.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -155,7 +155,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []

@@ -7,7 +7,7 @@
     {
       "name": "scope_name_reuse_combinations",
       "filename": "scope_name_reuse_combinations.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "same_name_i",
@@ -146,7 +146,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -181,7 +181,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -216,7 +216,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -251,7 +251,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -286,7 +286,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -341,7 +341,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -396,7 +396,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -451,7 +451,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -504,7 +504,11 @@
             "do_work_r",
             "do_work_l"
           ],
-          "abstract": false
+          "abstract": false,
+          "declaring_scope_kind": "module",
+          "declaring_scope_path": [
+            "scope_name_reuse_combinations"
+          ]
         }
       ],
       "enums": [],
@@ -527,7 +531,7 @@
     "scope_name_reuse_combinations": {
       "name": "scope_name_reuse_combinations",
       "filename": "scope_name_reuse_combinations.f90",
-      "uses": {},
+      "uses": [],
       "variables": [
         {
           "name": "same_name_i",
@@ -666,7 +670,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -701,7 +705,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -736,7 +740,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -771,7 +775,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -806,7 +810,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -861,7 +865,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -916,7 +920,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -971,7 +975,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -1024,7 +1028,11 @@
             "do_work_r",
             "do_work_l"
           ],
-          "abstract": false
+          "abstract": false,
+          "declaring_scope_kind": "module",
+          "declaring_scope_path": [
+            "scope_name_reuse_combinations"
+          ]
         }
       ],
       "enums": [],

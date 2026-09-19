@@ -60,7 +60,7 @@ def test_policy_completes_builtin_scalar_family_only_for_reflected_dispatch():
         surface
         for namespace in plan.namespaces
         for surface in namespace.classes
-        if surface.type_identity[1] == "vector"
+        if surface.type_identity[1] == "Vector"
     )
     overloads = {overload.python_name: overload for overload in vector.overloads}
 

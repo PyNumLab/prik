@@ -5,3 +5,5 @@ from prik.contracts import Addr, Arg, Int32, Returns, native_call, standalone
 def add_one(
     value: Int32
 ) -> tuple[Int32, Returns["value", Int32]]: ...
+
+__all__ = ["add_one"]

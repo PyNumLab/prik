@@ -7,7 +7,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.fortran._support.wrapper_build import _build_source_and_import
+from prik.parsers.fortran import parse_fortran_project
+from prik.pipeline.pyi import emit_module_stubs
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from tests.fortran._support.wrapper_build import _build_source_and_import, _build_text_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -17,6 +20,25 @@ GENERATED = {
     "type_accessibility_wrapper.c",
     "type_accessibility_wrapper.h",
 }
+
+DEPENDENCY_SOURCE = """
+module dependency_home
+  implicit none
+  type :: box
+    integer :: value
+  end type box
+end module dependency_home
+
+module dependency_consumer
+  use dependency_home, only : crate => box
+  implicit none
+contains
+  integer function crate_value(item) result(value)
+    type(crate), intent(in) :: item
+    value = item%value
+  end function crate_value
+end module dependency_consumer
+"""
 
 
 def test_accessibility_statements_shape_the_generated_class(tmp_path: Path):
@@ -28,12 +50,42 @@ def test_accessibility_statements_shape_the_generated_class(tmp_path: Path):
     """
     module = _build_source_and_import(SOURCE, tmp_path, GENERATED)
 
-    assert hasattr(module, "gated")
-    members = {name for name in dir(module.gated) if not name.startswith("_")}
+    assert hasattr(module, "Gated")
+    members = {name for name in dir(module.Gated) if not name.startswith("_")}
     assert members == {"shown", "step", "peek"}
 
-    instance = module.gated(shown=np.int32(5))
+    instance = module.Gated(shown=np.int32(5))
     assert instance.shown == np.int32(5)
     assert instance.peek() == np.int32(7)
     instance.step()
     assert instance.peek() == np.int32(8)
+
+
+def test_declaration_dependency_accessibility_and_python_publication_are_separate(tmp_path: Path):
+    """The semantic route remains valid while runtime and contract omit its alias."""
+    source = tmp_path / "dependency_accessibility.f90"
+    module = _build_text_and_import(
+        DEPENDENCY_SOURCE,
+        source.name,
+        tmp_path,
+        {
+            "bind_c_dependency_accessibility_wrapper.f90",
+            "dependency_accessibility_wrapper.c",
+            "dependency_accessibility_wrapper.h",
+        },
+    )
+    stubs = emit_module_stubs(
+        fortran_project_to_semantic_modules(parse_fortran_project([source])),
+        normalize_public_names=True,
+    )
+
+    consumer_contract = stubs["dependency_consumer"]
+    # A renamed type is still a class, spelled as one wherever the contract
+    # writes it: in its import and in the annotations naming it.
+    assert "from .dependency_home import Box as Crate" in consumer_contract
+    assert "item: Crate" in consumer_contract
+    assert consumer_contract.rstrip().endswith('__all__ = ["crate_value"]')
+    assert not any(name.casefold() == "crate" for name in vars(module.dependency_consumer))
+
+    item = module.dependency_home.Box(value=np.int32(7))
+    assert module.dependency_consumer.crate_value(item) == np.int32(7)

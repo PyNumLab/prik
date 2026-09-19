@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from prik.utilities.declaration_expressions import (
+    declaration_expression_identifiers,
     ArrayExpressionSource,
     DeclarationExpressionCall,
     ResolvedDeclarationExtent,
@@ -18,6 +19,7 @@ from prik.utilities.declaration_expressions import (
     fortran_extent_to_python,
     is_declaration_expression_helper,
     is_public_declaration_expression,
+    rename_declaration_expression_calls,
     render_declaration_extent,
     resolve_declaration_extent,
     split_declaration_assignment,
@@ -34,7 +36,7 @@ def test_source_helpers_keep_nested_syntax_intact() -> None:
         "[third, fourth]",
     ]
     assert split_top_level_expression("'first''part', second", ",") == ["'first''part'", "second"]
-    assert split_top_level_expression("first::Strided:upper", ":") == ["first", "", "Strided", "upper"]
+    assert split_top_level_expression("first::middle:upper", ":") == ["first", "", "middle", "upper"]
     with pytest.raises(ValueError, match="one character"):
         split_top_level_expression("value", "::")
 
@@ -111,7 +113,7 @@ def test_normalization_and_inspection_preserve_expression_provenance() -> None:
     assert declaration_extent_references("n + max(m, 1)") == ("n", "m")
     assert declaration_extent_references("values.shape[0]") == ("<invalid>",)
     assert declaration_extent_references("not valid (") == ("<invalid>",)
-    assert declaration_extent_references("::Strided") == ()
+    assert declaration_extent_references("::") == ()
     assert declaration_extent_uses_power("n ** 2")
     assert not declaration_extent_uses_power("not valid (")
     assert is_declaration_expression_helper("SUM")
@@ -192,7 +194,7 @@ def test_role_resolution_reuses_completed_roles_and_names_blockers() -> None:
     array_roles = {"values": ("values", ("value_role_0", "value_role_1"))}
     callable_roles = {"extent_for": ("prik_extent_for", "extent_role")}
 
-    assert resolve_declaration_extent("::Strided", scalar_roles, array_roles) == ResolvedDeclarationExtent("::Strided")
+    assert resolve_declaration_extent("::", scalar_roles, array_roles) == ResolvedDeclarationExtent("::")
     assert resolve_declaration_extent("n + values.shape[1]", scalar_roles, array_roles) == ResolvedDeclarationExtent(
         "n + __prik_extent_values_1",
         ("n", "__prik_extent_values_1"),
@@ -320,3 +322,64 @@ def test_backend_renderer_rejects_invalid_target_and_unrenderable_syntax() -> No
         render_declaration_extent("not valid (", {}, target="c")
     with pytest.raises(ValueError, match="unsupported completed declaration-expression node"):
         render_declaration_extent("[n]", {}, target="c")
+
+
+def test_a_character_literal_references_no_name_it_happens_to_spell():
+    """Parsing decides what is a reference, so a literal's contents are its value."""
+    assert declaration_expression_identifiers('"box"') == ()
+    assert declaration_expression_identifiers("'box'") == ()
+
+
+def test_an_expression_reports_the_names_it_reads():
+    """A name used in a declaration is a reference wherever it appears."""
+    assert declaration_expression_identifiers("crate") == ("crate",)
+    assert set(declaration_expression_identifiers("n * 2 + other")) == {"n", "other"}
+    assert set(declaration_expression_identifiers("size(values)")) == {"size", "values"}
+
+
+def test_a_selector_keyword_names_a_slot_rather_than_an_entity():
+    """`len` and `kind` are syntax, so only the value they carry is read."""
+    assert declaration_expression_identifiers("len=3") == ()
+    assert declaration_expression_identifiers("len=n") == ("n",)
+    assert declaration_expression_identifiers("kind=c_char") == ("c_char",)
+    assert declaration_expression_identifiers('kind="box"') == ()
+
+
+def test_each_selector_in_one_declaration_is_read_separately():
+    """A character declaration carries both selectors in one stored string."""
+    assert declaration_expression_identifiers("len=n, kind=c_char") == ("n", "c_char")
+    assert declaration_expression_identifiers("len=1, kind=c_char") == ("c_char",)
+
+
+def test_a_comparison_is_not_read_as_a_selector():
+    """`==` is an operator, so both sides are part of the expression."""
+    assert set(declaration_expression_identifiers("a == b")) == {"a", "b"}
+
+
+def test_lexical_translation_leaves_character_literals_alone():
+    """A literal's contents are its value, whatever they spell outside quotes."""
+    from prik.utilities.declaration_expressions import _python_parseable_fortran_expression
+
+    assert _python_parseable_fortran_expression('len(".true.")') == 'len(".true.")'
+    assert _python_parseable_fortran_expression('len("a%b")') == 'len("a%b")'
+    assert _python_parseable_fortran_expression('len("1d2")') == 'len("1d2")'
+    # Everything outside the literal is still translated.
+    assert _python_parseable_fortran_expression('obj%field + len("a%b")') == 'obj.field + len("a%b")'
+    assert _python_parseable_fortran_expression(".true.") == "True"
+
+
+def test_a_native_name_python_reserves_is_still_read_as_a_call():
+    """A Fortran function may be called `lambda`; the call is not invalid syntax."""
+    assert declaration_expression_calls("lambda(n) + class(2)") == ("lambda", "class")
+    assert declaration_expression_identifiers("lambda(n) + 1") == ("lambda", "n")
+
+
+def test_respelling_changes_call_targets_and_nothing_else():
+    """A variable or a literal spelled like the callee keeps its spelling."""
+    assert rename_declaration_expression_calls("lambda(n)", {"lambda": "lambda_"}) == "lambda_(n)"
+    assert (
+        rename_declaration_expression_calls("helper(n) + helper + len('helper(')", {"helper": "helper_2"})
+        == "helper_2(n) + helper + len('helper(')"
+    )
+    # Nothing to respell leaves the text exactly as written.
+    assert rename_declaration_expression_calls("2*n", {"helper": "helper_2"}) == "2*n"

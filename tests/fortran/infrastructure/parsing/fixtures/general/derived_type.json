@@ -7,7 +7,7 @@
     {
       "name": "particle_mod",
       "filename": "derived_type.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -40,7 +40,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -145,7 +145,7 @@
     "particle_mod": {
       "name": "particle_mod",
       "filename": "derived_type.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -178,7 +178,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []

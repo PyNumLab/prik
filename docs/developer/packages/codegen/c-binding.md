@@ -125,6 +125,7 @@ plan = ModulePlan(
     binding=BindingModulePlan(...),
     entrypoint=NativeEntrypointModulePlan(...),
     bridge=BridgeModulePlan(...),
+    variables=(),
     namespaces=(namespace,),
 )
 
@@ -196,6 +197,7 @@ plan = ModulePlan(
     binding=BindingModulePlan(owner_path="demo"),
     entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
+    variables=(),
     namespaces=(namespace,),
     native_generated_code_groups=(
         NativeGeneratedCodeGroupPlan(

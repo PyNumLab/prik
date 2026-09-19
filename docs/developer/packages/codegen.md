@@ -212,20 +212,32 @@ python3 prik/codegen/c/python_surface.py
 Rendered Python facade:
 _prik_unset = object()
 
-_prik_ops_state = {}
+_prik_ops_state_t = {}
 class State:
     'Opaque native state.'
     __slots__ = ('_prik_capsule', '_prik_owner', '_prik_ops', '_prik_origin')
     def __new__(cls, *args, **kwargs):
         'Construction is disabled.'
         raise TypeError('State objects come from native code.')
-def _prik_wrap_State(capsule, owner=None, ops=None, origin='direct'):
+def _prik_wrap_state_t(capsule, owner=None, ops=None, origin='direct'):
     ...
 ```
 
 The slots, rejected constructor, and wrapper helper are generated from that
 class plan. They show the planned Python surface without selecting its native
-lifecycle policy.
+lifecycle policy. The operation map and wrapper helper are keyed on the type's
+backend symbol, which stays unique when two modules declare a type spelled
+alike.
+
+A type is defined in one namespace, and generated code taking or returning it
+may live in any other. The binding therefore retains the module object of each
+namespace that defines a type, and fetches the class, its wrapper helper, and
+its operation maps from there rather than from the calling namespace. A
+derived module variable's helpers live beside its type, so its getter reaches
+them the same way. A class extending a type another namespace defines names its
+base through that namespace too: module initialization creates every namespace
+first, then sets them up in plan order, and binds each namespace a setup script
+reaches into its dictionary before the script runs.
 
 ## Tests And Evidence
 

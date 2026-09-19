@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.planning.models import (
-    ClassSurfacePlan,
     DerivedFieldPlan,
     DerivedMemberPathPlan,
     DerivedTypePlan,
@@ -103,21 +102,37 @@ class CBindingNames:
         return f"_prik_module_{variable.symbol_name.casefold()}_require_present"
 
     @staticmethod
-    def class_create_method(surface: ClassSurfacePlan) -> str:
-        """Return the private C constructor callable installed in the namespace."""
-        return f"_prik_create_{surface.type_identity[1].casefold()}"
+    def namespace_symbol(python_path: tuple[str, ...]) -> str:
+        """Return the symbol fragment naming one namespace path."""
+        return "_".join(python_path).casefold() if python_path else "root"
+
+    @classmethod
+    def namespace_reference(cls, python_path: tuple[str, ...]) -> str:
+        """Return the name one namespace's Python source reaches another by."""
+        return f"_prik_namespace_{cls.namespace_symbol(python_path)}"
 
     @staticmethod
-    def class_wrap_helper(
-        surface: ClassSurfacePlan | None,
-        *,
-        fallback: str | None = None,
-    ) -> str:
-        """Return the Python helper attaching existing native storage."""
-        name = surface.python_names[0] if surface is not None else fallback
-        if name is None:
-            raise ValueError("Class wrapper helper requires a Python type name")
-        return f"_prik_wrap_{name}"
+    def type_ops(backend_symbol: str) -> str:
+        """Return the Python operation-map name for a type's direct storage."""
+        return f"_prik_ops_{backend_symbol.casefold()}"
+
+    @staticmethod
+    def class_create_method(backend_symbol: str) -> str:
+        """Return the private C constructor callable installed in the namespace."""
+        return f"_prik_create_{backend_symbol.casefold()}"
+
+    @staticmethod
+    def class_wrap_helper(backend_symbol: str) -> str:
+        """Return the Python helper attaching existing native storage.
+
+        The helper is internal, and the generated code reaching for it knows
+        the native type it is wrapping rather than the name Python publishes
+        that type under, so it is keyed on the type's backend symbol the way
+        every other per-type helper is. That symbol is unique across the
+        extension, where the native name alone is not: two modules may each
+        declare a type spelled alike.
+        """
+        return f"_prik_wrap_{backend_symbol.casefold()}"
 
     @staticmethod
     def overload_dispatch_symbol(overload: OverloadPlan) -> str:

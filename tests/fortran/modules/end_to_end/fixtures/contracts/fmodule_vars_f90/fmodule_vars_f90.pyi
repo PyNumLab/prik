@@ -1,6 +1,6 @@
 from prik.contracts import Final, Float64, Int32
 
-class rgb_color:
+class Rgb_Color:
     def __init__(
         self,
         *,
@@ -15,7 +15,7 @@ class rgb_color:
 
 nmax: Final[Int32] = 12
 
-black: Final[rgb_color]
+black: Final[Rgb_Color]
 
 counter: Int32
 
@@ -30,3 +30,16 @@ def scaled_counter() -> Float64: ...
 def next_local() -> Int32: ...
 
 def black_sum() -> Int32: ...
+
+__all__ = [
+    "Rgb_Color",
+    "nmax",
+    "black",
+    "counter",
+    "scale",
+    "saved_counter",
+    "summarize",
+    "scaled_counter",
+    "next_local",
+    "black_sum",
+]

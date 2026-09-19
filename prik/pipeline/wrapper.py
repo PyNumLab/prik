@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from prik.utilities.declaration_expressions import RUNTIME_DIMENSION_MARKERS
 from prik.utilities.stage_values import StageRecord
 from prik.policy.ownership import (
     AssignmentMode,
@@ -37,9 +38,7 @@ from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayEntrypointABI,
-    ArrayLogicalABI,
     ArrayPythonLayout,
-    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
@@ -324,14 +323,15 @@ class WrapperGenerator:
             )
         diagnostics.extend(self._generated_support_procedure_entrypoint_diagnostics(plan))
         diagnostics.extend(self._namespace_tree_diagnostics(plan))
+        diagnostics.extend(self._module_variable_publication_diagnostics(plan))
+        for variable in plan.variables:
+            diagnostics.extend(self._module_variable_diagnostics(variable))
 
-        # Validate every typed member against the shared records in its namespace.
+        # Validate every namespace-owned member against its shared records.
         for namespace in plan.namespaces:
             diagnostics.extend(self._namespace_diagnostics(namespace))
             for function in namespace.functions:
                 diagnostics.extend(self._function_diagnostics(function))
-            for variable in namespace.variables:
-                diagnostics.extend(self._module_variable_diagnostics(variable))
             for class_surface in namespace.classes:
                 diagnostics.extend(self._class_surface_diagnostics(namespace, class_surface))
             functions = {id(function) for function in namespace.functions}
@@ -340,6 +340,7 @@ class WrapperGenerator:
 
         # Validate graph-wide ordering, generated spellings, and header dependencies.
         diagnostics.extend(self._class_graph_diagnostics(plan))
+        diagnostics.extend(self._derived_type_identity_diagnostics(plan))
         diagnostics.extend(self._generated_symbol_diagnostics(plan))
         diagnostics.extend(self._required_header_diagnostics(plan))
         return tuple(diagnostics)
@@ -403,7 +404,7 @@ class WrapperGenerator:
         for operation in operations:
             diagnostics.extend(self._generated_support_procedure_diagnostics(operation))
         try:
-            expected_projection = build_generated_support_procedure_projection(plan.namespaces)
+            expected_projection = build_generated_support_procedure_projection(plan.namespaces, plan.variables)
         except ValueError as error:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-auxiliary-entrypoint-inventory", str(error)))
             return tuple(diagnostics)
@@ -520,8 +521,14 @@ class WrapperGenerator:
         """Require module headers to equal the completed handle-plan union."""
         handles = tuple(
             handle
-            for namespace in plan.namespaces
-            for handle in self._namespace_native_array_handles(namespace)
+            for handle in (
+                *(variable.native_array_handle for variable in plan.variables),
+                *(
+                    handle
+                    for namespace in plan.namespaces
+                    for handle in self._namespace_native_array_handles(namespace)
+                ),
+            )
             if handle is not None
         )
         expected_headers = list(self._native_array_required_headers(handles))
@@ -581,7 +588,6 @@ class WrapperGenerator:
         return (
             *(argument.native_array_handle for function in namespace.functions for argument in function.arguments),
             *(result.native_array_handle for function in namespace.functions for result in function.results),
-            *(variable.native_array_handle for variable in namespace.variables),
             *(field.native_array_handle for derived in namespace.derived_types for field in derived.fields),
         )
 
@@ -853,6 +859,15 @@ class WrapperGenerator:
                 seen.add(surface.type_identity)
         return tuple(diagnostics)
 
+    def _derived_type_identity_diagnostics(self, plan: ModulePlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require each type to be defined once, where generated code reaches it."""
+        counts = Counter(derived.type_identity for namespace in plan.namespaces for derived in namespace.derived_types)
+        return tuple(
+            self._diagnostic(plan.owner_path, "duplicate-derived-type-identity", identity)
+            for identity, count in counts.items()
+            if count > 1
+        )
+
     # Derived-type definition, field, and module validation.
     def _derived_type_diagnostics(self, plan: NamespacePlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate namespace-owned opaque type and field identities."""
@@ -1022,7 +1037,7 @@ class WrapperGenerator:
     def _python_export_name_diagnostics(self, plan: NamespacePlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return duplicate local export-name diagnostics."""
         names = [function.binding.python_name for function in plan.functions]
-        names.extend(name for variable in plan.variables for name in variable.binding.python_names)
+        names.extend(name for publication in plan.variable_publications for name in publication.python_names)
         names.extend(name for derived in plan.derived_types for name in derived.python_names)
         names.extend(overload.python_name for overload in plan.overloads)
         return tuple(
@@ -1040,14 +1055,6 @@ class WrapperGenerator:
                 diagnostics.append(
                     self._diagnostic(function.owner_path, "inconsistent-function-export-owner", expected_owner)
                 )
-        for variable in plan.variables:
-            if not variable.binding.python_names:
-                continue
-            expected_owner = f"{plan.owner_path}.{variable.binding.python_names[0]}"
-            if variable.owner_path != expected_owner:
-                diagnostics.append(
-                    self._diagnostic(variable.owner_path, "inconsistent-variable-export-owner", expected_owner)
-                )
         for overload in plan.overloads:
             expected_owner = f"{plan.owner_path}.{overload.python_name}"
             if overload.owner_path != expected_owner:
@@ -1056,16 +1063,60 @@ class WrapperGenerator:
                 )
         return tuple(diagnostics)
 
+    def _module_variable_publication_diagnostics(
+        self,
+        plan: ModulePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate that every publication references one canonical variable plan."""
+        owners = {variable.owner_path for variable in plan.variables}
+        diagnostics = []
+        namespace_paths = {namespace.python_path for namespace in plan.namespaces}
+        diagnostics.extend(
+            self._diagnostic(
+                variable.owner_path,
+                "missing-module-variable-support-namespace",
+                variable.binding.support_namespace,
+            )
+            for variable in plan.variables
+            if variable.binding.support_namespace not in namespace_paths
+        )
+        for namespace in plan.namespaces:
+            for publication in namespace.variable_publications:
+                if publication.variable_owner_path not in owners:
+                    diagnostics.append(
+                        self._diagnostic(
+                            namespace.owner_path,
+                            "missing-module-variable-publication-owner",
+                            publication.variable_owner_path,
+                        )
+                    )
+                if not publication.python_names:
+                    diagnostics.append(
+                        self._diagnostic(
+                            namespace.owner_path,
+                            "empty-module-variable-publication",
+                            publication.variable_owner_path,
+                        )
+                    )
+        return tuple(diagnostics)
+
     def _generated_symbol_diagnostics(self, plan: ModulePlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Reject missing or colliding C/Fortran symbol stems before lowering."""
         owners_by_symbol: dict[str, list[str]] = {}
         diagnostics = list(self._namespace_symbol_diagnostics(plan))
         for namespace in plan.namespaces:
-            for item in (*namespace.functions, *namespace.variables):
+            for item in namespace.functions:
                 if not item.symbol_name or not item.symbol_name.isidentifier():
                     diagnostics.append(self._diagnostic(item.owner_path, "invalid-generated-symbol", item.symbol_name))
                     continue
                 owners_by_symbol.setdefault(item.symbol_name.casefold(), []).append(item.owner_path)
+        for variable in plan.variables:
+            if not variable.symbol_name or not variable.symbol_name.isidentifier():
+                diagnostics.append(
+                    self._diagnostic(variable.owner_path, "invalid-generated-symbol", variable.symbol_name)
+                )
+                continue
+            owners_by_symbol.setdefault(variable.symbol_name.casefold(), []).append(variable.owner_path)
         diagnostics.extend(
             self._diagnostic(plan.owner_path, "duplicate-generated-symbol", f"{symbol}:{','.join(owners)}")
             for symbol, owners in owners_by_symbol.items()
@@ -1091,8 +1142,6 @@ class WrapperGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return getter, setter, and initialization consistency diagnostics."""
         diagnostics = []
-        if not plan.binding.python_names:
-            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-python-name", plan.owner_path))
         diagnostics.extend(self._module_variable_entrypoint_diagnostics(plan))
         diagnostics.extend(self._module_getter_diagnostics(plan))
         if plan.binding.getter_action is ModuleGetterAction.DERIVED_OBJECT:
@@ -1675,6 +1724,11 @@ class WrapperGenerator:
             for result in plan.results
             if result.array is not None and "bridge" in result.array.extent_evaluation
         )
+        groups.extend(
+            (argument.owner_path, "argument_extent")
+            for argument in plan.arguments
+            if argument.array is not None and "bridge" in argument.array.extent_evaluation
+        )
         return tuple(groups)
 
     def _entrypoint_parameter_name_diagnostics(
@@ -1969,7 +2023,6 @@ class WrapperGenerator:
             *self._optional_argument_diagnostics(plan),
             *self._argument_family_diagnostics(plan, available_roles),
             *self._argument_transformation_diagnostics(plan),
-            *self._array_writeback_abi_diagnostics(plan),
             *self._argument_data_action_diagnostics(plan),
             *self._bridge_data_diagnostics(
                 plan.owner_path,
@@ -1978,28 +2031,6 @@ class WrapperGenerator:
             ),
         ]
         return tuple(diagnostics)
-
-    def _array_writeback_abi_diagnostics(
-        self,
-        plan: ArgumentTransferPlan,
-    ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate completed mutable-array normalization without selecting it."""
-        expected = ArrayWritebackABI.NOT_APPLICABLE
-        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER and (
-            plan.mutates_native or self._publishes_array_replacement(plan)
-        ):
-            # Every element type is written back the same way: a Boolean one
-            # already holds the zero or one its interoperable form requires.
-            expected = ArrayWritebackABI.NATIVE_ARRAY
-        if plan.array_writeback_abi is expected:
-            return ()
-        return (
-            self._diagnostic(
-                plan.owner_path,
-                "invalid-array-writeback-abi",
-                f"{plan.array_writeback_abi.value}; expected {expected.value}",
-            ),
-        )
 
     # Layer-owned representation transformation validation.
     def _argument_transformation_diagnostics(
@@ -2329,19 +2360,34 @@ class WrapperGenerator:
         transfer: CallbackTransferPlan,
         position: int,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require every primitive scalar callback transfer to use its value projection."""
-        if position < 0 or transfer.object_kind is not ObjectKind.SCALAR or transfer.rank != 0:
+        """Require every primitive scalar callback transfer to use a completed projection.
+
+        A rank-zero primitive dummy is projected either as an independent value
+        or, when the native caller reads it back, as rank-zero storage the
+        callable writes through.  Any other pairing of projection, ABI and copy
+        direction means completed policy and the plan disagree.
+        """
+        if position < 0 or transfer.rank != 0:
             return ()
-        valid = (
-            transfer.python_action is PythonBarrierAction.SCALAR_VALUE
-            and transfer.abi in {CallbackABIKind.VALUE, CallbackABIKind.REFERENCE}
-            and transfer.adapter_action
-            in {
-                CallbackTransferAction.COPY_IN,
-                CallbackTransferAction.COPY_OUT,
-                CallbackTransferAction.COPY_IN_OUT,
-            }
-        )
+        copies = {
+            CallbackTransferAction.COPY_IN,
+            CallbackTransferAction.COPY_OUT,
+            CallbackTransferAction.COPY_IN_OUT,
+        }
+        if transfer.object_kind is ObjectKind.SCALAR:
+            valid = (
+                transfer.python_action is PythonBarrierAction.SCALAR_VALUE
+                and transfer.abi in {CallbackABIKind.VALUE, CallbackABIKind.REFERENCE}
+                and transfer.adapter_action in copies
+            )
+        elif transfer.object_kind is ObjectKind.NUMPY_ARRAY:
+            valid = (
+                transfer.python_action is PythonBarrierAction.SCALAR_STORAGE
+                and transfer.abi is CallbackABIKind.REFERENCE
+                and transfer.adapter_action in copies
+            )
+        else:
+            return ()
         return (
             ()
             if valid
@@ -2766,16 +2812,6 @@ class WrapperGenerator:
                     slot.array_native_type,
                 )
             )
-        if slot.array_copy_in != plan.array_copy_in:
-            diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-array-copy-in", slot.array_copy_in))
-        if slot.array_copy_out != plan.array_copy_out:
-            diagnostics.append(
-                self._diagnostic(
-                    plan.owner_path,
-                    "inconsistent-array-copy-out",
-                    slot.array_copy_out,
-                )
-            )
         return tuple(diagnostics)
 
     def _argument_slot_consistency_diagnostics(
@@ -2818,8 +2854,6 @@ class WrapperGenerator:
         """Return the data action implied by completed orthogonal selectors."""
         if plan.callback is not None:
             return BridgeDataAction.DIRECT_TRANSFER
-        if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
-            return BridgeDataAction.COPY_REPRESENTATION
         if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
             return BridgeDataAction.COPY_REPRESENTATION
         if self._uses_typed_derived_value(plan):
@@ -3540,12 +3574,7 @@ class WrapperGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-array-handoff-mode", plan.entrypoint.handoff_mode.value)
             )
-        expected_data_action = (
-            BridgeDataAction.COPY_REPRESENTATION
-            if plan.array_logical_abi is ArrayLogicalABI.NATIVE_KIND_COPY
-            else BridgeDataAction.ASSOCIATE_VIEW
-        )
-        if plan.bridge.data_action is not expected_data_action:
+        if plan.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-array-data-action", plan.bridge.data_action.value)
             )
@@ -5033,7 +5062,7 @@ class WrapperGenerator:
     def _array_result_extent_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Reject unresolved ordinary array result extent spellings."""
         array = plan.array
-        if array is not None and any(shape in {":", "::Strided", "...", "Flat"} for shape in array.shape):
+        if array is not None and any(shape in RUNTIME_DIMENSION_MARKERS for shape in array.shape):
             return (self._diagnostic(plan.owner_path, "unresolved-array-result-shape", array.shape),)
         return ()
 

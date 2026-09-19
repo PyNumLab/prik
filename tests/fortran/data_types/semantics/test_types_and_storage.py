@@ -10,6 +10,7 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
     FortranProject,
     FortranUseMapping,
+    FortranUseStatement,
     FortranVariable,
 )
 from prik.semantics.fortran2ir import (
@@ -43,10 +44,10 @@ def test_converter_visitor_and_compatibility_methods_cover_public_paths():
     )
     module = FortranModule(
         name="m",
-        uses={
-            "iso_c_binding": [FortranUseMapping(source="c_int", target="i32")],
-            "plain_import": [],
-        },
+        uses=[
+            FortranUseStatement("iso_c_binding", True, (FortranUseMapping(source="c_int", target="i32"),)),
+            FortranUseStatement("plain_import"),
+        ],
         variables=[scale],
         procedures=[proc],
         derived_types=[dtype],
@@ -74,7 +75,9 @@ def test_converter_visitor_and_compatibility_methods_cover_public_paths():
     assert converter.visit(proc).name == "work"
     assert converter.visit(proc).visibility == "public"
     assert converter.visit(dtype, procedure_lookup={}).base_classes == ["base_t"]
-    assert converter.visit(module).imports[0].items[0].target == "i32"
+    # No declaration is written with `i32`, and the compiler supplies
+    # `iso_c_binding`, so the module states no import for its contract.
+    assert converter.visit(module).imports == []
 
     modules = converter.visit(parsed)
     assert [module.name for module in modules] == ["m", "standalone_source"]
@@ -157,7 +160,7 @@ end module contract_mod
 
     assumed = array_contract(args["assumed"].semantic_type)
     assert assumed.category == "assumed_shape"
-    assert assumed.shape == ["::Strided", "::Strided"]
+    assert assumed.shape == ["::", "::"]
     assert assumed.order == "ORDER_F"
 
     contig = array_contract(args["contig"].semantic_type)
@@ -268,7 +271,7 @@ def test_fortran_native_storage_contracts_preserve_exact_bounds_and_member_flags
     assert semantic_member.semantic_type.storage.array.pointer is True
     assert plain_member.optional is False
     assert plain_member.visibility == "public"
-    assert plain_member.semantic_type.storage.array.shape == ["::Strided"]
+    assert plain_member.semantic_type.storage.array.shape == ["::"]
     assert plain_member.semantic_type.storage.array.allocatable is False
     assert plain_member.semantic_type.storage.array.pointer is False
     assert plain_member.origin.source_language == "fortran"

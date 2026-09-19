@@ -26,16 +26,16 @@ def module(tmp_path_factory):
 
 def test_type_without_a_constructor_interface_keeps_keyword_fields(module):
     """No user constructor: the keyword-field `__init__` is unchanged."""
-    value = module.plain(tag=np.int32(5))
+    value = module.Plain(tag=np.int32(5))
 
     assert value.tag == np.int32(5)
 
 
 def test_constructor_interface_overloads_init_from_its_specifics(module):
     """`interface <typename>`: each specific becomes an accepted signature."""
-    empty = module.box()
-    from_count = module.box(np.int32(7))
-    from_value = module.box(np.float64(2.5))
+    empty = module.Box()
+    from_count = module.Box(np.int32(7))
+    from_value = module.Box(np.float64(2.5))
 
     assert (empty.count, empty.value) == (np.int32(0), np.float64(0.0))
     assert (from_count.count, from_count.value) == (np.int32(7), np.float64(7.0))
@@ -45,13 +45,13 @@ def test_constructor_interface_overloads_init_from_its_specifics(module):
 def test_constructor_overload_rejects_an_unmatched_signature(module):
     """A call matching no specific is refused rather than guessed at."""
     with pytest.raises(TypeError, match="no matching overload"):
-        module.box("not a supported signature")
+        module.Box("not a supported signature")
 
 
 def test_constructed_instances_are_independent_wrapper_objects(module):
     """Each accepted signature produces its own wrapper-owned instance."""
-    first = module.box(np.int32(1))
-    second = module.box(np.int32(2))
+    first = module.Box(np.int32(1))
+    second = module.Box(np.int32(2))
 
     assert first is not second
     first.count = np.int32(9)

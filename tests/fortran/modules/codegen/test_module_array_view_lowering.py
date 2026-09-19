@@ -58,11 +58,7 @@ def _lowered_getters():
     bridge = FortranBridgeGenerator()
     bridge.visit(plan)
     printer = FortranSourcePrinter()
-    return {
-        variable.binding.python_names[0]: printer.visit(bridge.visit(variable)[0])
-        for namespace in plan.namespaces
-        for variable in namespace.variables
-    }
+    return {variable.bridge.native_name: printer.visit(bridge.visit(variable)[0]) for variable in plan.variables}
 
 
 def test_addressable_module_array_takes_its_address_directly():
@@ -148,15 +144,14 @@ def _undecided_plan():
     module = parse_pyi_text("plain: Float64[3]\n", module_name="array_state")
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
-    variable = plan.namespaces[0].variables[0]
+    variable = plan.variables[0]
     return plan, variable, replace(variable, array_address=None)
 
 
 def test_module_array_view_plan_rejects_a_missing_address_mechanism():
     """The plan boundary reports the gap rather than letting lowering guess."""
     plan, _variable, undecided = _undecided_plan()
-    namespace = plan.namespaces[0]
-    namespace.variables = (undecided,)
+    plan.variables = (undecided,)
 
     diagnostics = WrapperGenerator()._plan_diagnostics(plan)
 

@@ -14,6 +14,11 @@ module fcallback_array_f90
       real(8), intent(in) :: values(count)
       real(8) :: output(count)
     end function transform_callback
+
+    subroutine assumed_shape_callback(values, doubled)
+      real(8), intent(in) :: values(:)
+      real(8), intent(out) :: doubled(:)
+    end subroutine assumed_shape_callback
   end interface
 
 contains
@@ -33,4 +38,12 @@ contains
 
     output = callback(count, values)
   end subroutine apply_transform
+
+  subroutine apply_assumed_shape(callback, values, doubled)
+    procedure(assumed_shape_callback) :: callback
+    real(8), intent(in) :: values(:)
+    real(8), intent(out) :: doubled(:)
+
+    call callback(values, doubled)
+  end subroutine apply_assumed_shape
 end module fcallback_array_f90

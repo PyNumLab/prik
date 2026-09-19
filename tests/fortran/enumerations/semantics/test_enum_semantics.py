@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
@@ -22,6 +23,7 @@ def test_fortran_enums_preserve_values_in_generated_pyi_contract():
         ("yellow", "11"),
     ]
     assert constants["red"].semantic_type.metadata["fortran_bind_c"] is True
+    complete_python_export_policy(semantic)
     stub = emit_module(semantic)
     assert "color: Int32 = red" not in stub
     assert "color: Int32 = ..." in stub

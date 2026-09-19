@@ -311,7 +311,7 @@ def test_native_handle_plans_keep_datatype_specific_state():
 
 def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
     plan = _module_handle_plan()
-    variables = {variable.symbol_name: variable for variable in plan.namespaces[0].variables}
+    variables = {variable.symbol_name: variable for variable in plan.variables}
     allocatable = variables["module_allocatable"].native_array_handle
     plain = variables["plain_allocatable"].native_array_handle
     names = variables["module_names"].native_array_handle
@@ -488,7 +488,7 @@ def test_native_handle_plan_edits_fail_central_validation(edit: str, diagnostic:
 
 def test_plain_module_descriptor_view_requires_matching_completed_interop():
     plan = _module_handle_plan()
-    plain = next(variable for variable in plan.namespaces[0].variables if variable.symbol_name == "plain_allocatable")
+    plain = next(variable for variable in plan.variables if variable.symbol_name == "plain_allocatable")
     assert plain.native_array_handle is not None
     plain.native_array_handle.descriptor_interop = NativeArrayDescriptorInterop.NONE
     plain.native_array_handle.required_headers = ()

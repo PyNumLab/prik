@@ -128,6 +128,19 @@ deallocation.
 Use an ordinary method instead when cleanup is optional, repeatable, or must
 report a recoverable status to Python.
 
+## Nest a Class
+
+A class written inside another is reached through it, as in Python:
+
+```python
+class grid:
+    class cell:
+        value: Int32
+```
+
+The module publishes `grid`; the nested type is `grid.cell`, not a module
+attribute of its own.
+
 ## Type-Bound and Magic Methods
 
 Type-bound and magic methods follow the same rules:

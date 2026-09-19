@@ -11,6 +11,7 @@ import re
 
 import textwrap
 
+from prik.utilities.declaration_expressions import split_top_level_expression
 from prik.codegen.nodes import (
     FortranAllocate,
     FortranAssignment,
@@ -593,17 +594,19 @@ class FortranSourcePrinter(ClassVisitor):
         return suffix if last_argument else ", &"
 
     def _array_constructor_items(self, expression: str) -> tuple[str, ...] | None:
-        """Parse a simple bracketed constructor into item text, or return None.
+        """Parse a bracketed constructor into item text, or return None.
 
-        This intentionally recognizes only the shallow layout form used by the
-        continuation renderer; nested semantic expression parsing belongs earlier.
+        Items are separated at the constructor's own commas, so a nested call
+        or a character literal holding a comma stays one item. Breaking a line
+        inside a literal would change the characters it states; this helper
+        performs layout only, and nested semantic parsing belongs earlier.
         """
         if not (expression.startswith("[") and expression.endswith("]")):
             return None
         content = expression[1:-1]
         if not content:
             return None
-        return tuple(item.strip() for item in content.split(","))
+        return tuple(item.strip() for item in split_top_level_expression(content, ","))
 
     def _parenthesized_items(
         self,
@@ -611,15 +614,18 @@ class FortranSourcePrinter(ClassVisitor):
         *,
         minimum_items: int = 2,
     ) -> tuple[str, tuple[str, ...]] | None:
-        """Parse one shallow parenthesized value into its name and item texts.
+        """Parse one parenthesized value into its name and item texts.
 
-        The optional minimum keeps callers from expanding short forms. Unmatched,
-        nameless, or too-short expressions return None and remain opaque source.
+        Items are separated at this value's own commas, so a nested call or a
+        character literal holding a comma stays one item and no continuation
+        lands inside it. The optional minimum keeps callers from expanding short
+        forms. Unmatched, nameless, or too-short expressions return None and
+        remain opaque source.
         """
         opening = expression.find("(")
         if opening < 1 or not expression.endswith(")"):
             return None
-        items = tuple(item.strip() for item in expression[opening + 1 : -1].split(","))
+        items = tuple(item.strip() for item in split_top_level_expression(expression[opening + 1 : -1], ","))
         if len(items) < minimum_items:
             return None
         return expression[:opening], items

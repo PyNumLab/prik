@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Allocatable, Annotated, Arg, Float64, Int64, Pass, Polymorphic, bind, native_call
 
-class vector:
+class Vector:
     def __init__(
         self,
         *,
@@ -27,7 +27,7 @@ class vector:
 
     def magnitude(self) -> Float64: ...
 
-class vector_store:
+class Vector_Store:
     def __init__(self) -> None: ...
 
     values: Allocatable[Float64[:]]
@@ -62,45 +62,45 @@ class vector_store:
     def make(
         n: Int64,
         fill_value: Float64
-    ) -> vector_store: ...
+    ) -> Vector_Store: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
 def scale(
-    self: Annotated[vector, Polymorphic],
+    self: Annotated[Vector, Polymorphic],
     factor: Float64
 ) -> None: ...
 
 @native_call([Addr(Arg(0)), Arg(1), Addr(Arg(2))])
 def shift_vector(
     dx: Float64,
-    owner: Annotated[vector, Polymorphic],
+    owner: Annotated[Vector, Polymorphic],
     dy: Float64
 ) -> None: ...
 
 def magnitude(
-    self: Annotated[vector, Polymorphic]
+    self: Annotated[Vector, Polymorphic]
 ) -> Float64: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
 def allocate_values(
-    self: Annotated[vector_store, Polymorphic],
+    self: Annotated[Vector_Store, Polymorphic],
     n: Int64
 ) -> None: ...
 
 def set_values(
-    self: Annotated[vector_store, Polymorphic],
+    self: Annotated[Vector_Store, Polymorphic],
     source: Float64[::]
 ) -> None: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def allocate_matrix(
-    self: Annotated[vector_store, Polymorphic],
+    self: Annotated[Vector_Store, Polymorphic],
     rows: Int64,
     cols: Int64
 ) -> None: ...
 
 def set_matrix(
-    self: Annotated[vector_store, Polymorphic],
+    self: Annotated[Vector_Store, Polymorphic],
     source: Float64[::, ::]
 ) -> None: ...
 
@@ -108,4 +108,17 @@ def set_matrix(
 def make_vector_store(
     n: Int64,
     fill_value: Float64
-) -> vector_store: ...
+) -> Vector_Store: ...
+
+__all__ = [
+    "Vector",
+    "Vector_Store",
+    "scale",
+    "shift_vector",
+    "magnitude",
+    "allocate_values",
+    "set_values",
+    "allocate_matrix",
+    "set_matrix",
+    "make_vector_store",
+]

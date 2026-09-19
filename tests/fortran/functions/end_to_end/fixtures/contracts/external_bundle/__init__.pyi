@@ -11,3 +11,5 @@ def triple_value(
 def offset_value(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["triple_value", "offset_value"]

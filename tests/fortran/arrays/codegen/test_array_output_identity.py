@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.ownership import CodegenAction, ObjectKind, OwnershipOwner, TransferMode
 from prik.policy.completion import complete_semantic_policies
-from prik.policy.models import ArrayWritebackABI
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 from prik.planning.models import WritebackPhase
@@ -93,13 +91,7 @@ def test_mutable_bool_array_writeback_needs_no_normalization():
     because the compiler profiles request the option that guarantees it, so the
     callee leaves nothing behind that has to be reduced afterwards.
     """
-    plan = _logical_output_plan()
-    values, out = plan.namespaces[0].functions[0].arguments[1:]
-
-    assert values.array_writeback_abi is ArrayWritebackABI.NATIVE_ARRAY
-    assert out.array_writeback_abi is ArrayWritebackABI.NATIVE_ARRAY
-
-    artifacts = WrapperGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(_logical_output_plan())
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "call native_invert_flags(n, values, out)" in bridge_source
@@ -118,12 +110,3 @@ def test_high_rank_bool_array_bridge_stays_inside_the_fortran_line_limit():
 
     assert "dimension(:, :, :, :, :, :, :, :, :, :, :, :, :, :, :), contiguous :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
-
-
-def test_generator_rejects_a_normalized_mutable_bool_array_writeback_abi():
-    """An edited plan cannot reintroduce a normalization pass that is not needed."""
-    plan = _logical_output_plan()
-    plan.namespaces[0].functions[0].arguments[-1].array_writeback_abi = ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
-
-    with pytest.raises(ValueError, match="invalid-array-writeback-abi"):
-        WrapperGenerator().generate(plan)

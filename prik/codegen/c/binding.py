@@ -14,7 +14,11 @@ from dataclasses import dataclass, replace
 import re
 from typing import ClassVar
 
-from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
+from prik.utilities.declaration_expressions import (
+    RUNTIME_EXTENT_MARKERS,
+    declaration_extent_uses_power,
+    render_declaration_extent,
+)
 from prik.policy.ownership import (
     CodegenAction,
     ObjectKind,
@@ -109,12 +113,14 @@ from prik.planning.models import (
     LifecycleActionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NamespacePlan,
     NativeArrayHandlePlan,
     NativeEntrypointABIValueKind,
     NativeEntrypointABIValuePlan,
     GeneratedSupportProcedureImplementationOwner,
     GeneratedSupportProcedureEntrypointPlan,
+    NativeEntrypointExtentPlan,
     NativeEntrypointParameterPlan,
     NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
@@ -154,6 +160,10 @@ class _CArgumentNames:
     runtime_rank_name: str
     itemsize_name: str
     polymorphic_name: str
+
+
+#: Entrypoint groups carrying extents the bridge evaluates and hands back.
+_EXTENT_GROUPS = frozenset({"declaration_extent", "argument_extent"})
 
 
 @dataclass
@@ -230,7 +240,6 @@ class CBindingGenerator(ClassVisitor):
     class; unsupported plan actions fail instead of being reinterpreted here.
     """
 
-    _RUNTIME_EXTENT_MARKERS = frozenset({":", "::Strided", "Flat"})
     _SHARED_OUTPUT_CLEANUP_MIN_RESULTS = 4
 
     def require_supported(self, plan: ModulePlan) -> None:
@@ -326,15 +335,19 @@ class CBindingGenerator(ClassVisitor):
         self._binding_owned_derived_owner_paths = frozenset(plan.binding.owned_derived_type_owner_paths)
         self._binding_allocatable_holder_owner_paths = frozenset(plan.binding.allocatable_holder_type_owner_paths)
         self._binding_pointer_holder_owner_paths = frozenset(plan.binding.pointer_holder_type_owner_paths)
-        # Stage 2: complete the immutable name index consumed by Python-surface emission.
-        class_python_names = {
-            surface.type_identity: surface.python_names[0]
+        # Stage 2: index the one namespace defining each type. Code taking or
+        # returning a type can be in any namespace, so it reaches the type's
+        # class and helpers there, never in its own.
+        self._type_homes = {
+            derived.type_identity: (namespace.python_path, derived)
             for namespace in plan.namespaces
-            for surface in namespace.classes
-            if surface.python_names
+            for derived in namespace.derived_types
         }
         # Stage 3: select support and assemble generated functions in dependency order.
-        functions = tuple(function for namespace in plan.namespaces for function in self.visit(namespace))
+        functions = (
+            *(function for namespace in plan.namespaces for function in self.visit(namespace)),
+            *(function for variable in plan.variables for function in self.visit(variable)),
+        )
         needs_native_support = self.requires_native_support(plan)
         needs_free = self._module_needs_allocator(plan)
         return CModule(
@@ -359,7 +372,7 @@ class CBindingGenerator(ClassVisitor):
                 *self._derived_handle_operation_functions(plan),
                 *self._native_array_operation_functions(plan),
                 *functions,
-                *self._overload_dispatch_functions(plan, class_python_names),
+                *self._overload_dispatch_functions(plan),
                 self._module_init(plan, needs_native_support),
             ),
         )
@@ -647,10 +660,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _visit_NamespacePlan(self, plan: NamespacePlan) -> tuple[CFunction, ...]:
         """Return binding functions directly owned by one Python namespace."""
-        return (
-            *(self.visit(function) for function in plan.functions),
-            *(function for variable in plan.variables for function in self.visit(variable)),
-        )
+        return tuple(self.visit(function) for function in plan.functions)
 
     def requires_native_support(self, plan: ModulePlan) -> bool:
         """Return whether module lowering consumes bundled native helpers."""
@@ -660,6 +670,9 @@ class CBindingGenerator(ClassVisitor):
             # Every published component converts through the bundled helpers, so a
             # type whose module exposes only `bind(C)` procedures still needs them.
             or any(derived.fields for derived in self._derived_types(plan))
+            # A namespace alias binds its target through a bundled helper, which a
+            # module publishing nothing else would otherwise never include.
+            or any(namespace.aliases for namespace in plan.namespaces)
         )
 
     def _module_needs_allocator(self, plan: ModulePlan) -> bool:
@@ -772,8 +785,7 @@ class CBindingGenerator(ClassVisitor):
             or self._module_uses_array_result_copy(plan)
             or any(
                 variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
-                for namespace in plan.namespaces
-                for variable in namespace.variables
+                for variable in plan.variables
             )
             or self._module_uses_derived_string_copy(plan)
             or self._module_uses_non_direct_derived_calls(plan)
@@ -847,7 +859,6 @@ class CBindingGenerator(ClassVisitor):
                         callback.binding.context_type_symbol,
                         (
                             CParameter("callable", "PyObject *"),
-                            CParameter("module", "PyObject *"),
                             CParameter("thread_id", "unsigned long"),
                             CParameter(
                                 "previous",
@@ -958,6 +969,27 @@ class CBindingGenerator(ClassVisitor):
             body=tuple(nodes),
         )
 
+    def _type_namespace(self, type_identity: tuple[str, str]) -> str:
+        """Return the retained module object of the namespace a type lives in."""
+        return self._namespace_owner_name(self._type_homes[type_identity][0])
+
+    def _type_class_name(self, type_identity: tuple[str, str]) -> str:
+        """Return the name a type's class is defined under in its home."""
+        return self._type_homes[type_identity][1].definition_name
+
+    def _type_attribute(self, type_identity: tuple[str, str], attribute: str) -> str:
+        """Return a new reference to one attribute of a type's home namespace."""
+        return f'PyObject_GetAttrString({self._type_namespace(type_identity)}, "{attribute}")'
+
+    def _type_class(self, type_identity: tuple[str, str]) -> str:
+        """Return a new reference to a type's class."""
+        return self._type_attribute(type_identity, self._type_class_name(type_identity))
+
+    def _type_wrap_helper(self, type_identity: tuple[str, str]) -> str:
+        """Return a new reference to the helper wrapping a type's native storage."""
+        backend_symbol = self._type_homes[type_identity][1].backend_symbol
+        return self._type_attribute(type_identity, CBindingNames.class_wrap_helper(backend_symbol))
+
     @staticmethod
     def _callback_abort_if_null(
         callback: CallbackHandoffPlan,
@@ -981,6 +1013,8 @@ class CBindingGenerator(ClassVisitor):
         match transfer.python_action:
             case PythonBarrierAction.SCALAR_VALUE:
                 nodes = self._callback_scalar_value_nodes(transfer, target)
+            case PythonBarrierAction.SCALAR_STORAGE:
+                nodes = self._callback_scalar_storage_nodes(transfer, target)
             case PythonBarrierAction.ARRAY_STORAGE:
                 nodes = self._callback_array_nodes(transfer, position, target)
             case PythonBarrierAction.STRING_STORAGE:
@@ -1016,6 +1050,41 @@ class CBindingGenerator(ClassVisitor):
                 target,
                 "PyObject *",
                 CodeExpression(f"prik_{self._scalar_helper_suffix(scalar)}_to_numpy({value_pointer})"),
+            ),
+        )
+
+    def _callback_scalar_storage_nodes(
+        self,
+        transfer: CallbackTransferPlan,
+        target: str,
+    ) -> tuple[CDeclaration, ...]:
+        """Materialize one completed rank-zero storage projection over native memory.
+
+        The Python callable receives a rank-zero view of the same storage the
+        adapter hands the native caller, so an ``out`` or ``inout`` dummy is
+        written through instead of arriving as an independent value.
+        """
+        if transfer.abi is not CallbackABIKind.REFERENCE:
+            raise ValueError(
+                f"Unsupported rank-zero storage callback ABI for {transfer.owner_path!r}: {transfer.abi.value}"
+            )
+        scalar = PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
+        parameter = self._callback_parameter_base_name(transfer)
+        flags = "NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED"
+        if transfer.adapter_action in {
+            CallbackTransferAction.COPY_OUT,
+            CallbackTransferAction.COPY_IN_OUT,
+            CallbackTransferAction.BORROW_WRITABLE,
+        }:
+            flags += " | NPY_ARRAY_WRITEABLE"
+        return (
+            CDeclaration(
+                target,
+                "PyObject *",
+                CodeExpression(
+                    f"PyArray_New(&PyArray_Type, 0, NULL, {scalar.numpy_type_macro}, "
+                    f"NULL, {parameter}_data, 0, {flags}, NULL)"
+                ),
             ),
         )
 
@@ -1103,9 +1172,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 helper,
                 "PyObject *",
-                CodeExpression(
-                    f'PyObject_GetAttrString(callback_context->module, "_prik_wrap_{transfer.semantic_type_name}")'
-                ),
+                CodeExpression(self._type_wrap_helper(transfer.derived_type_identity)),
             ),
             CDeclaration(
                 target,
@@ -1261,7 +1328,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "callback_expected_type",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString({context}->module, "{transfer.semantic_type_name}")'),
+                CodeExpression(self._type_class(transfer.derived_type_identity)),
             ),
             self._callback_abort_if_null(
                 callback,
@@ -2106,7 +2173,7 @@ class CBindingGenerator(ClassVisitor):
             *self._derived_private_method_prototypes(plan),
             *self._overload_dispatch_prototypes(plan),
             *self._derived_handle_operation_declarations(plan),
-            *self._derived_module_owner_declarations(plan),
+            *self._namespace_owner_declarations(plan),
             *self._module_variable_declarations(plan),
             *self._native_array_operation_declarations(plan),
             *self._namespace_declarations(plan),
@@ -2216,7 +2283,7 @@ class CBindingGenerator(ClassVisitor):
                     self._generated_support_procedure_entrypoint(surface.owner_path, "class:create")
                 ),
                 CFunctionPrototype(
-                    CBindingNames.class_create_method(surface),
+                    CBindingNames.class_create_method(surface.backend_symbol),
                     "PyObject *",
                     (CParameter("self", "PyObject *"), CParameter("args", "PyObject *")),
                     "static",
@@ -2247,7 +2314,7 @@ class CBindingGenerator(ClassVisitor):
         destroy = self._generated_support_procedure_entrypoint(derived.owner_path, "derived:destroy").symbol_name
         create = self._generated_support_procedure_entrypoint(surface.owner_path, "class:create").symbol_name
         return CFunction(
-            CBindingNames.class_create_method(surface),
+            CBindingNames.class_create_method(surface.backend_symbol),
             "PyObject *",
             parameters=(CParameter("self", "PyObject *"), CParameter("args", "PyObject *")),
             storage="static",
@@ -2282,7 +2349,7 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(
                     helper,
                     "PyObject *",
-                    CodeExpression(f'PyObject_GetAttrString(self, "{CBindingNames.class_wrap_helper(surface)}")'),
+                    CodeExpression(self._type_wrap_helper(surface.type_identity)),
                 ),
                 CIf(
                     CodeExpression(f"{helper} == NULL"),
@@ -3427,7 +3494,6 @@ class CBindingGenerator(ClassVisitor):
         """Return direct nested field getter from the supplied completed binding records; this helper preserves the selected binding behavior."""
         if field.derived is None:
             raise ValueError(f"Nested field {field.owner_path!r} has no derived handoff")
-        child_type = field.derived.type_name
         child_symbol = field.derived.backend_symbol
         body = (
             *self._derived_owner_address_nodes(derived),
@@ -3451,7 +3517,7 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f'PyCapsule_New(child_address, "{self._derived_capsule_name(child_symbol)}", NULL)'),
             ),
             CIf(CodeExpression("child_capsule == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-            *self._borrowed_derived_wrapper_nodes(child_type, "child_capsule", "owner_obj", None),
+            *self._borrowed_derived_wrapper_nodes(field.derived.type_identity, "child_capsule", "owner_obj", None),
         )
         return self._derived_private_method(self._derived_field_method_name(derived, field, "get"), body)
 
@@ -3465,7 +3531,7 @@ class CBindingGenerator(ClassVisitor):
             return None
         body = (
             *self._derived_owner_and_value_nodes(derived),
-            *self._exact_derived_type_check_nodes(field.derived.type_name, "value_obj", field.name),
+            *self._exact_derived_type_check_nodes(field.derived.type_identity, "value_obj", field.name),
             *self._derived_address_from_object_nodes(field.derived.backend_symbol, "value_obj", "value"),
             CExpressionStatement(
                 CodeExpression(
@@ -3489,7 +3555,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration("owner_obj", "PyObject *"),
             CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
             *self._borrowed_derived_wrapper_nodes(
-                field.derived.type_name,
+                field.derived.type_identity,
                 "Py_None",
                 "owner_obj",
                 self._module_member_ops_name(variable, member.path),
@@ -3513,7 +3579,7 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(
                 CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
             ),
-            *self._exact_derived_type_check_nodes(field.derived.type_name, "value_obj", field.name),
+            *self._exact_derived_type_check_nodes(field.derived.type_identity, "value_obj", field.name),
             *self._derived_address_from_object_nodes(field.derived.backend_symbol, "value_obj", "value"),
             CExpressionStatement(
                 CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value_address)")
@@ -3524,7 +3590,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _borrowed_derived_wrapper_nodes(
         self,
-        type_name: str,
+        type_identity: tuple[str, str],
         capsule_name: str,
         owner_name: str,
         ops_name: str | None,
@@ -3536,7 +3602,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "child_helper",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{type_name}")'),
+                CodeExpression(self._type_wrap_helper(type_identity)),
             ),
             CIf(
                 CodeExpression("child_helper == NULL"),
@@ -3643,12 +3709,12 @@ class CBindingGenerator(ClassVisitor):
             CIf(CodeExpression(f"{address} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
         )
 
-    @staticmethod
-    def _exact_derived_type_check_nodes(type_name: str, object_name: str, label: str) -> tuple:
+    def _exact_derived_type_check_nodes(self, type_identity: tuple[str, str], object_name: str, label: str) -> tuple:
         """Require the exact exported opaque class before a concrete field copy."""
         expected = f"{label}_expected_type"
+        type_name = self._type_class_name(type_identity)
         return (
-            CDeclaration(expected, "PyObject *", CodeExpression(f'PyObject_GetAttrString(self, "{type_name}")')),
+            CDeclaration(expected, "PyObject *", CodeExpression(self._type_class(type_identity))),
             CIf(CodeExpression(f"{expected} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CIf(
                 CodeExpression(f"Py_TYPE({object_name}) != (PyTypeObject *){expected}"),
@@ -5955,10 +6021,9 @@ class CBindingGenerator(ClassVisitor):
 
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Lower binding-owned getter and setter actions into C functions."""
-        # The binding facet names the Python attribute and the C symbols it
-        # calls; the native Fortran variable belongs to the bridge facet and is
-        # deliberately not read here.
-        name = plan.binding.python_names[0]
+        # One helper serves every Python publication, so its documentation uses
+        # the stable declaring native name rather than an arbitrary alias.
+        name = plan.owner_path.rsplit(".", 1)[-1]
         return (
             *self._documented(
                 self._lower_module_getter(plan),
@@ -6059,7 +6124,7 @@ class CBindingGenerator(ClassVisitor):
         attribute assignment is an ``int`` slot, not a returned object.
         """
         length = self._module_character_length(plan)
-        name = plan.binding.python_names[0]
+        name = plan.owner_path.rsplit(".", 1)[-1]
         return (
             CFunction(
                 self._module_setter_name(plan),
@@ -6383,7 +6448,7 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Derived module object {plan.owner_path!r} has no access plan")
         if derived.access is ModuleObjectAccessMechanism.VALUE_COPY:
             return self._lower_module_getter_derived_value_copy(plan)
-        owner = self._derived_module_owner_name(plan)
+        owner = self._namespace_owner_name(plan.binding.support_namespace)
         capsule_expression = (
             CodeExpression(
                 f"PyCapsule_New({self._module_bridge_getter_name(plan)}(), "
@@ -6411,9 +6476,7 @@ class CBindingGenerator(ClassVisitor):
         derived = plan.derived
         if derived is None:
             raise ValueError(f"Derived module constant {plan.owner_path!r} has no handoff")
-        type_name = derived.handoff.type_name
         type_symbol = derived.handoff.backend_symbol
-        owner = self._derived_module_owner_name(plan)
         address = "address"
         capsule = "capsule"
         helper = "helper"
@@ -6451,7 +6514,7 @@ class CBindingGenerator(ClassVisitor):
                     CDeclaration(
                         helper,
                         "PyObject *",
-                        CodeExpression(f'PyObject_GetAttrString({owner}, "_prik_wrap_{type_name}")'),
+                        CodeExpression(self._type_wrap_helper(derived.handoff.type_identity)),
                     ),
                     CIf(
                         CodeExpression(f"{helper} == NULL"),
@@ -6481,12 +6544,11 @@ class CBindingGenerator(ClassVisitor):
         """Call the namespace's internal wrapper helper with explicit owner/ops."""
         if plan.derived is None:
             return ()
-        type_name = plan.derived.handoff.type_name
         nodes = [
             CDeclaration(
                 "helper",
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString({owner}, "_prik_wrap_{type_name}")'),
+                CodeExpression(self._type_wrap_helper(plan.derived.handoff.type_identity)),
             ),
             CIf(
                 CodeExpression("helper == NULL"),
@@ -6597,7 +6659,7 @@ class CBindingGenerator(ClassVisitor):
             "value",
             (
                 f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
-                f"{scalar_type.python_type_name} for module variable {plan.binding.python_names[0]}. "
+                f"{scalar_type.python_type_name} for module variable {plan.owner_path.rsplit('.', 1)[-1]}. "
                 "Received <class '%s'>\", Py_TYPE(value_obj)->tp_name)"
             ),
             "-1",
@@ -6626,7 +6688,7 @@ class CBindingGenerator(ClassVisitor):
                 *argument_declarations,
                 *alias_declarations,
                 *self._callback_context_declarations(plan),
-                *self._declaration_extent_result_declarations(plan),
+                *self._entrypoint_extent_declarations(plan),
                 *self._direct_result_declaration(plan, context),
                 *self._native_output_declarations(plan, context),
                 self._parse_statement(plan, context),
@@ -6845,7 +6907,6 @@ class CBindingGenerator(ClassVisitor):
                         f"{context.arguments[argument.owner_path].object_name}"
                     )
                 ),
-                CExpressionStatement(CodeExpression(f"{self._callback_context_name(argument)}.module = self")),
                 CExpressionStatement(
                     CodeExpression(f"{self._callback_context_name(argument)}.thread_id = PyThread_get_thread_ident()")
                 ),
@@ -6859,7 +6920,6 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(
                     CodeExpression(f"Py_INCREF({context.arguments[argument.owner_path].object_name})")
                 ),
-                CExpressionStatement(CodeExpression("Py_INCREF(self)")),
                 CExpressionStatement(
                     CodeExpression(
                         f"{argument.callback.binding.context_current_symbol} = &{self._callback_context_name(argument)}"
@@ -6887,7 +6947,6 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(
                     CodeExpression(f"Py_XDECREF({self._callback_context_name(argument)}.last_result)")
                 ),
-                CExpressionStatement(CodeExpression(f"Py_DECREF({self._callback_context_name(argument)}.module)")),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({self._callback_context_name(argument)}.callable)")),
             )
         )
@@ -7076,16 +7135,17 @@ class CBindingGenerator(ClassVisitor):
         for variant in dispatch.variants:
             nodes.extend(
                 (
-                    CExpressionStatement(
-                        CodeExpression(f'{expected} = PyObject_GetAttrString(self, "{variant.python_name}")')
-                    ),
+                    CExpressionStatement(CodeExpression(f"{expected} = {self._type_class(variant.type_identity)}")),
                     CIf(CodeExpression(f"{expected} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
                     CIf(
                         CodeExpression(f"Py_TYPE({names.object_name}) == (PyTypeObject *){expected}"),
                         body=(
                             CExpressionStatement(CodeExpression(f"{code} = {variant.abi_code}")),
                             CExpressionStatement(
-                                CodeExpression(f"{type_name} = {self._c_string_literal(variant.python_name)}")
+                                CodeExpression(
+                                    f"{type_name} = "
+                                    f"{self._c_string_literal(self._type_class_name(variant.type_identity))}"
+                                )
                             ),
                             CExpressionStatement(
                                 CodeExpression(f"{type_symbol} = {self._c_string_literal(variant.backend_symbol)}")
@@ -7101,7 +7161,7 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression(f"Py_DECREF({expected})")),
                 )
             )
-        accepted = ", ".join(variant.python_name for variant in dispatch.variants)
+        accepted = ", ".join(self._type_class_name(variant.type_identity) for variant in dispatch.variants)
         nodes.append(
             CIf(
                 CodeExpression(f"{code} == 0"),
@@ -8028,7 +8088,7 @@ class CBindingGenerator(ClassVisitor):
         flattened: bool,
     ) -> str | None:
         """Lower one axis extent, or None when the axis carries no declared extent."""
-        if flattened or expression in self._RUNTIME_EXTENT_MARKERS:
+        if flattened or expression in RUNTIME_EXTENT_MARKERS:
             return None
         if array.extent_evaluation[axis] == "bridge":
             return None
@@ -8199,7 +8259,7 @@ class CBindingGenerator(ClassVisitor):
         nodes = []
         for axis, expression in enumerate(actual.shape):
             if (
-                expression in {":", "::Strided", "Flat"}
+                expression in RUNTIME_EXTENT_MARKERS
                 or (actual.flatten_storage and axis == actual.flat_axis)
                 or array.extent_evaluation[axis] == "bridge"
             ):
@@ -8334,7 +8394,7 @@ class CBindingGenerator(ClassVisitor):
         if handoff is None or handoff.rank is None:
             return ()
         checks = []
-        runtime_markers = {":", "::Strided", "Flat"}
+        runtime_markers = RUNTIME_EXTENT_MARKERS
         for axis, expression in enumerate(handoff.shape):
             if expression in runtime_markers:
                 continue
@@ -8365,7 +8425,7 @@ class CBindingGenerator(ClassVisitor):
             return ()
         checks = []
         for axis, expression in enumerate(handoff.shape):
-            if expression in {":", "::Strided", "Flat"} or handoff.extent_evaluation[axis] == "bridge":
+            if expression in RUNTIME_EXTENT_MARKERS or handoff.extent_evaluation[axis] == "bridge":
                 continue
             expected = self._array_extent_expression(handoff, axis, expression, context)
             checks.append(
@@ -9845,9 +9905,10 @@ class CBindingGenerator(ClassVisitor):
         expression: str,
         context: _CFunctionContext,
     ) -> str:
-        """Use the entrypoint result for native axes and local roles for all others."""
-        if handoff.extent_evaluation[axis] == "bridge":
-            return self._declaration_extent_result_name(result, axis)
+        """Use the extent the bridge returned for its axes and local roles for all others."""
+        evaluated = context.function.entrypoint.extent_names(result.owner_path).get(axis)
+        if evaluated is not None:
+            return evaluated
         return self._array_extent_expression(handoff, axis, expression, context)
 
     def _array_result_creation_expression(
@@ -10033,7 +10094,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 helper,
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{plan.derived.type_name}")'),
+                CodeExpression(self._type_wrap_helper(plan.derived.type_identity)),
             ),
             CIf(
                 CodeExpression(f"{helper} == NULL"),
@@ -10067,8 +10128,6 @@ class CBindingGenerator(ClassVisitor):
         """Wrap one nullable typed holder without exposing its component address."""
         if plan.derived is None:
             raise ValueError(f"Derived result {plan.owner_path!r} has no handoff plan")
-        type_name = plan.derived.type_name
-        type_symbol = plan.derived.backend_symbol
         storage = plan.derived.storage
         native_name = self._result_native_name(plan, context)
         python_name = context.python_results[plan.owner_path]
@@ -10084,8 +10143,7 @@ class CBindingGenerator(ClassVisitor):
                     CReturn(CodeExpression("NULL")),
                 ),
                 else_body=self._holder_wrapper_nodes(
-                    type_name,
-                    type_symbol,
+                    plan.derived,
                     storage,
                     self._derived_target_owner(plan.derived),
                     native_name,
@@ -10097,8 +10155,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _holder_wrapper_nodes(
         self,
-        type_name: str,
-        type_symbol: str,
+        derived: DerivedHandoffPlan,
         storage: DerivedObjectStorage,
         owner: str,
         address: str,
@@ -10107,7 +10164,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Construct one holder-backed wrapper with a single cleanup path."""
         capsule_name, destructor_name, destroy_name, ops_name, origin = self._holder_wrapper_symbols(
-            type_symbol,
+            derived.backend_symbol,
             storage,
         )
         capsule = f"{target}_capsule"
@@ -10130,7 +10187,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 helper,
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "_prik_wrap_{type_name}")'),
+                CodeExpression(self._type_wrap_helper(derived.type_identity)),
             ),
             CIf(
                 CodeExpression(f"{helper} == NULL"),
@@ -10143,7 +10200,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 ops,
                 "PyObject *",
-                CodeExpression(f'PyObject_GetAttrString(self, "{ops_name}")'),
+                CodeExpression(self._type_attribute(derived.type_identity, ops_name)),
             ),
             CIf(
                 CodeExpression(f"{ops} == NULL"),
@@ -12201,6 +12258,7 @@ class CBindingGenerator(ClassVisitor):
             *self._callback_context_push_nodes(plan, context),
             *self._lower_entrypoint_call(plan, context),
             *self._callback_context_pop_nodes(plan),
+            *self._argument_extent_rejection_nodes(plan, context),
             *self._derived_call_failure_nodes(plan, context),
             *self._derived_after_native_failure_nodes(plan, context),
             *self._derived_result_allocation_failure_nodes(plan, context),
@@ -12415,9 +12473,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{fault} != NULL && {fault}[0] != '\\0' && {fault}[0] != '0'"),
                 body=(
-                    *self._string_replacement_cleanup_nodes(plan, context),
-                    *self._binding_transformation_cleanup_nodes(plan, context),
-                    *self._native_result_failure_cleanup_nodes(plan.results, context),
+                    *self._post_call_failure_cleanup_nodes(plan, context),
                     CExpressionStatement(
                         CodeExpression(
                             'PyErr_SetString(PyExc_RuntimeError, "injected derived failure after native return")'
@@ -12439,9 +12495,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{self._derived_status_name(context.arguments[argument.owner_path])} != 0"),
                 body=(
-                    *self._string_replacement_cleanup_nodes(plan, context),
-                    *self._binding_transformation_cleanup_nodes(plan, context),
-                    *self._native_result_failure_cleanup_nodes(plan.results, context),
+                    *self._post_call_failure_cleanup_nodes(plan, context),
                     *self._one_derived_call_error_nodes(argument, context),
                     CReturn(CodeExpression("NULL")),
                 ),
@@ -12493,11 +12547,7 @@ class CBindingGenerator(ClassVisitor):
         if not derived:
             return ()
         native_names = tuple(self._result_native_name(result, context) for result in derived)
-        cleanup = [
-            *self._string_replacement_cleanup_nodes(plan, context),
-            *self._binding_transformation_cleanup_nodes(plan, context),
-            *self._native_result_failure_cleanup_nodes(plan.results, context),
-        ]
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         return (
             CIf(
                 CodeExpression(" || ".join(f"{name} == NULL" for name in native_names)),
@@ -12695,9 +12745,7 @@ class CBindingGenerator(ClassVisitor):
         policy = plan.binding.status_error
         status_name = context.native_outputs[policy.status_role]
         condition = CodeExpression(f"{status_name} != {policy.success}")
-        transformation_cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
-        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         if policy.message_role is None and policy.message_argument is None:
             return (
                 CIf(
@@ -12709,9 +12757,7 @@ class CBindingGenerator(ClassVisitor):
                                 f"(int){status_name})"
                             )
                         ),
-                        *string_cleanup,
-                        *transformation_cleanup,
-                        *native_result_cleanup,
+                        *cleanup,
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
@@ -12771,17 +12817,13 @@ class CBindingGenerator(ClassVisitor):
                         CIf(
                             CodeExpression(f"{message_object} == NULL"),
                             body=(
-                                *string_cleanup,
-                                *transformation_cleanup,
-                                *native_result_cleanup,
+                                *cleanup,
                                 CReturn(CodeExpression("NULL")),
                             ),
                         ),
                         CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
                         CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
-                        *string_cleanup,
-                        *transformation_cleanup,
-                        *native_result_cleanup,
+                        *cleanup,
                         CReturn(CodeExpression("NULL")),
                     ),
                 ),
@@ -12795,9 +12837,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"{message_name} == NULL"),
                         body=(
                             CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
-                            *string_cleanup,
-                            *transformation_cleanup,
-                            *native_result_cleanup,
+                            *cleanup,
                             CReturn(CodeExpression("NULL")),
                         ),
                     ),
@@ -12817,9 +12857,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{message_object} == NULL"),
                 body=(
-                    *string_cleanup,
-                    *transformation_cleanup,
-                    *native_result_cleanup,
+                    *cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
@@ -12828,9 +12866,7 @@ class CBindingGenerator(ClassVisitor):
                 body=(
                     CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
                     CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
-                    *string_cleanup,
-                    *transformation_cleanup,
-                    *native_result_cleanup,
+                    *cleanup,
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
@@ -13017,8 +13053,7 @@ class CBindingGenerator(ClassVisitor):
                             CExpressionStatement(CodeExpression(f"{result} = Py_None")),
                         ),
                         else_body=self._holder_wrapper_nodes(
-                            source.derived.type_name,
-                            source.derived.backend_symbol,
+                            source.derived,
                             storage,
                             self._derived_target_owner(source.derived),
                             names.value_name,
@@ -13230,19 +13265,79 @@ class CBindingGenerator(ClassVisitor):
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
         return (CDeclaration(context.result_name, scalar_type.c_spelling),)
 
-    def _declaration_extent_result_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
-        """Declare storage populated by native-dependent main-bridge extent outputs."""
+    @staticmethod
+    def _entrypoint_extent_declarations(plan: FunctionPlan) -> tuple[CDeclaration, ...]:
+        """Declare storage for every extent the bridge evaluates and hands back."""
         return tuple(
-            CDeclaration(
-                self._declaration_extent_result_name(result, axis),
-                "int64_t",
-                CodeExpression("0"),
-            )
-            for result in plan.results
-            if result.array is not None
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
+            CDeclaration(extent.parameter_name, "int64_t", CodeExpression("0"))
+            for parameter in plan.entrypoint.parameters
+            for extent in parameter.extents
         )
+
+    def _argument_extent_rejection_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CIf, ...]:
+        """Reject an actual shorter or longer than the extent its dummy declares.
+
+        Only the bridge can evaluate a specification function. It returned the
+        extent the dummy declares and ran the native procedure only when every
+        actual matched, so a mismatch arrives here with nothing called, and is
+        reported the way a binding-checked extent is.
+        """
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
+        return tuple(
+            CIf(
+                CodeExpression(
+                    self._argument_extent_mismatch(argument, extent, context.arguments[argument.owner_path])
+                ),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {argument.binding.python_name} has '
+                            f'incompatible shape at axis {extent.axis}")'
+                        )
+                    ),
+                    *cleanup,
+                    CReturn(CodeExpression("NULL")),
+                ),
+            )
+            for parameter in plan.entrypoint.parameters
+            if parameter.source_kind == "argument_extent"
+            for argument in (self._argument_by_owner(plan, parameter.owner_path),)
+            for extent in parameter.extents
+        )
+
+    def _post_call_failure_cleanup_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Release what the call path holds when it fails after the entrypoint returns.
+
+        That is the string buffers and array temporaries taken before the call
+        and any native result storage; every release is safe for storage the
+        call did not produce.
+        """
+        return (
+            *self._string_replacement_cleanup_nodes(plan, context),
+            *self._binding_transformation_cleanup_nodes(plan, context),
+            *self._native_result_failure_cleanup_nodes(plan.results, context),
+        )
+
+    @staticmethod
+    def _argument_extent_mismatch(
+        argument: ArgumentTransferPlan,
+        extent: NativeEntrypointExtentPlan,
+        names: _CArgumentNames,
+    ) -> str:
+        """Return when one actual disagrees with the extent its dummy declares."""
+        mismatch = f"{extent.parameter_name} != {names.extent_names[extent.axis]}"
+        if argument.entrypoint.optional_mode is OptionalMode.REQUIRED:
+            return mismatch
+        # An omitted actual has no extent to disagree with.
+        return f"{names.object_name} != Py_None && {mismatch}"
 
     def _native_output_declarations(
         self,
@@ -13538,9 +13633,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CExpressionStatement | CIf, ...]:
         """Copy back ordinary temporaries and retain published replacements."""
         nodes = []
-        cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        string_cleanup = self._string_replacement_cleanup_nodes(plan, context)
-        native_result_cleanup = self._native_result_failure_cleanup_nodes(plan.results, context)
+        cleanup = self._post_call_failure_cleanup_nodes(plan, context)
         for argument in plan.arguments:
             action = self._transformation_action(argument, WritebackPhase.COPY_OUT)
             if action is not TransformationAction.COPY_ARRAY_REPRESENTATION:
@@ -13552,12 +13645,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(
                         f"PyArray_CopyInto((PyArrayObject *){names.object_name}, (PyArrayObject *){temporary}) < 0"
                     ),
-                    body=(
-                        *string_cleanup,
-                        *cleanup,
-                        *native_result_cleanup,
-                        CReturn(CodeExpression("NULL")),
-                    ),
+                    body=(*cleanup, CReturn(CodeExpression("NULL"))),
                 )
             )
         nodes.extend(self._binding_transformation_success_cleanup_nodes(plan, context))
@@ -13726,6 +13814,8 @@ class CBindingGenerator(ClassVisitor):
             if slot.native_scalar_c_type is not None and slot.passing is EntrypointPassingConvention.C_VALUE:
                 values[0] = f"({slot.native_scalar_c_type}){values[0]}"
             return tuple(values)
+        if parameter.source_kind in _EXTENT_GROUPS:
+            return tuple(f"&{extent.parameter_name}" for extent in parameter.extents)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_values(
                 plan,
@@ -13738,8 +13828,6 @@ class CBindingGenerator(ClassVisitor):
             return self._entrypoint_hidden_result_values(result, name)
         if parameter.source_kind == "direct_result":
             return self._entrypoint_direct_result_values(result, context)
-        if parameter.source_kind == "declaration_extent":
-            return self._declaration_extent_result_values_for_result(result)
         raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
 
     @staticmethod
@@ -13857,19 +13945,6 @@ class CBindingGenerator(ClassVisitor):
             self._entrypoint_result_by_owner(plan, parameter.owner_path)
             for parameter in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
             if parameter.source_kind == "hidden_result"
-        )
-
-    def _declaration_extent_result_values_for_result(
-        self,
-        result: NativeEntrypointResultPlan,
-    ) -> tuple[str, ...]:
-        """Return extent output actuals for one planned result group."""
-        if result.array is None:
-            return ()
-        return tuple(
-            f"&{self._declaration_extent_result_name(result, axis)}"
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
         )
 
     def _entrypoint_hidden_result_values(
@@ -14064,6 +14139,8 @@ class CBindingGenerator(ClassVisitor):
                 self._argument_by_owner(plan, parameter.owner_path),
                 passing=slot.passing,
             )
+        if parameter.source_kind in _EXTENT_GROUPS:
+            return tuple(CParameter(extent.parameter_name, "int64_t *") for extent in parameter.extents)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))
         result = self._entrypoint_result_by_owner(plan, parameter.owner_path)
@@ -14071,27 +14148,7 @@ class CBindingGenerator(ClassVisitor):
             return self._entrypoint_result_parameters(result)
         if parameter.source_kind == "direct_result":
             return self._direct_entrypoint_result_parameters(result)
-        if parameter.source_kind == "declaration_extent":
-            return self._declaration_extent_result_parameters_for_result(result)
         raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
-
-    def _declaration_extent_result_parameters_for_result(
-        self,
-        result: NativeEntrypointResultPlan,
-    ) -> tuple[CParameter, ...]:
-        """Declare native-dependent extent outputs for one result group."""
-        if result.array is None:
-            return ()
-        return tuple(
-            CParameter(self._declaration_extent_result_name(result, axis), "int64_t *")
-            for axis, evaluation in enumerate(result.array.extent_evaluation)
-            if evaluation == "bridge"
-        )
-
-    @staticmethod
-    def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
-        """Return the shared entrypoint ABI name for one evaluated result axis."""
-        return f"prik_decl_extent_{result.result_position}_{axis}"
 
     def _owned_native_array_bridge_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
         """Declare typed Fortran operations over binding-owned result descriptors."""
@@ -14412,14 +14469,14 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 reject_replacement=(variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT),
             )
-            for variable in namespace.variables
+            for variable, publication in self._variable_publications(module, namespace)
             if variable.binding.getter_action
             not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }
-            for python_name in variable.binding.python_names
+            for python_name in publication.python_names
         )
         if not entries:
             return None
@@ -14674,31 +14731,40 @@ class CBindingGenerator(ClassVisitor):
         """Return every live native-owned derived module object."""
         return tuple(variable for variable in self._variables(plan) if variable.derived is not None)
 
-    def _derived_module_owner_declarations(self, plan: ModulePlan) -> tuple[CDeclaration, ...]:
-        """Retain the Python module owner for borrowed derived objects."""
+    def _owner_namespaces(self, plan: ModulePlan) -> tuple[tuple[str, ...], ...]:
+        """Return each namespace generated code reaches outside a call's own.
+
+        That is every type's home, and the namespace each derived module
+        object's helpers live in, which also owns the objects it lends out.
+        """
+        paths = {path for path, _ in self._type_homes.values()}
+        paths.update(variable.binding.support_namespace for variable in self._derived_module_variables(plan))
+        return tuple(sorted(paths))
+
+    def _namespace_owner_declarations(self, plan: ModulePlan) -> tuple[CDeclaration, ...]:
+        """Retain the module object of each namespace reached from another."""
         return tuple(
-            CDeclaration(
-                self._derived_module_owner_name(variable),
-                "static PyObject *",
-                CodeExpression("NULL"),
-            )
-            for variable in self._derived_module_variables(plan)
+            CDeclaration(self._namespace_owner_name(path), "static PyObject *", CodeExpression("NULL"))
+            for path in self._owner_namespaces(plan)
         )
 
-    @staticmethod
-    def _derived_module_owner_name(variable: ModuleVariablePlan) -> str:
-        """Return the binding-local derived module owner name derived from the supplied completed binding records; this helper preserves completed policy."""
-        owner = re.sub(r"\W", "_", variable.owner_path).casefold()
-        return f"prik_module_{owner}_derived_owner"
+    @classmethod
+    def _namespace_owner_name(cls, python_path: tuple[str, ...]) -> str:
+        """Return the retained module object of one namespace."""
+        return f"prik_namespace_{cls._path_symbol(python_path)}_owner"
 
     def _method_table(self, module: ModulePlan, namespace: NamespacePlan) -> CMethodDefTable:
         """Build method table from the supplied completed binding records; emitted nodes only project completed binding actions."""
         return CMethodDefTable(
             f"{module.binding.owner_path}_{self._namespace_symbol(namespace)}_methods",
-            self._method_entries(namespace),
+            self._method_entries(module, namespace),
         )
 
-    def _method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+    def _method_entries(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CMethodDefEntry, ...]:
         """Return the exact callable definitions installed in one namespace."""
         return (
             *(
@@ -14713,15 +14779,15 @@ class CBindingGenerator(ClassVisitor):
             *self._overload_method_entries(namespace),
             *(
                 CMethodDefEntry(
-                    CBindingNames.class_create_method(surface),
-                    CBindingNames.class_create_method(surface),
+                    CBindingNames.class_create_method(surface.backend_symbol),
+                    CBindingNames.class_create_method(surface.backend_symbol),
                     "METH_VARARGS",
                     "",
                 )
                 for surface in namespace.classes
                 if surface.constructor.kind is not ClassConstructorKind.ABSENT
             ),
-            *self._derived_private_method_entries(namespace),
+            *self._derived_private_method_entries(module, namespace),
         )
 
     @staticmethod
@@ -14769,23 +14835,15 @@ class CBindingGenerator(ClassVisitor):
                 seen.add(id(overload))
         return tuple(dispatches)
 
-    def _overload_dispatch_functions(
-        self,
-        plan: ModulePlan,
-        class_python_names: dict[tuple[str, str], str],
-    ) -> tuple[CFunction, ...]:
+    def _overload_dispatch_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Lower every completed overload surface into one C dispatcher."""
         return tuple(
-            self._overload_dispatch_function(dispatch, class_python_names)
+            self._overload_dispatch_function(dispatch)
             for namespace in plan.namespaces
             for dispatch in self._namespace_overload_dispatches(namespace)
         )
 
-    def _overload_dispatch_function(
-        self,
-        dispatch: _COverloadDispatch,
-        class_python_names: dict[tuple[str, str], str],
-    ) -> CFunction:
+    def _overload_dispatch_function(self, dispatch: _COverloadDispatch) -> CFunction:
         """Classify one call, assign a candidate ID, and switch to its wrapper."""
         overload = dispatch.overload
         positional_offset = 1 if dispatch.receiver else 0
@@ -14805,7 +14863,6 @@ class CBindingGenerator(ClassVisitor):
                     + self._overload_candidate_condition(
                         matches,
                         positional_offset=positional_offset,
-                        class_python_names=class_python_names,
                     )
                     + ")"
                 ),
@@ -14899,7 +14956,6 @@ class CBindingGenerator(ClassVisitor):
         matches: tuple[OverloadArgumentMatchPlan, ...],
         *,
         positional_offset: int,
-        class_python_names: dict[tuple[str, str], str],
     ) -> str:
         """Return one ordered candidate predicate over borrowed call arguments."""
         shape = self._overload_call_shape_condition(matches)
@@ -14907,7 +14963,6 @@ class CBindingGenerator(ClassVisitor):
             self._overload_argument_condition(
                 match,
                 self._overload_argument_value_expression(match, index, positional_offset),
-                class_python_names,
             )
             for index, match in enumerate(matches)
         )
@@ -14950,10 +15005,9 @@ class CBindingGenerator(ClassVisitor):
         self,
         match: OverloadArgumentMatchPlan,
         value: str,
-        class_python_names: dict[tuple[str, str], str],
     ) -> str:
         """Wrap one exact C predicate with its required or optional presence rule."""
-        predicate = self._overload_required_argument_condition(match, value, class_python_names)
+        predicate = self._overload_required_argument_condition(match, value)
         if match.optional:
             return f"({value} == NULL || ({predicate}))"
         return f"({value} != NULL && ({predicate}))"
@@ -14962,14 +15016,14 @@ class CBindingGenerator(ClassVisitor):
         self,
         match: OverloadArgumentMatchPlan,
         value: str,
-        class_python_names: dict[tuple[str, str], str],
     ) -> str:
         """Return the C-API predicate for one completed overload match kind."""
         if match.kind is OverloadMatchKind.DERIVED:
             if match.derived_type_identity is None:
                 raise ValueError(f"Derived overload argument {match.python_name!r} has no type identity")
-            class_name = self._c_string_literal(class_python_names[match.derived_type_identity])
-            expected = f"PyDict_GetItemString(PyModule_GetDict(self), {class_name})"
+            class_name = self._c_string_literal(self._type_class_name(match.derived_type_identity))
+            namespace = self._type_namespace(match.derived_type_identity)
+            expected = f"PyDict_GetItemString(PyModule_GetDict({namespace}), {class_name})"
             return f"{expected} != NULL && (PyObject *)Py_TYPE({value}) == {expected}"
         if match.kind is OverloadMatchKind.NUMPY_ARRAY:
             numpy_type = PrimitiveScalarTypeRegistry.type_for(match.semantic_type_name).numpy_type_macro
@@ -15169,14 +15223,18 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _derived_private_method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+    def _derived_private_method_entries(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CMethodDefEntry, ...]:
         """Expose private field callables used by generated Python properties."""
         names = (
             *self._direct_field_method_names(namespace),
-            *self._module_member_method_names(namespace),
+            *self._module_member_method_names(module, namespace),
             *self._allocatable_holder_method_names(namespace),
             *self._pointer_holder_method_names(namespace),
-            *self._module_proxy_guard_method_names(namespace),
+            *self._module_proxy_guard_method_names(module, namespace),
         )
         return tuple(CMethodDefEntry(name, name, "METH_VARARGS", "") for name in names)
 
@@ -15190,11 +15248,15 @@ class CBindingGenerator(ClassVisitor):
             for action in self._field_method_actions(field)
         )
 
-    def _module_member_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_member_method_names(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[str, ...]:
         """Return the binding-local module member method names derived from the supplied completed binding records; this helper preserves completed policy."""
         return tuple(
             self._module_member_method_name(variable, member, action)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
             for member in variable.derived.member_paths
             for action in self._field_method_actions(member.field)
@@ -15238,16 +15300,20 @@ class CBindingGenerator(ClassVisitor):
         guards = tuple(self._pointer_holder_presence_method_name(derived.backend_symbol) for derived in holders)
         return (*fields, *guards)
 
-    def _module_proxy_guard_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_proxy_guard_method_names(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[str, ...]:
         """Return the binding-local module proxy guard method names derived from the supplied completed binding records; this helper preserves completed policy."""
         presence = tuple(
             self._module_derived_presence_method_name(variable)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if self._nullable_derived_module_proxy(variable)
         )
         native_ops = tuple(
             self._derived_origin_capsule_method_name(variable)
-            for variable in namespace.variables
+            for variable in self._support_variables(module, namespace)
             if variable.derived is not None
         )
         return (*presence, *native_ops)
@@ -15289,20 +15355,60 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(f"PyModule_Create(&{module_name}_{self._namespace_symbol(root_namespace)}_module)"),
                 ),
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
-                *self._namespace_configuration_nodes(
-                    plan,
-                    root_namespace,
-                    "mod",
-                ),
+                *self._module_initializer_nodes(plan),
+                *self._module_native_array_owner_nodes(plan, "mod"),
                 *(node for namespace in child_namespaces for node in self._child_namespace_nodes(plan, namespace)),
+                # Every namespace exists before any is set up, and they are set
+                # up in plan order, which puts a namespace defining a base class
+                # before one whose classes extend it.
+                *(
+                    node
+                    for namespace in plan.namespaces
+                    for node in self._namespace_configuration_nodes(
+                        plan,
+                        namespace,
+                        self._namespace_object_name(namespace),
+                    )
+                ),
                 *(
                     node
                     for namespace in child_namespaces
                     for node in self._child_namespace_import_registration_nodes(plan, namespace)
                 ),
+                # Aliases bind after every namespace is populated, so the
+                # callable a re-export names already exists.
+                *(
+                    node
+                    for namespace in (root_namespace, *child_namespaces)
+                    for node in self._namespace_alias_nodes(plan, namespace)
+                ),
                 CReturn(CodeExpression("mod")),
             ),
         )
+
+    def _namespace_alias_nodes(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Bind each re-exported name to the callable its owner already exposes.
+
+        A re-export publishes an existing declaration, so the name is bound to
+        that one object rather than to a second wrapper for the same procedure.
+        """
+        target = self._namespace_object_name(namespace)
+        nodes: list[CExpressionStatement] = []
+        for alias in namespace.aliases:
+            source = self._namespace_object_name(self._namespace(plan, alias.source_namespace))
+            nodes.append(
+                CExpressionStatement(
+                    CodeExpression(
+                        f'if (prik_bind_namespace_alias({target}, "{alias.python_name}", '
+                        f'{source}, "{alias.source_name}") < 0) {{ Py_DECREF(mod); return NULL; }}'
+                    )
+                )
+            )
+        return tuple(nodes)
 
     def _ordered_child_namespaces(self, plan: ModulePlan) -> tuple[NamespacePlan, ...]:
         """Return parents before descendants regardless of editable tuple order."""
@@ -15318,7 +15424,7 @@ class CBindingGenerator(ClassVisitor):
         module: ModulePlan,
         namespace: NamespacePlan,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Create, attach, and configure one child Python module."""
+        """Create one child Python module and attach it to its parent."""
         object_name = self._namespace_object_name(namespace)
         parent = self._namespace_object_name(self._namespace(module, namespace.python_path[:-1]))
         definition = f"{module.binding.owner_path}_{self._namespace_symbol(namespace)}_module"
@@ -15331,11 +15437,6 @@ class CBindingGenerator(ClassVisitor):
                     f'if (PyModule_AddObject({parent}, "{local_name}", {object_name}) < 0) '
                     f"{{ Py_DECREF({object_name}); Py_DECREF(mod); return NULL; }}"
                 )
-            ),
-            *self._namespace_configuration_nodes(
-                module,
-                namespace,
-                object_name,
             ),
         )
 
@@ -15376,24 +15477,25 @@ class CBindingGenerator(ClassVisitor):
             else ()
         )
         return (
+            *self._namespace_owner_nodes(module, namespace, object_name),
             *property_nodes,
             *self._namespace_python_initializer_nodes(
+                module,
                 namespace,
                 object_name,
             ),
-            *self._module_native_array_owner_nodes(namespace, object_name),
-            *self._derived_module_owner_nodes(namespace, object_name),
-            *self._module_initializer_nodes(namespace),
-            *self._module_constant_nodes(namespace, object_name),
+            *self._module_constant_nodes(module, namespace, object_name),
         )
 
     def _namespace_python_initializer_nodes(
         self,
+        module: ModulePlan,
         namespace: NamespacePlan,
         module_object: str,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Install exact overload dispatch plus generated opaque wrapper types."""
-        has_proxy = any(variable.derived is not None for variable in namespace.variables)
+        variables = self._support_variables(module, namespace)
+        has_proxy = any(variable.derived is not None for variable in variables)
         if not namespace.derived_types and not has_proxy:
             return ()
         allocatable_holders = self._namespace_binding_holder_types(
@@ -15408,16 +15510,30 @@ class CBindingGenerator(ClassVisitor):
             allocatable_holder_identities=frozenset(derived.type_identity for derived in allocatable_holders),
             pointer_holder_identities=frozenset(derived.type_identity for derived in pointer_holders),
             nullable_module_proxy_owner_paths=frozenset(
-                variable.owner_path for variable in namespace.variables if self._nullable_derived_module_proxy(variable)
+                variable.owner_path for variable in variables if self._nullable_derived_module_proxy(variable)
             ),
+            type_homes=self._type_homes,
         )
-        source = PythonSurfaceEmitter(context).emit(namespace)
+        emitter = PythonSurfaceEmitter(context)
+        source = emitter.emit(namespace, variables)
         literal = self._c_string_literal(source)
         result_name = f"{self._namespace_symbol(namespace)}_python_setup"
         dictionary = f"{self._namespace_symbol(namespace)}_python_dict"
         return (
             CDeclaration(dictionary, "PyObject *", CodeExpression(f"PyModule_GetDict({module_object})")),
             CIf(CodeExpression(f"{dictionary} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+            # A class extending a type another namespace defines reaches its base
+            # through that namespace, which planning set up before this one.
+            *(
+                CIf(
+                    CodeExpression(
+                        f'PyDict_SetItemString({dictionary}, "{CBindingNames.namespace_reference(path)}", '
+                        f"{self._namespace_owner_name(path)}) < 0"
+                    ),
+                    body=(CReturn(CodeExpression("NULL")),),
+                )
+                for path in emitter.referenced_namespaces(namespace)
+            ),
             CDeclaration(
                 result_name,
                 "PyObject *",
@@ -15435,12 +15551,12 @@ class CBindingGenerator(ClassVisitor):
 
     def _module_native_array_owner_nodes(
         self,
-        namespace: NamespacePlan,
-        _module_object: str,
+        plan: ModulePlan,
+        module_object: str,
     ) -> tuple[CExpressionStatement, ...]:
         """Retain the root extension package for every borrowed native array."""
         nodes = []
-        for variable in namespace.variables:
+        for variable in plan.variables:
             if variable.binding.getter_action not in {
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
@@ -15449,32 +15565,33 @@ class CBindingGenerator(ClassVisitor):
             owner = self._module_native_array_owner_name(variable)
             nodes.extend(
                 (
-                    CExpressionStatement(CodeExpression("Py_INCREF(mod)")),
-                    CExpressionStatement(CodeExpression(f"{owner} = mod")),
-                )
-            )
-        return tuple(nodes)
-
-    def _derived_module_owner_nodes(
-        self,
-        namespace: NamespacePlan,
-        module_object: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Retain one module reference for each live borrowed derived object."""
-        nodes = []
-        for variable in namespace.variables:
-            if variable.derived is None:
-                continue
-            owner = self._derived_module_owner_name(variable)
-            nodes.extend(
-                (
                     CExpressionStatement(CodeExpression(f"Py_INCREF({module_object})")),
                     CExpressionStatement(CodeExpression(f"{owner} = {module_object}")),
                 )
             )
         return tuple(nodes)
 
-    def _module_initializer_nodes(self, namespace: NamespacePlan) -> tuple[CExpressionStatement, ...]:
+    def _namespace_owner_nodes(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+        module_object: str,
+    ) -> tuple[CIf, ...]:
+        """Retain this namespace's module object when another reaches into it."""
+        if namespace.python_path not in self._owner_namespaces(module):
+            return ()
+        owner = self._namespace_owner_name(namespace.python_path)
+        return (
+            CIf(
+                CodeExpression(f"{owner} == NULL"),
+                body=(
+                    CExpressionStatement(CodeExpression(f"Py_INCREF({module_object})")),
+                    CExpressionStatement(CodeExpression(f"{owner} = {module_object}")),
+                ),
+            ),
+        )
+
+    def _module_initializer_nodes(self, plan: ModulePlan) -> tuple[CExpressionStatement, ...]:
         """Return import-time native assignments selected by completed policy."""
         return tuple(
             CExpressionStatement(
@@ -15483,28 +15600,31 @@ class CBindingGenerator(ClassVisitor):
                     f"{self._module_literal(variable, variable.binding.initializer)})"
                 )
             )
-            for variable in namespace.variables
+            for variable in plan.variables
             if variable.binding.initializer is not None
         )
 
     def _module_constant_nodes(
         self,
+        plan: ModulePlan,
         namespace: NamespacePlan,
         module_object: str,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Materialize scalar constants in the ordinary module dictionary."""
         nodes = []
         index = 0
-        for variable in namespace.variables:
+        namespace_symbol = self._namespace_symbol(namespace)
+        for variable, publication in self._variable_publications(plan, namespace):
             if variable.binding.getter_action not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
                 continue
-            for python_name in variable.binding.python_names:
-                value_name = f"constant_{variable.symbol_name}_value_{index}"
-                object_name = f"constant_{variable.symbol_name}_object_{index}"
+            local_stem = f"{namespace_symbol}_{variable.symbol_name}"
+            for python_name in publication.python_names:
+                value_name = f"constant_{local_stem}_value_{index}"
+                object_name = f"constant_{local_stem}_object_{index}"
                 nodes.extend(
                     (
                         *self._module_constant_declarations(variable, value_name, object_name),
@@ -15712,8 +15832,35 @@ class CBindingGenerator(ClassVisitor):
         return tuple(function for namespace in plan.namespaces for function in namespace.functions)
 
     def _variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
-        """Return variables from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return tuple(variable for namespace in plan.namespaces for variable in namespace.variables)
+        """Return the canonical module-variable registry in planner order."""
+        return plan.variables
+
+    def _variable_publications(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[tuple[ModuleVariablePlan, ModuleVariablePublicationPlan], ...]:
+        """Resolve namespace publications to their one native variable plan."""
+        variables = {variable.owner_path: variable for variable in self._variables(plan)}
+        resolved = []
+        for publication in namespace.variable_publications:
+            variable = variables.get(publication.variable_owner_path)
+            if variable is None:
+                raise ValueError(
+                    f"Module-variable publication references missing plan {publication.variable_owner_path!r}"
+                )
+            resolved.append((variable, publication))
+        return tuple(resolved)
+
+    def _support_variables(
+        self,
+        plan: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[ModuleVariablePlan, ...]:
+        """Read the planned namespace for private module-variable helpers."""
+        return tuple(
+            variable for variable in plan.variables if variable.binding.support_namespace == namespace.python_path
+        )
 
     def _namespace(self, plan: ModulePlan, python_path: tuple[str, ...]) -> NamespacePlan:
         """Return the binding-local namespace derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -15724,7 +15871,12 @@ class CBindingGenerator(ClassVisitor):
 
     def _namespace_symbol(self, plan: NamespacePlan) -> str:
         """Return the binding-local namespace symbol derived from the supplied completed binding records; this helper preserves completed policy."""
-        return "_".join(plan.python_path).casefold() if plan.python_path else "root"
+        return self._path_symbol(plan.python_path)
+
+    @staticmethod
+    def _path_symbol(python_path: tuple[str, ...]) -> str:
+        """Return the C symbol fragment naming one namespace path."""
+        return CBindingNames.namespace_symbol(python_path)
 
     def _namespace_object_name(self, plan: NamespacePlan) -> str:
         """Return the binding-local namespace object name derived from the supplied completed binding records; this helper preserves completed policy."""

@@ -40,7 +40,7 @@ def test_aliased_derived_module_object_borrows_native_state(
     )
 
     current = module.current
-    assert isinstance(current, module.box)
+    assert isinstance(current, module.Box)
     values = current.values
     assert isinstance(values, AllocatableArray)
     assert values.owner is current
@@ -55,7 +55,7 @@ def test_aliased_derived_module_object_borrows_native_state(
     assert module.current_sum() == np.float64(15.0)
     assert module.current.values_sum() == np.float64(15.0)
 
-    owned = module.box()
+    owned = module.Box()
     owned.allocate_values(np.int32(2))
     owned.values.to_numpy()[0] = np.float64(20.0)
     assert owned.values_sum() == np.float64(22.0)

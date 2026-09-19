@@ -1,6 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
 from prik.parsers.fortran.models import (
+    FortranUseStatement,
     FortranArgument,
     FortranModule,
 )
@@ -24,14 +25,19 @@ from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():
     converter = FortranToIRConverter(wrapped_derived_types={("types_mod", "state_t")})
-    module = FortranModule(name="consumer", uses={"OTHER_MOD": [], "TYPES_MOD": []})
+    module = FortranModule(
+        name="consumer",
+        uses=[FortranUseStatement("OTHER_MOD"), FortranUseStatement("TYPES_MOD")],
+    )
     context = converter._module_derived_type_context(module)
 
     state = converter.visit(
         FortranArgument(name="state", base_type="derived", kind="state_t"),
         derived_type_context=context,
     ).semantic_type
-    opaque_context = converter._module_derived_type_context(FortranModule(name="consumer", uses={"OPAQUE_MOD": []}))
+    opaque_context = converter._module_derived_type_context(
+        FortranModule(name="consumer", uses=[FortranUseStatement("OPAQUE_MOD")])
+    )
     opaque = converter.visit(
         FortranArgument(name="opaque", base_type="derived", kind="opaque_t"),
         derived_type_context=opaque_context,
@@ -300,7 +306,9 @@ end module m
     assert array_contract(semantic_arg.semantic_type).allocatable is True
     assert semantic_proc.projection[0].python_position == 0
     assert semantic_dtype.base_classes == ["base"]
-    assert semantic_module.imports == ["iso_c_binding"]
+    # No declaration is written with a name `use iso_c_binding` supplies, and a
+    # compiler-supplied module has no contract to read one from.
+    assert semantic_module.imports == []
     assert semantic_dtype.visibility == "private"
     assert semantic_proc.visibility == "public"
     assert semantic_file_modules[0].name == "m"

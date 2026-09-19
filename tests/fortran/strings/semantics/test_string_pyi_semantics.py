@@ -79,7 +79,7 @@ def array_assumed_strided(values: String[...][::]) -> None: ...
     assert assumed_type.metadata["fortran_character_length"] == "*"
     assert assumed_type.rank == 1
     assert assumed_type.shape == [":"]
-    assert array_assumed_strided.arguments[0].semantic_type.shape == ["::Strided"]
+    assert array_assumed_strided.arguments[0].semantic_type.shape == ["::"]
 
     emitted = emit_module(module)
     assert "value: String" in emitted

@@ -44,7 +44,6 @@ RAW_STRING_ADDRESS_COPY_REASON = (
 )
 DERIVED_VALUE_COPY_REASON = "pass an exact derived pointee through a typed native value dummy"
 LOGICAL_SCALAR_KIND_COPY_REASON = "adapt a C-interoperable Boolean through storage with the native Fortran logical kind"
-LOGICAL_ARRAY_KIND_COPY_REASON = "adapt a one-byte Boolean array through storage with the native Fortran logical kind"
 
 
 class OptionalMode(str, Enum):
@@ -207,14 +206,6 @@ class DirectResultABI(str, Enum):
     LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
 
 
-class ArrayWritebackABI(str, Enum):
-    """Completed post-call element ABI for one mutable ordinary array."""
-
-    NOT_APPLICABLE = "not_applicable"
-    NATIVE_ARRAY = "native_array"
-    LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
-
-
 class ScalarLogicalABI(str, Enum):
     """Completed scalar logical adaptation between the C and native dummies."""
 
@@ -228,7 +219,6 @@ class ArrayLogicalABI(str, Enum):
 
     NOT_APPLICABLE = "not_applicable"
     C_BOOL_VIEW = "c_bool_view"
-    NATIVE_KIND_COPY = "native_kind_copy"
 
 
 class WritebackPhase(str, Enum):
@@ -1007,6 +997,9 @@ class LifecyclePolicy:
     semantic_type_name: str
     result_position: int
     object_kind: ObjectKind
+    # The handoff of the transfer this action belongs to, which is what makes
+    # the value a derived object; its type's spelling does not.
+    derived: DerivedHandoffPolicy | None
     operation: LifecycleOperation = LifecycleOperation.WRITEBACK
 
 
@@ -1294,9 +1287,6 @@ class ArgumentPolicy:
     scalar_native_type: str | None
     array_logical_abi: ArrayLogicalABI
     array_native_type: str | None
-    array_copy_in: bool
-    array_copy_out: bool
-    array_writeback_abi: ArrayWritebackABI
     optional: bool
     optional_mode: OptionalMode
     conversion_phase: ArgumentConversionPhase
@@ -1418,8 +1408,6 @@ class NativeCallSlotPolicy:
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
     array_native_type: str | None = None
-    array_copy_in: bool = False
-    array_copy_out: bool = False
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -1500,6 +1488,7 @@ if __name__ == "__main__":
         semantic_type_name="Float64",
         result_position=0,
         object_kind=ObjectKind.NUMPY_ARRAY,
+        derived=None,
     )
 
     print(f"Array policy: rank={example_array.rank}, shape={example_array.shape}, order={example_array.order}")

@@ -13,6 +13,7 @@ already fixed in the plan.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from prik.codegen.c.naming import CBindingNames
@@ -40,11 +41,17 @@ from prik.policy.models import (
 
 @dataclass(frozen=True)
 class PythonSurfaceContext:
-    """Store namespace facts already selected by planning and C orchestration."""
+    """Store namespace facts already selected by planning and C orchestration.
+
+    ``type_homes`` maps each type identity to the namespace defining it and
+    its plan there, so a class extending a type another namespace defines
+    reaches that base where it lives.
+    """
 
     allocatable_holder_identities: frozenset[tuple[str, str]]
     pointer_holder_identities: frozenset[tuple[str, str]]
     nullable_module_proxy_owner_paths: frozenset[str]
+    type_homes: Mapping[tuple[str, str], tuple[tuple[str, ...], DerivedTypePlan]]
 
 
 class PythonSurfaceEmitter(ClassVisitor):
@@ -53,29 +60,30 @@ class PythonSurfaceEmitter(ClassVisitor):
     def __init__(self, context: PythonSurfaceContext) -> None:
         self._context = context
 
-    def emit(self, namespace: NamespacePlan) -> str:
+    def emit(
+        self,
+        namespace: NamespacePlan,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> str:
         """Return overloads, opaque classes, and typed member operation maps."""
-        return self.visit(namespace)
+        return self.visit(namespace, variables)
 
-    def _visit_NamespacePlan(self, namespace: NamespacePlan) -> str:
+    def _visit_NamespacePlan(
+        self,
+        namespace: NamespacePlan,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> str:
         """Render one planned namespace as executable Python source."""
         surfaces = self._class_surfaces(namespace)
-        class_names = self._class_names(namespace)
-        ops_names = self._direct_ops_names(namespace)
         sections = [
             "_prik_unset = object()",
             *(
-                self._derived_type_python_source(
-                    derived,
-                    surfaces.get(derived.type_identity),
-                    class_names,
-                    ops_names,
-                )
+                self._derived_type_python_source(namespace, derived, surfaces.get(derived.type_identity))
                 for derived in namespace.derived_types
             ),
         ]
         sections.extend(self._holder_ops_python_sources(namespace))
-        sections.extend(self._module_proxy_ops_python_sources(namespace))
+        sections.extend(self._module_proxy_ops_python_sources(variables))
         return "\n\n".join(section for section in sections if section)
 
     @staticmethod
@@ -83,14 +91,37 @@ class PythonSurfaceEmitter(ClassVisitor):
         """Index planned class surfaces by completed type identity."""
         return {surface.type_identity: surface for surface in namespace.classes}
 
-    @staticmethod
-    def _class_names(namespace: NamespacePlan) -> dict[tuple[str, str], str]:
-        """Index visible class names needed for inheritance rendering."""
-        return {surface.type_identity: surface.python_names[0] for surface in namespace.classes if surface.python_names}
+    def referenced_namespaces(self, namespace: NamespacePlan) -> tuple[tuple[str, ...], ...]:
+        """Return each other namespace this one's source reaches a type in.
 
-    def _direct_ops_names(self, namespace: NamespacePlan) -> dict[tuple[str, str], str]:
-        """Index operation dictionaries inherited by generated subclasses."""
-        return {derived.type_identity: self._direct_type_ops_name(derived) for derived in namespace.derived_types}
+        The source names each such namespace as ``CBindingNames.namespace_reference``,
+        which has to be bound before it runs.
+        """
+        paths = {
+            self._context.type_homes[base][0] for surface in namespace.classes for base in surface.base_identities[:1]
+        }
+        return tuple(sorted(paths - {namespace.python_path}))
+
+    def _type_reference(self, namespace: NamespacePlan, type_identity: tuple[str, str], attribute: str) -> str:
+        """Return how this namespace's source names one attribute a type defines.
+
+        A type this namespace defines is named directly; one another namespace
+        defines is reached through that namespace.
+        """
+        path = self._context.type_homes[type_identity][0]
+        if path == namespace.python_path:
+            return attribute
+        return f"{CBindingNames.namespace_reference(path)}.{attribute}"
+
+    def _type_class_reference(self, namespace: NamespacePlan, type_identity: tuple[str, str]) -> str:
+        """Return how this namespace's source names a type's class."""
+        derived = self._context.type_homes[type_identity][1]
+        return self._type_reference(namespace, type_identity, derived.definition_name)
+
+    def _type_ops_reference(self, namespace: NamespacePlan, type_identity: tuple[str, str]) -> str:
+        """Return how this namespace's source names a type's operation map."""
+        derived = self._context.type_homes[type_identity][1]
+        return self._type_reference(namespace, type_identity, self._direct_type_ops_name(derived))
 
     def _holder_ops_python_sources(self, namespace: NamespacePlan) -> tuple[str, ...]:
         """Render allocatable and pointer holder operation maps by completed identity."""
@@ -107,26 +138,27 @@ class PythonSurfaceEmitter(ClassVisitor):
             ),
         )
 
-    def _module_proxy_ops_python_sources(self, namespace: NamespacePlan) -> tuple[str, ...]:
+    def _module_proxy_ops_python_sources(
+        self,
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> tuple[str, ...]:
         """Render persistent module-derived operation maps in declaration order."""
         return tuple(
-            self._module_proxy_ops_python_source(variable)
-            for variable in namespace.variables
-            if variable.derived is not None
+            self._module_proxy_ops_python_source(variable) for variable in variables if variable.derived is not None
         )
 
     def _derived_type_python_source(
         self,
+        namespace: NamespacePlan,
         derived: DerivedTypePlan,
         surface: ClassSurfacePlan | None,
-        class_names: dict[tuple[str, str], str],
-        ops_names: dict[tuple[str, str], str],
     ) -> str:
         """Return one opaque wrapper assembled from its completed class surface."""
-        name = derived.python_names[0]
+        name = derived.definition_name
         ops_name = self._direct_type_ops_name(derived)
-        base = self._class_base_name(surface, class_names)
-        base_ops = self._class_base_ops_name(surface, ops_names)
+        base_identity = surface.base_identities[0] if surface is not None and surface.base_identities else None
+        base = None if base_identity is None else self._type_class_reference(namespace, base_identity)
+        base_ops = None if base_identity is None else self._type_ops_reference(namespace, base_identity)
         slots = self._class_slots(base)
         own_ops = self._direct_type_ops_literal(derived)
         combined_ops = self._combined_ops_literal(base_ops, own_ops)
@@ -138,18 +170,29 @@ class PythonSurfaceEmitter(ClassVisitor):
         ]
         lines.extend(self._class_constructor_python_lines(surface))
         lines.extend(self._derived_class_member_python_lines(derived, surface))
-        lines.extend(self._class_wrap_helper_python_lines(surface, name, ops_name))
+        lines.extend(self._class_wrap_helper_python_lines(derived, ops_name))
+        lines.extend(self._unbound_class_python_lines(namespace, derived))
         return "\n".join(lines)
 
-    @staticmethod
-    def _class_base_ops_name(
-        surface: ClassSurfacePlan | None,
-        ops_names: dict[tuple[str, str], str],
-    ) -> str | None:
-        """Return the inherited operation-map name, when one is planned."""
-        if surface is None or not surface.base_identities:
-            return None
-        return ops_names[surface.base_identities[0]]
+    def _unbound_class_python_lines(self, namespace: NamespacePlan, derived: DerivedTypePlan) -> tuple[str, ...]:
+        """Name a class bound under no public name, and bind it on its parent.
+
+        Such a class is defined under a private name, so it takes the name its
+        contract calls it by. A nested one is then reached through its parent
+        and qualified by it, as a class written inside another is in Python.
+        """
+        if derived.python_names:
+            return ()
+        name = derived.definition_name
+        contract = derived.contract_name
+        if derived.nested_in is None:
+            return (f"{name}.__name__ = {name}.__qualname__ = {contract!r}",)
+        parent = self._type_class_reference(namespace, derived.nested_in)
+        return (
+            f"{name}.__name__ = {contract!r}",
+            f"{name}.__qualname__ = {parent}.__qualname__ + {'.' + contract!r}",
+            f"{parent}.{contract} = {name}",
+        )
 
     @staticmethod
     def _class_slots(base: str | None) -> str:
@@ -192,16 +235,12 @@ class PythonSurfaceEmitter(ClassVisitor):
         """Flatten overload descriptors while preserving plan order."""
         return tuple(line for overload in overloads for line in self._class_overload_python_lines(overload))
 
-    def _class_wrap_helper_python_lines(
-        self,
-        surface: ClassSurfacePlan | None,
-        name: str,
-        ops_name: str,
-    ) -> tuple[str, ...]:
+    @staticmethod
+    def _class_wrap_helper_python_lines(derived: DerivedTypePlan, ops_name: str) -> tuple[str, ...]:
         """Render the sole helper that attaches existing opaque native storage."""
         return (
-            f"def {CBindingNames.class_wrap_helper(surface, fallback=name)}(capsule, owner=None, ops=None, origin='direct'):",
-            f"    value = object.__new__({name})",
+            f"def {CBindingNames.class_wrap_helper(derived.backend_symbol)}(capsule, owner=None, ops=None, origin='direct'):",
+            f"    value = object.__new__({derived.definition_name})",
             "    value._prik_capsule = capsule",
             "    value._prik_owner = owner",
             f"    value._prik_ops = {ops_name} if ops is None else ops",
@@ -244,7 +283,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         signature = f", *, {parameters}" if parameters else ""
         lines = [
             "    def __new__(cls, *args, **kwargs):",
-            f"        return {CBindingNames.class_create_method(surface)}()",
+            f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
             f"    def __init__(self{signature}):",
             f"        {surface.constructor.docstring!r}",
         ]
@@ -267,7 +306,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         parameters = self._callable_public_arguments(target)
         lines = [
             "    def __new__(cls, *args, **kwargs):",
-            f"        return {CBindingNames.class_create_method(surface)}()",
+            f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
             f"    def __init__(self{self._python_parameter_suffix(parameters)}):",
             f"        {surface.constructor.docstring!r}",
             "        _prik_arguments = {'self': self}",
@@ -290,7 +329,7 @@ class PythonSurfaceEmitter(ClassVisitor):
         if overload.candidate_passed_objects and overload.candidate_passed_objects[0]:
             return (
                 "    def __new__(cls, *args, **kwargs):",
-                f"        return {CBindingNames.class_create_method(surface)}()",
+                f"        return {CBindingNames.class_create_method(surface.backend_symbol)}()",
                 *self._class_overload_python_lines(
                     overload,
                     constructor=True,
@@ -448,16 +487,6 @@ class PythonSurfaceEmitter(ClassVisitor):
         return tuple(lines)
 
     @staticmethod
-    def _class_base_name(
-        surface: ClassSurfacePlan | None,
-        class_names: dict[tuple[str, str], str],
-    ) -> str | None:
-        """Return the planned Python base-class name."""
-        if surface is None or not surface.base_identities:
-            return None
-        return class_names[surface.base_identities[0]]
-
-    @staticmethod
     def _derived_property_python_lines(field: DerivedFieldPlan) -> tuple[str, ...]:
         """Build a property from completed getter and setter actions."""
         lines = [
@@ -531,14 +560,14 @@ class PythonSurfaceEmitter(ClassVisitor):
     @staticmethod
     def _direct_type_ops_name(derived: DerivedTypePlan) -> str:
         """Return the Python operation-map name for direct storage."""
-        return f"_prik_ops_{derived.type_name.casefold()}"
+        return CBindingNames.type_ops(derived.backend_symbol)
 
     def _module_proxy_ops_python_source(self, variable: ModuleVariablePlan) -> str:
         """Return one operation dictionary per reachable plain-module object path."""
         if variable.derived is None:
             return ""
         if variable.derived.access is ModuleObjectAccessMechanism.DIRECT_ADDRESS:
-            direct = f"_prik_ops_{variable.derived.handoff.type_name.casefold()}"
+            direct = CBindingNames.type_ops(variable.derived.handoff.backend_symbol)
             native_ops = CBindingNames.derived_origin_capsule_method(variable)
             return f"{CBindingNames.module_member_ops(variable, ())} = dict({direct}, _native_ops={native_ops}())"
         grouped: dict[tuple[str, ...], list[DerivedMemberPathPlan]] = {}
@@ -582,12 +611,14 @@ if __name__ == "__main__":
         native_type_name="state_t",
         native_scope="state",
         python_names=("State",),
+        contract_name="State",
         fields=(),
         bind_c=False,
     )
     example_surface = ClassSurfacePlan(
         owner_path="state.State",
         type_identity=example_identity,
+        backend_symbol="state_t",
         python_names=("State",),
         base_identities=(),
         constructor=ConstructorPlan(
@@ -610,7 +641,9 @@ if __name__ == "__main__":
         derived_types=(example_derived,),
         classes=(example_surface,),
     )
-    example_context = PythonSurfaceContext(frozenset(), frozenset(), frozenset())
+    example_context = PythonSurfaceContext(
+        frozenset(), frozenset(), frozenset(), {example_identity: ((), example_derived)}
+    )
 
     print("Rendered Python facade:")
-    print(PythonSurfaceEmitter(example_context).emit(example_namespace))
+    print(PythonSurfaceEmitter(example_context).emit(example_namespace, ()))

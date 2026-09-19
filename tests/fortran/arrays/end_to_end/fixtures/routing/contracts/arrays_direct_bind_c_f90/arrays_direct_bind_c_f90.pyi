@@ -30,3 +30,5 @@ def scale_matrix(
     columns: Int32,
     values: Float64[rows, columns]
 ) -> None: ...
+
+__all__ = ["sum_values", "scale_values", "all_flags", "invert_flags", "scale_matrix"]

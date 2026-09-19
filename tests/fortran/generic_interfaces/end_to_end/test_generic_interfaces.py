@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_source_and_import,
     _build_source_or_generated_pyi_and_import,
     _build_sources_and_import,
 )
@@ -89,13 +90,13 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
     assert module.summarize(np.float64(2.5)) == np.float64(2.5)
     assert module.summarize(np.array([1.0, 2.0, 3.0], dtype=np.float64)) == np.float64(6.0)
 
-    value = module.accumulator()
+    value = module.Accumulator()
     value.add(np.int32(2))
     value.add(value=np.float64(0.5))
     assert value.total == np.float64(2.5)
     assert module.inspect(value) == np.float64(2.5)
 
-    sample = module.sample()
+    sample = module.Sample()
     sample.value = np.float64(7.25)
     assert module.inspect(sample) == np.float64(7.25)
 
@@ -123,3 +124,63 @@ def test_public_generic_dispatches_to_private_inline_submodule_specifics(tmp_pat
     assert "native__prik_overload_shift_1 => shift" in bridge
     assert "=> shift_integer" not in bridge
     assert "=> shift_real" not in bridge
+
+
+EXTENDED_GENERIC_SOURCE = """
+module gen_base_mod
+  implicit none
+  interface report
+    module procedure report_int
+  end interface report
+contains
+  subroutine report_int(value, seen)
+    integer, intent(in) :: value
+    integer, intent(out) :: seen
+    seen = value
+  end subroutine report_int
+end module gen_base_mod
+
+module gen_extended_mod
+  use gen_base_mod, only : report
+  implicit none
+  interface report
+    module procedure report_real
+  end interface report
+contains
+  subroutine report_real(value, seen)
+    real(8), intent(in) :: value
+    integer, intent(out) :: seen
+    seen = int(value) * 10
+  end subroutine report_real
+end module gen_extended_mod
+"""
+
+
+def test_generic_extended_across_modules_dispatches_to_every_specific(tmp_path: Path):
+    """A local interface block extends the generic it imports, not replaces it.
+
+    The extending module resolves both the specific it declares and the one
+    that reached it through the import, while the declaring module keeps only
+    its own: a generic accumulates along the `use` chain in one direction.
+    """
+    source = tmp_path / "gen_extended.f90"
+    source.write_text(EXTENDED_GENERIC_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {
+            "bind_c_gen_extended_wrapper.f90",
+            "gen_extended_wrapper.c",
+            "gen_extended_wrapper.h",
+        },
+    )
+
+    assert module.gen_extended_mod.report(np.int32(3)) == np.int32(3)
+    assert module.gen_extended_mod.report(np.float64(4.0)) == np.int32(40)
+    assert module.gen_base_mod.report(np.int32(3)) == np.int32(3)
+
+    # The inherited specific is reachable only through the generic, because
+    # `use gen_base_mod, only : report` never bound its own name.
+    assert "report_int" not in dir(module.gen_extended_mod)
+    with pytest.raises(TypeError, match="no matching overload"):
+        module.gen_base_mod.report(np.float64(4.0))

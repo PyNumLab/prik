@@ -10,3 +10,5 @@ def direct_outputs(
 def adapted_outputs(
     value: Int32
 ) -> tuple[Returns["value", Int32], Int32]: ...
+
+__all__ = ["direct_outputs", "adapted_outputs"]

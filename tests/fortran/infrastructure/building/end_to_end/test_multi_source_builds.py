@@ -64,6 +64,11 @@ integer function box_value(item) result(out)
   type(box), intent(in) :: item
   out = item%value
 end function box_value
+function boxed(value) result(out)
+  integer, intent(in) :: value
+  type(box) :: out
+  out%value = value
+end function boxed
 end module box_ops
 """
 
@@ -180,9 +185,13 @@ def _build_contract(
 
 def _assert_combined_runtime(module) -> None:
     assert module.first_math.add_one(np.int32(4)) == np.int32(5)
+    assert module.second_math.add_one is module.first_math.add_one
     assert module.second_math.double_after_add(np.int32(4)) == np.int32(10)
     box = module.shared_types.make_box(np.int32(7))
     assert module.box_ops.box_value(box) == np.int32(7)
+    # `box_ops` returns a type `shared_types` defines, so the result is built
+    # from that namespace's class rather than looked for in its own.
+    assert type(module.box_ops.boxed(np.int32(8))) is module.shared_types.Box
 
 
 def test_multi_file_modules_build_one_merged_extension(tmp_path: Path):
@@ -296,9 +305,11 @@ def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
     assert not (package / "second_api").exists()
     assert not (package / "combined_extensions").exists()
     assert entry.read_text(encoding="utf-8") == (
-        "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n"
+        "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n\n"
+        '__all__ = ["first_math", "shared_types", "second_math", "box_ops"]\n'
     )
-    assert "shared_types" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .shared_types import Box\n" in (package / "box_ops.pyi").read_text(encoding="utf-8")
+    assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
 
 
 def test_multi_source_generated_contract_build_matches_source_runtime_and_link_order(tmp_path: Path):
@@ -331,6 +342,38 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
     ]
     _assert_combined_runtime(source_module)
     _assert_combined_runtime(generated_module)
+    # `box_ops` imports the type to express its own signature and publishes no
+    # name of its own, so neither route adds one. The type stays where it is
+    # declared, and both builds agree on that.
+    assert not hasattr(generated_module.box_ops, "Box")
+    assert not hasattr(source_module.box_ops, "Box")
+    assert generated_module.shared_types.Box is not None
+
+
+def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
+    sources = _write_combined_sources(tmp_path)
+    entry = _generate_combined_contract(sources, tmp_path / "contracts")
+    native_objects = _compile_native_objects(sources, tmp_path / "native")
+
+    module, payload = _build_contract(
+        entry.parent / "box_ops.pyi",
+        native_objects,
+        tmp_path / "leaf_build",
+        output_name="box_leaf",
+    )
+
+    assert payload["sources"] == [
+        str(entry.parent / "box_ops.pyi"),
+        str(entry.parent / "shared_types.pyi"),
+    ]
+    # The leaf publishes what its `__all__` states. The sibling type it
+    # imports for its signatures is bound under no name of its own, yet it is
+    # a real class its procedures return and accept.
+    assert not hasattr(module, "Box")
+    assert not hasattr(module, "box")
+    box = module.boxed(np.int32(7))
+    assert type(box).__name__ == "Box"
+    assert module.box_value(box) == np.int32(7)
 
 
 def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias(tmp_path: Path):
@@ -347,7 +390,8 @@ def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias
         "from . import shared_types\n"
         "from . import second_math\n"
         "from . import box_ops\n"
-        "from .second_math import double_after_add as fused_value\n",
+        "from .second_math import double_after_add as fused_value\n\n"
+        '__all__ = ["first_math", "shared_types", "second_math", "box_ops", "fused_value"]\n',
         encoding="utf-8",
     )
 
@@ -426,3 +470,81 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
         assert module.second_api.double_value(np.int32(4)) == 10
     finally:
         sys.path.remove(str(tmp_path))
+
+
+REEXPORT_OWNERSHIP_SOURCE = """\
+module owner_mod
+  implicit none
+contains
+  subroutine scale_twice(value, scaled)
+    integer, intent(in) :: value
+    integer, intent(out) :: scaled
+    scaled = value * 2
+  end subroutine scale_twice
+end module owner_mod
+
+module facade_mod
+  use owner_mod, only : scale_twice
+  implicit none
+  private
+  public :: scale_twice
+end module facade_mod
+
+module renaming_mod
+  use owner_mod, only : doubled => scale_twice
+  implicit none
+  private
+  public :: doubled
+end module renaming_mod
+"""
+
+
+def _entry_listing(package: Path, modules: list[str]) -> None:
+    """Rewrite a package entry so it imports its modules in one stated order."""
+    lines = "".join(f"from . import {name}\n" for name in modules)
+    stated = ", ".join(f'"{name}"' for name in modules)
+    (package / "__init__.pyi").write_text(f"{lines}\n__all__ = [{stated}]\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "order",
+    [
+        pytest.param(["owner_mod", "facade_mod", "renaming_mod"], id="declaration-first"),
+        pytest.param(["renaming_mod", "facade_mod", "owner_mod"], id="declaration-last"),
+    ],
+)
+def test_reexport_is_owned_by_its_declaring_contract_whatever_the_entry_lists_first(
+    order: list[str],
+    tmp_path: Path,
+):
+    """The contract declaring a procedure owns it, whichever entry names it first.
+
+    An entry composes a package by importing from it, and the order it does so
+    is not a statement about where anything is declared. Reading ownership from
+    that order lets a facade own what it only republishes, and the wrapper then
+    belongs to the wrong namespace.
+    """
+    source = tmp_path / "ownership.f90"
+    source.write_text(REEXPORT_OWNERSHIP_SOURCE, encoding="utf-8")
+    package = tmp_path / "contracts"
+    subprocess.run(
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(package)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    entry = package / "__init__.pyi"
+    _entry_listing(package, order)
+
+    native_objects = _compile_native_objects((source,), tmp_path / "native")
+    module, _payload = _build_contract(entry, native_objects, tmp_path / "build", output_name="ownership")
+
+    assert module.facade_mod.scale_twice is module.owner_mod.scale_twice
+    assert module.renaming_mod.doubled is module.owner_mod.scale_twice
+    assert module.facade_mod.scale_twice(np.int32(21)) == np.int32(42)
+
+    # One wrapper defines the procedure, and the declaring namespace holds it.
+    generated = next((tmp_path / "build").rglob("*_wrapper.c")).read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_twice") == 1
+    assert 'prik_bind_namespace_alias(namespace_facade_mod, "scale_twice", namespace_owner_mod' in generated
+    assert 'prik_bind_namespace_alias(namespace_renaming_mod, "doubled", namespace_owner_mod' in generated

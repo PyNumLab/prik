@@ -1,7 +1,7 @@
 from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_abi, native_call
 
 @native_abi("c")
-class point:
+class Point:
     def __init__(
         self,
         *,
@@ -13,19 +13,19 @@ class point:
     axis: Int32
 
 @native_abi("c")
-class tagged_point:
+class Tagged_Point:
     def __init__(
         self,
         *,
         weight: Complex128 = ...
     ) -> None: ...
 
-    position: point
+    position: Point
     weight: Complex128
 
 @native_abi("c")
 def populate(
-    value: tagged_point,
+    value: Tagged_Point,
     x: Float64,
     axis: Int32,
     weight: Complex128
@@ -34,5 +34,7 @@ def populate(
 @native_abi("c")
 @native_call([Value(Arg(0))])
 def score_by_value(
-    value: tagged_point
+    value: Tagged_Point
 ) -> Float64: ...
+
+__all__ = ["Point", "Tagged_Point", "populate", "score_by_value"]

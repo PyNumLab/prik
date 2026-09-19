@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Annotated, Arg, Int32, SourceName, bind, native_call
 
-class visible_t:
+class Visible_T:
     def __init__(
         self,
         *,
@@ -11,7 +11,7 @@ class visible_t:
     lambda_: Annotated[Int32, SourceName("lambda")] = 3
     lambda__2: Annotated[Int32, SourceName("lambda_")] = 4
 
-    @bind("visible_t.from")
+    @bind("Visible_T.from")
     def from_(self) -> Int32: ...
 
 value: Int32
@@ -29,3 +29,5 @@ def lambda__2(
 ) -> Int32: ...
 
 def get_value() -> Int32: ...
+
+__all__ = ["Visible_T", "value", "lambda_", "lambda__2", "get_value"]

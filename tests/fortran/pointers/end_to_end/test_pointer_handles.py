@@ -321,7 +321,7 @@ def test_module_and_derived_pointer_handles_track_native_association(
     assert module_handle.associated is False
     assert module_handle.shape is None
 
-    owner = module.pointer_box()
+    owner = module.Pointer_Box()
     field_handle = owner.values
     assert isinstance(field_handle, PointerArray)
     assert field_handle.owner is owner

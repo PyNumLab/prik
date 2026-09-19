@@ -2,6 +2,7 @@
 
 import pytest
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran.scope import ScopeUses
 from prik.parsers.fortran.models import (
     FortranFunctionCall,
     FortranSlice,
@@ -62,7 +63,7 @@ end function norm2
     assert sig.result is not None
     assert sig.result.name == "res"
     assert sig.result.base_type == "real"
-    assert sig.uses["iso_c_binding"] == ["c_double"]
+    assert list(ScopeUses(sig.uses).mappings("iso_c_binding")) == ["c_double"]
     assert sig.arguments[0].shape == [":"]
 
 
@@ -447,14 +448,14 @@ end block data init_data
     submodule = submodules[0]
     assert submodule.parent == "parent_impl"
     assert submodule.ancestor == "ancestor_mod"
-    assert submodule.uses["iso_c_binding"] == ["c_int"]
+    assert list(ScopeUses(submodule.uses).mappings("iso_c_binding")) == ["c_int"]
     assert [v.name for v in submodule.variables] == ["counter"]
     assert [(p.name, p.kind) for p in submodule.procedures] == [("reset_counter", "module procedure")]
 
     programs = parse_fortran_programs(code)
     assert len(programs) == 1
     assert programs[0].name == "driver"
-    assert programs[0].uses["ancestor_mod"] == []
+    assert ScopeUses(programs[0].uses).imports_all("ancestor_mod") is True
     assert [v.name for v in programs[0].variables] == ["ierr"]
 
     block_data = parse_fortran_block_data(code)

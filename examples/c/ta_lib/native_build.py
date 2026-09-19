@@ -18,6 +18,9 @@ TA_LIB_TAG = f"v{TA_LIB_VERSION}"
 TA_LIB_COMMIT = "2247d599bddf37ed37e3a709371517e46efc66f6"
 TA_LIB_REPOSITORY = "https://github.com/TA-Lib/ta-lib.git"
 DEFAULT_JOB_LIMIT = 8
+REFERENCE_HARNESS_REVISION = "abstract-json-binary64-roundtrip-v1"
+_ABSTRACT_ARRAY_FORMAT = 'pos += snprintf(buf + pos, buf_size - pos, "%.15g", data[i]);'
+_ROUNDTRIP_ABSTRACT_ARRAY_FORMAT = 'pos += snprintf(buf + pos, buf_size - pos, "%.17g", data[i]);'
 
 
 def _require_tool(name: str) -> str:
@@ -74,6 +77,26 @@ def _verified_source(cache_root: Path, git: str) -> Path:
             f"cached TA-Lib {TA_LIB_TAG} resolved to {actual}, expected {TA_LIB_COMMIT}; remove {source} and retry"
         )
     return source
+
+
+def _reference_runner_source(text: str) -> str:
+    """Preserve binary64 inputs across the pinned runner's JSON protocol."""
+    original_count = text.count(_ABSTRACT_ARRAY_FORMAT)
+    roundtrip_count = text.count(_ROUNDTRIP_ABSTRACT_ARRAY_FORMAT)
+    if original_count == 0 and roundtrip_count == 1:
+        return text
+    if original_count != 1 or roundtrip_count != 0:
+        raise RuntimeError("pinned TA-Lib abstract-array serializer no longer matches the reviewed source")
+    return text.replace(_ABSTRACT_ARRAY_FORMAT, _ROUNDTRIP_ABSTRACT_ARRAY_FORMAT)
+
+
+def _prepare_reference_runner(source: Path) -> None:
+    """Apply the reviewed protocol-only adjustment to TA-Lib's test runner."""
+    path = source / "src" / "tools" / "ta_regtest" / "test_abstract.c"
+    current = path.read_text(encoding="utf-8")
+    prepared = _reference_runner_source(current)
+    if prepared != current:
+        path.write_text(prepared, encoding="utf-8")
 
 
 def _installed_library(prefix: Path) -> bool:
@@ -179,12 +202,19 @@ def build_ta_lib(compiler: str) -> tuple[Path, Path, Path, Path]:
     compiler = str(Path(compiler).resolve())
     cache_root = _cache_root()
     source = _verified_source(cache_root, _require_tool("git"))
+    _prepare_reference_runner(source)
     key = _compiler_key(compiler)
     build = cache_root / f"build-{TA_LIB_TAG}-{key}"
     prefix = cache_root / f"install-{TA_LIB_TAG}-{key}"
     complete = prefix / ".prik-ta-lib-complete"
+    completion = f"{TA_LIB_TAG}\n{TA_LIB_COMMIT}\n{REFERENCE_HARNESS_REVISION}\n"
     runner, oracle = _reference_paths(build)
-    if complete.is_file() and _installed_library(prefix) and _reference_tools_built(build):
+    if (
+        complete.is_file()
+        and complete.read_text(encoding="utf-8") == completion
+        and _installed_library(prefix)
+        and _reference_tools_built(build)
+    ):
         return prefix, runner, oracle, _shared_library(prefix)
 
     cmake = _require_tool("cmake")
@@ -206,7 +236,7 @@ def build_ta_lib(compiler: str) -> tuple[Path, Path, Path, Path]:
     oracle = _build_reference_server(compiler, source, build)
     if not runner.is_file():
         raise RuntimeError(f"TA-Lib build did not produce its regression runner at {runner}")
-    complete.write_text(f"{TA_LIB_TAG}\n{TA_LIB_COMMIT}\n", encoding="utf-8")
+    complete.write_text(completion, encoding="utf-8")
     return prefix, runner, oracle, _shared_library(prefix)
 
 

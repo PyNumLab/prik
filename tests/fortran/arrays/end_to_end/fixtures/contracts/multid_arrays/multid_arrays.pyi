@@ -37,3 +37,13 @@ def checksum3_strided(
     a: Float64[::, ::, ::],
     checksum: Float64[1]
 ) -> None: ...
+
+__all__ = [
+    "scale2_contiguous",
+    "scale2_strided",
+    "checksum2_strided",
+    "scale2_explicit",
+    "shift3_contiguous",
+    "shift3_strided",
+    "checksum3_strided",
+]

@@ -58,3 +58,16 @@ def fill_optional(
 def automatic_vector(
     count: Int32
 ) -> Float64[count]: ...
+
+__all__ = [
+    "scale_matrix",
+    "shift",
+    "sum_columns",
+    "sum_flat",
+    "sum_flat_columns",
+    "scale_visible_rows",
+    "scale_without_intent",
+    "mutate_optional",
+    "fill_optional",
+    "automatic_vector",
+]

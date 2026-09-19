@@ -169,3 +169,82 @@ def test_converter_preserves_defined_operators_assignment_and_type_bound_operato
     assert [
         (item.name, [procedure.name for procedure in item.procedures]) for item in classes["counter"].overload_sets
     ] == [("__add__", ["counter_add_integer"])]
+
+
+def test_type_bound_generic_split_across_statements_reaches_one_overload_set():
+    """Every specific a split generic binding names stays reachable.
+
+    A type-bound generic built from several ``generic ::`` statements means one
+    binding, so the class carries a single overload set holding every specific
+    -- not one set per statement, which leaves all but the first unreachable at
+    dispatch.
+    """
+    source = """
+module shape_mod
+  implicit none
+  type :: shape_t
+    real(8) :: v
+  contains
+    procedure :: area_integer
+    procedure :: area_real
+    generic :: area => area_integer
+    generic :: area => area_real
+  end type shape_t
+contains
+  real(8) function area_integer(self, scale)
+    class(shape_t), intent(in) :: self
+    integer, intent(in) :: scale
+    area_integer = self%v * scale
+  end function area_integer
+  real(8) function area_real(self, scale)
+    class(shape_t), intent(in) :: self
+    real(8), intent(in) :: scale
+    area_real = self%v * scale
+  end function area_real
+end module shape_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    shape = module.classes[0]
+    assert [(item.name, [proc.name for proc in item.procedures]) for item in shape.overload_sets] == [
+        ("area", ["area_integer", "area_real"])
+    ]
+
+
+def test_a_generic_declared_inside_a_procedure_is_not_a_module_generic():
+    """A generic belongs to the scope declaring it, and a procedure is a scope.
+
+    An interface written inside a procedure names a generic of that procedure.
+    Reading it as one of the module's own would publish it, and two procedures
+    naming one generic would each answer for the other.
+    """
+    source = """
+module scoped_mod
+  implicit none
+contains
+  subroutine first(x)
+    real(8), intent(in) :: x
+    interface local_generic
+      subroutine first_impl(a)
+        real(8), intent(in) :: a
+      end subroutine first_impl
+    end interface
+    call local_generic(x)
+  end subroutine first
+
+  subroutine second(n)
+    integer, intent(in) :: n
+    interface local_generic
+      subroutine second_impl(b)
+        integer, intent(in) :: b
+      end subroutine second_impl
+    end interface
+    call local_generic(n)
+  end subroutine second
+end module scoped_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    assert module.overload_sets == []

@@ -17,6 +17,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from prik.parsers.fortran.type_resolver import extract_character_selector
 from prik.utilities.declaration_expressions import split_dimension_bounds, split_top_level_expression
 
 
@@ -255,6 +256,35 @@ class FortranVariable:
         return bool(getattr(self, "_character_length_syntax", False))
 
     @property
+    def character_kind_expression(self) -> str | None:
+        """The kind a character declaration states, separated from its length."""
+        return getattr(self, "_character_kind_expression", None)
+
+    @property
+    def character_length_expression(self) -> str | None:
+        """The length a character declaration states, separated from its kind.
+
+        A character selector carries two expressions, either of which may hold
+        commas of its own, so the parser records them apart rather than leaving
+        a later stage to split one joined spelling.
+        """
+        return getattr(self, "_character_length_expression", None)
+
+    def record_character_selector(self, type_spec: str) -> None:
+        """Record what one character declaration's parenthesized selector states.
+
+        This is the only supported way to give a character model its selector
+        facts, so every producer -- the parser, the type-mapping report, a test
+        -- reaches them through one reading of the source text. A model built
+        without it states no length and no kind, which is what a bare
+        ``character`` declaration means.
+        """
+        selector = extract_character_selector(type_spec)
+        self._character_length_expression = selector.length
+        self._character_kind_expression = selector.kind
+        self._character_length_syntax = selector.length_syntax
+
+    @property
     def polymorphic(self) -> bool:
         """Whether this variable was declared with Fortran ``class(...)``."""
         return bool(getattr(self, "_fortran_polymorphic", False))
@@ -338,7 +368,7 @@ class FortranProcedureSignature:
     result: FortranArgument | None = None
     attributes: list[str] = field(default_factory=list)
     bind_name: str | None = None
-    uses: dict[str, list[FortranUseMapping]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     in_interface: bool = False
     variables: dict[str, FortranVariable] = field(default_factory=dict)
     common_variables: list[str] = field(default_factory=list)
@@ -367,6 +397,17 @@ class FortranInterface:
     specific_procedures: list[str] = field(default_factory=list)
     abstract: bool = False
 
+    declaring_scope_kind: str = "module"
+    """Kind of scope declaring this block: file, module, submodule or procedure."""
+
+    declaring_scope_path: list[str] = field(default_factory=list)
+    """Names of the scopes enclosing this block, outermost first.
+
+    A generic belongs to the scope declaring it, so a block written inside a
+    procedure names a generic of that procedure and not of its module. Keeping
+    the owner lets later stages read only the generics a module itself declares.
+    """
+
 
 @dataclass
 class FortranEnumerator:
@@ -385,11 +426,28 @@ class FortranEnum:
     visibility: str = "public"
 
 
+@dataclass(frozen=True)
+class FortranUseStatement:
+    """One ``use`` statement exactly as the source writes it.
+
+    ``only`` records whether the statement narrowed to an ``only`` list, which
+    is independent of what it listed: ``use m`` lists nothing and narrows
+    nothing, ``use m, only :`` lists nothing and narrows to nothing. Statements
+    are kept apart and immutable because the language reads several for one
+    module together, and a scope that inherits another's imports must not be
+    able to add to them.
+    """
+
+    module: str
+    only: bool = False
+    mappings: tuple[FortranUseMapping, ...] = ()
+
+
 @dataclass
 class FortranModule:
     name: str
     filename: str | None = None
-    uses: dict[str, list[FortranUseMapping]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     derived_types: list[FortranDerivedType] = field(default_factory=list)
@@ -407,7 +465,7 @@ class FortranSubmodule:
     parent: str
     ancestor: str | None = None
     filename: str | None = None
-    uses: dict[str, list[FortranUseMapping]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     derived_types: list[FortranDerivedType] = field(default_factory=list)
@@ -420,7 +478,7 @@ class FortranSubmodule:
 class FortranProgram:
     name: str | None = None
     filename: str | None = None
-    uses: dict[str, list[FortranUseMapping]] = field(default_factory=dict)
+    uses: list[FortranUseStatement] = field(default_factory=list)
     variables: list[FortranVariable] = field(default_factory=list)
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     enums: list[FortranEnum] = field(default_factory=list)

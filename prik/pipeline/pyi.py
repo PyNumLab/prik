@@ -16,6 +16,8 @@ from pathlib import Path
 
 from prik.parsers.pyi import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.contract_imports import complete_contract_imports
+from prik.policy.exports import complete_python_export_policy
 from prik.printers.pyi import emit_module
 from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _module_semantic_types
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
@@ -104,7 +106,7 @@ def emit_module_stubs(
     modules: SemanticModule | Iterable[SemanticModule],
     *,
     available_modules: Iterable[SemanticModule] | None = None,
-    normalize_fortran_public_names: bool = False,
+    normalize_public_names: bool = False,
 ) -> dict[str, str]:
     """Complete and render semantic modules plus opaque dependencies.
 
@@ -116,6 +118,7 @@ def emit_module_stubs(
     generated contract package by a pipeline stage.
     """
     source_modules = _module_list(modules)
+    available = _module_list(available_modules) if available_modules is not None else source_modules
     emitted_modules: dict[str, SemanticModule] = {}
     for module in source_modules:
         if module.name in emitted_modules:
@@ -124,18 +127,33 @@ def emit_module_stubs(
 
     for dependency in opaque_dependency_modules(
         source_modules,
-        available_modules=available_modules,
+        available_modules=available,
     ):
         target = emitted_modules.setdefault(dependency.name, SemanticModule(name=dependency.name))
         existing = {cls.name for cls in target.classes}
         target.classes.extend(cls for cls in dependency.classes if cls.name not in existing)
 
+    # Public names are owned by post-IR policy for every route, so they are
+    # completed even where the rest of policy cannot run: a C starter contract
+    # describes source the direct-only wrapper may go on to reject, and naming
+    # a declaration does not depend on whether that declaration is buildable.
+    # Available modules also participate in this naming pass. They are not
+    # emitted, but an emitted module importing one must ask for the exact name
+    # its separately emitted contract declares.
+    naming_modules = dict(emitted_modules)
+    for module in available:
+        naming_modules.setdefault(module.name, deepcopy(module))
+    for module in naming_modules.values():
+        complete_python_export_policy(module)
     complete_semantic_policies(module for module in emitted_modules.values() if module.origin.source_language != "c")
+    # Each import asks the module it reads from for the name that module's
+    # contract declares, emitted here or not.
+    complete_contract_imports(
+        emitted_modules.values(),
+        dependencies=(module for name, module in naming_modules.items() if name not in emitted_modules),
+    )
     return {
-        module_name: emit_module(
-            module,
-            normalize_fortran_public_names=normalize_fortran_public_names,
-        ).strip()
+        module_name: emit_module(module, normalize_public_names=normalize_public_names).strip()
         for module_name, module in emitted_modules.items()
     }
 

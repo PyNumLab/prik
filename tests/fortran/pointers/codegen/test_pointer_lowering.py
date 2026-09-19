@@ -77,7 +77,7 @@ def select_pointer(n: Int32) -> Annotated[
 def test_pointer_plans_complete_descriptor_ownership_and_operations_before_lowering():
     plan = _pointer_plan()
     namespace = plan.namespaces[0]
-    module_pointer = namespace.variables[0].native_array_handle
+    module_pointer = plan.variables[0].native_array_handle
     functions = {function.binding.python_name: function for function in namespace.functions}
     pointer_result = functions["make_pointer"].results[0].native_array_handle
     pointer_output = functions["select_pointer"].results[0]

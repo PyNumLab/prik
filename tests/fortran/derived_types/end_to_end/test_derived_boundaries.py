@@ -32,7 +32,7 @@ def test_scalar_derived_types_cross_procedure_boundaries(
         pyi_parity_build_mode,
     )
 
-    point = module.point()
+    point = module.Point()
     point.x = np.float64(1.0)
     point.y = np.float64(2.0)
     assert not hasattr(point, "hidden")
@@ -44,21 +44,21 @@ def test_scalar_derived_types_cross_procedure_boundaries(
     assert point.x == np.float64(5.0)
     assert point.y == np.float64(7.0)
 
-    out_point = module.point()
+    out_point = module.Point()
     assert module.make_point_out(out_point, np.float64(8.0), np.float64(9.0)) is None
     assert out_point.x == np.float64(8.0)
     assert out_point.y == np.float64(9.0)
 
     result_point = module.make_point(np.float64(10.0), np.float64(11.0))
-    assert isinstance(result_point, module.point)
+    assert isinstance(result_point, module.Point)
     assert result_point.x == np.float64(10.0)
     assert result_point.y == np.float64(11.0)
 
-    holder = module.holder()
+    holder = module.Holder()
     holder.scale = np.float64(2.5)
     assert module.set_holder_origin(holder, result_point) is None
     origin = holder.origin
-    assert isinstance(origin, module.point)
+    assert isinstance(origin, module.Point)
     assert origin.x == np.float64(10.0)
     origin.x = np.float64(12.0)
     assert module.holder_origin_x(holder) == np.float64(12.0)

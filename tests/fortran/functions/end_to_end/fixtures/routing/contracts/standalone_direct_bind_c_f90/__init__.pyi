@@ -13,3 +13,5 @@ def standalone_direct(
 def standalone_output(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["standalone_direct", "standalone_output"]

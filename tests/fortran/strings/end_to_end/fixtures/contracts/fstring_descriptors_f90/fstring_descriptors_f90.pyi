@@ -124,3 +124,34 @@ def pointer_result() -> Annotated[String[:], Ownership("python"), Transfer("snap
 
 @native_call([], result=Pointer(Return(0)))
 def fixed_pointer_result() -> Annotated[String[4], Ownership("python"), Transfer("snapshot_copy"), Destruction("python_refcount")] | None: ...
+
+__all__ = [
+    "grow",
+    "shrink",
+    "drop",
+    "optional_grow",
+    "grow_both",
+    "grow_and_measure",
+    "measure",
+    "make",
+    "measure_fixed_allocatable",
+    "make_fixed_allocatable",
+    "relabel_fixed_allocatable",
+    "drop_fixed_allocatable",
+    "measure_pointer",
+    "point_at_static",
+    "edit_pointer_in_place",
+    "reassociate_pointer",
+    "deallocate_pointer",
+    "nullify_pointer",
+    "optional_pointer_measure",
+    "optional_pointer_edit",
+    "regrow_pointer",
+    "measure_fixed_pointer",
+    "point_at_fixed_static",
+    "relabel_fixed_pointer",
+    "allocatable_result",
+    "fixed_allocatable_result",
+    "pointer_result",
+    "fixed_pointer_result",
+]

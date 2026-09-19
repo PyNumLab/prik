@@ -7,7 +7,7 @@
     {
       "name": "math_mod",
       "filename": "procedures_and_functions.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -66,7 +66,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -128,7 +128,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -156,7 +156,7 @@
     "math_mod": {
       "name": "math_mod",
       "filename": "procedures_and_functions.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [
         {
@@ -215,7 +215,7 @@
           },
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []
@@ -277,7 +277,7 @@
           "result": null,
           "attributes": [],
           "bind_name": null,
-          "uses": {},
+          "uses": [],
           "in_interface": false,
           "variables": {},
           "common_variables": []

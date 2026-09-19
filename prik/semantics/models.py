@@ -14,10 +14,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from prik.utilities.declaration_expressions import outside_character_literals
+
 
 EXTERNAL_TYPE_REF_METADATA = "external_type_ref"
 PROTOTYPE_REF_METADATA = "prototype_ref"
 PROTOTYPE_INTENT_METADATA = "prototype_intent"
+UNRESOLVED_PROCEDURE_INTERFACE_METADATA = "unresolved_procedure_interface"
 INTERNAL_MODULE_VARIABLE_ACCESS_METADATA = "internal_module_variable_access"
 INTERNAL_MODULE_VARIABLE_NAME_METADATA = "internal_module_variable_name"
 INTERNAL_NATIVE_ARRAY_HANDLE_OPERATION_METADATA = "internal_native_array_handle_operation"
@@ -372,6 +375,16 @@ class SemanticPrototype(SemanticFunction):
 
     pure: bool = False
 
+    declaring_scope: tuple[str, ...] = ()
+    """Contained procedure declaring the interface, empty for a module's own.
+
+    A prototype's identity is structural -- the scope that declares it together
+    with the name that scope gives it -- because two procedures may each declare
+    a different signature under one spelling. ``name`` carries the contract
+    spelling settled for that identity, which is allocated once and read
+    everywhere rather than rebuilt from the scope.
+    """
+
 
 # ============================================================
 # Semantic Methods
@@ -390,6 +403,18 @@ class SemanticMethod(SemanticFunction):
 class ProcedureOverloadSet:
     name: str
     procedures: list[SemanticFunction] = field(default_factory=list)
+    native_scope: str | None = None
+    """Module declaring the generic, which need not own every specific."""
+
+    visibility: str = "public"
+    """Accessibility the declaring module gives the generic name itself.
+
+    A generic follows its module's accessibility like any other declaration, so
+    a `private` one names a dispatcher the module keeps to itself. Publication
+    reads this rather than assuming a generic is public.
+    """
+
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 FORTRAN_GENERIC_NAME_METADATA = "fortran_generic_name"
@@ -398,6 +423,35 @@ OVERLOAD_TARGET_METADATA = "overload_target"
 PYTHON_BOUND_POSITION_METADATA = "python_bound_position"
 PYTHON_METHOD_NAME_METADATA = "python_method_name"
 PYTHON_EXPORTS_METADATA = "python_exports"
+CONTRACT_NAME_METADATA = "contract_name"
+CONTRACT_TARGET_NAME_METADATA = "contract_target_name"
+CONTRACT_BASE_NAMES_METADATA = "contract_base_names"
+#: The one spelling a module's contract writes for each name it imports, keyed
+#: by the name its source binds; annotations, imports, and ``__all__`` read it.
+CONTRACT_IMPORT_NAMES_METADATA = "contract_import_names"
+
+
+def completed_contract_name(owner, default_name: str | None = None) -> str:
+    """Return the spelling contract-name completion recorded for one declaration.
+
+    This reads the decision and never makes it: an owner completion did not
+    reach is an error, because naming it here would be a second authority.
+    """
+    completed = owner.metadata.get(CONTRACT_NAME_METADATA)
+    if completed is None:
+        name = default_name if default_name is not None else getattr(owner, "name", None)
+        raise ValueError(f"Contract name for {name!r} is incomplete; run complete_python_export_policy before emission")
+    return str(completed)
+
+
+def export_namespace(export: dict[str, object]) -> tuple[str, ...]:
+    """Return one normalized namespace tuple from semantic export metadata."""
+    raw_namespace = export.get("namespace", ())
+    if not isinstance(raw_namespace, tuple | list):
+        return ()
+    return tuple(str(part) for part in raw_namespace)
+
+
 PYTHON_EXPORTS_PREPARED_METADATA = "python_exports_prepared"
 POLICY_COMPLETION_PREPARED_METADATA = "policy_completion_prepared"
 HIDDEN_NATIVE_OUTPUT_METADATA = "hidden_native_output"
@@ -599,12 +653,22 @@ def _canonical_expression(value: Any, name_map: dict[str, str]) -> Any:
 
 
 def _canonical_expression_text(text: str, name_map: dict[str, str]) -> str:
+    """Rename argument references so two procedures compare by shape, not naming.
+
+    A character literal's contents are its value, not a reference to anything,
+    so renaming stops at the quotes: two procedures whose string defaults spell
+    their own argument names -- ``f(n, label='n')`` and ``f(m, label='m')`` --
+    default to different text and must not compare equal.
+    """
     if not name_map:
         return text
-    result = text
-    for name, placeholder in name_map.items():
-        result = re.sub(rf"\b{re.escape(name)}\b", placeholder, result)
-    return result
+
+    def renamed(chunk: str) -> str:
+        for name, placeholder in name_map.items():
+            chunk = re.sub(rf"\b{re.escape(name)}\b", placeholder, chunk)
+        return chunk
+
+    return outside_character_literals(text, renamed)
 
 
 # ============================================================
@@ -659,8 +723,18 @@ class SemanticClass:
 
 @dataclass
 class SemanticImportItem:
+    """One name an import binds, spelled as the sources and the contracts write it.
+
+    ``source`` names the entity the way the module it is read from spells it,
+    and ``target`` the name bound here when that differs. Contract-import
+    completion adds the spellings the completed contracts use, which a
+    source-derived contract writes instead; they stay unset until then.
+    """
+
     source: str
     target: str | None = None
+    contract_source: str | None = None
+    contract_target: str | None = None
 
 
 @dataclass
@@ -670,10 +744,69 @@ class SemanticImport:
 
 
 @dataclass
+class SemanticReexport:
+    """Record one public use-associated name and its declaring entity.
+
+    Fortran accessibility determines whether the association exists here.
+    Python export policy separately decides whether the importing namespace
+    publishes it; declaration use must not erase the Fortran association.
+    """
+
+    local_name: str
+    origin_module: str
+    source_name: str
+    module: str = ""
+    """Module publishing the name, which is not the one declaring it."""
+
+    python_name: str = ""
+    """The Python name this module publishes the re-export under.
+
+    Post-IR export policy completes it inside the same namespace ledger as the
+    module's own declarations, so an alias cannot be given a name a declaration
+    already holds. Every later stage reads it rather than deriving one.
+    """
+
+    entity_kind: str = "unknown"
+    """What the published name declares where it comes from.
+
+    Re-export reaches Python as a namespace alias only for an entity that is one
+    Python object, which today means an ordinary procedure or a derived type.
+    Every other kind -- a callback prototype, a module variable whose state
+    stays live, a generic -- keeps to the semantic and contract-import paths
+    that already carry it, and records its kind here rather than an alias that
+    would misrepresent it. An ``intrinsic`` name comes from a module the
+    compiler supplies, which declares nothing a contract could read.
+    """
+
+    access_modules: list[str] = field(default_factory=list)
+    """Immediate used-module routes through which the local name is accessible."""
+
+    declaration_dependency: bool = False
+    """Whether this module uses the local name to express a declaration."""
+
+    explicitly_public: bool = False
+    """Whether an entity-list ``public`` statement names the local name."""
+
+    python_exported: bool | None = None
+    """Completed post-IR decision to publish this association to Python."""
+
+    def publishes_to_python(self) -> bool:
+        """Return the completed Python publication decision."""
+        if self.python_exported is None:
+            raise ValueError(
+                f"Python re-export policy for {self.module}.{self.local_name} is incomplete; "
+                "run complete_python_export_policy before consuming it"
+            )
+        return self.python_exported
+
+
+@dataclass
 class SemanticModule:
     name: str
 
     functions: list[SemanticFunction] = field(default_factory=list)
+
+    reexports: list[SemanticReexport] = field(default_factory=list)
 
     prototypes: list[SemanticPrototype] = field(default_factory=list)
 
@@ -683,6 +816,20 @@ class SemanticModule:
     variables: list[SemanticVariable] = field(default_factory=list)
 
     imports: list[str | SemanticImport] = field(default_factory=list)
+
+    exported_names: list[str] | None = None
+    """This module's public symbol surface, or ``None`` when it states no list.
+
+    A published symbol is not always one Python object: a prototype names a
+    callback signature that contracts refer to and nothing exposes at runtime,
+    while a procedure names a callable. What the name declares decides how
+    publishing it appears.
+
+    A contract states its whole public surface here, so a name it imports is
+    published when it is listed and stays a dependency when it is not. The list
+    is written to be edited: a generated contract fills it with what the source
+    publishes, and removing or adding a name changes what reaches Python.
+    """
 
     metadata: dict[str, Any] = field(default_factory=dict)
 

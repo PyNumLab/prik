@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Annotated, Arg, Complex128, Float64, Int32, Pass, Polymorphic, bind, native_call, overload, private
 
-class accumulator:
+class Accumulator:
     def __init__(
         self,
         *,
@@ -39,7 +39,7 @@ class accumulator:
         value: Float64
     ) -> None: ...
 
-class sample:
+class Sample:
     def __init__(
         self,
         *,
@@ -79,25 +79,25 @@ def summarize_vector(
 
 @private
 def inspect_accumulator(
-    value: accumulator
+    value: Accumulator
 ) -> Float64: ...
 
 @private
 def inspect_sample(
-    value: sample
+    value: Sample
 ) -> Float64: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def accumulator_add_integer(
-    self: Annotated[accumulator, Polymorphic],
+    self: Annotated[Accumulator, Polymorphic],
     value: Int32
 ) -> None: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def accumulator_add_real(
-    self: Annotated[accumulator, Polymorphic],
+    self: Annotated[Accumulator, Polymorphic],
     value: Float64
 ) -> None: ...
 
@@ -134,11 +134,13 @@ def summarize(
 @bind("inspect")
 @overload("inspect_accumulator")
 def inspect(
-    value: accumulator
+    value: Accumulator
 ) -> Float64: ...
 
 @bind("inspect")
 @overload("inspect_sample")
 def inspect(
-    value: sample
+    value: Sample
 ) -> Float64: ...
+
+__all__ = ["Accumulator", "Sample", "convert", "summarize", "inspect"]

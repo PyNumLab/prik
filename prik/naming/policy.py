@@ -10,6 +10,8 @@ import warnings
 from prik.utilities.strings import create_incremented_string
 
 _NON_IDENTIFIER = re.compile(r"[^0-9A-Za-z_]")
+# Only a case-insensitive source language has no spelling of its own to keep.
+_CASE_INSENSITIVE_SOURCE_LANGUAGES = frozenset({"fortran"})
 _SYMBOL_CONTEXTS = frozenset({"module", "function", "class", "variable", "wrapper"})
 _PARENT_CONTEXTS = frozenset({"module", "function", "class", "loop", "program"})
 
@@ -53,23 +55,61 @@ class GeneratedSymbolRules:
         return folded in self.keywords or any(folded == str(symbol).casefold() for symbol in symbols)
 
 
-def normalize_public_name(raw_name: object) -> NormalizedPublicName:
-    """Convert a source spelling into a valid, lower-case Python identifier."""
+def preserves_source_case(source_language: object) -> bool:
+    """Return whether a source language's own casing is part of a name.
+
+    A case-insensitive language writes the same declaration many ways, so no
+    spelling is the declaration's own and one canonical lower-case form is the
+    Python name. Every other language distinguishes two spellings as two
+    declarations, so the source casing is the name and folding it would both
+    lose the identity and invent collisions the source does not have.
+    """
+    return str(source_language or "").casefold() not in _CASE_INSENSITIVE_SOURCE_LANGUAGES
+
+
+def _capitalized_words(name: str) -> str:
+    """Return one identifier with each underscore-separated word capitalized."""
+    return "_".join(word[:1].upper() + word[1:] for word in name.split("_"))
+
+
+def normalize_public_name(
+    raw_name: object,
+    *,
+    preserve_case: bool = False,
+    category: str = "function",
+) -> NormalizedPublicName:
+    """Convert a source spelling into a valid Python identifier.
+
+    PRIK chooses a spelling only where the source has none. ``preserve_case``
+    says the source casing is part of the name (see ``preserves_source_case``),
+    and then the spelling is adjusted only where Python cannot accept it.
+    Otherwise the choice is PRIK's: a wrapped type reaches Python as a class,
+    so a ``class`` capitalizes each word -- ``point_t`` becomes ``Point_T`` --
+    and every other declaration is lower-cased.
+
+    ``needs_fix`` reports only the adjustments Python forced, never the chosen
+    style, so ``--strict-wrapper-names`` rejects a name Python cannot spell
+    rather than one PRIK merely cased.
+    """
     source = str(raw_name).strip()
-    folded = source.casefold()
-    normalized = _NON_IDENTIFIER.sub("_", folded) or "_"
+    candidate = source if preserve_case else source.casefold()
+    normalized = _NON_IDENTIFIER.sub("_", candidate) or "_"
     if not (normalized[0].isalpha() or normalized[0] == "_"):
         normalized = f"_{normalized}"
     if keyword.iskeyword(normalized):
         normalized = f"{normalized}_"
-    return NormalizedPublicName(normalized, needs_fix=normalized != folded)
+    needs_fix = normalized != candidate
+    if not preserve_case and category == "class":
+        normalized = _capitalized_words(normalized)
+    return NormalizedPublicName(normalized, needs_fix=needs_fix)
 
 
 class NamingPolicy:
     """Allocate Python exports and language-safe generated symbols."""
 
-    def __init__(self, *, strict_public_names: bool = False):
+    def __init__(self, *, strict_public_names: bool = False, preserve_case: bool = False):
         self.strict_public_names = strict_public_names
+        self.preserve_case = preserve_case
         self._public_names: dict[tuple[str, ...], dict[str, PublicNameRecord]] = {}
 
     def reserve_public_name(
@@ -79,9 +119,18 @@ class NamingPolicy:
         *,
         category: str,
         owner: object | None = None,
+        preserve_case: bool | None = None,
     ) -> str:
-        """Reserve one public Python name within its namespace."""
-        normalized = normalize_public_name(raw_name)
+        """Reserve one public Python name within its namespace.
+
+        ``preserve_case`` overrides the policy's rule for a name written as it
+        is declared wherever it appears, such as a prototype's.
+        """
+        normalized = normalize_public_name(
+            raw_name,
+            preserve_case=self.preserve_case if preserve_case is None else preserve_case,
+            category=category,
+        )
         raw_text = str(raw_name)
         namespace_key = tuple(str(part) for part in namespace)
         namespace_text = ".".join(namespace_key) or "<module>"
@@ -110,6 +159,28 @@ class NamingPolicy:
         name = f"{normalized.name}_{suffix}"
         reserved[name] = PublicNameRecord(raw_text, category, str(owner or raw_name))
         return name
+
+    def hold_completed_public_name(
+        self,
+        namespace: tuple[str, ...],
+        name: object,
+        *,
+        category: str,
+        owner: object | None = None,
+    ) -> str:
+        """Hold an already-completed spelling without interpreting it again."""
+        completed = str(name)
+        namespace_key = tuple(str(part) for part in namespace)
+        reserved = self._public_names.setdefault(namespace_key, {})
+        existing = reserved.get(completed)
+        if existing is not None:
+            namespace_text = ".".join(namespace_key) or "<module>"
+            raise ValueError(
+                f"Completed public {category} name {completed!r} in {namespace_text} collides with "
+                f"{existing.category} {existing.raw_name!r} ({existing.owner})"
+            )
+        reserved[completed] = PublicNameRecord(completed, category, str(owner or name))
+        return completed
 
     def has_generated_symbol_clash(self, name: object, symbols: set[object], *, language: str) -> bool:
         """Return whether ``name`` is unusable in the selected language."""

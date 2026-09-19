@@ -24,15 +24,18 @@ from prik.planning.models import (
     ArrayHandoffPlan,
     BindingStatusErrorPlan,
     CallbackHandoffPlan,
+    CallbackResultPlan,
     CallbackTransferPlan,
     ClassMethodPlan,
     ClassSurfacePlan,
     ConstructorPlan,
     DatatypeFamily,
     DerivedFieldPlan,
+    DerivedTypePlan,
     FunctionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NamespacePlan,
     OverloadPlan,
     ResultPlan,
@@ -67,7 +70,7 @@ _ARRAY_ELEMENT_TYPES = {
 
 _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
 
-_UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
+_UNKNOWN_EXTENTS = frozenset({"", ":", "*", ".."})
 
 
 class WrapperDocstringBuilder:
@@ -88,6 +91,20 @@ class WrapperDocstringBuilder:
         are explicit plan overrides and remain unchanged. The same plan is
         returned for generation-stage chaining.
         """
+        # A docstring documents the Python API, so a wrapped type is named the
+        # way its namespace publishes it. Planning settled that name; indexing
+        # it here keeps every rendered signature reading the same one.
+        self._published_class_names = {
+            derived.type_identity: derived.contract_name
+            for namespace in plan.namespaces
+            for derived in namespace.derived_types
+        }
+        self._module_variables_by_owner = {variable.owner_path: variable for variable in plan.variables}
+        # A publication can sort before the namespace that owns its canonical
+        # variable plan. Render every canonical variable first so namespace
+        # summaries only read completed documentation from that owner.
+        for variable in self._module_variables_by_owner.values():
+            self._render_module_variable(variable)
         for namespace in plan.namespaces:
             self._render_namespace(plan.owner_path, namespace)
         return plan
@@ -99,22 +116,23 @@ class WrapperDocstringBuilder:
         for derived_type in namespace.derived_types:
             for field in derived_type.fields:
                 self._render_field(field)
-        for variable in namespace.variables:
-            self._render_module_variable(variable)
         for overload in namespace.overloads:
             self._render_overload(overload)
 
         derived_types = {item.type_identity: item for item in namespace.derived_types}
         for surface in namespace.classes:
-            derived_type = derived_types.get(surface.type_identity)
-            self._render_class_surface(surface, () if derived_type is None else derived_type.fields)
+            self._render_class_surface(surface, derived_types[surface.type_identity])
 
         if namespace.docstring is None:
+            variable_publications = tuple(
+                (self._module_variables_by_owner[publication.variable_owner_path], publication)
+                for publication in namespace.variable_publications
+            )
             namespace.docstring = self.namespace(
                 module_name,
                 namespace.python_path,
                 namespace.functions,
-                namespace.variables,
+                variable_publications,
                 namespace.classes,
                 namespace.overloads,
             )
@@ -149,9 +167,10 @@ class WrapperDocstringBuilder:
     def _render_class_surface(
         self,
         surface: ClassSurfacePlan,
-        fields: tuple[DerivedFieldPlan, ...],
+        derived_type: DerivedTypePlan,
     ) -> None:
         """Render one class's dependent records before its aggregate summary."""
+        fields = derived_type.fields
         for field in fields:
             self._render_field(field)
         for method in surface.methods:
@@ -167,10 +186,10 @@ class WrapperDocstringBuilder:
         if constructor.overload is not None:
             self._render_overload(constructor.overload)
         if constructor.docstring is None:
-            constructor.docstring = self.constructor(surface.python_names[0], constructor, fields)
+            constructor.docstring = self.constructor(derived_type.contract_name, constructor, fields)
         if surface.docstring is None:
             surface.docstring = self.class_surface(
-                surface.python_names[0],
+                derived_type.contract_name,
                 surface.type_identity[1],
                 constructor,
                 fields,
@@ -184,7 +203,7 @@ class WrapperDocstringBuilder:
         module_name: str,
         path: tuple[str, ...],
         functions: tuple[FunctionPlan, ...],
-        variables: tuple[ModuleVariablePlan, ...],
+        variables: tuple[tuple[ModuleVariablePlan, ModuleVariablePublicationPlan], ...],
         classes,
         overloads: tuple[OverloadPlan, ...],
     ) -> str:
@@ -205,7 +224,11 @@ class WrapperDocstringBuilder:
         self._append_section(
             lines,
             "Module Attributes",
-            tuple(line for variable in variables for line in self._module_variable_summary_lines(variable)),
+            tuple(
+                line
+                for variable, publication in variables
+                for line in self._module_variable_summary_lines(variable, publication.python_names)
+            ),
         )
         self._append_section(lines, "Functions", callable_lines)
         self._append_section(lines, "Classes", tuple(name for surface in classes for name in surface.python_names))
@@ -467,7 +490,7 @@ class WrapperDocstringBuilder:
         documentation.  Getter, setter, array-handle, and derived-object text
         comes directly from the completed variable plan.
         """
-        name = variable.binding.python_names[0]
+        name = variable.owner_path.rsplit(".", 1)[-1]
         nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
@@ -748,6 +771,7 @@ class WrapperDocstringBuilder:
         optional = argument.binding.optional_mode not in {OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR}
         nullable = optional or argument.binding.nullable
         lines = [f"{argument.binding.python_name} : {self._type(argument, nullable=nullable, signature=False)}"]
+        lines.extend(self._callback_signature_lines(argument))
         lines.extend(self._array_lines(argument.array))
         lines.extend(self._native_c_array_storage_lines(argument))
         lines.extend(self._optional_lines(argument))
@@ -913,6 +937,18 @@ class WrapperDocstringBuilder:
             return type_name
         return f"{type_name} | None" if signature else f"{type_name} or None"
 
+    def _published_class_name(self, transfer) -> str:
+        """Return the name a namespace publishes one wrapped type under.
+
+        The type is found by its identity: two modules may each declare a type
+        spelled alike, and each is published under its own name.
+        """
+        derived = getattr(transfer, "derived", None)
+        handoff = getattr(derived, "handoff", derived)
+        identity = handoff.type_identity if handoff is not None else transfer.derived_type_identity
+        index = getattr(self, "_published_class_names", {})
+        return index.get(identity, str(transfer.semantic_type_name))
+
     def _base_type(self, transfer) -> str:
         """Map one completed transfer family and storage facet to public type text.
 
@@ -923,7 +959,7 @@ class WrapperDocstringBuilder:
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.CALLBACK:
             return self._callback_type(transfer.callback)
         if getattr(transfer, "datatype_family", None) is DatatypeFamily.DERIVED:
-            return transfer.semantic_type_name
+            return self._published_class_name(transfer)
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
         array_element = _ARRAY_ELEMENT_TYPES.get(transfer.semantic_type_name, scalar)
         handle = getattr(transfer, "native_array_handle", None)
@@ -967,18 +1003,73 @@ class WrapperDocstringBuilder:
 
     @staticmethod
     def _callback_transfer_type(transfer: CallbackTransferPlan) -> str:
-        """Render a callback prototype argument or result from completed ABI facts.
+        """Render one callback prototype dummy as the Python object it receives.
 
-        Derived transfers preserve their type identity.  Arrays and reference
-        ABI transfers render as NumPy arrays; other transfers use the scalar
-        map.  The helper is pure and does not inspect outer wrapper policy.
+        The spelling follows the completed Python projection rather than the
+        native ABI: a dummy projected as storage arrives as an array the
+        callable can write through, and one projected as a value does not.
         """
         if transfer.derived_type_identity is not None:
             return transfer.semantic_type_name
         scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
-        if transfer.array is not None or transfer.abi.value == "reference":
+        if transfer.python_action in {PythonBarrierAction.ARRAY_STORAGE, PythonBarrierAction.SCALAR_STORAGE}:
             return f"ndarray[{scalar}]"
         return scalar
+
+    def _callback_signature_lines(self, argument: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Document the exact callable one callback parameter expects.
+
+        Every fact comes from the completed prototype the trampoline is
+        generated from, so the documented arity, direction and access cannot
+        drift from the callable the native caller actually invokes.
+        """
+        callback = argument.callback
+        if callback is None:
+            return ()
+        parameters = ", ".join(transfer.name for transfer in callback.arguments)
+        result = self._callback_result_type(callback.result)
+        return (
+            f"    Called as: {argument.binding.python_name}({parameters}) -> {result}",
+            *(f"      {self._callback_parameter_text(transfer)}" for transfer in callback.arguments),
+            "    Valid only during this call; do not retain the callable or its arguments.",
+            "    An exception or an invalid return value terminates the process.",
+        )
+
+    @staticmethod
+    def _callback_parameter_text(transfer: CallbackTransferPlan) -> str:
+        """Render one prototype dummy with the shape and access it presents."""
+        parts = [f"{transfer.name} : {WrapperDocstringBuilder._callback_transfer_type(transfer)}"]
+        parts.extend(WrapperDocstringBuilder._callback_array_facts(transfer.array))
+        if transfer.intent is not None:
+            parts.append(f"intent({transfer.intent})")
+        text = ", ".join(parts)
+        if transfer.python_action is PythonBarrierAction.SCALAR_STORAGE:
+            text += f"; assign through it ({transfer.name}[...] = value)"
+        return text
+
+    @staticmethod
+    def _callback_array_facts(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
+        """Describe one callback array's rank and extents from its completed plan.
+
+        The callable's ABI depends on both, and extents are spelled the way the
+        `.pyi` contract spells them so the two descriptions agree.
+        """
+        if array is None or not array.rank:
+            return ()
+        display = array.display_shape or array.shape
+        extents = ", ".join(str(extent) for extent in display)
+        return (f"rank {array.rank}",) + ((f"shape ({extents})",) if extents else ())
+
+    @staticmethod
+    def _callback_result_type(result: CallbackResultPlan) -> str:
+        """Render what the callable must return, or ``None`` for a subroutine."""
+        transfer = result.transfer
+        if transfer is None:
+            return "None"
+        if transfer.derived_type_identity is not None:
+            return transfer.semantic_type_name
+        scalar = _SCALAR_TYPES.get(transfer.semantic_type_name, transfer.semantic_type_name)
+        return f"ndarray[{scalar}]" if transfer.array is not None else scalar
 
     @staticmethod
     def _array_lines(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
@@ -993,7 +1084,8 @@ class WrapperDocstringBuilder:
         lines = [WrapperDocstringBuilder._array_rank_line(array)]
         display_shape = array.display_shape or array.shape
         if display_shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in display_shape):
-            lines.append(f"    Shape: ({', '.join(map(str, display_shape))})")
+            extents = (str(extent) for extent in display_shape)
+            lines.append(f"    Shape: ({', '.join(extents)})")
         layout = WrapperDocstringBuilder._array_layout_label(array)
         if layout is not None:
             lines.append(f"    Layout: {layout}")
@@ -1068,7 +1160,11 @@ class WrapperDocstringBuilder:
             return result.projected_call_slot.python_name
         return "result" if result.result_position == 0 else f"result_{result.result_position}"
 
-    def _module_variable_summary_lines(self, variable: ModuleVariablePlan) -> tuple[str, ...]:
+    def _module_variable_summary_lines(
+        self,
+        variable: ModuleVariablePlan,
+        python_names: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...]:
         """Expand one module-variable docstring for every exported Python alias.
 
         The first line supplies the rendered type while the remaining details
@@ -1082,7 +1178,8 @@ class WrapperDocstringBuilder:
         _name, separator, type_name = first.partition(" : ")
         if not separator:
             return (first,)
-        return tuple(line for name in variable.binding.python_names for line in (f"{name} : {type_name}", *details))
+        names = (variable.owner_path.rsplit(".", 1)[-1],) if python_names is None else python_names
+        return tuple(line for name in names for line in (f"{name} : {type_name}", *details))
 
     def _keyword_field_signature(
         self,

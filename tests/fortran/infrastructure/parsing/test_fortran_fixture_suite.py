@@ -63,7 +63,12 @@ def _strip_parent_fields(value):
 
 
 def _to_dict(value):
-    return _strip_parent_fields(asdict(value))
+    """Return one parsed file as the golden records it.
+
+    The golden is JSON, where a tuple and a list are the same array, so the
+    parsed model is compared in that form rather than as Python objects.
+    """
+    return json.loads(json.dumps(_strip_parent_fields(asdict(value))))
 
 
 def _dump_expected(path: Path, parsed: dict) -> None:

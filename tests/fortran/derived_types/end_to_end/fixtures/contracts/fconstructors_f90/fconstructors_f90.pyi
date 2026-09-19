@@ -1,6 +1,6 @@
 from prik.contracts import Float64, Int32, destroy
 
-class initialized:
+class Initialized:
     def __init__(
         self,
         *,
@@ -17,3 +17,5 @@ class initialized:
 def get_final_count() -> Int32: ...
 
 def reset_final_count() -> None: ...
+
+__all__ = ["Initialized", "get_final_count", "reset_final_count"]

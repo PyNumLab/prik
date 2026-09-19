@@ -10,7 +10,7 @@ maintainer guide below documents the same control flow.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field as dataclass_field, replace
 from pathlib import Path
@@ -18,7 +18,9 @@ from types import MappingProxyType
 from typing import ClassVar, Literal
 
 from prik.utilities.declaration_expressions import (
+    declaration_expression_identifiers,
     evaluate_integer_expression,
+    fortran_character_value,
     split_declaration_assignment,
     split_dimension_bounds,
     split_top_level_expression,
@@ -26,6 +28,7 @@ from prik.utilities.declaration_expressions import (
 from prik.utilities.visitor import ClassVisitor
 
 from prik.parsers.fortran.lexer import preprocess_lines
+from prik.parsers.fortran.scope import ScopeUses, used_module_names
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
@@ -40,10 +43,11 @@ from prik.parsers.fortran.models import (
     FortranProgram,
     FortranProject,
     FortranSubmodule,
+    FortranUseStatement,
     FortranUseMapping,
     FortranVariable,
 )
-from prik.parsers.fortran.type_resolver import extract_kind_from_type_spec
+from prik.parsers.fortran.type_resolver import extract_character_selector, extract_kind_from_type_spec
 from prik.parsers.fortran.utils import split_csv
 
 _PARSER_ARCHITECTURE_GUIDE = """
@@ -366,7 +370,16 @@ class _Declaration:
     explicit_visibility: str | None = None
     target_kind_expression: str | None = None
     character_length_syntax: bool = False
+    character_length_expression: str | None = None
+    character_kind_expression: str | None = None
     declared_storage_bits: int | None = None
+
+    def record_character_selector(self, type_spec: str) -> None:
+        """Record what one character declaration's parenthesized selector states."""
+        selector = extract_character_selector(type_spec)
+        self.character_length_expression = selector.length
+        self.character_kind_expression = selector.kind
+        self.character_length_syntax = selector.length_syntax
 
 
 @dataclass
@@ -382,8 +395,8 @@ class _ProcedureState:
     signature: FortranProcedureSignature
     symbols: dict[str, FortranArgument]
     typed_symbols: set[str] = dataclass_field(default_factory=set)
-    uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
-    local_uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
+    uses: list[FortranUseStatement] = dataclass_field(default_factory=list)
+    local_uses: list[FortranUseStatement] = dataclass_field(default_factory=list)
     local_params: dict[str, str] = dataclass_field(default_factory=dict)
     legacy_local_params: set[str] = dataclass_field(default_factory=set)
     implicit_typed_symbols: dict[str, str] = dataclass_field(default_factory=dict)
@@ -1860,7 +1873,7 @@ class FortranParser(ClassVisitor):
         proc_state.filename = filename
         proc_state.header_lineno = header[1]
         proc_state.header_source_line = header[2]
-        proc_state.uses.update(getattr(parent_scope.model, "uses", {}))
+        proc_state.uses.extend(getattr(parent_scope.model, "uses", ()))
         scope = self._helper_scope_for_model("procedure", proc_state.signature, parent=parent_scope, state=proc_state)
         self._parse_specification_part(scope, unit.specification, filename=filename)
         child_units = unit.children
@@ -1938,10 +1951,12 @@ class FortranParser(ClassVisitor):
         units: _ParsedFileUnits,
     ) -> list[FortranInterface]:
         """Collect interfaces and attach module-owned blocks to their owners."""
-        interfaces = [
-            self._visit(unit, parent_scope=scope, filename=filename)
-            for unit, scope in self._collect_interface_source_units(lines, filename)
-        ]
+        interfaces = self._merged_generic_interfaces(
+            [
+                self._interface_with_scope(unit, scope, filename)
+                for unit, scope in self._collect_interface_source_units(lines, filename)
+            ]
+        )
         for module in units.modules:
             module.interfaces = [
                 iface for iface in interfaces if iface.module and iface.module.lower() == module.name.lower()
@@ -1951,6 +1966,63 @@ class FortranParser(ClassVisitor):
                 iface for iface in interfaces if iface.module and iface.module.lower() == submodule.name.lower()
             ]
         return [iface for iface in interfaces if iface.module is None]
+
+    def _interface_with_scope(
+        self,
+        unit: SourceUnit,
+        scope: _ParserScope,
+        filename: str | None,
+    ) -> tuple[FortranInterface, tuple[tuple[str, str], ...]]:
+        """Parse one interface block and record the scope that declares it."""
+        interface = self._visit(unit, parent_scope=scope, filename=filename)
+        identity = self._interface_scope_identity(scope)
+        interface.declaring_scope_kind = identity[-1][0] if identity else "file"
+        interface.declaring_scope_path = [name for _kind, name in identity if name]
+        return interface, identity
+
+    @staticmethod
+    def _interface_scope_identity(scope: _ParserScope | None) -> tuple[tuple[str, str], ...]:
+        """Return the lexical scope chain that owns one interface block.
+
+        A generic belongs to the scope declaring it, and a module, a submodule
+        and each procedure inside them are all separate scopes. The chain names
+        every enclosing one, so two procedures of the same module never look
+        like a single owner.
+        """
+        chain: list[tuple[str, str]] = []
+        while scope is not None:
+            chain.append((str(scope.kind), str(scope.name or "").casefold()))
+            scope = scope.parent
+        return tuple(reversed(chain))
+
+    @staticmethod
+    def _merged_generic_interfaces(
+        interfaces: list[tuple[FortranInterface, tuple[tuple[str, str], ...]]],
+    ) -> list[FortranInterface]:
+        """Combine blocks that extend one generic interface into a single record.
+
+        Fortran lets a generic interface be built from several blocks in the
+        same scope, each contributing specifics.  They name one generic, so the
+        parser reports one interface carrying every entry in declaration order.
+        Two scopes that happen to use one name declare two generics, so the
+        lexical owner is part of the identity rather than the module alone.
+        Abstract and unnamed blocks are never generics and stay as they are.
+        """
+        merged: dict[tuple[tuple[tuple[str, str], ...], str], FortranInterface] = {}
+        result: list[FortranInterface] = []
+        for interface, scope_identity in interfaces:
+            if not interface.name or interface.abstract:
+                result.append(interface)
+                continue
+            key = (scope_identity, interface.name.lower())
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = interface
+                result.append(interface)
+                continue
+            existing.procedures.extend(interface.procedures)
+            existing.specific_procedures.extend(interface.specific_procedures)
+        return result
 
     def _resolve_file_compile_time_facts(self, units: _ParsedFileUnits) -> None:
         """Apply source-visible compile-time symbols within one parsed file.
@@ -2082,9 +2154,9 @@ class FortranParser(ClassVisitor):
         """
         requirements: set[str] = set()
         for module in parsed_file.modules:
-            requirements.update(name.lower() for name in module.uses)
+            requirements.update(used_module_names(module))
         for submodule in parsed_file.submodules:
-            requirements.update(name.lower() for name in submodule.uses)
+            requirements.update(used_module_names(submodule))
             requirements.add(submodule.parent.lower())
             if submodule.ancestor:
                 requirements.add(submodule.ancestor.lower())
@@ -2233,7 +2305,7 @@ class FortranParser(ClassVisitor):
         """Index one module and its owned public models."""
         module_key = module.name.lower()
         self._insert_unique_scope_symbol(project.modules, module_key, module, label="project module scope")
-        project.dependencies[module_key] = {name.lower() for name in module.uses}
+        project.dependencies[module_key] = used_module_names(module)
         self._helper_index_project_owner_members(project, module, module_key)
 
     def _helper_index_project_submodule(self, project: FortranProject, submodule: FortranSubmodule) -> None:
@@ -2245,7 +2317,7 @@ class FortranParser(ClassVisitor):
             submodule,
             label="project submodule scope",
         )
-        dependencies = {submodule.parent.lower(), *(name.lower() for name in submodule.uses)}
+        dependencies = {submodule.parent.lower(), *used_module_names(submodule)}
         if submodule.ancestor:
             dependencies.add(submodule.ancestor.lower())
         project.dependencies[submodule_key] = dependencies
@@ -2303,7 +2375,7 @@ class FortranParser(ClassVisitor):
             return
         program_key = program.name.lower()
         self._insert_unique_scope_symbol(project.programs, program_key, program, label="project program scope")
-        project.dependencies[program_key] = {name.lower() for name in program.uses}
+        project.dependencies[program_key] = used_module_names(program)
 
     def _helper_index_project_interface(
         self,
@@ -2811,7 +2883,12 @@ class FortranParser(ClassVisitor):
                 continue
             if unit.kind == "procedure":
                 key = ("procedure", unit.name.lower())
-            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type", "interface"}:
+            elif unit.kind == "interface":
+                # A generic interface may be declared in several blocks, each
+                # adding specifics to the same name, so a repeat is not a
+                # duplicate declaration.
+                continue
+            elif unit.kind in {"module", "submodule", "program", "block_data", "derived_type"}:
                 key = (unit.kind, unit.name.lower())
             else:
                 continue
@@ -3418,8 +3495,7 @@ class FortranParser(ClassVisitor):
 
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use and hasattr(target, "uses"):
-            module_name, mappings = parsed_use
-            target.uses[module_name] = mappings
+            target.uses.append(parsed_use)
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3586,9 +3662,8 @@ class FortranParser(ClassVisitor):
             return
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
-            module_name, mappings = parsed_use
-            proc_state.uses[module_name] = mappings
-            proc_state.local_uses[module_name] = mappings
+            proc_state.uses.append(parsed_use)
+            proc_state.local_uses.append(parsed_use)
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -3713,6 +3788,23 @@ class FortranParser(ClassVisitor):
         )
 
     @staticmethod
+    def _record_generic_binding(dtype: FortranDerivedType, binding: dict) -> None:
+        """Record one ``generic ::`` statement on a derived type.
+
+        Fortran lets a type-bound generic be built from several statements in
+        one type, each contributing specifics. They name one binding, so the
+        parser reports one record carrying every target in declaration order.
+        The standard requires every statement for a binding to declare the same
+        accessibility, so the first statement's attributes stand for the rest.
+        """
+        key = "".join(str(binding["name"]).split()).lower()
+        for existing in dtype.generic_bindings:
+            if "".join(str(existing["name"]).split()).lower() == key:
+                existing["targets"].extend(binding["targets"])
+                return
+        dtype.generic_bindings.append(binding)
+
+    @staticmethod
     def _apply_default_component_visibility(
         dtype: FortranDerivedType,
         declaration: str,
@@ -3769,13 +3861,14 @@ class FortranParser(ClassVisitor):
             attrs = [a.strip().lower() for a in split_csv(attr_txt)] if attr_txt else []
             lhs, rhs_txt = [x.strip() for x in right.split("=>", 1)]
             rhs = [r.strip() for r in split_csv(rhs_txt)]
-            dtype.generic_bindings.append(
+            self._record_generic_binding(
+                dtype,
                 {
                     "name": lhs,
                     "targets": rhs,
                     "attrs": attrs,
                     "visibility": _binding_visibility(attrs, dtype.binding_visibility),
-                }
+                },
             )
             return
 
@@ -3941,7 +4034,10 @@ class FortranParser(ClassVisitor):
             return declaration, split_csv((decl.group("attrs") or "").strip().lstrip(", "))
         if re.match(r"^procedure\s*\(", left, re.IGNORECASE):
             procm = _REGEX["procedure_dummy"].match(left)
-            iface = procm.group("iface").lower() if procm else None
+            # The interface name is a user-visible symbol that reaches the
+            # generated .pyi contract, so it keeps its declared spelling;
+            # every comparison against it normalizes case at the comparison.
+            iface = procm.group("iface") if procm else None
             return self._new_declaration("procedure", iface), split_csv(
                 (procm.group("attrs") if procm else "").strip().lstrip(", ")
             )
@@ -4043,7 +4139,7 @@ class FortranParser(ClassVisitor):
                 filename=filename,
                 code="PARSE_INTERNAL_STATE",
             )
-        if declaration.base_type == "procedure" and declaration.kind in proc_state.imports:
+        if declaration.base_type == "procedure" and self._scope_key(declaration.kind or "") in proc_state.imports:
             declaration.kind = ""
         for normalized_name, shape, _initializer, entity_declaration in self._declaration_entities(
             right,
@@ -4199,8 +4295,10 @@ class FortranParser(ClassVisitor):
             base_type,
             extract_kind_from_type_spec(base_type, type_spec),
         )
-        if base_type == "character" and type_spec and re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-            declaration.character_length_syntax = True
+        if base_type == "character" and type_spec:
+            # The selector is read once here, while its top-level items are
+            # known, so no later stage has to split a joined spelling again.
+            declaration.record_character_selector(type_spec)
         return declaration
 
     @staticmethod
@@ -4224,8 +4322,8 @@ class FortranParser(ClassVisitor):
         base_type, type_spec, _tail = intrinsic
         if base_type in {"double precision", "double complex"}:
             var._target_kind_expression = "kind(1.0d0)"
-        elif base_type == "character" and type_spec and re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-            var._character_length_syntax = True
+        elif base_type == "character" and type_spec:
+            var.record_character_selector(type_spec)
 
     @staticmethod
     def _apply_declaration_attributes(
@@ -4322,6 +4420,10 @@ class FortranParser(ClassVisitor):
             arg._target_kind_expression = declaration.target_kind_expression
         if declaration.character_length_syntax:
             arg._character_length_syntax = True
+        if declaration.character_length_expression is not None:
+            arg._character_length_expression = declaration.character_length_expression
+        if declaration.character_kind_expression is not None:
+            arg._character_kind_expression = declaration.character_kind_expression
         if declaration.declared_storage_bits is not None:
             arg._declared_storage_bits = declaration.declared_storage_bits
         if declaration.polymorphic:
@@ -4692,12 +4794,15 @@ class FortranParser(ClassVisitor):
         for arg in sig.arguments:
             if arg.kind:
                 arg.kind = self._resolve_kind_expression(arg.kind, local_params, resolver=local_resolver)
+            self._resolve_character_length(arg, local_params, resolver=local_resolver)
             if arg.shape:
                 arg.shape = [local_resolver.resolve(dim) for dim in arg.shape]
             if arg.base_type == "unknown" and not state.implicit_none:
                 arg.base_type = self._infer_implicit_base_type(arg.name)
         if sig.result and sig.result.kind:
             sig.result.kind = self._resolve_kind_expression(sig.result.kind, local_params, resolver=local_resolver)
+        if sig.result is not None:
+            self._resolve_character_length(sig.result, local_params, resolver=local_resolver)
         return self._collect_relevant_local_params(sig, local_params)
 
     def _reconcile_procedure_local_declarations(
@@ -4826,7 +4931,7 @@ class FortranParser(ClassVisitor):
             attr = f"import({symbol})"
             if attr not in sig.attributes:
                 sig.attributes.append(attr)
-        sig.uses = dict(state.uses)
+        sig.uses = list(state.uses)
         sig.common_variables = list(state.common_variables)
 
     @staticmethod
@@ -4843,7 +4948,7 @@ class FortranParser(ClassVisitor):
         not deep-copy arguments or other signature members.
         """
         finalized = replace(sig)
-        finalized._local_uses = dict(state.local_uses)
+        finalized._local_uses = list(state.local_uses)
         return finalized
 
     @staticmethod
@@ -5126,7 +5231,7 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _imported_compile_time_symbols(
-        uses: Mapping[str, list[FortranUseMapping]],
+        uses: Iterable[FortranUseStatement],
         symbols: _CompileTimeSymbols,
         *,
         include_intrinsic_aliases: bool,
@@ -5141,30 +5246,34 @@ class FortranParser(ClassVisitor):
         when the intrinsic module has no parsed model; ordinary procedure scope
         lookup leaves that target-dependent spelling untouched.
         """
+        scope = ScopeUses(uses)
+        offered = {module: symbols.in_module(module.casefold()) for module in scope.modules()}
         imported: dict[str, str] = {}
-        for dependency, mappings in uses.items():
-            dependency_name = dependency.casefold()
-            dependency_symbols = symbols.in_module(dependency_name)
-            if not mappings:
-                imported.update(dependency_symbols)
+        for name in scope.accessible_names(lambda module: offered[module]):
+            expressions = {
+                offered[route.module][route.source_name.casefold()]
+                for route in scope.routes_for(name, lambda module: offered[module])
+                if route.source_name.casefold() in offered[route.module]
+            }
+            # Routes that disagree leave the name meaning more than one value,
+            # which is not something to choose between.
+            if len(expressions) == 1:
+                imported[name.casefold()] = next(iter(expressions))
+        if not include_intrinsic_aliases:
+            return imported
+        # An intrinsic module has no parsed symbols, so a name imported from
+        # one stands for its own target-dependent spelling.
+        for module in scope.modules():
+            if module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES:
                 continue
-            for mapping in mappings:
-                source_name = mapping.source.casefold()
-                expression = dependency_symbols.get(source_name)
-                if (
-                    expression is None
-                    and include_intrinsic_aliases
-                    and dependency_name in _INTRINSIC_COMPILE_TIME_MODULES
-                ):
-                    expression = mapping.source
-                if expression is not None:
-                    imported[mapping.local_name.casefold()] = expression
+            for mapping in scope.mappings(module):
+                imported.setdefault(mapping.local_name.casefold(), mapping.source)
         return imported
 
     @staticmethod
     def _compile_time_symbols_for_scope(
         owner_name: str | None,
-        uses: Mapping[str, list[FortranUseMapping]],
+        uses: Iterable[FortranUseStatement],
         symbols: _CompileTimeSymbols,
     ) -> dict[str, str]:
         """Return a mutable flat symbol map visible to one parsed scope.
@@ -5254,6 +5363,7 @@ class FortranParser(ClassVisitor):
                     visible_symbols,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(argument, visible_symbols, resolver=resolver)
             if resolve_shapes and argument.shape:
                 argument.shape = [resolver.resolve(dimension) for dimension in argument.shape]
         if signature.result and signature.result.kind:
@@ -5324,6 +5434,7 @@ class FortranParser(ClassVisitor):
                     visible,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(variable, visible, resolver=resolver)
             if variable.shape:
                 variable.shape = [resolver.resolve(dimension) for dimension in variable.shape]
                 variable.lbound, variable.ubound = FortranParser._extract_bounds(variable.shape)
@@ -5356,9 +5467,34 @@ class FortranParser(ClassVisitor):
                     visible,
                     resolver=resolver,
                 )
+            FortranParser._resolve_character_length(field, visible, resolver=resolver)
             if field.shape:
                 field.shape = [resolver.resolve(dimension) for dimension in field.shape]
                 field.lbound, field.ubound = FortranParser._extract_bounds(field.shape)
+
+    @staticmethod
+    def _resolve_character_length(
+        variable: FortranVariable,
+        symbols: Mapping[str, str],
+        *,
+        resolver: _CompileTimeResolver | None = None,
+    ) -> None:
+        """Resolve a separated character length against the kind's own symbols.
+
+        The length is recorded apart from the kind, so it is resolved wherever
+        the kind is: a declaration written ``character(len=fixed)`` states the
+        value ``fixed`` names, the same as one written ``character(fixed)``.
+        """
+        active_resolver = resolver or _CompileTimeResolver(symbols)
+        for attribute in ("_character_length_expression", "_character_kind_expression"):
+            declared = getattr(variable, attribute, None)
+            if not declared:
+                continue
+            setattr(
+                variable,
+                attribute,
+                active_resolver.resolve(FortranParser._resolve_symbol_reference(str(declared), symbols)),
+            )
 
     @staticmethod
     def _resolve_kind_expression(
@@ -5412,11 +5548,16 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _extract_symbol_names(expr: str) -> set[str]:
-        """Extract lowercase identifier tokens from one expression."""
+        """Return the lower-case names one expression reads.
+
+        The names come from parsing, so a character literal's contents stay
+        part of its value: a parameter whose value is ``"widen"`` does not read
+        a parameter named ``widen``.
+        """
         keywords = {"and", "or", "not"}
         return {
             token.lower()
-            for token in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr or "")
+            for token in declaration_expression_identifiers(expr or "")
             if not token.isdigit() and token.lower() not in keywords
         }
 
@@ -5449,7 +5590,10 @@ class FortranParser(ClassVisitor):
             return True
         if re.fullmatch(r"\.(?:true|false)\.", text, re.IGNORECASE):
             return True
-        if re.fullmatch(r"(['\"]).*\1", text):
+        # One reader decides what a whole character literal is, so the value a
+        # parameter records is the one later stages decode. Matching any text
+        # between two quotes also accepted `'a' // 'b'`, which is an expression.
+        if fortran_character_value(text) is not None:
             return True
         if text.startswith("[") and text.endswith("]"):
             return all(FortranParser._is_literal_parameter_value(part) for part in split_csv(text[1:-1]))
@@ -5682,14 +5826,19 @@ class FortranParser(ClassVisitor):
         return name if name else None
 
     @staticmethod
-    def _parse_use_statement(line: str) -> tuple[str, list[FortranUseMapping]] | None:
-        """Parse a ``use`` statement into its module and explicit mappings."""
+    def _parse_use_statement(line: str) -> FortranUseStatement | None:
+        """Parse one ``use`` statement into the facts the source states.
+
+        Whether the statement narrowed to an ``only`` list is separate from
+        what it listed: ``use m, only :`` lists nothing and brings in nothing,
+        while ``use m`` also lists nothing and brings in everything.
+        """
         match = _REGEX["use"].match(line)
         if not match:
             return None
         rest = (match.group("rest") or "").strip()
         if not rest:
-            return match.group("module"), []
+            return FortranUseStatement(match.group("module"))
         payload = rest.lstrip(",").strip()
         only_match = re.match(r"^only\s*:\s*(?P<symbols>.*)$", payload, re.IGNORECASE)
         if only_match:
@@ -5705,7 +5854,7 @@ class FortranParser(ClassVisitor):
                 source = token
                 target = None
             mappings.append(FortranUseMapping(source=source, target=target))
-        return match.group("module"), mappings
+        return FortranUseStatement(match.group("module"), only_match is not None, tuple(mappings))
 
 
 # -----------------------------------------------------------------------------

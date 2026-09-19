@@ -27,24 +27,24 @@ def module(tmp_path_factory):
 def test_abstract_type_cannot_be_instantiated(module):
     """`type, abstract ::` has no instances, so its Python class has no constructor."""
     with pytest.raises(TypeError, match="abstract native type and cannot be instantiated"):
-        module.shape_base()
+        module.Shape_Base()
 
-    assert "__init__" not in module.shape_base.__dict__
+    assert "__init__" not in module.Shape_Base.__dict__
 
 
 def test_extensions_are_python_subclasses_of_the_abstract_base(module):
     """Fortran `extends` becomes real Python inheritance, not copied members."""
-    assert issubclass(module.circle, module.shape_base)
-    assert issubclass(module.square, module.shape_base)
-    assert module.circle.__mro__[:2] == (module.circle, module.shape_base)
+    assert issubclass(module.Circle, module.Shape_Base)
+    assert issubclass(module.Square, module.Shape_Base)
+    assert module.Circle.__mro__[:2] == (module.Circle, module.Shape_Base)
 
-    assert isinstance(module.circle(radius=np.float64(1.0)), module.shape_base)
+    assert isinstance(module.Circle(radius=np.float64(1.0)), module.Shape_Base)
 
 
 def test_deferred_bindings_dispatch_to_each_concrete_override(module):
     """A deferred binding names a contract; the dynamic type selects the body."""
-    circle = module.circle(radius=np.float64(2.0))
-    square = module.square(side=np.float64(3.0))
+    circle = module.Circle(radius=np.float64(2.0))
+    square = module.Square(side=np.float64(3.0))
 
     assert circle.area() == pytest.approx(12.566370614, rel=1e-9)
     assert square.area() == pytest.approx(9.0)
@@ -53,13 +53,13 @@ def test_deferred_bindings_dispatch_to_each_concrete_override(module):
 
     # The base declares the same bindings, and they resolve through the caller's
     # concrete type rather than through anything the abstract type implements.
-    assert module.shape_base.area(circle) == pytest.approx(circle.area())
-    assert module.shape_base.area(square) == pytest.approx(square.area())
+    assert module.Shape_Base.area(circle) == pytest.approx(circle.area())
+    assert module.Shape_Base.area(square) == pytest.approx(square.area())
 
 
 def test_inherited_bindings_and_components_reach_every_extension(module):
     """An implemented binding on the abstract base serves its extensions."""
-    circle = module.circle(radius=np.float64(1.0))
+    circle = module.Circle(radius=np.float64(1.0))
 
     assert circle.side_count() == np.int32(0)
     circle.bump_sides()
@@ -69,13 +69,13 @@ def test_inherited_bindings_and_components_reach_every_extension(module):
 
 def test_private_components_stay_off_the_generated_classes(module):
     """The hierarchy publishes only what its `private` statements allow."""
-    assert {name for name in dir(module.shape_base) if not name.startswith("_")} == {
+    assert {name for name in dir(module.Shape_Base) if not name.startswith("_")} == {
         "area",
         "label",
         "side_count",
         "bump_sides",
     }
-    assert {name for name in dir(module.circle) if not name.startswith("_")} == {
+    assert {name for name in dir(module.Circle) if not name.startswith("_")} == {
         "area",
         "label",
         "side_count",
@@ -86,7 +86,7 @@ def test_private_components_stay_off_the_generated_classes(module):
 
 def test_interoperable_type_keeps_its_layout_beside_the_hierarchy(module):
     """A `bind(c)` type in the same module still wraps through its own accessors."""
-    box = module.extent(width=np.float64(3.0), height=np.float64(4.0))
+    box = module.Extent(width=np.float64(3.0), height=np.float64(4.0))
 
     assert box.width == np.float64(3.0)
     assert module.describe(box) == pytest.approx(12.0)

@@ -14,3 +14,5 @@ def direct_allocate(
 def direct_pointer_sum(
     values: Annotated[Pointer[Float64[:]], PointerAssociation("runtime"), Ownership("caller"), Transfer("call_local"), Destruction("none")]
 ) -> Float64: ...
+
+__all__ = ["direct_optional_state", "direct_allocate", "direct_pointer_sum"]

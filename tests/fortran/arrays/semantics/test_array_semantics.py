@@ -9,6 +9,8 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
 )
 from prik.semantics.models import SemanticExpressionCallable
+from prik.policy.contract_imports import complete_contract_imports
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import PyiPrinter
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
@@ -43,7 +45,7 @@ end module
 
     contract = array_contract(x.semantic_type)
     assert contract.category == "assumed_shape"
-    assert contract.shape == ["::Strided"]
+    assert contract.shape == ["::"]
     assert contract.source_shape == [":"]
     assert contract.order is None
 
@@ -76,7 +78,7 @@ end module
     assert A.semantic_type.rank == 2
 
     contract = array_contract(A.semantic_type)
-    assert A.semantic_type.shape == ["::Strided", "::Strided"]
+    assert A.semantic_type.shape == ["::", "::"]
     assert contract.source_shape == [":", ":"]
     assert contract.category == "assumed_shape"
     assert contract.order == "ORDER_F"
@@ -171,6 +173,8 @@ end module inquiry_mod
         "2 if source.shape[1] > 0 else 1",
         "2 + source.shape[1] - 1 if source.shape[1] > 0 else 0",
     ]
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
     generated = PyiPrinter().emit(module)
     assert "source.shape[0], max(1, source.shape[1]), source.size, 2 ** source.ndim" in generated
     assert "2 if source.shape[1] > 0 else 1" in generated
@@ -226,11 +230,13 @@ end module expression_owner
         ],
     ]
 
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
     generated = PyiPrinter().emit(module)
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array
 
-    assert "from extent_helpers import extent_for as imported_extent" in generated
+    assert "from .extent_helpers import extent_for as imported_extent" in generated
     assert "Float64[imported_extent(n), local_extent(n)]" in generated
     assert reloaded_array.expression_callables == array.expression_callables
 
@@ -246,9 +252,7 @@ end function extent_for
 end module extent_helpers
 
 module unrelated_helpers
-contains
-subroutine unrelated()
-end subroutine unrelated
+  integer, parameter :: unrelated = 1
 end module unrelated_helpers
 
 module expression_owner
@@ -267,12 +271,48 @@ end module expression_owner
 
     assert array.expression_callables[0][0].native_scope == "extent_helpers"
 
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
     generated = PyiPrinter().emit(module)
     reloaded = parse_pyi_text(generated, module_name="expression_owner")
     reloaded_array = get_function(reloaded, "values").return_type.storage.array
 
-    assert "from extent_helpers import extent_for" in generated
+    assert "from .extent_helpers import extent_for" in generated
     assert reloaded_array.expression_callables == array.expression_callables
+
+
+def test_non_only_rename_does_not_choose_between_specification_function_routes():
+    """Ambiguous and renamed-away procedure names keep no invented origin."""
+    source = """
+module extent_helpers
+contains
+integer function x(n) result(extent)
+  integer, intent(in) :: n
+  extent = n
+end function x
+integer function y(n) result(extent)
+  integer, intent(in) :: n
+  extent = n
+end function y
+end module extent_helpers
+
+module expression_owner
+  use extent_helpers, x => y
+contains
+function values(n) result(output)
+  integer, intent(in) :: n
+  real(8) :: output(x(n), y(n))
+end function values
+end module expression_owner
+"""
+    modules = fortran_file_to_semantic_modules(parse_fortran_source(source))
+    module = next(item for item in modules if item.name == "expression_owner")
+    callables = get_function(module, "values").return_type.storage.array.expression_callables
+
+    assert callables == [
+        [SemanticExpressionCallable(name="x", native_name="x", source_language="fortran")],
+        [SemanticExpressionCallable(name="y", native_name="y", source_language="fortran")],
+    ]
 
 
 def test_unindexed_wildcard_specification_function_origin_is_not_guessed():
@@ -322,3 +362,35 @@ end module expression_owner
     assert (
         get_function(reloaded, "values").return_type.storage.array.expression_callables[0][0].placement == "standalone"
     )
+
+
+def test_a_pure_function_contract_states_its_purity_and_reads_it_back():
+    """A specification function must be pure, so its contract has to say it is.
+
+    The contract wrote `@pure` only on prototypes, so a pure module function
+    read back impure and a contract calling it in a declaration expression
+    could not be built.
+    """
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source("""
+module extent_provider
+contains
+pure integer function extent_for(n)
+  integer, intent(in) :: n
+  extent_for = n + 1
+end function extent_for
+integer function plain(n)
+  integer, intent(in) :: n
+  plain = n
+end function plain
+end module extent_provider
+""")
+    )
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+
+    assert "@pure\n@native_call([Addr(Arg(0))])\ndef extent_for(" in contract
+    assert "@pure\n@native_call([Addr(Arg(0))])\ndef plain(" not in contract
+    reloaded = parse_pyi_text(contract, module_name="extent_provider")
+    assert [function.metadata.get("fortran_attributes") for function in reloaded.functions] == [["pure"], None]
