@@ -65,6 +65,50 @@ rewrite the test when that invariant remains a contract; remove it when it only
 records the previous implementation or a recommendation. Do not change correct
 behavior solely to satisfy a brittle test.
 
+Before adding a test, name the invariant, its feature or infrastructure owner,
+and the earliest stage that can prove it. Keep the resulting evidence concise:
+
+- One test may assert several related consequences of the same setup and
+  invariant. Do not create one test function per field or incidental detail.
+- Use parametrization when cases exercise the same operation and assertion
+  shape with different inputs, and give every row a descriptive ID.
+- Do not repeat the same invariant at adjacent stages. Add another stage test
+  only when it protects a real handoff, completed decision, generated artifact,
+  ABI mechanism, or runtime behavior.
+- Cover combinatorial language cases at the cheapest owning stage. End-to-end
+  tests should cover each distinct compilation, ABI, ownership, lifetime, or
+  runtime mechanism, not every combination already established below it.
+- When source and generated-contract builds must agree, compare the two lanes
+  in one test or shared case instead of maintaining unrelated duplicate tests.
+- When several tests use the same native project and require no isolated build
+  state, build it once through an appropriately scoped pytest fixture. Do not
+  share mutable native state unless the fixture resets it deterministically.
+- Prefer existing test helpers. Add a shared helper only when it removes
+  repeated setup from multiple tests without hiding the behavior being tested.
+- Do not duplicate a complete expected artifact in several tests. Keep one
+  reviewed golden or fixture as its authority and make focused tests assert
+  only the relevant property.
+- Do not assert complete generated source text when a focused structural or
+  behavioral assertion proves the invariant, unless the generated text is
+  itself a documented serialized format.
+- When removing or consolidating a test, identify the invariant it protected
+  and show where that invariant remains covered.
+
+Organize native test sources by their evidence owner:
+
+- A permanent source compiled by a test belongs in a fixture file.
+- A multi-file native project uses one fixture file per real source file.
+- A source shared by tests, or a substantial source of roughly 20 lines or
+  more, should normally be a fixture file.
+- A small syntax example should remain inline when locality makes the test
+  clearer.
+- Programmatically generated, parametrized, or deliberately mutated source may
+  remain inline and must be written only to pytest temporary directories.
+- Place fixtures beneath the feature or infrastructure mechanism that owns the
+  asserted behavior and beneath the relevant stage. Do not place
+  feature-specific sources in `_support` or create a global collection of
+  unrelated fixtures.
+
 The agent owns the review work that is not delegated to rigid tests. Before and
 after a refactor, compare the affected public behavior and stage outputs. When
 editing documentation, examples, diagnostics, or generated text, preserve the
