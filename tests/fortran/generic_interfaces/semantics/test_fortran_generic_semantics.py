@@ -9,42 +9,15 @@ from prik.semantics.fortran2ir import (
 from prik.semantics.metadata import BIND_TARGET_METADATA
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "native" / "foperators_f90.f90"
 
 
 def test_converter_preserves_module_and_type_bound_generic_overload_sets():
-    source = """
-module generic_mod
-  private
-  public :: box, convert
-  interface convert
-    module procedure convert_integer, convert_real
-  end interface convert
-  type :: box
-  contains
-    procedure, private :: set_integer
-    procedure, private :: set_real
-    generic, public :: set => set_integer, set_real
-  end type box
-contains
-  integer function convert_integer(value)
-    integer :: value
-    convert_integer = value
-  end function convert_integer
-  real function convert_real(value)
-    real :: value
-    convert_real = value
-  end function convert_real
-  subroutine set_integer(self, value)
-    class(box) :: self
-    integer :: value
-  end subroutine set_integer
-  subroutine set_real(self, value)
-    class(box) :: self
-    real :: value
-  end subroutine set_real
-end module generic_mod
-"""
+    source = (NATIVE_FIXTURES / "converter_preserves_module_and_type_bound_generic_overload_sets.f90").read_text(
+        encoding="utf-8"
+    )
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 
     assert [(item.name, [proc.name for proc in item.procedures]) for item in module.overload_sets] == [
@@ -179,30 +152,9 @@ def test_type_bound_generic_split_across_statements_reaches_one_overload_set():
     -- not one set per statement, which leaves all but the first unreachable at
     dispatch.
     """
-    source = """
-module shape_mod
-  implicit none
-  type :: shape_t
-    real(8) :: v
-  contains
-    procedure :: area_integer
-    procedure :: area_real
-    generic :: area => area_integer
-    generic :: area => area_real
-  end type shape_t
-contains
-  real(8) function area_integer(self, scale)
-    class(shape_t), intent(in) :: self
-    integer, intent(in) :: scale
-    area_integer = self%v * scale
-  end function area_integer
-  real(8) function area_real(self, scale)
-    class(shape_t), intent(in) :: self
-    real(8), intent(in) :: scale
-    area_real = self%v * scale
-  end function area_real
-end module shape_mod
-"""
+    source = (NATIVE_FIXTURES / "type_bound_generic_split_across_statements_reaches_one_overload_set.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 
@@ -219,31 +171,9 @@ def test_a_generic_declared_inside_a_procedure_is_not_a_module_generic():
     Reading it as one of the module's own would publish it, and two procedures
     naming one generic would each answer for the other.
     """
-    source = """
-module scoped_mod
-  implicit none
-contains
-  subroutine first(x)
-    real(8), intent(in) :: x
-    interface local_generic
-      subroutine first_impl(a)
-        real(8), intent(in) :: a
-      end subroutine first_impl
-    end interface
-    call local_generic(x)
-  end subroutine first
-
-  subroutine second(n)
-    integer, intent(in) :: n
-    interface local_generic
-      subroutine second_impl(b)
-        integer, intent(in) :: b
-      end subroutine second_impl
-    end interface
-    call local_generic(n)
-  end subroutine second
-end module scoped_mod
-"""
+    source = (NATIVE_FIXTURES / "a_generic_declared_inside_a_procedure_is_not_a_module_generic.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 

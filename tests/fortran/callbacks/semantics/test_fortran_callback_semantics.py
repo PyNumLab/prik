@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+
 from prik.parsers.fortran import parse_fortran_project
 from prik.policy.exports import complete_python_export_policy
 from prik.printers import emit_module
@@ -15,63 +17,13 @@ from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_dummy_procedure_interfaces_become_complete_callable_contracts():
-    source = """
-module callbacks
-  type :: point_t
-    real(8) :: x
-  end type point_t
-    abstract interface
-      function transform_iface(count, values, point) result(output)
-        import :: point_t
-        integer, intent(in) :: count
-        real(8), intent(in) :: values(count)
-        type(point_t), intent(in) :: point
-        real(8) :: output(count)
-      end function transform_iface
-      subroutine no_intent_iface(count, values)
-        integer :: count
-        real(8) :: values(count)
-      end subroutine no_intent_iface
-      subroutine value_iface(value, ref)
-        integer, value, intent(in) :: value
-        real(8) :: ref
-      end subroutine value_iface
-      subroutine notify_iface(value)
-        integer, intent(in) :: value
-      end subroutine notify_iface
-      subroutine string_iface(read_label, write_label, update_label)
-        character(len=8), intent(in) :: read_label
-        character(len=8), intent(out) :: write_label
-        character(len=8), intent(inout) :: update_label
-      end subroutine string_iface
-  end interface
-contains
-  subroutine abstract_case(callback)
-    procedure(transform_iface) :: callback
-  end subroutine abstract_case
-  subroutine explicit_case(callback)
-    interface
-      integer function callback(value) result(output)
-        integer, intent(in) :: value
-      end function callback
-    end interface
-  end subroutine explicit_case
-  subroutine notify_case(callback)
-    procedure(notify_iface) :: callback
-  end subroutine notify_case
-  subroutine no_intent_case(callback)
-    procedure(no_intent_iface) :: callback
-  end subroutine no_intent_case
-  subroutine value_case(callback)
-    procedure(value_iface) :: callback
-  end subroutine value_case
-  subroutine string_case(callback)
-    procedure(string_iface) :: callback
-  end subroutine string_case
-end module callbacks
-"""
+    source = (NATIVE_FIXTURES / "dummy_procedure_interfaces_become_complete_callable_contracts.f90").read_text(
+        encoding="utf-8"
+    )
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 
     abstract_callback = get_function(module, "abstract_case").arguments[0].semantic_type
@@ -497,29 +449,9 @@ end module ren_consumer
 
 def test_non_only_rename_does_not_choose_between_callback_routes():
     """A renamed interface and the same local spelling remain ambiguous."""
-    source = """
-module callback_types
-  abstract interface
-    subroutine x(value)
-      real, intent(in) :: value
-    end subroutine x
-    subroutine y(value)
-      integer, intent(in) :: value
-    end subroutine y
-  end interface
-end module callback_types
-
-module callback_user
-  use callback_types, x => y
-contains
-  subroutine apply_x(callback)
-    procedure(x) :: callback
-  end subroutine apply_x
-  subroutine apply_y(callback)
-    procedure(y) :: callback
-  end subroutine apply_y
-end module callback_user
-"""
+    source = (NATIVE_FIXTURES / "non_only_rename_does_not_choose_between_callback_routes.f90").read_text(
+        encoding="utf-8"
+    )
     modules = {module.name: module for module in FortranToIRConverter().visit(parse_fortran_source(source))}
 
     callback_x = get_function(modules["callback_user"], "apply_x").arguments[0].semantic_type
@@ -558,48 +490,7 @@ end module cas_mod
     assert get_function(module, "run_cas").arguments[0].semantic_type.name == "OBJ"
 
 
-ACCESSIBILITY_SOURCE = """
-module acc_a
-  implicit none
-  abstract interface
-    subroutine OBJ(x)
-      implicit none
-      real(8), intent(in) :: x
-    end subroutine OBJ
-  end interface
-end module acc_a
-
-module acc_b_public
-  use acc_a, only : OBJ
-  implicit none
-  private
-  public :: OBJ
-end module acc_b_public
-
-module acc_b_private
-  use acc_a, only : OBJ
-  implicit none
-  private
-end module acc_b_private
-
-module acc_ok
-  use acc_b_public, only : OBJ
-  implicit none
-contains
-  subroutine run_ok(callback)
-    procedure(OBJ) :: callback
-  end subroutine run_ok
-end module acc_ok
-
-module acc_bad
-  use acc_b_private, only : OBJ
-  implicit none
-contains
-  subroutine run_bad(callback)
-    procedure(OBJ) :: callback
-  end subroutine run_bad
-end module acc_bad
-"""
+ACCESSIBILITY_SOURCE = (NATIVE_FIXTURES / "accessibility.f90").read_text(encoding="utf-8")
 
 
 def _is_resolved_callback(module, function_name: str) -> bool:

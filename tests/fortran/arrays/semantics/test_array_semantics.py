@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+
 from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
@@ -14,6 +16,8 @@ from prik.policy.exports import complete_python_export_policy
 from prik.printers import PyiPrinter
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_array_constraints():
@@ -182,29 +186,9 @@ end module inquiry_mod
 
 
 def test_specification_function_calls_keep_local_and_imported_native_identity():
-    source = """
-module extent_helpers
-contains
-pure integer function extent_for(n) result(extent)
-  integer, intent(in) :: n
-  extent = max(1, n)
-end function extent_for
-end module extent_helpers
-
-module expression_owner
-  use extent_helpers, only: imported_extent => extent_for
-contains
-pure integer function local_extent(n) result(extent)
-  integer, intent(in) :: n
-  extent = max(1, n)
-end function local_extent
-
-function values(n) result(output)
-  integer, intent(in) :: n
-  real(8) :: output(imported_extent(n), local_extent(n))
-end function values
-end module expression_owner
-"""
+    source = (NATIVE_FIXTURES / "specification_function_calls_keep_local_and_imported_native_identity.f90").read_text(
+        encoding="utf-8"
+    )
     modules = fortran_file_to_semantic_modules(parse_fortran_source(source))
     module = next(item for item in modules if item.name == "expression_owner")
     array = get_function(module, "values").return_type.storage.array
@@ -242,29 +226,9 @@ end module expression_owner
 
 
 def test_wildcard_specification_function_origin_round_trips_unambiguously():
-    source = """
-module extent_helpers
-contains
-pure integer function extent_for(n) result(extent)
-  integer, intent(in) :: n
-  extent = max(1, n)
-end function extent_for
-end module extent_helpers
-
-module unrelated_helpers
-  integer, parameter :: unrelated = 1
-end module unrelated_helpers
-
-module expression_owner
-  use extent_helpers
-  use unrelated_helpers
-contains
-function values(n) result(output)
-  integer, intent(in) :: n
-  real(8) :: output(extent_for(n))
-end function values
-end module expression_owner
-"""
+    source = (NATIVE_FIXTURES / "wildcard_specification_function_origin_round_trips_unambiguously.f90").read_text(
+        encoding="utf-8"
+    )
     modules = fortran_file_to_semantic_modules(parse_fortran_source(source))
     module = next(item for item in modules if item.name == "expression_owner")
     array = get_function(module, "values").return_type.storage.array
@@ -283,28 +247,9 @@ end module expression_owner
 
 def test_non_only_rename_does_not_choose_between_specification_function_routes():
     """Ambiguous and renamed-away procedure names keep no invented origin."""
-    source = """
-module extent_helpers
-contains
-integer function x(n) result(extent)
-  integer, intent(in) :: n
-  extent = n
-end function x
-integer function y(n) result(extent)
-  integer, intent(in) :: n
-  extent = n
-end function y
-end module extent_helpers
-
-module expression_owner
-  use extent_helpers, x => y
-contains
-function values(n) result(output)
-  integer, intent(in) :: n
-  real(8) :: output(x(n), y(n))
-end function values
-end module expression_owner
-"""
+    source = (NATIVE_FIXTURES / "non_only_rename_does_not_choose_between_specification_function_routes.f90").read_text(
+        encoding="utf-8"
+    )
     modules = fortran_file_to_semantic_modules(parse_fortran_source(source))
     module = next(item for item in modules if item.name == "expression_owner")
     callables = get_function(module, "values").return_type.storage.array.expression_callables

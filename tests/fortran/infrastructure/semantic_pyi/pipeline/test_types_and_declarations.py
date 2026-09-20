@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
+from pathlib import Path
+
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.policy.exports import complete_python_export_policy
@@ -25,6 +27,8 @@ from tests.fortran._support.printer_models import (
     generate_pyi,
     parse_pyi_text,
 )
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_emit_basic_scalar_function():
@@ -301,38 +305,7 @@ end module
 
 
 def test_emit_complex_fem_module():
-    source = """
-module fem_mod
-
-type :: mesh
-
-    integer :: nelements
-    integer :: nnodes
-
-end type
-
-contains
-
-subroutine assemble(K, coords, connectivity)
-
-    real(8), intent(out) :: K(:, :)
-
-    real(8), intent(in) :: coords(:, :)
-
-    integer, intent(in) :: connectivity(:, :)
-
-end subroutine
-
-function compute_norm(x) result(r)
-
-    real(8), intent(in) :: x(:)
-
-    real(8) :: r
-
-end function
-
-end module
-"""
+    source = (NATIVE_FIXTURES / "emit_complex_fem_module.f90").read_text(encoding="utf-8")
 
     code = generate_pyi(source)
 

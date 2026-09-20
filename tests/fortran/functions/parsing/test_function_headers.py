@@ -1,36 +1,18 @@
 """Procedure and function header parsing behavior."""
 
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_typed_function_result_headers_are_parsed_from_inline_fortran():
-    code = """
-module typed_result_mod
-  type :: point
-    real :: x
-  end type point
-contains
-  type(point) function make_point()
-  end function make_point
-
-  class(point), pointer function current_point()
-  end function current_point
-
-  character(len=8) function label_name()
-  end function label_name
-
-  real(8) function weighted_value()
-  end function weighted_value
-
-  double precision function norm2()
-  end function norm2
-
-  double complex function complex_norm2()
-  end function complex_norm2
-end module typed_result_mod
-"""
+    code = (NATIVE_FIXTURES / "typed_function_result_headers_are_parsed_from_inline_fortran.f90").read_text(
+        encoding="utf-8"
+    )
 
     procedures = {proc.name: proc for proc in parse_fortran_file(code).modules[0].procedures}
 

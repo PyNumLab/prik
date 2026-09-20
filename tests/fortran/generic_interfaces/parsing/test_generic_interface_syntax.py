@@ -12,6 +12,8 @@ from tests.fortran._support.parser_procedures import (
 )
 from prik.parsers.fortran.models import FortranParseError
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 
 
@@ -115,34 +117,9 @@ def test_generic_interface_declared_in_several_blocks_becomes_one_generic():
     specifics only for the kinds a build supports, so repeated blocks name one
     generic rather than redeclaring it.
     """
-    source = """
-module huge_mod
-  implicit none
-  private
-  public :: huge_value
-
-  interface huge_value
-    module procedure huge_value_sp, huge_value_dp
-  end interface huge_value
-
-  interface huge_value
-    module procedure huge_value_qp
-  end interface huge_value
-contains
-  real function huge_value_sp(x)
-    real, intent(in) :: x
-    huge_value_sp = huge(x)
-  end function huge_value_sp
-  real(8) function huge_value_dp(x)
-    real(8), intent(in) :: x
-    huge_value_dp = huge(x)
-  end function huge_value_dp
-  real(16) function huge_value_qp(x)
-    real(16), intent(in) :: x
-    huge_value_qp = huge(x)
-  end function huge_value_qp
-end module huge_mod
-"""
+    source = (NATIVE_FIXTURES / "generic_interface_declared_in_several_blocks_becomes_one_generic.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = parse_fortran_module(source)
 
@@ -189,30 +166,9 @@ def test_type_bound_generic_declared_in_several_statements_becomes_one_binding()
     statements, and every statement contributes specifics to that one binding
     rather than declaring another of the same name.
     """
-    source = """
-module shape_mod
-  implicit none
-  type :: shape_t
-    real(8) :: v
-  contains
-    procedure :: area_int
-    procedure :: area_real
-    generic :: area => area_int
-    generic :: area => area_real
-  end type shape_t
-contains
-  real(8) function area_int(self, k)
-    class(shape_t), intent(in) :: self
-    integer, intent(in) :: k
-    area_int = self%v * k
-  end function area_int
-  real(8) function area_real(self, k)
-    class(shape_t), intent(in) :: self
-    real(8), intent(in) :: k
-    area_real = self%v * k
-  end function area_real
-end module shape_mod
-"""
+    source = (NATIVE_FIXTURES / "type_bound_generic_declared_in_several_statements_becomes_one_binding.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = parse_fortran_module(source)
 
@@ -222,30 +178,9 @@ end module shape_mod
 
 def test_type_bound_operator_generic_merges_across_statements_and_spacing():
     """One defined operator binding survives being split across statements."""
-    source = """
-module vec_mod
-  implicit none
-  type :: vec_t
-    real(8) :: v
-  contains
-    procedure :: add_int
-    procedure :: add_real
-    generic :: operator(+) => add_int
-    generic :: operator (+) => add_real
-  end type vec_t
-contains
-  type(vec_t) function add_int(self, k)
-    class(vec_t), intent(in) :: self
-    integer, intent(in) :: k
-    add_int%v = self%v + k
-  end function add_int
-  type(vec_t) function add_real(self, k)
-    class(vec_t), intent(in) :: self
-    real(8), intent(in) :: k
-    add_real%v = self%v + k
-  end function add_real
-end module vec_mod
-"""
+    source = (NATIVE_FIXTURES / "type_bound_operator_generic_merges_across_statements_and_spacing.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = parse_fortran_module(source)
 
@@ -260,31 +195,9 @@ def test_same_generic_name_in_two_procedures_declares_two_generics():
     name, and they name different generics. Merging them on the module they
     share would let one procedure's specifics answer the other's calls.
     """
-    source = """
-module scoped_mod
-  implicit none
-contains
-  subroutine first(x)
-    real(8), intent(in) :: x
-    interface local_generic
-      subroutine first_impl(a)
-        real(8), intent(in) :: a
-      end subroutine first_impl
-    end interface
-    call local_generic(x)
-  end subroutine first
-
-  subroutine second(n)
-    integer, intent(in) :: n
-    interface local_generic
-      subroutine second_impl(b)
-        integer, intent(in) :: b
-      end subroutine second_impl
-    end interface
-    call local_generic(n)
-  end subroutine second
-end module scoped_mod
-"""
+    source = (NATIVE_FIXTURES / "same_generic_name_in_two_procedures_declares_two_generics.f90").read_text(
+        encoding="utf-8"
+    )
 
     module = parse_fortran_module(source)
 

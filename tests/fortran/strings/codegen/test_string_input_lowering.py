@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
@@ -16,6 +18,8 @@ from prik.policy.models import (
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 from prik.planning.models import DatatypeFamily
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def _string_input_module():
@@ -285,31 +289,7 @@ def test_deferred_length_string_update_plan_edits_fail_before_backend_lowering(
         WrapperGenerator().generate(plan)
 
 
-DESCRIPTOR_LOCAL_SOURCE = """
-module descriptor_locals
-  implicit none
-contains
-  subroutine fixed_allocatable(value, length)
-    character(len=4), allocatable, intent(in) :: value
-    integer(4), intent(out) :: length
-    length = len(value)
-  end subroutine fixed_allocatable
-  subroutine deferred_pointer(value, length)
-    character(len=:), pointer, intent(in) :: value
-    integer(4), intent(out) :: length
-    length = len(value)
-  end subroutine deferred_pointer
-  subroutine fixed_pointer(value, length)
-    character(len=4), pointer, intent(in) :: value
-    integer(4), intent(out) :: length
-    length = len(value)
-  end subroutine fixed_pointer
-  subroutine pointer_update(value)
-    character(len=:), pointer, intent(inout) :: value
-    if (associated(value)) value = 'z'
-  end subroutine pointer_update
-end module descriptor_locals
-"""
+DESCRIPTOR_LOCAL_SOURCE = (NATIVE_FIXTURES / "descriptor_local.f90").read_text(encoding="utf-8")
 
 
 def _descriptor_local_source(tmp_path) -> str:

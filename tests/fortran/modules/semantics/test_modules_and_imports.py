@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+
 from prik.parsers.fortran.models import (
     FortranUseStatement,
     FortranArgument,
@@ -21,6 +23,8 @@ from tests.fortran._support.semantic_conversion import (
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():
@@ -172,38 +176,7 @@ end submodule implementation
 
 
 def test_complex_module():
-    source = """
-module fem_mod
-
-type :: mesh
-
-    integer :: nelements
-    integer :: nnodes
-
-end type
-
-contains
-
-subroutine assemble(K, coords, connectivity)
-
-    real(8), intent(out) :: K(:, :)
-
-    real(8), intent(in) :: coords(:, :)
-
-    integer, intent(in) :: connectivity(:, :)
-
-end subroutine
-
-function compute_norm(x) result(r)
-
-    real(8), intent(in) :: x(:)
-
-    real(8) :: r
-
-end function
-
-end module
-"""
+    source = (NATIVE_FIXTURES / "complex_module.f90").read_text(encoding="utf-8")
 
     fmod = parse_fortran_source(source)
 

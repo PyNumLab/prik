@@ -11,6 +11,8 @@ from pathlib import Path
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import FortranToIRConverter
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 HOME = """\
 module known_callbacks
   implicit none
@@ -124,31 +126,7 @@ end module owning_mod
     ) == {"cb": "owning_mod"}
 
 
-LOCAL_CALLBACKS = """\
-module local_mod
-  implicit none
-contains
-  subroutine first(f)
-    abstract interface
-      subroutine cb(x)
-        integer, intent(in) :: x
-      end subroutine cb
-    end interface
-    procedure(cb) :: f
-    call f(1)
-  end subroutine first
-
-  subroutine second(f)
-    abstract interface
-      subroutine cb(x)
-        real(8), intent(in) :: x
-      end subroutine cb
-    end interface
-    procedure(cb) :: f
-    call f(1.0d0)
-  end subroutine second
-end module local_mod
-"""
+LOCAL_CALLBACKS = (NATIVE_FIXTURES / "local_callbacks.f90").read_text(encoding="utf-8")
 
 
 def test_each_procedure_resolves_the_callback_it_declares(tmp_path: Path):

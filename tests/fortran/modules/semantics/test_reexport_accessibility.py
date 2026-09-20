@@ -13,6 +13,8 @@ import pytest
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 DECLARING = """\
 module a_mod
   implicit none
@@ -254,29 +256,7 @@ def test_a_plain_use_carries_a_named_generic_interface(tmp_path: Path):
     """The offered-name inventory includes named interface declarations."""
     carried = _reexports(
         tmp_path,
-        """\
-module generic_home
-  implicit none
-  interface convert
-    module procedure convert_i
-    module procedure convert_r
-  end interface convert
-contains
-  integer function convert_i(value)
-    integer, intent(in) :: value
-    convert_i = value
-  end function convert_i
-  real function convert_r(value)
-    real, intent(in) :: value
-    convert_r = value
-  end function convert_r
-end module generic_home
-
-module b_mod
-  use generic_home
-  implicit none
-end module b_mod
-""",
+        (NATIVE_FIXTURES / "a_plain_use_carries_a_named_generic_interface.f90").read_text(encoding="utf-8"),
     )
 
     assert ("convert", "convert", "generic_home") in carried

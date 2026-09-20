@@ -16,59 +16,11 @@ from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules, fortran_project_to_semantic_modules
 
-PRIVATE_SOURCE = """\
-module m
-  implicit none
-  private
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  abstract interface
-    subroutine cb()
-    end subroutine
-  end interface
+PRIVATE_SOURCE = (NATIVE_FIXTURES / "private.f90").read_text(encoding="utf-8")
 
-  interface hidden_generic
-    module procedure hidden_one
-  end interface
-
-  public :: run
-contains
-  subroutine run(f)
-    procedure(cb) :: f
-    call f()
-  end subroutine run
-
-  subroutine hidden_one(a)
-    integer, intent(in) :: a
-    print *, a
-  end subroutine hidden_one
-end module m
-"""
-
-LOCAL_INTERFACE_SOURCE = """\
-module m
-  implicit none
-contains
-  subroutine first(f)
-    abstract interface
-      subroutine cb(x)
-        integer :: x
-      end subroutine
-    end interface
-    procedure(cb) :: f
-    call f(1)
-  end subroutine first
-
-  subroutine second(f)
-    abstract interface
-      subroutine cb(x)
-        real :: x
-      end subroutine
-    end interface
-    procedure(cb) :: f
-    call f(1.0)
-  end subroutine second
-end module m
-"""
+LOCAL_INTERFACE_SOURCE = (NATIVE_FIXTURES / "local_interface.f90").read_text(encoding="utf-8")
 
 
 def _module(source: str, tmp_path: Path):
@@ -127,57 +79,9 @@ def test_a_procedure_local_interface_is_never_a_module_publication(tmp_path: Pat
     assert '__all__ = ["first", "second"]' in contract
 
 
-MODULE_AND_LOCAL_SOURCE = """\
-module m
-  implicit none
-  abstract interface
-    subroutine first_cb(x)
-      integer :: x
-    end subroutine
-  end interface
-contains
-  subroutine first(f)
-    abstract interface
-      subroutine cb(x)
-        real :: x
-      end subroutine
-    end interface
-    procedure(cb) :: f
-    call f(1.0)
-  end subroutine first
+MODULE_AND_LOCAL_SOURCE = (NATIVE_FIXTURES / "module_and_local.f90").read_text(encoding="utf-8")
 
-  subroutine uses_module_one(g)
-    procedure(first_cb) :: g
-    call g(1)
-  end subroutine uses_module_one
-end module m
-"""
-
-JOINED_COLLISION_SOURCE = """\
-module m
-  implicit none
-contains
-  subroutine a_b(f)
-    abstract interface
-      subroutine c(x)
-        integer :: x
-      end subroutine
-    end interface
-    procedure(c) :: f
-    call f(1)
-  end subroutine a_b
-
-  subroutine a(f)
-    abstract interface
-      subroutine b_c(x)
-        real :: x
-      end subroutine
-    end interface
-    procedure(b_c) :: f
-    call f(1.0)
-  end subroutine a
-end module m
-"""
+JOINED_COLLISION_SOURCE = (NATIVE_FIXTURES / "joined_collision.f90").read_text(encoding="utf-8")
 
 
 def _callback_annotations(module) -> dict[str, tuple[str, str]]:
@@ -288,29 +192,7 @@ def test_a_prototype_does_not_take_a_name_the_module_imports(tmp_path: Path):
     assert f"f: {spelled}" in contract
 
 
-UNBOUND_USE_SOURCE = """\
-module helper_mod
-  implicit none
-  integer :: first_cb = 7
-end module helper_mod
-
-module m_mod
-  use helper_mod, only : first_cb
-  implicit none
-  private
-  public :: first
-contains
-  subroutine first(f)
-    abstract interface
-      subroutine cb(x)
-        real :: x
-      end subroutine
-    end interface
-    procedure(cb) :: f
-    call f(real(first_cb))
-  end subroutine first
-end module m_mod
-"""
+UNBOUND_USE_SOURCE = (NATIVE_FIXTURES / "unbound_use.f90").read_text(encoding="utf-8")
 
 
 def test_a_prototype_is_spelled_against_what_the_contract_binds(tmp_path: Path):

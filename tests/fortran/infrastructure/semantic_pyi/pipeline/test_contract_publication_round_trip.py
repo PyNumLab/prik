@@ -25,33 +25,9 @@ from prik.semantics.models import (
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.parsers.fortran import parse_fortran_file
 
-SOURCE = """\
-module v_mod
-  implicit none
-  private
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  abstract interface
-    subroutine cb()
-    end subroutine
-  end interface
-
-  interface hidden_generic
-    module procedure hidden_one
-  end interface
-
-  public :: run
-contains
-  subroutine run(f)
-    procedure(cb) :: f
-    call f()
-  end subroutine run
-
-  subroutine hidden_one(a)
-    integer, intent(in) :: a
-    print *, a
-  end subroutine hidden_one
-end module v_mod
-"""
+SOURCE = (NATIVE_FIXTURES / "source.f90").read_text(encoding="utf-8")
 
 
 @pytest.fixture

@@ -12,31 +12,9 @@ from pathlib import Path
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 
-CONTRIBUTORS = """\
-module ints_mod
-  implicit none
-  interface convert
-    module procedure convert_i
-  end interface
-contains
-  integer function convert_i(x)
-    integer, intent(in) :: x
-    convert_i = x
-  end function convert_i
-end module ints_mod
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-module reals_mod
-  implicit none
-  interface convert
-    module procedure convert_r
-  end interface
-contains
-  real function convert_r(x)
-    real, intent(in) :: x
-    convert_r = x
-  end function convert_r
-end module reals_mod
-"""
+CONTRIBUTORS = (NATIVE_FIXTURES / "contributors.f90").read_text(encoding="utf-8")
 
 LOCAL_EXTENSION = """\
   interface convert
@@ -236,45 +214,7 @@ end module facade_mod
     assert [item.entity_kind for item in modules["facade_mod"].reexports if item.local_name == "convert"] == ["unknown"]
 
 
-SAME_NAMED_SPECIFICS = """\
-module ints_mod
-  implicit none
-  interface convert
-    module procedure to_value
-  end interface
-contains
-  integer function to_value(x)
-    integer, intent(in) :: x
-    to_value = x
-  end function to_value
-end module ints_mod
-
-module reals_mod
-  implicit none
-  interface convert
-    module procedure to_value
-  end interface
-contains
-  real function to_value(x)
-    real, intent(in) :: x
-    to_value = x
-  end function to_value
-end module reals_mod
-
-module facade_mod
-  use ints_mod,  only : convert
-  use reals_mod, only : convert
-  implicit none
-  interface convert
-    module procedure to_value_l
-  end interface
-contains
-  logical function to_value_l(x)
-    logical, intent(in) :: x
-    to_value_l = x
-  end function to_value_l
-end module facade_mod
-"""
+SAME_NAMED_SPECIFICS = (NATIVE_FIXTURES / "same_named_specifics.f90").read_text(encoding="utf-8")
 
 
 def test_contributors_spelling_a_specific_alike_stay_two_procedures(tmp_path: Path):

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from prik.planning import WrapperPlanner
@@ -5,6 +7,8 @@ from prik.policy import complete_semantic_policies
 from prik.policy.models import NativeEntrypointAction
 from prik.printers import emit_module
 from tests.fortran._support.pyi_conversion import parse_pyi_text
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_native_abi_keeps_fortran_identity_symbol_and_route_neutral_projection():
@@ -32,30 +36,9 @@ def scale(value: Float64) -> Float64: ...
 
 def test_native_abi_composes_with_standalone_method_overload_and_prototype():
     module = parse_pyi_text(
-        """
-@native_abi("c")
-@standalone
-def external(value: Float64) -> Float64: ...
-
-@private
-@native_abi("c")
-def specific(value: Float64) -> Float64: ...
-
-@native_abi("c")
-@bind("generic_label")
-@overload("specific")
-def generic(value: Float64) -> Float64: ...
-
-@native_abi("c")
-@bind("callback_label")
-@prototype
-def callback(value: Float64) -> Float64: ...
-
-class State:
-    @native_abi("c")
-    @staticmethod
-    def reset(value: Float64) -> None: ...
-""",
+        (NATIVE_FIXTURES / "native_abi_composes_with_standalone_method_overload_and_prototype.f90").read_text(
+            encoding="utf-8"
+        ),
         module_name="compositions",
     )
 

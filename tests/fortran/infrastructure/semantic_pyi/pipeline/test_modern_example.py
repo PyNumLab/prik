@@ -5,6 +5,8 @@ from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.printers import emit_module
 from tests.fortran._support.paths import GENERAL_FORTRAN_DIR
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_modern_fortran_example_pyi_snapshot():
     fixture = GENERAL_FORTRAN_DIR / "modern_pyi_example.f90"
@@ -19,31 +21,7 @@ def test_modern_fortran_example_pyi_snapshot():
 
 
 def test_pyi_visibility_private_public_markers():
-    source = """
-module visibility_mod
-  implicit none
-  private
-  public :: pub_proc, visible_t
-
-  type :: visible_t
-     integer :: a
-     integer :: b
-  end type visible_t
-
-  type :: hidden_t
-     integer :: z
-  end type hidden_t
-
-contains
-  subroutine pub_proc(x)
-    integer, intent(in) :: x
-  end subroutine pub_proc
-
-  subroutine hidden_proc(x)
-    integer, intent(in) :: x
-  end subroutine hidden_proc
-end module visibility_mod
-"""
+    source = (NATIVE_FIXTURES / "pyi_visibility_private_public_markers.f90").read_text(encoding="utf-8")
     parsed = parse_fortran_file(source, filename="visibility_mod.f90")
     pyi = emit_module(fortran_module_to_semantic_module(parsed.modules[0])).strip()
 

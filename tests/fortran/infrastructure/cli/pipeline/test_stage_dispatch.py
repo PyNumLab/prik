@@ -28,6 +28,8 @@ from tests.fortran.infrastructure.cli.pipeline._support import (
     _patch_main_report_payloads,
 )
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_cli_keeps_free_procedure_when_module_has_same_name(tmp_path: Path):
     f90 = tmp_path / "same_name_scopes.f90"
@@ -105,37 +107,9 @@ end subroutine bad
 def test_fortran_parser_cli_reports_full_source_tree_from_inline_code(tmp_path: Path):
     f90 = tmp_path / "full_tree.f90"
     f90.write_text(
-        """
-module parent_mod
-  integer :: counter
-  type :: particle
-    integer :: id
-    real(8) :: x(3)
-  contains
-    procedure :: reset
-  end type particle
-contains
-  subroutine reset(self)
-    type(particle), intent(inout) :: self
-  end subroutine reset
-end module parent_mod
-
-submodule (parent_mod) child_mod
-contains
-  module subroutine child_step(n)
-    integer, intent(in) :: n
-  end subroutine child_step
-end submodule child_mod
-
-program driver
-  use parent_mod
-  integer :: n
-end program driver
-
-block data init_block
-  integer :: flag
-end block data init_block
-""",
+        (NATIVE_FIXTURES / "fortran_parser_cli_reports_full_source_tree_from_inline_code.f90").read_text(
+            encoding="utf-8"
+        ),
         encoding="utf-8",
     )
 
