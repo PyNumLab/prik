@@ -14,77 +14,17 @@ from prik.semantics.native_contract import native_contract_issues
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-PINTRF_SOURCE = """
-module pintrf_mod
-  implicit none
-  private
-  public :: OBJ
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  abstract interface
-    subroutine OBJ(x, f)
-      implicit none
-      real(8), intent(in) :: x
-      real(8), intent(out) :: f
-    end subroutine OBJ
-  end interface
-end module pintrf_mod
-"""
-
-SOLVER_SOURCE = """
-module solver_mod
-  use, non_intrinsic :: pintrf_mod, only : OBJ
-  implicit none
-contains
-  subroutine minimize(calfun, x, f)
-    procedure(OBJ) :: calfun
-    real(8), intent(in) :: x
-    real(8), intent(out) :: f
-
-    call calfun(x, f)
-  end subroutine minimize
-end module solver_mod
-"""
-
-RENAMED_SOURCE = """
-module renamed_mod
-  use, non_intrinsic :: pintrf_mod, only : LOCAL_OBJ => OBJ
-  implicit none
-contains
-  subroutine minimize_renamed(calfun, x, f)
-    procedure(LOCAL_OBJ) :: calfun
-    real(8), intent(in) :: x
-    real(8), intent(out) :: f
-
-    call calfun(x, f)
-  end subroutine minimize_renamed
-end module renamed_mod
-
-module scoped_rename_mod
-  implicit none
-contains
-  subroutine minimize_scoped(calfun, x, f)
-    use, non_intrinsic :: pintrf_mod, only : SCOPED_OBJ => OBJ
-    implicit none
-    procedure(SCOPED_OBJ) :: calfun
-    real(8), intent(in) :: x
-    real(8), intent(out) :: f
-
-    call calfun(x, f)
-  end subroutine minimize_scoped
-end module scoped_rename_mod
-"""
+MULTI_FILE_SOURCES = (
+    NATIVE_FIXTURES / "callback_multi_file_pintrf.f90",
+    NATIVE_FIXTURES / "callback_multi_file_solver.f90",
+    NATIVE_FIXTURES / "callback_multi_file_renamed.f90",
+)
 
 
 def _generate_contracts(tmp_path: Path) -> tuple[Path, list[Path]]:
-    sources = []
-    for name, text in (
-        ("pintrf.f90", PINTRF_SOURCE),
-        ("solver.f90", SOLVER_SOURCE),
-        ("renamed.f90", RENAMED_SOURCE),
-    ):
-        path = tmp_path / name
-        path.write_text(text, encoding="utf-8")
-        sources.append(path)
+    sources = list(MULTI_FILE_SOURCES)
     contracts = tmp_path / "contracts"
     subprocess.run(
         [
@@ -164,40 +104,10 @@ def test_building_from_generated_multi_file_contracts_runs_the_callback(tmp_path
     assert module.scoped_rename_mod.minimize_scoped(objective, np.float64(5.0)) == np.float64(25.0)
 
 
-CALLBACK_RESULT_TYPES_SOURCE = """
-module cbresult_types
-  implicit none
-  type :: point_t
-    real(8) :: x
-  end type point_t
-
-  abstract interface
-    function make_point(x) result(p)
-      import :: point_t
-      implicit none
-      real(8), intent(in) :: x
-      type(point_t) :: p
-    end function make_point
-  end interface
-end module cbresult_types
-"""
-
-CALLBACK_RESULT_CONSUMER_SOURCE = """
-module cbresult_consumer
-  use, non_intrinsic :: cbresult_types, only : make_point, point_t
-  implicit none
-contains
-  subroutine run(f, seed, out_x)
-    procedure(make_point) :: f
-    real(8), intent(in) :: seed
-    real(8), intent(out) :: out_x
-    type(point_t) :: made
-
-    made = f(seed)
-    out_x = made%x
-  end subroutine run
-end module cbresult_consumer
-"""
+CALLBACK_RESULT_SOURCES = (
+    NATIVE_FIXTURES / "callback_result_types.f90",
+    NATIVE_FIXTURES / "callback_result_consumer.f90",
+)
 
 
 def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
@@ -211,14 +121,7 @@ def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
     type through the runtime namespace is a separate, pre-existing gap that
     also affects ordinary functions returning an imported type.
     """
-    sources = []
-    for name, text in (
-        ("cbresult_types.f90", CALLBACK_RESULT_TYPES_SOURCE),
-        ("cbresult_consumer.f90", CALLBACK_RESULT_CONSUMER_SOURCE),
-    ):
-        path = tmp_path / name
-        path.write_text(text, encoding="utf-8")
-        sources.append(path)
+    sources = list(CALLBACK_RESULT_SOURCES)
     contracts = tmp_path / "contracts"
     subprocess.run(
         [
@@ -251,37 +154,7 @@ def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
     assert result.shared_library.exists()
 
 
-RENAMED_CHAIN_SOURCE = """
-module chain_declares_mod
-  implicit none
-  abstract interface
-    subroutine OBJ(x, f)
-      implicit none
-      real(8), intent(in) :: x
-      real(8), intent(out) :: f
-    end subroutine OBJ
-  end interface
-end module chain_declares_mod
-
-module chain_middle_mod
-  use, non_intrinsic :: chain_declares_mod, only : MID => OBJ
-  implicit none
-  public :: MID
-end module chain_middle_mod
-
-module chain_consumer_mod
-  use, non_intrinsic :: chain_middle_mod, only : LOCAL => MID
-  implicit none
-contains
-  subroutine run_chain(calfun, x, f)
-    procedure(LOCAL) :: calfun
-    real(8), intent(in) :: x
-    real(8), intent(out) :: f
-
-    call calfun(x, f)
-  end subroutine run_chain
-end module chain_consumer_mod
-"""
+RENAMED_CHAIN_SOURCE = NATIVE_FIXTURES / "chain.f90"
 
 
 def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path: Path):
@@ -291,8 +164,6 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
     is what exposes a reference that followed the module back to the declaration
     while keeping an alias from somewhere along the way.
     """
-    source = tmp_path / "chain.f90"
-    source.write_text(RENAMED_CHAIN_SOURCE, encoding="utf-8")
     contracts = tmp_path / "contracts"
     subprocess.run(
         [
@@ -301,7 +172,7 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
             "prik",
             "generate",
             "--pyi",
-            str(source),
+            str(RENAMED_CHAIN_SOURCE),
             "--out",
             str(contracts),
             "--compiler",
@@ -323,7 +194,7 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
     result = build_pyi_extension(
         contracts / "__init__.pyi",
         input_compiler=_compiler(),
-        native_fortran_sources=[str(source)],
+        native_fortran_sources=[str(RENAMED_CHAIN_SOURCE)],
         output_dir=tmp_path / "build",
         output_name="renamed_chain_callbacks",
     )
@@ -345,11 +216,8 @@ def test_renamed_reexport_chain_builds_directly_from_its_fortran_source(tmp_path
     """
     from tests.fortran._support.wrapper_build import _build_source_and_import
 
-    source = tmp_path / "chain.f90"
-    source.write_text(RENAMED_CHAIN_SOURCE, encoding="utf-8")
-
     module = _build_source_and_import(
-        source,
+        RENAMED_CHAIN_SOURCE,
         tmp_path / "build",
         {"bind_c_chain_wrapper.f90", "chain_wrapper.c", "chain_wrapper.h"},
     )

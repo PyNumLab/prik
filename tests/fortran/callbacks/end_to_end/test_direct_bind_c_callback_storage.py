@@ -9,48 +9,16 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = """
-module fcallback_direct_storage_f90
-  use iso_c_binding
-  implicit none
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  abstract interface
-    subroutine update_callback(value) bind(C)
-      import :: c_double
-      real(c_double), intent(inout) :: value
-    end subroutine update_callback
-
-    subroutine emit_callback(value) bind(C)
-      import :: c_double
-      real(c_double), intent(out) :: value
-    end subroutine emit_callback
-  end interface
-
-contains
-  real(c_double) function drive_update(callback, seed) bind(C) result(output)
-    procedure(update_callback) :: callback
-    real(c_double), value, intent(in) :: seed
-
-    output = seed
-    call callback(output)
-  end function drive_update
-
-  real(c_double) function drive_emit(callback) bind(C) result(output)
-    procedure(emit_callback) :: callback
-
-    call callback(output)
-  end function drive_emit
-end module fcallback_direct_storage_f90
-"""
+SOURCE = NATIVE_FIXTURES / "fcallback_direct_storage_f90.f90"
 
 
 def _direct_module(tmp_path: Path):
-    source = tmp_path / "fcallback_direct_storage_f90.f90"
-    source.write_text(SOURCE, encoding="utf-8")
     # A bind(C) entry point needs no generated Fortran adapter, so the expected
     # source set is exactly the binding pair.
     return _build_source_and_import(
-        source,
+        SOURCE,
         tmp_path / "build",
         {
             "fcallback_direct_storage_f90_wrapper.c",

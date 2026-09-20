@@ -15,6 +15,8 @@ CALLBACK_ARRAY_F90_SOURCE = FIXTURES / "native" / "fcallback_array_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_immediate_dummy_procedure_converts_array_arguments_and_results(
     pyi_parity_build_mode: str,
@@ -74,27 +76,7 @@ def test_assumed_shape_callback_arrays_cross_the_boundary_as_contiguous_copies(
     np.testing.assert_array_equal(doubled, values * 2.0)
 
 
-MATRIX_SOURCE = """
-module fcallback_matrix_f90
-  implicit none
-
-  abstract interface
-    subroutine matrix_callback(input, output)
-      real(8), intent(in) :: input(:,:)
-      real(8), intent(out) :: output(:,:)
-    end subroutine matrix_callback
-  end interface
-
-contains
-  subroutine apply_matrix(callback, input, output)
-    procedure(matrix_callback) :: callback
-    real(8), intent(in) :: input(:,:)
-    real(8), intent(out) :: output(:,:)
-
-    call callback(input, output)
-  end subroutine apply_matrix
-end module fcallback_matrix_f90
-"""
+MATRIX_SOURCE = NATIVE_FIXTURES / "fcallback_matrix_f90.f90"
 
 
 def test_rank_two_assumed_shape_callback_arrays_cross_both_directions(tmp_path: Path):
@@ -103,10 +85,8 @@ def test_rank_two_assumed_shape_callback_arrays_cross_both_directions(tmp_path: 
     A rank-one lowering can look correct while dropping later axes, so this
     checks the extents the callable observes and the data written back.
     """
-    source = tmp_path / "fcallback_matrix_f90.f90"
-    source.write_text(MATRIX_SOURCE, encoding="utf-8")
     module = _build_source_and_import(
-        source,
+        MATRIX_SOURCE,
         tmp_path / "build",
         {
             "bind_c_fcallback_matrix_f90_wrapper.f90",

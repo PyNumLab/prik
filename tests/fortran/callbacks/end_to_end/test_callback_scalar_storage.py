@@ -13,29 +13,9 @@ from tests.fortran._support.wrapper_build import (
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = """
-module fcallback_scalar_storage_f90
-  implicit none
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  abstract interface
-    subroutine directions_callback(read_value, update_value, write_value)
-      real(8), intent(in) :: read_value
-      real(8), intent(inout) :: update_value
-      real(8), intent(out) :: write_value
-    end subroutine directions_callback
-  end interface
-
-contains
-  subroutine apply_directions(callback, read_value, update_value, write_value)
-    procedure(directions_callback) :: callback
-    real(8), intent(in) :: read_value
-    real(8), intent(inout) :: update_value
-    real(8), intent(out) :: write_value
-
-    call callback(read_value, update_value, write_value)
-  end subroutine apply_directions
-end module fcallback_scalar_storage_f90
-"""
+SOURCE = (NATIVE_FIXTURES / "fcallback_scalar_storage_f90.f90").read_text(encoding="utf-8")
 
 CONTRACT = """
 from prik.contracts import Addr, Arg, Float64, In, InOut, Out, Return, Returns, native_call, prototype
@@ -93,27 +73,7 @@ def test_rank_zero_callback_storage_writes_through_to_the_native_caller(tmp_path
     assert written == np.float64(43.0)
 
 
-SOURCE_DEFAULT = """
-module fcallback_default_storage_f90
-  implicit none
-
-  abstract interface
-    subroutine objective_callback(x, f)
-      real(8), intent(in) :: x(:)
-      real(8), intent(out) :: f
-    end subroutine objective_callback
-  end interface
-
-contains
-  subroutine evaluate(calfun, x, total)
-    procedure(objective_callback) :: calfun
-    real(8), intent(in) :: x(:)
-    real(8), intent(out) :: total
-
-    call calfun(x, total)
-  end subroutine evaluate
-end module fcallback_default_storage_f90
-"""
+SOURCE_DEFAULT = NATIVE_FIXTURES / "fcallback_default_storage_f90.f90"
 
 
 def test_out_scalar_callback_writes_back_without_editing_the_contract(tmp_path: Path):
@@ -123,10 +83,8 @@ def test_out_scalar_callback_writes_back_without_editing_the_contract(tmp_path: 
     scalar reaches Python as writable storage, so the value the callable
     computes reaches the native caller with no contract edit.
     """
-    source = tmp_path / "fcallback_default_storage_f90.f90"
-    source.write_text(SOURCE_DEFAULT, encoding="utf-8")
     module = _build_source_and_import(
-        source,
+        SOURCE_DEFAULT,
         tmp_path / "build",
         {
             "bind_c_fcallback_default_storage_f90_wrapper.f90",
@@ -150,10 +108,8 @@ def test_callback_docstring_states_the_callable_signature_and_write_through(tmp_
     Guessing a callback signature wrong is fatal at the callback boundary, so
     `help()` must state the arity, direction, and how an output is delivered.
     """
-    source = tmp_path / "fcallback_default_storage_f90.f90"
-    source.write_text(SOURCE_DEFAULT, encoding="utf-8")
     module = _build_source_and_import(
-        source,
+        SOURCE_DEFAULT,
         tmp_path / "build",
         {
             "bind_c_fcallback_default_storage_f90_wrapper.f90",
@@ -169,34 +125,12 @@ def test_callback_docstring_states_the_callable_signature_and_write_through(tmp_
     assert "An exception or an invalid return value terminates the process." in documentation
 
 
-SOURCE_UNDECLARED = """
-module fcallback_undeclared_intent_f90
-  implicit none
-
-  abstract interface
-    subroutine tweak_callback(value)
-      real(8) :: value
-    end subroutine tweak_callback
-  end interface
-
-contains
-  subroutine drive(callback, seed, result)
-    procedure(tweak_callback) :: callback
-    real(8), intent(in) :: seed
-    real(8), intent(out) :: result
-
-    result = seed
-    call callback(result)
-  end subroutine drive
-end module fcallback_undeclared_intent_f90
-"""
+SOURCE_UNDECLARED = NATIVE_FIXTURES / "fcallback_undeclared_intent_f90.f90"
 
 
 def _undeclared_intent_module(tmp_path: Path):
-    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
-    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
     return _build_source_and_import(
-        source,
+        SOURCE_UNDECLARED,
         tmp_path / "build",
         {
             "bind_c_fcallback_undeclared_intent_f90_wrapper.f90",
@@ -231,12 +165,12 @@ def test_undeclared_intent_survives_the_generated_contract_round_trip(tmp_path: 
     ``Float64[()]`` spelling carries the conservative read/write transfer all
     the way to the trampoline, rather than only appearing in the contract text.
     """
-    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
-    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
     workdir = tmp_path / "round_trip"
-    module = _build_generated_pyi_and_import(source, workdir)
+    module = _build_generated_pyi_and_import(SOURCE_UNDECLARED, workdir)
 
-    contract = (workdir / "contracts" / source.stem / f"{source.stem}.pyi").read_text(encoding="utf-8")
+    contract = (workdir / "contracts" / SOURCE_UNDECLARED.stem / f"{SOURCE_UNDECLARED.stem}.pyi").read_text(
+        encoding="utf-8"
+    )
     assert "value: Float64[()]" in contract
     assert "In(" not in contract and "Out(" not in contract and "InOut(" not in contract
 
@@ -257,10 +191,8 @@ def test_assume_intent_in_scalars_makes_an_undeclared_callback_scalar_input_only
     The contract still carries no direction wrapper, because the source still
     declares none; only the projection and the copy direction change.
     """
-    source = tmp_path / "fcallback_undeclared_intent_f90.f90"
-    source.write_text(SOURCE_UNDECLARED, encoding="utf-8")
     module = _build_source_and_import(
-        source,
+        SOURCE_UNDECLARED,
         tmp_path / "build",
         {
             "bind_c_fcallback_undeclared_intent_f90_wrapper.f90",
