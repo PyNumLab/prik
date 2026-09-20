@@ -21,124 +21,16 @@ SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
-ALLOCATABLE_CROSS_A_SOURCE = """\
-module fallocatable_cross_a
-contains
-  subroutine select_a(values)
-    real(8), allocatable, intent(inout) :: values(:)
-    if (allocated(values)) deallocate(values)
-    allocate(values(2))
-    values = [1.0_8, 2.0_8]
-  end subroutine select_a
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  function total_a(values) result(total)
-    real(8), allocatable, intent(in) :: values(:)
-    real(8) :: total
-    if (allocated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function total_a
-end module fallocatable_cross_a
-"""
-ALLOCATABLE_CROSS_B_SOURCE = """\
-module fallocatable_cross_b
-contains
-  subroutine select_b(values)
-    real(8), allocatable, intent(inout) :: values(:)
-    if (allocated(values)) deallocate(values)
-    allocate(values(3))
-    values = [10.0_8, 20.0_8, 30.0_8]
-  end subroutine select_b
+ALLOCATABLE_CROSS_A_SOURCE = (NATIVE_FIXTURES / "fallocatable_cross_a.f90").read_text(encoding="utf-8")
+ALLOCATABLE_CROSS_B_SOURCE = (NATIVE_FIXTURES / "fallocatable_cross_b.f90").read_text(encoding="utf-8")
 
-  function total_b(values) result(total)
-    real(8), allocatable, intent(in) :: values(:)
-    real(8) :: total
-    if (allocated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function total_b
-end module fallocatable_cross_b
-"""
+CHARACTER_CROSS_A_SOURCE = (NATIVE_FIXTURES / "fcharacter_cross_a.f90").read_text(encoding="utf-8")
 
-CHARACTER_CROSS_A_SOURCE = """\
-module fcharacter_cross_a
-  use iso_c_binding, only: c_char
-  character(kind=c_char, len=4), target, save :: pointer_target(3) = &
-    [character(kind=c_char, len=4) :: 'one ', 'two ', 'tri ']
-contains
-  subroutine select_a(values)
-    character(kind=c_char, len=4), allocatable, intent(inout) :: values(:)
-    if (allocated(values)) deallocate(values)
-    allocate(values(2))
-    values = [character(kind=c_char, len=4) :: 'one ', 'two ']
-  end subroutine select_a
+CHARACTER_CROSS_B_SOURCE = (NATIVE_FIXTURES / "fcharacter_cross_b.f90").read_text(encoding="utf-8")
 
-  integer(4) function state_a(values) result(state)
-    character(kind=c_char, len=4), allocatable, intent(in) :: values(:)
-    state = 0
-    if (allocated(values)) state = size(values) * 100 + len(values)
-  end function state_a
-
-  subroutine select_pointer_a(values)
-    character(kind=c_char, len=4), pointer, intent(out) :: values(:)
-    values => pointer_target
-  end subroutine select_pointer_a
-
-  integer(4) function pointer_state_a(values) result(state)
-    character(kind=c_char, len=4), pointer, intent(in) :: values(:)
-    state = 0
-    if (associated(values)) state = size(values) * 100 + len(values)
-  end function pointer_state_a
-end module fcharacter_cross_a
-"""
-
-CHARACTER_CROSS_B_SOURCE = """\
-module fcharacter_cross_b
-  use iso_c_binding, only: c_char
-  character(kind=c_char, len=4), target, save :: pointer_target(2) = &
-    [character(kind=c_char, len=4) :: 'red ', 'blue']
-contains
-  subroutine select_b(values)
-    character(kind=c_char, len=4), allocatable, intent(inout) :: values(:)
-    if (allocated(values)) deallocate(values)
-    allocate(values(3))
-    values = [character(kind=c_char, len=4) :: 'red ', 'blue', 'sky ']
-  end subroutine select_b
-
-  integer(4) function state_b(values) result(state)
-    character(kind=c_char, len=4), allocatable, intent(in) :: values(:)
-    state = 0
-    if (allocated(values)) state = size(values) * 100 + len(values)
-  end function state_b
-
-  subroutine select_pointer_b(values)
-    character(kind=c_char, len=4), pointer, intent(out) :: values(:)
-    values => pointer_target
-  end subroutine select_pointer_b
-
-  integer(4) function pointer_state_b(values) result(state)
-    character(kind=c_char, len=4), pointer, intent(in) :: values(:)
-    state = 0
-    if (associated(values)) state = size(values) * 100 + len(values)
-  end function pointer_state_b
-end module fcharacter_cross_b
-"""
-
-CHARACTER_CROSS_WRONG_WIDTH_SOURCE = """\
-module fcharacter_cross_wrong_width
-  use iso_c_binding, only: c_char
-contains
-  integer(4) function state(values) result(value)
-    character(kind=c_char, len=5), allocatable, intent(in) :: values(:)
-    value = 0
-    if (allocated(values)) value = size(values) * 100 + len(values)
-  end function state
-end module fcharacter_cross_wrong_width
-"""
+CHARACTER_CROSS_WRONG_WIDTH_SOURCE = (NATIVE_FIXTURES / "fcharacter_cross_wrong_width.f90").read_text(encoding="utf-8")
 
 
 def _source_build_dir(tmp_path: Path, build_mode: str) -> Path:
