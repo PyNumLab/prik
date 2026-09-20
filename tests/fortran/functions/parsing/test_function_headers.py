@@ -9,10 +9,8 @@ from prik.parsers.fortran import FortranParseError, parse_fortran_file
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
-def test_typed_function_result_headers_are_parsed_from_inline_fortran():
-    code = (NATIVE_FIXTURES / "typed_function_result_headers_are_parsed_from_inline_fortran.f90").read_text(
-        encoding="utf-8"
-    )
+def test_typed_function_result_headers_are_parsed_from_fortran_source():
+    code = (NATIVE_FIXTURES / "typed_function_result_headers.f90").read_text(encoding="utf-8")
 
     procedures = {proc.name: proc for proc in parse_fortran_file(code).modules[0].procedures}
 

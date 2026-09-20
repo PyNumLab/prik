@@ -104,12 +104,10 @@ end subroutine bad
     assert "error[PARSE_UNSUPPORTED_DECLARATION]:" in res.stderr
 
 
-def test_fortran_parser_cli_reports_full_source_tree_from_inline_code(tmp_path: Path):
+def test_fortran_parser_cli_reports_full_source_tree_from_source_file(tmp_path: Path):
     f90 = tmp_path / "full_tree.f90"
     f90.write_text(
-        (NATIVE_FIXTURES / "fortran_parser_cli_reports_full_source_tree_from_inline_code.f90").read_text(
-            encoding="utf-8"
-        ),
+        (NATIVE_FIXTURES / "fortran_parser_cli_full_source_tree.f90").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
 

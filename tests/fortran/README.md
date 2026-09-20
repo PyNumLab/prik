@@ -129,6 +129,13 @@ Generated build products always use pytest temporary directories. `_support/`
 contains only helpers used by several Fortran features; it contains no pytest
 modules, feature sources, or checked contracts.
 
+Outside `end_to_end`, a substantial fixed native input belongs beside its
+owning stage under `fixtures/native/`. Small syntax examples remain inline when
+that keeps the source next to the assertion, while generated, parametrized, or
+deliberately mutated sources stay in Python and are written only to pytest
+temporary directories. Multi-file inputs use one fixture per native source
+file. Do not move feature inputs into `_support/` or a global fixture tree.
+
 The permanent evidence index is
 [`CONTRACT_COVERAGE.md`](CONTRACT_COVERAGE.md).
 
