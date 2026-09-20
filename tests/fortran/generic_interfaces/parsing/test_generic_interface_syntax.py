@@ -131,27 +131,7 @@ def test_generic_interface_declared_in_several_blocks_becomes_one_generic():
 
 def test_repeated_generic_names_stay_separate_per_module():
     """Two modules in one file each own their generic of the same name."""
-    source = """
-module first_mod
-  implicit none
-  interface report
-    module procedure report_first
-  end interface report
-contains
-  subroutine report_first()
-  end subroutine report_first
-end module first_mod
-
-module second_mod
-  implicit none
-  interface report
-    module procedure report_second
-  end interface report
-contains
-  subroutine report_second()
-  end subroutine report_second
-end module second_mod
-"""
+    source = (NATIVE_FIXTURES / "repeated_generic_names_stay_separate_per_module.f90").read_text(encoding="utf-8")
 
     modules = {module.name: module for module in parse_fortran_modules(source)}
 

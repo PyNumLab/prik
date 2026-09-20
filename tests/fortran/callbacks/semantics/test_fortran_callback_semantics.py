@@ -396,27 +396,7 @@ def test_procedure_local_rename_keeps_both_the_declared_and_local_names():
     The contract must import the declaring name under the local alias, which
     requires keeping the two spellings apart as separate source facts.
     """
-    source = """
-module ren_types
-  implicit none
-  abstract interface
-    subroutine OBJ(x)
-      implicit none
-      real(8), intent(in) :: x
-    end subroutine OBJ
-  end interface
-end module ren_types
-
-module ren_consumer
-  implicit none
-contains
-  subroutine run_ren(callback)
-    use ren_types, only : LOCAL_OBJ => OBJ
-    implicit none
-    procedure(LOCAL_OBJ) :: callback
-  end subroutine run_ren
-end module ren_consumer
-"""
+    source = (NATIVE_FIXTURES / "procedure_local_callback_rename.f90").read_text(encoding="utf-8")
 
     module = FortranToIRConverter().visit(parse_fortran_source(source))[1]
 

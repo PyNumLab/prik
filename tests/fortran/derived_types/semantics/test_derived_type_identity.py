@@ -1,11 +1,15 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+
 from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
 )
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_procedure_local_derived_type_rename_uses_origin_type_identity():
@@ -37,29 +41,8 @@ end module physics
 
 def test_non_only_rename_does_not_choose_between_derived_type_routes():
     """An ambiguous name and a renamed-away name have no invented type owner."""
-    parsed = parse_fortran_source(
-        """
-module types_mod
-  type :: x
-    integer :: value
-  end type x
-  type :: y
-    integer :: value
-  end type y
-end module types_mod
-
-module consumer
-  use types_mod, x => y
-contains
-  subroutine take_x(value)
-    type(x), intent(in) :: value
-  end subroutine take_x
-  subroutine take_y(value)
-    type(y), intent(in) :: value
-  end subroutine take_y
-end module consumer
-"""
-    )
+    source = NATIVE_FIXTURES / "non_only_rename_derived_type_routes.f90"
+    parsed = parse_fortran_source(source.read_text(encoding="utf-8"), filename=source.name)
     modules = {module.name: module for module in fortran_file_to_semantic_modules(parsed)}
 
     type_x = get_function(modules["consumer"], "take_x").arguments[0].semantic_type
