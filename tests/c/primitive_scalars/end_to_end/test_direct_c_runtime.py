@@ -34,7 +34,7 @@ double native_scale(double *value) { *value *= 2.0; return *value; }
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
 def test_c_native_language_is_explicit_for_a_source_free_pyi_contract(tmp_path: Path):
-    contract = tmp_path / "contract.pyi"
+    contract = tmp_path / "direct_c_contract.pyi"
     contract.write_text(
         """from prik.contracts import Float64, Int, bind
 
