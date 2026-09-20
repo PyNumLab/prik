@@ -34,6 +34,8 @@ C_ORDER_FLAT_CONTRACT = (
 )
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def _compiler() -> str:
     compiler = shutil.which("gfortran")
@@ -282,34 +284,7 @@ def test_handwritten_fortran_order_flat_contract_flattens_the_final_python_axes(
     source_dir.mkdir()
     source = source_dir / "column_sums_f.f90"
     source.write_text(
-        """
-subroutine column_sums_f(rows, columns, values, result)
-  integer, intent(in) :: rows
-  integer, intent(in) :: columns
-  double precision, intent(in) :: values(rows, *)
-  double precision, intent(out) :: result(*)
-  integer :: column
-
-  do column = 1, columns
-    result(column) = sum(values(:, column))
-  end do
-end subroutine column_sums_f
-
-subroutine bump_storage(value)
-  integer, intent(inout) :: value
-  value = value + 1
-end subroutine bump_storage
-
-subroutine make_storage(value)
-  integer, intent(out) :: value
-  value = 42
-end subroutine make_storage
-
-function storage_value() result(value)
-  integer :: value
-  value = 43
-end function storage_value
-""",
+        (NATIVE_FIXTURES / "column_sums_f.f90").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     contract = tmp_path / "column_sums_f.pyi"

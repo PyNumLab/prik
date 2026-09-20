@@ -19,6 +19,8 @@ from prik.contracts import Allocatable, String
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def _build_contract_module(contract: Path, native_object: Path, output_dir: Path, symbol: str):
     """Build one edited character contract through the canonical wrapper plan."""
@@ -159,55 +161,7 @@ def replace_names(
 def test_deferred_character_owners_compose_with_borrowed_matrix_handles(tmp_path: Path):
     """Owner results, module variables and fields share descriptor call semantics."""
     module = _build_text_and_import(
-        """
-module deferred_owner_matrix
-  use iso_c_binding, only: c_char, c_int, c_int64_t, c_loc
-  implicit none
-  type container
-    character(kind=c_char, len=:), allocatable :: values(:, :)
-  end type
-  type(container) :: parent
-  character(kind=c_char, len=:), allocatable :: saved(:, :)
-  integer(c_int64_t), private :: last_address = 0
-contains
-  subroutine setup()
-    allocate(character(len=2) :: saved(1, 2), parent%values(2, 1))
-    saved = 'ab'
-    parent%values = 'cd'
-  end subroutine
-  subroutine make_matrix(n, values)
-    integer(c_int), intent(in) :: n
-    character(kind=c_char, len=:), allocatable, target, intent(out) :: values(:, :)
-    if (n < 0) return
-    allocate(character(len=4) :: values(n, 2))
-    values = 'gold'
-    last_address = transfer(c_loc(values), last_address)
-  end subroutine
-  function allocation_address() result(address)
-    integer(c_int64_t) :: address
-    address = last_address
-  end function
-  subroutine rewrite(a, b)
-    character(kind=c_char, len=:), allocatable, intent(inout) :: a(:, :), b(:, :)
-    if (allocated(a)) deallocate(a)
-    if (allocated(b)) deallocate(b)
-    allocate(character(len=3) :: a(2, 3), b(3, 2))
-    a = 'one'
-    b = 'two'
-  end subroutine
-  integer(c_int) function inspect(values) result(state)
-    character(kind=c_char, len=:), allocatable, optional, intent(in) :: values(:, :)
-    state = -1
-    if (.not. present(values)) return
-    state = 0
-    if (allocated(values)) state = 100 * size(values, 1) + 10 * size(values, 2) + len(values)
-  end function
-  subroutine stamp(values) bind(c)
-    character(kind=c_char, len=:), allocatable, intent(inout) :: values(:, :)
-    if (allocated(values)) values(1, 1) = 'yes'
-  end subroutine
-end module
-""",
+        (NATIVE_FIXTURES / "deferred_owner_matrix.f90").read_text(encoding="utf-8"),
         "deferred_owner_matrix.f90",
         tmp_path,
         {
