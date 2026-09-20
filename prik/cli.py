@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shlex
@@ -617,6 +618,9 @@ def _convert_fortran_semantic_sources(
         refresh=context.refresh_fortran_type_probe,
     )
     converted_files = []
+    # A module that imports an abstract interface from another supplied file
+    # must resolve it here, exactly as a multi-file wrapper build does.
+    modules_by_file = {id(fobj): list(fobj.modules) for _p, fobj in parsed_files}
     for p, fobj in parsed_files:
         compile_time_values = _fortran_compile_time_values(fobj, context.preprocessing, **probe_options)
         type_facts = _fortran_type_facts(
@@ -631,6 +635,9 @@ def _convert_fortran_semantic_sources(
             compile_time_values=compile_time_values,
             wrapped_derived_types=wrapped_derived_types,
             assume_intent_in_scalars=context.assume_intent_in_scalars,
+            sibling_modules=[
+                module for key, modules in modules_by_file.items() if key != id(fobj) for module in modules
+            ],
             **({"type_facts": type_facts} if type_facts is not None else {}),
         )
         converted_files.append((p, modules))
@@ -651,7 +658,6 @@ _SOURCE_SEMANTIC_PIPELINES = {
 
 def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
     from prik.pipeline.pyi import emit_module_stubs
-    from prik.printers import emit_module
 
     out: dict[str, dict] = {}
     available_modules = [module for _p, modules in converted_files for module in modules]
@@ -662,9 +668,12 @@ def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
             continue
         if _is_c_semantic_file(modules):
             # A generated C starter contract preserves raw source facts, even
-            # for a form that the direct-only wrapper policy will later block.
-            # ``--pyi`` is contract extraction, not wrapper planning.
-            module_stubs = {module.name: emit_module(module).strip() for module in modules}
+            # for a form that the direct-only wrapper policy will later block:
+            # ``--pyi`` is contract extraction, not wrapper planning. Emission
+            # still goes through the shared stub pipeline, which completes the
+            # public names policy owns without completing wrapper policy.
+            stubs = emit_module_stubs(modules, normalize_public_names=True)
+            module_stubs = {module.name: stubs[module.name] for module in modules}
             out[str(p)] = {
                 "semantic_modules": [asdict(module) for module in modules],
                 "pyi": "\n\n".join(module_stubs.values()).strip(),
@@ -703,7 +712,7 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
         emit_module_stubs(
             native_modules,
             available_modules=available_modules,
-            normalize_fortran_public_names=True,
+            normalize_public_names=True,
         )
         if native_modules
         else {}
@@ -715,7 +724,7 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
         external_stubs = emit_module_stubs(
             [module],
             available_modules=available_modules,
-            normalize_fortran_public_names=True,
+            normalize_public_names=True,
         )
         external_text.append(external_stubs.pop(module.name))
         for name, text in external_stubs.items():
@@ -738,29 +747,61 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
 
 
 def _source_root_stub(module_names: list[str], external_text: list[str]) -> str:
+    from prik.printers.pyi import PyiPrinter
+
     contract_imports: set[str] = set()
+    exported_names: list[str] = []
     external_sections = []
     for text in external_text:
-        imports, body = _split_contract_imports(text)
+        imports, exported, body = _split_contract_imports(text)
         contract_imports.update(imports)
+        exported_names.extend(name for name in exported if name not in exported_names)
         if body:
             external_sections.append(body)
     contract_section = f"from prik.contracts import {', '.join(sorted(contract_imports))}" if contract_imports else ""
     lines = [f"from . import {name}" for name in module_names]
     import_section = "\n".join(line for line in [contract_section, *lines] if line)
     sections = [import_section, *external_sections]
+    # The entry publishes its package tree as well as any standalone name, and
+    # both are stated so either can be taken off the list.
+    exported_names = [*module_names, *exported_names]
+    if exported_names:
+        # Each source file states what it publishes, and this entry holds them
+        # all, so one list closes the file the way one does in any contract,
+        # wrapped the same way a long list is wrapped anywhere else.
+        sections.append(PyiPrinter.emit_exported_names(exported_names))
     return "\n\n".join(section for section in sections if section).strip()
 
 
-def _split_contract_imports(text: str) -> tuple[set[str], str]:
+def _split_contract_imports(text: str) -> tuple[set[str], list[str], str]:
+    """Separate a contract's required imports and stated exports from its body."""
     imports: set[str] = set()
+    exported: list[str] = []
     body_lines = []
+    pending: list[str] = []
     for line in text.splitlines():
+        if pending:
+            # A long list is written over several lines, so it is read back the
+            # same way: gather until the brackets close.
+            pending.append(line)
+            joined = "\n".join(pending)
+            if joined.count("[") == joined.count("]"):
+                exported.extend(ast.literal_eval(joined.split("=", 1)[1].strip()))
+                pending = []
+            continue
         if line.startswith("from prik.contracts import "):
             imports.update(item.strip() for item in line.removeprefix("from prik.contracts import ").split(","))
             continue
+        if line.startswith("__all__"):
+            if line.count("[") == line.count("]"):
+                exported.extend(ast.literal_eval(line.split("=", 1)[1].strip()))
+            else:
+                pending = [line]
+            continue
         body_lines.append(line)
-    return imports, "\n".join(body_lines).strip()
+    if pending:
+        raise ValueError(f"Unterminated __all__ in generated contract: {pending[0]!r}")
+    return imports, exported, "\n".join(body_lines).strip()
 
 
 def _format_pyi_report(semantic_report: dict[str, dict]) -> str:
@@ -998,8 +1039,8 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         )
     if getattr(args, "export_symbols", None):
         parser.error(
-            "--export-symbols selects declarations while reading C source; a semantic .pyi contract "
-            "already states its public functions"
+            "--export-symbols selects the public surface while reading C source; a semantic .pyi "
+            "contract already states its public surface in __all__"
         )
     if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
@@ -2290,7 +2331,10 @@ def _add_semantic_interpretation_options(
     group.add_argument(
         "--export-symbols",
         metavar="FILE",
-        help="Select exact reachable C functions from a UTF-8 name file; C semantic commands only",
+        help=(
+            "Select exact reachable C functions from a UTF-8 name file as the source-side "
+            "public surface; generate --pyi records the corresponding Python names in __all__"
+        ),
     )
 
 

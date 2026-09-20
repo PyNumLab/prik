@@ -1,7 +1,10 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
+from pathlib import Path
+
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import (
     PyiPrinter,
     emit_module,
@@ -24,6 +27,8 @@ from tests.fortran._support.printer_models import (
     generate_pyi,
     parse_pyi_text,
 )
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_emit_basic_scalar_function():
@@ -55,7 +60,12 @@ end module
     assert ") -> Float64: ..." in code
 
 
-def test_fortran_generated_contracts_emit_python_name_and_bind_original_name():
+def test_fortran_generated_contracts_emit_python_name_without_binding_the_same_name():
+    """A capitalized Fortran procedure is written lower case and binds nothing.
+
+    Fortran reaches a procedure without regard to case, so the lower-case
+    Python name already names it and no original spelling has to be recorded.
+    """
     module = SemanticModule(
         name="math_mod",
         functions=[
@@ -69,10 +79,12 @@ def test_fortran_generated_contracts_emit_python_name_and_bind_original_name():
         ],
         origin=SemanticOrigin(source_language="fortran", source_kind="module"),
     )
+    complete_python_export_policy(module)
 
-    code = emit_module(module, normalize_fortran_public_names=True)
+    code = emit_module(module, normalize_public_names=True)
 
-    assert '@bind("SQUARE_R4")\ndef square_r4(' in code
+    assert "def square_r4(" in code
+    assert "@bind(" not in code
 
 
 def test_emit_rejects_unknown_semantic_type():
@@ -293,38 +305,7 @@ end module
 
 
 def test_emit_complex_fem_module():
-    source = """
-module fem_mod
-
-type :: mesh
-
-    integer :: nelements
-    integer :: nnodes
-
-end type
-
-contains
-
-subroutine assemble(K, coords, connectivity)
-
-    real(8), intent(out) :: K(:, :)
-
-    real(8), intent(in) :: coords(:, :)
-
-    integer, intent(in) :: connectivity(:, :)
-
-end subroutine
-
-function compute_norm(x) result(r)
-
-    real(8), intent(in) :: x(:)
-
-    real(8) :: r
-
-end function
-
-end module
-"""
+    source = (NATIVE_FIXTURES / "emit_complex_fem_module.f90").read_text(encoding="utf-8")
 
     code = generate_pyi(source)
 

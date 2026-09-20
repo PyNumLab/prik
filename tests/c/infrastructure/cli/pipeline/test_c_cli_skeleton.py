@@ -319,7 +319,7 @@ def test_cli_c_pyi_out_writes_explicit_multi_header_owner_stubs(tmp_path: Path):
     assert result.stdout == ""
     assert "class state(CStruct):" in (tmp_path / "types.pyi").read_text(encoding="utf-8")
     api_stub = (tmp_path / "api.pyi").read_text(encoding="utf-8")
-    assert "from types import state" in api_stub
+    assert "from .types import state" in api_stub
     assert "class state" not in api_stub
     assert "state: state" in api_stub
     assert "Addr(state)" not in api_stub

@@ -62,6 +62,7 @@ prik/parsers/
 │   ├── lexer.py
 │   ├── models.py
 │   ├── parser.py
+│   ├── scope.py
 │   ├── type_resolver.py
 │   └── utils.py
 ├── pyi/
@@ -85,9 +86,10 @@ prik/parsers/
 | [`prik/parsers/fortran/utils.py`](../../../prik/parsers/fortran/utils.py) | `detect_source_form()` chooses fixed or free form; `split_csv()` separates only top-level Fortran comma lists. | Source-form detection or grammar-neutral list splitting changes. |
 | [`prik/parsers/fortran/lexer.py`](../../../prik/parsers/fortran/lexer.py) | `preprocess_lines()` produces logical lines with original coordinates; `strip_comment()` preserves string literals and OpenMP directives. | Comment handling, continuation folding, or location preservation changes. |
 | [`prik/parsers/fortran/models.py`](../../../prik/parsers/fortran/models.py) | Passive source-fact records: `FortranFile`, `FortranProject`, units, declarations, shapes, and `FortranParseError`. | A parser result, source fact, or diagnostic representation changes. |
+| [`prik/parsers/fortran/scope.py`](../../../prik/parsers/fortran/scope.py) | `ScopeUses` aggregates a scope's `use` statements and is the authority for rename semantics, accessible local names, and candidate routes. Semantic consumers decide only what those routes mean for their entity category. | `use` association or scope dependency interpretation changes. |
 | [`prik/parsers/fortran/type_resolver.py`](../../../prik/parsers/fortran/type_resolver.py) | `extract_kind_from_type_spec()` preserves intrinsic kind and character syntax after declaration parsing. | Parser-level type-spec spelling extraction changes. |
 | [`prik/parsers/fortran/parser.py`](../../../prik/parsers/fortran/parser.py) | `FortranParser`, `parse_fortran_file()`, and `parse_fortran_project()` build file and project models. | Grammar, source-unit structure, declarations, parser diagnostics, or project assembly changes. |
-| [`prik/parsers/fortran/cli.py`](../../../prik/parsers/fortran/cli.py) | `main()` formats parser reports and diagnostics. Its `--semantics` and `--pyi` options explicitly invoke later stages. | Parser CLI arguments, report layout, or diagnostic presentation changes. |
+| [`prik/parsers/fortran/cli.py`](../../../prik/parsers/fortran/cli.py) | `main()` formats parser reports and diagnostics. Its `--semantics` and `--pyi` options explicitly invoke later stages; `--pyi` emits every inspected module through `emit_module_stubs()`, so it shows the contract `prik generate --pyi` writes. | Parser CLI arguments, report layout, or diagnostic presentation changes. |
 | [`prik/parsers/c/`](../../../prik/parsers/c/README.md) | `parse_c_file()` and `parse_c_project()` build `CFile`/`CProject` records; the local lexer, models, resolver, and CLI preserve C declarations, project facts, diagnostics, and report output. | C tokenization, declarations, type resolution, project assembly, or parser reports change. |
 | [`prik/parsers/pyi/__init__.py`](../../../prik/parsers/pyi/__init__.py) | Re-exports `parse_pyi_text()` and `parse_pyi_file()`. | The supported raw-`.pyi` parser import surface changes. |
 | [`prik/parsers/pyi/parser.py`](../../../prik/parsers/pyi/parser.py) | Parses text or a file into `ast.Module` with no contract interpretation. | Raw Python syntax input, file reading, or parse diagnostics change. |

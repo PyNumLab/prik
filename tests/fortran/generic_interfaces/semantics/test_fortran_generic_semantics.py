@@ -9,42 +9,15 @@ from prik.semantics.fortran2ir import (
 from prik.semantics.metadata import BIND_TARGET_METADATA
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "native" / "foperators_f90.f90"
 
 
 def test_converter_preserves_module_and_type_bound_generic_overload_sets():
-    source = """
-module generic_mod
-  private
-  public :: box, convert
-  interface convert
-    module procedure convert_integer, convert_real
-  end interface convert
-  type :: box
-  contains
-    procedure, private :: set_integer
-    procedure, private :: set_real
-    generic, public :: set => set_integer, set_real
-  end type box
-contains
-  integer function convert_integer(value)
-    integer :: value
-    convert_integer = value
-  end function convert_integer
-  real function convert_real(value)
-    real :: value
-    convert_real = value
-  end function convert_real
-  subroutine set_integer(self, value)
-    class(box) :: self
-    integer :: value
-  end subroutine set_integer
-  subroutine set_real(self, value)
-    class(box) :: self
-    real :: value
-  end subroutine set_real
-end module generic_mod
-"""
+    source = (NATIVE_FIXTURES / "converter_preserves_module_and_type_bound_generic_overload_sets.f90").read_text(
+        encoding="utf-8"
+    )
     module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
 
     assert [(item.name, [proc.name for proc in item.procedures]) for item in module.overload_sets] == [
@@ -169,3 +142,39 @@ def test_converter_preserves_defined_operators_assignment_and_type_bound_operato
     assert [
         (item.name, [procedure.name for procedure in item.procedures]) for item in classes["counter"].overload_sets
     ] == [("__add__", ["counter_add_integer"])]
+
+
+def test_type_bound_generic_split_across_statements_reaches_one_overload_set():
+    """Every specific a split generic binding names stays reachable.
+
+    A type-bound generic built from several ``generic ::`` statements means one
+    binding, so the class carries a single overload set holding every specific
+    -- not one set per statement, which leaves all but the first unreachable at
+    dispatch.
+    """
+    source = (NATIVE_FIXTURES / "type_bound_generic_split_across_statements_reaches_one_overload_set.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    shape = module.classes[0]
+    assert [(item.name, [proc.name for proc in item.procedures]) for item in shape.overload_sets] == [
+        ("area", ["area_integer", "area_real"])
+    ]
+
+
+def test_a_generic_declared_inside_a_procedure_is_not_a_module_generic():
+    """A generic belongs to the scope declaring it, and a procedure is a scope.
+
+    An interface written inside a procedure names a generic of that procedure.
+    Reading it as one of the module's own would publish it, and two procedures
+    naming one generic would each answer for the other.
+    """
+    source = (NATIVE_FIXTURES / "a_generic_declared_inside_a_procedure_is_not_a_module_generic.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+
+    assert module.overload_sets == []

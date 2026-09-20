@@ -5,3 +5,5 @@ def scale(
     value: Float64,
     factor: Float64
 ) -> Float64: ...
+
+__all__ = ["scale"]

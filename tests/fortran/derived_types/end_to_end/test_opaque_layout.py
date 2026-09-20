@@ -42,7 +42,7 @@ def test_bind_c_derived_types_use_accessors_and_fortran_value_copy(
         assert "type(prik_type_tagged_point), pointer :: value" in bridge_source
         assert "result = native_score_by_value(value)" in bridge_source
 
-    value = module.tagged_point()
+    value = module.Tagged_Point()
     module.populate(
         value,
         np.float64(2.5),

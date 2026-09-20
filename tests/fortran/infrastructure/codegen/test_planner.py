@@ -72,6 +72,91 @@ def right_value(x: Int32) -> Int32: ...
     assert plan.namespaces[2].functions[0].symbol_name == "right_shared_value"
 
 
+def test_planner_keeps_one_module_variable_plan_for_multiple_publications():
+    """Namespace publications reference one plan that owns native access."""
+    module = parse_pyi_text("counter: Int32\n", module_name="state")
+    module.variables[0].metadata[PYTHON_EXPORTS_METADATA] = [
+        {"namespace": (), "name": "counter"},
+        {"namespace": ("facade",), "name": "counter"},
+    ]
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner().build(module)
+
+    variables = list(plan.variables)
+    publications = [
+        (namespace.python_path, publication.variable, publication.python_names)
+        for namespace in plan.namespaces
+        for publication in namespace.variable_publications
+    ]
+    assert len(variables) == 1
+    assert [(path, names) for path, _variable, names in publications] == [
+        ((), ("counter",)),
+        (("facade",), ("counter",)),
+    ]
+    assert all(variable is variables[0] for _path, variable, _names in publications)
+
+
+def test_module_variable_owner_is_its_native_identity_not_a_publication_path():
+    """Adding a facade changes publications without moving native ownership."""
+
+    def planned_owner(*namespaces: str):
+        module = parse_pyi_text("values: Int32\n", module_name="package")
+        variable = module.variables[0]
+        variable.origin.native_scope = "home"
+        variable.origin.native_name = "values"
+        variable.metadata[PYTHON_EXPORTS_METADATA] = [
+            {"namespace": (namespace,), "name": "values"} for namespace in namespaces
+        ]
+        complete_semantic_policies(module)
+        return WrapperPlanner().build(module)
+
+    facade_only = planned_owner("facade")
+    facade_and_api = planned_owner("facade", "api")
+
+    assert [variable.owner_path for variable in facade_only.variables] == ["home.values"]
+    assert [variable.owner_path for variable in facade_and_api.variables] == ["home.values"]
+    assert [variable.binding.support_namespace for variable in facade_only.variables] == [()]
+    assert [variable.binding.support_namespace for variable in facade_and_api.variables] == [()]
+    assert facade_only.entrypoint.support_procedures
+    assert [
+        (procedure.owner_path, procedure.role, procedure.symbol_name)
+        for procedure in facade_only.entrypoint.support_procedures
+    ] == [
+        (procedure.owner_path, procedure.role, procedure.symbol_name)
+        for procedure in facade_and_api.entrypoint.support_procedures
+    ]
+    assert {
+        (namespace.python_path, publication.variable.owner_path)
+        for namespace in facade_and_api.namespaces
+        for publication in namespace.variable_publications
+    } == {
+        (("api",), "home.values"),
+        (("facade",), "home.values"),
+    }
+
+
+def test_two_python_names_one_folded_stem_get_separate_generated_symbols():
+    """A generated symbol is shared with Fortran, which folds the two together."""
+    module = parse_pyi_text(
+        """
+def left_value(x: Int32) -> Int32: ...
+def right_value(x: Int32) -> Int32: ...
+""",
+        module_name="folded",
+    )
+    module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": (), "name": "Foo"}]
+    module.functions[1].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": (), "name": "foo"}]
+    complete_semantic_policies(module)
+
+    plan = WrapperPlanner().build(module)
+
+    functions = plan.namespaces[0].functions
+    assert [function.binding.python_name for function in functions] == ["Foo", "foo"]
+    stems = [function.symbol_name for function in functions]
+    assert len({stem.casefold() for stem in stems}) == len(stems)
+
+
 def test_binding_registers_child_namespaces_as_importable_submodules():
     module = parse_pyi_text(
         """
@@ -161,7 +246,13 @@ class outer:
     plan = WrapperPlanner().build(module)
     generated = WrapperGenerator().generate(plan)
 
-    assert tuple(derived.type_name for derived in plan.namespaces[0].derived_types) == ("outer", "inner")
+    planned_outer, planned_inner = plan.namespaces[0].derived_types
+    assert (planned_outer.native_type_name, planned_inner.native_type_name) == ("outer", "inner")
+    # The nested type is defined beside its parent and bound on it, not here.
+    assert planned_outer.python_names == ("outer",)
+    assert planned_inner.python_names == ()
+    assert planned_inner.nested_in == planned_outer.type_identity
+    assert planned_inner.contract_name == "inner"
     assert {source.path.suffix for source in generated.sources} == {".c", ".h", ".f90"}
 
 

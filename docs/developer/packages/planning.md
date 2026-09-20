@@ -64,6 +64,7 @@ ModulePlan
 │       └── NativeEntrypointSignaturePlan
 ├── NativeGeneratedCodeGroupPlan (zero or more)
 ├── BridgeModulePlan (optional; Fortran-local holder inventories)
+├── ModuleVariablePlan (canonical native-variable registry)
 └── NamespacePlan (root and child namespaces)
     ├── FunctionPlan
     │   ├── ArgumentTransferPlan
@@ -72,7 +73,7 @@ ModulePlan
     │   ├── NativeEntrypointProjectedSlotPlan
     │   │   └── BridgeCallSlotPlan (optional adapter facet)
     │   └── LifecycleActionPlan
-    └── ModuleVariablePlan
+    └── ModuleVariablePublicationPlan (namespace bindings to canonical variables)
 ```
 
 Each callable, argument, and result always owns binding and entrypoint views;
@@ -82,6 +83,17 @@ the exported symbol, direct return, ordered parameter groups, value/address
 projection, presence and length fields, descriptors, and hidden outputs.
 Bridge records own adapter-local representation conversion and the invocation
 of the original Fortran procedure.
+
+One module-level `ModuleVariablePlan` owns each declaring native variable and
+its completed getter, setter, ownership, descriptor, array, and derived-object
+mechanisms. Its owner path is the declaring native module and name, independent
+of Python publication. A namespace-level `ModuleVariablePublicationPlan` holds
+a direct reference to that canonical plan plus the Python names published in
+the namespace. Re-exporting module state therefore adds publication records
+without resolving ownership from a second key, changing variable identity, or
+adding accessors, support procedures, initialization, allocation state, or
+pointer state. Parameters use the same structure while retaining constant-value
+lowering.
 
 `NativeEntrypointModulePlan.support_procedures` is the authoritative registry for
 externally linked generated helper callables that are not ordinary wrapped
@@ -143,22 +155,31 @@ For each module, the planner first collects top-level and nested semantic
 classes into one depth-first, source-ordered tuple. That same collection feeds
 derived-type name indexing, backend-symbol allocation, and
 `_ClassPolicyCatalog`, so a nested class cannot reach projection without its
-symbol being registered. It projects direct functions and variables, then uses
+symbol being registered. It projects direct functions and canonical variables, then uses
 the catalogue to join each public class to its completed derived-type, surface,
 method, and overload policies. The catalogue is read-only: it maps existing
 owner paths to their semantic declarations without deciding policy again.
 
+Each type is defined in one namespace: the one publishing it, beside its
+parent class when it is nested and unpublished, and the root otherwise.
+Generated code taking or returning the type reaches its class and helpers
+there, so `WrapperGenerator` rejects a plan defining one type twice
+(`duplicate-derived-type-identity`). A derived module variable's private
+helpers are placed in that same namespace.
+
 The planner attaches class and overload callables to the function collections
 that need their native entrypoints. It completes generated symbols, adds every
 required parent namespace, and creates namespace plans in root-first path
-order. Finally it collects headers selected by completed descriptor-handle
+order, except that a namespace whose classes extend a type another namespace
+defines comes after that namespace. A namespace's classes are created when it
+is set up, in plan order, so the base has to exist first. Finally it collects headers selected by completed descriptor-handle
 plans and returns one editable `ModulePlan`.
 
 ### `models.py`: shared plans and three lowering views
 
-`models.py` defines editable `StageRecord` plans. `ModulePlan` is the root;
-each `NamespacePlan` groups the public functions, variables, derived types,
-classes, and overloads for one Python path. A `FunctionPlan` owns call-wide
+`models.py` defines editable `StageRecord` plans. `ModulePlan` is the root and
+owns canonical module variables; each `NamespacePlan` groups public functions,
+variable publications, derived types, classes, and overloads for one Python path. A `FunctionPlan` owns call-wide
 ordering, while its transfers, results, entrypoint parameters, projected call
 slots, optional adapter facets, and lifecycle actions carry the
 datatype-specific details.

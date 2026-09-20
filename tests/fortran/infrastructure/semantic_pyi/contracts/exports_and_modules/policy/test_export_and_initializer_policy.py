@@ -8,13 +8,41 @@ from prik.semantics.models import (
     RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA,
     SemanticFunction,
     SemanticModule,
+    SemanticReexport,
     SemanticType,
     SemanticVariable,
 )
+from prik.policy.exports import complete_python_export_policy
 from prik.policy.ownership import SetterAction
 from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import _scalar_type
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
+
+
+def test_reexport_policy_separates_fortran_accessibility_from_python_publication():
+    dependency = SemanticReexport(
+        "box",
+        "home",
+        "box",
+        "consumer",
+        entity_kind="derived_type",
+        declaration_dependency=True,
+    )
+    explicit = SemanticReexport(
+        "item",
+        "home",
+        "box",
+        "consumer",
+        entity_kind="derived_type",
+        declaration_dependency=True,
+        explicitly_public=True,
+    )
+    module = SemanticModule("consumer", reexports=[dependency, explicit])
+
+    complete_python_export_policy(module)
+
+    assert dependency.python_exported is False
+    assert explicit.python_exported is True
 
 
 def test_module_variable_initializer_policy_is_complete_before_ir_lowering():

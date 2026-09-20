@@ -113,10 +113,11 @@ void use_context(struct private_context *ctx);
         "wrapped": False,
         "representation": "opaque",
     }
-    assert "from private import private_context" in stubs["api"]
+    assert "from .private import private_context" in stubs["api"]
     assert (
         stubs["private"]
         == "from prik.contracts import CStruct, Opaque\n\nclass private_context(CStruct, Opaque):\n    pass"
+        '\n\n__all__ = ["private_context"]'
     )
 
 

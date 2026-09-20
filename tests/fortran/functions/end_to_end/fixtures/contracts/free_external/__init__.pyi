@@ -5,3 +5,5 @@ from prik.contracts import Addr, Arg, Int32, native_call, standalone
 def free_square(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["free_square"]

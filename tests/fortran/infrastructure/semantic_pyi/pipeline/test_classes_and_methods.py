@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
+from pathlib import Path
+
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import emit_module_stubs, pyi_text_to_semantic_module
@@ -22,6 +24,8 @@ from tests.fortran._support.printer_models import (
     parse_pyi_text,
     rendered_source,
 )
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_emit_class():
@@ -195,36 +199,7 @@ end module pass_mod
 
 
 def test_emit_and_load_module_and_type_bound_overload_sets():
-    source = """
-module generic_mod
-  interface convert
-    module procedure convert_integer, convert_real
-  end interface convert
-  type :: box
-  contains
-    procedure, private :: set_integer
-    procedure, private :: set_real
-    generic, public :: set => set_integer, set_real
-  end type box
-contains
-  integer function convert_integer(value)
-    integer :: value
-    convert_integer = value
-  end function convert_integer
-  real function convert_real(value)
-    real :: value
-    convert_real = value
-  end function convert_real
-  subroutine set_integer(self, value)
-    class(box) :: self
-    integer :: value
-  end subroutine set_integer
-  subroutine set_real(self, value)
-    class(box) :: self
-    real :: value
-  end subroutine set_real
-end module generic_mod
-"""
+    source = (NATIVE_FIXTURES / "emit_and_load_module_and_type_bound_overload_sets.f90").read_text(encoding="utf-8")
     code = generate_pyi(source)
 
     assert "from typing import overload" not in code
@@ -424,28 +399,7 @@ end module
 
 
 def test_emit_omits_fortran_source_private_methods_and_fields():
-    source = """
-module private_method_mod
-  implicit none
-  private
-  public :: box
-  type :: box
-    private
-    integer, public :: id
-    integer, private :: secret
-  contains
-    procedure, private :: hidden => hidden_impl
-    procedure, public :: visible => visible_impl
-  end type box
-contains
-  subroutine hidden_impl(self)
-    class(box) :: self
-  end subroutine hidden_impl
-  subroutine visible_impl(self)
-    class(box) :: self
-  end subroutine visible_impl
-end module
-"""
+    source = (NATIVE_FIXTURES / "emit_omits_fortran_source_private_methods_and_fields.f90").read_text(encoding="utf-8")
 
     code = generate_pyi(source)
 
@@ -518,30 +472,7 @@ def test_generic_specifics_with_projected_outputs_round_trip():
     declaration against the specific's native arguments rejected every such
     generic, which is the common shape in numerical Fortran.
     """
-    source = """
-module projected_generic_mod
-  implicit none
-  private
-  public :: ink
-  interface ink
-    module procedure ink_default, ink_extended
-  end interface ink
-contains
-  subroutine ink_default(x, n, iflag)
-    real(8), intent(in) :: x(:)
-    integer(4), intent(in) :: n
-    integer(4), intent(out) :: iflag
-    iflag = 0
-  end subroutine ink_default
-  subroutine ink_extended(x, n, extra, iflag)
-    real(8), intent(in) :: x(:)
-    integer(4), intent(in) :: n
-    real(8), intent(in) :: extra
-    integer(4), intent(out) :: iflag
-    iflag = 0
-  end subroutine ink_extended
-end module projected_generic_mod
-"""
+    source = (NATIVE_FIXTURES / "generic_specifics_with_projected_outputs_round_trip.f90").read_text(encoding="utf-8")
 
     code = generate_pyi(source)
     assert '@overload("ink_default")' in code

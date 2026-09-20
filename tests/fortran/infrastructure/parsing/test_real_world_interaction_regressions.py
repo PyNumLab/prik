@@ -1,10 +1,14 @@
 """Minimized parser regressions extracted from former third-party sources."""
 
+from pathlib import Path
+
 from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
 from prik.parsers.fortran.models import FortranProcedureSignature
 from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner
 from prik.parsers.fortran.utils import split_csv
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "support"
 
 
 def test_free_form_lexing_preserves_mixed_quotes_and_folds_leading_ampersands():
@@ -17,30 +21,8 @@ def test_free_form_lexing_preserves_mixed_quotes_and_folds_leading_ampersands():
 
 
 def test_legacy_and_extended_types_keep_initializers_and_declaration_attributes():
-    parsed = parse_fortran_file(
-        """
-module declaration_interactions
-  implicit none
-  type legacy_state
-    integer :: enabled = 1 < 2
-  end type legacy_state
-  type :: parent_state
-  end type parent_state
-  type, extends(parent_state) :: child_state
-  end type child_state
-  type, extends(remote_state) :: external_child_state
-  end type external_child_state
-  integer, target :: selected
-  integer, public :: exposed
-  integer, parameter :: truth = 1 < 2
-  real, parameter :: scale = 1.25d0
-  character(len=*), parameter :: label = "timer"
-  character*1, parameter :: prefix = 'D'
-  complex, parameter :: imaginary = (0.d0, 1.d0)
-end module declaration_interactions
-""",
-        filename="declaration_interactions.f90",
-    )
+    source = NATIVE_FIXTURES / "declaration_interactions.f90"
+    parsed = parse_fortran_file(source.read_text(encoding="utf-8"), filename=source.name)
     module = parsed.modules[0]
     types = {dtype.name: dtype for dtype in module.derived_types}
     variables = {variable.name: variable for variable in module.variables}

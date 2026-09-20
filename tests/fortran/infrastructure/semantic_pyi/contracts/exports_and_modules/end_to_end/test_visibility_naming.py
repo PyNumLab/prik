@@ -43,10 +43,10 @@ def test_visibility_and_default_python_name_fixing_policy(
     assert not hasattr(module, "get_value_2")
     assert not hasattr(module, "set_value")
 
-    assert not hasattr(module, "hidden_t")
+    assert not hasattr(module, "Hidden_T")
     assert not hasattr(module, "hidden_proc")
 
-    item = module.visible_t(lambda_=np.int32(5), lambda__2=np.int32(6))
+    item = module.Visible_T(lambda_=np.int32(5), lambda__2=np.int32(6))
     assert item.lambda_ == 5
     assert item.lambda__2 == 6
     assert item.from_() == 11

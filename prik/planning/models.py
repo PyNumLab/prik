@@ -36,12 +36,12 @@ from prik.policy.models import (
     ArrayLogicalABI,
     ArrayEntrypointABI,
     ArrayPythonLayout,
-    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
     CallbackGILAction,
     CallbackLifecycleAction,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
@@ -332,18 +332,39 @@ class DerivedTypePlan(StageRecord):
 
     The planner supplies identity, native naming, fields, and abstractness;
     generated class assembly uses this record as the authoritative type shape.
+
+    A type exists whether or not it is published: a published signature may
+    take or return one. ``python_names`` are the names this namespace binds it
+    under, possibly none; ``contract_name`` is what the contract calls it; and
+    ``nested_in`` names the class it is bound on instead of a namespace.
+
+    A type is defined in one namespace only. Code taking or returning it can
+    live in any namespace, so generated code reaches the class and its helpers
+    in the namespace defining it rather than in its own.
     """
 
     owner_path: str
-    type_name: str
     type_identity: tuple[str, str]
     backend_symbol: str
     native_type_name: str
     native_scope: str
     python_names: tuple[str, ...]
+    contract_name: str
     fields: tuple[DerivedFieldPlan, ...]
     bind_c: bool
     abstract: bool = False
+    nested_in: tuple[str, str] | None = None
+
+    @property
+    def definition_name(self) -> str:
+        """Return the name generated code defines and reaches this type by here.
+
+        A bound type is defined under the first name it is bound as. A type
+        bound under no public name is still defined -- generated code has to
+        reach the class to wrap a returned instance, subclass it, or check an
+        argument -- so it takes a private name no contract publishes.
+        """
+        return self.python_names[0] if self.python_names else f"_prik_type_{self.backend_symbol}"
 
 
 @dataclass
@@ -442,6 +463,7 @@ class ClassSurfacePlan(StageRecord):
 
     owner_path: str
     type_identity: tuple[str, str]
+    backend_symbol: str
     python_names: tuple[str, ...]
     base_identities: tuple[tuple[str, str], ...]
     constructor: ConstructorPlan
@@ -741,13 +763,9 @@ class BridgeModulePlan(StageRecord):
 
 @dataclass
 class BindingModuleVariablePlan(StageRecord):
-    """Describe Python module-attribute access and initialization for one value.
+    """Describe Python access and initialization for one native module value."""
 
-    ``python_names`` retains every public spelling. The binding consumes the
-    completed getter and setter actions plus the selected initializer/value.
-    """
-
-    python_names: tuple[str, ...]
+    support_namespace: tuple[str, ...]
     getter_action: ModuleGetterAction
     setter_action: SetterAction
     initializer: Any
@@ -783,7 +801,8 @@ class ModuleVariablePlan(StageRecord):
     """Join binding, entrypoint, and bridge views of one module-state value.
 
     Optional array, native-handle, and derived-object facets are attached only
-    when policy selected them. Namespace plans own these records for emission.
+    when policy selected them. ``ModulePlan`` owns these records by declaring
+    native identity; namespace plans contain publications only.
     """
 
     owner_path: str
@@ -802,6 +821,19 @@ class ModuleVariablePlan(StageRecord):
     # bridge to reach the address, the binding to define the C helper that one
     # of the two mechanisms calls. It is therefore a shared fact, not a facet.
     array_address: ModuleArrayAddressMechanism | None = None
+
+
+@dataclass
+class ModuleVariablePublicationPlan(StageRecord):
+    """Publish one existing module-variable plan in a Python namespace.
+
+    ``variable`` is the sole plan that owns native access, storage,
+    initialization, and support procedures. This record adds only Python names
+    in one namespace; it never creates another variable plan.
+    """
+
+    variable: ModuleVariablePlan
+    python_names: tuple[str, ...]
 
 
 @dataclass
@@ -825,17 +857,28 @@ class BindingFunctionPlan(StageRecord):
 
 
 @dataclass
+class NativeEntrypointExtentPlan(StageRecord):
+    """One extent only the bridge can evaluate, and the C-ABI output carrying it."""
+
+    axis: int
+    parameter_name: str
+
+
+@dataclass
 class NativeEntrypointParameterPlan(StageRecord):
     """Order one argument or result parameter group in the shared C ABI.
 
     The referenced argument or result entrypoint facet owns the group's exact
     transport. ``position`` orders groups after any direct function return.
+    ``extents`` are the outputs an extent group carries, one per axis a
+    specification function sizes, so neither backend enumerates them again.
     """
 
     owner_path: str
     position: int
     source_kind: str
     native_position: int | None = None
+    extents: tuple[NativeEntrypointExtentPlan, ...] = ()
 
 
 @dataclass
@@ -852,6 +895,15 @@ class NativeEntrypointFunctionPlan(StageRecord):
     # translation unit that never includes Python.h, so the binding's own
     # declaration of ``symbol_name`` cannot collide with a header declaration.
     collision_adapter_symbol: str | None = None
+
+    def extent_names(self, owner_path: str) -> dict[int, str]:
+        """Return the output name of each bridge-evaluated axis one owner has."""
+        return {
+            extent.axis: extent.parameter_name
+            for parameter in self.parameters
+            if parameter.owner_path == owner_path
+            for extent in parameter.extents
+        }
 
 
 @dataclass
@@ -1039,8 +1091,6 @@ class NativeEntrypointProjectedSlotPlan(StageRecord):
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
     array_native_type: str | None = None
-    array_copy_in: bool = False
-    array_copy_out: bool = False
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -1063,7 +1113,6 @@ class PolymorphicVariantPlan(StageRecord):
 
     type_identity: tuple[str, str]
     backend_symbol: str
-    python_name: str
     abi_code: int
 
 
@@ -1086,9 +1135,11 @@ class ProcedurePrototypeArgumentPlan(StageRecord):
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     rank: int
     passed_by_value: bool
     intent: str | None
+    optional: bool
     character_length: int | None
     array: ArrayHandoffPlan | None
     derived_type_identity: tuple[str, str] | None
@@ -1136,10 +1187,12 @@ class CallbackTransferPlan(StageRecord):
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     object_kind: ObjectKind
     rank: int
     passed_by_value: bool
     intent: str | None
+    optionality: CallbackOptionalityAction
     abi: CallbackABIKind
     adapter_action: CallbackTransferAction
     python_action: PythonBarrierAction
@@ -1231,9 +1284,6 @@ class ArgumentTransferPlan(StageRecord):
     scalar_native_type: str | None
     array_logical_abi: ArrayLogicalABI
     array_native_type: str | None
-    array_copy_in: bool
-    array_copy_out: bool
-    array_writeback_abi: ArrayWritebackABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
     transfer_mode: TransferMode
@@ -1388,21 +1438,36 @@ class DeclarationCallablePlan(StageRecord):
 
 
 @dataclass
+class NamespaceAliasPlan(StageRecord):
+    """Bind one name in a namespace to a callable another namespace owns.
+
+    A re-export publishes an existing declaration rather than adding one, so
+    the alias names where the callable lives instead of repeating its plan.
+    """
+
+    python_name: str
+    source_namespace: tuple[str, ...]
+    source_name: str
+
+
+@dataclass
 class NamespacePlan(StageRecord):
     """Represent one Python namespace and its directly exported wrapper owners.
 
     ``python_path`` identifies the root or child module path; contained tuples
-    preserve planner order for functions, variables, types, classes, and
-    overloads. ``ModulePlan`` groups these namespaces into one generation unit.
+    preserve planner order for functions, variable publications, types,
+    classes, and overloads. ``ModulePlan`` groups these namespaces into one
+    generation unit.
     """
 
     owner_path: str
     python_path: tuple[str, ...]
     functions: tuple[FunctionPlan, ...] = ()
-    variables: tuple[ModuleVariablePlan, ...] = ()
+    variable_publications: tuple[ModuleVariablePublicationPlan, ...] = ()
     derived_types: tuple[DerivedTypePlan, ...] = ()
     classes: tuple[ClassSurfacePlan, ...] = ()
     overloads: tuple[OverloadPlan, ...] = ()
+    aliases: tuple[NamespaceAliasPlan, ...] = ()
     docstring: str | None = None
 
 
@@ -1420,6 +1485,7 @@ class ModulePlan(StageRecord):
     binding: BindingModulePlan
     entrypoint: NativeEntrypointModulePlan
     bridge: BridgeModulePlan | None
+    variables: tuple[ModuleVariablePlan, ...]
     namespaces: tuple[NamespacePlan, ...]
     native_generated_code_groups: tuple[NativeGeneratedCodeGroupPlan, ...] = ()
     required_headers: tuple[str, ...] = ()
@@ -1478,6 +1544,7 @@ if __name__ == "__main__":
         binding=BindingModulePlan(owner_path="demo"),
         entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
         bridge=BridgeModulePlan(owner_path="demo"),
+        variables=(),
         namespaces=(NamespacePlan(owner_path="demo", python_path=(), functions=(function,)),),
     )
 

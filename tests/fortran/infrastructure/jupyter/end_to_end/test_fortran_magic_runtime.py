@@ -139,6 +139,8 @@ end module
     )
     contract = contract.replace("@native_call", '@bind("square")\n@native_call')
     contract = contract.replace("def square(", "def squared(")
+    # Renaming a declaration renames what the contract publishes.
+    contract = contract.replace('__all__ = ["square"]', '__all__ = ["squared"]')
     line = magic_line.removeprefix("%%pyi").strip()
 
     shell.run_cell_magic("pyi", line, contract)

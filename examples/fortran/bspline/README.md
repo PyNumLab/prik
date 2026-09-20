@@ -84,7 +84,7 @@ import numpy as np
 import prik_bspline.bspline_oo_module as bspline
 
 x = np.linspace(0.0, 2.0 * np.pi, 25)
-spline = bspline.bspline_1d(x, np.sin(x), np.int32(4))   # generic constructor
+spline = bspline.Bspline_1d(x, np.sin(x), np.int32(4))   # generic constructor
 
 value, iflag = spline.evaluate(np.float64(1.234), np.int32(0))
 print(value)                                             # about 0.943811
@@ -96,11 +96,11 @@ print(area)                                              # about 2.0
 The abstract base is present but cannot be constructed:
 
 ```python
-bspline.bspline_class()
+bspline.Bspline_Class()
 # TypeError: bspline_class is an abstract native type and cannot be
 #            instantiated; create one of its concrete extensions instead
 
-issubclass(bspline.bspline_1d, bspline.bspline_class)    # True
+issubclass(bspline.Bspline_1d, bspline.Bspline_Class)    # True
 ```
 
 ## Run focused tests

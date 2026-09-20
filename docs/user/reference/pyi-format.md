@@ -114,8 +114,8 @@ The generated forms therefore have these responsibilities:
 | C `<name>.pyi` | Selected C declarations in one directly buildable contract file. |
 
 A contract build receives one entry `.pyi`: the package `__init__.pyi` for the
-Fortran layout above, or the C file itself. Relative imports from a package
-entry discover its leaf files.
+full Fortran package, a Fortran module leaf for that module and its imported
+siblings, or the C file itself. Relative imports discover dependent contracts.
 
 ### Entry Contract And Extension Identity
 
@@ -141,10 +141,18 @@ contracts/
 Building `api.pyi` directly exposes its declarations at the extension root and
 uses `api` as the default extension name.
 
-Use the entry, not every imported leaf, on the command line:
+Use one entry on the command line to build the full package:
 
 ```bash
 python3 -m prik contracts/solver/__init__.pyi \
+  --native-objects build/solver.o
+```
+
+To build a module leaf directly, pass that leaf as the entry. Its relative
+imports load sibling contracts needed by its declarations:
+
+```bash
+python3 -m prik contracts/solver/solver_mod.pyi \
   --native-objects build/solver.o
 ```
 
@@ -171,6 +179,84 @@ Python namespace:
 Aliases change the Python API only. They do not rename native modules, types,
 or symbols. Conflicting wildcard exports are rejected; resolve them with
 explicit imports and aliases.
+
+### Stating What A Contract Publishes
+
+A contract may end with `__all__`, naming every entity it publishes:
+
+```python
+from prik.contracts import Int32
+from .shapes_mod import box
+
+def area(item: box) -> Int32: ...
+
+__all__ = ["area"]
+```
+
+The list states the contract's complete public symbol surface, not only the names
+it re-exports. It settles a question import syntax cannot answer, because one
+import serves two purposes: naming a type a declaration needs, and publishing an
+entity this contract means to expose. `from .shapes_mod import box as crate`
+reads the same whether `crate` avoids a collision or is published under a new
+name.
+
+A published symbol is not always a Python object the extension exposes. What the
+name declares decides how publishing it appears:
+
+| Published symbol | How it appears |
+| --- | --- |
+| Procedure | A runtime callable. |
+| Derived type | A runtime type. |
+| Package sub-namespace | A runtime namespace attribute. |
+| Prototype | A callback signature contracts name, with no runtime object. |
+| Module variable | Live state or a constant; every publication reaches the declaring variable. |
+| Generic interface | A dispatch surface, publishable only by the namespace declaring it. |
+
+A procedure and a derived type each reach Python as one object, so another
+namespace can bind that object under whatever name the importing contract
+states. A module-variable re-export instead installs another route to the same
+declaring variable: reads, writes, allocation, pointer association, and derived
+object state remain shared. A `Final[...]` parameter is published with the same
+constant semantics in every namespace. A generic is a dispatch surface rather
+than one object and remains publishable only by its declaring namespace.
+
+PRIK writes the list into every generated contract. It includes the module's
+own public declarations, explicitly public imports, and accessible imported
+names that are not dependencies of its own declarations. For example, a type
+imported only to declare an argument stays available as an import in the
+contract but is not published to Python unless the module names it in a
+`public` statement. This Python publication choice does not change the name's
+Fortran accessibility through the importing module. Fortran accessibility may
+also name an imported module itself: making every route to an entity private
+withholds it, while any explicitly public route keeps it accessible. Edit the
+list freely.
+
+| Edit | Effect |
+| --- | --- |
+| Remove a name | The entity stays declared and callable from other contracts, but no longer reaches Python here. |
+| Add an imported name | Publishes it here as well, including one imported only to express a declaration. |
+| `__all__ = []` | Publishes nothing from this contract. |
+| Remove `__all__` | Publishes everything the contract reaches, its declarations and its imports alike. |
+
+A name in `__all__` must be one the contract declares or imports; naming
+anything else is rejected before wrapper planning, so renaming a declaration
+means renaming what the contract publishes.
+
+A wildcard import reads the surface its dependency publishes:
+
+```python
+from .shapes_mod import *
+```
+
+brings in what `shapes_mod` states in its own `__all__` and nothing it withheld.
+A withheld name stays reachable by asking for it, which a contract needing it to
+express a declaration -- or meaning to publish it itself -- still can:
+
+```python
+from .shapes_mod import crate
+
+__all__ = ["crate"]
+```
 
 ### Contract Import Graph
 
@@ -472,7 +558,7 @@ Python declaration and native callable names differ.
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |
 | `@overload("specific", generic=...)` | Function or method | Shared: add one exact candidate to a generated Python overload set. |
 | `@prototype` | Module-level function declaration | Fortran exact procedure interface used by callbacks or declaration expressions. |
-| `@pure` | `@prototype` declaration | Fortran: preserve the native pure characteristic. |
+| `@pure` | Module-level function or `@prototype` declaration | Fortran: preserve the native pure characteristic. |
 | `@raises(status=..., message=..., success=...)` | Function or method | Shared: consume named status outputs and raise on non-success. |
 | `@nogil` | Function or method | Shared: request GIL release around the completed native call. |
 | `@abstractmethod` | Method | Fortran deferred binding. |
@@ -480,8 +566,8 @@ Python declaration and native callable names differ.
 | `@staticmethod` | Method | Python stub marker for a method without `self`. |
 
 Decorators are validated in context. `@prototype` cannot combine with wrapper
-decorators, `@overload` cannot combine with `@native_call`, and `@pure` requires
-`@prototype`.
+decorators, `@overload` cannot combine with `@native_call`, and `@pure` applies
+to a module-level native procedure, not a method or an `@overload` dispatcher.
 
 A status projection can hide its consumed output from the Python return:
 
@@ -542,8 +628,10 @@ def update_values(
 def apply_update(callback: update_values) -> None: ...
 ```
 
-`@pure` is valid only with `@prototype`. Calling a pure prototype name inside a
-declaration expression identifies a standalone specification function. Current
+`@pure` states that a native procedure is pure, which a function called in a
+declaration expression must be: a module function the expression imports
+carries it, and calling a pure prototype name identifies a standalone
+specification function. Current
 callback wrapper support is Fortran-specific; C function pointers can be
 inspected but are not buildable C callbacks.
 
@@ -748,9 +836,6 @@ and supported pure specification functions. `size(values, 2)`, for example,
 becomes the second public extent. PRIK rejects expressions it cannot resolve
 before lowering.
 
-`Strided` is a compatibility spelling for older explicit forms such as
-`T[::Strided]`; author the shorter `T[::]` form.
-
 ### Character Length And Shape
 
 `String` uses the first subscription for character length and a second
@@ -938,12 +1023,27 @@ def consume(class_: Annotated[Int32, SourceName("class")]) -> None: ...
 Python export name. `SourceName(...)` preserves a native data or argument name.
 These are separate operations.
 
-When PRIK generates a Fortran contract, it lowercases Fortran identifiers,
-adds a trailing underscore to Python keywords, normalizes other invalid Python
-identifiers, and gives remaining collisions deterministic numeric suffixes.
-The same policy covers module members, classes, methods, fields, and argument
-names. `--strict-wrapper-names` rejects a generated name that would need any of
-these fixes.
+When PRIK generates a contract it adds a trailing underscore to Python
+keywords, normalizes other invalid Python identifiers, and gives remaining
+collisions deterministic numeric suffixes.
+
+PRIK chooses a spelling only where the source has none. Fortran writes one
+declaration under many spellings, so PRIK picks: a wrapped type becomes a
+Python class and is spelled like one, capitalizing each underscore-separated
+word, and every other declaration is lowercased. `type :: point_t` publishes as
+`Point_T`, and `subroutine SCALE_VALUE` as `scale_value`. C names each
+declaration exactly, so its spelling is kept as written: `BarBaz` stays
+`BarBaz`, `struct point` stays `point`, and `Foo` and `foo` remain two
+functions.
+
+These are defaults, not constraints. Rename a declaration in the contract and
+the build follows it, because a Fortran name resolves without regard to case
+and `@bind(...)` states a native name that differs from the Python one. The
+same policy covers module members, classes, methods, fields, and argument
+names, and it decides both the names a build publishes and the names the
+contract describing that build states. `--strict-wrapper-names` rejects a
+generated name Python could not otherwise spell; it does not object to the
+chosen casing.
 
 Fortran `bind(C, name=...)` changes the native symbol, not the Python name. In
 an edited contract, `@bind("native_name")` records that native-name distinction;
@@ -994,7 +1094,7 @@ valid and whether it is buildable.
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |
-| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F`, `Strided` |
+| Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F` |
 | General metadata | `Aliased`, `ArrayCategory`, `AssumedType`, `FortranAllocatable`, `Immutable`, `MaybeUnallocated`, `Polymorphic`, `SourceName` |
 | Constraints and ownership | `Bounded`, `Finite`, `Range`, `Ownership`, `Transfer`, `Destruction`, `PointerAssociation`, `PointerPolicy` |
 | Prototype direction | `In`, `Out`, `InOut` |
@@ -1032,7 +1132,7 @@ The loader rejects malformed language forms before wrapper planning:
 - Python enum classes instead of `Final[...]` integer constants;
 - `typing.overload` instead of PRIK `@overload("specific")`;
 - `@overload` combined with `@native_call`;
-- `@pure` without `@prototype`;
+- `@pure` on a method or an `@overload` dispatcher;
 - `@native_abi(...)` outside Fortran or with a value other than `"c"`;
 - incomplete, duplicated, or out-of-range `@native_call` entries;
 - untyped hidden literals inside `@native_call`;

@@ -39,6 +39,7 @@ from prik.naming.generated_files import stub_identifier
 from prik.parsers.c import parse_c_file
 from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.parsers.fortran.parser import parse_fortran_project
+from prik.parsers.fortran.scope import used_module_names
 from prik.preprocessing.probes.fortran_types import (
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
@@ -61,12 +62,11 @@ from prik.semantics.models import (
     PYTHON_EXPORTS_PREPARED_METADATA,
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     ProcedureOverloadSet,
-    SemanticClass,
     SemanticFunction,
     SemanticImport,
     SemanticModule,
     SemanticPrototype,
-    SemanticVariable,
+    SemanticReexport,
     _module_semantic_types,
 )
 from prik.semantics.native_contract import NATIVE_CONTRACT_PREPARED_METADATA, validate_pyi_native_contract
@@ -76,6 +76,7 @@ from prik.policy.native_array_handles import (
 )
 from prik.policy.completion import _DEFERRED_C_DIRECT_DIAGNOSTIC_CODES, complete_semantic_policies
 from prik.policy.models import FunctionWrapperPolicy, NativeEntrypointAction
+from prik.policy.exports import complete_reexport_publication_policy
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.planning import NativeGeneratedCodeGroupPlan, WrapperPlanner
@@ -844,10 +845,12 @@ def _write_build_contract_package(
     reshaping the Python surface never needs a separate `generate --pyi` run.
     The package lives in its own directory inside the build output so its
     ``__init__.pyi`` cannot make the build directory look like a Python package.
+    Only a source build writes one, so the declarations are named in Fortran or
+    C and the contract states the Python names this build just published.
     """
     if not source_modules:
         return ()
-    stubs = emit_module_stubs(source_modules)
+    stubs = emit_module_stubs(source_modules, normalize_public_names=True)
     package_dir = output_dir / BUILD_CONTRACT_DIRECTORY_NAME
     package_dir.mkdir(parents=True, exist_ok=True)
     written = []
@@ -1636,22 +1639,6 @@ def _serial_compile_batches(object_files: Iterable[ObjectFile]) -> tuple[tuple[O
     return tuple((object_file,) for object_file in object_files)
 
 
-def _fortran_owner_used_modules(owner: object) -> set[str]:
-    """Return lowercased modules used directly or indirectly by one owner.
-
-    ``owner`` may be a parsed module, program, procedure, or submodule.  The
-    helper reads its ``uses`` mappings and the uses of contained procedures and
-    interface procedures, returning a new set without changing the parsed AST.
-    """
-    used = {str(name).lower() for name in getattr(owner, "uses", {})}
-    for procedure in getattr(owner, "procedures", ()):
-        used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
-    for interface in getattr(owner, "interfaces", ()):
-        for procedure in getattr(interface, "procedures", ()):
-            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
-    return used
-
-
 def _fortran_file_used_modules(parsed_file: object) -> set[str]:
     """Return lowercased module dependencies declared by one parsed file.
 
@@ -1667,10 +1654,9 @@ def _fortran_file_used_modules(parsed_file: object) -> set[str]:
     )
     used = set()
     for owner in owners:
-        used.update(_fortran_owner_used_modules(owner))
+        used.update(used_module_names(owner))
     for interface in getattr(parsed_file, "interfaces", ()):
-        for procedure in getattr(interface, "procedures", ()):
-            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
+        used.update(used_module_names(interface))
     for submodule in getattr(parsed_file, "submodules", ()):
         used.add(str(submodule.parent).lower())
         if submodule.ancestor:
@@ -2046,6 +2032,16 @@ class _PyiExportNode:
     declarations: list[object] = field(default_factory=list)
     children: dict[str, _PyiExportNode] = field(default_factory=dict)
     origins: set[Path] = field(default_factory=set)
+    unpublished: set[str] = field(default_factory=set)
+    """Names this node resolves but its contract left out of ``__all__``.
+
+    A contract stating no list publishes everything it reaches, so a name is
+    withheld only where the contract named its surface and left this one off.
+    A sub-namespace is part of that surface like anything else, so leaving one
+    off keeps the package from exposing it. Such a name still resolves, because
+    a contract reading from this one has to resolve what it names; it simply
+    does not become a Python attribute here.
+    """
 
 
 def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticModule]) -> None:
@@ -2063,6 +2059,40 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
 
     tree = _pyi_export_tree(entry, modules_by_path, cache={}, pending=set())
     _record_pyi_exports(tree)
+    namespace_by_contract = _namespace_by_contract(tree, entry)
+    # A declaration published from more than one namespace is one entity, so
+    # the namespaces beyond its own bind what its own already exports rather
+    # than each wrapping the native declaration again. Which namespace owns it
+    # is settled by the contract declaring it, never by the order an entry
+    # happens to import from. A rename changes the name a namespace binds,
+    # never the object behind it.
+    for path, module in modules_by_path.items():
+        home = namespace_by_contract.get(path)
+        for declaration, entity_kind in (
+            *((item, "derived_type") for item in module.classes),
+            *((item, "procedure") for item in module.functions),
+        ):
+            exports = _declaration_exports(declaration)
+            if len(exports) < 2:
+                continue
+            primary = next(
+                (export for export in exports if tuple(export["namespace"]) == home),
+                exports[0],
+            )
+            aliases = [export for export in exports if export is not primary]
+            source_namespace = ".".join(primary["namespace"])
+            for alias in aliases:
+                module.reexports.append(
+                    SemanticReexport(
+                        local_name=alias["name"],
+                        origin_module=source_namespace,
+                        source_name=primary["name"],
+                        module=".".join(alias["namespace"]),
+                        entity_kind=entity_kind,
+                    )
+                )
+            exports[:] = [primary]
+        _reject_unsupported_republication(path, module, home)
 
 
 def _pyi_export_tree(
@@ -2106,6 +2136,14 @@ def _pyi_export_tree(
         if not isinstance(semantic_import, SemanticImport) or not semantic_import.module.startswith("."):
             continue
         _merge_relative_import(tree, path, semantic_import, modules_by_path, cache, pending)
+    if module.exported_names is not None:
+        # A stated list is the whole public surface: a name on it is published
+        # whether this contract declares or imports it, and one left off stays
+        # available to express declarations without reaching Python. A contract
+        # stating no list has named no surface, so everything it reaches is
+        # published, which is what an entry contract selecting from its package
+        # has always meant.
+        _apply_stated_exports(tree, path, module.exported_names)
     pending.remove(path)
     cache[path] = tree
     return tree
@@ -2132,7 +2170,11 @@ def _merge_relative_import(
         dependency_tree = _required_export_tree(dependency, modules_by_path, cache, pending)
         for item in semantic_import.items:
             if item.source == "*":
+                # A wildcard takes the surface the dependency publishes. A name
+                # it withheld is still reachable, but only by asking for it.
                 for name, child in dependency_tree.children.items():
+                    if name in dependency_tree.unpublished:
+                        continue
                     _merge_export_child(tree, name, child, origin=path)
                 continue
             if item.source not in dependency_tree.children:
@@ -2167,6 +2209,15 @@ def _required_export_tree(
     return _pyi_export_tree(path, modules_by_path, cache=cache, pending=pending)
 
 
+def _apply_stated_exports(tree: _PyiExportNode, path: Path, exported_names: list[str]) -> None:
+    """Publish exactly the names one contract states, and nothing else."""
+    stated = list(dict.fromkeys(exported_names))
+    missing = [name for name in stated if name not in tree.children]
+    if missing:
+        raise ValueError(f"{path}: __all__ names nothing this contract declares or imports: {missing}")
+    tree.unpublished = {name for name in tree.children if name not in set(stated)}
+
+
 def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, *, origin: Path) -> None:
     """Insert one named export into ``tree`` or reject a conflicting origin.
 
@@ -2186,6 +2237,53 @@ def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, 
     )
 
 
+def _reject_unsupported_republication(
+    path: Path,
+    module: SemanticModule,
+    home: tuple[str, ...] | None,
+) -> None:
+    """Refuse a generic published outside the namespace declaring it.
+
+    A module variable has a dedicated publication plan that routes every
+    namespace to one native variable plan. A generic remains a dispatch
+    surface rather than one bindable object, so it cannot be republished.
+    """
+    for declaration, kind in ((item, "generic") for item in module.overload_sets):
+        exports = _declaration_exports(declaration)
+        relocated = [export for export in exports if home is None or tuple(export["namespace"]) != home]
+        if not relocated:
+            continue
+        declaring = "<unknown>" if home is None else (".".join(home) or "<root>")
+        namespaces = ", ".join(".".join(export["namespace"]) or "<root>" for export in relocated)
+        raise ValueError(
+            f"{path}: {kind} {declaration.name!r} is declared in {declaring} and published in "
+            f"{namespaces}; this kind is publishable only by the namespace declaring it"
+        )
+
+
+def _namespace_by_contract(tree: _PyiExportNode, entry: Path) -> dict[Path, tuple[str, ...]]:
+    """Return the Python namespace each contract's own declarations live in.
+
+    A contract publishes its declarations in one namespace of its own, and any
+    other namespace publishing them is republishing what that one owns. The
+    entry contract owns the package root; every other namespace node names the
+    contract it was built from.
+    """
+    namespaces: dict[Path, tuple[str, ...]] = {entry: ()}
+
+    def walk(node: _PyiExportNode, namespace: tuple[str, ...]) -> None:
+        for name, child in node.children.items():
+            if not child.children:
+                continue
+            child_namespace = (*namespace, name)
+            for origin in child.origins:
+                namespaces.setdefault(origin, child_namespace)
+            walk(child, child_namespace)
+
+    walk(tree, ())
+    return namespaces
+
+
 def _record_pyi_exports(tree: _PyiExportNode, namespace: tuple[str, ...] = ()) -> None:
     """Write resolved namespace paths from an export tree into declarations.
 
@@ -2194,6 +2292,8 @@ def _record_pyi_exports(tree: _PyiExportNode, namespace: tuple[str, ...] = ()) -
     The declaration metadata is intentionally mutated for later planning.
     """
     for name, child in tree.children.items():
+        if name in tree.unpublished:
+            continue
         for declaration in child.declarations:
             if isinstance(declaration, SemanticPrototype):
                 continue
@@ -2209,32 +2309,14 @@ def _module_declarations(module: SemanticModule) -> tuple[object, ...]:
     return (*module.variables, *module.functions, *module.overload_sets, *module.classes)
 
 
-def _declaration_metadata(declaration: object) -> dict[str, object]:
-    """Return the mutable metadata dictionary for one supported declaration.
-
-    Overload sets use their first candidate's metadata because that is where
-    their shared export projection is stored.  Unsupported objects raise
-    ``TypeError`` rather than silently lose metadata.
-    """
-    if isinstance(declaration, ProcedureOverloadSet):
-        if not declaration.procedures:
-            return {}
-        return declaration.procedures[0].metadata
-    if isinstance(declaration, SemanticVariable | SemanticFunction | SemanticClass):
-        return declaration.metadata
-    raise TypeError(f"Unsupported semantic declaration: {type(declaration).__name__}")
-
-
 def _declaration_exports(declaration: object) -> list[dict[str, object]]:
     """Return and initialize the declaration's mutable Python export list."""
-    metadata = _declaration_metadata(declaration)
-    return metadata.setdefault(PYTHON_EXPORTS_METADATA, [])
+    return declaration.metadata.setdefault(PYTHON_EXPORTS_METADATA, [])
 
 
 def _set_declaration_exports(declaration: object, exports: list[dict[str, object]]) -> None:
     """Replace one declaration's stored Python export projection in place."""
-    metadata = _declaration_metadata(declaration)
-    metadata[PYTHON_EXPORTS_METADATA] = exports
+    declaration.metadata[PYTHON_EXPORTS_METADATA] = exports
 
 
 def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
@@ -2245,6 +2327,7 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
     procedures receive the root namespace; private declarations receive none.
     """
     for module in modules:
+        complete_reexport_publication_policy(module, contract_named=False)
         module.metadata[PYTHON_EXPORTS_PREPARED_METADATA] = True
         namespace = (module.name.casefold(),) if module.origin.source_kind == "module" else ()
         for declaration in _module_declarations(module):
@@ -2256,6 +2339,32 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
                     else [{"namespace": namespace, "name": None}]
                 ),
             )
+
+    variables_by_identity = {
+        (module.name.casefold(), str(variable.origin.native_name or variable.name).casefold()): variable
+        for module in modules
+        for variable in module.variables
+    }
+    for module in modules:
+        for reexport in module.reexports:
+            if not reexport.publishes_to_python():
+                continue
+            if reexport.entity_kind != "variable":
+                continue
+            variable = variables_by_identity.get(
+                (str(reexport.origin_module).casefold(), str(reexport.source_name).casefold())
+            )
+            if variable is None:
+                raise ValueError(
+                    f"Cannot resolve re-exported module variable {reexport.origin_module}.{reexport.source_name}"
+                )
+            export = {
+                "namespace": tuple(part.casefold() for part in str(reexport.module).split(".") if part),
+                "name": str(reexport.local_name),
+            }
+            exports = _declaration_exports(variable)
+            if export not in exports:
+                exports.append(export)
 
 
 # Native build inputs and link planning
@@ -3048,15 +3157,21 @@ def _merge_wrapper_modules(modules: list[SemanticModule], *, name: str | None = 
     Concatenates every declaration category while preserving list order and
     derives combined metadata and the origin from the first module.  An empty
     input cannot produce a wrapper and raises ``ValueError``.
+
+    The merged module is completed for this build as one namespace, which is
+    not how each source module's own contract is completed, so it owns copies:
+    completing it leaves the source modules describing their own contracts.
     """
     if not modules:
         raise ValueError("wrapper build found no Fortran modules or standalone procedures")
+    modules = deepcopy(modules)
 
     return SemanticModule(
         name=name or modules[0].name,
         functions=[function for module in modules for function in module.functions],
         prototypes=[prototype for module in modules for prototype in module.prototypes],
         overload_sets=[overload for module in modules for overload in module.overload_sets],
+        reexports=[reexport for module in modules for reexport in module.reexports],
         classes=[semantic_class for module in modules for semantic_class in module.classes],
         variables=[variable for module in modules for variable in module.variables],
         metadata=_wrapper_module_metadata(modules),
@@ -3819,8 +3934,12 @@ def build_c_extension(
     unsupported operations raise a documented completed-policy diagnostic
     before planning, generated files, or compiler commands. A selected genuine
     identifier collision may use a separate C forwarder translation unit.
-    ``export_symbols`` restricts semantic conversion to those exact reachable
-    C functions and can explicitly select declarations from included headers.
+    ``export_symbols`` names the source-side public surface: semantic conversion
+    keeps exactly those reachable C functions, and can explicitly select
+    declarations from included headers. It is the C-source equivalent of the
+    ``__all__`` a semantic ``.pyi`` contract states for itself; emitted stubs
+    record the corresponding Python public names there. Unknown names are
+    rejected rather than silently narrowing the module.
     ``compile_input_sources`` controls whether the parsed C sources are also
     compiled. ``native_c_sources`` adds separately compiled C inputs, while explicit
     Fortran inputs are supported only as ordinary link dependencies.

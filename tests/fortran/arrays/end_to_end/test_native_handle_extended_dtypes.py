@@ -11,63 +11,12 @@ from tests.fortran._support.wrapper_build import _build_inline_pyi_contract_modu
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-SOURCE = r"""\
-module fextended_handle_dtypes
-  use iso_c_binding, only: c_long_double, c_long_double_complex
-  implicit none
 
-  real(c_long_double), allocatable :: real_values(:)
-  complex(c_long_double_complex), pointer :: complex_values(:) => null()
+SOURCE = (NATIVE_FIXTURES / "fextended_handle_dtypes.f90").read_text(encoding="utf-8")
 
-contains
-
-  subroutine setup()
-    integer :: i
-
-    if (allocated(real_values)) deallocate(real_values)
-    allocate(real_values(2))
-    real_values = [1.0_c_long_double, 2.0_c_long_double]
-
-    if (associated(complex_values)) deallocate(complex_values)
-    allocate(complex_values(2))
-    complex_values = [(cmplx(i, -i, kind=c_long_double_complex), i = 1, 2)]
-
-  end subroutine setup
-
-  function sum_real(values) result(total)
-    real(c_long_double), intent(in) :: values(:)
-    real(c_long_double) :: total
-    total = sum(values)
-  end function sum_real
-
-  function sum_complex(values) result(total)
-    complex(c_long_double_complex), intent(in) :: values(:)
-    complex(c_long_double_complex) :: total
-    total = sum(values)
-  end function sum_complex
-
-end module fextended_handle_dtypes
-"""
-
-SIZE_SOURCE = r"""\
-module fsize_handle
-  use iso_c_binding, only: c_size_t
-  implicit none
-  integer(c_size_t), allocatable :: values(:)
-contains
-  subroutine setup()
-    if (allocated(values)) deallocate(values)
-    allocate(values(2))
-    values = [4_c_size_t, 8_c_size_t]
-  end subroutine setup
-
-  function total() result(value)
-    integer(c_size_t) :: value
-    value = sum(values)
-  end function total
-end module fsize_handle
-"""
+SIZE_SOURCE = (NATIVE_FIXTURES / "fsize_handle.f90").read_text(encoding="utf-8")
 
 SIZE_CONTRACT = """\
 from prik.contracts import Allocatable, SizeT

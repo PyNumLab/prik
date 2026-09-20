@@ -8,8 +8,11 @@ from prik.parsers.fortran import parse_fortran_file
 from tests.fortran._support.parser_procedures import (
     parse_fortran_interfaces,
     parse_fortran_module,
+    parse_fortran_modules,
 )
 from prik.parsers.fortran.models import FortranParseError
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 
@@ -105,3 +108,84 @@ end module unsupported_generic
         parse_fortran_file(source, filename="unsupported_generic.f90")
 
     assert exc_info.value.code == "PARSE_UNSUPPORTED_DECLARATION"
+
+
+def test_generic_interface_declared_in_several_blocks_becomes_one_generic():
+    """Fortran builds one generic from as many blocks as a scope declares.
+
+    Real sources split a generic across preprocessor-guarded blocks, adding
+    specifics only for the kinds a build supports, so repeated blocks name one
+    generic rather than redeclaring it.
+    """
+    source = (NATIVE_FIXTURES / "generic_interface_declared_in_several_blocks_becomes_one_generic.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = parse_fortran_module(source)
+
+    generics = [interface for interface in module.interfaces if interface.name]
+    assert len(generics) == 1
+    assert generics[0].name == "huge_value"
+    assert generics[0].specific_procedures == ["huge_value_sp", "huge_value_dp", "huge_value_qp"]
+
+
+def test_repeated_generic_names_stay_separate_per_module():
+    """Two modules in one file each own their generic of the same name."""
+    source = (NATIVE_FIXTURES / "repeated_generic_names_stay_separate_per_module.f90").read_text(encoding="utf-8")
+
+    modules = {module.name: module for module in parse_fortran_modules(source)}
+
+    assert [item.specific_procedures for item in modules["first_mod"].interfaces if item.name] == [["report_first"]]
+    assert [item.specific_procedures for item in modules["second_mod"].interfaces if item.name] == [["report_second"]]
+
+
+def test_type_bound_generic_declared_in_several_statements_becomes_one_binding():
+    """A type-bound generic collects specifics from as many statements as it takes.
+
+    A derived type may name one generic binding over several ``generic ::``
+    statements, and every statement contributes specifics to that one binding
+    rather than declaring another of the same name.
+    """
+    source = (NATIVE_FIXTURES / "type_bound_generic_declared_in_several_statements_becomes_one_binding.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = parse_fortran_module(source)
+
+    assert [binding["name"] for binding in module.derived_types[0].generic_bindings] == ["area"]
+    assert module.derived_types[0].generic_bindings[0]["targets"] == ["area_int", "area_real"]
+
+
+def test_type_bound_operator_generic_merges_across_statements_and_spacing():
+    """One defined operator binding survives being split across statements."""
+    source = (NATIVE_FIXTURES / "type_bound_operator_generic_merges_across_statements_and_spacing.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = parse_fortran_module(source)
+
+    assert [binding["name"] for binding in module.derived_types[0].generic_bindings] == ["operator(+)"]
+    assert module.derived_types[0].generic_bindings[0]["targets"] == ["add_int", "add_real"]
+
+
+def test_same_generic_name_in_two_procedures_declares_two_generics():
+    """A generic belongs to the scope declaring it, and procedures are scopes.
+
+    Two procedures of one module may each declare an interface of the same
+    name, and they name different generics. Merging them on the module they
+    share would let one procedure's specifics answer the other's calls.
+    """
+    source = (NATIVE_FIXTURES / "same_generic_name_in_two_procedures_declares_two_generics.f90").read_text(
+        encoding="utf-8"
+    )
+
+    module = parse_fortran_module(source)
+
+    assert [
+        (interface.name, [signature.name for signature in interface.procedures])
+        for interface in module.interfaces
+        if interface.name
+    ] == [
+        ("local_generic", ["first_impl"]),
+        ("local_generic", ["second_impl"]),
+    ]

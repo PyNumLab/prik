@@ -151,3 +151,63 @@ def test_pyi_python_api_rejects_invalid_projection_before_codegen(tmp_path: Path
         build_pyi_extension(INVALID_NATIVE_CALL_PYI, native_objects=[native_object], output_dir=tmp_path / "build")
 
     assert not list((tmp_path / "build").glob("*_wrapper.*"))
+
+
+STALE_PACKAGE_HOME = (
+    "from prik.contracts import Int32\n\ndef calculate(value: Int32) -> Int32: ...\n\n__all__ = [{names}]\n"
+)
+
+
+def _stale_package(tmp_path: Path, home: str, reader: str | None = None) -> Path:
+    package = tmp_path / "pkg"
+    package.mkdir(parents=True)
+    package.joinpath("home_mod.pyi").write_text(home, encoding="utf-8")
+    modules = ["home_mod"]
+    if reader is not None:
+        package.joinpath("reader_mod.pyi").write_text(reader, encoding="utf-8")
+        modules.append("reader_mod")
+    lines = "".join(f"from . import {name}\n" for name in modules)
+    stated = ", ".join(f'"{name}"' for name in modules)
+    package.joinpath("__init__.pyi").write_text(f"{lines}\n__all__ = [{stated}]\n", encoding="utf-8")
+    return package / "__init__.pyi"
+
+
+def _loaded_modules(entry: Path) -> dict[Path, object]:
+    """Load one contract package the way a wrapper build loads it."""
+    cache = pyi_pipeline._PyiSemanticModuleCache()
+    paths = tuple(sorted({entry, *_discover_pyi_imports(entry, cache)}))
+    return dict(zip(paths, cache.paths_to_semantic_modules(paths), strict=True))
+
+
+def test_all_naming_a_renamed_declaration_is_rejected(tmp_path: Path):
+    """`__all__` asserts a surface, so a name it states has to exist.
+
+    Renaming a declaration renames what the contract publishes. Dropping the
+    stale name instead would leave the contract publishing nothing and say so
+    nowhere, which is far harder to find than a refused build.
+    """
+    entry = _stale_package(tmp_path, STALE_PACKAGE_HOME.format(names='"old_name"'))
+
+    with pytest.raises(ValueError, match=r"__all__ names nothing this contract declares or imports"):
+        build_pipeline._apply_pyi_python_exports(entry, _loaded_modules(entry))
+
+
+def test_all_naming_a_stale_imported_alias_is_rejected(tmp_path: Path):
+    """An imported name that no longer arrives under that alias is stale too."""
+    entry = _stale_package(
+        tmp_path,
+        STALE_PACKAGE_HOME.format(names='"calculate"'),
+        'from .home_mod import calculate as renamed\n\n__all__ = ["calculate"]\n',
+    )
+
+    with pytest.raises(ValueError, match=r"__all__ names nothing this contract declares or imports"):
+        build_pipeline._apply_pyi_python_exports(entry, _loaded_modules(entry))
+
+
+def test_all_accepts_an_empty_list_and_repeated_names(tmp_path: Path):
+    """Publishing nothing is a statement; naming one entity twice states it once."""
+    entry = _stale_package(tmp_path, STALE_PACKAGE_HOME.format(names=""))
+    build_pipeline._apply_pyi_python_exports(entry, _loaded_modules(entry))
+
+    entry = _stale_package(tmp_path / "again", STALE_PACKAGE_HOME.format(names='"calculate", "calculate"'))
+    build_pipeline._apply_pyi_python_exports(entry, _loaded_modules(entry))

@@ -4,3 +4,5 @@ from prik.contracts import Addr, Arg, Int32, native_call
 def module_increment(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["module_increment"]

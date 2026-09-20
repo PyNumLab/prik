@@ -7,6 +7,8 @@ logical is exactly what `numpy.bool_` describes. Kinds wider than a byte have no
 NumPy Boolean to be, so they report the integer of matching width instead.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -14,59 +16,9 @@ from tests.fortran._support.wrapper_build import _build_text_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-LOGICAL_VIEW_SOURCE = """
-module flogical_view_f90
-  use iso_c_binding, only: c_bool
-  implicit none
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  logical(c_bool) :: narrow(4)
-  logical :: wide(4)
-  logical(c_bool), allocatable :: narrow_alloc(:)
-  logical, allocatable :: wide_alloc(:)
-  logical, target :: wide_store(4)
-  logical, pointer :: wide_pointer(:) => null()
-
-contains
-
-  subroutine setup()
-    narrow = [.true., .false., .true., .false.]
-    wide = [.true., .false., .true., .false.]
-    if (.not. allocated(narrow_alloc)) allocate(narrow_alloc(4))
-    narrow_alloc = [.true., .true., .false., .false.]
-    if (.not. allocated(wide_alloc)) allocate(wide_alloc(4))
-    wide_alloc = [.true., .false., .true., .false.]
-    wide_store = [.true., .false., .true., .false.]
-    wide_pointer => wide_store
-  end subroutine setup
-
-  subroutine negate()
-    narrow = .not. narrow
-    wide = .not. wide
-  end subroutine negate
-
-  function count_narrow() result(total)
-    integer :: total
-    total = count(narrow)
-  end function count_narrow
-
-  function count_wide() result(total)
-    integer :: total
-    total = count(wide)
-  end function count_wide
-
-  function count_narrow_actual(values) result(total)
-    logical(c_bool), intent(in) :: values(:)
-    integer :: total
-    total = count(values)
-  end function count_narrow_actual
-
-  function count_wide_actual(values) result(total)
-    logical, intent(in) :: values(:)
-    integer :: total
-    total = count(values)
-  end function count_wide_actual
-end module flogical_view_f90
-"""
+LOGICAL_VIEW_SOURCE = (NATIVE_FIXTURES / "flogical_view_f90.f90").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")

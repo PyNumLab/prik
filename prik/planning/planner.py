@@ -117,10 +117,12 @@ from prik.planning.models import (
     LifecycleActionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    ModuleVariablePublicationPlan,
     NativeGeneratedCodeGroupKind,
     NativeGeneratedCodeGroupPlan,
     GeneratedSupportProcedureImplementationOwner,
     NativeEntrypointArgumentPlan,
+    NativeEntrypointExtentPlan,
     NativeEntrypointCallbackPlan,
     NativeEntrypointFunctionPlan,
     DirectCABIPlan,
@@ -130,6 +132,7 @@ from prik.planning.models import (
     NativeEntrypointParameterPlan,
     NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
+    NamespaceAliasPlan,
     NamespacePlan,
     NativeArrayActualPlan,
     NativeArrayDefaultHandlePlan,
@@ -153,6 +156,9 @@ from prik.planning.entrypoints import (
     build_callback_support_procedure_entrypoint,
     build_generated_support_procedure_projection,
 )
+
+# Re-export reaches Python only where the published name is one exported object.
+_ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "derived_type"})
 
 
 _DATATYPE_FAMILIES = {
@@ -229,6 +235,16 @@ class _ClassPolicyEntry:
                 }
             ),
         )
+
+
+@dataclass(frozen=True)
+class _TypePlacement:
+    """One namespace a type is defined in, the names binding it, and its parent."""
+
+    entry: _ClassPolicyEntry
+    namespace: tuple[str, ...]
+    python_names: tuple[str, ...]
+    nested_in: tuple[str, str] | None
 
 
 @dataclass(frozen=True)
@@ -362,17 +378,25 @@ class WrapperPlanner(ClassVisitor):
         # Initialize every class-backed index from one complete ordered collection.
         semantic_classes = _ClassPolicyCatalog.ordered_semantic_classes(module.classes)
         class_policies = _ClassPolicyCatalog.from_semantic_classes(semantic_classes)
-        self._derived_type_names = {semantic_class.name for semantic_class in semantic_classes}
         self._derived_field_plans: dict[str, DerivedFieldPlan] = {}
         self._complete_derived_backend_symbols(semantic_classes)
 
         # Project every public surface before linking private callable entries.
-        functions, variables, derived_types, classes, overloads = self._namespace_member_plans(
+        functions, variables, variable_publications, derived_types, classes, overloads = self._namespace_member_plans(
             module,
             class_policies,
         )
+        aliases = self._aliases_by_namespace(module)
         if not any(
-            (*functions.values(), *variables.values(), *derived_types.values(), *classes.values(), *overloads.values())
+            (
+                *functions.values(),
+                variables,
+                *variable_publications.values(),
+                *derived_types.values(),
+                *classes.values(),
+                *overloads.values(),
+                *aliases.values(),
+            )
         ):
             raise ValueError(f"Semantic module {module.name!r} has no public wrapper exports")
 
@@ -381,8 +405,17 @@ class WrapperPlanner(ClassVisitor):
         self._attach_overload_functions(functions, overloads)
 
         # Complete stable namespace paths, generated symbols, and required headers.
-        namespaces = self._namespace_plans(module.name, functions, variables, derived_types, classes, overloads)
-        support_projection = build_generated_support_procedure_projection(namespaces)
+        namespaces = self._namespace_plans(
+            module.name,
+            functions,
+            variables,
+            variable_publications,
+            derived_types,
+            classes,
+            overloads,
+            aliases,
+        )
+        support_projection = build_generated_support_procedure_projection(namespaces, variables)
         support_procedures = support_projection.support_procedures
         generated_code_groups = self._native_generated_code_groups(
             module.name,
@@ -413,9 +446,10 @@ class WrapperPlanner(ClassVisitor):
                 if generated_code_groups
                 else None
             ),
+            variables=variables,
             namespaces=namespaces,
             native_generated_code_groups=generated_code_groups,
-            required_headers=self._required_headers(namespaces),
+            required_headers=self._required_headers(namespaces, variables),
         )
 
     @staticmethod
@@ -468,23 +502,25 @@ class WrapperPlanner(ClassVisitor):
         self,
         module: models.SemanticModule,
         class_policies: _ClassPolicyCatalog,
-    ) -> tuple[dict, dict, dict, dict, dict]:
+    ) -> tuple[dict, dict, dict, dict, dict, dict]:
         """Build namespace-owned plan maps from one shared class-policy catalog.
 
-        Direct functions and variables are projected first. The local catalog
+        Direct functions and canonical variables are projected first. The local catalog
         then organizes each public class once so derived-type and Python-class
         projections consume the same semantic declaration, completed policies,
         and callable owner-path maps.
         """
         # Project ordinary module members independently from class-owned surfaces.
         functions = self._functions_by_namespace(module)
-        variables = self._variables_by_namespace(module)
+        variables, variable_publications = self._module_variables_and_publications(module)
+        placements = self._type_placements(class_policies)
 
         return (
             functions,
             variables,
-            self._derived_types_by_namespace(class_policies),
-            self._classes_by_namespace(module.name, class_policies),
+            variable_publications,
+            self._derived_types_by_namespace(placements),
+            self._classes_by_namespace(module.name, placements),
             self._module_overloads_by_namespace(module),
         )
 
@@ -505,46 +541,174 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         functions: dict,
-        variables: dict,
+        variables: tuple[ModuleVariablePlan, ...],
+        variable_publications: dict,
         derived_types: dict,
         classes: dict,
         overloads: dict,
+        aliases: dict,
     ) -> tuple[NamespacePlan, ...]:
         """Freeze linked namespace members in dependency-safe path order."""
         self._complete_generated_symbols(functions, variables)
-        namespace_paths = self._namespace_paths((*functions, *variables, *derived_types, *classes, *overloads))
-        return tuple(
+        namespace_paths = self._namespace_paths(
+            (*functions, *variable_publications, *derived_types, *classes, *overloads, *aliases)
+        )
+        namespaces = tuple(
             self._namespace_plan(
                 module_name,
                 path,
                 tuple(functions[path]),
-                tuple(variables[path]),
+                tuple(variable_publications[path]),
                 tuple(derived_types[path]),
                 tuple(classes[path]),
                 tuple(overloads[path]),
+                tuple(aliases[path]),
             )
             for path in namespace_paths
         )
+        self._complete_variable_support_namespaces(variables, namespaces)
+        return self._bases_first(namespaces)
+
+    @staticmethod
+    def _bases_first(namespaces: tuple[NamespacePlan, ...]) -> tuple[NamespacePlan, ...]:
+        """Order namespaces so each comes after those defining the bases it extends.
+
+        A namespace's classes are created when it is set up, and a class
+        extending one another module declares needs that base to exist. Path
+        order is kept wherever inheritance does not decide; namespaces whose
+        classes extend each other's are left in path order for validation to
+        reject.
+        """
+        defined_in = {
+            surface.type_identity: namespace.python_path for namespace in namespaces for surface in namespace.classes
+        }
+        needs = {
+            namespace.python_path: {
+                defined_in[base]
+                for surface in namespace.classes
+                for base in surface.base_identities
+                if base in defined_in
+            }
+            - {namespace.python_path}
+            for namespace in namespaces
+        }
+        ordered: list[NamespacePlan] = []
+        remaining = list(namespaces)
+        while remaining:
+            placed = {namespace.python_path for namespace in ordered}
+            ready = next((namespace for namespace in remaining if needs[namespace.python_path] <= placed), None)
+            if ready is None:
+                return (*ordered, *remaining)
+            ordered.append(ready)
+            remaining.remove(ready)
+        return tuple(ordered)
+
+    @staticmethod
+    def _complete_variable_support_namespaces(
+        variables: tuple[ModuleVariablePlan, ...],
+        namespaces: tuple[NamespacePlan, ...],
+    ) -> None:
+        """Place a derived variable's private helpers beside its type's own.
+
+        They wrap the variable with that type's class and extend its operation
+        map, so they live in the one namespace defining the type. Canonical
+        ownership does not move.
+        """
+        defined_in = {
+            derived.type_identity: namespace.python_path
+            for namespace in namespaces
+            for derived in namespace.derived_types
+        }
+        for variable in variables:
+            variable.binding.support_namespace = (
+                () if variable.derived is None else defined_in.get(variable.derived.handoff.type_identity, ())
+            )
+
+    def _aliases_by_namespace(self, module: models.SemanticModule) -> dict[tuple[str, ...], list[NamespaceAliasPlan]]:
+        """Group each published re-export under the namespace that publishes it.
+
+        An alias binds one Python object already exported elsewhere, so it is
+        planned only where the published name reaches Python as exactly that.
+        The declaration it names supplies the attribute to read, because a
+        Fortran spelling is not a Python attribute and only the completed export
+        knows which name the declaring namespace actually bound. The alias
+        publishes under the name export policy completed for it, inside the same
+        ledger as this module's declarations, so it cannot take one of theirs.
+        """
+        grouped = defaultdict(list)
+        for reexport in module.reexports:
+            if not reexport.publishes_to_python():
+                continue
+            if reexport.entity_kind not in _ALIASABLE_REEXPORT_KINDS:
+                continue
+            source_namespace = tuple(part.casefold() for part in reexport.origin_module.split(".") if part)
+            source_name = self._exported_declaration_name(module, source_namespace, reexport.source_name)
+            if source_name is None:
+                continue
+            grouped[tuple(part.casefold() for part in reexport.module.split(".") if part)].append(
+                NamespaceAliasPlan(
+                    python_name=reexport.python_name or str(reexport.local_name),
+                    source_namespace=source_namespace,
+                    source_name=source_name,
+                )
+            )
+        return grouped
+
+    @staticmethod
+    def _exported_declaration_name(
+        module: models.SemanticModule,
+        namespace: tuple[str, ...],
+        source_name: str,
+    ) -> str | None:
+        """Return the Python name one namespace bound for a re-exported entity.
+
+        A record reaching here states the entity either the way its source
+        declares it or the way its own contract already published it, so both
+        spellings identify the declaration. Finding none means the namespace
+        exports no such object and there is nothing an alias could bind.
+        """
+        wanted = source_name.casefold()
+        published: str | None = None
+        for declaration in (*module.functions, *module.classes):
+            if getattr(declaration, "visibility", "public") != "public":
+                continue
+            native = str(getattr(declaration, "native_name", "") or declaration.name).casefold()
+            exports = declaration.metadata.get(models.PYTHON_EXPORTS_METADATA) or ()
+            for export in exports:
+                name = export.get("name")
+                if not name or tuple(export.get("namespace") or ()) != namespace:
+                    continue
+                # A source spelling identifies the declaration itself, while a
+                # published one identifies what a namespace called it. Only a
+                # collision makes the two name different declarations, and then
+                # the source spelling is the one that came from Fortran.
+                if native == wanted:
+                    return str(name)
+                if str(name).casefold() == wanted:
+                    published = published or str(name)
+        return published
 
     def _namespace_plan(
         self,
         module_name: str,
         path: tuple[str, ...],
         functions: tuple[FunctionPlan, ...],
-        variables: tuple[ModuleVariablePlan, ...],
+        variable_publications: tuple[ModuleVariablePublicationPlan, ...],
         derived_types: tuple[DerivedTypePlan, ...],
         classes: tuple[ClassSurfacePlan, ...],
         overloads: tuple[OverloadPlan, ...],
+        aliases: tuple[NamespaceAliasPlan, ...] = (),
     ) -> NamespacePlan:
         """Create one namespace after its generated symbols are complete."""
         return NamespacePlan(
             owner_path=self._namespace_owner_path(module_name, path),
             python_path=path,
             functions=functions,
-            variables=variables,
+            variable_publications=variable_publications,
             derived_types=derived_types,
             classes=classes,
             overloads=overloads,
+            aliases=aliases,
         )
 
     def _complete_derived_backend_symbols(
@@ -557,12 +721,6 @@ class WrapperPlanner(ClassVisitor):
         self._derived_backend_symbols = {
             policy.type_identity: self._derived_backend_symbol_for_policy(policy, counts) for policy in policies
         }
-        self._class_python_names = self._completed_class_python_names(policies)
-
-    @staticmethod
-    def _completed_class_python_names(policies: tuple[DerivedTypePolicy, ...]) -> dict[tuple[str, str], str]:
-        """Index the primary completed Python export for each native type."""
-        return {policy.type_identity: policy.python_names[0] for policy in policies if policy.python_names}
 
     @staticmethod
     def _derived_backend_symbol_for_policy(policy: DerivedTypePolicy, counts: Counter) -> str:
@@ -586,25 +744,58 @@ class WrapperPlanner(ClassVisitor):
     # Derived-type definitions, fields, and class surfaces.
     def _derived_types_by_namespace(
         self,
-        class_policies: _ClassPolicyCatalog,
+        placements: tuple[_TypePlacement, ...],
     ) -> dict[tuple[str, ...], list[DerivedTypePlan]]:
         """Project opaque types from completed class and field policies."""
         grouped = defaultdict(list)
-        for entry in class_policies.entries:
-            policy = entry.derived_policy
-            surface = entry.surface_policy
-            exports_by_namespace = defaultdict(list)
-            for export in policy.python_exports:
-                exports_by_namespace[export.namespace].append(export.name)
-            for namespace, python_names in exports_by_namespace.items():
-                grouped[namespace].append(
-                    self._derived_type_plan(
-                        policy,
-                        tuple(python_names),
-                        fields=surface.effective_fields,
-                    )
+        for placement in placements:
+            entry = placement.entry
+            grouped[placement.namespace].append(
+                self._derived_type_plan(
+                    entry.derived_policy,
+                    placement.python_names,
+                    fields=entry.surface_policy.effective_fields,
+                    contract_name=models.completed_contract_name(entry.semantic_class),
+                    nested_in=placement.nested_in,
                 )
+            )
         return grouped
+
+    @staticmethod
+    def _type_placements(class_policies: _ClassPolicyCatalog) -> tuple[_TypePlacement, ...]:
+        """Return each namespace a type is defined in, and the names bound there.
+
+        A type is defined in the namespace that publishes it, under the names
+        it is published as. Generated code reaches a type in the one namespace
+        defining it, so a plan defining it in two is rejected. A type that
+        publishes nowhere still exists -- a
+        published signature may take or return one -- so it is defined once
+        without a public name: beside its parent class, which binds it, when it
+        is nested, and at the root otherwise.
+        """
+        parents = {id(child): entry for entry in class_policies.entries for child in entry.semantic_class.classes}
+        homes: dict[int, tuple[tuple[str, ...], ...]] = {}
+        placements: list[_TypePlacement] = []
+        # Entries arrive parents first, so a nested type finds its parent's home.
+        for entry in class_policies.entries:
+            published: dict[tuple[str, ...], list[str]] = defaultdict(list)
+            for export in entry.derived_policy.python_exports:
+                published[export.namespace].append(export.name)
+            parent = parents.get(id(entry.semantic_class))
+            if published:
+                found = tuple(
+                    _TypePlacement(entry, namespace, tuple(names), None) for namespace, names in published.items()
+                )
+            elif parent is not None:
+                found = tuple(
+                    _TypePlacement(entry, namespace, (), parent.derived_policy.type_identity)
+                    for namespace in homes[id(parent.semantic_class)]
+                )
+            else:
+                found = (_TypePlacement(entry, (), (), None),)
+            homes[id(entry.semantic_class)] = tuple(item.namespace for item in found)
+            placements.extend(found)
+        return tuple(placements)
 
     def _derived_type_plan(
         self,
@@ -612,12 +803,13 @@ class WrapperPlanner(ClassVisitor):
         python_names: tuple[str, ...],
         *,
         fields: tuple[DerivedFieldPolicy, ...] | None = None,
+        contract_name: str,
+        nested_in: tuple[str, str] | None,
     ) -> DerivedTypePlan:
         """Mechanically project one completed derived type and its public fields."""
         planned_fields = tuple(self._derived_field_plan(field) for field in (fields or policy.fields))
         return DerivedTypePlan(
             owner_path=policy.owner_path,
-            type_name=policy.type_name,
             type_identity=policy.type_identity,
             backend_symbol=self._derived_backend_symbol(policy.type_identity),
             native_type_name=policy.native_type_name,
@@ -626,30 +818,27 @@ class WrapperPlanner(ClassVisitor):
             fields=planned_fields,
             bind_c=policy.bind_c,
             abstract=policy.abstract,
+            contract_name=contract_name,
+            nested_in=nested_in,
         )
 
     # Generated class surfaces compose Phase 8 types and ordinary function plans.
     def _classes_by_namespace(
         self,
         module_name: str,
-        class_policies: _ClassPolicyCatalog,
+        placements: tuple[_TypePlacement, ...],
     ) -> dict[tuple[str, ...], list[ClassSurfacePlan]]:
-        """Project completed class surfaces into their public namespaces."""
+        """Project each class surface beside the type it is defined with."""
         grouped = defaultdict(list)
-        for entry in class_policies.entries:
-            policy = entry.surface_policy
-            exports_by_namespace = defaultdict(list)
-            for export in policy.python_exports:
-                exports_by_namespace[export.namespace].append(export.name)
-            for namespace, python_names in exports_by_namespace.items():
-                grouped[namespace].append(
-                    self._class_surface_plan(
-                        module_name,
-                        namespace,
-                        entry,
-                        tuple(python_names),
-                    )
+        for placement in placements:
+            grouped[placement.namespace].append(
+                self._class_surface_plan(
+                    module_name,
+                    placement.namespace,
+                    placement.entry,
+                    placement.python_names,
                 )
+            )
         return grouped
 
     def _class_surface_plan(
@@ -678,6 +867,7 @@ class WrapperPlanner(ClassVisitor):
         return ClassSurfacePlan(
             owner_path=policy.owner_path,
             type_identity=policy.type_identity,
+            backend_symbol=self._derived_backend_symbol(policy.type_identity),
             python_names=python_names,
             base_identities=policy.base_identities,
             constructor=constructor,
@@ -1041,12 +1231,16 @@ class WrapperPlanner(ClassVisitor):
             return None
         return completed_function_wrapper_policy(function)
 
-    def _variables_by_namespace(
+    def _module_variables_and_publications(
         self,
         module: models.SemanticModule,
-    ) -> dict[tuple[str, ...], list[ModuleVariablePlan]]:
-        """Group exported module-variable plans by completed Python namespace."""
-        variables = defaultdict(list)
+    ) -> tuple[
+        tuple[ModuleVariablePlan, ...],
+        dict[tuple[str, ...], list[ModuleVariablePublicationPlan]],
+    ]:
+        """Build the canonical native-variable registry and namespace publications."""
+        variables = []
+        publications = defaultdict(list)
         for variable in module.variables:
             if variable.visibility != "public":
                 continue
@@ -1054,25 +1248,53 @@ class WrapperPlanner(ClassVisitor):
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
+            plan = self._module_variable_plan(policy)
+            variables.append(plan)
             for namespace, python_names in exports_by_namespace.items():
-                variables[namespace].append(
-                    self._module_variable_plan(policy, namespace, tuple(python_names), module.name)
+                publications[namespace].append(
+                    ModuleVariablePublicationPlan(
+                        variable=plan,
+                        python_names=tuple(python_names),
+                    )
                 )
-        return variables
+        return tuple(variables), publications
 
     def _complete_generated_symbols(
         self,
         functions: dict[tuple[str, ...], list[FunctionPlan]],
-        variables: dict[tuple[str, ...], list[ModuleVariablePlan]],
+        variables: tuple[ModuleVariablePlan, ...],
     ) -> None:
-        """Keep unique symbols short and qualify only colliding local names."""
-        entries = (*self._planned_items(functions), *self._planned_items(variables))
+        """Keep unique symbols short and qualify from stable native identity."""
+        variable_entries = tuple((self._variable_native_namespace(item), item) for item in variables)
+        entries = (*self._planned_items(functions), *variable_entries)
         counts = Counter(item.symbol_name.casefold() for _namespace, item in entries)
         for namespace, item in entries:
             if counts[item.symbol_name.casefold()] > 1:
                 item.symbol_name = self._symbol_name(namespace, item.symbol_name)
+        self._separate_folded_generated_symbols(entries)
         self._qualify_variable_bridge_collisions(functions, variables)
         self._complete_entrypoint_symbols(functions)
+
+    @staticmethod
+    def _separate_folded_generated_symbols(entries: tuple[tuple[tuple[str, ...], object], ...]) -> None:
+        """Separate stems that only a case-sensitive source keeps apart.
+
+        A generated symbol is shared with Fortran, which folds case, so two
+        declarations a case-sensitive language distinguishes by spelling alone
+        reach one stem that qualifying by namespace cannot separate. They
+        publish different Python names, so the stems are numbered in plan order.
+        """
+        taken: set[str] = set()
+        for _namespace, item in entries:
+            stem = item.symbol_name
+            if stem.casefold() not in taken:
+                taken.add(stem.casefold())
+                continue
+            suffix = 2
+            while f"{stem}_{suffix}".casefold() in taken:
+                suffix += 1
+            item.symbol_name = f"{stem}_{suffix}"
+            taken.add(item.symbol_name.casefold())
 
     @staticmethod
     def _complete_entrypoint_symbols(
@@ -1087,24 +1309,22 @@ class WrapperPlanner(ClassVisitor):
     def _qualify_variable_bridge_collisions(
         self,
         functions: dict[tuple[str, ...], list[FunctionPlan]],
-        variables: dict[tuple[str, ...], list[ModuleVariablePlan]],
+        variables: tuple[ModuleVariablePlan, ...],
     ) -> None:
-        """Qualify a variable helper when its get/set spelling collides with a function."""
-        for namespace, namespace_variables in variables.items():
-            function_symbols = {function.symbol_name for function in functions[namespace]}
-            self._qualify_namespace_variable_helpers(namespace, namespace_variables, function_symbols)
-
-    def _qualify_namespace_variable_helpers(
-        self,
-        namespace: tuple[str, ...],
-        variables: list[ModuleVariablePlan],
-        function_symbols: set[str],
-    ) -> None:
-        """Resolve get/set helper collisions inside one Python namespace."""
+        """Qualify a native variable helper when it collides with any function."""
+        function_symbols = {function.symbol_name for items in functions.values() for function in items}
         for variable in variables:
             helper_symbols = {f"get_{variable.symbol_name}", f"set_{variable.symbol_name}"}
             if function_symbols & helper_symbols:
-                variable.symbol_name = self._symbol_name(namespace, variable.symbol_name)
+                variable.symbol_name = self._symbol_name(
+                    self._variable_native_namespace(variable),
+                    variable.symbol_name,
+                )
+
+    @staticmethod
+    def _variable_native_namespace(variable: ModuleVariablePlan) -> tuple[str, ...]:
+        """Return the declaring native path used only for generated-name qualification."""
+        return tuple(part.casefold() for part in variable.owner_path.rsplit(".", 1)[0].split(".") if part)
 
     def _planned_items(self, grouped: dict[tuple[str, ...], list]) -> tuple[tuple[tuple[str, ...], object], ...]:
         """Flatten namespace groups while retaining each item's namespace."""
@@ -1113,23 +1333,18 @@ class WrapperPlanner(ClassVisitor):
     def _module_variable_plan(
         self,
         policy: ModuleVariablePolicy,
-        namespace: tuple[str, ...],
-        python_names: tuple[str, ...],
-        module_name: str,
     ) -> ModuleVariablePlan:
         """Project one completed module-variable policy into its shared plan record.
 
-        ``policy`` supplies all accessor, setter, descriptor, and derived
-        object decisions.  ``namespace`` and ``python_names`` select the
-        exported owner path and binding aliases.  The result shares array and
-        derived-field projections with the rest of the module; no accessor or
-        ownership policy is selected here.
+        ``policy`` supplies the declaring native identity plus all accessor,
+        setter, descriptor, and derived-object decisions. Publications are
+        projected separately and cannot change this record's owner path.
         """
         # Roles are present only where the completed accessor policy requires them.
         getter_role = self._module_getter_role(policy)
         setter_role = f"{policy.owner_path}:setter" if policy.setter_action is SetterAction.WRITE_THROUGH else None
         return ModuleVariablePlan(
-            owner_path=self._export_owner_path(module_name, namespace, python_names[0]),
+            owner_path=policy.owner_path,
             symbol_name=policy.native_name.casefold(),
             semantic_type_name=policy.semantic_type_name,
             datatype_family=self._transfer_datatype_family(
@@ -1137,7 +1352,7 @@ class WrapperPlanner(ClassVisitor):
                 policy.derived.handoff if policy.derived is not None else None,
             ),
             binding=BindingModuleVariablePlan(
-                python_names=python_names,
+                support_namespace=(),
                 getter_action=policy.getter_action,
                 setter_action=policy.setter_action,
                 initializer=policy.initializer,
@@ -1355,19 +1570,50 @@ class WrapperPlanner(ClassVisitor):
                 )
             )
         )
-        groups.extend(
-            (result.owner_path, "declaration_extent", None)
-            for result in results
-            if result.array is not None and "bridge" in result.array.extent_evaluation
-        )
+        extents = WrapperPlanner._entrypoint_extent_groups(arguments, results)
+        groups.extend((owner, kind, None) for owner, kind in extents)
         return tuple(
             NativeEntrypointParameterPlan(
                 owner_path=owner,
                 position=position,
                 source_kind=source_kind,
                 native_position=native_position,
+                extents=extents.get((owner, source_kind), ()),
             )
             for position, (owner, source_kind, native_position) in enumerate(groups)
+        )
+
+    @staticmethod
+    def _entrypoint_extent_groups(
+        arguments: tuple[ArgumentTransferPlan, ...],
+        results: tuple[NativeEntrypointResultPlan, ...],
+    ) -> dict[tuple[str, str], tuple[NativeEntrypointExtentPlan, ...]]:
+        """Return the extents each owner's group hands back, keyed by owner and group kind.
+
+        Only the bridge can evaluate a specification function, so it hands back
+        each extent one sizes: a result's to allocate by, an argument's for the
+        binding to check the actual by.
+        """
+        extents: dict[tuple[str, str], tuple[NativeEntrypointExtentPlan, ...]] = {}
+        for result in results:
+            if result.array is not None and "bridge" in result.array.extent_evaluation:
+                extents[(result.owner_path, "declaration_extent")] = WrapperPlanner._bridge_extents(
+                    result.array, f"prik_decl_extent_{result.result_position}"
+                )
+        for argument in arguments:
+            if argument.array is not None and "bridge" in argument.array.extent_evaluation:
+                extents[(argument.owner_path, "argument_extent")] = WrapperPlanner._bridge_extents(
+                    argument.array, f"{argument.entrypoint.parameter_name}_declared_extent"
+                )
+        return extents
+
+    @staticmethod
+    def _bridge_extents(array, prefix: str) -> tuple[NativeEntrypointExtentPlan, ...]:
+        """Name the output carrying each axis of one array the bridge evaluates."""
+        return tuple(
+            NativeEntrypointExtentPlan(axis=axis, parameter_name=f"{prefix}_{axis}")
+            for axis, evaluation in enumerate(array.extent_evaluation)
+            if evaluation == "bridge"
         )
 
     def _entrypoint_result_plans(
@@ -1557,8 +1803,6 @@ class WrapperPlanner(ClassVisitor):
                     scalar_native_type=slot_policy.scalar_native_type,
                     array_logical_abi=slot_policy.array_logical_abi,
                     array_native_type=slot_policy.array_native_type,
-                    array_copy_in=slot_policy.array_copy_in,
-                    array_copy_out=slot_policy.array_copy_out,
                     literal_type=slot_policy.literal_type,
                     literal_value=slot_policy.literal_value,
                     result_position=slot_policy.result_position,
@@ -1650,9 +1894,6 @@ class WrapperPlanner(ClassVisitor):
             scalar_native_type=policy.scalar_native_type,
             array_logical_abi=policy.array_logical_abi,
             array_native_type=policy.array_native_type,
-            array_copy_in=policy.array_copy_in,
-            array_copy_out=policy.array_copy_out,
-            array_writeback_abi=policy.array_writeback_abi,
             object_kind=policy.ownership.kind,
             ownership_owner=policy.ownership.owner,
             transfer_mode=policy.ownership.transfer,
@@ -1736,10 +1977,12 @@ class WrapperPlanner(ClassVisitor):
             owner_path=policy.owner_path,
             name=policy.name,
             semantic_type_name=policy.semantic_type_name,
+            native_fortran_type=policy.native_fortran_type,
             object_kind=policy.object_kind,
             rank=policy.rank,
             passed_by_value=policy.passed_by_value,
             intent=policy.intent,
+            optionality=policy.optionality,
             abi=policy.abi,
             adapter_action=policy.adapter_action,
             python_action=policy.python_action,
@@ -1784,9 +2027,11 @@ class WrapperPlanner(ClassVisitor):
             owner_path=policy.owner_path,
             name=policy.name,
             semantic_type_name=policy.semantic_type_name,
+            native_fortran_type=policy.native_fortran_type,
             rank=policy.rank,
             passed_by_value=policy.passed_by_value,
             intent=policy.intent,
+            optional=policy.optional,
             character_length=policy.character_length,
             array=self._array_plan(policy.array, policy.owner_path),
             derived_type_identity=policy.derived_type_identity,
@@ -1829,7 +2074,6 @@ class WrapperPlanner(ClassVisitor):
                 PolymorphicVariantPlan(
                     type_identity=identity,
                     backend_symbol=self._derived_backend_symbol(identity),
-                    python_name=self._class_python_names[identity],
                     abi_code=index,
                 )
                 for index, identity in enumerate(policy.variants, start=1)
@@ -1948,7 +2192,7 @@ class WrapperPlanner(ClassVisitor):
         policy: LifecyclePolicy,
     ) -> LifecycleActionPlan:
         """Return one transfer-owned action for function-wide ordering."""
-        family = self._datatype_family(policy.semantic_type_name)
+        family = self._transfer_datatype_family(policy.semantic_type_name, policy.derived)
         binding = None
         bridge = None
         if policy.phase is WritebackPhase.NATIVE_MUTATION:
@@ -2558,12 +2802,18 @@ class WrapperPlanner(ClassVisitor):
         """Return bridge-resolved declaration-callable symbol roles."""
         return tuple(item.symbolic_role for item in declaration_callables)
 
-    def _required_headers(self, namespaces: tuple[NamespacePlan, ...]) -> tuple[str, ...]:
+    def _required_headers(
+        self,
+        namespaces: tuple[NamespacePlan, ...],
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> tuple[str, ...]:
         """Return the union of headers selected by completed handle plans."""
         handles = tuple(
             handle
-            for namespace in namespaces
-            for handle in self._namespace_native_array_handles(namespace)
+            for handle in (
+                *(item.native_array_handle for item in variables),
+                *(handle for namespace in namespaces for handle in self._namespace_native_array_handles(namespace)),
+            )
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
@@ -2621,10 +2871,9 @@ class WrapperPlanner(ClassVisitor):
         self,
         namespace: NamespacePlan,
     ) -> tuple[NativeArrayHandlePlan | None, ...]:
-        """Return argument, result, and module handle plans for one namespace."""
+        """Return argument, result, and derived-field handles for one namespace."""
         return (
             *(handle for function in namespace.functions for handle in self._function_native_array_handles(function)),
-            *(variable.native_array_handle for variable in namespace.variables),
             *self._derived_field_native_array_handles(namespace),
         )
 
@@ -2667,8 +2916,6 @@ class WrapperPlanner(ClassVisitor):
         try:
             return _DATATYPE_FAMILIES[semantic_type_name]
         except KeyError:
-            if semantic_type_name in getattr(self, "_derived_type_names", set()):
-                return DatatypeFamily.DERIVED
             raise ValueError(f"Unsupported first-lane scalar type {semantic_type_name!r}") from None
 
     def _transfer_datatype_family(

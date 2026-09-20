@@ -38,7 +38,7 @@ def test_borrowed_child_wrapper_never_finalizes_native_component(
     module = compiled_borrowed_component_module
 
     module.reset_final_count()
-    owner = module.parent()
+    owner = module.Parent()
     borrowed = owner.value
 
     del borrowed

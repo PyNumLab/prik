@@ -87,6 +87,12 @@ under [`examples/c/libm/`](../../../../examples/c/libm/).
 reviewed 60-function public surface. The export allowlist excludes the rest of
 the platform header and fails if a requested ISO C99 function is missing.
 
+The allowlist names native C functions; the generated contract records the
+corresponding Python public names in `__all__`. Review that list together with
+the signatures below it. Once you build from the contract, `__all__` is the
+statement of what the module publishes, and `--export-symbols` no longer takes
+part.
+
 Generate the contract for the active target with:
 
 ```bash

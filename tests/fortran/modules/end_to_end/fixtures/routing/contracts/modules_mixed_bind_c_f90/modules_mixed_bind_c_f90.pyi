@@ -11,3 +11,5 @@ def direct_total(
 def adapted_total(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["counter", "direct_total", "adapted_total"]

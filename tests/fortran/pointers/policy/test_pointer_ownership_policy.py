@@ -1,5 +1,7 @@
 """Completed pointer ownership and native-array handle policy."""
 
+from pathlib import Path
+
 import pytest
 from prik.printers import PyiPrinter
 from prik.semantics.models import (
@@ -33,6 +35,8 @@ from tests.fortran._support.ownership_policy import (
     _writable_argument_context,
     parse_pyi_text,
 )
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_native_array_handle_dispatcher_routes_completed_policy_to_named_method():
@@ -599,37 +603,7 @@ def consume(
 
 def test_native_array_handle_policies_complete_before_ir_lowering():
     module = parse_pyi_text(
-        """
-values: Allocatable[Float64[:]]
-target_values: Annotated[Allocatable[Float64[:]], Aliased]
-
-class box:
-    values: Allocatable[Float64[:]]
-    target: Pointer[Float64[:]]
-
-def consume(
-    values: Allocatable[Float64[:]],
-    managed_target: Annotated[
-        Pointer[Float64[:]],
-        PointerPolicy(
-            nullable=True,
-            transfer="call_local",
-            target_owner="caller",
-            lifetime="call",
-            deallocation="deallocate_resize",
-            shape_source="pointer_bounds",
-            contiguity="contiguous",
-            reassociation="allocate_resize",
-            aliasing="descriptor",
-            mutability="mutable",
-        ),
-    ],
-    maybe_target: Pointer[Float64[:]] | None = ...,
-) -> None: ...
-
-def make_values() -> Allocatable[Float64[:]]: ...
-def make_target() -> Pointer[Float64[:]]: ...
-""",
+        (NATIVE_FIXTURES / "native_array_handle_policies_complete_before_ir_lowering.f90").read_text(encoding="utf-8"),
         module_name="native_handles",
     )
 

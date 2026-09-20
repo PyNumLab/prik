@@ -108,7 +108,7 @@ def test_optional_arguments_drive_fortran_present_behavior(
     assert "May be omitted or passed as None." in module.summarize.__doc__
 
     values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-    item = module.sample()
+    item = module.Sample()
     item.value = np.int32(7)
 
     assert module.summarize(np.int32(5)) == np.int32(5)

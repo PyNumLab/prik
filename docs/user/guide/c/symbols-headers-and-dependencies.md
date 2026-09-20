@@ -171,9 +171,18 @@ python3 -m prik generate --pyi --language c api_probe.h \
   --out contracts/api.pyi
 ```
 
-The export file selects the semantic API, not linker exports. Selected
-functions still need native link inputs and a signature supported by the C
-wrapper. See [C include
+The name file defines the source-side public function surface, not linker
+exports. `generate --pyi` writes that surface into the generated contract's
+`__all__`. The two lists live in different naming domains: the file names
+native C identifiers, and `__all__` names the Python names the contract
+publishes.
+
+The allowlist chooses the initial contract surface from C source. Once the
+`.pyi` exists, `__all__` is the editable authority for what that contract
+publishes, and a contract build rejects `--export-symbols`.
+
+Selected functions still need native link inputs and a signature supported by
+the C wrapper. See [C include
 exposure](../../reference/cli-commands.md#c-include-exposure) for the file
 format and validation rules.
 
@@ -186,6 +195,12 @@ build = build_c_extension(
     native_libraries=("vendor",),
 )
 ```
+
+`export_symbols=` is the Python API equivalent of `--export-symbols`: it selects
+the same source-side public function surface for a direct C source build. The
+build writes type stubs for the extension into a `contracts/` directory beside
+it, and those stubs state the selected surface as `__all__` the same way
+`generate --pyi` does.
 
 ### Inspect a broader C API
 

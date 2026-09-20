@@ -1,5 +1,7 @@
 """A positional-only surface drops keyword names policy does not owe the caller."""
 
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran import parse_fortran_file
@@ -7,26 +9,10 @@ from prik.policy import complete_semantic_policies
 from prik.policy.construction import completed_function_wrapper_policy
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-_SOURCE = """
-module surface
-  implicit none
-contains
-  function required_only(alpha, beta) result(total)
-    real(8), intent(in) :: alpha, beta
-    real(8) :: total
-    total = alpha + beta
-  end function required_only
 
-  function has_optional(value, scale) result(total)
-    real(8), intent(in) :: value
-    real(8), intent(in), optional :: scale
-    real(8) :: total
-    total = value
-    if (present(scale)) total = value * scale
-  end function has_optional
-end module surface
-"""
+_SOURCE = (NATIVE_FIXTURES / "positional_only_surface.f90").read_text(encoding="utf-8")
 
 
 def _policies(source: str, **options):

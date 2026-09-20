@@ -78,16 +78,25 @@ def _source(artifacts, suffix: str) -> str:
 
 
 def _replace_variable(plan, python_name: str, edit):
-    root = plan.namespaces[0]
-    variables = tuple(
-        edit(variable) if variable.binding.python_names == (python_name,) else variable for variable in root.variables
+    current = next(variable for variable in plan.variables if variable.bridge.native_name == python_name)
+    replacement = edit(current)
+    variables = tuple(replacement if variable is current else variable for variable in plan.variables)
+    namespaces = tuple(
+        replace(
+            namespace,
+            variable_publications=tuple(
+                replace(publication, variable=replacement) if publication.variable is current else publication
+                for publication in namespace.variable_publications
+            ),
+        )
+        for namespace in plan.namespaces
     )
-    return replace(plan, namespaces=(replace(root, variables=variables), *plan.namespaces[1:]))
+    return replace(plan, variables=variables, namespaces=namespaces)
 
 
 def test_module_variable_plan_contains_only_completed_dispatch_facts():
     plan = _plan()
-    variables = {variable.binding.python_names[0]: variable for variable in plan.namespaces[0].variables}
+    variables = {variable.bridge.native_name: variable for variable in plan.variables}
 
     assert variables["limit"].binding.getter_action is ModuleGetterAction.CONSTANT_VALUE
     assert variables["limit"].binding.setter_action is SetterAction.OMIT
@@ -108,7 +117,7 @@ def test_module_variable_plan_contains_only_completed_dispatch_facts():
 
 def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initialization():
     plan = _computed_constant_plan()
-    variables = {variable.binding.python_names[0]: variable for variable in plan.namespaces[1].variables}
+    variables = {variable.bridge.native_name: variable for variable in plan.variables}
     computed = variables["computed"]
     assert computed.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_VALUE
     assert computed.binding.constant_value is None
@@ -119,7 +128,7 @@ def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initia
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
     assert "int32_t bind_c_get_computed(void);" in c_source
-    assert "int32_t constant_computed_value_0 = bind_c_get_computed();" in c_source
+    assert "int32_t constant_computed_constants_computed_value_0 = bind_c_get_computed();" in c_source
     assert 'PyUnicode_FromString("D")' in c_source
     assert "native_computed => computed" in fortran_source
     assert "function bind_c_get_computed()" in fortran_source
@@ -130,12 +139,7 @@ def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initia
 
 def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
     plan = _parameter_array_plan()
-    variable = next(
-        variable
-        for namespace in plan.namespaces
-        for variable in namespace.variables
-        if variable.binding.python_names == ("dpmpar",)
-    )
+    variable = next(variable for variable in plan.variables if variable.bridge.native_name == "dpmpar")
     assert variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
     assert variable.binding.setter_action is SetterAction.OMIT
     assert variable.binding.constant_value is None
@@ -146,10 +150,14 @@ def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
     assert "void * bind_c_get_dpmpar(int64_t * extent_0);" in c_source
-    assert "PyArray_EMPTY(1, constant_dpmpar_value_0_dimensions, NPY_FLOAT64, 1)" in c_source
-    assert "memcpy(PyArray_DATA((PyArrayObject *)constant_dpmpar_object_0)" in c_source
-    assert "PyArray_CLEARFLAGS((PyArrayObject *)constant_dpmpar_object_0, NPY_ARRAY_WRITEABLE)" in c_source
-    assert 'PyModule_AddObject(namespace_parameter_array, "dpmpar", constant_dpmpar_object_0)' in c_source
+    assert "PyArray_EMPTY(1, constant_parameter_array_dpmpar_value_0_dimensions, NPY_FLOAT64, 1)" in c_source
+    assert "memcpy(PyArray_DATA((PyArrayObject *)constant_parameter_array_dpmpar_object_0)" in c_source
+    assert (
+        "PyArray_CLEARFLAGS((PyArrayObject *)constant_parameter_array_dpmpar_object_0, NPY_ARRAY_WRITEABLE)" in c_source
+    )
+    assert (
+        'PyModule_AddObject(namespace_parameter_array, "dpmpar", constant_parameter_array_dpmpar_object_0)' in c_source
+    )
     assert "real(c_double), allocatable, target, save, dimension(:) :: parameter_snapshot" in fortran_source
     assert "parameter_snapshot = native_dpmpar" in fortran_source
     assert "result = c_loc(parameter_snapshot)" in fortran_source
@@ -157,9 +165,7 @@ def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
 
 def test_module_variable_visitors_consume_their_backend_owned_actions():
     plan = _plan()
-    counter = next(
-        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
-    )
+    counter = next(variable for variable in plan.variables if variable.bridge.native_name == "counter")
     split_actions = replace(
         counter,
         binding=replace(
@@ -185,9 +191,7 @@ def test_module_variable_visitors_consume_their_backend_owned_actions():
 
 def test_fortran_module_setter_rejects_unsupported_bridge_assignment():
     plan = _plan()
-    counter = next(
-        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
-    )
+    counter = next(variable for variable in plan.variables if variable.bridge.native_name == "counter")
     invalid = replace(counter, bridge=replace(counter.bridge, native_assignment=AssignmentMode.ALIAS))
 
     bridge = FortranBridgeGenerator()
@@ -314,20 +318,14 @@ def test_missing_generated_support_procedure_fails_before_lowering():
 def test_bridge_local_module_target_edit_does_not_change_the_c_boundary():
     plan = _plan()
     baseline = _source(WrapperGenerator().generate(plan), ".c")
-    counter = next(
-        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
-    )
-    edited_counter = replace(
-        counter,
-        bridge=replace(counter.bridge, native_name="counter_alternate"),
-    )
-    root = replace(
-        plan.namespaces[0],
-        variables=tuple(
-            edited_counter if variable is counter else variable for variable in plan.namespaces[0].variables
+    edited = _replace_variable(
+        plan,
+        "counter",
+        lambda variable: replace(
+            variable,
+            bridge=replace(variable.bridge, native_name="counter_alternate"),
         ),
     )
-    edited = replace(plan, namespaces=(root, *plan.namespaces[1:]))
 
     artifacts = WrapperGenerator().generate(edited)
 
@@ -336,20 +334,12 @@ def test_bridge_local_module_target_edit_does_not_change_the_c_boundary():
 
 
 def test_generator_rejects_python_module_setter_without_bridge_handoff():
-    plan = _plan()
-    counter = next(
-        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
-    )
-    invalid_counter = replace(counter, entrypoint=replace(counter.entrypoint, setter_role=None))
-    invalid = replace(
-        plan,
-        namespaces=(
-            replace(
-                plan.namespaces[0],
-                variables=tuple(
-                    invalid_counter if variable is counter else variable for variable in plan.namespaces[0].variables
-                ),
-            ),
+    invalid = _replace_variable(
+        _plan(),
+        "counter",
+        lambda variable: replace(
+            variable,
+            entrypoint=replace(variable.entrypoint, setter_role=None),
         ),
     )
 

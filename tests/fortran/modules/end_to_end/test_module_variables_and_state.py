@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
+    _build_source_and_import,
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
     _sole_native_module,
@@ -16,6 +18,11 @@ FIXTURES = Path(__file__).parent / "fixtures"
 MODULE_VARIABLES_F90_SOURCE = FIXTURES / "native" / "fmodule_vars_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
+
+MODULE_VARIABLE_REEXPORT_SOURCE = (NATIVE_FIXTURES / "module_variable_reexports.f90").read_text(encoding="utf-8")
 
 
 def _module_variables_build_dir(tmp_path: Path, build_mode: str) -> Path:
@@ -52,7 +59,7 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert "Assignment writes through to native storage." not in module_docstring
 
     assert module.nmax == np.int32(12)
-    assert isinstance(module.black, module.rgb_color)
+    assert isinstance(module.black, module.Rgb_Color)
     assert module.black.r == np.int32(0)
     assert module.black.g == np.int32(0)
     assert module.black.b == np.int32(0)
@@ -126,38 +133,7 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert second_module.black.r == np.int32(0)
 
 
-PLAIN_MODULE_ARRAY_SOURCE = """
-module fplain_module_arrays_f90
-  use iso_fortran_env, only: int32, real64
-  implicit none
-  real(real64) :: grid(2, 3)
-  integer(int32) :: counts(3) = [7, 8, 9]
-  character(len=5) :: labels(2) = ['alpha', 'bravo']
-  real(real64), target :: addressable(2) = [1.0d0, 2.0d0]
-contains
-  subroutine bump()
-    grid(1, 1) = grid(1, 1) + 1.0d0
-  end subroutine bump
-
-  function read_grid(row, column) result(value)
-    integer(int32), intent(in) :: row, column
-    real(real64) :: value
-    value = grid(row, column)
-  end function read_grid
-
-  function read_count(index) result(value)
-    integer(int32), intent(in) :: index
-    integer(int32) :: value
-    value = counts(index)
-  end function read_count
-
-  function read_label(index) result(value)
-    integer(int32), intent(in) :: index
-    character(len=5) :: value
-    value = labels(index)
-  end function read_label
-end module fplain_module_arrays_f90
-"""
+PLAIN_MODULE_ARRAY_SOURCE = (NATIVE_FIXTURES / "fplain_module_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_fixed_module_arrays_without_target_expose_the_same_live_view(tmp_path: Path):
@@ -212,29 +188,7 @@ def test_fixed_module_arrays_without_target_expose_the_same_live_view(tmp_path: 
             setattr(module, name, np.zeros(2))
 
 
-CHARACTER_MODULE_ARRAY_SOURCE = """
-module fchar_module_arrays_f90
-  implicit none
-  character(len=8), target :: labels(3) = ['alpha   ', 'beta    ', 'gamma   ']
-  character(len=4), target :: grid(2, 2) = reshape(['aa  ', 'bb  ', 'cc  ', 'dd  '], [2, 2])
-contains
-  subroutine relabel_first()
-    labels(1) = 'ALPHA!!!'
-  end subroutine relabel_first
-
-  function read_label(index) result(value)
-    integer(4), intent(in) :: index
-    character(len=8) :: value
-    value = labels(index)
-  end function read_label
-
-  function read_grid(row, column) result(value)
-    integer(4), intent(in) :: row, column
-    character(len=4) :: value
-    value = grid(row, column)
-  end function read_grid
-end module fchar_module_arrays_f90
-"""
+CHARACTER_MODULE_ARRAY_SOURCE = (NATIVE_FIXTURES / "fchar_module_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path: Path):
@@ -272,23 +226,7 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
     assert module.read_grid(np.int32(2), np.int32(1)) == "ZZ  "
 
 
-CHARACTER_MODULE_SCALAR_SOURCE = """
-module fchar_module_scalars_f90
-  implicit none
-  character(len=8) :: label = 'alpha   '
-  character(len=3) :: code = 'abc'
-  character(len=*), parameter :: tag = 'fixed'
-contains
-  subroutine relabel()
-    label = 'ALPHA!!!'
-  end subroutine relabel
-
-  function read_label() result(value)
-    character(len=8) :: value
-    value = label
-  end function read_label
-end module fchar_module_scalars_f90
-"""
+CHARACTER_MODULE_SCALAR_SOURCE = (NATIVE_FIXTURES / "fchar_module_scalars_f90.f90").read_text(encoding="utf-8")
 
 
 def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
@@ -346,34 +284,7 @@ def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: s
     assert module.code == "abc"
 
 
-CHARACTER_MODULE_DESCRIPTOR_SOURCE = """
-module fchar_module_descriptors_f90
-  implicit none
-  character(len=:), allocatable :: deferred
-  character(len=6), allocatable :: fixed
-  character(len=:), pointer :: link => null()
-  character(len=6), target :: store = 'STORED'
-  character(len=2), parameter :: pair(2) = ['ab', 'cd']
-  character(len=3), parameter :: grid(2, 2) = reshape(['aaa', 'bbb', 'ccc', 'ddd'], [2, 2])
-  character(len=*), parameter :: inferred(3) = ['alpha', 'beta ', 'gamma']
-contains
-  subroutine setup()
-    deferred = 'alpha'
-    fixed = 'FIXEDV'
-    link => store
-  end subroutine setup
-
-  subroutine grow()
-    deferred = deferred // '-more'
-  end subroutine grow
-
-  subroutine clear()
-    if (allocated(deferred)) deallocate(deferred)
-    if (allocated(fixed)) deallocate(fixed)
-    nullify(link)
-  end subroutine clear
-end module fchar_module_descriptors_f90
-"""
+CHARACTER_MODULE_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90").read_text(encoding="utf-8")
 
 
 def _character_descriptor_module(tmp_path: Path):
@@ -460,28 +371,7 @@ def test_assumed_length_character_parameter_array_reports_its_inferred_width(tmp
     )
 
 
-DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = """
-module fchar_declared_arrays_f90
-  implicit none
-  character(len=4), allocatable :: fixed_alloc(:)
-  character(len=:), pointer :: deferred_ptr(:) => null()
-  character(len=4), pointer :: fixed_ptr(:) => null()
-  character(len=4), target :: store(2) = ['aaaa', 'bbbb']
-contains
-  subroutine setup()
-    allocate(fixed_alloc(2))
-    fixed_alloc = ['xxxx', 'yyyy']
-    fixed_ptr => store
-    deferred_ptr => store
-  end subroutine setup
-
-  subroutine allocate_deferred()
-    if (associated(deferred_ptr)) nullify(deferred_ptr)
-    allocate(character(len=6) :: deferred_ptr(3))
-    deferred_ptr = ['a     ', 'bb    ', 'ccc   ']
-  end subroutine allocate_deferred
-end module fchar_declared_arrays_f90
-"""
+DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = (NATIVE_FIXTURES / "fchar_declared_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_declared_length_character_module_arrays_compile_and_expose_their_width(tmp_path: Path):
@@ -534,3 +424,278 @@ def test_declared_length_character_module_arrays_compile_and_expose_their_width(
     module.deferred_ptr.deallocate()
     assert module.deferred_ptr.associated is False
     assert module.deferred_ptr.shape is None
+
+
+REEXPORT_SOURCE = (NATIVE_FIXTURES / "reexport.f90").read_text(encoding="utf-8")
+
+
+def test_module_variable_reexports_share_one_native_entity_from_source_and_contract(
+    pyi_parity_build_mode: str,
+    tmp_path: Path,
+):
+    """Every publication reads one variable plan and its live native state."""
+    source = tmp_path / "module_variable_reexports.f90"
+    source.write_text(MODULE_VARIABLE_REEXPORT_SOURCE, encoding="utf-8")
+
+    if pyi_parity_build_mode == "source":
+        build_dir = tmp_path / "source_build"
+        module = _build_source_and_import(
+            source,
+            build_dir,
+            {
+                "bind_c_module_variable_reexports_wrapper.f90",
+                "module_variable_reexports_wrapper.c",
+                "module_variable_reexports_wrapper.h",
+            },
+        )
+    else:
+        workdir = tmp_path / "generated_pyi_build"
+        module = _build_generated_pyi_and_import(source, workdir)
+        build_dir = workdir / "pyi_build"
+
+        contracts = workdir / "contracts" / source.stem
+        home_contract = (contracts / "reexport_state_home.pyi").read_text(encoding="utf-8")
+        facade_contract = (contracts / "reexport_state_facade.pyi").read_text(encoding="utf-8")
+        assert "counter: Int32" in home_contract
+        assert "limit: Final[Int32]" in home_contract
+        assert "from .reexport_state_home import " in facade_contract
+        imported_names = facade_contract.partition("import ")[2].partition("\n")[0].split(", ")
+        assert {"counter", "limit"}.issubset(imported_names)
+        assert '"counter"' in facade_contract.partition("__all__ = ")[2]
+        assert '"limit"' in facade_contract.partition("__all__ = ")[2]
+
+    home = module.reexport_state_home
+    facade = module.reexport_state_facade
+    home.setup()
+
+    assert home.limit == facade.limit == np.int32(7)
+
+    home.counter = np.int32(10)
+    assert facade.counter == np.int32(10)
+    facade.counter = np.int32(25)
+    assert home.counter == np.int32(25)
+
+    home.numbers[0] = np.int32(21)
+    assert facade.numbers[0] == np.int32(21)
+    facade.numbers[1] = np.int32(22)
+    assert home.numbers[1] == np.int32(22)
+
+    home.values.to_numpy()[0] = np.float64(31.0)
+    assert facade.values.to_numpy()[0] == np.float64(31.0)
+    facade.values.to_numpy()[1] = np.float64(32.0)
+    assert home.values.to_numpy()[1] == np.float64(32.0)
+
+    assert home.selected.associated is True
+    facade.selected.nullify()
+    assert home.selected.associated is False
+
+    home.current.value = np.int32(41)
+    assert facade.current.value == np.int32(41)
+    facade.current.value = np.int32(42)
+    assert home.current.value == np.int32(42)
+
+    home.optional_item.value = np.int32(51)
+    assert facade.optional_item.value == np.int32(51)
+    facade.optional_item.value = np.int32(52)
+    assert home.optional_item.value == np.int32(52)
+
+    generated = next(build_dir.glob("*_wrapper.c")).read_text(encoding="utf-8")
+    assert "module_get_limit" not in generated
+    assert "module_set_limit" not in generated
+    for name in ("counter", "numbers", "values", "selected", "current", "optional_item"):
+        assert generated.count(f"static PyObject * module_get_{name}(void) {{") == 1
+    assert generated.count("static int module_set_counter(PyObject * value_obj) {") == 1
+
+    bridge = next(build_dir.glob("bind_c_*_wrapper.f90")).read_text(encoding="utf-8")
+    assert "bind_c_get_limit" not in bridge
+    assert "bind_c_set_limit" not in bridge
+    for signature in (
+        "function bind_c_get_counter(",
+        "subroutine bind_c_set_counter(",
+        "function bind_c_get_numbers(",
+        "subroutine bind_c_values_descriptor(",
+        "subroutine bind_c_selected_descriptor(",
+        "function bind_c_prik_module_field_current_value_get(",
+        "subroutine bind_c_prik_module_field_current_value_set(",
+        "function bind_c_prik_module_field_optional_item_value_get(",
+        "subroutine bind_c_prik_module_field_optional_item_value_set(",
+    ):
+        assert bridge.count(signature) == 1
+
+
+def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_path: Path):
+    """Naming an imported procedure in a `public` statement publishes it here.
+
+    The declaration is not repeated: the published name binds to the one
+    wrapper its own module exposes, so both namespaces share a single callable.
+    A default-public module also republishes an accessible imported name.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_facade_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
+
+    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
+
+    # One wrapper defines the procedure; the facade only names it again.
+    generated = (tmp_path / "build" / "reexport_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_value") == 1
+
+
+def test_published_import_resolves_the_python_name_its_declaring_module_bound(tmp_path: Path):
+    """A re-export binds a Python attribute, which is not a Fortran spelling.
+
+    A Fortran entity written in capitals is exported under its Python name, so
+    the module publishing it has to reach for that name rather than the source
+    spelling, which names no attribute at all.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_case_mod.scale_loud is module.reexport_shout_mod.scale_loud
+    assert module.reexport_case_mod.scale_loud(np.int32(4)) == np.int32(12)
+    assert not hasattr(module.reexport_case_mod, "SCALE_LOUD")
+
+
+def test_renamed_published_import_shares_the_wrapper_it_renames(tmp_path: Path):
+    """A renamed re-export states a new name for one existing callable."""
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_renamed_mod.public_scale is module.reexport_home_mod.scale_value
+    assert module.reexport_renamed_mod.public_scale(np.int32(6)) == np.int32(12)
+
+
+def test_publishing_a_name_a_plain_use_brought_in_republishes_that_name(tmp_path: Path):
+    """A plain `use` carries public names that remain accessible by default.
+
+    An explicit `public` statement also publishes the named import; both routes
+    bind the one wrapper owned by the declaring module.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_wildcard_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
+    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
+
+
+def test_publishing_an_already_published_import_follows_it_to_its_declaration(tmp_path: Path):
+    """A published name may come from a module that published it in turn.
+
+    The module a `use` reads is not always the one declaring the entity, so
+    each hop is followed until the declaration itself is reached; stopping at
+    the first module leaves the name looking like nothing at all.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_hop_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_hop_mod.scale_value(np.int32(7)) == np.int32(14)
+
+
+def test_published_import_binds_the_declaration_a_collision_moved_aside(tmp_path: Path):
+    """Two source names may want one Python name, and only one may have it.
+
+    A module holding both `lambda` and `lambda_` publishes them as `lambda_`
+    and `lambda__2`, so a module publishing the second reaches the name the
+    declaring module settled on rather than the one its source resembles.
+    """
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+    module = _build_source_and_import(
+        source,
+        tmp_path / "build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+
+    assert module.reexport_collide_mod.lambda_(np.int32(0)) == np.int32(1)
+    assert module.reexport_collide_mod.lambda__2(np.int32(0)) == np.int32(100)
+    assert module.reexport_collide_user_mod.lambda_ is module.reexport_collide_mod.lambda__2
+    assert module.reexport_collide_user_mod.lambda_(np.int32(0)) == np.int32(100)
+
+
+def test_a_reexport_binds_one_callable_from_source_and_from_its_contract(tmp_path: Path):
+    """A published name is an alias, so both routes bind the same object.
+
+    A re-export names a procedure that is already wrapped, whichever way the
+    build was described. Wrapping it a second time would give one native
+    procedure two Python objects, and a renamed re-export is no different: the
+    name it binds changes, not the callable behind it.
+    """
+    import subprocess
+    import sys
+
+    from tests.fortran._support.wrapper_build import _compiler, _import_from_build_dir
+    from prik import build_pyi_extension
+
+    source = tmp_path / "reexport.f90"
+    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
+
+    from_source = _build_source_and_import(
+        source,
+        tmp_path / "source_build",
+        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    )
+    assert from_source.reexport_facade_mod.scale_value is from_source.reexport_home_mod.scale_value
+    assert from_source.reexport_renamed_mod.public_scale is from_source.reexport_home_mod.scale_value
+
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            str(source),
+            "--out",
+            str(contracts),
+            "--compiler",
+            _compiler(),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    result = build_pyi_extension(
+        contracts / "__init__.pyi",
+        input_compiler=_compiler(),
+        native_fortran_sources=[str(source)],
+        output_dir=tmp_path / "contract_build",
+        output_name="reexport_contract",
+    )
+    from_contract = _import_from_build_dir(result.module_name, result.output_dir)
+
+    assert from_contract.reexport_facade_mod.scale_value is from_contract.reexport_home_mod.scale_value
+    assert from_contract.reexport_renamed_mod.public_scale is from_contract.reexport_home_mod.scale_value
+    assert from_contract.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
+
+    # One wrapper defines the procedure on either route.
+    generated = (result.output_dir / "reexport_contract_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * wrap_scale_value") == 1

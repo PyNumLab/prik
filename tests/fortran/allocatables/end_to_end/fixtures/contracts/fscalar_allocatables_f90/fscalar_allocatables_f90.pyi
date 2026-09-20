@@ -33,3 +33,15 @@ def create_allocatable() -> Float64 | None: ...
 def maybe_allocatable(
     flag: Int32
 ) -> Float64 | None: ...
+
+__all__ = [
+    "optional_scale",
+    "clear_module_value",
+    "set_module_value",
+    "bump_module_value",
+    "echo_allocatable",
+    "update_allocatable",
+    "clear_allocatable_value",
+    "create_allocatable",
+    "maybe_allocatable",
+]

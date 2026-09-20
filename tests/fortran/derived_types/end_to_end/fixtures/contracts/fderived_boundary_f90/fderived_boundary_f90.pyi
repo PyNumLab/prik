@@ -1,6 +1,6 @@
 from prik.contracts import Addr, Arg, Float64, native_call
 
-class point:
+class Point:
     def __init__(
         self,
         *,
@@ -11,30 +11,30 @@ class point:
     x: Float64
     y: Float64
 
-class holder:
+class Holder:
     def __init__(
         self,
         *,
         scale: Float64 = ...
     ) -> None: ...
 
-    origin: point
+    origin: Point
     scale: Float64
 
 def point_sum(
-    p: point
+    p: Point
 ) -> Float64: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def move_point(
-    p: point,
+    p: Point,
     dx: Float64,
     dy: Float64
 ) -> None: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def make_point_out(
-    p: point,
+    p: Point,
     x: Float64,
     y: Float64
 ) -> None: ...
@@ -43,13 +43,24 @@ def make_point_out(
 def make_point(
     x: Float64,
     y: Float64
-) -> point: ...
+) -> Point: ...
 
 def set_holder_origin(
-    h: holder,
-    p: point
+    h: Holder,
+    p: Point
 ) -> None: ...
 
 def holder_origin_x(
-    h: holder
+    h: Holder
 ) -> Float64: ...
+
+__all__ = [
+    "Point",
+    "Holder",
+    "point_sum",
+    "move_point",
+    "make_point_out",
+    "make_point",
+    "set_holder_origin",
+    "holder_origin_x",
+]

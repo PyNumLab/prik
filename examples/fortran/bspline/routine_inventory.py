@@ -4,15 +4,15 @@ from __future__ import annotations
 
 #: Object-oriented classes, most-derived first, over one abstract base.
 CLASSES: tuple[str, ...] = (
-    "bspline_1d",
-    "bspline_2d",
-    "bspline_3d",
-    "bspline_4d",
-    "bspline_5d",
-    "bspline_6d",
+    "Bspline_1d",
+    "Bspline_2d",
+    "Bspline_3d",
+    "Bspline_4d",
+    "Bspline_5d",
+    "Bspline_6d",
 )
 
-ABSTRACT_BASE = "bspline_class"
+ABSTRACT_BASE = "Bspline_Class"
 
 #: Bindings the abstract base declares and every class answers.
 DEFERRED_BINDINGS: tuple[str, ...] = ("destroy", "size_of")

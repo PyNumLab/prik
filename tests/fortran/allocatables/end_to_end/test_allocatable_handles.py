@@ -26,32 +26,10 @@ ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-PLAIN_ALLOCATABLE_MODULE_SOURCE = """\
-module fallocatable_plain_f90
-  implicit none
-  real(8), allocatable :: values(:)
-contains
-  subroutine allocate_values(n)
-    integer(4), intent(in) :: n
-    integer(4) :: i
 
-    if (allocated(values)) deallocate(values)
-    allocate(values(n))
-    values = [(1.0_8 * i, i = 1, n)]
-  end subroutine allocate_values
-
-  subroutine scale_values(scale)
-    real(8), intent(in) :: scale
-
-    values = scale * values
-  end subroutine scale_values
-
-  subroutine deallocate_values()
-    if (allocated(values)) deallocate(values)
-  end subroutine deallocate_values
-end module fallocatable_plain_f90
-"""
+PLAIN_ALLOCATABLE_MODULE_SOURCE = (NATIVE_FIXTURES / "fallocatable_plain_f90.f90").read_text(encoding="utf-8")
 
 
 def _plain_allocatable_module(build_mode: str, tmp_path: Path):
@@ -165,15 +143,15 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     assert "Persistent allocatable descriptor handle." in module.__doc__
     assert "Replacement assignment is not supported." in module.__doc__
     assert "build_values" in module.__doc__
-    assert "buffer" in module.__doc__
+    assert "Buffer" in module.__doc__
     assert "build_values(n) -> AllocatableArray[float64]" in module.build_values.__doc__
     assert "values : AllocatableArray[float64]" in module.build_values.__doc__
     assert "Descriptor ownership: owned" in module.build_values.__doc__
     assert "Unallocated state remains inside the returned handle." in module.build_values.__doc__
     assert not hasattr(module, "get_module_values")
-    assert "Fields" in module.buffer.__doc__
-    assert "values : AllocatableArray[float64]" in module.buffer.__doc__
-    assert "allocatable array descriptor handle" in module.buffer.values.__doc__
+    assert "Fields" in module.Buffer.__doc__
+    assert "values : AllocatableArray[float64]" in module.Buffer.__doc__
+    assert "allocatable array descriptor handle" in module.Buffer.values.__doc__
 
     module_values = module.module_values
     assert isinstance(module_values, AllocatableArray)
@@ -268,7 +246,7 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     gc.collect()
     np.testing.assert_allclose(retained_result_view, np.array([3.0, 6.0, 9.0], dtype=np.float64))
 
-    values = module.buffer()
+    values = module.Buffer()
     field_handle = values.values
     assert isinstance(field_handle, AllocatableArray)
     assert field_handle.owner is values
@@ -365,51 +343,7 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
     assert handle.to_numpy() is None
 
 
-LOWER_BOUND_SOURCE = """
-module falloc_lower_bounds_f90
-  use iso_fortran_env, only: int32, real64
-  implicit none
-  real(real64), allocatable :: plain_a(:)
-  real(real64), allocatable, target :: tgt_a(:)
-  real(real64), allocatable, target :: defaulted(:)
-  character(len=5), allocatable, target :: fixed_words(:)
-  character(len=5), allocatable :: missing_words(:)
-  character(len=5), pointer :: missing_pointer(:) => null()
-  character(len=:), allocatable, target :: deferred_words(:)
-contains
-  function lower_bound_of(x) result(bound)
-    real(real64), allocatable, intent(in) :: x(:)
-    integer(int32) :: bound
-    bound = lbound(x, 1)
-  end function lower_bound_of
-
-  function element_at(x, index) result(value)
-    real(real64), allocatable, intent(in) :: x(:)
-    integer(int32), intent(in) :: index
-    real(real64) :: value
-    value = x(index)
-  end function element_at
-
-  function deferred_word_bound_and_width(x) result(packed)
-    character(len=:), allocatable, intent(in) :: x(:)
-    integer(int32) :: packed
-    packed = 100 * lbound(x, 1) + len(x)
-  end function deferred_word_bound_and_width
-
-  subroutine setup()
-    allocate(plain_a(5:8))
-    plain_a = 1.0d0
-    allocate(tgt_a(5:8))
-    tgt_a = 2.0d0
-    allocate(defaulted(4))
-    defaulted = 3.0d0
-    allocate(character(len=5) :: fixed_words(5:8))
-    fixed_words = 'aaaaa'
-    allocate(character(len=6) :: deferred_words(5:8))
-    deferred_words = 'bbbbbb'
-  end subroutine setup
-end module falloc_lower_bounds_f90
-"""
+LOWER_BOUND_SOURCE = (NATIVE_FIXTURES / "falloc_lower_bounds_f90.f90").read_text(encoding="utf-8")
 
 
 def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(tmp_path: Path):
@@ -496,40 +430,7 @@ def test_fixed_character_projection_reports_absence(tmp_path: Path):
         module.deferred_word_bound_and_width(fixed)
 
 
-BORROWED_DESCRIPTOR_SOURCE = """\
-module fallocatable_borrowed_f90
-  implicit none
-  type :: box
-    real(8), allocatable :: field(:)
-  end type box
-  real(8), allocatable :: modvar(:)
-  type(box) :: thebox
-contains
-  subroutine grow(values)
-    real(8), allocatable, intent(inout) :: values(:)
-
-    if (allocated(values)) deallocate(values)
-    allocate(values(6))
-    values = 9.0_8
-  end subroutine grow
-
-  function total(values) result(sum_out)
-    real(8), allocatable, intent(in) :: values(:)
-    real(8) :: sum_out
-
-    sum_out = sum(values)
-  end function total
-
-  function make(n) result(values)
-    integer(4), intent(in) :: n
-    real(8), allocatable :: values(:)
-    integer(4) :: i
-
-    allocate(values(n))
-    values = [(1.0_8 * i, i = 1, n)]
-  end function make
-end module fallocatable_borrowed_f90
-"""
+BORROWED_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fallocatable_borrowed_f90.f90").read_text(encoding="utf-8")
 
 
 def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp_path: Path):
@@ -618,38 +519,7 @@ def test_a_writable_allocatable_dummy_reaches_the_callers_entity(tmp_path: Path)
     assert owned.to_numpy().tolist() == [9.0] * 6
 
 
-EMPTY_ACTUAL_SOURCE = """\
-module fallocatable_empty_actual_f90
-  implicit none
-
-contains
-
-  subroutine fill_empty(values)
-    real(8), allocatable, intent(inout) :: values(:)
-
-    if (allocated(values)) deallocate(values)
-    allocate(values(0))
-  end subroutine fill_empty
-
-  subroutine fill_three(values)
-    real(8), allocatable, intent(inout) :: values(:)
-
-    if (allocated(values)) deallocate(values)
-    allocate(values(3))
-    values = [1.0_8, 2.0_8, 3.0_8]
-  end subroutine fill_three
-
-  ! An ordinary explicit-shape dummy: it receives an address and an extent.
-  function total(values, n) result(sum_values)
-    integer, intent(in) :: n
-    real(8), intent(in) :: values(n)
-    real(8) :: sum_values
-
-    sum_values = sum(values)
-  end function total
-
-end module fallocatable_empty_actual_f90
-"""
+EMPTY_ACTUAL_SOURCE = (NATIVE_FIXTURES / "fallocatable_empty_actual_f90.f90").read_text(encoding="utf-8")
 
 
 def test_zero_sized_allocatable_handle_reaches_an_ordinary_array_dummy(tmp_path: Path):

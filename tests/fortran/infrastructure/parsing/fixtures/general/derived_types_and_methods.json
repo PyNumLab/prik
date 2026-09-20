@@ -7,7 +7,7 @@
     {
       "name": "mesh_mod",
       "filename": "derived_types_and_methods.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [],
       "derived_types": [
@@ -179,7 +179,7 @@
     "mesh_mod": {
       "name": "mesh_mod",
       "filename": "derived_types_and_methods.f90",
-      "uses": {},
+      "uses": [],
       "variables": [],
       "procedures": [],
       "derived_types": [

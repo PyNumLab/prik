@@ -9,3 +9,5 @@ def direct_char_code(
 def adapted_fixed_code(
     text: String[4]
 ) -> Int32: ...
+
+__all__ = ["direct_char_code", "adapted_fixed_code"]

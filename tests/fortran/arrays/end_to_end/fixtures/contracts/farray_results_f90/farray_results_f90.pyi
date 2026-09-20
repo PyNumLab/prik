@@ -73,3 +73,31 @@ def maybe_alloc_matrix(
     rows: Int32,
     cols: Int32
 ) -> Allocatable[Float64[:, :]]: ...
+
+__all__ = [
+    "fixed_vector",
+    "automatic_vector",
+    "size_intrinsic_vector",
+    "automatic_matrix",
+    "rank3_cube",
+    "rank1_result",
+    "rank2_result",
+    "rank3_result",
+    "rank4_result",
+    "rank5_result",
+    "rank6_result",
+    "rank7_result",
+    "rank8_result",
+    "rank9_result",
+    "rank10_result",
+    "rank11_result",
+    "rank12_result",
+    "rank13_result",
+    "rank14_result",
+    "rank15_result",
+    "zero_vector",
+    "zero_alloc_vector",
+    "maybe_alloc_vector",
+    "zero_alloc_matrix",
+    "maybe_alloc_matrix",
+]

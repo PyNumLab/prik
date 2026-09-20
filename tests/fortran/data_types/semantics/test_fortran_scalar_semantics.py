@@ -14,6 +14,13 @@ from prik.semantics.fortran2ir import (
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
+def _character_variable(name: str, selector: str) -> FortranVariable:
+    """Build one character model stating the selector a declaration writes."""
+    variable = FortranVariable(name=name, base_type="character", kind=selector[1:-1])
+    variable.record_character_selector(selector)
+    return variable
+
+
 def test_intrinsic_builtin_kinds_map_to_semantic_types():
     converter = FortranToIRConverter()
     cases = [
@@ -164,7 +171,7 @@ def test_fortran_storage_requirements_follow_resolved_kinds_and_actual_source_ty
             FortranVariable(name="default_real", base_type="real"),
             FortranVariable(name="selected", base_type="real", kind="rk"),
             FortranVariable(name="flag", base_type="logical", kind="8"),
-            FortranVariable(name="text", base_type="character", kind="len=12, kind=c_char"),
+            _character_variable("text", "(len=12, kind=c_char)"),
         ]
     )
 
@@ -203,3 +210,40 @@ end subroutine legacy
         ("real", "kind(1.0d0)", "storage_size(real(0.0,kind=kind(1.0d0)))"),
         ("complex", "kind(1.0d0)", "storage_size(cmplx(0.0,kind=kind(1.0d0)))"),
     }
+
+
+def test_interface_body_dummies_require_target_storage_facts():
+    """An interface body's dummies reach the target probe like any other variable.
+
+    An abstract interface names its own kinds, often through a ``use`` written
+    inside the body, and no module variable or module procedure declares them.
+    Collecting nothing for such a body leaves the conversion without the storage
+    fact it later demands.
+    """
+    source = """
+module callback_mod
+  implicit none
+  private
+  public :: reporter
+  abstract interface
+    subroutine reporter(x, nf)
+      use kind_mod, only : rp, ik
+      implicit none
+      real(rp), intent(in) :: x
+      integer(ik), intent(in) :: nf
+    end subroutine reporter
+  end interface
+end module callback_mod
+"""
+
+    parsed = parse_fortran_source(source)
+
+    requirements = collect_fortran_type_storage_requirements(
+        parsed,
+        compile_time_values={"rp": "kind(0.0d0)", "ik": "kind(0)"},
+    )
+
+    assert [requirement["expression"] for requirement in requirements] == [
+        "storage_size(real(0.0,kind=kind(0.0d0)))",
+        "storage_size(int(0,kind=kind(0)))",
+    ]

@@ -2,6 +2,7 @@ import pytest
 
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran import parse_fortran_file
+from prik.parsers.fortran.scope import ScopeUses
 
 
 def test_same_argument_name_in_different_procedures_is_allowed():
@@ -188,3 +189,147 @@ end subroutine
 
     assert len(signatures) == 1
     assert signatures[0].name == "touch"
+
+
+def test_repeated_use_of_one_module_accumulates_its_imports():
+    """A scope may name the same module in several `use` statements.
+
+    Each statement adds what it lists, so a later one extends the imports
+    rather than replacing them; real sources split long import lists this way,
+    and dropping the earlier statements loses the names they carried.
+    """
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use, intrinsic :: iso_fortran_env, only : INT32, SP => REAL32, DP => REAL64
+  use, intrinsic :: iso_fortran_env, only : QP => REAL128
+  use, intrinsic :: iso_fortran_env, only : STDOUT => OUTPUT_UNIT
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+
+    scope = ScopeUses(module.uses)
+    assert [(item.source, item.target) for item in scope.mappings("iso_fortran_env")] == [
+        ("INT32", None),
+        ("REAL32", "SP"),
+        ("REAL64", "DP"),
+        ("REAL128", "QP"),
+        ("OUTPUT_UNIT", "STDOUT"),
+    ]
+
+
+def test_a_bare_use_is_read_beside_the_named_imports_of_the_same_module():
+    """Importing everything does not erase what another statement listed.
+
+    Both statements are source facts, and the language reads them together: the
+    module's public names are accessible, and `rk` is bound as well.
+    """
+    module = parse_fortran_file(
+        """
+module wide_mod
+  use kinds_mod, only : rk
+  use kinds_mod
+  implicit none
+end module wide_mod
+"""
+    ).modules[0]
+
+    scope = ScopeUses(module.uses)
+    assert scope.imports_all("kinds_mod") is True
+    assert [(item.source, item.target) for item in scope.mappings("kinds_mod")] == [("rk", None)]
+
+
+def test_an_empty_only_list_imports_nothing():
+    """`use m, only :` is valid and narrows to no names at all."""
+    module = parse_fortran_file(
+        """
+module narrow_mod
+  use kinds_mod, only :
+  implicit none
+end module narrow_mod
+"""
+    ).modules[0]
+
+    scope = ScopeUses(module.uses)
+    assert (scope.imports_all("kinds_mod"), scope.mappings("kinds_mod")) == (False, ())
+
+
+def test_a_procedure_local_use_stays_out_of_its_module_imports():
+    """A scope inherits its parent's statements; it cannot add to them.
+
+    The procedure sees what the module imported and what it imported itself,
+    while the module keeps only its own -- otherwise a procedure-local import
+    would reach module accessibility and re-export analysis.
+    """
+    module = parse_fortran_file(
+        """
+module owner_mod
+  use dep_mod, only : x
+  implicit none
+contains
+  subroutine inner()
+    use dep_mod, only : y
+  end subroutine inner
+end module owner_mod
+"""
+    ).modules[0]
+
+    assert [item.source for statement in module.uses for item in statement.mappings] == ["x"]
+    procedure = module.procedures[0]
+    assert [item.source for statement in procedure.uses for item in statement.mappings] == ["x", "y"]
+
+
+def test_statements_for_one_module_are_read_whatever_their_spelling():
+    """Fortran module names are case-insensitive, so both statements are one use."""
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use DEP_MOD, only : p => q
+  use dep_mod
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+
+    scope = ScopeUses(module.uses)
+    assert scope.modules() == ("DEP_MOD",)
+    assert scope.imports_all("dep_mod") is True
+    assert [(item.source, item.target) for item in scope.mappings("dep_mod")] == [("q", "p")]
+
+
+def test_one_local_name_reached_by_two_entities_keeps_both_routes():
+    """A rename may collide with a name the same module already publishes.
+
+    `use dep, x => y` binds `y` as `x` while `x` itself still arrives, so the
+    local name reaches two entities. Reporting both routes is what lets the
+    stage holding them call that ambiguous rather than picking one.
+    """
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use dep_mod, x => y
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+
+    routes = ScopeUses(module.uses).routes_for("x", lambda name: {"x", "y"})
+    assert sorted(route.source_name for route in routes) == ["x", "y"]
+
+
+def test_unread_whole_module_routes_still_apply_rename_semantics():
+    """Unknown offered names stay possible except under a renamed-away spelling."""
+    module = parse_fortran_file(
+        """
+module consumer_mod
+  use dep_mod, x => y
+  implicit none
+end module consumer_mod
+"""
+    ).modules[0]
+    scope = ScopeUses(module.uses)
+
+    assert [route.source_name for route in scope.unresolved_routes_for("x", lambda name: None)] == ["x"]
+    assert scope.unresolved_routes_for("y", lambda name: None) == ()
+    assert [route.source_name for route in scope.unresolved_routes_for("z", lambda name: None)] == ["z"]

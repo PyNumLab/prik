@@ -1,13 +1,18 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
+from pathlib import Path
+
 import pytest
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran.scope import ScopeUses
 from tests.fortran._support.parser_procedures import (
     COMPILE_TIME_EXPRESSION_SOURCE,
     collect_project_procedure_signatures,
     parse_fortran_modules,
 )
 from prik.parsers.fortran.parser import FortranParser
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_builtin_datatypes_preserve_positional_and_keyword_kinds():
@@ -136,7 +141,7 @@ end module cfg
     assert len(modules) == 1
     mod = modules[0]
     assert mod.name == "cfg"
-    assert mod.uses["iso_c_binding"] == ["c_int"]
+    assert list(ScopeUses(mod.uses).mappings("iso_c_binding")) == ["c_int"]
     assert [v.name for v in mod.variables] == ["nmax", "origin"]
     assert mod.variables[0].is_parameter is True
     assert mod.variables[1].is_parameter is False
@@ -352,33 +357,7 @@ end module dims_mod
 
 
 def test_big_compile_time_expression_suite():
-    files = {
-        "exprs.f90": """
-module expr_mod
-  integer, parameter :: a = 8
-  integer, parameter :: b = 3
-  integer, parameter :: c = 2
-  integer, parameter :: p_add = a + b
-  integer, parameter :: p_sub = a - b
-  integer, parameter :: p_mul = b * c
-  integer, parameter :: p_div = a / c
-  integer, parameter :: p_pow = c ** b
-  integer, parameter :: p_mix = (a + b) * c - 1
-contains
-  subroutine all_exprs(x1, x2, x3, x4, x5, x6, x7, x8, x9)
-    integer, intent(inout) :: x1(1:p_add)
-    integer, intent(inout) :: x2(1:p_sub)
-    integer, intent(inout) :: x3(1:p_mul)
-    integer, intent(inout) :: x4(1:p_div)
-    integer, intent(inout) :: x5(1:p_pow)
-    integer, intent(inout) :: x6(0:p_mix)
-    integer, intent(inout) :: x7(1:-(-a + b))
-    integer, intent(inout) :: x8(1:(a+b)*(c+1)-1)
-    integer, intent(inout) :: x9(1:(a-b)*(a-c))
-  end subroutine all_exprs
-end module expr_mod
-"""
-    }
+    files = {"exprs.f90": (NATIVE_FIXTURES / "big_compile_time_expression_suite.f90").read_text(encoding="utf-8")}
     sig = collect_project_procedure_signatures(files)[0]
     assert [a.shape[0] for a in sig.arguments] == [
         "1:p_add",

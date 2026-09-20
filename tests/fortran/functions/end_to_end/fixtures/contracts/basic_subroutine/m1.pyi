@@ -5,3 +5,5 @@ def add1(
     n: Int32,
     x: Float64[n]
 ) -> None: ...
+
+__all__ = ["add1"]

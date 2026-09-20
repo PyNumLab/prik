@@ -210,7 +210,8 @@ def _compile_native_object(source: Path, native_dir: Path) -> Path:
     return native_object
 
 
-def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_package: Path) -> Path:
+def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_package: Path | None) -> Path:
+    """Generate one contract package, comparing it to a fixture when given."""
     _run_captured_command(
         [
             sys.executable,
@@ -225,7 +226,8 @@ def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_pac
             _compiler(),
         ],
     )
-    assert_generated_pyi_package_matches_fixture(package_dir, expected_package)
+    if expected_package is not None:
+        assert_generated_pyi_package_matches_fixture(package_dir, expected_package)
     return package_dir / "__init__.pyi"
 
 
@@ -262,7 +264,12 @@ def _build_inline_pyi_contract_module(
     return module, result
 
 
-def _build_generated_pyi_and_import(source_template: Path, workdir: Path, expected_contract_package: Path):
+def _build_generated_pyi_and_import(
+    source_template: Path,
+    workdir: Path,
+    expected_contract_package: Path | None = None,
+):
+    """Generate a contract from source, then build and import through that contract."""
     source_dir = workdir / "source"
     source_dir.mkdir(parents=True)
     source = source_dir / source_template.name
@@ -568,8 +575,8 @@ def _assert_modern_string_examples(module):
 
 
 def _assert_modern_class_examples(module):
-    assert hasattr(module, "vector")
-    value = module.vector()
+    assert hasattr(module, "Vector")
+    value = module.Vector()
     value.x = np.float64(3.0)
     value.y = np.float64(4.0)
 
@@ -585,8 +592,8 @@ def _assert_modern_class_examples(module):
     assert value.x == np.float64(3.75)
     assert value.y == np.float64(3.0)
 
-    assert hasattr(module, "vector_store")
-    store = module.vector_store()
+    assert hasattr(module, "Vector_Store")
+    store = module.Vector_Store()
     values = store.values
     matrix_values = store.matrix
     assert isinstance(values, AllocatableArray)
@@ -642,7 +649,7 @@ def _assert_modern_class_examples(module):
     with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
         store.set_matrix(np.array(replacement, order="C"))
 
-    made = module.vector_store.make(np.int64(4), np.float64(1.5))
+    made = module.Vector_Store.make(np.int64(4), np.float64(1.5))
     made_values = made.values
     assert isinstance(made_values, AllocatableArray)
     assert made_values.owner is made

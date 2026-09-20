@@ -2045,11 +2045,14 @@ def select_c_export_functions(
 ) -> list[SemanticModule]:
     """Restrict C semantic IR to an exact, fail-closed function allowlist.
 
+    ``symbols`` names native C functions and states the source-side public
+    surface, the way a semantic ``.pyi`` contract states its own ``__all__``.
     The selection happens after ordinary include exposure has recorded source
     provenance and before policy completion. Selected functions receive one
     explicit-export marker so a declaration from an included system header is
     intentionally treated as part of the wrapped translation unit. Every
-    other declaration category is removed from the selected semantic surface.
+    other declaration category is removed from the selected semantic surface,
+    so the emitted stub publishes exactly the corresponding Python names.
     """
     selected_modules = list(modules)
     requested = _validated_c_export_symbols(symbols)

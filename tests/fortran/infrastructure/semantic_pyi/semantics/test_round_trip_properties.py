@@ -5,6 +5,8 @@ from hypothesis import (
     given,
     strategies as st,
 )
+from prik.policy.contract_imports import complete_contract_imports
+from prik.policy.exports import complete_python_export_policy
 from prik.printers import emit_module
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 from prik.semantics.models import (
@@ -71,9 +73,11 @@ def test_generated_pyi_synthetic_imports_are_stably_sorted(type_stems):
                 for index, type_name in enumerate(names)
             ],
         )
+        complete_python_export_policy(module)
+        complete_contract_imports([module])
         return [line for line in emit_module(module).splitlines() if line.startswith("from ")]
 
-    expected = [f"from types import {', '.join(sorted(type_names))}"]
+    expected = [f"from .types import {', '.join(sorted(type_names))}"]
     assert import_lines(type_names) == expected
     assert import_lines(reversed(type_names)) == expected
 

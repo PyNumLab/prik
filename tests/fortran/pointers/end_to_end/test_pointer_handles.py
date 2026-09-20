@@ -24,133 +24,14 @@ from prik.runtime.handles import AllocatableArray, PointerArray
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 FIXTURES = Path(__file__).parent / "fixtures"
 POINTERS_F90_SOURCE = FIXTURES / "native" / "fpointers_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
-POINTER_CROSS_A_SOURCE = """\
-module fpointer_cross_a
-  real(8), target :: storage_a(2) = [1.0_8, 2.0_8]
-contains
-  subroutine select_a(values)
-    real(8), pointer, intent(inout) :: values(:)
-    values => storage_a
-  end subroutine select_a
-
-  function total_a(values) result(total)
-    real(8), pointer, intent(in) :: values(:)
-    real(8) :: total
-    if (associated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function total_a
-end module fpointer_cross_a
-"""
-POINTER_CROSS_B_SOURCE = """\
-module fpointer_cross_b
-  real(8), target :: storage_b(3) = [10.0_8, 20.0_8, 30.0_8]
-contains
-  subroutine select_b(values)
-    real(8), pointer, intent(inout) :: values(:)
-    values => storage_b
-  end subroutine select_b
-
-  function total_b(values) result(total)
-    real(8), pointer, intent(in) :: values(:)
-    real(8) :: total
-    if (associated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function total_b
-end module fpointer_cross_b
-"""
-POINTER_HANDLE_SOURCE = """\
-module fpointer_handles_f90
-  implicit none
-
-  real(8), target :: module_storage(5) = [1.0_8, 2.0_8, 3.0_8, 4.0_8, 5.0_8]
-  real(8), target :: field_storage(4) = [6.0_8, 7.0_8, 8.0_8, 9.0_8]
-  real(8), pointer :: module_values(:) => null()
-  real(8), allocatable, target :: module_allocatable(:)
-
-  type :: pointer_box
-    real(8), pointer :: values(:) => null()
-  contains
-    procedure :: associate_values => box_associate_values
-    procedure :: associate_values_strided => box_associate_values_strided
-  end type pointer_box
-
-contains
-
-  subroutine associate_module_slice()
-    module_values => module_storage(2:5:2)
-  end subroutine associate_module_slice
-
-  subroutine associate_module_contiguous()
-    module_values => module_storage(2:4)
-  end subroutine associate_module_contiguous
-
-  subroutine associate_module_reversed()
-    module_values => module_storage(5:2:-1)
-  end subroutine associate_module_reversed
-
-  subroutine select_module_values(values)
-    real(8), pointer, intent(out) :: values(:)
-    values => module_storage(2:4)
-  end subroutine select_module_values
-
-  subroutine select_no_values(values)
-    real(8), pointer, intent(out) :: values(:)
-    nullify(values)
-  end subroutine select_no_values
-
-  subroutine allocate_module_values()
-    if (allocated(module_allocatable)) deallocate(module_allocatable)
-    allocate(module_allocatable(3))
-    module_allocatable = [10.0_8, 20.0_8, 30.0_8]
-  end subroutine allocate_module_values
-
-  subroutine box_associate_values(self)
-    class(pointer_box), intent(inout) :: self
-    self%values => field_storage(2:4)
-  end subroutine box_associate_values
-
-  subroutine box_associate_values_strided(self)
-    class(pointer_box), intent(inout) :: self
-    self%values => field_storage(1:4:2)
-  end subroutine box_associate_values_strided
-
-  function sum_values(values) result(total)
-    real(8), intent(in) :: values(:)
-    real(8) :: total
-    total = sum(values)
-  end function sum_values
-
-  function sum_pointer_descriptor(values) result(total)
-    real(8), pointer, intent(in) :: values(:)
-    real(8) :: total
-    if (associated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function sum_pointer_descriptor
-
-  function sum_allocatable_descriptor(values) result(total)
-    real(8), allocatable, intent(in) :: values(:)
-    real(8) :: total
-    if (allocated(values)) then
-      total = sum(values)
-    else
-      total = -1.0_8
-    end if
-  end function sum_allocatable_descriptor
-
-end module fpointer_handles_f90
-"""
+POINTER_CROSS_A_SOURCE = (NATIVE_FIXTURES / "fpointer_cross_a.f90").read_text(encoding="utf-8")
+POINTER_CROSS_B_SOURCE = (NATIVE_FIXTURES / "fpointer_cross_b.f90").read_text(encoding="utf-8")
+POINTER_HANDLE_SOURCE = (NATIVE_FIXTURES / "fpointer_handles_f90.f90").read_text(encoding="utf-8")
 
 
 def _build_pointer_cross_extension(
@@ -321,7 +202,7 @@ def test_module_and_derived_pointer_handles_track_native_association(
     assert module_handle.associated is False
     assert module_handle.shape is None
 
-    owner = module.pointer_box()
+    owner = module.Pointer_Box()
     field_handle = owner.values
     assert isinstance(field_handle, PointerArray)
     assert field_handle.owner is owner
@@ -656,27 +537,7 @@ def test_pointer_array_results_use_owned_descriptors_without_owning_targets(
     np.testing.assert_array_equal(values, np.array([1.0, 2.0, 3.0], dtype=np.float64))
 
 
-POINTER_RELEASE_SOURCE = """
-module fpointer_release_f90
-  implicit none
-  real(8), allocatable, target :: pool(:)
-contains
-  function mint(n) result(values)
-    integer(4), intent(in) :: n
-    real(8), pointer :: values(:)
-    allocate(values(n))
-    values = 1.0d0
-  end function mint
-
-  function borrow(n) result(values)
-    integer(4), intent(in) :: n
-    real(8), pointer :: values(:)
-    if (.not. allocated(pool)) allocate(pool(n))
-    pool = 2.0d0
-    values => pool
-  end function borrow
-end module fpointer_release_f90
-"""
+POINTER_RELEASE_SOURCE = (NATIVE_FIXTURES / "fpointer_release_f90.f90").read_text(encoding="utf-8")
 
 
 @pytest.mark.fortran_end_to_end
@@ -722,29 +583,7 @@ def test_pointer_handle_releases_native_storage_when_the_caller_asks(tmp_path: P
     assert module.borrow(np.int32(4)).associated is True
 
 
-POINTER_REASSOCIATION_SOURCE = """\
-module fpointer_reassociate_f90
-  implicit none
-
-  real(8), target :: small_target(3) = [1.0_8, 2.0_8, 3.0_8]
-  real(8), target :: large_target(5) = [10.0_8, 20.0_8, 30.0_8, 40.0_8, 50.0_8]
-
-contains
-
-  subroutine repoint(values)
-    real(8), pointer, intent(inout) :: values(:)
-    values => large_target
-  end subroutine repoint
-
-  function total(values) result(sum_values)
-    real(8), pointer, intent(in) :: values(:)
-    real(8) :: sum_values
-    sum_values = 0.0_8
-    if (associated(values)) sum_values = sum(values)
-  end function total
-
-end module fpointer_reassociate_f90
-"""
+POINTER_REASSOCIATION_SOURCE = (NATIVE_FIXTURES / "fpointer_reassociate_f90.f90").read_text(encoding="utf-8")
 
 
 def test_callee_reassociation_of_an_inout_pointer_dummy_reaches_the_caller_handle(tmp_path: Path):

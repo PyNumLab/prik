@@ -16,11 +16,16 @@ completed role maps to :func:`resolve_declaration_extent`.
 from __future__ import annotations
 
 import ast
+import io
 import re
-from collections.abc import Mapping
+import tokenize
+from keyword import iskeyword
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 __all__ = (
+    "RUNTIME_DIMENSION_MARKERS",
+    "RUNTIME_EXTENT_MARKERS",
     "ArrayExpressionSource",
     "DeclarationExpressionCall",
     "ResolvedDeclarationExtent",
@@ -33,6 +38,7 @@ __all__ = (
     "fortran_extent_to_python",
     "is_declaration_expression_helper",
     "is_public_declaration_expression",
+    "is_strided_extent",
     "render_declaration_extent",
     "resolve_declaration_extent",
     "split_declaration_assignment",
@@ -41,7 +47,28 @@ __all__ = (
 )
 
 
-_RUNTIME_DIMENSIONS = frozenset({":", "::Strided", "...", "Flat"})
+# A runtime extent has a concrete rank but no compile-time bound, so a backend
+# spells it from the descriptor it is handed rather than from the expression.
+RUNTIME_EXTENT_MARKERS = frozenset({":", "::", "Flat"})
+
+
+def is_strided_extent(expression: str) -> bool:
+    """Return whether one extent expression describes a strided axis.
+
+    A trailing empty step marks it, with or without bounds: ``::`` spans the
+    whole axis and ``lower:upper:`` narrows it.  Without that step the axis is
+    contiguous, so ``:`` and ``lower:upper`` are dense.
+    """
+    parts = str(expression).split(":")
+    return len(parts) == 3 and parts[2] == ""
+
+
+_ASSUMED_RANK_MARKER = "..."
+_QUOTED_LITERAL = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
+_IDENTIFIER_PATTERN = r"\b[A-Za-z_]\w*\b"
+_SELECTOR_KEYWORD = re.compile(r"\s*[A-Za-z_]\w*\s*=(?!=)")
+# Every extent whose value only exists at run time, assumed rank included.
+RUNTIME_DIMENSION_MARKERS = RUNTIME_EXTENT_MARKERS | {_ASSUMED_RANK_MARKER}
 _FORTRAN_RELATIONAL_OPERATORS = {
     ".eq.": "==",
     ".ne.": "!=",
@@ -360,7 +387,7 @@ def resolve_declaration_extent(
     stored on completed policy and consumed by backend rendering.
     """
     # Stage 1: preserve caller-owned runtime dimension markers.
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ResolvedDeclarationExtent(expression)
 
     # Stage 2: parse the public expression before binding any producer roles.
@@ -395,7 +422,7 @@ def declaration_extent_references(expression: str) -> tuple[str, ...]:
     known. Array properties and unsupported syntax return ``<invalid>`` so the
     later policy stage cannot accidentally treat them as scalar values.
     """
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return ()
     tree = _parse_expression(expression)
     if tree is None:
@@ -410,6 +437,79 @@ def declaration_extent_references(expression: str) -> tuple[str, ...]:
             node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id not in function_names
         )
     )
+
+
+def declaration_expression_identifiers(expression: str) -> tuple[str, ...]:
+    """Return the names one declaration expression references.
+
+    Parsing decides what is a reference: an identifier spelled inside a
+    character literal is part of the literal's value and names nothing, so
+    ``"box"`` references no ``box``. Text this stage cannot parse -- a kind
+    selector such as ``len=3``, for instance -- falls back to scanning
+    identifiers with the literals removed, so a quoted spelling stays out
+    either way.
+    """
+    names: list[str] = []
+    for part in split_top_level_expression(expression, ","):
+        names.extend(_expression_identifiers(_selector_value(part)))
+    return tuple(dict.fromkeys(names))
+
+
+#: A character literal's optional kind, written before its opening quote.
+_CHARACTER_KIND_PREFIX = re.compile(r"^(?:[A-Za-z]\w*|\d+)_(?=[\"'])")
+
+
+def fortran_character_value(text: str) -> str | None:
+    """Return the value of one whole Fortran character literal, or ``None``.
+
+    Fortran doubles a quote to hold one, so ``'don''t'`` is five characters.
+    Python reads that same spelling as two literals written side by side and
+    joins them, losing the quote, so a Fortran literal is decoded here rather
+    than handed to a Python reader. A literal may also state its kind before
+    the opening quote, as ``c_char_'abc'`` does; the kind is a declared type
+    fact rather than part of the value, so only the characters are returned.
+    Text that is not one whole literal returns ``None`` for the caller to read
+    as an expression.
+    """
+    stripped = _CHARACTER_KIND_PREFIX.sub("", text.strip(), count=1)
+    if len(stripped) < 2 or stripped[0] != stripped[-1] or stripped[0] not in "\"'":
+        return None
+    quote = stripped[0]
+    body = stripped[1:-1]
+    index = 0
+    value: list[str] = []
+    while index < len(body):
+        character = body[index]
+        if character == quote:
+            # A lone quote ends the literal, so this is not one whole literal.
+            if index + 1 >= len(body) or body[index + 1] != quote:
+                return None
+            index += 2
+            value.append(quote)
+            continue
+        value.append(character)
+        index += 1
+    return "".join(value)
+
+
+def _selector_value(part: str) -> str:
+    """Return the expression one declaration selector supplies.
+
+    A selector writes its keyword before the value it carries, as ``len=n``
+    and ``kind=c_char`` do. The keyword is syntax naming the slot rather than
+    an entity the declaration reads, so only what follows it is an expression.
+    """
+    match = _SELECTOR_KEYWORD.match(part)
+    return part[match.end() :] if match is not None else part
+
+
+def _expression_identifiers(expression: str) -> tuple[str, ...]:
+    """Return the names one expression reads, scanning only what will not parse."""
+    text = _python_parseable_fortran_expression(expression)
+    tree = _parse_expression(text)
+    if tree is not None:
+        return tuple(dict.fromkeys(node.id for node in ast.walk(tree) if isinstance(node, ast.Name)))
+    return tuple(dict.fromkeys(re.findall(_IDENTIFIER_PATTERN, _QUOTED_LITERAL.sub(" ", expression))))
 
 
 def declaration_expression_calls(expression: str) -> tuple[str, ...]:
@@ -581,11 +681,79 @@ def _parse_expression(expression: str) -> ast.Expression | None:
     returns an ``eval``-mode tree. It returns ``None`` only for syntax that the
     public caller must preserve, block, or reframe with its own diagnostic; it
     never modifies the supplied text.
+
+    A native name may be one Python reserves -- a Fortran function can be
+    called ``lambda`` -- and it is still a name. Such a name is set aside while
+    Python parses the rest and restored in the tree, so the call is read as a
+    call rather than the whole expression as invalid.
     """
     try:
         return ast.parse(expression, mode="eval")
     except SyntaxError:
+        pass
+    escaped = _escape_reserved_names(expression)
+    if escaped is None:
         return None
+    try:
+        tree = ast.parse(escaped, mode="eval")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id.startswith(_RESERVED_NAME_ESCAPE):
+            node.id = node.id.removeprefix(_RESERVED_NAME_ESCAPE)
+        elif isinstance(node, ast.Attribute) and node.attr.startswith(_RESERVED_NAME_ESCAPE):
+            node.attr = node.attr.removeprefix(_RESERVED_NAME_ESCAPE)
+    return tree
+
+
+#: Keywords the lexical translation writes itself; any other one is a native name.
+_TRANSLATED_KEYWORDS = frozenset({"and", "or", "not", "True", "False"})
+_RESERVED_NAME_ESCAPE = "_prik_reserved_"
+
+
+def _escape_reserved_names(expression: str) -> str | None:
+    """Return the text with each reserved native name escaped, or ``None``.
+
+    Python's own tokenizer finds the names, so a literal or an operator is
+    never mistaken for one. ``None`` means no name needed escaping, or the text
+    does not tokenize.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(expression).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return None
+    reserved = [
+        token.type == tokenize.NAME and iskeyword(token.string) and token.string not in _TRANSLATED_KEYWORDS
+        for token in tokens
+    ]
+    if not any(reserved):
+        return None
+    return tokenize.untokenize(
+        (token.type, _RESERVED_NAME_ESCAPE + token.string if escape else token.string)
+        for token, escape in zip(tokens, reserved, strict=True)
+    )
+
+
+def rename_declaration_expression_calls(expression: str, names: Mapping[str, str]) -> str:
+    """Return one expression with its call targets respelled, and nothing else.
+
+    ``names`` maps a call target as the expression writes it to the spelling
+    that replaces it. Only a called name changes: an argument, a variable, an
+    attribute, or a literal spelled the same way is left alone. An expression
+    with nothing to respell, or one that does not parse, is returned unchanged.
+    """
+    tree = _parse_expression(expression)
+    if tree is None:
+        return expression
+    changed = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        spelled = names.get(node.func.id, node.func.id)
+        if spelled != node.func.id:
+            node.func.id = spelled
+            changed = True
+    return ast.unparse(tree) if changed else expression
 
 
 def _python_parseable_fortran_expression(expression: str) -> str:
@@ -595,8 +763,29 @@ def _python_parseable_fortran_expression(expression: str) -> str:
     translation. Unknown names and calls are intentionally retained for later
     provenance or policy diagnostics.
     """
-    text = expression.strip()
-    text = _replace_fortran_array_constructors(text)
+    text = _replace_fortran_array_constructors(expression.strip())
+    return outside_character_literals(text, _normalized_fortran_lexemes)
+
+
+def outside_character_literals(text: str, transform: Callable[[str], str]) -> str:
+    """Apply one text transform to everything but the character literals.
+
+    A literal's contents are its value, so lexical translation has to leave
+    them alone: ``len(".true.")`` measures six characters whatever ``.true.``
+    means outside quotes.
+    """
+    pieces: list[str] = []
+    position = 0
+    for literal in _QUOTED_LITERAL.finditer(text):
+        pieces.append(transform(text[position : literal.start()]))
+        pieces.append(literal.group(0))
+        position = literal.end()
+    pieces.append(transform(text[position:]))
+    return "".join(pieces)
+
+
+def _normalized_fortran_lexemes(text: str) -> str:
+    """Rewrite Fortran spellings that Python spells differently."""
     text = re.sub(r"(?i)(?<=\d)_[A-Za-z]\w*\b", "", text)
     text = re.sub(r"(?i)(?<=\d)_[0-9]+\b", "", text)
     text = re.sub(r"(?i)\b(\d+(?:\.\d*)?)[dD]([+-]?\d+)\b", r"\1e\2", text)
@@ -606,8 +795,7 @@ def _python_parseable_fortran_expression(expression: str) -> str:
         text = re.sub(re.escape(source), replacement, text, flags=re.IGNORECASE)
     for source, replacement in _FORTRAN_LOGICAL_OPERATORS.items():
         text = re.sub(re.escape(source), replacement, text, flags=re.IGNORECASE)
-    text = text.replace("/=", "!=")
-    return text.replace("%", ".")
+    return text.replace("/=", "!=").replace("%", ".")
 
 
 def _qualified_call_name(node: ast.AST) -> str | None:
@@ -1591,7 +1779,7 @@ def render_declaration_extent(
     """
     if target not in {"c", "fortran"}:
         raise ValueError(f"unsupported declaration-expression target: {target!r}")
-    if expression in _RUNTIME_DIMENSIONS:
+    if expression in RUNTIME_DIMENSION_MARKERS:
         return expression
     try:
         node = ast.parse(expression, mode="eval").body

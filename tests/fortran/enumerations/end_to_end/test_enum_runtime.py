@@ -39,7 +39,7 @@ def test_fortran_enums_preserve_integer_runtime_surface(
     assert not hasattr(module, "Enum")
     assert not hasattr(module, "IntEnum")
 
-    sample = module.paint()
+    sample = module.Paint()
     assert sample.color == np.int32(-1)
     sample.color = np.int32(module.yellow)
     assert sample.color == np.int32(11)

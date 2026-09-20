@@ -62,7 +62,7 @@ def test_c2ir_explicit_project_headers_import_types_from_their_owner_module():
         "representation": "wrapped",
     }
     assert "external_type_ref" not in local_state.metadata
-    assert "from types import state" in stubs["api"]
+    assert "from .types import state" in stubs["api"]
     assert "class state" not in stubs["api"]
 
 

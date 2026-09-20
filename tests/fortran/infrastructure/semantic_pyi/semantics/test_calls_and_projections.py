@@ -872,7 +872,7 @@ nested_answer: Final[Final[Int32]]
     assert rank_any.storage.array.category == "assumed_rank"
     assert rank_any.storage.array.source_shape == [".."]
     assert rank_any.rank == 1
-    assert strided.shape == ["0:n:Strided"]
+    assert strided.shape == ["0:n:"]
     assert strided.storage.array.contiguous is False
     assert computed.shape == ["xl.size"]
     assert bounded.constraints == [

@@ -15,12 +15,14 @@ compile-time requirement utilities at the end of the module.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from typing import NamedTuple
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from pathlib import Path
 
+from prik.parsers.fortran.scope import ScopeUses, UseRoute
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
@@ -28,18 +30,22 @@ from prik.parsers.fortran.models import (
     FortranEnum,
     FortranEnumerator,
     FortranFile,
+    FortranInterface,
     FortranModule,
     FortranProject,
     FortranProgram,
     FortranProcedureSignature,
     FortranSubmodule,
-    FortranUseMapping,
+    FortranUseStatement,
     FortranVariable,
 )
 from prik.utilities.declaration_expressions import (
+    is_strided_extent,
     ArrayExpressionSource,
     canonicalize_declaration_extent,
     declaration_expression_calls,
+    declaration_expression_identifiers,
+    outside_character_literals,
     fortran_extent_to_python,
     is_declaration_expression_helper,
     split_dimension_bounds,
@@ -72,6 +78,7 @@ from prik.semantics.models import (
     PYTHON_STATIC_METADATA,
     PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
+    UNRESOLVED_PROCEDURE_INTERFACE_METADATA,
     SemanticArgument,
     SemanticArrayContract,
     SemanticClass,
@@ -86,6 +93,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticOrigin,
     SemanticPrototype,
+    SemanticReexport,
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
@@ -173,6 +181,52 @@ _FORTRAN_STORAGE_TYPE_MAP = {
 
 
 @dataclass(frozen=True)
+class _CallbackInterface:
+    """Pair one resolvable callback interface with the module that declares it.
+
+    The declaring module is what makes an imported interface convertible: its
+    dummies are written in that module's lexical scope, so a derived type the
+    interface names belongs to the declaring module even when the consuming
+    module never imports that type.
+    """
+
+    signature: FortranProcedureSignature
+    module: FortranModule | None = None
+    local_name: str | None = None
+    """Spelling the importing scope binds, when a ``use`` renamed the interface."""
+
+    declaring_scope: tuple[str, ...] = ()
+    """Contained procedure declaring the block, empty for a module's own block."""
+
+    @property
+    def native_name(self) -> str:
+        """Return the name the declaring module gives this interface."""
+        return self.signature.name
+
+    @property
+    def visible_name(self) -> str:
+        """Return the canonical spelling visible where the interface was resolved."""
+        return self.local_name or self.signature.name
+
+
+class _SpecificProcedure(NamedTuple):
+    """One generic's specific: the module declaring it, and the name it gives it.
+
+    Two modules may each declare a specific of the same name and contribute
+    both to one merged generic, so a specific is identified by where it is
+    declared rather than by its spelling alone.
+    """
+
+    module: str
+    name: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """Return the case-folded identity this specific is looked up by."""
+        return self.module.casefold(), self.name.casefold()
+
+
+@dataclass(frozen=True)
 class _DerivedTypeContext:
     """Keep lexical derived-type lookup facts while one parser node is converted.
 
@@ -182,8 +236,8 @@ class _DerivedTypeContext:
     """
 
     module: str | None = None
-    uses: dict[str, list[FortranUseMapping]] | None = None
-    procedure_uses: dict[str, list[FortranUseMapping]] | None = None
+    uses: list[FortranUseStatement] | None = None
+    procedure_uses: list[FortranUseStatement] | None = None
     local_types: frozenset[str] = frozenset()
 
 
@@ -207,7 +261,7 @@ class _DeclarationCallableContext:
     module: str | None
     local_procedures: dict[str, SemanticFunction]
     local_interfaces: dict[str, SemanticPrototype]
-    uses: dict[str, list[FortranUseMapping]]
+    uses: list[FortranUseStatement]
 
 
 def _normalize_compile_time_values(
@@ -257,7 +311,17 @@ def _resolve_compile_time_text(text: str, compile_time_values: dict[str, str]) -
         token = match.group(0)
         return compile_time_values.get(token.lower(), token)
 
-    return re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*\b", replace_symbol, raw)
+    def substitute(fragment: str) -> str:
+        return re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*\b", replace_symbol, fragment)
+
+    # A character literal's contents are data, so a symbol spelled inside one
+    # is not a reference to substitute: ``len("runtime")`` measures seven
+    # characters whatever value ``runtime`` names.
+    return outside_character_literals(raw, substitute)
+
+
+# Language-owned modules are contract vocabulary, not sibling contract leaves.
+_INTRINSIC_FORTRAN_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 
 
 class FortranToIRConverter(ClassVisitor):
@@ -296,6 +360,7 @@ class FortranToIRConverter(ClassVisitor):
         self.wrapped_derived_types = {
             (str(module).lower(), str(name).lower()) for module, name in (wrapped_derived_types or [])
         }
+        self._known_modules: set[str] = {module for module, _name in self.wrapped_derived_types}
         self._known_procedures: set[tuple[str, str]] = set()
         self.type_facts = {
             (str(base_type).lower(), None if kind is None else str(kind).lower()): dict(fact)
@@ -344,23 +409,30 @@ class FortranToIRConverter(ClassVisitor):
         parsed_file: FortranFile,
         *,
         standalone_module_name: str | None = None,
+        sibling_modules: Iterable[FortranModule] = (),
     ) -> list[SemanticModule]:
         """Convert every module and standalone procedure group in one file.
 
         The method first expands the wrapped-derived-type lookup from the file,
         then preserves parser module order.  Standalone procedures are emitted
-        last as the requested synthetic module when present.
+        last as the requested synthetic module when present.  ``sibling_modules``
+        supplies modules parsed from other files so that an abstract interface
+        imported across files resolves the same way it does for a project.
         """
-        converter = self._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
+        siblings = tuple(sibling_modules)
+        converter = self._with_additional_known_modules(module.name for module in (*siblings, *parsed_file.modules))
+        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
         converter = converter._with_additional_abstract_types(self._abstract_types_from_file(parsed_file))
-        modules = [converter.visit(module) for module in parsed_file.modules]
+        index = self._callback_module_index(siblings, parsed_file.modules)
+        modules = [converter.visit(module, module_index=index) for module in parsed_file.modules]
         if parsed_file.procedures:
             modules.append(
                 converter.procedures_to_semantic_module(
                     parsed_file.procedures,
                     name=standalone_module_name or self._standalone_module_name(parsed_file),
-                    callback_interfaces=self._callback_interface_lookup(parsed_file),
+                    callback_interfaces=self._declared_callback_interfaces(parsed_file),
+                    module_index=index,
                 )
             )
         return modules
@@ -372,25 +444,25 @@ class FortranToIRConverter(ClassVisitor):
         while imported callback interfaces are resolved against the project.
         The returned module ordering matches the input file and parser order.
         """
-        converter = self._with_additional_wrapped_types(self._wrapped_types_from_project(project))
+        index = self._callback_module_index(
+            project.modules.values(),
+            (module for parsed_file in project.files for module in parsed_file.modules),
+        )
+        converter = self._with_additional_known_modules(module.name for module in index.values())
+        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_project(project))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
         converter = converter._with_additional_abstract_types(self._abstract_types_from_project(project))
         semantic_modules = []
         for parsed_file in project.files:
             file_converter = converter._with_additional_wrapped_types(converter._wrapped_types_from_file(parsed_file))
-            semantic_modules.extend(
-                file_converter.visit(
-                    module,
-                    callback_interfaces=self._project_callback_interface_lookup(project, module),
-                )
-                for module in parsed_file.modules
-            )
+            semantic_modules.extend(file_converter.visit(module, module_index=index) for module in parsed_file.modules)
             if parsed_file.procedures:
                 semantic_modules.append(
                     file_converter.procedures_to_semantic_module(
                         parsed_file.procedures,
                         name=self._standalone_module_name(parsed_file),
-                        callback_interfaces=self._callback_interface_lookup(parsed_file),
+                        callback_interfaces=self._declared_callback_interfaces(parsed_file),
+                        module_index=index,
                     )
                 )
         return semantic_modules
@@ -495,14 +567,16 @@ class FortranToIRConverter(ClassVisitor):
     def _character_length(self, var: FortranVariable) -> str:
         """Return the resolved character length recorded by a parsed declaration.
 
-        The helper reads the parser's mixed kind/length spelling, preferring an
-        explicit ``len=`` fragment and otherwise preserving legacy length syntax;
-        declarations with neither continue to use Fortran's length-one default.
+        The parser separates a character selector's length from its kind, so
+        the length is read from that fact rather than found again inside a
+        joined spelling, where an expression holding a comma of its own -- a
+        ``len=max(4, n)`` -- would be cut short. A declaration stating no
+        length continues to use Fortran's length-one default.
         """
+        declared = getattr(var, "character_length_expression", None)
+        if declared:
+            return self._resolve_compile_time_text(str(declared)).strip()
         raw = self._resolve_compile_time_text(str(var.kind or "")).strip()
-        length_match = re.search(r"(?:^|,)\s*len\s*=\s*([^,]+)", raw, re.IGNORECASE)
-        if length_match is not None:
-            return length_match.group(1).strip()
         if var.character_length_syntax and raw:
             return raw
         return "1"
@@ -512,7 +586,7 @@ class FortranToIRConverter(ClassVisitor):
         arg: FortranArgument | FortranVariable,
         *,
         derived_type_context: _DerivedTypeContext | None = None,
-        callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
+        callback_interfaces: dict[str, _CallbackInterface] | None = None,
         as_data_member: bool = False,
         as_type: bool = False,
         binding_cls: type[SemanticVariable] = SemanticVariable,
@@ -572,7 +646,7 @@ class FortranToIRConverter(ClassVisitor):
         self,
         arg: FortranArgument | FortranVariable,
         *,
-        callback_interfaces: dict[str, FortranProcedureSignature] | None,
+        callback_interfaces: dict[str, _CallbackInterface] | None,
         derived_type_context: _DerivedTypeContext | None,
         declaration_arrays: dict[str, ArrayExpressionSource] | None,
     ) -> SemanticType:
@@ -670,46 +744,215 @@ class FortranToIRConverter(ClassVisitor):
         return binding
 
     @staticmethod
-    def _callback_interface_lookup(
-        module: FortranModule | FortranFile,
-    ) -> dict[str, FortranProcedureSignature]:
-        """Index explicit and abstract interface procedures usable by dummy procedures."""
-        lookup: dict[str, FortranProcedureSignature] = {}
-        for interface in module.interfaces:
+    def _declared_callback_interfaces(
+        container: FortranModule | FortranFile,
+    ) -> dict[str, _CallbackInterface]:
+        """Index interfaces declared directly in one module or file.
+
+        A block written inside a contained procedure belongs to that procedure,
+        which may declare its own interface under a name another procedure uses
+        for a different one. Those blocks are stored beside the module's own, so
+        only the module's are indexed here and each procedure adds its own.
+        """
+        owner = container if isinstance(container, FortranModule) else None
+        blocks = (
+            FortranToIRConverter._module_interfaces(container)
+            if isinstance(container, FortranModule)
+            else container.interfaces
+        )
+        lookup: dict[str, _CallbackInterface] = {}
+        for interface in blocks:
             for signature in interface.procedures:
-                lookup.setdefault(signature.name.casefold(), signature)
+                lookup.setdefault(signature.name.casefold(), _CallbackInterface(signature, owner))
             if interface.name and len(interface.procedures) == 1:
-                lookup.setdefault(interface.name.casefold(), interface.procedures[0])
+                lookup.setdefault(interface.name.casefold(), _CallbackInterface(interface.procedures[0], owner))
         return lookup
 
+    @staticmethod
+    def _callback_module_index(*containers: Iterable[FortranModule]) -> dict[str, FortranModule]:
+        """Index every known module by casefolded name for interface resolution."""
+        return {module.name.casefold(): module for group in containers for module in group}
+
     @classmethod
-    def _project_callback_interface_lookup(
+    def _module_callback_interfaces(
         cls,
-        project: FortranProject,
+        modules: dict[str, FortranModule],
         module: FortranModule,
-    ) -> dict[str, FortranProcedureSignature]:
-        """Resolve abstract interfaces imported from another parsed module."""
-        modules = {name.casefold(): item for name, item in project.modules.items()}
-        modules.update({item.name.casefold(): item for parsed_file in project.files for item in parsed_file.modules})
-        imported: dict[str, FortranProcedureSignature] = {}
-        for module_name, mappings in module.uses.items():
-            source_module = modules.get(module_name.casefold())
-            if source_module is None:
+        *,
+        seen: frozenset[str] = frozenset(),
+        exported_only: bool = False,
+    ) -> dict[str, _CallbackInterface]:
+        """Index every interface name visible in one module.
+
+        Declarations of the module itself take precedence over imported names,
+        and an import is followed through re-exporting modules so a chain of
+        ``use`` hops resolves to the module that actually declares it.  A module
+        outside the index leaves its names unresolved, which later stages report
+        against the ``use`` that named them.
+
+        ``exported_only`` applies the module's accessibility to the result, for
+        a caller reaching the names from outside through ``use``.  A module
+        still sees its own private interfaces, so it is left off in that case.
+        The accessibility is the one every other stage reads, so a name reached
+        through an explicitly public or private ``use`` route is judged the same
+        way here as anywhere else rather than by a separate calculation.
+        """
+        key = module.name.casefold()
+        if key in seen:
+            return {}
+        visible = cls._declared_callback_interfaces(module)
+        cls._merge_imported_callback_interfaces(
+            visible,
+            modules,
+            module.uses,
+            seen=seen | {key},
+            override=False,
+        )
+        if not exported_only:
+            return visible
+        public = cls._module_public_names(module, modules)
+        return {name: resolved for name, resolved in visible.items() if resolved.visible_name.casefold() in public}
+
+    @classmethod
+    def _scope_callback_interfaces(
+        cls,
+        modules: dict[str, FortranModule],
+        uses: list[FortranUseStatement],
+        *,
+        base: dict[str, _CallbackInterface],
+        owner: FortranModule | None = None,
+        scope_name: str | None = None,
+    ) -> dict[str, _CallbackInterface]:
+        """Extend a visible interface set with one inner scope's own declarations.
+
+        A procedure-local ``use``, and an interface block written inside the
+        procedure, both name the interface in that scope alone, so each takes
+        precedence over anything the enclosing scope made visible under the
+        same name. Two procedures may name different interfaces the same way,
+        which is why the enclosing module contributes only its own blocks.
+        """
+        visible = dict(base)
+        scope = (str(scope_name),) if scope_name else ()
+        for interface in cls._procedure_interfaces(owner, scope_name):
+            for signature in interface.procedures:
+                visible[signature.name.casefold()] = _CallbackInterface(signature, owner, declaring_scope=scope)
+            if interface.name and len(interface.procedures) == 1:
+                visible[interface.name.casefold()] = _CallbackInterface(
+                    interface.procedures[0],
+                    owner,
+                    declaring_scope=scope,
+                )
+        cls._merge_imported_callback_interfaces(visible, modules, uses, seen=frozenset(), override=True)
+        return visible
+
+    @staticmethod
+    def _interface_declaring_scope(interface) -> tuple[str, ...]:
+        """Return the contained procedure declaring one interface block, if any.
+
+        A module's own block returns the empty scope, which is what makes its
+        name reachable through a ``use`` of the module.
+        """
+        if str(getattr(interface, "declaring_scope_kind", "module")).casefold() != "procedure":
+            return ()
+        return tuple(str(part) for part in getattr(interface, "declaring_scope_path", ()))[-1:]
+
+    @staticmethod
+    def _procedure_interfaces(owner: FortranModule | None, scope_name: str | None):
+        """Return the interface blocks written inside one contained procedure."""
+        if owner is None or scope_name is None:
+            return ()
+        wanted = scope_name.casefold()
+        return tuple(
+            interface
+            for interface in owner.interfaces
+            if str(getattr(interface, "declaring_scope_kind", "module")).casefold() == "procedure"
+            and [part.casefold() for part in getattr(interface, "declaring_scope_path", ())][-1:] == [wanted]
+        )
+
+    @classmethod
+    def _merge_imported_callback_interfaces(
+        cls,
+        visible: dict[str, _CallbackInterface],
+        modules: dict[str, FortranModule],
+        uses: list[FortranUseStatement],
+        *,
+        seen: frozenset[str],
+        override: bool,
+    ) -> None:
+        """Merge every interface one ``use`` list makes visible into ``visible``.
+
+        A name reached by several ``use`` statements has to name one interface.
+        Routes are compared by the declaration they reach, so repeating a route
+        to the same interface is harmless while two different ones leave the
+        name meaning nothing here. A ``use`` of a module this project never
+        read is a route as well: it offers whatever it names, which nothing
+        here can compare, so it makes the name unresolved rather than letting a
+        readable route answer for it.
+        """
+        declared_here = set(visible)
+        scope = ScopeUses(uses)
+        exported = {
+            module_name: cls._module_callback_interfaces(modules, source, seen=seen, exported_only=True)
+            for module_name in scope.modules()
+            if (source := modules.get(module_name.casefold())) is not None
+        }
+        for name in scope.accessible_names(lambda module: exported.get(module)):
+            reached = [
+                cls._reached_callback_interface(route, exported)
+                for route in scope.routes_for(name, lambda module: exported.get(module))
+            ]
+            resolved = cls._one_reached_interface(reached, local_name=name)
+            if resolved is None:
+                if name.casefold() not in declared_here:
+                    visible.pop(name.casefold(), None)
                 continue
-            source_lookup = cls._callback_interface_lookup(source_module)
-            if not mappings:
-                imported.update(source_lookup)
-                continue
-            for mapping in mappings:
-                signature = source_lookup.get(mapping.source.casefold())
-                if signature is not None:
-                    imported[mapping.local_name.casefold()] = signature
-        return imported
+            if override:
+                visible[name.casefold()] = resolved
+            else:
+                visible.setdefault(name.casefold(), resolved)
+
+    @staticmethod
+    def _reached_callback_interface(
+        route: UseRoute,
+        exported: dict[str, dict[str, _CallbackInterface]],
+    ) -> _CallbackInterface | None:
+        """Return the interface one route reaches, or ``None`` for an unread module."""
+        lookup = exported.get(route.module)
+        return None if lookup is None else lookup.get(route.source_name.casefold())
+
+    @classmethod
+    def _one_reached_interface(
+        cls,
+        reached: list[_CallbackInterface | None],
+        *,
+        local_name: str,
+    ) -> _CallbackInterface | None:
+        """Return the one interface a local name reaches, or ``None``.
+
+        Routes are compared by the declaration they reach, so repeating a route
+        to one interface is harmless while two different ones leave the name
+        meaning nothing here. A route into a module this project never read
+        offers whatever it names, which nothing here can compare, so it makes
+        the name unresolved rather than letting a readable route answer for it.
+        """
+        identities = {None if item is None else cls._callback_identity(item) for item in reached}
+        if len(identities) != 1:
+            return None
+        resolved = next((item for item in reached if item is not None), None)
+        # The importing scope may bind the interface under another spelling,
+        # which a contract written here has to state.
+        return None if resolved is None else replace(resolved, local_name=local_name)
+
+    @staticmethod
+    def _callback_identity(resolved: _CallbackInterface) -> tuple[str | None, str]:
+        """Return the declaration one resolved interface names."""
+        owner = resolved.module.name.casefold() if resolved.module is not None else None
+        return (owner, resolved.native_name.casefold())
 
     def _callback_semantic_type(
         self,
         arg: FortranArgument | FortranVariable,
-        callback_interfaces: dict[str, FortranProcedureSignature],
+        callback_interfaces: dict[str, _CallbackInterface],
         *,
         derived_type_context: _DerivedTypeContext | None,
     ) -> SemanticType:
@@ -723,33 +966,71 @@ class FortranToIRConverter(ClassVisitor):
         if getattr(arg, "pointer", False):
             return self._convert_variable_type(arg, derived_type_context=derived_type_context)
         interface_name = str(arg.kind or arg.name)
-        signature = callback_interfaces.get(interface_name.casefold())
+        resolved = callback_interfaces.get(interface_name.casefold())
+        signature = resolved.signature if resolved is not None else None
         if signature is None:
-            return self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            semantic_type = self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            if getattr(arg, "kind", None):
+                # The declaration named an interface that no supplied module
+                # declares, which later stages report against that name rather
+                # than against the opaque procedure type used as a placeholder.
+                semantic_type.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] = interface_name
+            return semantic_type
 
-        context = self._procedure_derived_type_context(signature, derived_type_context)
+        # An interface body is written in the scope of the module that declares
+        # it, so its dummies resolve there rather than in the module that
+        # imported the interface -- which need not import the types it names.
+        declaring_context = (
+            self._module_derived_type_context(resolved.module)
+            if resolved is not None and resolved.module is not None
+            else derived_type_context
+        )
+        context = self._procedure_derived_type_context(signature, declaring_context)
         projected_arguments = list(signature.arguments)
         callback_arguments = [self.visit(item, derived_type_context=context) for item in projected_arguments]
         for source_argument, callback_argument in zip(projected_arguments, callback_arguments, strict=True):
             self._normalize_callback_reference_storage(callback_argument, source_argument)
             self._record_prototype_argument_intent(callback_argument, source_argument)
+            self._record_imported_prototype_type_origin(
+                callback_argument.semantic_type,
+                source_argument,
+                resolved,
+                derived_type_context,
+            )
         callback_return = (
             self.visit(signature.result, derived_type_context=context, as_type=True)
             if signature.result
             else SemanticType("None", dtype="None")
         )
+        # A result carries the declaring module's types exactly as a dummy does.
+        self._record_imported_prototype_type_origin(
+            callback_return,
+            signature.result,
+            resolved,
+            derived_type_context,
+        )
         prototype_module = str(signature.module or "")
+        # The declaring module names the interface; the importing scope may bind
+        # a different spelling. Both are source facts, and a contract needs each
+        # of them to import the right name under the right alias.
+        native_name = resolved.native_name if resolved is not None else interface_name
+        local_name = resolved.visible_name if resolved is not None else interface_name
+        declaring_scope = resolved.declaring_scope if resolved is not None else ()
         return SemanticType(
-            interface_name,
+            local_name,
             dtype="Prototype",
             metadata={
                 "arguments": [item.semantic_type for item in callback_arguments],
                 "callback_arguments": callback_arguments,
                 "return": callback_return,
                 PROTOTYPE_REF_METADATA: {
-                    "name": interface_name,
-                    "local_name": interface_name,
+                    "name": native_name,
+                    "local_name": local_name,
                     "origin_module": prototype_module,
+                    # The scope declaring the interface completes its identity:
+                    # two procedures may each declare a `cb` meaning different
+                    # signatures, which contract-name completion spells apart.
+                    "declaring_scope": tuple(declaring_scope),
                 },
                 "native_callback_kind": signature.kind,
                 "callback_lifetime": "call",
@@ -774,16 +1055,23 @@ class FortranToIRConverter(ClassVisitor):
             ),
         )
 
-    @staticmethod
     def _normalize_callback_reference_storage(
+        self,
         callback_argument: SemanticArgument,
         source_argument: FortranArgument | FortranVariable,
     ) -> None:
-        """Make every non-value callback dummy a permissive reference contract."""
+        """Make every non-value callback dummy a permissive reference contract.
+
+        A dummy the callee may write needs storage the Python callable can
+        write through.  Python has no writable scalar, so such a primitive
+        scalar records rank-zero storage rather than the value contract used
+        for a dummy the callee only reads.
+        """
         if getattr(source_argument, "pass_by_value", False):
             return
         semantic_type = callback_argument.semantic_type
-        if semantic_type.name == "String" and semantic_type.rank == 0:
+        written_back = self._is_written_back_callback_scalar(source_argument, semantic_type)
+        if written_back or (semantic_type.name == "String" and semantic_type.rank == 0):
             semantic_type.storage = SemanticStorageContract(
                 kind="array",
                 read_only=False,
@@ -806,6 +1094,59 @@ class FortranToIRConverter(ClassVisitor):
             semantic_type.storage.mutable = True
         semantic_type.ownership.mutable = True
 
+    def _is_written_back_callback_scalar(
+        self,
+        source_argument: FortranArgument | FortranVariable,
+        semantic_type: SemanticType,
+    ) -> bool:
+        """Report whether the callee may write one primitive scalar callback dummy.
+
+        Fortran permits a dummy with no declared ``intent`` to be both read and
+        modified, so an undeclared direction is conservatively writable.  Only
+        ``assume_intent_in_scalars`` elects the input-only default for it; the
+        declaration itself keeps no intent either way.
+        """
+        if int(semantic_type.rank or 0) != 0 or semantic_type.name not in SEMANTIC_SCALAR_TYPE_NAMES:
+            return False
+        intent = getattr(source_argument, "intent", None)
+        if intent is None:
+            return not self.assume_intent_in_scalars
+        return str(intent).casefold() in {"out", "inout"}
+
+    def _record_imported_prototype_type_origin(
+        self,
+        semantic_type: SemanticType,
+        declaration: FortranArgument | FortranVariable | None,
+        resolved: _CallbackInterface | None,
+        consuming_context: _DerivedTypeContext | None,
+    ) -> None:
+        """Name the declaring module for a derived type an imported interface owns.
+
+        A type declared beside the interface is local to that module, so nothing
+        in the module that imported the interface identifies it.  Recording the
+        origin keeps the identity with the module that declares the type rather
+        than the one that happened to import the interface.
+        """
+        if resolved is None or resolved.module is None or declaration is None:
+            return
+        if str(getattr(declaration, "base_type", "")).casefold() != "derived":
+            return
+        declaring = resolved.module.name
+        consuming = str(consuming_context.module or "") if consuming_context is not None else ""
+        if declaring.casefold() == consuming.casefold():
+            return
+        if EXTERNAL_TYPE_REF_METADATA in semantic_type.metadata:
+            return
+        name = str(getattr(declaration, "kind", "") or semantic_type.name)
+        wrapped = (declaring.casefold(), name.casefold()) in self.wrapped_derived_types
+        semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] = {
+            "name": name,
+            "local_name": name,
+            "origin_module": declaring,
+            "wrapped": wrapped,
+            "representation": "wrapped" if wrapped else "opaque",
+        }
+
     @staticmethod
     def _record_prototype_argument_intent(
         argument: SemanticArgument,
@@ -816,24 +1157,59 @@ class FortranToIRConverter(ClassVisitor):
         if intent is not None:
             argument.origin.metadata[PROTOTYPE_INTENT_METADATA] = intent
 
+    @staticmethod
+    def _prototype_reference_identity(
+        semantic_type: SemanticType | None,
+    ) -> tuple[str, tuple[str, ...], str] | None:
+        """Return the prototype identity one callback annotation refers to.
+
+        A prototype is identified by the module declaring it, the contained
+        procedure owning the block if any, and the name that scope gives it.
+        The module matters because another one may declare its own prototype
+        under the same spelling, and the two are different signatures.
+        """
+        if semantic_type is None or semantic_type.storage is None or semantic_type.storage.kind != "callback":
+            return None
+        reference = semantic_type.metadata.get(PROTOTYPE_REF_METADATA)
+        if not isinstance(reference, dict):
+            return None
+        scope = tuple(str(part) for part in reference.get("declaring_scope", ()))
+        return (
+            str(reference.get("origin_module", "")).casefold(),
+            scope,
+            str(reference.get("name", "")).casefold(),
+        )
+
     def _module_prototypes(
         self,
         module: FortranModule,
         context: _DerivedTypeContext,
-        referenced: set[str],
+        referenced: set[tuple[str, tuple[str, ...], str]],
         called: set[str],
     ) -> list[SemanticPrototype]:
-        """Convert every referenced interface into one exact prototype signature."""
+        """Convert every referenced interface into one exact prototype signature.
+
+        A block written inside a contained procedure declares a signature that
+        procedure alone can name, and two procedures may spell different
+        signatures the same way. Such a block therefore takes its own
+        scope-qualified contract identity and stays private: the contract needs
+        it to annotate that procedure's callback, but a ``use`` of this module
+        cannot reach it, so the module does not publish it.
+        """
         prototypes: list[SemanticPrototype] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, tuple[str, ...], str]] = set()
         for interface in module.interfaces:
+            scope = self._interface_declaring_scope(interface)
             for signature in interface.procedures:
-                name = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
-                if not (interface.abstract or name.casefold() in referenced or name.casefold() in called):
+                declared = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
+                # Identity is the declaring scope with the name that scope
+                # gives; contract-name completion spells it.
+                identity = (module.name.casefold(), scope, declared.casefold())
+                if not (interface.abstract or identity in referenced or declared.casefold() in called):
                     continue
-                if name in seen:
+                if identity in seen:
                     continue
-                seen.add(name)
+                seen.add(identity)
                 arguments = [self.visit(item, derived_type_context=context) for item in signature.arguments]
                 for source_argument, argument in zip(signature.arguments, arguments, strict=True):
                     self._normalize_callback_reference_storage(argument, source_argument)
@@ -845,15 +1221,16 @@ class FortranToIRConverter(ClassVisitor):
                 )
                 prototypes.append(
                     SemanticPrototype(
-                        name=name,
-                        native_name=name,
+                        name=declared,
+                        native_name=declared,
+                        declaring_scope=scope,
                         arguments=arguments,
                         return_type=return_type,
                         metadata=self._procedure_metadata(signature),
-                        visibility=self._symbol_visibility(module, name),
+                        visibility="private" if scope else self._symbol_visibility(module, declared),
                         origin=SemanticOrigin(
                             source_language="fortran",
-                            native_name=name,
+                            native_name=declared,
                             native_abi=self._procedure_native_abi(signature),
                             native_symbol=self._procedure_native_symbol(signature),
                             native_scope=module.name,
@@ -929,7 +1306,7 @@ class FortranToIRConverter(ClassVisitor):
         visibility: str = "public",
         *,
         derived_type_context: _DerivedTypeContext | None = None,
-        callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
+        callback_interfaces: dict[str, _CallbackInterface] | None = None,
     ) -> SemanticFunction:
         """Convert a parsed procedure signature into its callable semantic contract.
 
@@ -1109,7 +1486,7 @@ class FortranToIRConverter(ClassVisitor):
         self,
         module: FortranModule,
         *,
-        callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
+        module_index: dict[str, FortranModule] | None = None,
     ) -> SemanticModule:
         """Assemble the semantic contents of one parsed Fortran module.
 
@@ -1120,10 +1497,8 @@ class FortranToIRConverter(ClassVisitor):
         """
         context = self._module_derived_type_context(module)
         self._record_abstract_type_names(module)
-        callback_interfaces = {
-            **(callback_interfaces or {}),
-            **self._callback_interface_lookup(module),
-        }
+        index = module_index if module_index is not None else self._callback_module_index([module])
+        callback_interfaces = self._module_callback_interfaces(index, module)
         source_procedures = [
             *module.procedures,
             *self._module_explicit_interface_procedures(module),
@@ -1133,15 +1508,27 @@ class FortranToIRConverter(ClassVisitor):
                 proc,
                 visibility=self._symbol_visibility(module, proc.name),
                 derived_type_context=context,
-                callback_interfaces=callback_interfaces,
+                # A procedure-local ``use`` names an interface only inside that
+                # procedure, so each one resolves against its own imports.
+                callback_interfaces=self._scope_callback_interfaces(
+                    index,
+                    proc.uses,
+                    base=callback_interfaces,
+                    owner=module,
+                    scope_name=proc.name,
+                ),
             )
             for proc in source_procedures
         ]
+        # A callback argument names the prototype identity it resolved to, so
+        # the prototypes to convert are read from those identities rather than
+        # rediscovered from the spellings the annotations happen to use.
         callback_prototypes = {
-            argument.semantic_type.name.casefold()
+            identity
             for function in semantic_functions
             for argument in function.arguments
-            if argument.semantic_type.storage is not None and argument.semantic_type.storage.kind == "callback"
+            for identity in (self._prototype_reference_identity(argument.semantic_type),)
+            if identity is not None
         }
         prototypes = self._module_prototypes(
             module,
@@ -1155,7 +1542,7 @@ class FortranToIRConverter(ClassVisitor):
                 module,
                 functions=semantic_functions,
                 prototypes=prototypes,
-                uses={**module.uses, **procedure.uses},
+                uses=[*module.uses, *procedure.uses],
             )
             self._record_function_declaration_callables(function, callable_context)
 
@@ -1179,12 +1566,17 @@ class FortranToIRConverter(ClassVisitor):
                 ),
             )
 
-        overload_sets = self._module_overload_sets(
+        overload_sets, inherited_functions = self._module_overload_sets(
             module,
             procedure_lookup,
             context,
             semantic_classes,
+            module_index=index,
         )
+        # A specific reached through a use-associated generic is callable here,
+        # so it joins this module's functions. The import never bound its own
+        # name, so it stays private and is reachable only through the generic.
+        semantic_functions.extend(inherited_functions)
         metadata = {}
         common_variables = {name.casefold() for name in module.common_variables}
         enum_constants = [
@@ -1223,7 +1615,8 @@ class FortranToIRConverter(ClassVisitor):
             overload_sets=overload_sets,
             classes=semantic_classes,
             variables=module_variables + enum_constants,
-            imports=self._module_imports(module),
+            imports=self._module_imports(module, index),
+            reexports=self._module_reexports(module, index),
             metadata=metadata,
             origin=SemanticOrigin(
                 source_language="fortran",
@@ -1282,15 +1675,24 @@ class FortranToIRConverter(ClassVisitor):
         procedures: list[FortranProcedureSignature],
         *,
         name: str,
-        callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
+        callback_interfaces: dict[str, _CallbackInterface] | None = None,
+        module_index: dict[str, FortranModule] | None = None,
     ) -> SemanticModule:
         """Package standalone procedures as the synthetic semantic module ``name``.
 
         This is used by file and project conversion after parser module handling.
-        Procedure order and optional callback lookup are passed unchanged to the
-        existing procedure visitor.
+        Procedure order is preserved, and each procedure resolves interfaces from
+        its own ``use`` list on top of the supplied file-level lookup.
         """
-        semantic_functions = [self.visit(proc, callback_interfaces=callback_interfaces) for proc in procedures]
+        index = module_index or {}
+        base = callback_interfaces or {}
+        semantic_functions = [
+            self.visit(
+                proc,
+                callback_interfaces=self._scope_callback_interfaces(index, proc.uses, base=base),
+            )
+            for proc in procedures
+        ]
         function_lookup = {function.name.casefold(): function for function in semantic_functions}
         for procedure, function in zip(procedures, semantic_functions, strict=True):
             self._record_function_declaration_callables(
@@ -1299,7 +1701,7 @@ class FortranToIRConverter(ClassVisitor):
                     module=None,
                     local_procedures=function_lookup,
                     local_interfaces={},
-                    uses=dict(procedure.uses),
+                    uses=list(procedure.uses),
                 ),
             )
         return SemanticModule(
@@ -1312,20 +1714,398 @@ class FortranToIRConverter(ClassVisitor):
         )
 
     @staticmethod
-    def _module_imports(module: FortranModule) -> list[str | SemanticImport]:
-        """Translate parser ``use`` mappings while preserving parser declaration order."""
-        imports: list[str | SemanticImport] = []
-        for module_name, mappings in module.uses.items():
-            if not mappings:
-                imports.append(module_name)
-            else:
-                imports.append(
-                    SemanticImport(
-                        module=module_name,
-                        items=[SemanticImportItem(source=item.source, target=item.target) for item in mappings],
-                    )
+    def _effective_accessibility(module: FortranModule):
+        """Return whether one name is public through its use-association routes.
+
+        Accessibility is settled by precedence: an access statement naming the
+        entity decides it; otherwise any explicitly public module route makes
+        it public, while routes make it private only when every one is named
+        private. The module's bare default applies next and is itself public
+        when no bare statement appears.
+        """
+        default_public = str(getattr(module, "default_visibility", "public")).casefold() != "private"
+        explicit_public = {str(name).casefold() for name in getattr(module, "public_symbols", ())}
+        explicit_private = {str(name).casefold() for name in getattr(module, "private_symbols", ())}
+
+        def is_public(name: object, routes: Iterable[object] = ()) -> bool:
+            folded = str(name).casefold()
+            if folded in explicit_private:
+                return False
+            if folded in explicit_public:
+                return True
+            route_names = {str(route).casefold() for route in routes}
+            if route_names & explicit_public:
+                return True
+            if route_names and route_names <= explicit_private:
+                return False
+            return default_public
+
+        return is_public
+
+    @staticmethod
+    def _module_interfaces(module: FortranModule):
+        """Return the interface blocks declared by the module itself.
+
+        A block written inside a contained procedure belongs to that procedure,
+        so what it declares is reachable only there. Those blocks are stored
+        alongside the module's own, and including them would put a local name
+        into everything a ``use`` of this module can reach.
+        """
+        return tuple(
+            interface
+            for interface in module.interfaces
+            if str(getattr(interface, "declaring_scope_kind", "module")).casefold() == "module"
+        )
+
+    @staticmethod
+    def _module_enumerators(module: FortranModule):
+        """Return every enumerator one module's enum blocks declare.
+
+        An enumerator is a named constant the module declares, and PRIK models
+        it as one: a ``use`` carries it exactly as it carries a ``parameter``,
+        so this layer reads it wherever it reads the module's variables.
+        """
+        return tuple(
+            enumerator for enum in getattr(module, "enums", ()) for enumerator in getattr(enum, "enumerators", ())
+        )
+
+    @staticmethod
+    def _module_declared_names(module: FortranModule) -> set[str]:
+        """Return the names declared by one module for accessibility resolution.
+
+        A named interface block declares its generic. An abstract block names
+        no generic, and what it declares are the procedure signatures inside
+        it, which is what another module imports to write a ``procedure(...)``
+        declaration. A specific inside an ordinary generic is not separately
+        declared here, because the generic is the name that block introduces.
+        An enumerator is a declared constant, so it is named here as a variable
+        is, which is what it becomes.
+        """
+        return {
+            *(procedure.name.casefold() for procedure in module.procedures),
+            *(derived.name.casefold() for derived in module.derived_types),
+            *(variable.name.casefold() for variable in getattr(module, "variables", ())),
+            *(enumerator.name.casefold() for enumerator in FortranToIRConverter._module_enumerators(module)),
+            *(
+                interface.name.casefold()
+                for interface in FortranToIRConverter._module_interfaces(module)
+                if interface.name is not None
+            ),
+            *(
+                signature.name.casefold()
+                for interface in FortranToIRConverter._module_interfaces(module)
+                if interface.name is None
+                for signature in interface.procedures
+                if signature.name
+            ),
+        }
+
+    @classmethod
+    def _module_declaration_dependencies(cls, module: FortranModule) -> set[str]:
+        """Return imported names used to express this module's declarations.
+
+        The parser models retain declaration expressions but not executable
+        statements here, so intersecting their identifiers with names visible
+        through ``use`` distinguishes a dependency from an otherwise implicit
+        default-public re-export. Those identifiers come from parsing each
+        expression rather than scanning its text, so a name spelled inside a
+        character literal is read as part of that literal's value and not as a
+        reference to whatever it happens to spell. An explicit ``public``
+        statement remains the module's authoritative request to publish the
+        name.
+        """
+
+        declaration_text: list[str] = []
+
+        def add_variable(variable: FortranVariable | None) -> None:
+            if variable is None:
+                return
+            declaration_text.extend(
+                str(value)
+                for value in (
+                    variable.kind,
+                    variable.target_kind_expression,
+                    variable.symbolic_value,
+                    variable.value,
+                    *variable.shape,
+                    *variable.lbound,
+                    *variable.ubound,
                 )
-        return imports
+                if value is not None
+            )
+
+        def add_procedure(procedure: FortranProcedureSignature) -> None:
+            for argument in procedure.arguments:
+                add_variable(argument)
+            add_variable(procedure.result)
+            for variable in procedure.variables.values():
+                add_variable(variable)
+
+        for variable in module.variables:
+            add_variable(variable)
+        for procedure in module.procedures:
+            add_procedure(procedure)
+        for derived in module.derived_types:
+            if derived.extends is not None:
+                declaration_text.append(str(getattr(derived.extends, "name", derived.extends)))
+            for field in derived.fields:
+                add_variable(field)
+            for binding in derived.procedure_bindings:
+                interface_name = binding.get("interface")
+                if interface_name:
+                    declaration_text.append(str(interface_name))
+        for interface in module.interfaces:
+            for procedure in interface.procedures:
+                add_procedure(procedure)
+        for enumerator in cls._module_enumerators(module):
+            declaration_text.extend(
+                str(value) for value in (enumerator.symbolic_value, enumerator.value) if value is not None
+            )
+
+        return {
+            identifier.casefold()
+            for text in declaration_text
+            for identifier in declaration_expression_identifiers(text)
+        }
+
+    @classmethod
+    def _module_public_names(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        seen: frozenset[str] = frozenset(),
+    ) -> set[str]:
+        """Return the names one module offers to a plain ``use`` of it."""
+        key = module.name.casefold()
+        if key in seen:
+            return set()
+        seen = seen | {key}
+        is_public = cls._effective_accessibility(module)
+        offered: dict[str, set[str]] = {name: set() for name in cls._module_declared_names(module)}
+        scope = ScopeUses(module.uses)
+        reachable = cls._offered_names(index, seen)
+        for name in scope.accessible_names(reachable):
+            folded = name.casefold()
+            offered.setdefault(folded, set()).update(route.module for route in scope.routes_for(name, reachable))
+        return {name for name, routes in offered.items() if is_public(name, routes)}
+
+    @staticmethod
+    def _reconcile_routes(origins: list[tuple[str, str, str]]) -> tuple[str, str, str] | None:
+        """Return the one entity a local name's routes reach, or ``None``.
+
+        An ordinary entity has one declaration, so routes that disagree -- or a
+        readable route standing beside one this project never parsed -- mean the
+        local name reaches more than one thing, and choosing between them would
+        be a guess rather than a reading.
+
+        A generic is the exception the language makes. Several accessible
+        generic interfaces spelled the same contribute their specific procedures
+        to one generic, so generic routes are contributors rather than rivals.
+        The merged specifics belong to the overload set assembled from them;
+        this record names the first contributor in source order, which is the
+        route the association is reported through.
+        """
+        distinct = list(dict.fromkeys(origins))
+        if len(distinct) == 1:
+            return distinct[0]
+        if distinct and all(kind == "generic" for kind, _module, _name in distinct):
+            return distinct[0]
+        return None
+
+    @classmethod
+    def _offered_names(cls, index: dict[str, FortranModule], seen: frozenset[str] = frozenset()):
+        """Return what each used module publishes, or ``None`` when unparsed."""
+
+        def offered(module_name: str):
+            used = index.get(module_name.casefold())
+            return None if used is None else cls._module_public_names(used, index, seen)
+
+        return offered
+
+    @classmethod
+    def _name_routes(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        local_name: str,
+    ) -> tuple[UseRoute, ...]:
+        """Return every route by which one module reaches one local name.
+
+        A named mapping states the name it carries. A plain ``use`` carries
+        every public name of what it reads, so it is a route for this name only
+        when that module is parsed and offers it -- an unparsed module cannot be
+        enumerated, and assuming it carries the name would refuse resolutions
+        PRIK can make. How a route entered, through ``only`` or through a plain
+        ``use``, says nothing about what it carries, so both kinds are collected
+        together and weighed the same way afterwards.
+        """
+        return ScopeUses(module.uses).routes_for(local_name, cls._offered_names(index))
+
+    @classmethod
+    def _use_associated_names(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> tuple[str, ...]:
+        """Return every local name one module reaches through ``use``, in order.
+
+        A named mapping contributes the spelling it binds; a plain ``use``
+        contributes the names the module it reads offers, which are known only
+        for a parsed one. Named spellings come first, so a name reached both
+        ways keeps the case its ``use`` statement wrote.
+        """
+        return ScopeUses(module.uses).accessible_names(cls._offered_names(index))
+
+    @classmethod
+    def _use_associations(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> Iterator[tuple[str, tuple[str, ...], tuple[str, str, str]]]:
+        """Yield each use-associated name, the modules routing it, and what it names.
+
+        The entity is ``(kind, declaring module, declared name)``, followed back
+        through every module re-exporting it. A name this module declares as
+        well, or one naming two entities, has no single association to report.
+        """
+        declared = cls._module_declared_names(module)
+        for local_name in cls._use_associated_names(module, index):
+            routes = cls._name_routes(module, index, local_name)
+            if local_name.casefold() in declared or not routes:
+                continue
+            origin = cls._reconcile_routes(
+                [cls._resolve_reexport_origin(index, route.module, route.source_name) for route in routes]
+            )
+            if origin is not None:
+                yield local_name, tuple(dict.fromkeys(route.module for route in routes)), origin
+
+    @classmethod
+    def _module_imports(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+    ) -> list[SemanticImport]:
+        """Return the use associations this module's declarations are written with.
+
+        A contract binds the names its declarations use, and only those. A
+        ``use`` that extends a generic the module declares, or reaches a name no
+        declaration mentions, binds nothing a contract writes, and a name from a
+        module the compiler supplies has no contract to be read from. Each name
+        is read from the module declaring it, however many modules it passed
+        through, so every reference to one entity binds it the same way.
+        """
+        dependencies = cls._module_declaration_dependencies(module)
+        imports: dict[str, SemanticImport] = {}
+        for local_name, _routes, (kind, origin_module, origin_name) in cls._use_associations(module, index):
+            if local_name.casefold() not in dependencies or kind == "intrinsic":
+                continue
+            imports.setdefault(origin_module.casefold(), SemanticImport(module=origin_module)).items.append(
+                SemanticImportItem(source=origin_name, target=None if origin_name == local_name else local_name)
+            )
+        return list(imports.values())
+
+    def _module_reexports(
+        cls,
+        module: FortranModule,
+        module_index: dict[str, FortranModule] | None = None,
+    ) -> list[SemanticReexport]:
+        """Return the public names this module accesses through ``use``.
+
+        A use-associated entity belongs to this module's interface when the
+        module's effective accessibility makes it public, which an ordinary
+        default-public module does without any access statement naming it.
+        Declaration use is recorded for later Python publication policy but
+        does not change this Fortran accessibility decision.
+        """
+        is_public = cls._effective_accessibility(module)
+        dependencies = cls._module_declaration_dependencies(module)
+        explicit_public = {str(name).casefold() for name in module.public_symbols}
+        return [
+            SemanticReexport(
+                local_name,
+                origin_module,
+                origin_name,
+                module.name,
+                entity_kind=kind,
+                access_modules=list(route_names),
+                declaration_dependency=local_name.casefold() in dependencies,
+                explicitly_public=local_name.casefold() in explicit_public,
+            )
+            for local_name, route_names, (kind, origin_module, origin_name) in cls._use_associations(
+                module, module_index or {}
+            )
+            if is_public(local_name, route_names)
+        ]
+
+    @classmethod
+    def _resolve_reexport_origin(
+        cls,
+        index: dict[str, FortranModule],
+        module_name: str,
+        source_name: str,
+        seen: frozenset[tuple[str, str]] = frozenset(),
+    ) -> tuple[str, str, str]:
+        """Return where a published name is declared, following every hop.
+
+        A module may publish a name it imported from a module that published it
+        in turn, so the module a ``use`` reads is not always the one declaring
+        the entity. Following the chain reports the declaration itself: its
+        kind, the module holding it, and the name it is declared under. A name
+        reached through no declaration, or through a cycle, stays unknown.
+
+        Each hop applies the rule a direct import does. A module that does not
+        declare the name has it only through its own ``use`` statements, so the
+        chain continues only while Fortran accessibility keeps the name public
+        there -- a `private` statement in an intermediate module ends it -- and
+        only while every route through that module names one entity. Two routes
+        naming different declarations leave the origin genuinely ambiguous
+        there, exactly as they would in the importing module.
+        """
+        if module_name.casefold() in _INTRINSIC_FORTRAN_MODULES:
+            # The compiler supplies it: there is no declaration to name, and no
+            # contract a name could be read from.
+            return "intrinsic", module_name, source_name
+        key = (module_name.casefold(), source_name.casefold())
+        declaring = index.get(module_name.casefold())
+        if declaring is None or key in seen:
+            return "unknown", module_name, source_name
+        kind = cls._declared_entity_kind(declaring, source_name)
+        if kind != "unknown":
+            return kind, declaring.name, source_name
+        seen = seen | {key}
+        routes = cls._name_routes(declaring, index, source_name)
+        route_names = tuple(dict.fromkeys(route.module for route in routes))
+        if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
+            return "unknown", module_name, source_name
+        origin = cls._reconcile_routes(
+            [cls._resolve_reexport_origin(index, route.module, route.source_name, seen) for route in routes]
+        )
+        return origin if origin is not None else ("unknown", module_name, source_name)
+
+    @staticmethod
+    def _declared_entity_kind(declaring: FortranModule | None, source_name: str) -> str:
+        """Return what one name declares in the module that holds its declaration."""
+        if declaring is None:
+            return "unknown"
+        key = source_name.casefold()
+        if any(procedure.name.casefold() == key for procedure in declaring.procedures):
+            return "procedure"
+        for interface in FortranToIRConverter._module_interfaces(declaring):
+            if interface.abstract and any(signature.name.casefold() == key for signature in interface.procedures):
+                return "prototype"
+            if interface.name and interface.name.casefold() == key:
+                return "prototype" if interface.abstract else "generic"
+            if not interface.abstract and any(signature.name.casefold() == key for signature in interface.procedures):
+                return "procedure"
+        if any(derived.name.casefold() == key for derived in declaring.derived_types):
+            return "derived_type"
+        if any(variable.name.casefold() == key for variable in getattr(declaring, "variables", ())):
+            return "variable"
+        # An enumerator is a named constant, which is the representation it
+        # already has downstream, so a route reaching one names a variable.
+        if any(enumerator.name.casefold() == key for enumerator in FortranToIRConverter._module_enumerators(declaring)):
+            return "variable"
+        return "unknown"
 
     def _declaration_callable_context(
         self,
@@ -1333,14 +2113,14 @@ class FortranToIRConverter(ClassVisitor):
         functions: Iterable[SemanticFunction] = (),
         prototypes: Iterable[SemanticPrototype] = (),
         *,
-        uses: dict[str, list[FortranUseMapping]] | None = None,
+        uses: list[FortranUseStatement] | None = None,
     ) -> _DeclarationCallableContext:
         """Build lexical procedure facts for one module-owned declaration."""
         return _DeclarationCallableContext(
             module=module.name,
             local_procedures={function.name.casefold(): function for function in functions},
             local_interfaces={prototype.name.casefold(): prototype for prototype in prototypes},
-            uses=dict(module.uses if uses is None else uses),
+            uses=list(module.uses if uses is None else uses),
         )
 
     def _record_declaration_callables(
@@ -1416,36 +2196,32 @@ class FortranToIRConverter(ClassVisitor):
                 declaration=local,
             )
 
-        explicit = [
-            (module_name, mapping.source)
-            for module_name, mappings in context.uses.items()
-            for mapping in mappings
-            if mapping.local_name.casefold() == key
-        ]
-        if len(explicit) == 1:
-            return SemanticExpressionCallable(
-                name=name,
-                native_name=explicit[0][1],
-                native_scope=explicit[0][0],
-                source_language="fortran",
-                placement="module",
-            )
-        if explicit:
-            return None
-
-        wildcard_modules = [module_name for module_name, mappings in context.uses.items() if not mappings]
-        known_origins = [
-            module_name for module_name in wildcard_modules if (module_name.casefold(), key) in self._known_procedures
-        ]
-        if len(known_origins) != 1:
+        scope = ScopeUses(context.uses)
+        offered = self._known_procedure_names()
+        routes = scope.routes_for(name, offered)
+        if len({route.key for route in routes}) != 1:
             return None
         return SemanticExpressionCallable(
             name=name,
-            native_name=name,
-            native_scope=known_origins[0],
+            native_name=routes[0].source_name,
+            native_scope=routes[0].module,
             source_language="fortran",
             placement="module",
         )
+
+    def _known_procedure_names(self):
+        """Return the procedure names each module declares, or ``None``."""
+        by_module: dict[str, set[str]] = {}
+        for module_name, procedure_name in self._known_procedures:
+            by_module.setdefault(module_name.casefold(), set()).add(procedure_name.casefold())
+
+        def offered(module_name: str):
+            key = module_name.casefold()
+            if key in self._known_modules:
+                return by_module.get(key, set())
+            return None
+
+        return offered
 
     def _with_additional_wrapped_types(
         self,
@@ -1470,6 +2246,24 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = set(self._known_procedures)
         converter._abstract_derived_types = set(self._abstract_derived_types)
+        converter._known_modules |= self._known_modules
+        return converter
+
+    def _with_additional_known_modules(self, modules: Iterable[str]) -> FortranToIRConverter:
+        """Return this converter or a clone that also knows parsed modules."""
+        merged = self._known_modules | {str(module).casefold() for module in modules}
+        if merged == self._known_modules:
+            return self
+        converter = FortranToIRConverter(
+            type_map=self.type_map,
+            compile_time_values=self.compile_time_values,
+            wrapped_derived_types=self.wrapped_derived_types,
+            type_facts=self.type_facts,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
+        )
+        converter._known_modules = merged
+        converter._known_procedures = set(self._known_procedures)
+        converter._abstract_derived_types = set(self._abstract_derived_types)
         return converter
 
     def _with_additional_known_procedures(
@@ -1491,6 +2285,7 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = merged
         converter._abstract_derived_types = set(self._abstract_derived_types)
+        converter._known_modules = self._known_modules | {module for module, _name in merged}
         return converter
 
     def _with_additional_abstract_types(
@@ -1512,6 +2307,7 @@ class FortranToIRConverter(ClassVisitor):
         )
         converter._known_procedures = set(self._known_procedures)
         converter._abstract_derived_types = merged
+        converter._known_modules = self._known_modules | {module for module, _name in merged}
         return converter
 
     @staticmethod
@@ -1603,31 +2399,25 @@ class FortranToIRConverter(ClassVisitor):
         The new context keeps enclosing local types while separating procedure-
         local imports, which later controls imported type qualification.
         """
-        uses = dict(parent.uses or {}) if parent is not None else {}
-        uses.update(proc.uses)
+        inherited = (parent.uses or ()) if parent is not None else ()
+        uses = [*inherited, *proc.uses]
         return _DerivedTypeContext(
             module=proc.module or (parent.module if parent is not None else None),
             uses=uses,
-            procedure_uses=FortranToIRConverter._procedure_local_uses(proc, parent),
+            procedure_uses=FortranToIRConverter._procedure_local_uses(proc),
             local_types=parent.local_types if parent is not None else frozenset(),
         )
 
     @staticmethod
-    def _procedure_local_uses(
-        proc: FortranProcedureSignature,
-        parent: _DerivedTypeContext | None,
-    ) -> dict[str, list[FortranUseMapping]]:
-        """Return imports introduced locally by ``proc`` relative to its parent.
+    def _procedure_local_uses(proc: FortranProcedureSignature) -> list[FortranUseStatement]:
+        """Return the ``use`` statements ``proc`` writes itself.
 
-        A parser-preserved ``_local_uses`` mapping takes precedence; otherwise
-        only imports differing from the parent context are returned.
+        The parser records them apart from the ones it inherits, so a
+        procedure's own imports are read rather than recovered by comparing its
+        table with its parent's.
         """
         local_uses = getattr(proc, "_local_uses", None)
-        if isinstance(local_uses, dict):
-            return dict(local_uses)
-        if parent is None or parent.uses is None:
-            return dict(proc.uses)
-        return {module: mappings for module, mappings in proc.uses.items() if parent.uses.get(module) != mappings}
+        return list(proc.uses if local_uses is None else local_uses)
 
     def _derived_type_ref(
         self,
@@ -1693,7 +2483,7 @@ class FortranToIRConverter(ClassVisitor):
     def _resolve_derived_type_origin_from_uses(
         self,
         local_name: str,
-        uses: dict[str, list[FortranUseMapping]] | None,
+        uses: list[FortranUseStatement] | None,
     ) -> _ResolvedDerivedTypeOrigin:
         """Resolve one derived-type spelling from explicit or wildcard ``use`` maps.
 
@@ -1701,32 +2491,32 @@ class FortranToIRConverter(ClassVisitor):
         imports intentionally remain unresolved so this conversion stage does
         not invent a native identity.
         """
-        lname = local_name.lower()
-        explicit: list[tuple[str, str]] = []
-        wildcard_modules: list[str] = []
-        for module_name, mappings in (uses or {}).items():
-            if not mappings:
-                wildcard_modules.append(module_name)
-                continue
-            for mapping in mappings:
-                if mapping.local_name.lower() == lname:
-                    explicit.append((module_name, mapping.source))
-
-        if len(explicit) == 1:
-            return _ResolvedDerivedTypeOrigin(explicit[0][0], explicit[0][1])
-        if len(explicit) > 1:
+        scope = ScopeUses(uses or ())
+        offered = self._wrapped_type_names()
+        routes = scope.routes_for(local_name, offered)
+        identities = {route.key for route in routes}
+        if len(identities) == 1:
+            return _ResolvedDerivedTypeOrigin(routes[0].module, routes[0].source_name)
+        if identities:
             return _ResolvedDerivedTypeOrigin(None, local_name)
-
-        wrapped_wildcards = [
-            module_name
-            for module_name in wildcard_modules
-            if (module_name.lower(), lname) in self.wrapped_derived_types
-        ]
-        if len(wrapped_wildcards) == 1:
-            return _ResolvedDerivedTypeOrigin(wrapped_wildcards[0], local_name)
-        if len(wildcard_modules) == 1:
-            return _ResolvedDerivedTypeOrigin(wildcard_modules[0], local_name)
+        unresolved = scope.unresolved_routes_for(local_name, offered)
+        if len({route.key for route in unresolved}) == 1:
+            return _ResolvedDerivedTypeOrigin(unresolved[0].module, unresolved[0].source_name)
         return _ResolvedDerivedTypeOrigin(None, local_name)
+
+    def _wrapped_type_names(self):
+        """Return the wrapped type names each module declares, or ``None``."""
+        by_module: dict[str, set[str]] = {}
+        for module_name, type_name in self.wrapped_derived_types:
+            by_module.setdefault(module_name.casefold(), set()).add(type_name.casefold())
+
+        def offered(module_name: str):
+            key = module_name.casefold()
+            if key in self._known_modules:
+                return by_module.get(key, set())
+            return None
+
+        return offered
 
     def _semantic_type_name(self, var: FortranVariable) -> str:
         """Map a parsed intrinsic, derived, or procedure declaration to its dtype name.
@@ -1765,14 +2555,14 @@ class FortranToIRConverter(ClassVisitor):
 
     def _semantic_kind_key(self, var: FortranVariable) -> str | None:
         """Normalize the declaration's kind text for semantic type-map lookup."""
+        base_type = var.base_type.lower()
+        if base_type == "character":
+            return self._character_kind_expression(var)
+
         raw_kind = var.target_kind_expression or var.kind
         if not raw_kind:
             return None
-
-        base_type = var.base_type.lower()
         kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
-        if base_type == "character":
-            return FortranToIRConverter._character_kind_key(kind, character_length_syntax=var.character_length_syntax)
         if base_type == "logical":
             return "c_bool" if kind == "c_bool" else kind
         literal_kind = FortranToIRConverter._literal_kind_key(kind)
@@ -1787,32 +2577,29 @@ class FortranToIRConverter(ClassVisitor):
         storage key, while explicit character kind clauses retain their kind.
         """
         base_type = var.base_type.lower()
+        if base_type == "character":
+            return base_type, self._character_kind_expression(var)
+
         raw_kind = var.target_kind_expression or var.kind
         if not raw_kind:
             return base_type, None
-
         kind = self._resolve_compile_time_text(str(raw_kind)).strip().lower()
-        if base_type == "character":
-            if var.character_length_syntax:
-                return base_type, None
-            kind_match = re.search(r"(?:^|,)\s*kind\s*=\s*([^,]+)", kind)
-            if kind_match is not None:
-                kind = kind_match.group(1).strip()
-            elif kind.startswith("len="):
-                return base_type, None
         return base_type, kind
 
-    @staticmethod
-    def _character_kind_key(kind: str, *, character_length_syntax: bool = False) -> str | None:
-        """Extract a character-kind key while ignoring length-only spellings."""
-        if character_length_syntax:
+    def _character_kind_expression(self, var: FortranVariable) -> str | None:
+        """Return the kind a character declaration states, or ``None`` for the default.
+
+        A character model records its selector apart from the legacy ``kind``
+        field, which carries a length for some spellings and nothing at all for
+        a model built through ``record_character_selector``. The recorded fact
+        is therefore the authority, read before that field is consulted and in
+        place of searching a joined spelling, where an expression holding a
+        comma of its own -- a ``kind=max(c_char, 1)`` -- would be cut short.
+        """
+        declared = getattr(var, "character_kind_expression", None)
+        if not declared:
             return None
-        kind_match = re.search(r"(?:^|,)\s*kind\s*=\s*([^,]+)", kind)
-        if kind_match is not None:
-            kind = kind_match.group(1).strip()
-        elif re.match(r"^len\s*=", kind):
-            return None
-        return kind or None
+        return self._resolve_compile_time_text(str(declared)).strip().lower() or None
 
     def _target_type_fact(self, var: FortranVariable) -> dict[str, object] | None:
         """Return legacy fixed-width or configured compiler facts for ``var``."""
@@ -2060,7 +2847,7 @@ class FortranToIRConverter(ClassVisitor):
         if category == "assumed_rank":
             return ["..."]
         if category == "assumed_shape" and not contiguous:
-            return ["::Strided" for _dim in shape]
+            return ["::" for _dim in shape]
 
         axes: list[str] = []
         for dim in shape:
@@ -2117,7 +2904,7 @@ class FortranToIRConverter(ClassVisitor):
     @staticmethod
     def _is_strided_axis(axis: str) -> bool:
         """Return whether an encoded public axis carries the strided marker."""
-        return "Strided" in axis
+        return is_strided_extent(axis)
 
     @staticmethod
     def _reference_storage_contract(*, writes_argument: bool) -> SemanticStorageContract:
@@ -2317,13 +3104,41 @@ class FortranToIRConverter(ClassVisitor):
             )
         return methods
 
+    @staticmethod
+    def _declared_specific(procedure: SemanticFunction) -> tuple[str, str]:
+        """Return the identity of the declaration one specific was taken from."""
+        return _SpecificProcedure(
+            str(procedure.origin.native_scope or ""),
+            str(procedure.native_name or procedure.name),
+        ).key
+
+    @staticmethod
+    def _bind_private_specifics_through_generic(
+        overload_set: ProcedureOverloadSet,
+        targets: list[_SpecificProcedure],
+        lookup: dict[tuple[str, str], SemanticFunction],
+        generic_name: str,
+    ) -> None:
+        """Bind each private specific through the generic name that reaches it.
+
+        A specific its declaring module keeps private is unreachable by its own
+        name, while the generic -- or, for a constructor, the type name -- is
+        public and resolves to the same procedure.
+        """
+        for target, candidate in zip(targets, overload_set.procedures, strict=True):
+            if lookup[target.key].visibility == "private":
+                candidate.native_name = generic_name
+                candidate.metadata[BIND_TARGET_METADATA] = generic_name
+
     def _module_overload_sets(
         self,
         module: FortranModule,
         procedure_lookup: dict[str, SemanticFunction],
         context: _DerivedTypeContext,
         semantic_classes: list[SemanticClass],
-    ) -> list[ProcedureOverloadSet]:
+        *,
+        module_index: dict[str, FortranModule] | None = None,
+    ) -> tuple[list[ProcedureOverloadSet], list[SemanticFunction]]:
         """Convert module generic interfaces into function or class overload sets.
 
         Normal procedure generics remain module overloads.  Defined operators
@@ -2331,27 +3146,48 @@ class FortranToIRConverter(ClassVisitor):
         constructors preserve the existing descriptive conversion failure.
         """
         overload_sets: list[ProcedureOverloadSet] = []
+        inherited_functions: list[SemanticFunction] = []
         class_map = {semantic_class.name.casefold(): semantic_class for semantic_class in semantic_classes}
         for interface in module.interfaces:
             if not interface.name or interface.abstract:
                 continue
+            if interface.declaring_scope_kind == "procedure":
+                # A generic written inside a procedure belongs to that
+                # procedure, so it is never part of the module's own interface.
+                continue
+            # A specific this module declares is identified by this module, so
+            # its own and its inline candidates are keyed the same way the
+            # inherited ones are.
             inline_lookup = {
-                signature.name.casefold(): self.visit(
+                _SpecificProcedure(module.name, signature.name).key: self.visit(
                     signature,
                     visibility=self._symbol_visibility(module, signature.name),
                     derived_type_context=context,
                 )
                 for signature in interface.procedures
             }
-            target_names = interface.specific_procedures or [signature.name for signature in interface.procedures]
+            own_lookup = {
+                _SpecificProcedure(module.name, name).key: function for name, function in procedure_lookup.items()
+            }
+            target_names, inherited_lookup = self._generic_target_names(
+                module,
+                interface,
+                module_index or {},
+                inherited_functions,
+            )
             procedures, missing = self._resolve_overload_targets(
                 target_names,
-                procedure_lookup | inline_lookup,
+                own_lookup | inline_lookup | inherited_lookup,
                 visibility=self._symbol_visibility(module, interface.name),
             )
             if missing or not procedures:
                 if self._is_procedure_generic_name(interface.name):
-                    overload_sets.append(ProcedureOverloadSet(interface.name))
+                    overload_sets.append(
+                        ProcedureOverloadSet(
+                            interface.name,
+                            visibility=self._symbol_visibility(module, interface.name),
+                        )
+                    )
                 continue
             if self._is_procedure_generic_name(interface.name):
                 constructor_class = class_map.get(interface.name.casefold())
@@ -2360,22 +3196,29 @@ class FortranToIRConverter(ClassVisitor):
                     # constructor, so its specifics become the class's own
                     # `__init__` overload set rather than a module generic.
                     constructor_set = self._normal_overload_set("__init__", procedures)
-                    target_lookup = procedure_lookup | inline_lookup
-                    for target_name, candidate in zip(target_names, constructor_set.procedures, strict=True):
-                        if target_lookup[target_name.casefold()].visibility == "private":
-                            # A private specific is unreachable by name; the type
-                            # name is public and resolves to the same procedure.
-                            candidate.native_name = interface.name
-                            candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                    self._bind_private_specifics_through_generic(
+                        constructor_set,
+                        target_names,
+                        own_lookup | inline_lookup | inherited_lookup,
+                        interface.name,
+                    )
                     self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
-                    self._mark_constructor_specifics(procedures, procedure_lookup, interface.name)
+                    self._mark_constructor_specifics(procedures, own_lookup, interface.name)
                     continue
-                overload_set = self._normal_overload_set(interface.name, procedures)
-                target_lookup = procedure_lookup | inline_lookup
-                for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
-                    if target_lookup[target_name.casefold()].visibility == "private":
-                        candidate.native_name = interface.name
-                        candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                overload_set = self._normal_overload_set(
+                    interface.name,
+                    procedures,
+                    native_scope=str(module.origin.native_name or module.name)
+                    if hasattr(module, "origin")
+                    else module.name,
+                    visibility=self._symbol_visibility(module, interface.name),
+                )
+                self._bind_private_specifics_through_generic(
+                    overload_set,
+                    target_names,
+                    own_lookup | inline_lookup | inherited_lookup,
+                    interface.name,
+                )
                 overload_sets.append(overload_set)
                 continue
             defined_sets = self._defined_overload_sets(
@@ -2383,10 +3226,10 @@ class FortranToIRConverter(ClassVisitor):
                 procedures,
                 class_map,
             )
-            self._apply_assignment_projection_to_originals(interface.name, procedures, procedure_lookup, class_map)
+            self._apply_assignment_projection_to_originals(interface.name, procedures, own_lookup, class_map)
             for semantic_class, class_sets in defined_sets:
                 self._merge_overload_sets(semantic_class.overload_sets, class_sets)
-        return overload_sets
+        return overload_sets, inherited_functions
 
     def _bound_overload_sets(
         self,
@@ -2399,14 +3242,18 @@ class FortranToIRConverter(ClassVisitor):
         generic targets preserve the previous empty-placeholder behavior for
         ordinary procedure names and are otherwise omitted.
         """
-        lookup = {method.name.casefold(): method for method in methods}
+        # A type-bound generic's specifics are this type's own methods, so
+        # they are identified by the module declaring the type.
+        owner_module = str(getattr(dtype, "module", "") or "")
+        lookup = {_SpecificProcedure(owner_module, method.name).key: method for method in methods}
         overload_sets: list[ProcedureOverloadSet] = []
         for binding in dtype.generic_bindings:
             name = str(binding["name"])
             attrs = {str(attr).casefold() for attr in binding.get("attrs", ())}
             visibility = "private" if "private" in attrs else "public" if "public" in attrs else None
+            targets = [_SpecificProcedure(owner_module, str(item)) for item in binding.get("targets", ())]
             procedures, missing = self._resolve_overload_targets(
-                list(binding.get("targets", ())),
+                targets,
                 lookup,
                 visibility=visibility,
             )
@@ -2416,8 +3263,8 @@ class FortranToIRConverter(ClassVisitor):
                 continue
             if self._is_procedure_generic_name(name):
                 overload_set = self._normal_overload_set(name, procedures)
-                for target_name, candidate in zip(binding.get("targets", ()), overload_set.procedures, strict=True):
-                    if lookup[target_name.casefold()].visibility == "private":
+                for target, candidate in zip(targets, overload_set.procedures, strict=True):
+                    if lookup[target.key].visibility == "private":
                         candidate.native_name = name
                         candidate.metadata[BIND_TARGET_METADATA] = name
                 overload_sets.append(overload_set)
@@ -2441,7 +3288,7 @@ class FortranToIRConverter(ClassVisitor):
         self,
         generic_name: str,
         procedures: list[SemanticFunction],
-        lookup: dict[str, SemanticFunction],
+        lookup: dict[tuple[str, str], SemanticFunction],
         classes: dict[str, SemanticClass],
     ) -> None:
         """Replace valid defined-assignment projections on their original procedures.
@@ -2456,14 +3303,14 @@ class FortranToIRConverter(ClassVisitor):
         for procedure in procedures:
             if self._defined_procedure_error(kind, token, procedure, classes) is not None:
                 continue
-            original = lookup.get((procedure.native_name or procedure.name).casefold())
+            original = lookup.get(self._declared_specific(procedure))
             if original is not None:
                 original.projection = self._assignment_projection(original, 0)
 
     @staticmethod
     def _mark_constructor_specifics(
         procedures: list[SemanticFunction],
-        procedure_lookup: dict[str, SemanticFunction],
+        procedure_lookup: dict[tuple[str, str], SemanticFunction],
         type_name: str,
     ) -> None:
         """Hide the module functions a generic constructor selects between.
@@ -2473,7 +3320,7 @@ class FortranToIRConverter(ClassVisitor):
         the public spelling the source chose for it.
         """
         for procedure in procedures:
-            original = procedure_lookup.get((procedure.native_name or procedure.name).casefold())
+            original = procedure_lookup.get(FortranToIRConverter._declared_specific(procedure))
             if original is not None:
                 original.metadata[CONSTRUCTOR_SPECIFIC_METADATA] = type_name
 
@@ -2491,7 +3338,13 @@ class FortranToIRConverter(ClassVisitor):
                 existing.procedures.extend(overload_set.procedures)
 
     @staticmethod
-    def _normal_overload_set(name: str, procedures: list[SemanticFunction]) -> ProcedureOverloadSet:
+    def _normal_overload_set(
+        name: str,
+        procedures: list[SemanticFunction],
+        *,
+        native_scope: str | None = None,
+        visibility: str = "public",
+    ) -> ProcedureOverloadSet:
         """Copy regular generic candidates and attach generic dispatch metadata.
 
         Type-bound methods are projected back to ordinary functions while
@@ -2523,7 +3376,7 @@ class FortranToIRConverter(ClassVisitor):
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             candidate.metadata[OVERLOAD_TARGET_METADATA] = candidate.native_name or candidate.name
             candidates.append(candidate)
-        return ProcedureOverloadSet(name, candidates)
+        return ProcedureOverloadSet(name, candidates, native_scope=native_scope, visibility=visibility)
 
     def _defined_overload_sets(
         self,
@@ -2777,20 +3630,139 @@ class FortranToIRConverter(ClassVisitor):
         """Return whether a generic spelling is an ordinary callable identifier."""
         return re.fullmatch(r"[a-z_]\w*", name, re.IGNORECASE) is not None
 
+    def _generic_target_names(
+        self,
+        module: FortranModule,
+        interface: FortranInterface,
+        modules: dict[str, FortranModule],
+        inherited_functions: list[SemanticFunction],
+    ) -> tuple[list[_SpecificProcedure], dict[tuple[str, str], SemanticFunction]]:
+        """Order one generic's specifics, inherited before locally declared.
+
+        ``inherited_functions`` collects each specific this module gained from
+        the generics it extends, so the module can carry them for dispatch. A
+        specific is identified by its declaring module, so two contributors
+        that spell one the same way both survive.
+        """
+        inherited, inherited_lookup = self._inherited_generic_specifics(module, interface.name, modules)
+        known = {
+            (str(item.origin.native_scope or "").casefold(), str(item.native_name or item.name).casefold())
+            for item in inherited_functions
+        }
+        inherited_functions.extend(inherited_lookup[target.key] for target in inherited if target.key not in known)
+        own = [
+            _SpecificProcedure(module.name, name)
+            for name in (interface.specific_procedures or [signature.name for signature in interface.procedures])
+        ]
+        return [*inherited, *own], inherited_lookup
+
+    def _inherited_generic_specifics(
+        self,
+        module: FortranModule,
+        generic_name: str,
+        modules: dict[str, FortranModule],
+    ) -> tuple[list[_SpecificProcedure], dict[tuple[str, str], SemanticFunction]]:
+        """Return the specifics one generic inherits from the generics it extends.
+
+        A local interface block repeating a ``use``-associated generic name
+        extends that generic rather than replacing it, and the language lets
+        several accessible generics of one name contribute at once, so every
+        contributor is read rather than the first route that matches. One
+        declaration reached by two routes contributes once. Accumulation runs
+        one way: a declaring module never sees what a later module adds.
+        """
+        inherited: list[_SpecificProcedure] = []
+        lookup: dict[tuple[str, str], SemanticFunction] = {}
+        for source_module, source_generic in self._imported_generic_interfaces(module, generic_name, modules):
+            signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
+            source_context = self._module_derived_type_context(source_module)
+            names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
+            for name in names:
+                target = _SpecificProcedure(source_module.name, name)
+                signature = signatures.get(name.casefold())
+                if signature is None or target.key in lookup:
+                    continue
+                function = self.visit(signature, visibility="private", derived_type_context=source_context)
+                lookup[target.key] = function
+                inherited.append(target)
+        return inherited, lookup
+
+    @staticmethod
+    def _module_generic_interface(module: FortranModule, name: str) -> FortranInterface | None:
+        """Return the module-scope generic one module declares under ``name``.
+
+        A block written inside a contained procedure belongs to that procedure,
+        so it never contributes to what a ``use`` of the module reaches, and an
+        abstract block declares prototypes rather than a generic.
+        """
+        return next(
+            (
+                item
+                for item in FortranToIRConverter._module_interfaces(module)
+                if item.name and not item.abstract and item.name.casefold() == name.casefold()
+            ),
+            None,
+        )
+
+    @classmethod
+    def _imported_generic_interfaces(
+        cls,
+        module: FortranModule,
+        generic_name: str,
+        modules: dict[str, FortranModule],
+        seen: frozenset[tuple[str, str]] = frozenset(),
+    ) -> tuple[tuple[FortranModule, FortranInterface], ...]:
+        """Return every accessible generic one module imports under one name.
+
+        A generic is not a single-origin entity: accessible generic interfaces
+        sharing an identifier all contribute their specifics to it. Every route
+        carrying the name is therefore followed, in source order, and a module
+        that re-exports the name rather than declaring a generic is walked
+        through to its own contributors. Fortran accessibility applies at each
+        hop, so a route a module makes private carries nothing onward.
+        """
+        contributors: list[tuple[FortranModule, FortranInterface]] = []
+        for route in cls._name_routes(module, modules, generic_name):
+            source_module = modules.get(route.module.casefold())
+            if source_module is None:
+                continue
+            key = (source_module.name.casefold(), route.source_name.casefold())
+            if key in seen:
+                continue
+            onward = cls._name_routes(source_module, modules, route.source_name)
+            route_names = tuple(dict.fromkeys(item.module for item in onward))
+            if not cls._effective_accessibility(source_module)(route.source_name, route_names):
+                continue
+            declared = cls._module_generic_interface(source_module, route.source_name)
+            if declared is not None:
+                contributors.append((source_module, declared))
+            contributors.extend(
+                cls._imported_generic_interfaces(source_module, route.source_name, modules, seen | {key})
+            )
+        # The same declaration reached by more than one route contributes once.
+        unique: dict[int, tuple[FortranModule, FortranInterface]] = {}
+        for contributor in contributors:
+            unique.setdefault(id(contributor[1]), contributor)
+        return tuple(unique.values())
+
     @staticmethod
     def _resolve_overload_targets(
-        target_names: list[str],
-        procedure_lookup: dict[str, SemanticFunction],
+        targets: list[_SpecificProcedure],
+        procedure_lookup: dict[tuple[str, str], SemanticFunction],
         *,
         visibility: str | None,
     ) -> tuple[list[SemanticFunction], list[str]]:
-        """Copy resolved generic targets and list target names absent from ``procedure_lookup``."""
+        """Copy resolved generic targets and name those absent from ``procedure_lookup``.
+
+        A target is identified by the module declaring it, so two contributors
+        that spell a specific the same way stay two procedures.
+        """
         procedures: list[SemanticFunction] = []
         missing: list[str] = []
-        for target_name in target_names:
-            procedure = procedure_lookup.get(target_name.casefold())
+        for target in targets:
+            procedure = procedure_lookup.get(target.key)
             if procedure is None:
-                missing.append(target_name)
+                missing.append(target.name)
                 continue
             candidate = deepcopy(procedure)
             if visibility is not None:
@@ -3204,6 +4176,7 @@ class _FortranVariableContextVisitor(ClassVisitor):
             node.block_data_units,
             node.procedures,
             node.derived_types,
+            node.interfaces,
         )
         for collection in collections:
             for child in collection:
@@ -3237,6 +4210,25 @@ class _FortranVariableContextVisitor(ClassVisitor):
             _variable_context(variable, unit_kind="block_data", unit=owner, module=None, role="variable")
             for variable in node.variables
         )
+
+    def _visit_FortranInterface(
+        self,
+        node: FortranInterface,
+        *,
+        module_name: str | None = None,
+        **_context,
+    ):
+        """Return the variable contexts an interface body declares.
+
+        An interface body types its own dummies, and the kind it names may come
+        from a ``use`` written inside that body. Those variables reach a target
+        probe only from here, since no module variable or module procedure
+        declares them.
+        """
+        contexts = []
+        for procedure in node.procedures:
+            contexts.extend(self._visit(procedure, module_name=module_name or node.module))
+        return tuple(contexts)
 
     @staticmethod
     def _visit_FortranProcedureSignature(
@@ -3299,6 +4291,8 @@ class _FortranVariableContextVisitor(ClassVisitor):
             contexts.extend(self._visit(procedure, module_name=owner))
         for derived_type in node.derived_types:
             contexts.extend(self._visit(derived_type, module_name=owner))
+        for interface in node.interfaces:
+            contexts.extend(self._visit(interface, module_name=owner))
         return tuple(contexts)
 
 
@@ -3413,6 +4407,20 @@ def collect_fortran_type_storage_requirements(
     return requirements
 
 
+def _declared_kind_expression(var: FortranVariable) -> str | None:
+    """Return the kind text one declaration states, as its model records it.
+
+    A character model records its selector apart from the legacy ``kind``
+    field, which carries a length for some spellings and nothing at all for a
+    model built through ``record_character_selector``, so the character kind is
+    read from that recorded fact. Every other base type states its kind in the
+    field itself.
+    """
+    if str(var.base_type or "").lower() == "character":
+        return var.character_kind_expression
+    return var.kind or None
+
+
 def collect_semantic_compile_time_requirements(
     parsed,
     *,
@@ -3476,11 +4484,12 @@ def collect_semantic_compile_time_requirements(
                 add_requirement("parameter_value", ctx, expression=expression)
 
         base_type = parameter_base_type
-        if base_type not in {"integer", "real", "complex", "logical", "character"} or not var.kind:
+        declared_kind = _declared_kind_expression(var)
+        if base_type not in {"integer", "real", "complex", "logical", "character"} or not declared_kind:
             continue
         kind_key = converter._semantic_kind_key(var)
         if converter.type_map.get((base_type, kind_key)) is None:
-            expression = _resolve_compile_time_text(str(var.kind), values)
+            expression = _resolve_compile_time_text(str(declared_kind), values)
             add_requirement(
                 "unsupported_kind",
                 ctx,
@@ -3492,32 +4501,40 @@ def collect_semantic_compile_time_requirements(
     return requirements
 
 
-def _resolve_semantic_value(value, compile_time_values: dict[str, str]):
-    """Recursively resolve compile-time text inside a semantic metadata value."""
-    if isinstance(value, str):
-        return _resolve_compile_time_text(value, compile_time_values)
-    if isinstance(value, list):
-        return [_resolve_semantic_value(item, compile_time_values) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_semantic_value(item, compile_time_values) for item in value)
-    if isinstance(value, dict):
-        return {key: _resolve_semantic_value(item, compile_time_values) for key, item in value.items()}
-    return value
+#: Metadata keys whose value is declaration expression text, not an opaque tag.
+#:
+#: Compile-time specialization rewrites identifiers, so it may only reach a
+#: field the schema says holds an expression.  Every other metadata value --
+#: a policy tag, a native identity, an enumerated choice -- is opaque text
+#: that happens to look like an identifier, and resolving it would silently
+#: replace the recorded decision with a parameter's value.
+_EXPRESSION_METADATA_KEYS = frozenset({"fortran_character_length", "fortran_initializer"})
+
+
+def _resolve_metadata_expressions(
+    metadata: dict[str, object],
+    compile_time_values: dict[str, str],
+) -> dict[str, object]:
+    """Return ``metadata`` with only its declared expression fields resolved."""
+    resolved = dict(metadata)
+    for key in _EXPRESSION_METADATA_KEYS & resolved.keys():
+        value = resolved[key]
+        if isinstance(value, str):
+            resolved[key] = _resolve_compile_time_text(value, compile_time_values)
+    return resolved
 
 
 def _resolve_semantic_type_compile_time_values(
     semantic_type: SemanticType | None,
     compile_time_values: dict[str, str],
 ) -> None:
-    """Resolve shape, constraint, and storage text on one semantic type in place."""
+    """Resolve shape, storage, and expression metadata on one semantic type in place."""
     if semantic_type is None:
         return
     semantic_type.shape = [_resolve_compile_time_text(dim, compile_time_values) for dim in semantic_type.shape]
-    for constraint in semantic_type.constraints:
-        constraint.arguments = _resolve_semantic_value(constraint.arguments, compile_time_values)
-    semantic_type.metadata = _resolve_semantic_value(semantic_type.metadata, compile_time_values)
+    semantic_type.metadata = _resolve_metadata_expressions(semantic_type.metadata, compile_time_values)
     if semantic_type.storage is not None:
-        semantic_type.storage.metadata = _resolve_semantic_value(
+        semantic_type.storage.metadata = _resolve_metadata_expressions(
             semantic_type.storage.metadata,
             compile_time_values,
         )
@@ -3533,7 +4550,7 @@ def _resolve_semantic_type_compile_time_values(
                 None if dim is None else _resolve_compile_time_text(dim, compile_time_values)
                 for dim in array.upper_bounds
             ]
-            array.metadata = _resolve_semantic_value(array.metadata, compile_time_values)
+            array.metadata = _resolve_metadata_expressions(array.metadata, compile_time_values)
 
 
 def _resolve_semantic_argument_compile_time_values(
@@ -3542,23 +4559,22 @@ def _resolve_semantic_argument_compile_time_values(
 ) -> None:
     """Resolve type, default, and metadata text on one semantic argument in place."""
     _resolve_semantic_type_compile_time_values(arg.semantic_type, compile_time_values)
-    arg.default_value = _resolve_semantic_value(arg.default_value, compile_time_values)
-    arg.metadata = _resolve_semantic_value(arg.metadata, compile_time_values)
+    if isinstance(arg.default_value, str):
+        arg.default_value = _resolve_compile_time_text(arg.default_value, compile_time_values)
+    arg.metadata = _resolve_metadata_expressions(arg.metadata, compile_time_values)
 
 
 def _resolve_semantic_function_compile_time_values(
     func: SemanticFunction,
     compile_time_values: dict[str, str],
 ) -> None:
-    """Resolve all type-bearing fields and projection values on one function in place."""
+    """Resolve all type-bearing fields on one function and its locals in place."""
     for arg in func.arguments:
         _resolve_semantic_argument_compile_time_values(arg, compile_time_values)
     for local in func.locals:
         _resolve_semantic_argument_compile_time_values(local, compile_time_values)
     _resolve_semantic_type_compile_time_values(func.return_type, compile_time_values)
-    for mapping in func.projection:
-        mapping.value = _resolve_semantic_value(mapping.value, compile_time_values)
-    func.metadata = _resolve_semantic_value(func.metadata, compile_time_values)
+    func.metadata = _resolve_metadata_expressions(func.metadata, compile_time_values)
 
 
 def _resolve_semantic_module_compile_time_values(
@@ -3575,8 +4591,8 @@ def _resolve_semantic_module_compile_time_values(
             _resolve_semantic_argument_compile_time_values(field, compile_time_values)
         for method in declaration.methods:
             _resolve_semantic_function_compile_time_values(method, compile_time_values)
-        declaration.metadata = _resolve_semantic_value(declaration.metadata, compile_time_values)
-    module.metadata = _resolve_semantic_value(module.metadata, compile_time_values)
+        declaration.metadata = _resolve_metadata_expressions(declaration.metadata, compile_time_values)
+    module.metadata = _resolve_metadata_expressions(module.metadata, compile_time_values)
 
 
 def resolve_semantic_compile_time_values(
@@ -3674,12 +4690,15 @@ def fortran_file_to_semantic_modules(
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
     assume_intent_in_scalars: bool = False,
+    sibling_modules: Iterable[FortranModule] = (),
 ) -> list[SemanticModule]:
     """Convert every module and standalone procedure group in one parsed file.
 
     Use this rather than the single-module helper when file-level procedures
     matter.  Parser module ordering is retained, and ``standalone_module_name``
-    controls the synthetic module used for top-level procedures.
+    controls the synthetic module used for top-level procedures.  Pass
+    ``sibling_modules`` when other files were parsed alongside this one so an
+    abstract interface imported across files resolves.
 
     Example:
         >>> parsed = FortranFile(procedures=[FortranProcedureSignature(name="tick", kind="subroutine")])
@@ -3694,6 +4713,7 @@ def fortran_file_to_semantic_modules(
     ).visit(
         parsed_file,
         standalone_module_name=standalone_module_name,
+        sibling_modules=sibling_modules,
     )
 
 

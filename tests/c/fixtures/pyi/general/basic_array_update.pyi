@@ -10,3 +10,5 @@ def add1_strided(
     x: Float64[...],
     incx: Int
 ) -> None: ...
+
+__all__ = ["add1", "add1_strided"]

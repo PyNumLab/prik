@@ -13,19 +13,9 @@ from tests.fortran._support.wrapper_build import _build_source_wrapper_plan_and_
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-PARAMETER_ARRAY_SOURCE = """\
-module parameter_array_constants_f90
-  use iso_fortran_env, only: real64
-  implicit none
-  real(real64), parameter :: dpmpar(3) = [epsilon(1.0_real64), tiny(1.0_real64), huge(1.0_real64)]
-contains
-  function parameter_sum() result(value)
-    real(real64) :: value
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-    value = sum(dpmpar)
-  end function parameter_sum
-end module parameter_array_constants_f90
-"""
+PARAMETER_ARRAY_SOURCE = (NATIVE_FIXTURES / "parameter_array_constants_f90.f90").read_text(encoding="utf-8")
 
 
 def _write_source(root: Path) -> Path:

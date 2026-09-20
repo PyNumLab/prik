@@ -129,6 +129,7 @@ def test_source_printers_reject_wrapper_plan_models():
         binding=BindingModulePlan("demo", "demo"),
         entrypoint=NativeEntrypointModulePlan("demo"),
         bridge=BridgeModulePlan("demo"),
+        variables=(),
         namespaces=(NamespacePlan(owner_path="demo", python_path=()),),
     )
 
@@ -154,6 +155,34 @@ def test_fortran_source_printer_wraps_long_parenthesized_call_arguments():
     assert "&   1:values_upper_bound_3 + 1:values_stride_3), &" in source
     assert "& out_base(&" in source
     assert max(map(len, source.splitlines())) <= 124
+
+
+def test_fortran_source_printer_never_continues_inside_a_character_literal():
+    """A literal's commas are its characters, so no continuation may split it.
+
+    Fortran resumes a continued literal after the next line's `&`, so a break
+    placed at a comma inside quotes changes the characters the literal states
+    while still compiling.
+    """
+    padding = "x" * 40
+    expression = f"build_message(prefix_{padding}, 'alpha, beta', suffix_{padding})"
+
+    source = FortranSourcePrinter().doprint(FortranAssignment("destination", CodeExpression(expression)))
+
+    assert "'alpha, beta'" in source
+    assert "'alpha, &" not in source
+    assert max(map(len, source.splitlines())) <= 132
+
+
+def test_fortran_source_printer_breaks_a_call_at_its_own_arguments():
+    """A nested call's commas belong to it, so the outer break skips them."""
+    padding = "y" * 40
+    expression = f"compute_total(first_{padding}, max(second_term, third_term), fourth_{padding})"
+
+    source = FortranSourcePrinter().doprint(FortranAssignment("destination", CodeExpression(expression)))
+
+    assert "& max(second_term, third_term), &" in source
+    assert max(map(len, source.splitlines())) <= 132
 
 
 def test_fortran_source_printer_wraps_long_pointer_array_sections():

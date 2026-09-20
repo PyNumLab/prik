@@ -41,7 +41,7 @@ SemanticModule graph          -> PyiPrinter             -> editable .pyi
 | [`prik/printers/__init__.py`](../../../prik/printers/__init__.py) | Re-exports `CSourcePrinter`, `FortranSourcePrinter`, `PyiPrinter`, and `emit_module()`. | The supported printer import surface changes. |
 | [`prik/printers/c.py`](../../../prik/printers/c.py) | `CSourcePrinter` serializes C translation units, headers, declarations, functions, tables, and statements. | C syntax layout, escaping, or formatting changes. |
 | [`prik/printers/fortran.py`](../../../prik/printers/fortran.py) | `FortranSourcePrinter` serializes bridge modules, interfaces, declarations, procedures, and free-form wrapped statements. | Fortran source layout or line-wrapping changes. |
-| [`prik/printers/pyi.py`](../../../prik/printers/pyi.py) | `PyiPrinter`, `emit_module()`, and `_PyiEmissionContext` serialize semantic modules and scope imports, aliases, namespaces, and defaults for one emission. | Editable contract spelling or emission-context behavior changes. |
+| [`prik/printers/pyi.py`](../../../prik/printers/pyi.py) | `PyiPrinter`, `emit_module()`, and `_PyiEmissionContext` serialize semantic modules and scope imports, aliases, namespaces, and defaults for one emission. | Editable contract rendering or emission-context behavior changes. |
 
 The fact that code generation calls a printer at the end of wrapper rendering
 does not make printing part of codegen ownership. `pipeline/wrapper.py`
@@ -77,9 +77,14 @@ unsplittable line that remains above the 132-column compiler-safe limit.
 ### `pyi.py`: semantic IR to an editable contract
 
 `PyiPrinter.emit()` creates a fresh `_PyiEmissionContext` for every call. The
-context records contract imports, aliases, public-name reservations, source
-array defaults, and nested namespaces without mutating a reusable printer or
-the semantic IR.
+context records contract imports, aliases, source array defaults, and nested
+namespaces without mutating a reusable printer or the semantic IR. Contract
+spellings and overload-target spellings must already be completed on semantic
+owners by post-IR policy; the printer reads them and keeps no naming allocator.
+Imports from other modules are the statements `complete_contract_imports()`
+recorded in `SemanticModule.imports`, each item spelled both ways; the printer
+writes the source spellings or the completed ones and never chooses which names
+to bind.
 
 For a module, the printer first renders public classes, prototypes, variables,
 functions, and overload sets into body sections. As visitors use contract
@@ -152,12 +157,15 @@ from prik.contracts import Float64, bind
 def double_value(
     value: Float64
 ) -> Float64: ...
+
+__all__ = ["double_value"]
 ```
 
 The native examples prove that punctuation and layout are added to already
 formed nodes. The `.pyi` import and `@bind` line show that required contract
 imports and native identity are derived from semantic IR without attaching
-wrapper policy.
+wrapper policy, and the closing `__all__` states the surface the module
+publishes.
 
 ## Tests And Evidence
 

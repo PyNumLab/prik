@@ -15,6 +15,7 @@ import re
 from collections.abc import Iterable
 
 from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.utilities.declaration_expressions import declaration_extent_references
 from prik.policy.ownership import (
     CodegenAction,
     OwnershipDecision,
@@ -288,18 +289,7 @@ def _is_entry_export_reachable(declaration: object) -> bool:
     """Keep private declarations and public declarations selected by entry exports."""
     if getattr(declaration, "visibility", "public") == "private":
         return True
-    return bool(_entry_exports(declaration))
-
-
-def _entry_exports(declaration: object) -> object:
-    """Return a declaration's entry-export metadata, with overloads using their first procedure."""
-    if isinstance(declaration, models.ProcedureOverloadSet):
-        if not declaration.procedures:
-            return ()
-        return declaration.procedures[0].metadata.get(models.PYTHON_EXPORTS_METADATA, ())
-    if isinstance(declaration, models.SemanticVariable | models.SemanticFunction | models.SemanticClass):
-        return declaration.metadata.get(models.PYTHON_EXPORTS_METADATA, ())
-    raise TypeError(f"Unsupported semantic declaration: {type(declaration).__name__}")
+    return bool(declaration.metadata.get(models.PYTHON_EXPORTS_METADATA, ()))
 
 
 def _complete_ownership_policies(
@@ -368,6 +358,7 @@ def _complete_ownership_policies(
                 procedure,
                 f"{procedure_scope}.{overload_set.name}.{procedure.name}",
                 derived_types=derived_types,
+                module_export=False,
             )
     # Build resolved module overload tables after every candidate is complete.
     overload_functions = {
@@ -546,7 +537,6 @@ def _complete_class_surface_policies(
             owner_path=derived.owner_path,
             derived=derived,
             class_identities=identities,
-            strict_wrapper_names=strict_wrapper_names,
         )
         completed_derived = replace(derived, fields=surface.effective_fields)
         semantic_class.metadata[models.RESOLVED_DERIVED_TYPE_POLICY_METADATA] = completed_derived
@@ -718,6 +708,7 @@ def _complete_concrete_class_methods(
             method,
             function_owner_path,
             derived_types=derived_types,
+            module_export=False,
             class_call=calls.get(owner_path),
             polymorphic_variants=polymorphic_variants,
         )
@@ -805,6 +796,7 @@ def _complete_one_class_overload_method(
         owner_path,
         derived_types=derived_types,
         class_call=call,
+        module_export=False,
         polymorphic_variants=polymorphic_variants,
         native_dispatch_name=native_dispatch_name,
     )
@@ -1097,7 +1089,7 @@ def _complete_function(
     *,
     derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
     class_call: ClassMethodPolicy | None = None,
-    module_export: bool | None = None,
+    module_export: bool,
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> None:
@@ -2120,12 +2112,19 @@ def _semantic_shape(semantic_type: models.SemanticType) -> list[str]:
 
 
 def _is_resolved_extent(value: object, visible_scalar_names: set[str]) -> bool:
-    """Report whether an extent is concrete or references only visible scalar inputs."""
+    """Report whether an extent is concrete or references only visible scalar inputs.
+
+    The references come from parsing the extent, which is what distinguishes a
+    value the extent reads from the name of a call it makes: ``max(n, m)``
+    reads ``n`` and ``m``, and requiring ``max`` to be a visible scalar would
+    refuse an expression declaration support otherwise accepts. Syntax that
+    stage cannot resolve reports a name no argument carries, so it stays
+    refused.
+    """
     text = str(value).strip()
     if not text or text in {":", "*", "...", ".."} or ":" in text:
         return False
-    names = set(re.findall(r"\b[A-Za-z_]\w*\b", text))
-    return names <= visible_scalar_names
+    return set(declaration_extent_references(text)) <= visible_scalar_names
 
 
 def _complete_variable(

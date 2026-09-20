@@ -65,6 +65,50 @@ rewrite the test when that invariant remains a contract; remove it when it only
 records the previous implementation or a recommendation. Do not change correct
 behavior solely to satisfy a brittle test.
 
+Before adding a test, name the invariant, its feature or infrastructure owner,
+and the earliest stage that can prove it. Keep the resulting evidence concise:
+
+- One test may assert several related consequences of the same setup and
+  invariant. Do not create one test function per field or incidental detail.
+- Use parametrization when cases exercise the same operation and assertion
+  shape with different inputs, and give every row a descriptive ID.
+- Do not repeat the same invariant at adjacent stages. Add another stage test
+  only when it protects a real handoff, completed decision, generated artifact,
+  ABI mechanism, or runtime behavior.
+- Cover combinatorial language cases at the cheapest owning stage. End-to-end
+  tests should cover each distinct compilation, ABI, ownership, lifetime, or
+  runtime mechanism, not every combination already established below it.
+- When source and generated-contract builds must agree, compare the two lanes
+  in one test or shared case instead of maintaining unrelated duplicate tests.
+- When several tests use the same native project and require no isolated build
+  state, build it once through an appropriately scoped pytest fixture. Do not
+  share mutable native state unless the fixture resets it deterministically.
+- Prefer existing test helpers. Add a shared helper only when it removes
+  repeated setup from multiple tests without hiding the behavior being tested.
+- Do not duplicate a complete expected artifact in several tests. Keep one
+  reviewed golden or fixture as its authority and make focused tests assert
+  only the relevant property.
+- Do not assert complete generated source text when a focused structural or
+  behavioral assertion proves the invariant, unless the generated text is
+  itself a documented serialized format.
+- When removing or consolidating a test, identify the invariant it protected
+  and show where that invariant remains covered.
+
+Organize native test sources by their evidence owner:
+
+- A permanent source compiled by a test belongs in a fixture file.
+- A multi-file native project uses one fixture file per real source file.
+- A source shared by tests, or a substantial source of roughly 20 lines or
+  more, should normally be a fixture file.
+- A small syntax example should remain inline when locality makes the test
+  clearer.
+- Programmatically generated, parametrized, or deliberately mutated source may
+  remain inline and must be written only to pytest temporary directories.
+- Place fixtures beneath the feature or infrastructure mechanism that owns the
+  asserted behavior and beneath the relevant stage. Do not place
+  feature-specific sources in `_support` or create a global collection of
+  unrelated fixtures.
+
 The agent owns the review work that is not delegated to rigid tests. Before and
 after a refactor, compare the affected public behavior and stage outputs. When
 editing documentation, examples, diagnostics, or generated text, preserve the
@@ -97,6 +141,63 @@ policy or the shared wrapper plan. Change binding or bridge lowering only when
 the selected plan requires a genuinely new emitted-code mechanism; those
 generators should otherwise keep reusing and dispatching existing planned
 paths.
+
+A decision is read, not recomputed. Completed policy moving forward also means a
+later stage must not derive the same answer a second time, which is harder to
+notice than an override because the second site often calls the same helper and
+so reads as reuse rather than as a second authority. When two places need one
+answer, ask: **if these two call sites disagreed, which one would be wrong?** If
+that has no answer, the decision has two authorities and no owner; if it has
+one, the other site must read the answer rather than compute it. This applies to
+derivation carrying state or a condition — a collision counter, a reservation
+ledger, a language gate, a default — because that is what drifts; calling a
+pure, total helper from several stages is fine. Read the owner's recorded
+output: the completed policy, the shared plan, or the metadata the owner wrote.
+Where a stage cannot run the owner's full completion, run the narrower
+completion step for that one decision rather than deriving it again — contract
+extraction must describe C that the direct-only wrapper would reject, so
+`emit_module_stubs` completes public-name policy for every module and the rest
+only where a build request allows it. Sharing the owner's helper is not enough
+when the derivation keeps a ledger: two allocators fed the same declarations in
+a different order produce the same set of names attached to different
+declarations, which every per-stage test still passes.
+
+A fix removes an interpretation path or it does not land. "The regression is
+fixed and the tests pass" is half an answer; the other half is **did this delete
+a way of deciding, or add one?** A representation that has to mean several
+things is the usual source of these bugs, and widening it with another flag or
+another fallback leaves every existing reader intact and adds a reader. So when
+a record cannot express a case, replace the record; when a lookup is reached by
+two key shapes, finish the migration to one; when a completed decision is
+ambiguous with an absent one, make completion record it; when a consumer
+special-cases what a plan should have decided, move the decision into the plan.
+Introducing a record, a small class, or a named reading is the preferred move
+when it lets a reader see the rule in one place, and it does not need a separate
+mandate: reach for it whenever it fixes the bug in fewer lines than another
+branch would, and change an existing structure freely when replacing it is what
+makes the code read more simply. Prefer that to a new condition threaded through
+existing paths, which each reader then has to hold in mind. The one condition is
+that the new thing is accepted only if it deletes the branches and helpers it
+replaces — moving them to another module, or wrapping them behind a new name,
+does not count. The practical test before committing: the file you changed
+should be no harder to read than before, and the count of places that answer
+your question should have gone down.
+
+Keep the regressions while doing it. The tests that pin bare, `only`, renamed
+and repeated `use` forms, route accessibility, transitive re-exports, merged
+generics, prototype collisions, exact `__all__`, and source-build versus
+generated-`.pyi` replay are the specification of what PRIK supports; simplify
+what sits under them, never by dropping the cases they cover.
+
+Where one decision reaches users through two artifacts, a test must compare
+those artifacts rather than only check each one. A built extension and the
+`.pyi` contract describing it are one such pair: each had passing tests while
+the names they published disagreed, because nothing asserted that they agreed.
+Treat the same comparison as a recommendation, not a requirement, for internal
+pairs such as a wrapper plan and the sources generated from it. Watch for a
+second policy or allocator instance, for a language, route, or flag gate at the
+consumer that the owner lacks, and for a `prik/printers/` helper that returns a
+name, kind, or decision rather than text.
 
 To answer an ABI question, or to decide whether something belongs in the
 binding or in the Fortran bridge, first ask: **how would this work for a

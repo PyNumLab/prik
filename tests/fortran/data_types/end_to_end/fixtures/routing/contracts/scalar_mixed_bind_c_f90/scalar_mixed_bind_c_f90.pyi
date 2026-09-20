@@ -10,3 +10,5 @@ def direct_add(
 def adapted_add(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["direct_add", "adapted_add"]

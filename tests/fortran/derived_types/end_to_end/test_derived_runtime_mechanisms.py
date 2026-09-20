@@ -28,6 +28,8 @@ ALIASED_MODULE_SOURCE = FIXTURES / "native" / "fmodule_derived_alias_f90.f90"
 ALIASED_MODULE_CONTRACT = EDITED_CONTRACTS / "module_aliased_proxy" / "__init__.pyi"
 DERIVED_CONSTANT_SOURCE = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures" / "native" / "fmodule_vars_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 DERIVED_CONSTANT_CONTRACT = """\
 from prik.contracts import Final, Int32
 
@@ -40,26 +42,7 @@ black: Final[rgb_color]
 
 def black_sum() -> Int32: ...
 """
-STRING_FIELD_SOURCE = """\
-module derived_string_fields
-  implicit none
-
-  type :: record
-    character(len=8) :: label = 'start   '
-  end type record
-
-  type(record), target :: current
-contains
-  function current_label() result(value)
-    character(len=8) :: value
-    value = current%label
-  end function current_label
-
-  subroutine reset_label()
-    current%label = 'native  '
-  end subroutine reset_label
-end module derived_string_fields
-"""
+STRING_FIELD_SOURCE = (NATIVE_FIXTURES / "fderived_string_field.f90").read_text(encoding="utf-8")
 STRING_FIELD_CONTRACT = """\
 from prik.contracts import Aliased, Annotated, String
 
@@ -71,54 +54,7 @@ current: Annotated[record, Aliased]
 def current_label() -> String[8]: ...
 def reset_label() -> None: ...
 """
-VALUE_AND_OPTIONAL_SOURCE = """\
-module derived_value_arguments
-  use iso_c_binding
-  implicit none
-
-  type, bind(c) :: point
-    real(c_double) :: x
-    real(c_double) :: y
-  end type point
-contains
-  function make_point(x, y) result(value)
-    real(c_double), intent(in) :: x
-    real(c_double), intent(in) :: y
-    type(point) :: value
-    value%x = x
-    value%y = y
-  end function make_point
-
-  function score_by_value(value) result(total)
-    type(point), value :: value
-    real(c_double) :: total
-    value%x = value%x + 100.0_c_double
-    total = value%x + value%y
-  end function score_by_value
-
-  function optional_sum(value) result(total)
-    type(point), optional, intent(in) :: value
-    real(c_double) :: total
-    if (present(value)) then
-      total = value%x + value%y
-    else
-      total = -1.0_c_double
-    end if
-  end function optional_sum
-
-  subroutine update_point(value)
-    type(point), intent(inout) :: value
-    value%x = value%x + 10.0_c_double
-    value%y = value%y + 20.0_c_double
-  end subroutine update_point
-
-  subroutine fill_point(value)
-    type(point), intent(out) :: value
-    value%x = 31.0_c_double
-    value%y = 32.0_c_double
-  end subroutine fill_point
-end module derived_value_arguments
-"""
+VALUE_AND_OPTIONAL_SOURCE = (NATIVE_FIXTURES / "fderived_value_optional.f90").read_text(encoding="utf-8")
 VALUE_AND_OPTIONAL_CONTRACT = """\
 from prik.contracts import Arg, Float64, Returns, Value, native_abi, native_call
 
@@ -136,40 +72,7 @@ def fill_point(value: point) -> Returns["value", point]: ...
 """
 # GCC 13.2 PR113885 ICEs on function-result assignment when a finalizable type
 # has no data components. The marker keeps this lifetime test on its intended path.
-BORROWED_FINALIZER_SOURCE = """\
-module derived_borrowed_finalizer
-  implicit none
-  integer :: final_count = 0
-
-  type :: child
-    integer :: marker = 0
-  contains
-    final :: cleanup_child
-  end type child
-
-  type :: parent
-    type(child) :: value
-  end type parent
-contains
-  subroutine cleanup_child(self)
-    type(child) :: self
-    final_count = final_count + 1
-  end subroutine cleanup_child
-
-  function make_parent() result(value)
-    type(parent) :: value
-  end function make_parent
-
-  function get_final_count() result(value)
-    integer :: value
-    value = final_count
-  end function get_final_count
-
-  subroutine reset_final_count()
-    final_count = 0
-  end subroutine reset_final_count
-end module derived_borrowed_finalizer
-"""
+BORROWED_FINALIZER_SOURCE = (NATIVE_FIXTURES / "fborrowed_finalizer_runtime.f90").read_text(encoding="utf-8")
 BORROWED_FINALIZER_CONTRACT = """\
 from prik.contracts import Int32, destroy
 
@@ -445,7 +348,7 @@ def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Pa
     assert source_module.update_point(source_point) is None
     assert source_point.x == np.float64(11.0)
     assert source_point.y == np.float64(22.0)
-    source_filled = source_module.point()
+    source_filled = source_module.Point()
     assert source_module.fill_point(source_filled) is None
     assert source_filled.x == np.float64(31.0)
     assert source_filled.y == np.float64(32.0)

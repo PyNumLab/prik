@@ -9,3 +9,5 @@ def factorial(
 def add_one(
     n: Int32
 ) -> Int32: ...
+
+__all__ = ["factorial", "add_one"]

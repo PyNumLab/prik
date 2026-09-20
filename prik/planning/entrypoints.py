@@ -89,9 +89,10 @@ class GeneratedSupportProcedureProjection:
 
 def build_generated_support_procedure_projection(
     namespaces: tuple[NamespacePlan, ...],
+    variables: tuple[ModuleVariablePlan, ...],
 ) -> GeneratedSupportProcedureProjection:
     """Return external and backend-local support membership in stable order."""
-    builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces)
+    builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces, variables)
     projection = builder.build()
     procedures = projection.support_procedures
     keys = [procedure.key for procedure in procedures]
@@ -112,7 +113,7 @@ def build_callback_support_procedure_entrypoint(
     result,
 ) -> GeneratedSupportProcedureEntrypointPlan:
     """Project the binding trampoline once while its callback site is planned."""
-    builder = _GeneratedSupportProcedureEntrypointBuilder(())
+    builder = _GeneratedSupportProcedureEntrypointBuilder((), ())
     parameters = tuple(
         parameter for transfer in arguments for parameter in builder._callback_transfer_parameters(transfer)
     )
@@ -129,12 +130,25 @@ def build_callback_support_procedure_entrypoint(
 class _GeneratedSupportProcedureEntrypointBuilder:
     """Project operation existence, symbols, and ABI signatures from completed plans."""
 
-    def __init__(self, namespaces: tuple[NamespacePlan, ...]) -> None:
+    def __init__(
+        self,
+        namespaces: tuple[NamespacePlan, ...],
+        variables: tuple[ModuleVariablePlan, ...],
+    ) -> None:
         self.namespaces = namespaces
         self.functions = tuple(function for namespace in namespaces for function in namespace.functions)
-        self.variables = tuple(variable for namespace in namespaces for variable in namespace.variables)
-        self.derived_types = tuple(derived for namespace in namespaces for derived in namespace.derived_types)
-        self.classes = tuple(surface for namespace in namespaces for surface in namespace.classes)
+        self.variables = variables
+        # One native type may be exported through several Python namespaces.
+        # Its support procedures belong to the native type, not each export.
+        derived_by_identity = {}
+        classes_by_identity = {}
+        for namespace in namespaces:
+            for derived in namespace.derived_types:
+                derived_by_identity.setdefault(derived.type_identity, derived)
+            for surface in namespace.classes:
+                classes_by_identity.setdefault(surface.type_identity, surface)
+        self.derived_types = tuple(derived_by_identity.values())
+        self.classes = tuple(classes_by_identity.values())
 
     def build(self) -> GeneratedSupportProcedureProjection:
         """Collect external and binding-local support in declaration order."""
@@ -406,7 +420,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             self._operation(
                 surface.owner_path,
                 "class:create",
-                f"bind_c_prik_create_{surface.type_identity[1].casefold()}",
+                f"bind_c_prik_create_{surface.backend_symbol.casefold()}",
                 result=self._opaque_result(),
             )
             for surface in self.classes
@@ -483,6 +497,13 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 if case.action is not DerivedCallAction.INCOMPATIBLE
             )
         )
+        identities.update(
+            variable.derived.handoff.type_identity
+            for variable in self.variables
+            if variable.derived is not None
+            and variable.derived.handoff.storage
+            in {DerivedObjectStorage.MODULE_ALLOCATABLE, DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET}
+        )
         return tuple(derived for derived in self.derived_types if derived.type_identity in identities)
 
     def _pointer_holder_types(self) -> tuple[DerivedTypePlan, ...]:
@@ -503,6 +524,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 for case in argument.derived_call.cases
                 if case.action is not DerivedCallAction.INCOMPATIBLE
             )
+        )
+        identities.update(
+            variable.derived.handoff.type_identity
+            for variable in self.variables
+            if variable.derived is not None and variable.derived.handoff.storage is DerivedObjectStorage.MODULE_POINTER
         )
         return tuple(derived for derived in self.derived_types if derived.type_identity in identities)
 

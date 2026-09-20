@@ -11,7 +11,7 @@ def notify_callback(
 ) -> None: ...
 
 @prototype
-def callback(
+def apply_explicit_callback(
     value: In(Addr(Float64))
 ) -> Float64: ...
 
@@ -23,7 +23,7 @@ def apply_scalar(
 
 @native_call([Arg(0), Addr(Arg(1))])
 def apply_explicit(
-    callback: callback,
+    callback: apply_explicit_callback,
     value: Float64
 ) -> Float64: ...
 
@@ -32,3 +32,5 @@ def call_notify(
     callback: notify_callback,
     value: Float64
 ) -> None: ...
+
+__all__ = ["scalar_callback", "notify_callback", "apply_scalar", "apply_explicit", "call_notify"]

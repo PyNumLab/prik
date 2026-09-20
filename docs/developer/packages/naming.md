@@ -19,10 +19,13 @@ choose exports, ownership, wrapper support, or emitted syntax.
 ## The Two Naming Routes
 
 ```text
-source spelling + public namespace
+source spelling + contract namespace
   -> normalize Python identifier
   -> reserve it or add a collision suffix
-  -> public export name
+  -> completed contract spelling
+
+completed contract spelling + publication policy
+  -> zero or more public export placements
 
 owner identity + preferred generated name + target rules
   -> escape reserved or special names
@@ -30,7 +33,7 @@ owner identity + preferred generated name + target rules
   -> deterministic native symbol
 ```
 
-Public names and generated symbols are deliberately separate. Escaping a
+Contract names and generated symbols are deliberately separate. Escaping a
 Python keyword must not rename the underlying Fortran symbol, and a C or
 Fortran restriction must not change the public Python API.
 
@@ -54,7 +57,13 @@ prik/naming/
   `NativeSymbolNames.compact()`. It combines a readable prefix with a hash of
   the full owner identity under a requested length limit.
 
-`NamingPolicy` retains public reservations for one construction operation.
+`NamingPolicy` retains contract-namespace reservations for one policy
+completion operation. Post-IR policy records the selected spelling on semantic
+owners; contract emission and class-surface construction read that result and
+do not create their own reservation ledgers, and neither does semantic
+conversion: a prototype, too, is spelled in that ledger, keeping the case it is
+declared in. Publication is separate: a withheld declaration still has a
+contract spelling so annotations can name it.
 `NativeSymbolNames` is stateless: the same owner, preferred spelling, and
 limit always produce the same result.
 

@@ -28,6 +28,8 @@ from tests.fortran.infrastructure.cli.pipeline._support import (
     _patch_main_report_payloads,
 )
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def test_cli_keeps_free_procedure_when_module_has_same_name(tmp_path: Path):
     f90 = tmp_path / "same_name_scopes.f90"
@@ -102,40 +104,10 @@ end subroutine bad
     assert "error[PARSE_UNSUPPORTED_DECLARATION]:" in res.stderr
 
 
-def test_fortran_parser_cli_reports_full_source_tree_from_inline_code(tmp_path: Path):
+def test_fortran_parser_cli_reports_full_source_tree_from_source_file(tmp_path: Path):
     f90 = tmp_path / "full_tree.f90"
     f90.write_text(
-        """
-module parent_mod
-  integer :: counter
-  type :: particle
-    integer :: id
-    real(8) :: x(3)
-  contains
-    procedure :: reset
-  end type particle
-contains
-  subroutine reset(self)
-    type(particle), intent(inout) :: self
-  end subroutine reset
-end module parent_mod
-
-submodule (parent_mod) child_mod
-contains
-  module subroutine child_step(n)
-    integer, intent(in) :: n
-  end subroutine child_step
-end submodule child_mod
-
-program driver
-  use parent_mod
-  integer :: n
-end program driver
-
-block data init_block
-  integer :: flag
-end block data init_block
-""",
+        (NATIVE_FIXTURES / "fortran_parser_cli_full_source_tree.f90").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
 
@@ -320,16 +292,18 @@ end module physics
     payload = prik_cli._semantic_report([str(physics)])
 
     assert payload[str(physics)]["pyi_dependencies"] == {
-        "types_mod": "from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass"
+        "types_mod": 'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]'
     }
     monkeypatch.setattr(sys, "argv", ["prik", "generate", "--pyi", str(physics), "--out"])
     assert prik_cli.main() == 0
 
     package = tmp_path / "physics"
-    assert (package / "__init__.pyi").read_text(encoding="utf-8") == "from . import physics\n"
+    assert (package / "__init__.pyi").read_text(encoding="utf-8") == (
+        'from . import physics\n\n__all__ = ["physics"]\n'
+    )
     assert (package / "types_mod.pyi").read_text(
         encoding="utf-8"
-    ) == "from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n"
+    ) == 'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]\n'
 
 
 @pytest.mark.parametrize(

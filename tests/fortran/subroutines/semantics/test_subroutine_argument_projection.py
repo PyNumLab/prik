@@ -1,10 +1,14 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import ProjectionMapping
 from tests.fortran._support.semantic_conversion import get_function
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
 def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():
@@ -91,26 +95,7 @@ end module outputs
     ]
 
 
-ASSUMED_INTENT_SOURCE = """
-module legacy
-  type :: pt
-    real(8) :: x = 0.0d0
-  end type pt
-contains
-subroutine touch(count, item, values, label, declared)
-    integer(4) :: count
-    type(pt) :: item
-    real(8) :: values(:)
-    character(len=4) :: label
-    integer(4), intent(inout) :: declared
-    count = count + 1
-    item%x = item%x + 1.0d0
-    values = values * 2.0d0
-    label = "zzzz"
-    declared = declared + 1
-end subroutine touch
-end module legacy
-"""
+ASSUMED_INTENT_SOURCE = (NATIVE_FIXTURES / "assumed_intent.f90").read_text(encoding="utf-8")
 
 
 def _touch_result_names(*, assume_intent_in_scalars):

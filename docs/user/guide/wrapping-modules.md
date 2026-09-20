@@ -103,12 +103,14 @@ mod.counter = np.int32(9)
 print(mod.counter)      # 9
 print(mod.summarize())  # 21
 
-print(mod.nmax)         # 12 (read-only parameter)
+print(mod.nmax)         # 12 (the declared parameter value)
 ```
 
-- `parameter` declarations become read-only constants in the generated
-  contract.
-- Assigning to a constant in Python only creates a local shadow — it does **not** mutate the native value.
+- `parameter` declarations become `Final[...]` constants in the generated
+  contract, carrying the value the Fortran `parameter` declares.
+- Assignment is not refused. Assigning to one rebinds that Python name only: it
+  does **not** mutate the native value, and it does not change any other
+  namespace publishing the same parameter.
 
 ---
 
@@ -220,6 +222,10 @@ Public functions, variables, constants, and generated classes are exported at
 the extension root. If the original module imports were replaced,
 `library.module1` and `library.module2` are no longer exported. The native
 Fortran modules and their storage do not move; only the Python API changes.
+Publishing a module variable in more than one namespace gives every name the
+same live storage, so a write, allocation, pointer association, or derived
+object mutation through one name is visible through all of them. Parameters
+remain read-only constants in every namespace.
 
 Wildcard imports never use import order to resolve a collision. If both
 modules export the same name, the wrapper build fails and asks for an explicit

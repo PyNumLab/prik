@@ -352,6 +352,9 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
         )
         == []
     )
+    # A character model states its selector the way every producer records it.
+    bad_character = FortranVariable(name="bad_character", base_type="character", kind="bad")
+    bad_character.record_character_selector("(kind=bad)")
     unsupported = collect_semantic_compile_time_requirements(
         FortranFile(
             variables=[
@@ -359,7 +362,7 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
                 FortranVariable(name="bad_real", base_type="real", kind="bad"),
                 FortranVariable(name="bad_complex", base_type="complex", kind="bad"),
                 FortranVariable(name="bad_logical", base_type="logical", kind="bad"),
-                FortranVariable(name="bad_character", base_type="character", kind="bad"),
+                bad_character,
                 FortranVariable(name="callback", base_type="procedure", kind="f_iface"),
             ]
         )
@@ -393,7 +396,37 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
     assert _compile_time_requirement_message("other", "n", "n + 1") == "Compile-time value required for 'n'."
 
 
-def test_resolve_semantic_compile_time_values_rewrites_shapes_and_constraints():
+def test_resolve_semantic_compile_time_values_leaves_recorded_decisions_opaque():
+    """A metadata tag is a decision already taken, not text awaiting a value.
+
+    `fortran_pointer_association="runtime"` records how a pointer is
+    associated.  A module that also declares `runtime` as a parameter must not
+    turn that recorded choice into the parameter's value.
+    """
+    module = SemanticModule(
+        name="tagged_mod",
+        variables=[
+            SemanticArgument(
+                name="view",
+                semantic_type=SemanticType(
+                    name="Float64",
+                    dtype="Float64",
+                    rank=1,
+                    shape=["runtime"],
+                    metadata={"fortran_pointer_association": "runtime"},
+                ),
+            )
+        ],
+    )
+
+    resolved = resolve_semantic_compile_time_values(module, {"runtime": 4})
+
+    semantic_type = resolved.variables[0].semantic_type
+    assert semantic_type.shape == ["4"]
+    assert semantic_type.metadata == {"fortran_pointer_association": "runtime"}
+
+
+def test_resolve_semantic_compile_time_values_rewrites_shapes():
     module = SemanticModule(
         name="shape_mod",
         variables=[
@@ -425,6 +458,11 @@ def test_resolve_semantic_compile_time_values_rewrites_shapes_and_constraints():
 
 
 def test_resolve_semantic_compile_time_values_handles_nested_modules():
+    """Specialization reaches every nesting level and touches only expression fields.
+
+    A metadata value that happens to spell a parameter name is a recorded
+    decision, not text to evaluate, so it survives at every level.
+    """
     module = SemanticModule(
         name="nested_mod",
         variables=[
@@ -445,10 +483,10 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
                             upper_bounds=["n"],
                         ),
                     ),
-                    metadata={"bounds": ("n", ["m"])},
+                    metadata={"fortran_character_length": "n", "fortran_pointer_association": "n"},
                 ),
                 default_value="n",
-                metadata={"alias": "m"},
+                metadata={"fortran_initializer": "m", "address_role": "m"},
             )
         ],
         functions=[
@@ -458,15 +496,15 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
                     SemanticArgument(
                         name="x",
                         semantic_type=SemanticType("Float64", rank=1, shape=["m"]),
-                        metadata={"scale": "n"},
+                        metadata={"native_callback_kind": "n"},
                     )
                 ],
-                projection=[ProjectionMapping(value={"shape": ["n", ("m",)]})],
-                metadata={"work": ["n", {"inner": "m"}]},
+                projection=[ProjectionMapping(value={"kind": "return", "name": "n", "position": 0})],
+                metadata={"import_scope": "n"},
             ),
             SemanticFunction(
                 name="with_result",
-                return_type=SemanticType("Int32", metadata={"extent": "n"}),
+                return_type=SemanticType("Int32", metadata={"fortran_character_length": "n"}),
             ),
         ],
         classes=[
@@ -482,43 +520,47 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
                 methods=[
                     SemanticMethod(
                         name="touch",
-                        arguments=[SemanticArgument("self", SemanticType("state_t", metadata={"n": "n"}))],
-                        return_type=SemanticType("Int32", metadata={"m": "m"}),
-                        projection=[ProjectionMapping(value=("n", {"m": "m"}))],
-                        metadata={"method": "n"},
+                        arguments=[SemanticArgument("self", SemanticType("state_t", metadata={"c_kind": "n"}))],
+                        return_type=SemanticType("Int32", metadata={"fortran_character_length": "m"}),
+                        metadata={"fortran_type_bound_target": "n"},
                     )
                 ],
-                metadata={"class": "m"},
+                metadata={"fortran_attributes": "m"},
             )
         ],
-        metadata={"module": ["n", ("m",)]},
+        metadata={"fortran_bind_c": "n"},
     )
 
     resolved = resolve_semantic_compile_time_values([module], {"n": 4, "m": 2})
 
     assert module.variables[0].semantic_type.shape == ["n"]
     resolved_module = resolved[0]
+
+    # Every level's declaration expressions are specialized.
     assert resolved_module.variables[0].semantic_type.shape == ["4"]
     assert resolved_module.variables[0].semantic_type.storage.array.shape == ["4"]
     assert resolved_module.variables[0].semantic_type.storage.array.source_shape == ["1:4"]
     assert resolved_module.variables[0].semantic_type.storage.array.lower_bounds == ["4"]
     assert resolved_module.variables[0].semantic_type.storage.array.upper_bounds == ["4"]
-    assert resolved_module.variables[0].semantic_type.metadata == {"bounds": ("4", ["2"])}
+    assert resolved_module.variables[0].semantic_type.metadata["fortran_character_length"] == "4"
     assert resolved_module.variables[0].default_value == "4"
-    assert resolved_module.variables[0].metadata == {"alias": "2"}
+    assert resolved_module.variables[0].metadata["fortran_initializer"] == "2"
     assert resolved_module.functions[0].arguments[0].semantic_type.shape == ["2"]
-    assert resolved_module.functions[0].arguments[0].metadata == {"scale": "4"}
-    assert resolved_module.functions[0].projection[0].value == {"shape": ["4", ("2",)]}
-    assert resolved_module.functions[0].metadata == {"work": ["4", {"inner": "2"}]}
-    assert resolved_module.functions[1].return_type.metadata == {"extent": "4"}
+    assert resolved_module.functions[1].return_type.metadata["fortran_character_length"] == "4"
     assert resolved_module.classes[0].fields[0].semantic_type.shape == ["4"]
     assert resolved_module.classes[0].fields[0].default_value == "2"
-    assert resolved_module.classes[0].methods[0].arguments[0].semantic_type.metadata == {"n": "4"}
-    assert resolved_module.classes[0].methods[0].return_type.metadata == {"m": "2"}
-    assert resolved_module.classes[0].methods[0].projection[0].value == ("4", {"m": "2"})
-    assert resolved_module.classes[0].methods[0].metadata == {"method": "4"}
-    assert resolved_module.classes[0].metadata == {"class": "2"}
-    assert resolved_module.metadata == {"module": ["4", ("2",)]}
+    assert resolved_module.classes[0].methods[0].return_type.metadata["fortran_character_length"] == "2"
+
+    # Recorded decisions are opaque at every level, however they are spelled.
+    assert resolved_module.variables[0].semantic_type.metadata["fortran_pointer_association"] == "n"
+    assert resolved_module.variables[0].metadata["address_role"] == "m"
+    assert resolved_module.functions[0].arguments[0].metadata == {"native_callback_kind": "n"}
+    assert resolved_module.functions[0].projection[0].value == {"kind": "return", "name": "n", "position": 0}
+    assert resolved_module.functions[0].metadata == {"import_scope": "n"}
+    assert resolved_module.classes[0].methods[0].arguments[0].semantic_type.metadata == {"c_kind": "n"}
+    assert resolved_module.classes[0].methods[0].metadata == {"fortran_type_bound_target": "n"}
+    assert resolved_module.classes[0].metadata == {"fortran_attributes": "m"}
+    assert resolved_module.metadata == {"fortran_bind_c": "n"}
 
 
 def test_module_parameters_preserve_literal_values_in_semantic_ir():

@@ -66,8 +66,9 @@ def test_entry_contract_selects_child_flattened_aliased_and_bound_exports(tmp_pa
     flattened_package = _editable_package(tmp_path, "flattened_api", "flatten.pyi")
     for leaf_name in ("module1.pyi", "module2.pyi"):
         leaf = flattened_package / leaf_name
+        # Removing a declaration removes what the contract publishes with it.
         leaf.write_text(
-            leaf.read_text(encoding="utf-8").replace(UPDATE_DECLARATION, "\n"),
+            leaf.read_text(encoding="utf-8").replace(UPDATE_DECLARATION, "\n").replace(', "update"]', "]"),
             encoding="utf-8",
         )
     flattened = _build(flattened_package, native_object)

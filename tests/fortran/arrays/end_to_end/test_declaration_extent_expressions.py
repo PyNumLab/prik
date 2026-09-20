@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
     _build_inline_pyi_contract_module,
     _build_sources_and_import,
     _build_text_and_import,
@@ -14,78 +15,10 @@ from tests.fortran._support.wrapper_build import (
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-SOURCE = """
-module declaration_extent_expressions
-  use, intrinsic :: iso_c_binding, only: c_double
-  implicit none
 
-  integer, parameter :: base_extent = 2
-  integer, parameter :: field_extent = max(3, base_extent + 1)
-
-  type :: record
-    real(c_double) :: values(field_extent)
-  end type record
-
-  real(c_double), target :: module_values(base_extent ** 2)
-  type(record), target :: current
-
-contains
-
-  pure integer function local_extent(n) result(extent)
-    integer, intent(in) :: n
-    extent = max(0, n)
-  end function local_extent
-
-  subroutine initialize_state()
-    module_values = [1.0_c_double, 2.0_c_double, 3.0_c_double, 4.0_c_double]
-    current%values = [5.0_c_double, 6.0_c_double, 7.0_c_double]
-  end subroutine initialize_state
-
-  subroutine exercise_inquiries( &
-      source, destination, total, rank_values, reduced, constructed, conditional, lower_bound, upper_bound)
-    real(c_double), intent(in) :: source(2:, 2:)
-    real(c_double), intent(out) :: destination( &
-      ubound(source, 1) - lbound(source, 1) + 1, &
-      max(1, size(source, dim=2, kind=8)))
-    real(c_double), intent(out) :: total(size(source, kind=8))
-    real(c_double), intent(out) :: rank_values(2 ** rank(source))
-    real(c_double), intent(out) :: reduced(sum(shape(source, kind=8)))
-    real(c_double), intent(out) :: constructed(product((/ size(source, 1), 1 /)))
-    real(c_double), intent(out) :: conditional(merge(size(source, 1), 1, size(source, 2) > 0))
-    real(c_double), intent(out) :: lower_bound(lbound(source, 1))
-    real(c_double), intent(out) :: upper_bound(ubound(source, 1))
-
-    destination = source
-    total = reshape(source, [size(source)])
-    rank_values = 8.0_c_double
-    reduced = 9.0_c_double
-    constructed = 10.0_c_double
-    conditional = 11.0_c_double
-    lower_bound = 12.0_c_double
-    upper_bound = 13.0_c_double
-  end subroutine exercise_inquiries
-
-  function copied(source) result(values)
-    real(c_double), intent(in) :: source(:, :)
-    real(c_double) :: values(size(source, 1), size(source, 2))
-    values = source
-  end function copied
-
-  function local_extent_values(n) result(values)
-    integer, intent(in) :: n
-    real(c_double) :: values(local_extent(n))
-    values = 14.0_c_double
-  end function local_extent_values
-
-  subroutine fill_local_extent(n, values)
-    integer, intent(in) :: n
-    real(c_double), intent(out) :: values(local_extent(n))
-    values = 15.0_c_double
-  end subroutine fill_local_extent
-
-end module declaration_extent_expressions
-"""
+SOURCE = (NATIVE_FIXTURES / "declaration_extent_expressions.f90").read_text(encoding="utf-8")
 
 
 def test_all_array_declaration_owners_and_supported_extent_forms_execute(tmp_path: Path):
@@ -181,31 +114,10 @@ def test_all_array_declaration_owners_and_supported_extent_forms_execute(tmp_pat
     np.testing.assert_array_equal(caller_values, np.full(4, 15.0))
 
 
-IMPORTED_EXTENT_PROVIDER = """
-module imported_extent_provider
-  implicit none
-contains
-  pure integer function extent_for(n) result(extent)
-    integer, intent(in) :: n
-    extent = max(0, n + 1)
-  end function extent_for
-end module imported_extent_provider
-"""
+IMPORTED_EXTENT_PROVIDER = (NATIVE_FIXTURES / "imported_extent_provider.f90").read_text(encoding="utf-8")
 
 
-IMPORTED_EXTENT_OWNER = """
-module imported_extent_owner
-  use, intrinsic :: iso_c_binding, only: c_double
-  use imported_extent_provider, only: imported_extent => extent_for
-  implicit none
-contains
-  function values(n) result(output)
-    integer, intent(in) :: n
-    real(c_double) :: output(imported_extent(n))
-    output = 16.0_c_double
-  end function values
-end module imported_extent_owner
-"""
+IMPORTED_EXTENT_OWNER = (NATIVE_FIXTURES / "imported_extent_owner.f90").read_text(encoding="utf-8")
 
 
 def test_imported_module_specification_function_uses_its_mod_interface(tmp_path: Path):
@@ -225,43 +137,7 @@ def test_imported_module_specification_function_uses_its_mod_interface(tmp_path:
     assert "pure function extent_for(" not in bridge
 
 
-STANDALONE_EXTENT_SOURCE = """
-pure integer function standalone_extent(n) result(extent)
-  implicit none
-  integer, intent(in) :: n
-  extent = max(0, n + 2)
-end function standalone_extent
-
-pure integer function standalone_value_extent(n) result(extent)
-  implicit none
-  integer, value, intent(in) :: n
-  extent = max(0, n + 3)
-end function standalone_value_extent
-
-module standalone_extent_contract
-  use, intrinsic :: iso_c_binding, only: c_double
-  implicit none
-  interface
-    pure integer function standalone_extent(n) result(extent)
-      integer, intent(in) :: n
-    end function standalone_extent
-    pure integer function standalone_value_extent(n) result(extent)
-      integer, value, intent(in) :: n
-    end function standalone_value_extent
-  end interface
-contains
-  function values(n) result(output)
-    integer, intent(in) :: n
-    real(c_double) :: output(standalone_extent(n))
-    output = 17.0_c_double
-  end function values
-  function value_values(n) result(output)
-    integer, intent(in) :: n
-    real(c_double) :: output(standalone_value_extent(n))
-    output = 18.0_c_double
-  end function value_values
-end module standalone_extent_contract
-"""
+STANDALONE_EXTENT_SOURCE = (NATIVE_FIXTURES / "standalone_extent_contract.f90").read_text(encoding="utf-8")
 
 
 STANDALONE_EXTENT_CONTRACT = """
@@ -315,26 +191,7 @@ def test_prototype_emits_standalone_extent_entity(tmp_path: Path):
     assert "__prik_callable_" not in binding
 
 
-STANDALONE_TARGET_SOURCE = """
-pure integer function external_extent(n) result(extent)
-  implicit none
-  integer, intent(in) :: n
-  extent = max(0, n + 4)
-end function external_extent
-
-function external_values(n) result(output)
-  use, intrinsic :: iso_c_binding, only: c_double
-  implicit none
-  interface
-    pure integer function external_extent(n) result(extent)
-      integer, intent(in) :: n
-    end function external_extent
-  end interface
-  integer, intent(in) :: n
-  real(c_double) :: output(external_extent(n))
-  output = 19.0_c_double
-end function external_values
-"""
+STANDALONE_TARGET_SOURCE = (NATIVE_FIXTURES / "standalone_target_extent.f90").read_text(encoding="utf-8")
 
 
 STANDALONE_TARGET_CONTRACT = """
@@ -369,3 +226,117 @@ def test_prototype_entity_is_visible_inside_a_standalone_target_interface(tmp_pa
     assert f"procedure({interface_symbol}) :: external_extent" in bridge
     assert "import :: c_int32_t, external_extent, c_double" in bridge
     assert "real(c_double), dimension(external_extent(n)) :: native_result" in bridge
+
+
+RESERVED_EXTENT_PROVIDER = (NATIVE_FIXTURES / "reserved_extent_provider.f90").read_text(encoding="utf-8")
+
+
+RESERVED_EXTENT_OWNER = (NATIVE_FIXTURES / "reserved_extent_owner.f90").read_text(encoding="utf-8")
+
+
+def test_specification_functions_python_must_rename_still_size_their_results(tmp_path: Path):
+    """`lambda` is a Python keyword and `lambda_` then collides with its escape.
+
+    The contract calls them `lambda_` and `lambda__2`, while the native calls
+    still reach the Fortran functions spelled `lambda` and `lambda_`.
+    """
+    module, _payload = _build_sources_and_import(
+        [
+            ("reserved_extent_provider.f90", RESERVED_EXTENT_PROVIDER),
+            ("reserved_extent_owner.f90", RESERVED_EXTENT_OWNER),
+        ],
+        tmp_path,
+    )
+
+    np.testing.assert_array_equal(module.reserved_extent_owner.keyword_values(np.int32(3)), np.full(3, 1.0))
+    np.testing.assert_array_equal(module.reserved_extent_owner.collided_values(np.int32(3)), np.full(11, 2.0))
+    contract = (tmp_path / "contracts" / "reserved_extent_owner.pyi").read_text(encoding="utf-8")
+    assert "-> Float64[lambda_(n)]" in contract
+    assert "-> Float64[2 * lambda__2(n) + n]" in contract
+
+
+CHECKED_EXTENT_SOURCE = (NATIVE_FIXTURES / "checked_extent.f90").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("lane", ["source", "generated_pyi"])
+def test_an_actual_is_checked_against_the_extent_a_specification_function_declares(tmp_path: Path, lane: str):
+    """An explicit-shape dummy is as long as its declaration says, whoever sizes it.
+
+    Only the Fortran bridge can evaluate a specification function, so the
+    binding skipped the check it makes for every other extent. A shorter
+    `intent(out)` actual was then written past its end and a shorter
+    `intent(in)` one read past it. The contract states the function is pure,
+    so the generated contract builds and checks the same way the source does.
+    """
+    if lane == "source":
+        package, _payload = _build_sources_and_import([("checked_extent.f90", CHECKED_EXTENT_SOURCE)], tmp_path)
+    else:
+        source = tmp_path / "checked_extent.f90"
+        source.write_text(CHECKED_EXTENT_SOURCE, encoding="utf-8")
+        package = _build_generated_pyi_and_import(source, tmp_path / "replay")
+    owner = package.checked_extent_owner
+
+    values = np.zeros(4)
+    owner.fill(np.int32(3), values)
+    np.testing.assert_array_equal(values, np.full(4, 2.0))
+    assert owner.total(np.int32(3), np.ones(4)) == 4.0
+    owner.maybe_fill(np.int32(3))
+    for call in (
+        lambda: owner.fill(np.int32(3), np.zeros(3)),
+        lambda: owner.fill(np.int32(3), np.zeros(5)),
+        lambda: owner.total(np.int32(3), np.ones(3)),
+        lambda: owner.maybe_fill(np.int32(3), np.zeros(3)),
+    ):
+        with pytest.raises(TypeError, match="has incompatible shape at axis 0"):
+            call()
+
+
+EXTENT_BOUNDARY_SOURCE = (NATIVE_FIXTURES / "extent_boundary.f90").read_text(encoding="utf-8")
+
+
+EXTENT_BOUNDARY_CONTRACT = """
+from prik.contracts import Addr, Annotated, Arg, COPY_F, Float64, Int32, ORDER_C, native_call, pure
+
+class Box:
+    def __init__(self, *, value: Int32 = ...) -> None: ...
+
+    value: Int32
+
+@pure
+@native_call([Addr(Arg(0))])
+def extent_for(n: Int32) -> Int32: ...
+
+@native_call([Addr(Arg(0)), Arg(1), Arg(2)])
+def pair(n: Int32, grid: Annotated[Float64[n, n], ORDER_C, COPY_F], values: Float64[extent_for(n)]) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def boxed(n: Int32, values: Float64[extent_for(n)]) -> Box: ...
+"""
+
+
+def test_a_rejected_extent_runs_nothing_that_follows_the_call(tmp_path: Path):
+    """A mismatch ends the call where the extent is found: no copy-back, no result.
+
+    `grid` crosses through a Fortran-order temporary whose copy-back follows a
+    successful call, and `boxed` returns an object only a call produces. A
+    rejected call must reach neither, so the caller's array is untouched and
+    the shape error is what surfaces, not a missing result.
+    """
+    module, _ = _build_inline_pyi_contract_module(
+        tmp_path,
+        module_name="extent_boundary",
+        source_text=EXTENT_BOUNDARY_SOURCE,
+        contract_text=EXTENT_BOUNDARY_CONTRACT,
+    )
+
+    grid = np.full((3, 3), 7.0, order="C")
+    module.pair(np.int32(3), grid, np.ones(4))
+    np.testing.assert_array_equal(grid, np.full((3, 3), 4.0))
+    grid = np.full((3, 3), 7.0, order="C")
+    with pytest.raises(TypeError, match="Argument values has incompatible shape at axis 0"):
+        module.pair(np.int32(3), grid, np.ones(3))
+    np.testing.assert_array_equal(grid, np.full((3, 3), 7.0))
+
+    assert module.boxed(np.int32(3), np.ones(4)).value == 4
+    with pytest.raises(TypeError, match="Argument values has incompatible shape at axis 0"):
+        module.boxed(np.int32(3), np.ones(3))

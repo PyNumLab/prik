@@ -4,3 +4,5 @@ from prik.contracts import Addr, Arg, Int32, native_call
 def func(
     value: Int32
 ) -> Int32: ...
+
+__all__ = ["func"]

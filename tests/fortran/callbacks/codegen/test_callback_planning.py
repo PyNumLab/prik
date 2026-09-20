@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
+from prik.semantics.fortran2ir import FortranToIRConverter
 from prik.semantics import models
 from prik.policy.ownership import PythonBarrierAction
 from prik.policy.completion import complete_semantic_policies
@@ -12,9 +14,11 @@ from prik.policy.models import (
     CallbackABIKind,
     CallbackGILAction,
     CallbackLifecycleAction,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
+    OptionalMode,
 )
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import GeneratedSupportProcedureImplementationOwner, WrapperPlanner
@@ -64,12 +68,15 @@ def test_callback_policy_completes_value_default_and_explicit_reference_before_p
     assert scalar.thread_action is CallbackThreadAction.REQUIRE_ENTERING_THREAD
     assert scalar.gil_actions == (CallbackGILAction.ACQUIRE_GIL, CallbackGILAction.RELEASE_GIL)
     assert tuple(transfer.abi for transfer in scalar.arguments) == (CallbackABIKind.REFERENCE,) * 3
+    # An undeclared intent permits the callee to read and modify the dummy, so
+    # it copies both ways rather than defaulting to copy-in.
     assert tuple(transfer.adapter_action for transfer in scalar.arguments) == (
         CallbackTransferAction.COPY_IN_OUT,
         CallbackTransferAction.COPY_OUT,
-        CallbackTransferAction.COPY_IN,
+        CallbackTransferAction.COPY_IN_OUT,
     )
-    assert tuple(transfer.python_action for transfer in scalar.arguments) == (PythonBarrierAction.SCALAR_VALUE,) * 3
+    # Every dummy the callee may write needs storage Python can write through.
+    assert tuple(transfer.python_action for transfer in scalar.arguments) == (PythonBarrierAction.SCALAR_STORAGE,) * 3
 
     array = policies["apply_array_storage_callback"].arguments[0].callback
     assert array.arguments[0].abi is CallbackABIKind.REFERENCE
@@ -83,7 +90,7 @@ def test_callback_policy_completes_value_default_and_explicit_reference_before_p
     assert tuple(transfer.character_length for transfer in string.arguments) == (8, 8, 8)
 
     derived = policies["apply_point_callback"].arguments[0].callback
-    assert derived.arguments[0].derived_type_identity == ("fcallback_all_f90", "point_t")
+    assert derived.arguments[0].derived_type_identity == ("fcallback_all_f90", "Point_T")
     assert derived.result.action is CallbackResultAction.RETURN_DERIVED_ADDRESS
 
 
@@ -144,6 +151,10 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
         ("scalar_projection", "inconsistent-callback-scalar-value-projection"),
         ("result", "callback-void-has-transfer"),
         ("entrypoint_parameter", "inconsistent-callback-entrypoint-parameter"),
+        ("prototype_optional", "inconsistent-callback-prototype-arguments"),
+        ("native_fortran_type", "inconsistent-callback-prototype-arguments"),
+        ("optional_value_abi", "invalid-callback-optionality"),
+        ("blocked_optionality", "invalid-callback-optionality"),
         ("symbols", "invalid-callback-symbols"),
     ),
 )
@@ -157,13 +168,27 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
         callback.arguments[1].extent_roles = ()
     elif edit == "scalar_projection":
         callback = _callback_argument(plan, "apply_scalar_storage_callback").callback
-        callback.arguments[0].python_action = PythonBarrierAction.SCALAR_STORAGE
+        # A rank-zero storage transfer cannot claim the value projection: an
+        # immutable value cannot deliver a write back to the native caller.
+        callback.arguments[0].python_action = PythonBarrierAction.SCALAR_VALUE
     elif edit == "result":
         callback = _callback_argument(plan, "apply_value_callback").callback
         callback.result.action = CallbackResultAction.RETURN_VOID
     elif edit == "entrypoint_parameter":
         argument = _callback_argument(plan, "apply_value_callback")
         argument.entrypoint.pass_callback_parameter = True
+    elif edit == "prototype_optional":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.prototype.arguments[0].optional = True
+    elif edit == "native_fortran_type":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.prototype.arguments[0].native_fortran_type = "logical(kind=8)"
+    elif edit == "optional_value_abi":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.arguments[0].optionality = CallbackOptionalityAction.NULL_DATA_POINTER
+    elif edit == "blocked_optionality":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.arguments[0].optionality = CallbackOptionalityAction.BLOCKED
     else:
         callback = _callback_argument(plan, "apply_value_callback").callback
         callback.entrypoint.support_procedure.symbol_name = callback.bridge.adapter_symbol
@@ -237,11 +262,186 @@ def test_every_callback_uses_the_shared_generated_abstract_prototype():
     assert "=> transform_callback" not in bridge
 
 
-def test_optional_callback_retains_one_exact_policy_blocker():
+def test_optional_callback_uses_the_ordinary_presence_plan():
     module = pyi_file_to_semantic_module(CONTRACT, module_name="fcallback_all_f90")
     function = next(item for item in module.functions if item.name == "apply_value_callback")
     function.arguments[0].optional = True
     complete_semantic_policies(module)
 
-    with pytest.raises(ValueError, match="unsupported optional callback"):
-        WrapperPlanner().build(module)
+    plan = WrapperPlanner().build(module)
+    argument = _callback_argument(plan, "apply_value_callback")
+
+    assert argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert argument.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert argument.entrypoint.pass_callback_parameter is True
+
+    c_source, bridge = _sources(plan)
+    assert "bound_callback_obj != Py_None ? prik_callback_trampoline_" in c_source
+    assert "if (c_associated(callback)) then" in bridge
+    assert "native_apply_value_callback(callback=prik_callback_adapter_" in bridge
+    assert "native_apply_value_callback(value=value)" in bridge
+
+
+def test_direct_bind_c_callback_generates_no_fortran_callback_adapter():
+    source = """
+module direct_callback
+  use iso_c_binding
+  implicit none
+
+  abstract interface
+    subroutine report(value) bind(C)
+      import c_int
+      integer(c_int), value, intent(in) :: value
+    end subroutine report
+  end interface
+
+contains
+
+  subroutine run(callback) bind(C)
+    procedure(report) :: callback
+    call callback(4_c_int)
+  end subroutine run
+end module direct_callback
+"""
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+    callback = _callback_argument(plan, "run").callback
+
+    artifacts = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    assert callback.entrypoint.support_procedure.symbol_name in c_source
+    assert all(source.path.suffix != ".f90" for source in artifacts.sources)
+
+
+def test_runtime_callback_extents_lower_to_assumed_shape_dummies_and_measured_copies():
+    """Codegen spells a runtime extent instead of leaking the plan's marker.
+
+    A runtime extent reaches the bridge as a public marker rather than an
+    expression, so the dummy takes the caller's descriptor and the contiguous
+    copy that backs ``c_loc`` is measured from that dummy.
+    """
+    module = pyi_file_to_semantic_module(ARRAY_CONTRACT, module_name="fcallback_array_f90")
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    callback = _callback_argument(plan, "apply_assumed_shape").callback
+    assert [transfer.array.shape for transfer in callback.arguments] == [("::",), ("::",)]
+
+    _, bridge = _sources(plan)
+    assert "real(c_double), intent(in), dimension(:) :: values" in bridge
+    assert "real(c_double), target, dimension(size(values, 1)) :: values_callback_storage" in bridge
+    assert "real(c_double), intent(out), dimension(:) :: doubled" in bridge
+    assert "real(c_double), target, dimension(size(doubled, 1)) :: doubled_callback_storage" in bridge
+
+
+def test_rank_zero_callback_storage_lowers_to_a_direction_correct_native_view():
+    """Rank-zero storage aliases native memory instead of copying a value.
+
+    Writeability follows the completed transfer direction, so only an ``out``
+    or ``inout`` dummy can be written through.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, In, InOut, Out, prototype
+
+@prototype
+def directions_callback(
+    read_value: In(Float64[()]),
+    update_value: InOut(Float64[()]),
+    write_value: Out(Float64[()])
+) -> None: ...
+
+def apply_directions(callback: directions_callback) -> None: ...
+""",
+        module_name="callback_scalar_storage",
+    )
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    callback = _callback_argument(plan, "apply_directions").callback
+    assert [transfer.python_action for transfer in callback.arguments] == [PythonBarrierAction.SCALAR_STORAGE] * 3
+    assert [transfer.abi for transfer in callback.arguments] == [CallbackABIKind.REFERENCE] * 3
+
+    c_source, _bridge = _sources(plan)
+    read_only = "PyArray_New(&PyArray_Type, 0, NULL, NPY_FLOAT64, NULL, read_value_data, 0, "
+    assert f"{read_only}NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL)" in c_source
+    for parameter in ("update_value", "write_value"):
+        writable = f"PyArray_New(&PyArray_Type, 0, NULL, NPY_FLOAT64, NULL, {parameter}_data, 0, "
+        assert f"{writable}NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)" in c_source
+
+
+MATRIX_CONTRACT = """
+from prik.contracts import Float64, In, Out, prototype
+
+@prototype
+def matrix_callback(
+    input: In(Float64[::, ::]),
+    output: Out(Float64[::, ::])
+) -> None: ...
+
+def apply_matrix(callback: matrix_callback) -> None: ...
+"""
+
+
+def _matrix_plan():
+    module = pyi_text_to_semantic_module(MATRIX_CONTRACT, module_name="callback_matrix")
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def test_multidimensional_runtime_extents_measure_every_axis_from_the_dummy():
+    """Each axis of an assumed-shape callback array is lowered independently.
+
+    A rank-one fix can silently ignore later axes, so the copy that backs
+    ``c_loc`` must be measured on every axis of the dummy it sits beside.
+    """
+    plan = _matrix_plan()
+    callback = _callback_argument(plan, "apply_matrix").callback
+    assert [transfer.array.rank for transfer in callback.arguments] == [2, 2]
+
+    _, bridge = _sources(plan)
+    assert "real(c_double), intent(in), dimension(:, :) :: input" in bridge
+    assert "real(c_double), target, dimension(size(input, 1), size(input, 2)) :: input_callback_storage" in bridge
+    assert "real(c_double), intent(out), dimension(:, :) :: output" in bridge
+    assert "real(c_double), target, dimension(size(output, 1), size(output, 2)) :: output_callback_storage" in bridge
+
+
+def test_callback_docstrings_carry_array_rank_and_public_extents():
+    """A callable's ABI depends on rank and shape, so both are documented.
+
+    Extents use the spelling the `.pyi` contract uses, so the two descriptions
+    of the same array agree and no internal marker reaches the reader.
+    """
+    plan = _matrix_plan()
+    c_source, _bridge = _sources(plan)
+    documentation = c_source.encode().decode("unicode_escape")
+
+    assert "Called as: callback(input, output) -> None" in documentation
+    assert "input : ndarray[float64], rank 2, shape (::, ::), intent(in)" in documentation
+    assert "output : ndarray[float64], rank 2, shape (::, ::), intent(out)" in documentation
+
+
+def test_callback_array_result_diagnostic_uses_the_contract_spelling():
+    """A rejected shape is reported the way a contract would spell it.
+
+    A function result has no caller descriptor to measure, so a runtime extent
+    there is refused; the message names the extent the author wrote rather than
+    the explicit step the IR stores.
+    """
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Float64, In, prototype
+
+@prototype
+def strided_result(x: In(Float64)) -> Float64[::]: ...
+
+def apply(callback: strided_result) -> None: ...
+""",
+        module_name="callback_strided_result",
+    )
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    with pytest.raises(ValueError, match=r"runtime extents \['::'\]"):
+        _sources(plan)

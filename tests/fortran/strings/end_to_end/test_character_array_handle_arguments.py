@@ -27,76 +27,10 @@ from tests.fortran._support.wrapper_build import (
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-ALLOCATABLE_SOURCE = """\
-module fcharacter_owner_allocatable
-  use iso_c_binding, only: c_char
-  implicit none
-contains
-  integer(4) function inspect(values) result(state)
-    character(kind=c_char, len=4), allocatable, intent(in) :: values(:)
-    state = 0
-    if (allocated(values)) state = size(values) * 100 + len(values)
-  end function inspect
 
-  subroutine replace(values)
-    character(kind=c_char, len=4), allocatable, intent(inout) :: values(:)
-    if (allocated(values)) deallocate(values)
-    allocate(values(3))
-    values = [character(kind=c_char, len=4) :: 'red ', 'blue', 'sky ']
-  end subroutine replace
-
-  subroutine fill(values)
-    character(kind=c_char, len=4), allocatable, intent(out) :: values(:)
-    allocate(values(2))
-    values = [character(kind=c_char, len=4) :: 'left', 'rght']
-  end subroutine fill
-
-  subroutine optional_fill(values, was_allocated)
-    character(kind=c_char, len=4), allocatable, intent(out), optional :: values(:)
-    integer(4), intent(out) :: was_allocated
-    was_allocated = -1
-    if (present(values)) then
-      was_allocated = merge(1, 0, allocated(values))
-      allocate(values(2))
-      values = [character(kind=c_char, len=4) :: 'new1', 'new2']
-    end if
-  end subroutine optional_fill
-
-  integer(4) function optional_state(values) result(state)
-    character(kind=c_char, len=4), allocatable, intent(in), optional :: values(:)
-    state = -1
-    if (present(values)) then
-      state = 0
-      if (allocated(values)) state = size(values) * 100 + len(values)
-    end if
-  end function optional_state
-
-  integer(4) function mixed(first, plain, second, scale) result(state)
-    character(kind=c_char, len=4), allocatable, intent(in) :: first(:)
-    character(kind=c_char, len=4), intent(in) :: plain(:)
-    character(kind=c_char, len=4), allocatable, intent(in) :: second(:)
-    integer(4), intent(in) :: scale
-    state = scale + size(plain) * 10
-    if (allocated(first)) state = state + size(first) * 100
-    if (allocated(second)) state = state + size(second) * 1000
-  end function mixed
-
-  integer(4) function inspect_rank2(values) result(state)
-    character(kind=c_char, len=3), allocatable, intent(in) :: values(:, :)
-    state = 0
-    if (allocated(values)) state = size(values, 1) * 1000 + size(values, 2) * 100 + len(values)
-  end function inspect_rank2
-
-  subroutine fill_rank2(values)
-    character(kind=c_char, len=3), allocatable, intent(inout) :: values(:, :)
-    if (allocated(values)) deallocate(values)
-    allocate(values(2, 4))
-    values = 'abc'
-  end subroutine fill_rank2
-
-end module fcharacter_owner_allocatable
-"""
+ALLOCATABLE_SOURCE = (NATIVE_FIXTURES / "fcharacter_allocatable_handles.f90").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -187,49 +121,7 @@ def test_owner_close_is_idempotent_and_finalization_is_safe(allocatable_owner_mo
     assert result.returncode == 0, result.stderr
 
 
-POINTER_SOURCE = """\
-module fcharacter_owner_pointer
-  use iso_c_binding, only: c_char
-  implicit none
-  character(kind=c_char, len=4), target, save :: fixed_target(3) = &
-    [character(kind=c_char, len=4) :: 'one ', 'two ', 'tri ']
-  character(kind=c_char, len=:), pointer, save :: deferred_target(:)
-contains
-  subroutine repoint_fixed(values)
-    character(kind=c_char, len=4), pointer, intent(out) :: values(:)
-    values => fixed_target
-  end subroutine repoint_fixed
-
-  integer(4) function fixed_state(values) result(state)
-    character(kind=c_char, len=4), pointer, intent(in) :: values(:)
-    state = 0
-    if (associated(values)) state = size(values) * 100 + len(values)
-  end function fixed_state
-
-  integer(4) function ordinary_width(values) result(width)
-    character(kind=c_char, len=*), intent(in) :: values(:)
-    width = 0
-    if (size(values) > 0) width = len(values)
-  end function ordinary_width
-
-  subroutine repoint_deferred(values)
-    character(kind=c_char, len=:), pointer, intent(out) :: values(:)
-    if (.not. associated(deferred_target)) then
-      allocate(character(kind=c_char, len=6) :: deferred_target(2))
-      deferred_target = [character(kind=c_char, len=6) :: 'alpha ', 'beta  ']
-    end if
-    values => deferred_target
-  end subroutine repoint_deferred
-
-  integer(4) function deferred_state(values) result(state)
-    character(kind=c_char, len=:), pointer, intent(in) :: values(:)
-    state = 0
-    if (associated(values)) then
-      state = size(values) * 100 + len(values) + iachar(values(1)(1:1))
-    end if
-  end function deferred_state
-end module fcharacter_owner_pointer
-"""
+POINTER_SOURCE = (NATIVE_FIXTURES / "fcharacter_pointer_handles.f90").read_text(encoding="utf-8")
 
 
 POINTER_POLICY = """Annotated[
