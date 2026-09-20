@@ -78,10 +78,20 @@ def _source(artifacts, suffix: str) -> str:
 
 
 def _replace_variable(plan, python_name: str, edit):
-    variables = tuple(
-        edit(variable) if variable.bridge.native_name == python_name else variable for variable in plan.variables
+    current = next(variable for variable in plan.variables if variable.bridge.native_name == python_name)
+    replacement = edit(current)
+    variables = tuple(replacement if variable is current else variable for variable in plan.variables)
+    namespaces = tuple(
+        replace(
+            namespace,
+            variable_publications=tuple(
+                replace(publication, variable=replacement) if publication.variable is current else publication
+                for publication in namespace.variable_publications
+            ),
+        )
+        for namespace in plan.namespaces
     )
-    return replace(plan, variables=variables)
+    return replace(plan, variables=variables, namespaces=namespaces)
 
 
 def test_module_variable_plan_contains_only_completed_dispatch_facts():
@@ -308,14 +318,13 @@ def test_missing_generated_support_procedure_fails_before_lowering():
 def test_bridge_local_module_target_edit_does_not_change_the_c_boundary():
     plan = _plan()
     baseline = _source(WrapperGenerator().generate(plan), ".c")
-    counter = next(variable for variable in plan.variables if variable.bridge.native_name == "counter")
-    edited_counter = replace(
-        counter,
-        bridge=replace(counter.bridge, native_name="counter_alternate"),
-    )
-    edited = replace(
+    edited = _replace_variable(
         plan,
-        variables=tuple(edited_counter if variable is counter else variable for variable in plan.variables),
+        "counter",
+        lambda variable: replace(
+            variable,
+            bridge=replace(variable.bridge, native_name="counter_alternate"),
+        ),
     )
 
     artifacts = WrapperGenerator().generate(edited)
@@ -325,12 +334,13 @@ def test_bridge_local_module_target_edit_does_not_change_the_c_boundary():
 
 
 def test_generator_rejects_python_module_setter_without_bridge_handoff():
-    plan = _plan()
-    counter = next(variable for variable in plan.variables if variable.bridge.native_name == "counter")
-    invalid_counter = replace(counter, entrypoint=replace(counter.entrypoint, setter_role=None))
-    invalid = replace(
-        plan,
-        variables=tuple(invalid_counter if variable is counter else variable for variable in plan.variables),
+    invalid = _replace_variable(
+        _plan(),
+        "counter",
+        lambda variable: replace(
+            variable,
+            entrypoint=replace(variable.entrypoint, setter_role=None),
+        ),
     )
 
     with pytest.raises(ValueError, match="missing-module-setter-role"):
