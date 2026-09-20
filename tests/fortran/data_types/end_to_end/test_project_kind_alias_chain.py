@@ -14,29 +14,9 @@ from prik.semantics.fortran2ir import collect_fortran_type_storage_requirements
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-KIND_ALIAS_SOURCE = """
-module consts_mod
-  use iso_fortran_env, only : REAL64
-  use iso_fortran_env, only : INT32
-  implicit none
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  integer, parameter :: DP = REAL64
-  integer, parameter :: IK_DFT = INT32
-  integer, parameter :: RP = DP
-  integer, parameter :: IK = IK_DFT
-end module consts_mod
-
-module consumer_mod
-  use consts_mod, only : RP, IK
-  implicit none
-contains
-  subroutine work(x, n)
-    real(RP), intent(inout) :: x
-    integer(IK), intent(in) :: n
-    x = x * real(n, RP)
-  end subroutine work
-end module consumer_mod
-"""
+KIND_ALIAS_SOURCE = (NATIVE_FIXTURES / "kinds.f90").read_text(encoding="utf-8")
 
 
 def test_kind_alias_chain_reaches_the_probe_as_intrinsic_expressions(tmp_path: Path):

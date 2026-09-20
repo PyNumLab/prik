@@ -16,37 +16,11 @@ OVERLOAD_F90_SOURCE = FIXTURES / "native" / "foverloads_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
-PRIVATE_INLINE_GENERIC_MODULE = """\
-module private_inline_generic
-  implicit none
-  private
-  public :: shift
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-  interface shift
-    module function shift_integer(value) result(output)
-      integer, intent(in) :: value
-      integer :: output
-    end function shift_integer
-    module function shift_real(value) result(output)
-      real(8), intent(in) :: value
-      real(8) :: output
-    end function shift_real
-  end interface shift
-end module private_inline_generic
-"""
+PRIVATE_INLINE_GENERIC_MODULE = (NATIVE_FIXTURES / "private_inline_generic.f90").read_text(encoding="utf-8")
 
-PRIVATE_INLINE_GENERIC_SUBMODULE = """\
-submodule(private_inline_generic) private_inline_generic_impl
-contains
-  module procedure shift_integer
-    output = value + 1
-  end procedure shift_integer
-
-  module procedure shift_real
-    output = value + 0.5_8
-  end procedure shift_real
-end submodule private_inline_generic_impl
-"""
+PRIVATE_INLINE_GENERIC_SUBMODULE = (NATIVE_FIXTURES / "private_inline_generic_impl.f90").read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -126,34 +100,7 @@ def test_public_generic_dispatches_to_private_inline_submodule_specifics(tmp_pat
     assert "=> shift_real" not in bridge
 
 
-EXTENDED_GENERIC_SOURCE = """
-module gen_base_mod
-  implicit none
-  interface report
-    module procedure report_int
-  end interface report
-contains
-  subroutine report_int(value, seen)
-    integer, intent(in) :: value
-    integer, intent(out) :: seen
-    seen = value
-  end subroutine report_int
-end module gen_base_mod
-
-module gen_extended_mod
-  use gen_base_mod, only : report
-  implicit none
-  interface report
-    module procedure report_real
-  end interface report
-contains
-  subroutine report_real(value, seen)
-    real(8), intent(in) :: value
-    integer, intent(out) :: seen
-    seen = int(value) * 10
-  end subroutine report_real
-end module gen_extended_mod
-"""
+EXTENDED_GENERIC_SOURCE = (NATIVE_FIXTURES / "extended_generic.f90").read_text(encoding="utf-8")
 
 
 def test_generic_extended_across_modules_dispatches_to_every_specific(tmp_path: Path):

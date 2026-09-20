@@ -11,23 +11,12 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from tests.fortran.generic_interfaces.semantics.test_generic_contributor_merging import (
-    CONTRIBUTORS,
-    LOCAL_EXTENSION,
-)
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-MERGED_SOURCE = (
-    CONTRIBUTORS
-    + """
-module facade_mod
-  use ints_mod,  only : convert
-  use reals_mod, only : convert
-  implicit none
-"""
-    + LOCAL_EXTENSION
-)
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
+MERGED_SOURCE = (NATIVE_FIXTURES / "merged_generic.f90").read_text(encoding="utf-8")
 
 
 def _source_build(source: Path, build_dir: Path):
