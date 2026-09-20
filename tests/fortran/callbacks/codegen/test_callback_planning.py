@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
+from prik.semantics.fortran2ir import FortranToIRConverter
 from prik.semantics import models
 from prik.policy.ownership import PythonBarrierAction
 from prik.policy.completion import complete_semantic_policies
@@ -278,6 +280,38 @@ def test_optional_callback_uses_the_ordinary_presence_plan():
     assert "if (c_associated(callback)) then" in bridge
     assert "native_apply_value_callback(callback=prik_callback_adapter_" in bridge
     assert "native_apply_value_callback(value=value)" in bridge
+
+
+def test_direct_bind_c_callback_generates_no_fortran_callback_adapter():
+    source = """
+module direct_callback
+  use iso_c_binding
+  implicit none
+
+  abstract interface
+    subroutine report(value) bind(C)
+      import c_int
+      integer(c_int), value, intent(in) :: value
+    end subroutine report
+  end interface
+
+contains
+
+  subroutine run(callback) bind(C)
+    procedure(report) :: callback
+    call callback(4_c_int)
+  end subroutine run
+end module direct_callback
+"""
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+    callback = _callback_argument(plan, "run").callback
+
+    artifacts = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    assert callback.entrypoint.support_procedure.symbol_name in c_source
+    assert all(source.path.suffix != ".f90" for source in artifacts.sources)
 
 
 def test_runtime_callback_extents_lower_to_assumed_shape_dummies_and_measured_copies():

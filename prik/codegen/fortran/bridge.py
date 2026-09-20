@@ -53,6 +53,7 @@ from prik.policy.models import (
     NativeArrayOwnerStorage,
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
+    NativeEntrypointAction,
     NativeInvocationKind,
     EntrypointPassingConvention,
     EntrypointProjectionAction,
@@ -518,7 +519,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _callback_standalone_adapter_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
         """Return separately linked callback adapters in stable site order."""
         return tuple(
-            self._callback_standalone_adapter_procedure(callback, plan) for callback in self._callback_sites(plan)
+            self._callback_standalone_adapter_procedure(callback, plan)
+            for callback in self._callback_adapter_sites(plan)
         )
 
     def _derived_holder_definitions(self, plan: ModulePlan) -> tuple[FortranTypeDefinition, ...]:
@@ -8472,7 +8474,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _prototype_plans(self, plan: ModulePlan) -> tuple[ProcedurePrototypePlan, ...]:
         """Deduplicate callback and direct-call uses by generated interface symbol."""
         candidates = (
-            *(callback.prototype for callback in self._callback_sites(plan)),
+            *(callback.prototype for callback in self._callback_adapter_sites(plan)),
             *(
                 declaration.prototype
                 for function in self._functions(plan)
@@ -8662,11 +8664,12 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
-    def _callback_sites(self, plan: ModulePlan) -> tuple[CallbackHandoffPlan, ...]:
-        """Return callback sites in stable native-call order."""
+    def _callback_adapter_sites(self, plan: ModulePlan) -> tuple[CallbackHandoffPlan, ...]:
+        """Return callback sites whose completed route needs a Fortran adapter."""
         return tuple(
             argument.callback
             for function in self._functions(plan)
+            if function.entrypoint.action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
             for argument in sorted(function.arguments, key=lambda item: item.native_position)
             if argument.callback is not None
         )
@@ -9523,6 +9526,7 @@ class FortranBridgeGenerator(ClassVisitor):
         callback_parameters = any(
             argument.entrypoint.pass_callback_parameter
             for function in self._functions(plan)
+            if function.entrypoint.action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
             for argument in function.arguments
         )
         module_descriptors = any(self._uses_module_descriptor_backend(variable) for variable in self._variables(plan))
