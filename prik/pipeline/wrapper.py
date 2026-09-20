@@ -44,6 +44,7 @@ from prik.policy.models import (
     CallbackFatalAction,
     CallbackGILAction,
     CallbackLifecycleAction,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
@@ -2234,9 +2235,11 @@ class WrapperGenerator:
         return (
             argument.name,
             argument.semantic_type_name,
+            argument.native_fortran_type,
             argument.rank,
             argument.passed_by_value,
             argument.intent,
+            argument.optional,
             argument.character_length,
             WrapperGenerator._prototype_array_shape(argument.array),
             argument.derived_type_identity,
@@ -2244,9 +2247,11 @@ class WrapperGenerator:
         ) == (
             transfer.name,
             transfer.semantic_type_name,
+            transfer.native_fortran_type,
             transfer.rank,
             transfer.passed_by_value,
             transfer.intent,
+            transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER,
             transfer.character_length,
             WrapperGenerator._prototype_array_shape(transfer.array),
             transfer.derived_type_identity,
@@ -2348,11 +2353,32 @@ class WrapperGenerator:
         diagnostics = []
         if not transfer.owner_path or not transfer.name:
             diagnostics.append(self._diagnostic(transfer.owner_path, "incomplete-callback-transfer", position))
+        diagnostics.extend(self._callback_optionality_diagnostics(transfer, position))
         diagnostics.extend(self._callback_array_role_diagnostics(transfer, position))
         diagnostics.extend(self._callback_string_role_diagnostics(transfer, position))
         diagnostics.extend(self._callback_derived_role_diagnostics(transfer, position))
         diagnostics.extend(self._callback_scalar_projection_diagnostics(transfer, position))
         return tuple(diagnostics)
+
+    def _callback_optionality_diagnostics(
+        self,
+        transfer: CallbackTransferPlan,
+        position: int,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Reject a presence action that cannot use the transfer's completed ABI."""
+        invalid = transfer.optionality is CallbackOptionalityAction.BLOCKED or (
+            transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER
+            and (transfer.abi is CallbackABIKind.VALUE or transfer.passed_by_value)
+        )
+        if not invalid:
+            return ()
+        return (
+            self._diagnostic(
+                transfer.owner_path,
+                "invalid-callback-optionality",
+                (position, transfer.optionality.value, transfer.abi.value),
+            ),
+        )
 
     def _callback_scalar_projection_diagnostics(
         self,

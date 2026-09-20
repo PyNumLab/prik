@@ -12,6 +12,7 @@ from prik.policy.models import (
     CallbackABIKind,
     CallbackGILAction,
     CallbackLifecycleAction,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
@@ -148,6 +149,10 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
         ("scalar_projection", "inconsistent-callback-scalar-value-projection"),
         ("result", "callback-void-has-transfer"),
         ("entrypoint_parameter", "inconsistent-callback-entrypoint-parameter"),
+        ("prototype_optional", "inconsistent-callback-prototype-arguments"),
+        ("native_fortran_type", "inconsistent-callback-prototype-arguments"),
+        ("optional_value_abi", "invalid-callback-optionality"),
+        ("blocked_optionality", "invalid-callback-optionality"),
         ("symbols", "invalid-callback-symbols"),
     ),
 )
@@ -170,6 +175,18 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
     elif edit == "entrypoint_parameter":
         argument = _callback_argument(plan, "apply_value_callback")
         argument.entrypoint.pass_callback_parameter = True
+    elif edit == "prototype_optional":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.prototype.arguments[0].optional = True
+    elif edit == "native_fortran_type":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.prototype.arguments[0].native_fortran_type = "logical(kind=8)"
+    elif edit == "optional_value_abi":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.arguments[0].optionality = CallbackOptionalityAction.NULL_DATA_POINTER
+    elif edit == "blocked_optionality":
+        callback = _callback_argument(plan, "apply_value_callback").callback
+        callback.arguments[0].optionality = CallbackOptionalityAction.BLOCKED
     else:
         callback = _callback_argument(plan, "apply_value_callback").callback
         callback.entrypoint.support_procedure.symbol_name = callback.bridge.adapter_symbol
