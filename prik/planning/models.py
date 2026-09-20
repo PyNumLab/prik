@@ -826,12 +826,12 @@ class ModuleVariablePlan(StageRecord):
 class ModuleVariablePublicationPlan(StageRecord):
     """Publish one existing module-variable plan in a Python namespace.
 
-    ``variable_owner_path`` identifies the sole plan that owns native access,
-    storage, initialization, and support procedures.  This record adds only
-    Python names in one namespace; it never creates another variable plan.
+    ``variable`` is the sole plan that owns native access, storage,
+    initialization, and support procedures. This record adds only Python names
+    in one namespace; it never creates another variable plan.
     """
 
-    variable_owner_path: str
+    variable: ModuleVariablePlan
     python_names: tuple[str, ...]
 
 

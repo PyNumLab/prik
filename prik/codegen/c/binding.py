@@ -14481,7 +14481,7 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 reject_replacement=(variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT),
             )
-            for variable, publication in self._variable_publications(module, namespace)
+            for variable, publication in self._variable_publications(namespace)
             if variable.binding.getter_action
             not in {
                 ModuleGetterAction.CONSTANT_VALUE,
@@ -15626,7 +15626,7 @@ class CBindingGenerator(ClassVisitor):
         nodes = []
         index = 0
         namespace_symbol = self._namespace_symbol(namespace)
-        for variable, publication in self._variable_publications(plan, namespace):
+        for variable, publication in self._variable_publications(namespace):
             if variable.binding.getter_action not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
@@ -15849,20 +15849,10 @@ class CBindingGenerator(ClassVisitor):
 
     def _variable_publications(
         self,
-        plan: ModulePlan,
         namespace: NamespacePlan,
     ) -> tuple[tuple[ModuleVariablePlan, ModuleVariablePublicationPlan], ...]:
-        """Resolve namespace publications to their one native variable plan."""
-        variables = {variable.owner_path: variable for variable in self._variables(plan)}
-        resolved = []
-        for publication in namespace.variable_publications:
-            variable = variables.get(publication.variable_owner_path)
-            if variable is None:
-                raise ValueError(
-                    f"Module-variable publication references missing plan {publication.variable_owner_path!r}"
-                )
-            resolved.append((variable, publication))
-        return tuple(resolved)
+        """Pair namespace publications with their canonical variable plans."""
+        return tuple((publication.variable, publication) for publication in namespace.variable_publications)
 
     def _support_variables(
         self,

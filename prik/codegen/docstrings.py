@@ -99,11 +99,9 @@ class WrapperDocstringBuilder:
             for namespace in plan.namespaces
             for derived in namespace.derived_types
         }
-        self._module_variables_by_owner = {variable.owner_path: variable for variable in plan.variables}
-        # A publication can sort before the namespace that owns its canonical
-        # variable plan. Render every canonical variable first so namespace
-        # summaries only read completed documentation from that owner.
-        for variable in self._module_variables_by_owner.values():
+        # Render every canonical variable first so namespace summaries only
+        # read completed documentation from that owner.
+        for variable in plan.variables:
             self._render_module_variable(variable)
         for namespace in plan.namespaces:
             self._render_namespace(plan.owner_path, namespace)
@@ -125,8 +123,7 @@ class WrapperDocstringBuilder:
 
         if namespace.docstring is None:
             variable_publications = tuple(
-                (self._module_variables_by_owner[publication.variable_owner_path], publication)
-                for publication in namespace.variable_publications
+                (publication.variable, publication) for publication in namespace.variable_publications
             )
             namespace.docstring = self.namespace(
                 module_name,

@@ -1067,7 +1067,7 @@ class WrapperGenerator:
         plan: ModulePlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate that every publication references one canonical variable plan."""
-        owners = {variable.owner_path for variable in plan.variables}
+        variable_ids = {id(variable) for variable in plan.variables}
         diagnostics = []
         namespace_paths = {namespace.python_path for namespace in plan.namespaces}
         diagnostics.extend(
@@ -1081,12 +1081,12 @@ class WrapperGenerator:
         )
         for namespace in plan.namespaces:
             for publication in namespace.variable_publications:
-                if publication.variable_owner_path not in owners:
+                if id(publication.variable) not in variable_ids:
                     diagnostics.append(
                         self._diagnostic(
                             namespace.owner_path,
                             "missing-module-variable-publication-owner",
-                            publication.variable_owner_path,
+                            publication.variable.owner_path,
                         )
                     )
                 if not publication.python_names:
@@ -1094,7 +1094,7 @@ class WrapperGenerator:
                         self._diagnostic(
                             namespace.owner_path,
                             "empty-module-variable-publication",
-                            publication.variable_owner_path,
+                            publication.variable.owner_path,
                         )
                     )
         return tuple(diagnostics)

@@ -87,12 +87,13 @@ of the original Fortran procedure.
 One module-level `ModuleVariablePlan` owns each declaring native variable and
 its completed getter, setter, ownership, descriptor, array, and derived-object
 mechanisms. Its owner path is the declaring native module and name, independent
-of Python publication. A namespace-level `ModuleVariablePublicationPlan`
-records only the Python names that point to that canonical plan. Re-exporting
-module state therefore adds publication records without changing variable
-identity or adding accessors, support procedures, initialization, allocation
-state, or pointer state. Parameters use the same structure while retaining
-constant-value lowering.
+of Python publication. A namespace-level `ModuleVariablePublicationPlan` holds
+a direct reference to that canonical plan plus the Python names published in
+the namespace. Re-exporting module state therefore adds publication records
+without resolving ownership from a second key, changing variable identity, or
+adding accessors, support procedures, initialization, allocation state, or
+pointer state. Parameters use the same structure while retaining constant-value
+lowering.
 
 `NativeEntrypointModulePlan.support_procedures` is the authoritative registry for
 externally linked generated helper callables that are not ordinary wrapped

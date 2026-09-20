@@ -85,15 +85,16 @@ def test_planner_keeps_one_module_variable_plan_for_multiple_publications():
 
     variables = list(plan.variables)
     publications = [
-        (namespace.python_path, publication.variable_owner_path, publication.python_names)
+        (namespace.python_path, publication.variable, publication.python_names)
         for namespace in plan.namespaces
         for publication in namespace.variable_publications
     ]
     assert len(variables) == 1
-    assert publications == [
-        ((), variables[0].owner_path, ("counter",)),
-        (("facade",), variables[0].owner_path, ("counter",)),
+    assert [(path, names) for path, _variable, names in publications] == [
+        ((), ("counter",)),
+        (("facade",), ("counter",)),
     ]
+    assert all(variable is variables[0] for _path, variable, _names in publications)
 
 
 def test_module_variable_owner_is_its_native_identity_not_a_publication_path():
@@ -126,7 +127,7 @@ def test_module_variable_owner_is_its_native_identity_not_a_publication_path():
         for procedure in facade_and_api.entrypoint.support_procedures
     ]
     assert {
-        (namespace.python_path, publication.variable_owner_path)
+        (namespace.python_path, publication.variable.owner_path)
         for namespace in facade_and_api.namespaces
         for publication in namespace.variable_publications
     } == {

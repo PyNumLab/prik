@@ -1253,7 +1253,7 @@ class WrapperPlanner(ClassVisitor):
             for namespace, python_names in exports_by_namespace.items():
                 publications[namespace].append(
                     ModuleVariablePublicationPlan(
-                        variable_owner_path=plan.owner_path,
+                        variable=plan,
                         python_names=tuple(python_names),
                     )
                 )
