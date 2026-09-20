@@ -261,22 +261,7 @@ end module solver_mod
     assert callback.metadata[UNRESOLVED_PROCEDURE_INTERFACE_METADATA] == "OBJ"
 
 
-CALLBACK_TYPES_SOURCE = """
-module callback_types
-  implicit none
-  type :: point_t
-    real(8) :: x
-  end type point_t
-
-  abstract interface
-    subroutine move_point(p)
-      import :: point_t
-      implicit none
-      type(point_t), intent(inout) :: p
-    end subroutine move_point
-  end interface
-end module callback_types
-"""
+CALLBACK_TYPES_SOURCE = (NATIVE_FIXTURES / "callback_types.f90").read_text(encoding="utf-8")
 
 
 def test_imported_interface_resolves_its_types_in_the_declaring_module():

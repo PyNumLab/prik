@@ -16,18 +16,7 @@ NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 CONTRIBUTORS = (NATIVE_FIXTURES / "contributors.f90").read_text(encoding="utf-8")
 
-LOCAL_EXTENSION = """\
-  interface convert
-    module procedure convert_l
-  end interface
-
-contains
-  logical function convert_l(x)
-    logical, intent(in) :: x
-    convert_l = x
-  end function convert_l
-end module facade_mod
-"""
+LOCAL_EXTENSION = (NATIVE_FIXTURES / "local_extension.f90").read_text(encoding="utf-8")
 
 
 def _modules(tmp_path: Path, *sources: str):

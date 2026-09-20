@@ -15,21 +15,7 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-DECLARING = """\
-module a_mod
-  implicit none
-  integer :: x = 7
-  integer :: y = 9
-  type :: box
-    integer :: value
-  end type box
-contains
-  integer function scale_value(v)
-    integer, intent(in) :: v
-    scale_value = v * 2
-  end function scale_value
-end module a_mod
-"""
+DECLARING = (NATIVE_FIXTURES / "declaring_module.f90").read_text(encoding="utf-8")
 
 
 def _reexports(
@@ -594,19 +580,9 @@ def test_a_compile_time_symbol_is_not_substituted_inside_a_character_literal():
     assert _resolve_compile_time_text('len("runtime") + runtime', values) == 'len("runtime") + 4'
 
 
-TRANSITIVE_DECLARING = """\
-module a_mod
-  implicit none
-  integer :: x = 1
-end module a_mod
-"""
+TRANSITIVE_DECLARING = (NATIVE_FIXTURES / "transitive_declaring.f90").read_text(encoding="utf-8")
 
-TRANSITIVE_OTHER = """\
-module c_mod
-  implicit none
-  real :: x = 2.0
-end module c_mod
-"""
+TRANSITIVE_OTHER = (NATIVE_FIXTURES / "transitive_other.f90").read_text(encoding="utf-8")
 
 
 def _project_modules(tmp_path: Path, *sources: str):
