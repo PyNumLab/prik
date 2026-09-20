@@ -14,6 +14,8 @@ from tests.fortran._support.wrapper_build import _build_source_and_import, _buil
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 SOURCE = Path(__file__).parent / "fixtures" / "native" / "type_accessibility.f90"
 GENERATED = {
     "bind_c_type_accessibility_wrapper.f90",
@@ -21,24 +23,7 @@ GENERATED = {
     "type_accessibility_wrapper.h",
 }
 
-DEPENDENCY_SOURCE = """
-module dependency_home
-  implicit none
-  type :: box
-    integer :: value
-  end type box
-end module dependency_home
-
-module dependency_consumer
-  use dependency_home, only : crate => box
-  implicit none
-contains
-  integer function crate_value(item) result(value)
-    type(crate), intent(in) :: item
-    value = item%value
-  end function crate_value
-end module dependency_consumer
-"""
+DEPENDENCY_SOURCE = (NATIVE_FIXTURES / "type_accessibility_dependency.f90").read_text(encoding="utf-8")
 
 
 def test_accessibility_statements_shape_the_generated_class(tmp_path: Path):

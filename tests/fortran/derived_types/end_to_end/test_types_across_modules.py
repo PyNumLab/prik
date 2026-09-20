@@ -16,157 +16,20 @@ from tests.fortran._support.wrapper_build import _build_sources_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SHAPES_SOURCE = """\
-module shapes
-  implicit none
-  type :: box
-    integer :: value = 0
-  end type box
-  type, extends(box) :: tagged_box
-    integer :: tag = 0
-  end type tagged_box
-end module shapes
-"""
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-OPS_SOURCE = """\
-module ops
-  use shapes, only: box, tagged_box
-  implicit none
-  private
-  public :: holder, boxed, total, visit, describe, weigh, maybe_box, producer, consumer
-  type :: holder
-    type(box) :: inner
-  end type holder
-  abstract interface
-    function producer() result(out)
-      import :: box
-      type(box) :: out
-    end function producer
-    subroutine consumer(item)
-      import :: box
-      type(box), intent(in) :: item
-    end subroutine consumer
-  end interface
-  interface weigh
-    module procedure weigh_box, weigh_int
-  end interface weigh
-contains
-  function boxed(v) result(out)
-    integer, intent(in) :: v
-    type(box) :: out
-    out%value = v
-  end function boxed
+SHAPES_SOURCE = (NATIVE_FIXTURES / "cross_module_shapes.f90").read_text(encoding="utf-8")
 
-  integer function total(make)
-    procedure(producer) :: make
-    type(box) :: item
-    item = make()
-    total = item%value
-  end function total
+OPS_SOURCE = (NATIVE_FIXTURES / "cross_module_ops.f90").read_text(encoding="utf-8")
 
-  subroutine visit(fn)
-    procedure(consumer) :: fn
-    type(box) :: item
-    item%value = 41
-    call fn(item)
-  end subroutine visit
+FIRST_SOURCE = (NATIVE_FIXTURES / "cross_module_first.f90").read_text(encoding="utf-8")
 
-  integer function describe(item)
-    class(box), intent(in) :: item
-    select type (item)
-    type is (tagged_box)
-      describe = 2
-    class default
-      describe = 1
-    end select
-  end function describe
-
-  integer function weigh_box(item)
-    type(box), intent(in) :: item
-    weigh_box = item%value
-  end function weigh_box
-
-  integer function weigh_int(n)
-    integer, intent(in) :: n
-    weigh_int = -n
-  end function weigh_int
-
-  function maybe_box(v) result(out)
-    integer, intent(in) :: v
-    type(box), allocatable :: out
-    allocate(out)
-    out%value = v
-  end function maybe_box
-end module ops
-"""
-
-FIRST_SOURCE = """\
-module first_mod
-  implicit none
-  type :: box
-    integer :: value = 1
-  end type box
-contains
-  function make_first() result(out)
-    type(box) :: out
-    out%value = 10
-  end function make_first
-end module first_mod
-"""
-
-SECOND_SOURCE = """\
-module second_mod
-  implicit none
-  type :: box
-    real(8) :: weight = 2.0d0
-  end type box
-  abstract interface
-    function producer() result(out)
-      import :: box
-      type(box) :: out
-    end function producer
-  end interface
-contains
-  real(8) function weigh(make) result(total)
-    procedure(producer) :: make
-    type(box) :: item
-    item = make()
-    total = item%weight
-  end function weigh
-end module second_mod
-"""
+SECOND_SOURCE = (NATIVE_FIXTURES / "cross_module_second.f90").read_text(encoding="utf-8")
 
 
-BASE_SOURCE = """\
-module zeta_base
-  implicit none
-  type :: shape
-    integer :: sides = 0
-  end type shape
-contains
-  integer function sides_of(item)
-    class(shape), intent(in) :: item
-    sides_of = item%sides
-  end function sides_of
-end module zeta_base
-"""
+BASE_SOURCE = (NATIVE_FIXTURES / "cross_module_base.f90").read_text(encoding="utf-8")
 
-EXTENSION_SOURCE = """\
-module alpha_child
-  use zeta_base, only: shape
-  implicit none
-  type, extends(shape) :: square
-    integer :: edge = 1
-  end type square
-contains
-  function make_square(edge) result(out)
-    integer, intent(in) :: edge
-    type(square) :: out
-    out%sides = 4
-    out%edge = edge
-  end function make_square
-end module alpha_child
-"""
+EXTENSION_SOURCE = (NATIVE_FIXTURES / "cross_module_extension.f90").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
