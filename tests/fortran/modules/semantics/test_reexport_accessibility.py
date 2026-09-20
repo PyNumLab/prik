@@ -103,11 +103,10 @@ end module b_mod
     ) == [("crate", "box", "a_mod")]
 
 
-def test_a_bare_private_default_publishes_nothing_it_imports(tmp_path: Path):
-    """A bare `private` sets the default, which then covers the import."""
-    assert (
-        _reexports(
-            tmp_path,
+@pytest.mark.parametrize(
+    ("importer", "expected"),
+    [
+        pytest.param(
             """\
 module b_mod
   use a_mod, only : x
@@ -115,16 +114,11 @@ module b_mod
   private
 end module b_mod
 """,
-        )
-        == []
-    )
-
-
-def test_an_access_statement_outranks_a_private_default(tmp_path: Path):
-    """Naming the entity decides it, whichever way the default points."""
-    assert _reexports(
-        tmp_path,
-        """\
+            [],
+            id="private-default",
+        ),
+        pytest.param(
+            """\
 module b_mod
   use a_mod, only : x
   implicit none
@@ -132,14 +126,10 @@ module b_mod
   public :: x
 end module b_mod
 """,
-    ) == [("x", "x", "a_mod")]
-
-
-def test_an_access_statement_outranks_a_public_default(tmp_path: Path):
-    """`private :: x` decides it even though the default is public."""
-    assert (
-        _reexports(
-            tmp_path,
+            [("x", "x", "a_mod")],
+            id="public-name-over-private-default",
+        ),
+        pytest.param(
             """\
 module b_mod
   use a_mod, only : x
@@ -147,16 +137,10 @@ module b_mod
   private :: x
 end module b_mod
 """,
-        )
-        == []
-    )
-
-
-def test_a_private_used_module_route_withholds_its_entities(tmp_path: Path):
-    """Naming the only used-module route private makes its entities private."""
-    assert (
-        _reexports(
-            tmp_path,
+            [],
+            id="private-name-over-public-default",
+        ),
+        pytest.param(
             """\
 module b_mod
   use a_mod
@@ -164,16 +148,11 @@ module b_mod
   private :: a_mod
 end module b_mod
 """,
-        )
-        == []
-    )
-
-
-def test_a_public_used_module_route_outranks_the_private_default(tmp_path: Path):
-    """A public route exposes its entities despite the module's bare default."""
-    published = _reexports(
-        tmp_path,
-        """\
+            [],
+            id="private-module-route",
+        ),
+        pytest.param(
+            """\
 module b_mod
   use a_mod
   implicit none
@@ -181,9 +160,23 @@ module b_mod
   public :: a_mod
 end module b_mod
 """,
-    )
-
-    assert sorted(local for local, _source, _origin in published) == ["box", "scale_value", "x", "y"]
+            [
+                ("box", "box", "a_mod"),
+                ("scale_value", "scale_value", "a_mod"),
+                ("x", "x", "a_mod"),
+                ("y", "y", "a_mod"),
+            ],
+            id="public-module-route-over-private-default",
+        ),
+    ],
+)
+def test_accessibility_precedence_for_use_associations(
+    importer: str,
+    expected: list[tuple[str, str, str]],
+    tmp_path: Path,
+):
+    """A named access decision outranks the module's public or private default."""
+    assert sorted(_reexports(tmp_path, importer)) == sorted(expected)
 
 
 def test_any_public_route_keeps_a_multiply_accessible_entity_public(tmp_path: Path):
@@ -821,16 +814,12 @@ end module outer_mod
     assert reexports["x"].origin_module == "middle_mod"
 
 
-def test_a_rename_without_only_still_carries_the_rest_of_the_module(tmp_path: Path):
-    """Only an `only` list narrows a `use`; a rename just binds another name.
-
-    `use a_mod, p => q` accesses that entity as `p` and still carries whatever
-    else `a_mod` offers. Reading a non-empty mapping list as an `only` list
-    dropped every other name the module publishes.
-    """
-    modules = _project_modules(
-        tmp_path,
-        """\
+@pytest.mark.parametrize(
+    ("sources", "expected"),
+    [
+        pytest.param(
+            (
+                """\
 module a_mod
   implicit none
   integer :: q = 1
@@ -842,17 +831,13 @@ module b_mod
   implicit none
 end module b_mod
 """,
-    )
-
-    reexports = {item.local_name: (item.origin_module, item.source_name) for item in modules["b_mod"].reexports}
-    assert reexports == {"p": ("a_mod", "q"), "other": ("a_mod", "other")}
-
-
-def test_an_only_list_still_carries_nothing_else(tmp_path: Path):
-    """The narrowing form keeps narrowing."""
-    modules = _project_modules(
-        tmp_path,
-        """\
+            ),
+            {"p": ("a_mod", "q"), "other": ("a_mod", "other")},
+            id="rename-without-only",
+        ),
+        pytest.param(
+            (
+                """\
 module a_mod
   implicit none
   integer :: q = 1
@@ -864,16 +849,13 @@ module b_mod
   implicit none
 end module b_mod
 """,
-    )
-
-    assert {item.local_name for item in modules["b_mod"].reexports} == {"q"}
-
-
-def test_a_renamed_entity_is_not_also_carried_under_its_own_name(tmp_path: Path):
-    """`use m, p => q` accesses the entity as `p`, so `q` names nothing here."""
-    modules = _project_modules(
-        tmp_path,
-        """\
+            ),
+            {"q": ("a_mod", "q")},
+            id="only-list",
+        ),
+        pytest.param(
+            (
+                """\
 module a_mod
   implicit none
   integer :: q = 1
@@ -884,36 +866,26 @@ module b_mod
   implicit none
 end module b_mod
 """,
-    )
-
-    assert {item.local_name for item in modules["b_mod"].reexports} == {"p"}
-
-
-def test_an_empty_only_list_carries_no_name(tmp_path: Path):
-    """`use m, only :` is valid syntax that narrows to nothing.
-
-    It lists no names, exactly as a bare `use` does, so a model that cannot
-    tell the two apart reads one of them wrongly.
-    """
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        """\
+            ),
+            {"p": ("a_mod", "q")},
+            id="renamed-source-name-hidden",
+        ),
+        pytest.param(
+            (
+                TRANSITIVE_DECLARING,
+                """\
 module b_mod
   use a_mod, only :
   implicit none
 end module b_mod
 """,
-    )
-
-    assert modules["b_mod"].reexports == []
-
-
-def test_statements_naming_one_module_are_read_together(tmp_path: Path):
-    """The language combines them, so neither statement erases the other."""
-    modules = _project_modules(
-        tmp_path,
-        """\
+            ),
+            {},
+            id="empty-only-list",
+        ),
+        pytest.param(
+            (
+                """\
 module a_mod
   implicit none
   integer :: q = 1
@@ -926,10 +898,21 @@ module b_mod
   implicit none
 end module b_mod
 """,
-    )
-
+            ),
+            {"p": ("a_mod", "q"), "other": ("a_mod", "other")},
+            id="repeated-statements",
+        ),
+    ],
+)
+def test_use_statement_forms_define_the_accessible_local_names(
+    sources: tuple[str, ...],
+    expected: dict[str, tuple[str, str]],
+    tmp_path: Path,
+):
+    """ONLY, renaming, and repeated USE statements share one route interpretation."""
+    modules = _project_modules(tmp_path, *sources)
     reexports = {item.local_name: (item.origin_module, item.source_name) for item in modules["b_mod"].reexports}
-    assert reexports == {"p": ("a_mod", "q"), "other": ("a_mod", "other")}
+    assert reexports == expected
 
 
 def test_a_non_only_rename_still_carries_imported_compile_time_symbols(tmp_path: Path):
