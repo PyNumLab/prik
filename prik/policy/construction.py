@@ -85,6 +85,7 @@ from prik.policy.models import (
     TransformationLayer,
     TransformationAction,
     CallbackABIKind,
+    CallbackOptionalityAction,
     CallbackTransferAction,
     CallbackResultAction,
     CallbackLifecycleAction,
@@ -1505,10 +1506,12 @@ def _callback_transfer_policy(
     passed_by_value = bool(argument.origin.metadata.get("value"))
     derived = _is_scalar_derived_type(semantic_type)
     array = _array_handoff_policy(semantic_type) if int(semantic_type.rank or 0) > 0 else None
+    _logical_abi, native_fortran_type = _scalar_logical_argument_abi(argument)
     return CallbackTransferPolicy(
         owner_path=owner_path,
         name=argument.name,
         semantic_type_name=semantic_type.name,
+        native_fortran_type=native_fortran_type,
         object_kind=decision.kind,
         rank=int(semantic_type.rank or 0),
         passed_by_value=passed_by_value,
@@ -1516,6 +1519,13 @@ def _callback_transfer_policy(
             str(intent)
             if (intent := argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)) is not None
             else None
+        ),
+        optionality=(
+            CallbackOptionalityAction.BLOCKED
+            if argument.optional and passed_by_value
+            else CallbackOptionalityAction.NULL_DATA_POINTER
+            if argument.optional
+            else CallbackOptionalityAction.REQUIRED
         ),
         abi=_callback_abi_kind(argument, derived=derived),
         adapter_action=_callback_adapter_action(argument),
@@ -1578,8 +1588,11 @@ def _callback_transfer_blockers(
     """Reject callback forms whose typed adapter ABI is incomplete."""
     semantic_type = argument.semantic_type
     blockers = list(_runtime_semantic_validation_blockers(semantic_type, f"callback argument {argument.name!r}"))
-    if argument.optional:
-        blockers.append(f"callback argument {argument.name!r} cannot be optional")
+    if transfer.optionality is CallbackOptionalityAction.BLOCKED:
+        blockers.append(
+            f"callback argument {argument.name!r} cannot be both optional and passed by value; "
+            "use a reference dummy so absence has a null-pointer ABI"
+        )
     if _uses_unsupported_callback_descriptor(semantic_type):
         blockers.append(
             f"callback argument {argument.name!r} uses unsupported allocatable, pointer, "
@@ -1634,10 +1647,12 @@ def _callback_result_policy(
         owner_path=owner_path,
         name="result",
         semantic_type_name=return_type.name,
+        native_fortran_type=None,
         object_kind=decision.kind,
         rank=int(return_type.rank or 0),
         passed_by_value=False,
         intent=None,
+        optionality=CallbackOptionalityAction.REQUIRED,
         abi=(
             CallbackABIKind.DERIVED_ADDRESS
             if derived
@@ -2025,7 +2040,8 @@ def _complete_entrypoint_argument_route(
         entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
         entrypoint_pass_derived_transaction=(uses_adapter and argument.derived_call is not None),
         entrypoint_pass_callback_parameter=(
-            action is NativeEntrypointAction.DIRECT_C_ABI and argument.callback is not None
+            argument.callback is not None
+            and (action is NativeEntrypointAction.DIRECT_C_ABI or argument.optional_mode is OptionalMode.NULLABLE_VALUE)
         ),
         entrypoint_optionality=(
             EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
@@ -3270,11 +3286,12 @@ def _argument_boundary_policy(
 ) -> _ArgumentBoundaryPolicy:
     """Normalize callback inputs onto the ordinary argument-policy schema."""
     if callback is not None:
+        optional_mode = OptionalMode.NULLABLE_VALUE if argument.optional else OptionalMode.REQUIRED
         return _ArgumentBoundaryPolicy(
-            optional_mode=OptionalMode.REQUIRED,
+            optional_mode=optional_mode,
             conversion_phase=ArgumentConversionPhase.IMMEDIATE,
             handoff_mode=ArgumentHandoffMode.VALUE,
-            nullable=False,
+            nullable=argument.optional,
             writable=False,
             descriptor_boundary=False,
             codegen_action=CodegenAction.CALL_LOCAL_INPUT,
@@ -3334,8 +3351,6 @@ def _completed_argument_blockers(
     if callback is not None:
         blockers.extend(callback.blockers)
         blockers.extend(_callback_derived_type_blockers(callback, derived_types))
-        if argument.optional:
-            blockers.append(f"argument {argument.name!r} is an unsupported optional callback")
     else:
         blockers.extend(
             _argument_blockers(
@@ -7296,7 +7311,12 @@ def _scalar_logical_argument_abi(
     if source_type is None:
         if semantic_type.name in {"Bool", "Bool8"}:
             return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
-        return ScalarLogicalABI.NATIVE_KIND_COPY, None
+        native_kind = {"Bool16": 2, "Bool32": 4, "Bool64": 8}.get(semantic_type.name)
+        return (
+            (ScalarLogicalABI.NATIVE_KIND_COPY, f"logical(kind={native_kind})")
+            if native_kind is not None
+            else (ScalarLogicalABI.NATIVE_KIND_COPY, None)
+        )
     compact = "".join(source_type.casefold().split())
     if compact == "logical(kind=c_bool)":
         return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
@@ -7966,6 +7986,7 @@ def _semantic_prototype_argument_policy(
         owner_path=f"{owner_path}.prototype_argument.{argument.name}",
         name=argument.name,
         semantic_type_name=semantic_type.name,
+        native_fortran_type=_scalar_logical_argument_abi(argument)[1],
         rank=int(semantic_type.rank or 0),
         passed_by_value=bool(argument.origin.metadata.get("value")),
         intent=(
@@ -7973,6 +7994,7 @@ def _semantic_prototype_argument_policy(
             if (intent := argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)) is not None
             else None
         ),
+        optional=argument.optional,
         character_length=_character_length(semantic_type),
         array=_array_handoff_policy(semantic_type) if int(semantic_type.rank or 0) > 0 else None,
         derived_type_identity=(

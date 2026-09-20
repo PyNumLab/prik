@@ -14,6 +14,7 @@ from prik.policy.completion import complete_semantic_policies
 from prik.policy.ownership import PythonBarrierAction
 from prik.policy.models import (
     CallbackABIKind,
+    CallbackOptionalityAction,
     CallbackTransferAction,
     FunctionWrapperPolicy,
 )
@@ -59,7 +60,8 @@ def test_source_callback_value_default_and_explicit_reference_are_completed():
         ),
         (
             "def callback_shape(value: Float64 = ...) -> None: ...",
-            "callback argument 'value' cannot be optional",
+            "callback argument 'value' cannot be both optional and passed by value; "
+            "use a reference dummy so absence has a null-pointer ABI",
         ),
         (
             "def callback_shape() -> Pointer[Float64]: ...",
@@ -67,7 +69,7 @@ def test_source_callback_value_default_and_explicit_reference_are_completed():
         ),
     ],
 )
-def test_callback_descriptor_and_optional_forms_are_blocked_before_codegen(prototype: str, blocker: str):
+def test_unsupported_callback_forms_are_blocked_before_codegen(prototype: str, blocker: str):
     module = parse_pyi_text(
         f"""
 @prototype
@@ -212,6 +214,26 @@ def apply(callback: callback_shape) -> None: ...
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
     assert policy.supported is True
     assert policy.arguments[0].callback.arguments[0].python_action is PythonBarrierAction.SCALAR_VALUE
+
+
+def test_optional_reference_callback_dummy_has_one_null_pointer_presence_decision():
+    module = parse_pyi_text(
+        """
+@prototype
+def callback_shape(value: In(Addr(Int32)) = ...) -> None: ...
+
+def apply(callback: callback_shape = ...) -> None: ...
+""",
+        module_name="optional_callback",
+    )
+
+    complete_semantic_policies(module)
+    policy = completed_function_wrapper_policy(module.functions[0])
+
+    argument = policy.arguments[0]
+    assert argument.optional is True
+    assert argument.callback.arguments[0].optionality is CallbackOptionalityAction.NULL_DATA_POINTER
+    assert argument.callback.prototype.arguments[0].optional is True
 
 
 def test_imported_interface_keeps_its_declaring_module_in_the_completed_identity():

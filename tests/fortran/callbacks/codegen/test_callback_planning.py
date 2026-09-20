@@ -15,6 +15,7 @@ from prik.policy.models import (
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
+    OptionalMode,
 )
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import GeneratedSupportProcedureImplementationOwner, WrapperPlanner
@@ -242,14 +243,24 @@ def test_every_callback_uses_the_shared_generated_abstract_prototype():
     assert "=> transform_callback" not in bridge
 
 
-def test_optional_callback_retains_one_exact_policy_blocker():
+def test_optional_callback_uses_the_ordinary_presence_plan():
     module = pyi_file_to_semantic_module(CONTRACT, module_name="fcallback_all_f90")
     function = next(item for item in module.functions if item.name == "apply_value_callback")
     function.arguments[0].optional = True
     complete_semantic_policies(module)
 
-    with pytest.raises(ValueError, match="unsupported optional callback"):
-        WrapperPlanner().build(module)
+    plan = WrapperPlanner().build(module)
+    argument = _callback_argument(plan, "apply_value_callback")
+
+    assert argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert argument.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert argument.entrypoint.pass_callback_parameter is True
+
+    c_source, bridge = _sources(plan)
+    assert "bound_callback_obj != Py_None ? prik_callback_trampoline_" in c_source
+    assert "if (c_associated(callback)) then" in bridge
+    assert "native_apply_value_callback(callback=prik_callback_adapter_" in bridge
+    assert "native_apply_value_callback(value=value)" in bridge
 
 
 def test_runtime_callback_extents_lower_to_assumed_shape_dummies_and_measured_copies():

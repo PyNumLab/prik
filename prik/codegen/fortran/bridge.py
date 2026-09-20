@@ -28,6 +28,7 @@ from prik.policy.models import (
     ArrayEntrypointABI,
     BridgeDataAction,
     CallbackABIKind,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackTransferAction,
     ClassInvocationKind,
@@ -895,6 +896,8 @@ class FortranBridgeGenerator(ClassVisitor):
             attributes.append("value")
         if transfer.intent is not None:
             attributes.append(f"intent({transfer.intent})")
+        if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+            attributes.append("optional")
         if transfer.abi is not CallbackABIKind.VALUE and transfer.adapter_action in {
             CallbackTransferAction.BORROW_READ_ONLY,
             CallbackTransferAction.BORROW_WRITABLE,
@@ -917,6 +920,14 @@ class FortranBridgeGenerator(ClassVisitor):
         native_imports = self._callback_native_imports(callback)
         adapter_imports = (
             *(("c_loc",) if any(transfer.abi is not CallbackABIKind.VALUE for transfer in callback.arguments) else ()),
+            *(
+                ("c_null_ptr",)
+                if any(
+                    transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER
+                    for transfer in callback.arguments
+                )
+                else ()
+            ),
             *(
                 ("c_f_pointer",)
                 if callback.result.action
@@ -975,50 +986,90 @@ class FortranBridgeGenerator(ClassVisitor):
         }:
             attributes = ["target"]
             if transfer.rank:
-                attributes.append(f"dimension({self._callback_storage_shape(transfer)})")
+                if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+                    attributes.extend(("allocatable", self._array_dimension_attribute(transfer.rank)))
+                else:
+                    attributes.append(f"dimension({self._callback_storage_shape(transfer)})")
             declarations.append(
                 FortranDeclaration(
                     self._callback_storage_name(transfer),
-                    self._callback_native_type(transfer),
+                    self._callback_abi_storage_type(transfer),
                     tuple(attributes),
                 )
             )
+        if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+            if transfer.abi is CallbackABIKind.DATA_AND_SHAPE:
+                declarations.extend(
+                    FortranDeclaration(f"{base}_extent_{axis}", "integer(c_int64_t)") for axis in range(transfer.rank)
+                )
+            elif transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
+                declarations.append(FortranDeclaration(f"{base}_length", "integer(c_int64_t)"))
         return tuple(declarations)
 
     def _callback_transfer_preparation(
         self,
         transfer: CallbackTransferPlan,
-    ) -> tuple[FortranAssignment, ...]:
+    ) -> tuple[FortranAssignment | FortranAllocate | FortranIf, ...]:
         """Copy into call-local storage when selected, then expose its address."""
         if transfer.abi is CallbackABIKind.VALUE:
             return ()
         base = self._callback_parameter_base_name(transfer)
         storage = self._callback_address_source(transfer)
-        statements = []
+        statements: list[FortranAssignment | FortranAllocate] = []
+        if (
+            transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER
+            and transfer.rank
+            and transfer.adapter_action
+            in {
+                CallbackTransferAction.COPY_IN,
+                CallbackTransferAction.COPY_OUT,
+                CallbackTransferAction.COPY_IN_OUT,
+            }
+        ):
+            statements.append(
+                FortranAllocate(
+                    storage,
+                    tuple(CodeExpression(f"size({base}, dim={axis + 1})") for axis in range(transfer.rank)),
+                )
+            )
         if transfer.adapter_action in {
             CallbackTransferAction.COPY_IN,
             CallbackTransferAction.COPY_IN_OUT,
         }:
             statements.append(FortranAssignment(storage, CodeExpression(base)))
         statements.append(FortranAssignment(f"{base}_data", CodeExpression(f"c_loc({storage})")))
-        return tuple(statements)
+        statements.extend(self._callback_optional_metadata_assignments(transfer, storage))
+        if transfer.optionality is CallbackOptionalityAction.REQUIRED:
+            return tuple(statements)
+        initializers = [FortranAssignment(f"{base}_data", CodeExpression("c_null_ptr"))]
+        initializers.extend(self._callback_optional_metadata_initializers(transfer))
+        return (
+            *initializers,
+            FortranIf(CodeExpression(f"present({base})"), body=tuple(statements)),
+        )
 
     def _callback_transfer_writeback(
         self,
         transfer: CallbackTransferPlan,
-    ) -> tuple[FortranAssignment, ...]:
+    ) -> tuple[FortranAssignment | FortranIf, ...]:
         """Copy writable callback storage back to the native dummy exactly once."""
         if transfer.adapter_action not in {
             CallbackTransferAction.COPY_OUT,
             CallbackTransferAction.COPY_IN_OUT,
         }:
             return ()
-        return (
-            FortranAssignment(
-                self._callback_parameter_base_name(transfer),
-                CodeExpression(self._callback_storage_name(transfer)),
-            ),
+        assignment = FortranAssignment(
+            self._callback_parameter_base_name(transfer),
+            CodeExpression(self._callback_storage_name(transfer)),
         )
+        if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+            return (
+                FortranIf(
+                    CodeExpression(f"present({self._callback_parameter_base_name(transfer)})"),
+                    body=(assignment,),
+                ),
+            )
+        return (assignment,)
 
     def _callback_invocation(
         self,
@@ -1052,18 +1103,66 @@ class FortranBridgeGenerator(ClassVisitor):
         if transfer.abi is CallbackABIKind.VALUE:
             return (CodeExpression(base),)
         if transfer.abi is CallbackABIKind.DATA_AND_SHAPE:
+            if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+                return (
+                    CodeExpression(f"{base}_data"),
+                    *(CodeExpression(f"{base}_extent_{axis}") for axis in range(transfer.rank)),
+                )
             storage = self._callback_address_source(transfer)
             return (
                 CodeExpression(f"{base}_data"),
                 *(CodeExpression(f"size({storage}, dim={axis + 1}, kind=c_int64_t)") for axis in range(transfer.rank)),
             )
         if transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
+            if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+                return (CodeExpression(f"{base}_data"), CodeExpression(f"{base}_length"))
             storage = self._callback_address_source(transfer)
             return (
                 CodeExpression(f"{base}_data"),
                 CodeExpression(f"int(len({storage}), kind=c_int64_t)"),
             )
         return (CodeExpression(f"{base}_data"),)
+
+    def _callback_optional_metadata_initializers(
+        self,
+        transfer: CallbackTransferPlan,
+    ) -> tuple[FortranAssignment, ...]:
+        """Initialize metadata paired with an absent callback dummy."""
+        base = self._callback_parameter_base_name(transfer)
+        if transfer.abi is CallbackABIKind.DATA_AND_SHAPE:
+            return tuple(
+                FortranAssignment(f"{base}_extent_{axis}", CodeExpression("0_c_int64_t"))
+                for axis in range(transfer.rank)
+            )
+        if transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
+            return (FortranAssignment(f"{base}_length", CodeExpression("0_c_int64_t")),)
+        return ()
+
+    def _callback_optional_metadata_assignments(
+        self,
+        transfer: CallbackTransferPlan,
+        storage: str,
+    ) -> tuple[FortranAssignment, ...]:
+        """Measure metadata only after an optional callback dummy is present."""
+        if transfer.optionality is CallbackOptionalityAction.REQUIRED:
+            return ()
+        base = self._callback_parameter_base_name(transfer)
+        if transfer.abi is CallbackABIKind.DATA_AND_SHAPE:
+            return tuple(
+                FortranAssignment(
+                    f"{base}_extent_{axis}",
+                    CodeExpression(f"size({storage}, dim={axis + 1}, kind=c_int64_t)"),
+                )
+                for axis in range(transfer.rank)
+            )
+        if transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
+            return (
+                FortranAssignment(
+                    f"{base}_length",
+                    CodeExpression(f"int(len({storage}), kind=c_int64_t)"),
+                ),
+            )
+        return ()
 
     def _callback_result_declarations(
         self,
@@ -1134,6 +1233,8 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _callback_native_type(self, transfer: CallbackTransferPlan) -> str:
         """Return one typed native callback value without selecting behavior."""
+        if transfer.native_fortran_type is not None:
+            return transfer.native_fortran_type
         if transfer.abi is CallbackABIKind.DERIVED_ADDRESS:
             if transfer.derived_backend_symbol is None:
                 raise ValueError(f"Callback derived transfer {transfer.owner_path!r} has no backend symbol")
@@ -1141,6 +1242,12 @@ class FortranBridgeGenerator(ClassVisitor):
         if transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
             return f"character(kind=c_char, len={transfer.character_length})"
         return PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name).fortran_spelling
+
+    def _callback_abi_storage_type(self, transfer: CallbackTransferPlan) -> str:
+        """Return the interoperable storage type selected for the C trampoline."""
+        if transfer.native_fortran_type is not None:
+            return PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name).fortran_spelling
+        return self._callback_native_type(transfer)
 
     @staticmethod
     def _callback_parameter_base_name(transfer: CallbackTransferPlan) -> str:
@@ -3726,7 +3833,15 @@ class FortranBridgeGenerator(ClassVisitor):
     def _lower_argument(self, plan: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Dispatch one completed bridge optional mode explicitly."""
         if plan.callback is not None:
-            return ()
+            if not plan.entrypoint.pass_callback_parameter:
+                return ()
+            return (
+                FortranParameter(
+                    plan.entrypoint.parameter_name,
+                    "type(c_funptr)",
+                    ("value",),
+                ),
+            )
         mode = plan.entrypoint.optional_mode
         if plan.object_kind is ObjectKind.DERIVED_TYPE:
             return self._lower_derived_argument(plan, mode)
@@ -4672,6 +4787,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _presence_condition(self, plan: ArgumentTransferPlan) -> str:
         """Return the local C-pointer association condition for one nullable entrypoint argument."""
         name = plan.entrypoint.parameter_name
+        if plan.callback is not None:
+            return f"c_associated({name})"
         if plan.derived_call is not None:
             return f"bound_{name}_access /= 0_c_int"
         handle = plan.native_array_handle
@@ -4695,6 +4812,8 @@ class FortranBridgeGenerator(ClassVisitor):
             return ()
         action = plan.bridge.data_action
         match action:
+            case BridgeDataAction.DIRECT_TRANSFER:
+                return ()
             case BridgeDataAction.ASSOCIATE_VIEW:
                 return self._prepare_present_associated_view(plan)
             case BridgeDataAction.COPY_REPRESENTATION:
@@ -4810,6 +4929,8 @@ class FortranBridgeGenerator(ClassVisitor):
         argument: ArgumentTransferPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Return optional helper declarations for one completed handoff."""
+        if argument.callback is not None:
+            return ()
         handle = argument.native_array_handle
         if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
             if handle.owner_type_name is None:
@@ -8401,6 +8522,8 @@ class FortranBridgeGenerator(ClassVisitor):
             attributes.append("value")
         if argument.intent is not None:
             attributes.append(f"intent({argument.intent})")
+        if argument.optional:
+            attributes.append("optional")
         if argument.rank:
             attributes.append(f"dimension({self._procedure_prototype_shape(argument.array, argument.owner_path)})")
         return FortranParameter(
@@ -8424,6 +8547,8 @@ class FortranBridgeGenerator(ClassVisitor):
         value: ProcedurePrototypeArgumentPlan | ProcedurePrototypeResultPlan,
     ) -> str:
         """Return the native type shared by callback and direct prototype uses."""
+        if isinstance(value, ProcedurePrototypeArgumentPlan) and value.native_fortran_type is not None:
+            return value.native_fortran_type
         if value.derived_backend_symbol is not None:
             return f"type({self._derived_native_alias(value.derived_backend_symbol)})"
         if value.semantic_type_name == "String":
@@ -9395,6 +9520,11 @@ class FortranBridgeGenerator(ClassVisitor):
             for operation in plan.entrypoint.support_procedures
             for parameter in operation.signature.parameters
         )
+        callback_parameters = any(
+            argument.entrypoint.pass_callback_parameter
+            for function in self._functions(plan)
+            for argument in function.arguments
+        )
         module_descriptors = any(self._uses_module_descriptor_backend(variable) for variable in self._variables(plan))
         field_descriptors = any(
             field.access
@@ -9405,7 +9535,7 @@ class FortranBridgeGenerator(ClassVisitor):
             for derived in self._derived_types(plan)
             for field in derived.fields
         )
-        return support_callbacks or module_descriptors or field_descriptors
+        return support_callbacks or callback_parameters or module_descriptors or field_descriptors
 
     def _uses_derived_interop_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed derived call or module-variable actions require derived interop support."""

@@ -186,6 +186,38 @@ end subroutine standalone_case
     assert standalone_callback.metadata["return"].name == "Int32"
 
 
+def test_optional_callback_presence_round_trips_through_one_contract_spelling():
+    source = """
+module optional_callbacks
+  abstract interface
+    subroutine report(value, status)
+      integer, intent(in) :: value
+      integer, intent(in), optional :: status
+    end subroutine report
+  end interface
+contains
+  subroutine run(callback)
+    procedure(report), optional :: callback
+  end subroutine run
+end module optional_callbacks
+"""
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+    complete_python_export_policy(module)
+
+    callback = get_function(module, "run").arguments[0]
+    assert callback.optional is True
+    assert callback.semantic_type.metadata["callback_arguments"][1].optional is True
+
+    contract = emit_module(module)
+    assert "status: In(Addr(Int32)) = ..." in contract
+    assert "callback: report = ..." in contract
+
+    reloaded = parse_pyi_text(contract, module_name="optional_callbacks")
+    reloaded_callback = get_function(reloaded, "run").arguments[0]
+    assert reloaded_callback.optional is True
+    assert reloaded_callback.semantic_type.metadata["callback_arguments"][1].optional is True
+
+
 def test_duplicate_interface_signatures_emit_one_named_callback_prototype():
     source = """
 module duplicate_prototypes

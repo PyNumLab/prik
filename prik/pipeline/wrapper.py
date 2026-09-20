@@ -2677,7 +2677,10 @@ class WrapperGenerator:
         adapter = slot.adapter
         if adapter is None:
             return (self._diagnostic(plan.owner_path, "missing-argument-adapter-facet", None),)
-        if plan.entrypoint.pass_callback_parameter:
+        expected_callback_parameter = bool(
+            plan.callback is not None and plan.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
+        )
+        if plan.entrypoint.pass_callback_parameter is not expected_callback_parameter:
             diagnostics.append(
                 self._diagnostic(
                     plan.owner_path,

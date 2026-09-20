@@ -30,6 +30,7 @@ from prik.policy.models import (
     ArrayEntrypointABI,
     ArrayPythonLayout,
     CallbackABIKind,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackTransferAction,
     ClassConstructorKind,
@@ -1018,6 +1019,40 @@ class CBindingGenerator(ClassVisitor):
         target: str,
     ) -> tuple:
         """Dispatch one completed Python projection into a small conversion leaf."""
+        if transfer.optionality is CallbackOptionalityAction.NULL_DATA_POINTER:
+            present_target = f"{target}_present"
+            present_nodes = self._callback_required_python_argument_nodes(
+                callback,
+                transfer,
+                position,
+                present_target,
+            )
+            base = self._callback_parameter_base_name(transfer)
+            return (
+                CDeclaration(target, "PyObject *", CodeExpression("NULL")),
+                CIf(
+                    CodeExpression(f"{base}_data == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
+                        CExpressionStatement(CodeExpression(f"{target} = Py_None")),
+                    ),
+                    else_body=(
+                        *present_nodes,
+                        CExpressionStatement(CodeExpression(f"{target} = {present_target}")),
+                    ),
+                ),
+                self._callback_abort_if_null(callback, target, "failed to convert callback argument"),
+            )
+        return self._callback_required_python_argument_nodes(callback, transfer, position, target)
+
+    def _callback_required_python_argument_nodes(
+        self,
+        callback: CallbackHandoffPlan,
+        transfer: CallbackTransferPlan,
+        position: int,
+        target: str,
+    ) -> tuple:
+        """Project one callback dummy whose data pointer is known to be present."""
         match transfer.python_action:
             case PythonBarrierAction.SCALAR_VALUE:
                 nodes = self._callback_scalar_value_nodes(transfer, target)
@@ -6873,10 +6908,19 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CIf, ...]:
         """Validate an immediate Python callable before any context is retained."""
         names = context.arguments[plan.owner_path]
+        optional = plan.binding.optional_mode is OptionalMode.NULLABLE_VALUE
         return (
-            CDeclaration(names.object_name, "PyObject *"),
+            CDeclaration(
+                names.object_name,
+                "PyObject *",
+                CodeExpression("Py_None") if optional else None,
+            ),
             CIf(
-                CodeExpression(f"!PyCallable_Check({names.object_name})"),
+                CodeExpression(
+                    f"{names.object_name} != Py_None && !PyCallable_Check({names.object_name})"
+                    if optional
+                    else f"!PyCallable_Check({names.object_name})"
+                ),
                 body=(
                     CExpressionStatement(
                         CodeExpression(
@@ -6897,6 +6941,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 self._callback_context_name(argument),
                 argument.callback.binding.context_type_symbol,
+                CodeExpression("{0}"),
             )
             for argument in plan.arguments
             if argument.callback is not None
@@ -6906,13 +6951,13 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
-    ) -> tuple[CExpressionStatement, ...]:
+    ) -> tuple[CExpressionStatement | CIf, ...]:
         """Retain callables and publish each stack context immediately before entry."""
-        return tuple(
-            node
-            for argument in plan.arguments
-            if argument.callback is not None
-            for node in (
+        nodes = []
+        for argument in plan.arguments:
+            if argument.callback is None:
+                continue
+            body = (
                 CExpressionStatement(
                     CodeExpression(
                         f"{self._callback_context_name(argument)}.callable = "
@@ -6938,18 +6983,22 @@ class CBindingGenerator(ClassVisitor):
                     )
                 ),
             )
-        )
+            if argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE:
+                name = context.arguments[argument.owner_path].object_name
+                nodes.append(CIf(CodeExpression(f"{name} != Py_None"), body=body))
+            else:
+                nodes.extend(body)
+        return tuple(nodes)
 
     def _callback_context_pop_nodes(
         self,
         plan: FunctionPlan,
-    ) -> tuple[CExpressionStatement, ...]:
+    ) -> tuple[CExpressionStatement | CIf, ...]:
         """Restore nested stacks and release retained objects in reverse order."""
         arguments = tuple(argument for argument in plan.arguments if argument.callback is not None)
-        return tuple(
-            node
-            for argument in reversed(arguments)
-            for node in (
+        nodes = []
+        for argument in reversed(arguments):
+            body = (
                 CExpressionStatement(
                     CodeExpression(
                         f"{argument.callback.binding.context_current_symbol} = "
@@ -6961,7 +7010,16 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 CExpressionStatement(CodeExpression(f"Py_DECREF({self._callback_context_name(argument)}.callable)")),
             )
-        )
+            if argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE:
+                nodes.append(
+                    CIf(
+                        CodeExpression(f"{self._callback_context_name(argument)}.callable != NULL"),
+                        body=body,
+                    )
+                )
+            else:
+                nodes.extend(body)
+        return tuple(nodes)
 
     @staticmethod
     def _callback_context_name(argument: ArgumentTransferPlan) -> str:
@@ -14002,7 +14060,10 @@ class CBindingGenerator(ClassVisitor):
         if plan.callback is not None:
             if not plan.entrypoint.pass_callback_parameter:
                 return ()
-            return (plan.callback.entrypoint.support_procedure.symbol_name,)
+            symbol = plan.callback.entrypoint.support_procedure.symbol_name
+            if plan.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE:
+                return (f"{names.object_name} != Py_None ? {symbol} : NULL",)
+            return (symbol,)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
             return self._string_entrypoint_argument_values(plan, names, passing=passing)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:

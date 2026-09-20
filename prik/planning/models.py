@@ -41,6 +41,7 @@ from prik.policy.models import (
     CallbackFatalAction,
     CallbackGILAction,
     CallbackLifecycleAction,
+    CallbackOptionalityAction,
     CallbackResultAction,
     CallbackThreadAction,
     CallbackTransferAction,
@@ -1134,9 +1135,11 @@ class ProcedurePrototypeArgumentPlan(StageRecord):
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     rank: int
     passed_by_value: bool
     intent: str | None
+    optional: bool
     character_length: int | None
     array: ArrayHandoffPlan | None
     derived_type_identity: tuple[str, str] | None
@@ -1184,10 +1187,12 @@ class CallbackTransferPlan(StageRecord):
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     object_kind: ObjectKind
     rank: int
     passed_by_value: bool
     intent: str | None
+    optionality: CallbackOptionalityAction
     abi: CallbackABIKind
     adapter_action: CallbackTransferAction
     python_action: PythonBarrierAction

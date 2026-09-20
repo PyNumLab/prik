@@ -273,6 +273,14 @@ class CallbackTransferAction(str, Enum):
     BORROW_WRITABLE = "borrow_writable"
 
 
+class CallbackOptionalityAction(str, Enum):
+    """Completed presence ABI for one callback dummy."""
+
+    REQUIRED = "required"
+    NULL_DATA_POINTER = "null_data_pointer"
+    BLOCKED = "blocked"
+
+
 class CallbackResultAction(str, Enum):
     """Typed result conversion performed by one callback trampoline."""
 
@@ -1045,9 +1053,11 @@ class ProcedurePrototypeArgumentPolicy:
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     rank: int
     passed_by_value: bool
     intent: str | None
+    optional: bool
     character_length: int | None
     array: ArrayHandoffPolicy | None
     derived_type_identity: tuple[str, str] | None
@@ -1235,10 +1245,12 @@ class CallbackTransferPolicy:
     owner_path: str
     name: str
     semantic_type_name: str
+    native_fortran_type: str | None
     object_kind: ObjectKind
     rank: int
     passed_by_value: bool
     intent: str | None
+    optionality: CallbackOptionalityAction
     abi: CallbackABIKind
     adapter_action: CallbackTransferAction
     python_action: PythonBarrierAction

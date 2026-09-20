@@ -7,6 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Optional Fortran callbacks and optional reference dummies inside callback
+  interfaces preserve `PRESENT()` through source and generated-contract builds.
+
 - A build named after one of its source modules -- the CLI's default, taken
   from the first source -- no longer renames a type another of its modules
   uses privately. Completing the merged build counted that use as an import,

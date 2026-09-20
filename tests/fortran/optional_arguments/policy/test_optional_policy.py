@@ -115,7 +115,7 @@ def alloc_state(value: Float64 | None) -> Int32: ...
     assert value.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
 
 
-def test_optional_passed_procedure_is_blocked_before_codegen():
+def test_optional_value_callback_dummy_is_blocked_before_codegen():
     module = parse_pyi_text(
         """
 @prototype
@@ -131,4 +131,7 @@ def apply(callback: callback_shape) -> None: ...
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
     assert isinstance(policy, FunctionWrapperPolicy)
     assert policy.supported is False
-    assert "callback argument 'value' cannot be optional" in policy.blockers
+    assert (
+        "callback argument 'value' cannot be both optional and passed by value; "
+        "use a reference dummy so absence has a null-pointer ABI"
+    ) in policy.blockers

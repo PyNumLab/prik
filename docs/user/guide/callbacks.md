@@ -79,6 +79,22 @@ api.apply(lambda value: np.float64(3.0 * value), np.float64(2.5))
 
 The lambda receives converted Python objects, not `Addr(...)` markers.
 
+Optional procedure dummies use the same Python spelling as other optional
+arguments. Omit the callable or pass `None` to make Fortran observe
+`present(callback) == .false.`:
+
+```python
+api.run(np.int32(4))
+api.run(np.int32(4), None)
+api.run(np.int32(4), report)
+```
+
+Optional dummies inside a callback prototype arrive at the Python callable as
+`None` when the native callback invocation omits them. The callable keeps the
+prototype's full positional argument list, so one callable such as
+`report(value, status=None)` handles both `call report(value)` and
+`call report(value, status)`.
+
 ---
 
 ## Small Example
@@ -309,10 +325,6 @@ The current callback contract does not support:
 - Stored callbacks, persistent callbacks, procedure pointers, or callbacks
   invoked after the wrapped call returns. Pass the callable into each wrapped
   call that needs it.
-- Optional callback procedure arguments. Expose a separate native entry point
-  for the no-callback path, or require the callback argument.
-- Optional arguments inside a `@prototype`. Pass an explicit value, sentinel, or
-  presence flag instead.
 - Pure callback prototypes. A Python callback adapter calls the Python runtime,
   so it cannot satisfy a pure Fortran procedure contract. In particular, one
   pure prototype cannot be used both as a callback annotation and as a called
@@ -323,6 +335,8 @@ The current callback contract does not support:
 - Arrays passed by Fortran `value`, arrays of derived values, and array callback
   results without a complete fixed shape. Pass arrays by reference and give array
   results an exact primitive shape; an array *argument* may be assumed-shape.
+- Optional callback dummies passed by `value`. Use a reference dummy so absence
+  has a C-interoperable null-pointer representation.
 - Variable-length callback strings. Use a fixed positive `String[n]` length.
 - Callback execution on a different Python thread. The callback must run on the
   same thread that entered the wrapper.
