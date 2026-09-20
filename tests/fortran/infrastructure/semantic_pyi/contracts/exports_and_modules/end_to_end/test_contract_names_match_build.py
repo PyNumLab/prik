@@ -11,19 +11,12 @@ from tests.fortran._support.wrapper_build import _build_inline_pyi_contract_modu
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 # A module variable and a module procedure whose source names both want the
 # Python name `lambda_`. The collision crosses declaration categories, so any
 # stage naming them in a different order settles the pair the other way round.
-CROSS_CATEGORY_COLLISION = """
-module collide_mod
-  implicit none
-  integer :: lambda = 7
-contains
-  integer function lambda_()
-    lambda_ = 1
-  end function lambda_
-end module collide_mod
-"""
+CROSS_CATEGORY_COLLISION = (NATIVE_FIXTURES / "cross_category_collision.f90").read_text(encoding="utf-8")
 
 
 def _declared_names(contract: Path) -> dict[str, str]:

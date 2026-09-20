@@ -12,17 +12,9 @@ from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-BIND_C_LABEL_SOURCE = """
-module label_mod
-  use iso_c_binding, only : c_int
-  implicit none
-contains
-  subroutine scale(x) bind(C, name="SCALE")
-    integer(c_int), intent(inout) :: x
-    x = x * 3
-  end subroutine scale
-end module label_mod
-"""
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
+BIND_C_LABEL_SOURCE = (NATIVE_FIXTURES / "bind_c_label_case.f90").read_text(encoding="utf-8")
 
 
 def test_bind_c_label_keeps_its_exact_spelling_through_a_generated_contract(tmp_path: Path):

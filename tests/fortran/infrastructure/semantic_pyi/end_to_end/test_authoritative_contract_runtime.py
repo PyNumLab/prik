@@ -20,6 +20,8 @@ SOURCE = FIXTURES / "native" / "contract_mixed_module_external.f90"
 EXPECTED_CONTRACT = FIXTURES / "contracts" / "contract_mixed_module_external" / "generated"
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 
 def _import_extension(module_name: str, build_dir: Path):
     sys.modules.pop(module_name, None)
@@ -97,22 +99,7 @@ def test_generated_contract_rebuilds_without_native_source_fallback(compiled_con
     assert module.external_double(np.int32(4)) == np.int32(8)
 
 
-WILDCARD_SOURCE = """\
-module wild_home
-  implicit none
-contains
-  subroutine one(value, out)
-    integer, intent(in) :: value
-    integer, intent(out) :: out
-    out = value + 1
-  end subroutine one
-  subroutine two(value, out)
-    integer, intent(in) :: value
-    integer, intent(out) :: out
-    out = value + 2
-  end subroutine two
-end module wild_home
-"""
+WILDCARD_SOURCE = (NATIVE_FIXTURES / "wildcard_home.f90").read_text(encoding="utf-8")
 
 
 def _wildcard_contracts(tmp_path: Path, consumer: str) -> Path:

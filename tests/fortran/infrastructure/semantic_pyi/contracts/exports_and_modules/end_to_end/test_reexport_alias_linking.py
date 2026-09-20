@@ -14,29 +14,13 @@ from tests.fortran._support.wrapper_build import _import_from_build_dir
 
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+
 # Neither procedure takes an argument, returns a result, or touches a derived
 # type or module variable, so the alias is the module's only helper use.
-HOME = """\
-module alias_home
-  implicit none
-contains
-  subroutine target()
-  end subroutine target
-end module alias_home
-"""
+HOME = (NATIVE_FIXTURES / "reexport_home.f90").read_text(encoding="utf-8")
 
-FACADE = """\
-module alias_facade
-  use alias_home, only : lambda => target
-  implicit none
-  public :: lambda
-
-contains
-
-  subroutine lambda_()
-  end subroutine lambda_
-end module alias_facade
-"""
+FACADE = (NATIVE_FIXTURES / "reexport_facade.f90").read_text(encoding="utf-8")
 
 
 def test_an_alias_is_the_only_helper_a_module_needs(tmp_path: Path):

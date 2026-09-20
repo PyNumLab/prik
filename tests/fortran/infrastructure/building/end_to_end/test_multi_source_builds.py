@@ -22,55 +22,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACT_FIXTURES = FIXTURES / "contracts" / "multiple_files"
 COMBINED_MODULES_GENERATED = CONTRACT_FIXTURES / "combined_modules"
 pytestmark = pytest.mark.fortran_end_to_end
+
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 FIRST_API_SOURCE = FIXTURES / "native" / "first_api.f90"
 SECOND_API_SOURCE = FIXTURES / "native" / "second_api.f90"
 STANDALONE_API_SOURCE = FIXTURES / "native" / "standalone_api.f"
 DOUBLE_VALUE_SOURCE = FIXTURES / "native" / "double_value.f"
-FIRST_COMBINED_SOURCE = """\
-module first_math
-contains
-integer function add_one(value) result(out)
-  integer, intent(in) :: value
-  out = value + 1
-end function add_one
-end module first_math
-
-module shared_types
-  type :: box
-    integer :: value
-  end type box
-contains
-function make_box(value) result(out)
-  integer, intent(in) :: value
-  type(box) :: out
-  out%value = value
-end function make_box
-end module shared_types
-"""
-SECOND_COMBINED_SOURCE = """\
-module second_math
-  use first_math, only: add_one
-contains
-integer function double_after_add(value) result(out)
-  integer, intent(in) :: value
-  out = 2 * add_one(value)
-end function double_after_add
-end module second_math
-
-module box_ops
-  use shared_types, only: box
-contains
-integer function box_value(item) result(out)
-  type(box), intent(in) :: item
-  out = item%value
-end function box_value
-function boxed(value) result(out)
-  integer, intent(in) :: value
-  type(box) :: out
-  out%value = value
-end function boxed
-end module box_ops
-"""
+FIRST_COMBINED_SOURCE = (NATIVE_FIXTURES / "first_combined.f90").read_text(encoding="utf-8")
+SECOND_COMBINED_SOURCE = (NATIVE_FIXTURES / "second_combined.f90").read_text(encoding="utf-8")
 
 
 def _source_text(path: Path) -> str:
@@ -472,31 +431,7 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
         sys.path.remove(str(tmp_path))
 
 
-REEXPORT_OWNERSHIP_SOURCE = """\
-module owner_mod
-  implicit none
-contains
-  subroutine scale_twice(value, scaled)
-    integer, intent(in) :: value
-    integer, intent(out) :: scaled
-    scaled = value * 2
-  end subroutine scale_twice
-end module owner_mod
-
-module facade_mod
-  use owner_mod, only : scale_twice
-  implicit none
-  private
-  public :: scale_twice
-end module facade_mod
-
-module renaming_mod
-  use owner_mod, only : doubled => scale_twice
-  implicit none
-  private
-  public :: doubled
-end module renaming_mod
-"""
+REEXPORT_OWNERSHIP_SOURCE = (NATIVE_FIXTURES / "reexport_ownership.f90").read_text(encoding="utf-8")
 
 
 def _entry_listing(package: Path, modules: list[str]) -> None:
