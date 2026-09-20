@@ -19,46 +19,10 @@ MODULE_VARIABLES_F90_SOURCE = FIXTURES / "native" / "fmodule_vars_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-MODULE_VARIABLE_REEXPORT_SOURCE = """
-module reexport_state_home
-  use iso_fortran_env, only: int32, real64
-  implicit none
 
-  type :: item
-    integer(int32) :: value = 0
-  end type item
-
-  integer(int32), parameter :: limit = 7
-  integer(int32) :: counter = 3
-  integer(int32) :: numbers(3)
-  real(real64), allocatable :: values(:)
-  real(real64), target :: backing(3)
-  real(real64), pointer :: selected(:) => null()
-  type(item) :: current
-  type(item), allocatable :: optional_item
-
-contains
-
-  subroutine setup()
-    numbers = [1, 2, 3]
-    if (.not. allocated(values)) allocate(values(3))
-    values = [4.0_real64, 5.0_real64, 6.0_real64]
-    backing = [7.0_real64, 8.0_real64, 9.0_real64]
-    selected => backing
-    current%value = 10
-    if (.not. allocated(optional_item)) allocate(optional_item)
-    optional_item%value = 11
-  end subroutine setup
-end module reexport_state_home
-
-module reexport_state_facade
-  use reexport_state_home, only: limit, counter, numbers, values, selected, current, optional_item
-  implicit none
-  private
-  public :: limit, counter, numbers, values, selected, current, optional_item
-end module reexport_state_facade
-"""
+MODULE_VARIABLE_REEXPORT_SOURCE = (NATIVE_FIXTURES / "module_variable_reexports.f90").read_text(encoding="utf-8")
 
 
 def _module_variables_build_dir(tmp_path: Path, build_mode: str) -> Path:
@@ -169,38 +133,7 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert second_module.black.r == np.int32(0)
 
 
-PLAIN_MODULE_ARRAY_SOURCE = """
-module fplain_module_arrays_f90
-  use iso_fortran_env, only: int32, real64
-  implicit none
-  real(real64) :: grid(2, 3)
-  integer(int32) :: counts(3) = [7, 8, 9]
-  character(len=5) :: labels(2) = ['alpha', 'bravo']
-  real(real64), target :: addressable(2) = [1.0d0, 2.0d0]
-contains
-  subroutine bump()
-    grid(1, 1) = grid(1, 1) + 1.0d0
-  end subroutine bump
-
-  function read_grid(row, column) result(value)
-    integer(int32), intent(in) :: row, column
-    real(real64) :: value
-    value = grid(row, column)
-  end function read_grid
-
-  function read_count(index) result(value)
-    integer(int32), intent(in) :: index
-    integer(int32) :: value
-    value = counts(index)
-  end function read_count
-
-  function read_label(index) result(value)
-    integer(int32), intent(in) :: index
-    character(len=5) :: value
-    value = labels(index)
-  end function read_label
-end module fplain_module_arrays_f90
-"""
+PLAIN_MODULE_ARRAY_SOURCE = (NATIVE_FIXTURES / "fplain_module_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_fixed_module_arrays_without_target_expose_the_same_live_view(tmp_path: Path):
@@ -255,29 +188,7 @@ def test_fixed_module_arrays_without_target_expose_the_same_live_view(tmp_path: 
             setattr(module, name, np.zeros(2))
 
 
-CHARACTER_MODULE_ARRAY_SOURCE = """
-module fchar_module_arrays_f90
-  implicit none
-  character(len=8), target :: labels(3) = ['alpha   ', 'beta    ', 'gamma   ']
-  character(len=4), target :: grid(2, 2) = reshape(['aa  ', 'bb  ', 'cc  ', 'dd  '], [2, 2])
-contains
-  subroutine relabel_first()
-    labels(1) = 'ALPHA!!!'
-  end subroutine relabel_first
-
-  function read_label(index) result(value)
-    integer(4), intent(in) :: index
-    character(len=8) :: value
-    value = labels(index)
-  end function read_label
-
-  function read_grid(row, column) result(value)
-    integer(4), intent(in) :: row, column
-    character(len=4) :: value
-    value = grid(row, column)
-  end function read_grid
-end module fchar_module_arrays_f90
-"""
+CHARACTER_MODULE_ARRAY_SOURCE = (NATIVE_FIXTURES / "fchar_module_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path: Path):
@@ -315,23 +226,7 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
     assert module.read_grid(np.int32(2), np.int32(1)) == "ZZ  "
 
 
-CHARACTER_MODULE_SCALAR_SOURCE = """
-module fchar_module_scalars_f90
-  implicit none
-  character(len=8) :: label = 'alpha   '
-  character(len=3) :: code = 'abc'
-  character(len=*), parameter :: tag = 'fixed'
-contains
-  subroutine relabel()
-    label = 'ALPHA!!!'
-  end subroutine relabel
-
-  function read_label() result(value)
-    character(len=8) :: value
-    value = label
-  end function read_label
-end module fchar_module_scalars_f90
-"""
+CHARACTER_MODULE_SCALAR_SOURCE = (NATIVE_FIXTURES / "fchar_module_scalars_f90.f90").read_text(encoding="utf-8")
 
 
 def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
@@ -389,34 +284,7 @@ def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: s
     assert module.code == "abc"
 
 
-CHARACTER_MODULE_DESCRIPTOR_SOURCE = """
-module fchar_module_descriptors_f90
-  implicit none
-  character(len=:), allocatable :: deferred
-  character(len=6), allocatable :: fixed
-  character(len=:), pointer :: link => null()
-  character(len=6), target :: store = 'STORED'
-  character(len=2), parameter :: pair(2) = ['ab', 'cd']
-  character(len=3), parameter :: grid(2, 2) = reshape(['aaa', 'bbb', 'ccc', 'ddd'], [2, 2])
-  character(len=*), parameter :: inferred(3) = ['alpha', 'beta ', 'gamma']
-contains
-  subroutine setup()
-    deferred = 'alpha'
-    fixed = 'FIXEDV'
-    link => store
-  end subroutine setup
-
-  subroutine grow()
-    deferred = deferred // '-more'
-  end subroutine grow
-
-  subroutine clear()
-    if (allocated(deferred)) deallocate(deferred)
-    if (allocated(fixed)) deallocate(fixed)
-    nullify(link)
-  end subroutine clear
-end module fchar_module_descriptors_f90
-"""
+CHARACTER_MODULE_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90").read_text(encoding="utf-8")
 
 
 def _character_descriptor_module(tmp_path: Path):
@@ -503,28 +371,7 @@ def test_assumed_length_character_parameter_array_reports_its_inferred_width(tmp
     )
 
 
-DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = """
-module fchar_declared_arrays_f90
-  implicit none
-  character(len=4), allocatable :: fixed_alloc(:)
-  character(len=:), pointer :: deferred_ptr(:) => null()
-  character(len=4), pointer :: fixed_ptr(:) => null()
-  character(len=4), target :: store(2) = ['aaaa', 'bbbb']
-contains
-  subroutine setup()
-    allocate(fixed_alloc(2))
-    fixed_alloc = ['xxxx', 'yyyy']
-    fixed_ptr => store
-    deferred_ptr => store
-  end subroutine setup
-
-  subroutine allocate_deferred()
-    if (associated(deferred_ptr)) nullify(deferred_ptr)
-    allocate(character(len=6) :: deferred_ptr(3))
-    deferred_ptr = ['a     ', 'bb    ', 'ccc   ']
-  end subroutine allocate_deferred
-end module fchar_declared_arrays_f90
-"""
+DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = (NATIVE_FIXTURES / "fchar_declared_arrays_f90.f90").read_text(encoding="utf-8")
 
 
 def test_declared_length_character_module_arrays_compile_and_expose_their_width(tmp_path: Path):
@@ -579,87 +426,7 @@ def test_declared_length_character_module_arrays_compile_and_expose_their_width(
     assert module.deferred_ptr.shape is None
 
 
-REEXPORT_SOURCE = """
-module reexport_home_mod
-  implicit none
-contains
-  subroutine scale_value(value, scaled)
-    integer, intent(in) :: value
-    integer, intent(out) :: scaled
-    scaled = value * 2
-  end subroutine scale_value
-end module reexport_home_mod
-
-module reexport_facade_mod
-  use reexport_home_mod, only : scale_value
-  implicit none
-  private
-  public :: scale_value
-end module reexport_facade_mod
-
-module reexport_default_mod
-  use reexport_home_mod
-  implicit none
-end module reexport_default_mod
-
-module reexport_shout_mod
-  implicit none
-contains
-  subroutine SCALE_LOUD(value, scaled)
-    integer, intent(in) :: value
-    integer, intent(out) :: scaled
-    scaled = value * 3
-  end subroutine SCALE_LOUD
-end module reexport_shout_mod
-
-module reexport_case_mod
-  use reexport_shout_mod, only : SCALE_LOUD
-  implicit none
-  private
-  public :: SCALE_LOUD
-end module reexport_case_mod
-
-module reexport_renamed_mod
-  use reexport_home_mod, only : public_scale => scale_value
-  implicit none
-  private
-  public :: public_scale
-end module reexport_renamed_mod
-
-module reexport_wildcard_mod
-  use reexport_home_mod
-  implicit none
-  private
-  public :: scale_value
-end module reexport_wildcard_mod
-
-module reexport_hop_mod
-  use reexport_facade_mod, only : scale_value
-  implicit none
-  private
-  public :: scale_value
-end module reexport_hop_mod
-
-module reexport_collide_mod
-  implicit none
-contains
-  subroutine lambda(x)
-    integer, intent(inout) :: x
-    x = x + 1
-  end subroutine lambda
-  subroutine lambda_(x)
-    integer, intent(inout) :: x
-    x = x + 100
-  end subroutine lambda_
-end module reexport_collide_mod
-
-module reexport_collide_user_mod
-  use reexport_collide_mod, only : lambda_
-  implicit none
-  private
-  public :: lambda_
-end module reexport_collide_user_mod
-"""
+REEXPORT_SOURCE = (NATIVE_FIXTURES / "reexport.f90").read_text(encoding="utf-8")
 
 
 def test_module_variable_reexports_share_one_native_entity_from_source_and_contract(
