@@ -2165,7 +2165,7 @@ class WrapperPlanner(ClassVisitor):
         """Return the explicit optional or descriptor presence handoff role."""
         if native_array_handle is not None:
             return native_array_handle.handoff.presence_role
-        if policy.optional_mode is OptionalMode.DESCRIPTOR:
+        if policy.entrypoint_pass_descriptor_presence:
             return f"{policy.owner_path}:present"
         return None
 

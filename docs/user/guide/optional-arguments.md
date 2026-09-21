@@ -137,6 +137,8 @@ Result:
 - Providing a concrete value makes the argument **present**.
 - Use **keyword arguments** when skipping earlier optional parameters.
 - Optional arrays and derived types also accept `None` to indicate absence.
+- Optional assumed-rank arrays accept ranks 1 through 15 when present; omission
+  and `None` preserve `present(...) == .false.`.
 - Optional `intent(out)` / `intent(inout)` arguments remain visible in Python
   so you can control `present(...)`.
 - An optional argument without `intent` uses the same conservative

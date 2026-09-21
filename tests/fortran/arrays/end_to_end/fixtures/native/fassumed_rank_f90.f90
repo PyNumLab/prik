@@ -1,6 +1,16 @@
 
 module fassumed_rank_f90
 contains
+  integer function optional_rank(values) result(observed)
+    real(8), intent(in), optional :: values(..)
+
+    if (present(values)) then
+      observed = rank(values)
+    else
+      observed = -1
+    end if
+  end function optional_rank
+
   real(8) function rank_weighted_sum(values) result(total)
     real(8), intent(in) :: values(..)
 

@@ -57,6 +57,15 @@ def test_assumed_rank_arguments_dispatch_to_runtime_rank(
         module.rank_weighted_sum(rank16)
 
 
+def test_optional_assumed_rank_preserves_fortran_presence(assumed_rank_module):
+    module = assumed_rank_module
+
+    assert module.optional_rank() == -1
+    assert module.optional_rank(None) == -1
+    assert module.optional_rank(np.ones(3, dtype=np.float64)) == 1
+    assert module.optional_rank(np.ones((2, 3), dtype=np.float64, order="F")) == 2
+
+
 def test_assumed_rank_bridge_dispatches_each_runtime_rank_argument(
     assumed_rank_module,
 ):

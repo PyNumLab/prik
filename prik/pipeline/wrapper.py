@@ -63,6 +63,7 @@ from prik.policy.models import (
     DerivedWriteback,
     DeclarationCallableAction,
     DirectResultABI,
+    EntrypointOptionalityAction,
     EntrypointPassingConvention,
     LifecycleOperation,
     FIXED_STRING_RESULT_COPY_REASON,
@@ -4352,10 +4353,32 @@ class WrapperGenerator:
         descriptor_mode = mode in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}
         if plan.binding.descriptor_boundary != descriptor_mode:
             diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-descriptor-boundary", mode.value))
-        if mode is OptionalMode.DESCRIPTOR and plan.entrypoint.presence_role is None:
+        if plan.entrypoint.pass_descriptor_presence and plan.entrypoint.presence_role is None:
             diagnostics.append(self._diagnostic(plan.owner_path, "missing-descriptor-presence-role", mode.value))
-        if mode is not OptionalMode.DESCRIPTOR and plan.entrypoint.presence_role is not None:
+        if not plan.entrypoint.pass_descriptor_presence and plan.entrypoint.presence_role is not None:
             diagnostics.append(self._diagnostic(plan.owner_path, "unexpected-descriptor-presence-role", mode.value))
+        if plan.entrypoint.pass_descriptor_presence and plan.entrypoint.optionality not in {
+            EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE,
+            EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR,
+        }:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "inconsistent-explicit-descriptor-presence",
+                    plan.entrypoint.optionality.value,
+                )
+            )
+        if plan.entrypoint.optionality is EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR:
+            array = plan.array
+            if (
+                not plan.entrypoint.pass_descriptor_presence
+                or array is None
+                or array.rank is not None
+                or array.entrypoint_abi is not ArrayEntrypointABI.C_DESCRIPTOR
+            ):
+                diagnostics.append(
+                    self._diagnostic(plan.owner_path, "invalid-placeholder-descriptor-presence", mode.value)
+                )
         return tuple(diagnostics)
 
     def _optional_native_diagnostics(

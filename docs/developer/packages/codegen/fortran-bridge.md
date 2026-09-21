@@ -72,17 +72,21 @@ them.
 3. It runs the selected writeback and cleanup finalizers, wrapping derived
    result or carrier lifecycles when the plan requires them.
 
-An adapter with optional native arguments lowers presence as a linear chain of
-contained procedures. Each procedure introduces one planned optional actual
-and forwards the optional dummies already introduced; the terminal procedure
-makes the native call once. Fortran therefore propagates absence through its
-own optional-dummy rules without an exhaustive call tree. When the binding has
-already entered Fortran-owned descriptors through its inverted consumer chain,
-that outer chain remains active until this inner native call returns.
+An adapter with optional native arguments uses a linear number of contained
+procedures and one native call site instead of enumerating presence
+combinations. Each procedure introduces one planned optional actual and
+forwards the optional dummies already introduced. Fortran therefore propagates
+absence through its own optional-dummy rules. When the binding has already
+entered Fortran-owned descriptors through its inverted consumer chain, that
+outer chain remains active until this inner native call returns.
 Mutable deferred-length character descriptors remain on direct present/absent
 call leaves because compiler descriptor updates do not propagate reliably
-through another optional dummy; other optionals in the same procedure still
-use the linear chain.
+through another optional dummy. Optional assumed-rank arrays also remain on
+direct leaves because Fortran cannot declare the local assumed-rank pointer
+that descriptor transport would require. Their completed entrypoint ABI carries
+an explicit presence value beside either the caller's descriptor or a rank-zero
+placeholder; the placeholder is never passed to the native procedure. Other
+optionals in the same procedure still use the forwarding chain.
 
 The entrypoint record exposes a `bind(C)` name shared with the C binding. For a
 standalone native procedure, the bridge record explicitly selects its external

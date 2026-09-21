@@ -1,5 +1,9 @@
 from prik.contracts import Float64, Int32
 
+def optional_rank(
+    values: Float64[...] = ...
+) -> Int32: ...
+
 def rank_weighted_sum(
     values: Float64[...]
 ) -> Float64: ...
@@ -13,4 +17,4 @@ def rank_pair_score(
     right: Float64[...]
 ) -> Int32: ...
 
-__all__ = ["rank_weighted_sum", "bump_assumed_rank", "rank_pair_score"]
+__all__ = ["optional_rank", "rank_weighted_sum", "bump_assumed_rank", "rank_pair_score"]

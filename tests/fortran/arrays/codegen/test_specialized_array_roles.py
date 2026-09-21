@@ -7,6 +7,7 @@ from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
     ArrayEntrypointABI,
+    EntrypointOptionalityAction,
     EntrypointPassingConvention,
     NativeArraySourceKind,
     OptionalMode,
@@ -22,6 +23,7 @@ def _later_array_plan():
 from prik.contracts import Float64, String
 
 def optional(values: Float64[:] = ...) -> None: ...
+def optional_any_rank(values: Float64[...] = ...) -> None: ...
 def any_rank(values: Float64[...]) -> Float64: ...
 def labels(values: String[8][:]) -> None: ...
 def labels_any_width(values: String[...][:]) -> None: ...
@@ -49,6 +51,8 @@ def hidden_labels() -> String[4][2]: ...
 def test_optional_assumed_rank_and_character_arrays_have_explicit_distinct_roles():
     functions = {function.binding.python_name: function for function in _later_array_plan().namespaces[0].functions}
     optional = functions["optional"].arguments[0]
+    optional_assumed_argument = functions["optional_any_rank"].arguments[0]
+    optional_assumed = optional_assumed_argument.array
     assumed_argument = functions["any_rank"].arguments[0]
     assumed = assumed_argument.array
     character_argument = functions["labels"].arguments[0]
@@ -64,6 +68,17 @@ def test_optional_assumed_rank_and_character_arrays_have_explicit_distinct_roles
     assert optional.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
     assert optional.native_array_actual is not None
     assert optional.native_array_actual.accepted_sources == handle_sources
+    assert optional_assumed_argument.binding.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert optional_assumed_argument.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert (
+        optional_assumed_argument.entrypoint.optionality
+        is EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR
+    )
+    assert optional_assumed_argument.entrypoint.presence_role is not None
+    assert optional_assumed is not None
+    assert optional_assumed.rank is None
+    assert optional_assumed.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+    assert optional_assumed_argument.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     assert assumed is not None
     assert assumed.rank is None
     assert assumed.contiguous is False
@@ -105,12 +120,27 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
     ) in c_source
     assert "NPY_FLOAT64, 1, 15, PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F" in c_source
     assert "bound_values_rank = (int64_t)PyArray_NDIM" in c_source
+    assert "void bind_c_optional_any_rank(CFI_cdesc_t * values, void * values_present);" in c_source
+    assert "bound_values_present = bound_values_obj != Py_None ? (void *)bound_values_obj : NULL;" in c_source
+    assert (
+        "CFI_establish((CFI_cdesc_t *)&bound_values_section, NULL, CFI_attribute_pointer, "
+        "CFI_type_double, sizeof(double), 0, NULL)"
+    ) in c_source
     # Runtime character width is part of the raw bridge ABI. The shared binder
     # returns it for either a NumPy array or a native handle.
     assert "bound_values_itemsize" in c_source
     assert "&bound_values_itemsize, CFI_type_char" in c_source
     assert "real(c_double), dimension(..) :: values" in bridge_source
     assert "select case (values_rank)" not in bridge_source
+    optional_any_rank = bridge_source.split("subroutine bind_c_optional_any_rank", maxsplit=1)[1].split(
+        "end subroutine bind_c_optional_any_rank", maxsplit=1
+    )[0]
+    assert "real(c_double), dimension(..) :: values" in optional_any_rank
+    assert "type(c_ptr), value :: bound_values_present" in optional_any_rank
+    assert "if (c_associated(bound_values_present)) then" in optional_any_rank
+    assert "call native_optional_any_rank(values=values)" in optional_any_rank
+    assert "call native_optional_any_rank()" in optional_any_rank
+    assert "prik_optional_values_transport" not in optional_any_rank
     assert "character(kind=c_char, len=8), pointer, contiguous, dimension(:) :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 

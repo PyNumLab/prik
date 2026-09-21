@@ -56,6 +56,7 @@ from prik.policy.models import (
     NativeEntrypointAction,
     NativeInvocationKind,
     EntrypointPassingConvention,
+    EntrypointOptionalityAction,
     EntrypointProjectionAction,
     OptionalMode,
     ScalarLogicalABI,
@@ -4084,14 +4085,31 @@ class FortranBridgeGenerator(ClassVisitor):
         here: the dummy is the array, with the bounds and directions the caller
         described, and it is handed to the native procedure as it stands.
         """
-        return (
+        parameters = [
             self._array_descriptor_parameter(
                 plan,
                 plan.entrypoint.parameter_name,
-                optional=plan.entrypoint.optional_mode is not OptionalMode.REQUIRED,
-                target=plan.entrypoint.optional_mode is not OptionalMode.REQUIRED,
-            ),
-        )
+                optional=(
+                    plan.entrypoint.optional_mode is not OptionalMode.REQUIRED
+                    and not plan.entrypoint.pass_descriptor_presence
+                ),
+                target=(
+                    plan.entrypoint.optional_mode is not OptionalMode.REQUIRED
+                    and not plan.entrypoint.pass_descriptor_presence
+                    and plan.array is not None
+                    and plan.array.rank is not None
+                ),
+            )
+        ]
+        if plan.entrypoint.pass_descriptor_presence:
+            parameters.append(
+                FortranParameter(
+                    f"bound_{plan.entrypoint.parameter_name}_present",
+                    "type(c_ptr)",
+                    ("value",),
+                )
+            )
+        return tuple(parameters)
 
     def _array_descriptor_parameter(
         self,
@@ -4380,7 +4398,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @staticmethod
     def _requires_direct_optional_call(argument: ArgumentTransferPlan) -> bool:
-        """Keep mutable deferred character descriptors on a direct call leaf."""
+        """Keep non-forwardable Fortran descriptors on a direct call leaf."""
+        if argument.entrypoint.optionality is EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR:
+            return True
         character = argument.bridge.character_local
         return bool(
             argument.mutates_native
@@ -4902,6 +4922,8 @@ class FortranBridgeGenerator(ClassVisitor):
         if handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER:
             return f"c_associated(bound_{name}_present)"
         if self._array_crosses_as_descriptor(plan):
+            if plan.entrypoint.pass_descriptor_presence:
+                return f"c_associated(bound_{name}_present)"
             # The dummy is the array itself, and C omits it by passing no
             # descriptor at all, so Fortran's own inquiry is the condition.
             return f"present({name})"
@@ -5041,8 +5063,10 @@ class FortranBridgeGenerator(ClassVisitor):
             OptionalMode.DESCRIPTOR,
         } and self._array_crosses_as_descriptor(argument):
             array = argument.array
-            if array is None or array.rank is None:
-                raise ValueError(f"Optional descriptor transport {argument.owner_path!r} requires explicit rank")
+            if array is None:
+                raise ValueError(f"Optional descriptor transport {argument.owner_path!r} has no array plan")
+            if array.rank is None:
+                return ()
             attributes = (self._array_dimension_attribute(array.rank), "pointer")
             return (
                 FortranDeclaration(
