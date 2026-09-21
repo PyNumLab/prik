@@ -72,6 +72,18 @@ them.
 3. It runs the selected writeback and cleanup finalizers, wrapping derived
    result or carrier lifecycles when the plan requires them.
 
+An adapter with optional native arguments lowers presence as a linear chain of
+contained procedures. Each procedure introduces one planned optional actual
+and forwards the optional dummies already introduced; the terminal procedure
+makes the native call once. Fortran therefore propagates absence through its
+own optional-dummy rules without an exhaustive call tree. When the binding has
+already entered Fortran-owned descriptors through its inverted consumer chain,
+that outer chain remains active until this inner native call returns.
+Mutable deferred-length character descriptors remain on direct present/absent
+call leaves because compiler descriptor updates do not propagate reliably
+through another optional dummy; other optionals in the same procedure still
+use the linear chain.
+
 The entrypoint record exposes a `bind(C)` name shared with the C binding. For a
 standalone native procedure, the bridge record explicitly selects its external
 declaration; for a module procedure, it supplies the native module use. Those

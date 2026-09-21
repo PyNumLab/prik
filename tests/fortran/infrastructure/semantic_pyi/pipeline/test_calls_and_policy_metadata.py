@@ -444,10 +444,9 @@ def update(scale: Float64 | None = ..., target: Float64 | None = ...) -> None: .
     assert "bound_target_present" in bridge_source
     assert "if (c_associated(bound_scale_present)) then" in bridge_source
     assert "if (c_associated(bound_target_present)) then" in bridge_source
-    assert "call native_update()" in bridge_source
-    assert "call native_update(scale=scale_descriptor)" in bridge_source
-    assert "call native_update(target=target_descriptor)" in bridge_source
-    assert "call native_update(scale=scale_descriptor, target=target_descriptor" in bridge_source
+    assert "scale=prik_optional_scale" in bridge_source
+    assert "target=prik_optional_target" in bridge_source
+    assert bridge_source.count("call native_update(") == 1
 
     assert "bound_scale_obj = NULL;" in c_wrapper
     assert "bound_target_obj = NULL;" in c_wrapper

@@ -278,8 +278,9 @@ def test_optional_callback_uses_the_ordinary_presence_plan():
     c_source, bridge = _sources(plan)
     assert "bound_callback_obj != Py_None ? prik_callback_trampoline_" in c_source
     assert "if (c_associated(callback)) then" in bridge
-    assert "native_apply_value_callback(callback=prik_callback_adapter_" in bridge
-    assert "native_apply_value_callback(value=value)" in bridge
+    assert "procedure(prik_value_callback_" in bridge
+    assert "callback=prik_optional_callback" in bridge
+    assert bridge.count("result = native_apply_value_callback(") == 1
 
 
 def test_direct_bind_c_callback_generates_no_fortran_callback_adapter():

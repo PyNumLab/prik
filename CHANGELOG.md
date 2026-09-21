@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Fortran adapters forward optional arguments through a linear contained-call
+  chain, so procedures with many optional arguments preserve `PRESENT()`
+  without generating every possible argument combination.
+
 - Optional Fortran callbacks and optional reference dummies inside callback
   interfaces preserve `PRESENT()` through source and generated-contract builds.
 

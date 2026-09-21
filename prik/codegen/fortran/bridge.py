@@ -4089,6 +4089,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 plan,
                 plan.entrypoint.parameter_name,
                 optional=plan.entrypoint.optional_mode is not OptionalMode.REQUIRED,
+                target=plan.entrypoint.optional_mode is not OptionalMode.REQUIRED,
             ),
         )
 
@@ -4098,6 +4099,7 @@ class FortranBridgeGenerator(ClassVisitor):
         name: str,
         *,
         optional: bool,
+        target: bool = False,
     ) -> FortranParameter:
         """Declare one interoperable ordinary-array descriptor dummy."""
         array = plan.array
@@ -4114,6 +4116,8 @@ class FortranBridgeGenerator(ClassVisitor):
         if optional:
             # C omits it by passing no descriptor, which is what optional means
             # for an interoperable dummy.
+            if target:
+                attributes.append("target")
             attributes.append("optional")
         return FortranParameter(name, element_type, tuple(attributes))
 
@@ -4185,26 +4189,25 @@ class FortranBridgeGenerator(ClassVisitor):
         tuple[FortranAssignment | FortranCall | FortranIf | FortranSelectCase, ...],
         tuple[FortranFunction, ...],
     ]:
-        """Build one native-call leaf plus linear optional-derived dispatch."""
+        """Build one native-call leaf plus linear optional forwarding."""
         result_name = self._native_direct_result_name(plan, result_name)
-        derived_optional = tuple(
+        optional = tuple(
             argument
             for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
-            if argument.derived_call is not None
-            and argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
+            if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
         )
-        if derived_optional:
-            forwarded = self._contained_optional_descriptor_arguments(plan)
-            procedures = self._derived_optional_dispatch_procedures(
-                plan,
-                derived_optional,
-                result_name,
-                forwarded,
-            )
-            return (self._contained_optional_descriptor_call_tree(forwarded, 0, ()),), procedures
-        return self._ordinary_function_body(plan, result_name), ()
+        forwarded = tuple(argument for argument in optional if not self._requires_direct_optional_call(argument))
+        if not forwarded:
+            return self._native_dispatch_body(plan, result_name), ()
+        return (
+            (
+                *self._optional_descriptor_transport_initializers(forwarded),
+                FortranCall(self._optional_forwarding_step_name(0)),
+            ),
+            self._optional_forwarding_procedures(plan, forwarded, result_name),
+        )
 
-    def _ordinary_function_body(
+    def _native_dispatch_body(
         self,
         plan: FunctionPlan,
         result_name: str | None,
@@ -4212,8 +4215,9 @@ class FortranBridgeGenerator(ClassVisitor):
         present: frozenset[str] = frozenset(),
         replacements: dict[str, str] | None = None,
     ) -> tuple[FortranAssignment | FortranCall | FortranIf | FortranSelectCase, ...]:
-        """Build the existing rank and non-derived optional call tree."""
+        """Build rank or polymorphic dispatch around one native call site."""
         replacements = dict(replacements or {})
+        direct_optional = self._direct_call_optional_arguments(plan)
         polymorphic = self._polymorphic_arguments(plan)
         if polymorphic:
             return (
@@ -4224,6 +4228,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     present,
                     result_name,
                     replacements,
+                    direct_optional,
                 ),
             )
         assumed_rank = self._assumed_rank_arguments(plan)
@@ -4236,12 +4241,10 @@ class FortranBridgeGenerator(ClassVisitor):
                     replacements,
                     result_name,
                     present=present,
+                    direct_optional=direct_optional,
                 ),
             )
-        optional = self._non_derived_optional_arguments(plan)
-        if not optional:
-            return (self._native_invocation(plan, present, result_name, replacements),)
-        return (self._optional_call_tree(plan, optional, 0, present, result_name, replacements),)
+        return (self._direct_optional_call_tree(plan, direct_optional, 0, present, result_name, replacements),)
 
     @staticmethod
     def _polymorphic_arguments(plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
@@ -4263,56 +4266,6 @@ class FortranBridgeGenerator(ClassVisitor):
             and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
         )
 
-    @staticmethod
-    def _non_derived_optional_arguments(
-        plan: FunctionPlan,
-    ) -> tuple[ArgumentTransferPlan, ...]:
-        """Return optional arguments handled by the ordinary presence tree."""
-        return tuple(
-            argument
-            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
-            if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
-            and argument.derived_call is None
-        )
-
-    def _contained_optional_descriptor_arguments(
-        self,
-        plan: FunctionPlan,
-    ) -> tuple[ArgumentTransferPlan, ...]:
-        """Return descriptor optionals that must not be host-associated on ifx."""
-        return tuple(
-            argument
-            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
-            if argument.derived_call is None
-            and argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
-            and argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-            and self._array_crosses_as_descriptor(argument)
-        )
-
-    def _contained_optional_descriptor_call_tree(
-        self,
-        arguments: tuple[ArgumentTransferPlan, ...],
-        index: int,
-        passed: tuple[CodeExpression, ...],
-    ) -> FortranCall | FortranIf:
-        """Enter the contained chain without forwarding an absent descriptor."""
-        if index == len(arguments):
-            return FortranCall(self._derived_optional_step_name(0), passed)
-        argument = arguments[index]
-        local_name = self._forwarded_optional_descriptor_parameter_name(argument)
-        actual_name = argument.entrypoint.parameter_name
-        return FortranIf(
-            CodeExpression(f"present({actual_name})"),
-            body=(
-                self._contained_optional_descriptor_call_tree(
-                    arguments,
-                    index + 1,
-                    (*passed, CodeExpression(f"{local_name}={actual_name}")),
-                ),
-            ),
-            else_body=(self._contained_optional_descriptor_call_tree(arguments, index + 1, passed),),
-        )
-
     def _polymorphic_call_tree(
         self,
         plan: FunctionPlan,
@@ -4321,10 +4274,18 @@ class FortranBridgeGenerator(ClassVisitor):
         present: frozenset[str],
         result_name: str | None,
         replacements: dict[str, str],
+        direct_optional: tuple[ArgumentTransferPlan, ...],
     ) -> FortranAssignment | FortranCall | FortranIf | FortranSelectCase:
         """Dispatch N enumerated scalar inputs without speculative native calls."""
         if index == len(arguments):
-            return self._native_invocation(plan, present, result_name, replacements)
+            return self._direct_optional_call_tree(
+                plan,
+                direct_optional,
+                0,
+                present,
+                result_name,
+                replacements,
+            )
         argument = arguments[index]
         cases = []
         for variant in argument.polymorphic.variants:
@@ -4340,6 +4301,7 @@ class FortranBridgeGenerator(ClassVisitor):
                             present,
                             result_name,
                             replacements,
+                            direct_optional,
                         ),
                     ),
                 )
@@ -4354,59 +4316,58 @@ class FortranBridgeGenerator(ClassVisitor):
         """Name one bridge-local typed pointer from its stable plan code."""
         return f"{argument.entrypoint.parameter_name}_polymorphic_{abi_code}"
 
-    def _derived_optional_dispatch_procedures(
+    def _optional_forwarding_procedures(
         self,
         plan: FunctionPlan,
         optional: tuple[ArgumentTransferPlan, ...],
         result_name: str | None,
-        forwarded: tuple[ArgumentTransferPlan, ...],
     ) -> tuple[FortranFunction, ...]:
-        """Propagate N optional derived dummies with O(N) adapter procedures."""
+        """Propagate N optional dummies through O(N) contained procedures."""
         procedures = []
-        forwarded_parameters = tuple(self._forwarded_optional_descriptor_parameter(item) for item in forwarded)
-        forwarded_passed = tuple(
-            CodeExpression(self._forwarded_optional_descriptor_parameter_name(item)) for item in forwarded
-        )
         for index, argument in enumerate(optional):
             carried = optional[:index]
-            parameters = (*forwarded_parameters, *(self._derived_optional_parameter(item) for item in carried))
-            passed = (
-                *forwarded_passed,
-                *(CodeExpression(self._derived_optional_parameter_name(item)) for item in carried),
+            parameters = tuple(self._optional_forwarding_parameter(plan, item) for item in carried)
+            passed = tuple(
+                CodeExpression(
+                    f"{self._optional_forwarding_parameter_name(item)}={self._optional_forwarding_parameter_name(item)}"
+                )
+                for item in carried
             )
-            expression = CodeExpression(self._native_argument_expression(argument))
+            expression = self._optional_forwarding_actual_expression(argument)
             procedures.append(
                 FortranFunction(
-                    name=self._derived_optional_step_name(index),
+                    name=self._optional_forwarding_step_name(index),
                     parameters=parameters,
                     body=(
                         FortranIf(
-                            CodeExpression(self._presence_condition(argument)),
+                            CodeExpression(self._optional_forwarding_presence_condition(argument)),
                             body=(
+                                *self._present_preparation(argument),
                                 FortranCall(
-                                    self._derived_optional_step_name(index + 1),
-                                    (*passed, expression),
+                                    self._optional_forwarding_step_name(index + 1),
+                                    (
+                                        *passed,
+                                        CodeExpression(
+                                            f"{self._optional_forwarding_parameter_name(argument)}={expression.text}"
+                                        ),
+                                    ),
                                 ),
                             ),
-                            else_body=(FortranCall(self._derived_optional_step_name(index + 1), passed),),
+                            else_body=(FortranCall(self._optional_forwarding_step_name(index + 1), passed),),
                         ),
                     ),
                     is_subroutine=True,
                 )
             )
         replacements = {
-            **{argument.owner_path: self._derived_optional_parameter_name(argument) for argument in optional},
-            **{
-                argument.owner_path: self._forwarded_optional_descriptor_parameter_name(argument)
-                for argument in forwarded
-            },
+            argument.owner_path: self._optional_forwarding_parameter_name(argument) for argument in optional
         }
         present = frozenset(argument.owner_path for argument in optional)
         procedures.append(
             FortranFunction(
-                name=self._derived_optional_step_name(len(optional)),
-                parameters=(*forwarded_parameters, *(self._derived_optional_parameter(item) for item in optional)),
-                body=self._ordinary_function_body(
+                name=self._optional_forwarding_step_name(len(optional)),
+                parameters=tuple(self._optional_forwarding_parameter(plan, item) for item in optional),
+                body=self._native_dispatch_body(
                     plan,
                     result_name,
                     present=present,
@@ -4417,29 +4378,204 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return tuple(procedures)
 
-    def _forwarded_optional_descriptor_parameter(
+    @staticmethod
+    def _requires_direct_optional_call(argument: ArgumentTransferPlan) -> bool:
+        """Keep mutable deferred character descriptors on a direct call leaf."""
+        character = argument.bridge.character_local
+        return bool(
+            argument.mutates_native
+            and (
+                (character is not None and character.deferred_length and character.descriptor_kind is not None)
+                or (
+                    argument.datatype_family is DatatypeFamily.STRING
+                    and argument.native_array_handle is not None
+                    and argument.array is not None
+                    and argument.array.itemsize is None
+                )
+            )
+        )
+
+    def _direct_call_optional_arguments(
         self,
+        plan: FunctionPlan,
+    ) -> tuple[ArgumentTransferPlan, ...]:
+        """Return optionals whose descriptor changes cannot cross a forwarding dummy."""
+        return tuple(
+            argument
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
+            if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
+            and self._requires_direct_optional_call(argument)
+        )
+
+    def _direct_optional_call_tree(
+        self,
+        plan: FunctionPlan,
+        optional: tuple[ArgumentTransferPlan, ...],
+        index: int,
+        present: frozenset[str],
+        result_name: str | None,
+        replacements: dict[str, str],
+    ) -> FortranAssignment | FortranCall | FortranIf:
+        """Keep descriptor-changing character actuals direct for compiler correctness."""
+        if index == len(optional):
+            return self._native_invocation(plan, present, result_name, replacements)
+        argument = optional[index]
+        return FortranIf(
+            CodeExpression(self._presence_condition(argument)),
+            body=(
+                *self._present_preparation(argument),
+                self._direct_optional_call_tree(
+                    plan,
+                    optional,
+                    index + 1,
+                    present | {argument.owner_path},
+                    result_name,
+                    replacements,
+                ),
+            ),
+            else_body=(
+                self._direct_optional_call_tree(
+                    plan,
+                    optional,
+                    index + 1,
+                    present,
+                    result_name,
+                    replacements,
+                ),
+            ),
+        )
+
+    def _optional_descriptor_transport_initializers(
+        self,
+        optional: tuple[ArgumentTransferPlan, ...],
+    ) -> tuple[FortranNullify | FortranIf, ...]:
+        """Capture optional entrypoint descriptors as ordinary local pointers."""
+        nodes = []
+        for argument in optional:
+            if not self._array_crosses_as_descriptor(argument):
+                continue
+            transport = self._optional_descriptor_transport_name(argument)
+            nodes.extend(
+                (
+                    FortranNullify(transport),
+                    FortranIf(
+                        CodeExpression(f"present({argument.entrypoint.parameter_name})"),
+                        body=(
+                            FortranPointerAssignment(
+                                transport,
+                                CodeExpression(argument.entrypoint.parameter_name),
+                            ),
+                        ),
+                    ),
+                )
+            )
+        return tuple(nodes)
+
+    def _optional_forwarding_presence_condition(self, argument: ArgumentTransferPlan) -> str:
+        """Read presence from the entrypoint transport selected for one optional."""
+        if self._array_crosses_as_descriptor(argument):
+            return f"associated({self._optional_descriptor_transport_name(argument)})"
+        return self._presence_condition(argument)
+
+    def _optional_forwarding_actual_expression(self, argument: ArgumentTransferPlan) -> CodeExpression:
+        """Return the prepared actual introduced by one forwarding step."""
+        if self._array_crosses_as_descriptor(argument):
+            return CodeExpression(self._optional_descriptor_transport_name(argument))
+        return CodeExpression(self._native_argument_expression(argument))
+
+    def _optional_forwarding_parameter(
+        self,
+        plan: FunctionPlan,
         argument: ArgumentTransferPlan,
     ) -> FortranParameter:
-        """Declare one optional descriptor passed into every contained step."""
-        return self._array_descriptor_parameter(
-            argument,
-            self._forwarded_optional_descriptor_parameter_name(argument),
-            optional=True,
+        """Declare one optional dummy matching the prepared native actual."""
+        name = self._optional_forwarding_parameter_name(argument)
+        if argument.callback is not None:
+            return FortranParameter(
+                name,
+                f"procedure({argument.callback.prototype.interface_symbol})",
+                ("optional",),
+            )
+        if argument.derived_call is not None:
+            return self._derived_native_parameter(argument, name, optional=True)
+        if self._array_crosses_as_descriptor(argument):
+            return self._array_descriptor_parameter(argument, name, optional=True)
+        if parameter := self._optional_native_array_parameter(argument, name):
+            return parameter
+        if parameter := self._optional_character_descriptor_parameter(argument, name):
+            return parameter
+        return self._ordinary_optional_forwarding_parameter(plan, argument, name)
+
+    def _optional_native_array_parameter(
+        self,
+        argument: ArgumentTransferPlan,
+        name: str,
+    ) -> FortranParameter | None:
+        """Declare one optional native-array descriptor forwarding dummy."""
+        handle = argument.native_array_handle
+        if handle is None or argument.entrypoint.handoff_mode is not ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+            return None
+        attribute = "allocatable" if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
+        element_type = (
+            self._native_array_argument_element_type(argument)
+            if argument.array is not None and argument.array.itemsize is None
+            else self._array_element_fortran_type(argument)
         )
+        return FortranParameter(
+            name,
+            element_type,
+            ("optional", attribute, self._array_dimension_attribute(handle.array.rank)),
+        )
+
+    def _optional_character_descriptor_parameter(
+        self,
+        argument: ArgumentTransferPlan,
+        name: str,
+    ) -> FortranParameter | None:
+        """Declare one optional scalar character descriptor forwarding dummy."""
+        character_local = argument.bridge.character_local
+        if argument.object_kind is not ObjectKind.STRING or character_local is None:
+            return None
+        descriptor = character_local.descriptor_kind
+        if descriptor is None:
+            return None
+        if not character_local.deferred_length and argument.character_length is None:
+            raise ValueError(f"Fixed-length character optional {argument.owner_path!r} has no length")
+        length = ":" if character_local.deferred_length else str(argument.character_length)
+        attribute = "allocatable" if descriptor is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
+        return FortranParameter(
+            name,
+            f"character(kind=c_char, len={length})",
+            (attribute, "optional"),
+        )
+
+    def _ordinary_optional_forwarding_parameter(
+        self,
+        plan: FunctionPlan,
+        argument: ArgumentTransferPlan,
+        name: str,
+    ) -> FortranParameter:
+        """Add optionality to an ordinary prepared native actual."""
+        parameter = self._external_interface_parameter(plan, argument, name=name)
+        attributes = list(parameter.attributes)
+        if "optional" not in attributes:
+            attributes.append("optional")
+        if argument.object_kind is ObjectKind.SCALAR and argument.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
+            attribute = "pointer" if argument.projected_call_slot.value_kind == "pointer" else "allocatable"
+            if attribute not in attributes:
+                attributes.append(attribute)
+        type_name = argument.scalar_native_type or parameter.type_name
+        return replace(parameter, type_name=type_name, attributes=tuple(attributes))
 
     @staticmethod
-    def _forwarded_optional_descriptor_parameter_name(argument: ArgumentTransferPlan) -> str:
-        """Name an optional descriptor local to the contained dispatch chain."""
+    def _optional_forwarding_parameter_name(argument: ArgumentTransferPlan) -> str:
+        """Name one optional dummy carried through the contained chain."""
         return f"prik_optional_{argument.entrypoint.parameter_name}"
 
-    def _derived_optional_parameter(self, argument: ArgumentTransferPlan) -> FortranParameter:
-        """Mirror the completed native dummy category and add OPTIONAL."""
-        return self._derived_native_parameter(
-            argument,
-            self._derived_optional_parameter_name(argument),
-            optional=True,
-        )
+    @staticmethod
+    def _optional_descriptor_transport_name(argument: ArgumentTransferPlan) -> str:
+        """Name the local pointer that carries an entrypoint descriptor safely."""
+        return f"prik_optional_{argument.entrypoint.parameter_name}_transport"
 
     def _derived_native_parameter(
         self,
@@ -4468,41 +4604,9 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     @staticmethod
-    def _derived_optional_parameter_name(argument: ArgumentTransferPlan) -> str:
-        """Return the local optional-presence parameter name for one derived argument."""
-        return f"prik_optional_{argument.entrypoint.parameter_name}"
-
-    @staticmethod
-    def _derived_optional_step_name(index: int) -> str:
-        """Return the deterministic nested-procedure name for one optional derived dispatch case."""
-        return f"prik_derived_optional_step_{index}"
-
-    def _optional_call_tree(
-        self,
-        plan: FunctionPlan,
-        optional: tuple[ArgumentTransferPlan, ...],
-        index: int,
-        present: frozenset[str],
-        result_name: str | None,
-        replacements: dict[str, str],
-    ) -> FortranAssignment | FortranCall | FortranIf:
-        """Return an exhaustive native-call tree for optional presence states."""
-        if index == len(optional):
-            return self._native_invocation(plan, present, result_name, replacements)
-        argument = optional[index]
-        present_roles = present | {argument.owner_path}
-        return FortranIf(
-            condition=CodeExpression(
-                f"present({replacements[argument.owner_path]})"
-                if self._array_crosses_as_descriptor(argument) and argument.owner_path in replacements
-                else self._presence_condition(argument)
-            ),
-            body=(
-                *self._present_preparation(argument),
-                self._optional_call_tree(plan, optional, index + 1, present_roles, result_name, replacements),
-            ),
-            else_body=(self._optional_call_tree(plan, optional, index + 1, present, result_name, replacements),),
-        )
+    def _optional_forwarding_step_name(index: int) -> str:
+        """Return the deterministic name for one linear optional-forwarding step."""
+        return f"prik_optional_step_{index}"
 
     def _native_invocation(
         self,
@@ -4705,18 +4809,18 @@ class FortranBridgeGenerator(ClassVisitor):
         result_name: str | None,
         *,
         present: frozenset[str] = frozenset(),
+        direct_optional: tuple[ArgumentTransferPlan, ...] = (),
     ) -> FortranAssignment | FortranCall | FortranIf | FortranSelectCase:
         """Dispatch each runtime-rank array through explicit one-to-fifteen branches."""
         if index == len(arguments):
-            optional = tuple(
-                argument
-                for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
-                if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
-                and argument.derived_call is None
+            return self._direct_optional_call_tree(
+                plan,
+                direct_optional,
+                0,
+                present,
+                result_name,
+                replacements,
             )
-            if optional:
-                return self._optional_call_tree(plan, optional, 0, present, result_name, replacements)
-            return self._native_invocation(plan, present, result_name, replacements)
         argument = arguments[index]
         name = argument.entrypoint.parameter_name
         cases = []
@@ -4730,6 +4834,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 replacements,
                 result_name,
                 present=present,
+                direct_optional=direct_optional,
             )
             del replacements[argument.owner_path]
             cases.append(
@@ -4931,6 +5036,21 @@ class FortranBridgeGenerator(ClassVisitor):
         argument: ArgumentTransferPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Return optional helper declarations for one completed handoff."""
+        if argument.entrypoint.optional_mode in {
+            OptionalMode.NULLABLE_VALUE,
+            OptionalMode.DESCRIPTOR,
+        } and self._array_crosses_as_descriptor(argument):
+            array = argument.array
+            if array is None or array.rank is None:
+                raise ValueError(f"Optional descriptor transport {argument.owner_path!r} requires explicit rank")
+            attributes = (self._array_dimension_attribute(array.rank), "pointer")
+            return (
+                FortranDeclaration(
+                    self._optional_descriptor_transport_name(argument),
+                    self._array_element_fortran_type(argument),
+                    attributes,
+                ),
+            )
         if argument.callback is not None:
             return ()
         handle = argument.native_array_handle
