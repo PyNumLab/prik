@@ -7,6 +7,7 @@ import pytest
 from prik.cli import _read_export_symbols
 from prik.semantics.fortran_exports import select_fortran_export_functions
 from prik.semantics.models import (
+    ProcedureOverloadSet,
     SemanticFunction,
     SemanticModule,
     SemanticOrigin,
@@ -102,3 +103,29 @@ def test_selection_rejects_private_module_procedure():
     hidden.visibility = "private"
     with pytest.raises(ValueError, match="private procedures: solver_mod::hidden"):
         select_fortran_export_functions([_module("solver_mod", functions=[hidden])], ["solver_mod::hidden"])
+
+
+def test_selection_keeps_one_generic_with_its_specific_candidates():
+    specific_int = _function("solver_mod", "solve_int")
+    specific_real = _function("solver_mod", "solve_real")
+    generic = ProcedureOverloadSet(name="solve", procedures=[specific_int, specific_real], native_scope="solver_mod")
+    module = _module(
+        "solver_mod",
+        functions=[specific_int, specific_real, _function("solver_mod", "helper")],
+    )
+    module.overload_sets = [generic]
+
+    selected = select_fortran_export_functions([module], ["SOLVER_MOD::SOLVE"]).primary_modules[0]
+
+    assert selected.functions == []
+    assert [overload.name for overload in selected.overload_sets] == ["solve"]
+    assert [candidate.name for candidate in selected.overload_sets[0].procedures] == ["solve_int", "solve_real"]
+    assert selected.exported_names == ["solve"]
+
+
+def test_external_root_cannot_satisfy_a_module_qualified_identity():
+    external = _module("foo", functions=[_function("foo", "external")])
+    external.origin.source_kind = "external_root"
+
+    with pytest.raises(ValueError, match="unknown modules: foo"):
+        select_fortran_export_functions([external], ["foo::external"])

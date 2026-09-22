@@ -59,6 +59,47 @@ def test_generate_pyi_emits_only_the_selected_module_and_callback_dependency(tmp
     assert '__all__ = ["selected_solver_mod"]' in (contract / "__init__.pyi").read_text(encoding="utf-8")
 
 
+def test_module_identity_ignores_same_named_external_root(tmp_path: Path):
+    source = tmp_path / "foo.f90"
+    source.write_text(
+        """module foo
+contains
+  subroutine chosen()
+  end subroutine chosen
+end module foo
+
+subroutine external()
+end subroutine external
+""",
+        encoding="utf-8",
+    )
+    exports = tmp_path / "exports.txt"
+    exports.write_text("foo::chosen\n", encoding="utf-8")
+    contract = tmp_path / "contract"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            str(source),
+            "--export-symbols",
+            str(exports),
+            "--out",
+            str(contract),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert {path.name for path in contract.iterdir()} == {"__init__.pyi", "foo.pyi"}
+    assert "def chosen(" in (contract / "foo.pyi").read_text(encoding="utf-8")
+    assert "external" not in (contract / "foo.pyi").read_text(encoding="utf-8")
+
+
 @pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
 def test_source_and_generated_contract_builds_publish_and_run_the_same_callback(tmp_path: Path):
     source_result = build_fortran_extension(

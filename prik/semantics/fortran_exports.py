@@ -18,6 +18,7 @@ _FORTRAN_EXPORT_RE = re.compile(rf"^(?P<module>{_FORTRAN_IDENTIFIER})::(?P<proce
 class FortranExportSelection:
     """Selected wrapper roots and the surrounding semantic source context."""
 
+    primary_sources: tuple[SemanticModule, ...]
     primary_modules: tuple[SemanticModule, ...]
     context_modules: tuple[SemanticModule, ...]
 
@@ -47,7 +48,11 @@ def select_fortran_export_functions(
     source modules remain available as context. Contract-import policy decides
     which of them the generated contract needs to emit.
     """
-    source_modules = tuple(modules)
+    source_modules = tuple(
+        module
+        for module in modules
+        if module.origin.source_language == "fortran" and module.origin.source_kind == "module"
+    )
     requested = _validated_fortran_export_symbols(symbols)
     module_index = {_native_module_name(module): module for module in source_modules}
     callable_index, non_callable_index = _fortran_export_candidates(source_modules)
@@ -55,6 +60,7 @@ def select_fortran_export_functions(
 
     selected = set(requested)
     primary_names = {module_name for module_name, _procedure_name in requested}
+    primary_sources = []
     primary_modules = []
     for module in source_modules:
         module_name = _native_module_name(module)
@@ -74,6 +80,7 @@ def select_fortran_export_functions(
         selected_module.exported_names = [
             declaration.name for declaration in (*selected_module.functions, *selected_module.overload_sets)
         ]
+        primary_sources.append(module)
         primary_modules.append(selected_module)
 
     # Root selection owns only the requested callable surface. Contract-import
@@ -83,7 +90,7 @@ def select_fortran_export_functions(
     # let that one authority emit only the dependencies the contract binds.
     context_names = tuple(name for name in module_index if name not in primary_names)
     context_modules = tuple(deepcopy(module_index[name]) for name in context_names)
-    return FortranExportSelection(tuple(primary_modules), context_modules)
+    return FortranExportSelection(tuple(primary_sources), tuple(primary_modules), context_modules)
 
 
 def _validated_fortran_export_symbols(symbols: Iterable[str]) -> tuple[tuple[str, str], ...]:

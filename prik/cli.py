@@ -527,16 +527,13 @@ def _converted_semantic_files(
     from prik.semantics.fortran_exports import select_fortran_export_functions
 
     selection = select_fortran_export_functions(available_modules, export_symbols)
-    selected_by_module = {
-        str(module.origin.native_name or module.name).casefold(): module for module in selection.primary_modules
+    selected_by_source = {
+        id(source): selected
+        for source, selected in zip(selection.primary_sources, selection.primary_modules, strict=True)
     }
     selected_files = []
     for path, modules in converted_files:
-        selected_modules = [
-            selected_by_module[name]
-            for module in modules
-            if (name := str(module.origin.native_name or module.name).casefold()) in selected_by_module
-        ]
+        selected_modules = [selected_by_source[id(module)] for module in modules if id(module) in selected_by_source]
         if selected_modules:
             selected_files.append((path, selected_modules))
     return _ConvertedSemanticSources(tuple(selected_files), selection.available_modules)

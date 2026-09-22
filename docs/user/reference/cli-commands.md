@@ -402,9 +402,10 @@ cobyla_mod::cobyla
 ```
 
 Qualification keeps procedures with the same spelling in different modules
-distinct. Every listed identity must resolve to exactly one reachable
-function. Empty files, invalid or repeated identities, unknown declarations,
-and names that do not denote functions fail the command.
+distinct. The module side must name a declared Fortran `module`, not a
+file-level external-procedure group. Every listed identity must resolve to
+exactly one reachable function. Empty files, invalid or repeated identities,
+unknown declarations, and names that do not denote functions fail the command.
 
 Fortran extraction retains declarations needed to express the selected
 signatures, such as callback prototypes and derived types, without publishing
