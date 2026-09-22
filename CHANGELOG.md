@@ -15,7 +15,8 @@ release tags add a leading `v` to the package version.
 - The PRIMA example links five derivative-free solvers against one statically
   compiled `libprimaf` archive through a generated semantic contract and runs
   in the real-library portability matrix. Its guide includes a reproducible
-  build, runnable solver example, and optional SciPy COBYLA cross-check.
+  build, source-checked build and test examples, and an optional SciPy COBYLA
+  parity check.
 
 - Forwardable Fortran optional arguments use a linear number of contained
   procedures and converge on one native call site instead of enumerating
