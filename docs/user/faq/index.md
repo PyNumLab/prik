@@ -107,7 +107,7 @@ for the complete boundary.
 </details>
 
 <details class="prik-faq-item" id="how-do-i-wrap-an-existing-c-library-or-large-header" markdown="1">
-<summary>How do I wrap an existing C library or large header?</summary>
+<summary>How do I wrap a reviewed surface from a large C or Fortran library?</summary>
 
 First create `symbols.txt` with one C function name per line:
 
@@ -131,6 +131,18 @@ that list alongside the signatures: once you build from the contract, `__all__`
 controls what the contract publishes and `--export-symbols` is no longer used.
 Adding a name to `__all__` publishes a declaration the contract already
 reaches; it cannot conjure one the C sources never declared.
+
+For Fortran, list module-qualified procedures instead:
+
+```text
+solver_mod::solve
+optimizer_mod::minimize
+```
+
+Pass the library's source universe to `generate --pyi`. PRIK uses it to resolve
+kind parameters, callback prototypes, derived types, and other declaration
+dependencies, while the generated contract contains only the selected
+procedure surface and the declarations its signatures require.
 
 Pass the header's normal `-I`, `-D`, and `--std` options when it needs them.
 Review `vendor.pyi` before building. Primitive scalar signatures are ready to

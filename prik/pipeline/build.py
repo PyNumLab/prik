@@ -2330,12 +2330,14 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
         complete_reexport_publication_policy(module, contract_named=False)
         module.metadata[PYTHON_EXPORTS_PREPARED_METADATA] = True
         namespace = (module.name.casefold(),) if module.origin.source_kind == "module" else ()
+        stated = None if module.exported_names is None else {str(name) for name in module.exported_names}
         for declaration in _module_declarations(module):
             _set_declaration_exports(
                 declaration,
                 (
                     []
                     if getattr(declaration, "visibility", "public") == "private"
+                    or (stated is not None and str(declaration.name) not in stated)
                     else [{"namespace": namespace, "name": None}]
                 ),
             )
@@ -3517,6 +3519,7 @@ def _fortran_wrapper_module(
     fortran_type_probe_cache_dir: str | Path | None,
     refresh_fortran_type_probe: bool,
     assume_intent_in_scalars: bool = False,
+    export_symbols: Iterable[str] | None = None,
 ) -> tuple[object, SemanticModule, tuple[SemanticModule, ...], tuple[Path, ...]]:
     """Parse Fortran sources, resolve type facts, and form one wrapper module."""
     # Preprocess and parse the complete source project.
@@ -3554,6 +3557,13 @@ def _fortran_wrapper_module(
         type_facts=type_facts,
         assume_intent_in_scalars=assume_intent_in_scalars,
     )
+    if export_symbols is not None:
+        from prik.semantics.fortran_exports import select_fortran_export_functions
+
+        selection = select_fortran_export_functions(modules, export_symbols)
+        for context_module in selection.context_modules:
+            context_module.exported_names = []
+        modules = list(selection.available_modules)
     _apply_source_python_exports(modules)
     module_name = _validated_wrapper_module_name(output_name, source_paths[0].stem)
     return (
@@ -3656,6 +3666,7 @@ def build_fortran_extension(
     collision_adapter_all: bool = False,
     positional_only: bool = False,
     assume_intent_in_scalars: bool = False,
+    export_symbols: Iterable[str] | None = None,
     fortran_type_report=None,
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | Path | None = None,
@@ -3723,6 +3734,11 @@ def build_fortran_extension(
         ``character`` dummies follow the same rule.  A declared ``intent`` is
         always honored, and arrays, derived-type objects, and allocatable or
         pointer scalars are unaffected.
+    export_symbols
+        Exact case-insensitive ``module::procedure`` identities to publish
+        from the source universe. Signature dependencies remain available but
+        are not added to the callable surface. A generated semantic contract
+        records the corresponding Python surface in ``__all__``.
     fortran_type_report, fortran_type_probe_runner,
     fortran_type_probe_cache_dir, refresh_fortran_type_probe
         Optional controls for compiler-probed Fortran type facts used while
@@ -3819,6 +3835,7 @@ def build_fortran_extension(
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
+        export_symbols=export_symbols,
     )
 
     # 3. Complete wrapper policy and generate the canonical wrapper.

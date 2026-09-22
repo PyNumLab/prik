@@ -469,6 +469,12 @@ class _ParsedSemanticSources:
 
 
 @dataclass(frozen=True)
+class _ConvertedSemanticSources:
+    files: tuple[tuple[Path, list[object]], ...]
+    available_modules: tuple[object, ...]
+
+
+@dataclass(frozen=True)
 class _SourceSemanticPipeline:
     parser: Callable[[_SemanticPipelineContext], _ParsedSemanticSources]
     converter_to_ir: Callable[[_ParsedSemanticSources, _SemanticPipelineContext], list[tuple[Path, list[object]]]]
@@ -495,7 +501,7 @@ def _converted_semantic_files(
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: tuple[str, ...] | None = None,
-) -> list[tuple[Path, list[object]]]:
+) -> _ConvertedSemanticSources:
     context = _SemanticPipelineContext(
         paths=paths,
         source_paths=_source_paths_for_semantic_pipeline(
@@ -513,7 +519,27 @@ def _converted_semantic_files(
     )
     pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
     parsed = pipeline.parser(context)
-    return pipeline.converter_to_ir(parsed, context)
+    converted_files = pipeline.converter_to_ir(parsed, context)
+    available_modules = tuple(module for _path, modules in converted_files for module in modules)
+    if language != "fortran" or export_symbols is None:
+        return _ConvertedSemanticSources(tuple(converted_files), available_modules)
+
+    from prik.semantics.fortran_exports import select_fortran_export_functions
+
+    selection = select_fortran_export_functions(available_modules, export_symbols)
+    selected_by_module = {
+        str(module.origin.native_name or module.name).casefold(): module for module in selection.primary_modules
+    }
+    selected_files = []
+    for path, modules in converted_files:
+        selected_modules = [
+            selected_by_module[name]
+            for module in modules
+            if (name := str(module.origin.native_name or module.name).casefold()) in selected_by_module
+        ]
+        if selected_modules:
+            selected_files.append((path, selected_modules))
+    return _ConvertedSemanticSources(tuple(selected_files), selection.available_modules)
 
 
 def _semantic_report(
@@ -530,7 +556,7 @@ def _semantic_report(
     export_symbols: tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
-    converted_files = _converted_semantic_files(
+    converted = _converted_semantic_files(
         paths,
         preprocessing,
         language=language,
@@ -542,7 +568,10 @@ def _semantic_report(
         assume_intent_in_scalars=assume_intent_in_scalars,
         export_symbols=export_symbols,
     )
-    return _semantic_payload_for_converted_files(converted_files)
+    return _semantic_payload_for_converted_files(
+        converted.files,
+        available_modules=converted.available_modules,
+    )
 
 
 def _parse_fortran_source_files(
@@ -617,18 +646,19 @@ def _convert_fortran_semantic_sources(
         cache_dir=context.fortran_type_probe_cache_dir,
         refresh=context.refresh_fortran_type_probe,
     )
+    project = FortranParser()._assemble_project([fobj for _path, fobj in parsed_files])
+    compile_time_values = _fortran_compile_time_values(project, context.preprocessing, **probe_options)
+    type_facts = _fortran_type_facts(
+        project,
+        context.preprocessing,
+        compile_time_values=compile_time_values,
+        **probe_options,
+    )
     converted_files = []
     # A module that imports an abstract interface from another supplied file
     # must resolve it here, exactly as a multi-file wrapper build does.
     modules_by_file = {id(fobj): list(fobj.modules) for _p, fobj in parsed_files}
     for p, fobj in parsed_files:
-        compile_time_values = _fortran_compile_time_values(fobj, context.preprocessing, **probe_options)
-        type_facts = _fortran_type_facts(
-            fobj,
-            context.preprocessing,
-            compile_time_values=compile_time_values,
-            **probe_options,
-        )
         modules = fortran_file_to_semantic_modules(
             fobj,
             standalone_module_name=p.stem,
@@ -656,11 +686,19 @@ _SOURCE_SEMANTIC_PIPELINES = {
 }
 
 
-def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
+def _semantic_payload_for_converted_files(
+    converted_files,
+    *,
+    available_modules=None,
+) -> dict[str, dict]:
     from prik.pipeline.pyi import emit_module_stubs
 
     out: dict[str, dict] = {}
-    available_modules = [module for _p, modules in converted_files for module in modules]
+    available_modules = list(
+        available_modules
+        if available_modules is not None
+        else (module for _p, modules in converted_files for module in modules)
+    )
     primary_names = {module.name for module in available_modules}
     for p, modules in converted_files:
         if _is_fortran_semantic_file(modules):
@@ -713,6 +751,7 @@ def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[st
             native_modules,
             available_modules=available_modules,
             normalize_public_names=True,
+            emit_imported_dependencies=True,
         )
         if native_modules
         else {}
@@ -1039,7 +1078,7 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         )
     if getattr(args, "export_symbols", None):
         parser.error(
-            "--export-symbols selects the public surface while reading C source; a semantic .pyi "
+            "--export-symbols selects the public surface while reading native source; a semantic .pyi "
             "contract already states its public surface in __all__"
         )
     if not getattr(args, "external_native_implementation", False) and not (
@@ -1160,15 +1199,13 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
 
 def _validate_c_main_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.language != "c":
-        if getattr(args, "export_symbols", None):
-            parser.error("--export-symbols is supported only with --language c")
         return
     if args.command == "parse" and args.show_vars:
         parser.error("--show-vars is Fortran-only and is not supported for --language c")
 
 
-def _read_c_export_symbols(path: str | Path) -> tuple[str, ...]:
-    """Read one fail-closed C function allowlist from a UTF-8 text file."""
+def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
+    """Read one fail-closed source-function allowlist from a UTF-8 file."""
     source = Path(path)
     try:
         lines = source.read_text(encoding="utf-8").splitlines()
@@ -1181,34 +1218,50 @@ def _read_c_export_symbols(path: str | Path) -> tuple[str, ...]:
         symbol = raw_line.split("#", 1)[0].strip()
         if not symbol:
             continue
-        valid = (
-            symbol.isascii()
-            and (symbol[0].isalpha() or symbol[0] == "_")
-            and all(character.isalnum() or character == "_" for character in symbol)
-        )
+        if language == "c":
+            valid = (
+                symbol.isascii()
+                and (symbol[0].isalpha() or symbol[0] == "_")
+                and all(character.isalnum() or character == "_" for character in symbol)
+            )
+            label = "C identifier"
+            duplicate_label = "C function name"
+        else:
+            from prik.semantics.fortran_exports import parse_fortran_export_identity
+
+            try:
+                parse_fortran_export_identity(symbol)
+            except ValueError:
+                valid = False
+            else:
+                valid = True
+            label = "Fortran module procedure identity"
+            duplicate_label = "Fortran module procedure identity"
         if not valid:
-            raise ValueError(f"Invalid C identifier in --export-symbols file {source}:{line_number}: {symbol!r}")
-        previous = locations.get(symbol)
+            raise ValueError(f"Invalid {label} in --export-symbols file {source}:{line_number}: {symbol!r}")
+        identity = symbol if language == "c" else symbol.casefold()
+        previous = locations.get(identity)
         if previous is not None:
             raise ValueError(
-                f"Repeated C function name in --export-symbols file {source}:{line_number}: "
+                f"Repeated {duplicate_label} in --export-symbols file {source}:{line_number}: "
                 f"{symbol!r} first appeared on line {previous}"
             )
-        locations[symbol] = line_number
+        locations[identity] = line_number
         symbols.append(symbol)
     if not symbols:
-        raise ValueError(f"--export-symbols file contains no C function names: {source}")
+        label = "C function names" if language == "c" else "Fortran module procedure identities"
+        raise ValueError(f"--export-symbols file contains no {label}: {source}")
     return tuple(symbols)
 
 
-def _complete_c_export_symbol_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def _complete_export_symbol_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Resolve the CLI file once for every downstream semantic/build path."""
     path = getattr(args, "export_symbols", None)
     args._resolved_export_symbols = None
     if path is None:
         return
     try:
-        args._resolved_export_symbols = _read_c_export_symbols(path)
+        args._resolved_export_symbols = _read_export_symbols(path, language=args.language)
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -1271,7 +1324,7 @@ def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentPa
     _validate_c_main_options(args, parser)
 
     _validate_output_options(args, parser)
-    _complete_c_export_symbol_options(args, parser)
+    _complete_export_symbol_options(args, parser)
     return args.print_limit
 
 
@@ -1678,6 +1731,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         collision_adapter_all=getattr(args, "collision_adapter_all", False),
         positional_only=getattr(args, "positional_only", False),
         assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
+        export_symbols=getattr(args, "_resolved_export_symbols", None),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         standard_logicals=getattr(args, "standard_logicals", True),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
@@ -2332,8 +2386,9 @@ def _add_semantic_interpretation_options(
         "--export-symbols",
         metavar="FILE",
         help=(
-            "Select exact reachable C functions from a UTF-8 name file as the source-side "
-            "public surface; generate --pyi records the corresponding Python names in __all__"
+            "Select exact reachable C functions or module-qualified Fortran procedures from a UTF-8 "
+            "name file as the source-side public surface; generate --pyi records the corresponding "
+            "Python names in __all__"
         ),
     )
 
