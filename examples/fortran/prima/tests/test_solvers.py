@@ -75,6 +75,29 @@ def test_cobyla_runs_with_every_optional_callback_dummy_present(prima):
     assert observed[-1][4:] == ((0,), ())
 
 
+def test_cobyla_agrees_with_scipy_on_a_quadratic(prima):
+    """Cross-check the shared solver without making SciPy a build requirement."""
+    optimize = pytest.importorskip("scipy.optimize")
+    start = np.array([3.0, 0.0], dtype=np.float64)
+    x = start.copy()
+
+    def objective_and_constraints(values, result, constraints):
+        _objective(values, result)
+
+    prima.cobyla_mod.cobyla(objective_and_constraints, np.int32(0), x, maxfun=np.int32(100))
+    scipy_result = optimize.minimize(
+        lambda values: (values[0] - 1.0) ** 2 + (values[1] + 2.0) ** 2,
+        start,
+        method="COBYLA",
+        options={"maxiter": 100},
+    )
+
+    expected = np.array([1.0, -2.0])
+    np.testing.assert_allclose(x, expected, atol=2.0e-3, rtol=0.0)
+    np.testing.assert_allclose(scipy_result.x, expected, atol=2.0e-3, rtol=0.0)
+    np.testing.assert_allclose(x, scipy_result.x, atol=2.0e-3, rtol=0.0)
+
+
 def test_uobyqa_callback_receives_omitted_optional_dummies_as_none(prima):
     x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
     observed = []
