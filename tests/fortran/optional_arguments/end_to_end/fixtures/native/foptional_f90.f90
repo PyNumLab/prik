@@ -53,4 +53,13 @@ contains
     optional_status = base
     if (present(status)) status = base + 50
   end function optional_status
+
+  integer function three_optional(first, second, third)
+    integer, intent(in), optional :: first, second, third
+
+    three_optional = 0
+    if (present(first)) three_optional = three_optional + 1
+    if (present(second)) three_optional = three_optional + 2
+    if (present(third)) three_optional = three_optional + 4
+  end function three_optional
 end module foptional_f90

@@ -2014,6 +2014,15 @@ def _complete_entrypoint_argument_route(
 ) -> ArgumentPolicy:
     """Project a selected route into one argument's completed ABI metadata."""
     uses_adapter = action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+    placeholder_descriptor_presence = (
+        uses_adapter
+        and argument.entrypoint_optionality is EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
+        and argument.array is not None
+        and argument.array.rank is None
+    )
+    explicit_descriptor_presence = (
+        uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR
+    ) or placeholder_descriptor_presence
     return replace(
         argument,
         entrypoint_pass_character_length=(
@@ -2037,15 +2046,17 @@ def _complete_entrypoint_argument_route(
             and argument.array is not None
             and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
         ),
-        entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
+        entrypoint_pass_descriptor_presence=explicit_descriptor_presence,
         entrypoint_pass_derived_transaction=(uses_adapter and argument.derived_call is not None),
         entrypoint_pass_callback_parameter=(
             argument.callback is not None
             and (action is NativeEntrypointAction.DIRECT_C_ABI or argument.optional_mode is OptionalMode.NULLABLE_VALUE)
         ),
         entrypoint_optionality=(
-            EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
-            if uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR
+            EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR
+            if placeholder_descriptor_presence
+            else EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
+            if explicit_descriptor_presence
             else argument.entrypoint_optionality
         ),
     )
@@ -5150,9 +5161,6 @@ def _array_storage_boundary_blockers(
         blockers.append(f"argument {argument.name!r} ordinary array must be non-descriptor storage")
     if decision.nullable and not argument.optional:
         blockers.append(f"argument {argument.name!r} ordinary array is nullable without optional presence")
-    array_policy = _array_handoff_policy(argument.semantic_type)
-    if argument.optional and array_policy is not None and array_policy.rank is None:
-        blockers.append(f"argument {argument.name!r} optional assumed-rank combination is not supported")
     return tuple(blockers)
 
 

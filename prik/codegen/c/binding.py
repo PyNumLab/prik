@@ -56,6 +56,7 @@ from prik.policy.models import (
     NativeDescriptorHandoffABI,
     EntrypointProjectionAction,
     EntrypointPassingConvention,
+    EntrypointOptionalityAction,
     OptionalMode,
     OverloadMatchKind,
     PythonExceptionKind,
@@ -7807,6 +7808,8 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{names.value_name}_extents_out", self.ARRAY_EXTENTS_RECORD),
             *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
         ]
+        if plan.entrypoint.pass_descriptor_presence:
+            declarations.append(CDeclaration(names.present_name, "void *", CodeExpression("NULL")))
         if plan.transformations:
             declarations.append(
                 CDeclaration(
@@ -10457,7 +10460,12 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression(f"prik_native_array_backend_release_call({backend})"))
             for backend in reversed(leased)
         )
-        return (*acquire_nodes, *body, *release_nodes)
+        return (
+            *self._explicit_descriptor_presence_nodes(plan, context),
+            *acquire_nodes,
+            *body,
+            *release_nodes,
+        )
 
     def _lower_entrypoint_call_with_live_descriptors(
         self,
@@ -10494,6 +10502,66 @@ class CBindingGenerator(ClassVisitor):
                 else ()
             ),
         )
+
+    def _explicit_descriptor_presence_nodes(
+        self,
+        plan: FunctionPlan,
+        context: _CFunctionContext,
+    ) -> tuple:
+        """Supply a valid rank-zero ordinary descriptor beside explicit presence."""
+        nodes = []
+        for owner_path in context.inverted_descriptors:
+            argument = self._argument_by_owner(plan, owner_path)
+            if (
+                argument.entrypoint.optionality
+                is not EntrypointOptionalityAction.EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR
+            ):
+                continue
+            if argument.array is None:
+                raise ValueError(f"Placeholder descriptor {argument.owner_path!r} has no array handoff")
+            names = context.arguments[owner_path]
+            placeholder = f"{names.value_name}_placeholder"
+            placeholder_type = (
+                "char"
+                if argument.datatype_family is DatatypeFamily.STRING
+                else PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).array_c_spelling
+            )
+            nodes.extend(
+                (
+                    CDeclaration(placeholder, placeholder_type, CodeExpression("0")),
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"{names.present_name} = {names.object_name} != Py_None ? "
+                            f"(void *){names.object_name} : NULL"
+                        )
+                    ),
+                    CIf(
+                        CodeExpression(f"{names.value_name} == NULL"),
+                        body=(
+                            CIf(
+                                CodeExpression(
+                                    f"CFI_establish((CFI_cdesc_t *)&{names.value_name}_section, &{placeholder}, "
+                                    f"CFI_attribute_other, {self._native_array_cfi_type(argument)}, "
+                                    f"{self._native_array_expected_element_size(argument)}, 0, NULL) != CFI_SUCCESS"
+                                ),
+                                body=(
+                                    CExpressionStatement(
+                                        CodeExpression(
+                                            'PyErr_SetString(PyExc_RuntimeError, "Could not create an absent '
+                                            f'descriptor for argument {argument.binding.python_name}")'
+                                        )
+                                    ),
+                                    CReturn(CodeExpression("NULL")),
+                                ),
+                            ),
+                            CExpressionStatement(
+                                CodeExpression(f"{names.value_name} = (CFI_cdesc_t *)&{names.value_name}_section")
+                            ),
+                        ),
+                    ),
+                )
+            )
+        return tuple(nodes)
 
     @staticmethod
     def _array_crosses_as_descriptor(argument: ArgumentTransferPlan) -> bool:
@@ -14366,7 +14434,10 @@ class CBindingGenerator(ClassVisitor):
             if self._array_crosses_as_descriptor(argument):
                 # Extents and strides travel inside the descriptor, so the
                 # address and the fields beside it are not needed.
-                return (CParameter(name, "CFI_cdesc_t *"),)
+                parameters = [CParameter(name, "CFI_cdesc_t *")]
+                if argument.entrypoint.pass_descriptor_presence:
+                    parameters.append(CParameter(f"{name}_present", "void *"))
+                return tuple(parameters)
             return self._array_entrypoint_argument_parameters(argument, name)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             handle = argument.native_array_handle

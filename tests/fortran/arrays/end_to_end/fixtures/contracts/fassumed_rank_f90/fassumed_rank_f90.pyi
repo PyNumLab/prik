@@ -1,4 +1,12 @@
-from prik.contracts import Float64, Int32
+from prik.contracts import Allocatable, Annotated, Float64, Int32, Pointer, PointerAssociation
+
+def allocatable_handle() -> Allocatable[Float64[:]]: ...
+
+def pointer_handle() -> Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]: ...
+
+def optional_rank(
+    values: Float64[...] = ...
+) -> Int32: ...
 
 def rank_weighted_sum(
     values: Float64[...]
@@ -13,4 +21,11 @@ def rank_pair_score(
     right: Float64[...]
 ) -> Int32: ...
 
-__all__ = ["rank_weighted_sum", "bump_assumed_rank", "rank_pair_score"]
+__all__ = [
+    "allocatable_handle",
+    "pointer_handle",
+    "optional_rank",
+    "rank_weighted_sum",
+    "bump_assumed_rank",
+    "rank_pair_score",
+]

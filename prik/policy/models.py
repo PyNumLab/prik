@@ -107,6 +107,7 @@ class EntrypointOptionalityAction(str, Enum):
     NULL_POINTER = "null_pointer"
     NULL_C_DESCRIPTOR_POINTER = "null_c_descriptor_pointer"
     EXPLICIT_NATIVE_PRESENCE = "explicit_native_presence"
+    EXPLICIT_PRESENCE_WITH_PLACEHOLDER_DESCRIPTOR = "explicit_presence_with_placeholder_descriptor"
     ADAPTER_SIDE_FORTRAN_OMISSION = "adapter_side_fortran_omission"
     BLOCKED = "blocked"
 

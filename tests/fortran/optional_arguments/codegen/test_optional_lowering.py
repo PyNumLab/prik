@@ -55,8 +55,8 @@ def test_optional_scalar_lowering_distinguishes_absent_or_none_from_value():
     assert "bound_factor_nullable = &bound_factor;" in c_source
     assert "bind_c_optional_scale(base, bound_factor)" in fortran_source
     assert "if (c_associated(bound_factor)) then" in fortran_source
-    assert "result = optional_scale(base=base, factor=factor)" in fortran_source
-    assert "result = optional_scale(base=base)" in fortran_source
+    assert "result = optional_scale(base=base, factor=prik_optional_factor)" in fortran_source
+    assert fortran_source.count("result = optional_scale(") == 1
 
 
 def test_optional_descriptor_lowering_records_presence_and_nullable_value_handoffs():
@@ -86,8 +86,8 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     assert "bind_c_alloc_state(bound_value_nullable, bound_value_present)" in c_source
     assert "type(c_ptr), value :: bound_value_present" in fortran_source
     assert "if (c_associated(bound_value_present)) then" in fortran_source
-    assert "result = native_alloc_state(value=value_descriptor)" in fortran_source
-    assert "result = native_alloc_state()" in fortran_source
+    assert "result = native_alloc_state(value=prik_optional_value)" in fortran_source
+    assert fortran_source.count("result = native_alloc_state(") == 1
 
 
 def test_optional_arguments_with_hidden_literals_materialize_the_literal_in_the_binding():
@@ -105,10 +105,10 @@ def optional_literal(value: Annotated[Float64, Immutable] | None = ...) -> Float
     assert "double bind_c_optional_literal(int32_t literal_0, double * value);" in c_source
     assert "bind_c_optional_literal(1, bound_value_nullable);" in c_source
     assert "function bind_c_optional_literal(literal_0, bound_value)" in fortran_source
-    assert "native_optional_literal(literal_0, value=value)" in fortran_source
+    assert "native_optional_literal(literal_0, value=prik_optional_value)" in fortran_source
 
 
-def test_optional_descriptor_is_passed_into_contained_derived_dispatch():
+def test_optional_descriptor_is_forwarded_explicitly_into_the_native_call():
     """A contained procedure receives, rather than host-associates, the descriptor."""
     module = pyi_file_to_semantic_module(OPTIONAL_MIXED_CONTRACT, module_name="foptional_f90")
     fortran_source = _source(_artifacts(module), ".f90")
@@ -117,11 +117,33 @@ def test_optional_descriptor_is_passed_into_contained_derived_dispatch():
     )[0]
     contained = summarize.split("  contains", maxsplit=1)[1]
 
-    assert "if (present(values)) then" in fortran_source
-    assert "call prik_derived_optional_step_0(prik_optional_values=values)" in fortran_source
+    assert "call prik_optional_step_0()" in summarize
+    assert "if (present(values)) then" in summarize.split("  contains", maxsplit=1)[0]
+    assert "prik_optional_values_transport => values" in summarize
     assert "real(c_double), dimension(:), optional :: prik_optional_values" in contained
-    assert "if (present(prik_optional_values)) then" in contained
+    assert "prik_optional_values=prik_optional_values" in contained
     assert "present(values)" not in contained
+    assert contained.count("result = native_summarize(") == 1
+
+
+def test_many_optional_scalars_generate_one_native_call_site():
+    """Forwardable optionals use linear procedures and converge on one call site."""
+    argument_count = 24
+    arguments = ",\n    ".join(
+        f"value_{index}: Annotated[Int32, Immutable] | None = ..." for index in range(argument_count)
+    )
+    module = parse_pyi_text(
+        f"""
+def many_optional(
+    {arguments},
+) -> Int32: ...
+""",
+        module_name="many_optional",
+    )
+    fortran_source = _source(_artifacts(module), ".f90")
+
+    assert fortran_source.count("result = native_many_optional(") == 1
+    assert "value_23=prik_optional_value_23" in fortran_source
 
 
 def test_required_descriptor_keeps_python_presence_separate_from_native_state_and_copyout():

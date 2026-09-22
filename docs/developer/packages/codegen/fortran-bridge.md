@@ -72,6 +72,24 @@ them.
 3. It runs the selected writeback and cleanup finalizers, wrapping derived
    result or carrier lifecycles when the plan requires them.
 
+Forwardable optional arguments use a linear number of contained procedures and
+converge on one native call site instead of enumerating presence combinations.
+Each procedure introduces one planned optional actual and forwards the optional
+dummies already introduced. Fortran therefore propagates absence through its
+own optional-dummy rules. When the binding has already entered Fortran-owned
+descriptors through its inverted consumer chain, that outer chain remains
+active until this inner native call returns.
+Mutable deferred-length character descriptors remain on direct present/absent
+call leaves because compiler descriptor updates do not propagate reliably
+through another optional dummy. Optional assumed-rank arrays also remain on
+direct leaves because Fortran cannot declare the local assumed-rank pointer
+that descriptor transport would require. Their completed entrypoint ABI carries
+an explicit presence value beside the caller's descriptor or a valid rank-zero
+ordinary placeholder. This avoids compiler-dependent rank loss at an optional
+assumed-rank `bind(C)` dummy; the placeholder is never passed to the native
+procedure. Other optionals in the same procedure still use the forwarding
+chain.
+
 The entrypoint record exposes a `bind(C)` name shared with the C binding. For a
 standalone native procedure, the bridge record explicitly selects its external
 declaration; for a module procedure, it supplies the native module use. Those

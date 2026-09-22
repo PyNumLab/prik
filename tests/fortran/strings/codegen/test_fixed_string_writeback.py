@@ -211,8 +211,8 @@ def optional_identity(label: String = ...) -> None: ...
     assert "character(kind=c_char, len=label_length), pointer :: label" in bridge_source
     assert "if (c_associated(bound_label)) then" in bridge_source
     assert "call c_f_pointer(bound_label, label)" in bridge_source
-    assert "call native_optional(label=label)" in bridge_source
-    assert "call native_optional()" in bridge_source
+    assert "call native_optional(label=prik_optional_label)" in bridge_source
+    assert bridge_source.count("call native_optional(") == 1
     # A mutating callee wrote the binding's bytes, so nothing is copied back.
     assert "label_bytes" not in bridge_source
     assert "transfer(" not in bridge_source

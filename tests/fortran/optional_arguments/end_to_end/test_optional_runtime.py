@@ -121,6 +121,10 @@ def test_optional_arguments_drive_fortran_present_behavior(
     assert module.summarize(np.int32(5), item=item, values=values, label="abc") == np.int32(21)
     assert module.summarize(np.int32(5), None, values=values, item=item) == np.int32(18)
 
+    assert module.three_optional() == np.int32(0)
+    assert module.three_optional(None, np.int32(20)) == np.int32(2)
+    assert module.three_optional(np.int32(10), np.int32(20), np.int32(30)) == np.int32(7)
+
     mutable = np.array([1.0, 2.0], dtype=np.float64)
     assert module.mutate_optional() is None
     assert module.mutate_optional(None, np.float64(100.0)) is None

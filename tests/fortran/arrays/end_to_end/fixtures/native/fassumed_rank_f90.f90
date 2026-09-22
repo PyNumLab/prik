@@ -1,6 +1,31 @@
 
 module fassumed_rank_f90
+  real(8), target :: pointer_values(2) = [3.0_8, 4.0_8]
+  private :: pointer_values
 contains
+  function allocatable_handle() result(values)
+    real(8), allocatable :: values(:)
+
+    allocate(values(2))
+    values = [1.0_8, 2.0_8]
+  end function allocatable_handle
+
+  function pointer_handle() result(values)
+    real(8), pointer :: values(:)
+
+    values => pointer_values
+  end function pointer_handle
+
+  integer function optional_rank(values) result(observed)
+    real(8), intent(in), optional :: values(..)
+
+    if (present(values)) then
+      observed = rank(values)
+    else
+      observed = -1
+    end if
+  end function optional_rank
+
   real(8) function rank_weighted_sum(values) result(total)
     real(8), intent(in) :: values(..)
 

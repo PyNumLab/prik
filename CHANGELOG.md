@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Forwardable Fortran optional arguments use a linear number of contained
+  procedures and converge on one native call site instead of enumerating
+  presence combinations. Descriptor categories that cannot be forwarded,
+  including optional assumed-rank arrays, preserve `PRESENT()` through direct
+  present/absent call leaves.
+
 - Optional Fortran callbacks and optional reference dummies inside callback
   interfaces preserve `PRESENT()` through source and generated-contract builds.
 

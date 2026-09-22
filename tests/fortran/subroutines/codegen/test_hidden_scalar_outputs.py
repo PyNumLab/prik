@@ -63,5 +63,5 @@ def scale(
     assert "real(c_double) :: x" in native_interface
     assert "real(c_double) :: result" in native_interface
     assert "integer(c_int32_t), optional :: mode" in native_interface
-    assert "call SCALE_OUT(x=x, result=result, mode=mode)" in fortran_source
-    assert "call SCALE_OUT(x=x, result=result)" in fortran_source
+    assert "call SCALE_OUT(x=x, result=result, mode=prik_optional_mode)" in fortran_source
+    assert fortran_source.count("call SCALE_OUT(") == 1
