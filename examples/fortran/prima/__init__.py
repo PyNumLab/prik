@@ -1,0 +1,1 @@
+"""PRIMA static-library example."""

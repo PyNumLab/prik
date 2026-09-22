@@ -12,6 +12,8 @@ release tags add a leading `v` to the package version.
   source builds publish only that reviewed function surface while retaining
   callback, type, and other declaration dependencies required by its
   signatures.
+- The PRIMA example links five derivative-free solvers against one statically
+  compiled `libprimaf` archive through a generated semantic contract.
 
 - Forwardable Fortran optional arguments use a linear number of contained
   procedures and converge on one native call site instead of enumerating
