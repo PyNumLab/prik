@@ -95,8 +95,8 @@ Minimize an actionable fuzz failure and retain it as a focused regression.
 
 Native changes need focused codegen evidence and relevant end-to-end coverage.
 Ordinary local runs exclude `real_library`. Maintained coverage includes the
-five Fortran examples—BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN—and
+six Fortran examples—BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and PRIMA—and
 the C libm and TA-Lib examples across the hosted portability matrix. Each has
-its own example workflow; leave LAPACK wrapper tests to GitHub Actions
-unless explicitly requested. See [Pull request checks](ci.md) for hosted
+its own build and tests in that workflow; leave LAPACK wrapper tests to GitHub
+Actions unless explicitly requested. See [Pull request checks](ci.md) for hosted
 coverage, compiler, real-library, benchmark, and documentation evidence.

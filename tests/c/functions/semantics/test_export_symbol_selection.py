@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from prik.cli import _read_c_export_symbols
+from prik.cli import _read_export_symbols
 from prik.parsers.c.models import CFile, CFunction, CInt, CVariable
 from prik.semantics.c2ir import CToIRConverter, select_c_export_functions
 from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA
@@ -64,8 +64,8 @@ def test_export_selection_rejects_an_ambiguous_function_name():
 def test_export_symbol_file_accepts_comments_and_rejects_duplicates(tmp_path: Path):
     export_file = tmp_path / "exports.txt"
     export_file.write_text("# reviewed\nkeep  # public\n\ndrop\n", encoding="utf-8")
-    assert _read_c_export_symbols(export_file) == ("keep", "drop")
+    assert _read_export_symbols(export_file, language="c") == ("keep", "drop")
 
     export_file.write_text("keep\nkeep\n", encoding="utf-8")
     with pytest.raises(ValueError, match="first appeared on line 1"):
-        _read_c_export_symbols(export_file)
+        _read_export_symbols(export_file, language="c")

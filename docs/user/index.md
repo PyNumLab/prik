@@ -34,8 +34,8 @@ designed API. Performance presents the reproducible PRIK and f2py comparison.
   generated-wrapper surfaces. Start with [`.pyi`
   Format](reference/pyi-format.md) for the contract language and [Editing
   `.pyi` Contracts](reference/pyi-contracts/index.md) for supported recipes.
-- [Examples](examples/index.md) — five complete Fortran projects (BLAS, LAPACK,
-  FFTPACK, MINPACK, and BSPLINE-FORTRAN) plus the C
+- [Examples](examples/index.md) — six complete Fortran projects (BLAS, LAPACK,
+  FFTPACK, MINPACK, BSPLINE-FORTRAN, and PRIMA) plus the C
   [libm](examples/c/libm-wrapper.md) and
   [TA-Lib](examples/c/ta-lib-wrapper.md) projects.
 - [Troubleshooting](troubleshooting/compiler-issues.md) — compiler detection,

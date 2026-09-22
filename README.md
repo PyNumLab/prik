@@ -170,7 +170,7 @@ provides task-oriented recipes for reshaping the API.
 
 ## Proven on real libraries
 
-PRIK builds and numerically tests seven maintained libraries, not just generated
+PRIK builds and numerically tests eight maintained libraries, not just generated
 wrappers.
 
 | Project | Native language and PRIK input | Validated surface |
@@ -180,10 +180,11 @@ wrappers.
 | [FFTPACK](https://pynumlab.github.io/prik/user/examples/fortran/fftpack-wrapper/) | Fortran source/interfaces | 31 Fourier, cosine, and sine transform procedures |
 | [MINPACK](https://pynumlab.github.io/prik/user/examples/fortran/minpack-wrapper/) | Fortran source/interfaces | 22 nonlinear and least-squares procedures, including callbacks |
 | [BSPLINE-FORTRAN](https://pynumlab.github.io/prik/user/examples/fortran/bspline-wrapper/) | Fortran source/interfaces | 15 interpolation routines and modern Fortran classes |
+| [PRIMA](https://pynumlab.github.io/prik/user/examples/fortran/prima-wrapper/) | Fortran source and generated contract; link static archive | 5 derivative-free solvers with Python callbacks |
 | [libm](https://pynumlab.github.io/prik/user/examples/c/libm-wrapper/) | C declarations from `<math.h>`; link compiled platform libm | 60 target-generated ISO C99 math functions |
 | [TA-Lib](https://pynumlab.github.io/prik/user/examples/c/ta-lib-wrapper/) | C declarations from `ta_libc.h`; link compiled `libta-lib` | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
 
-The **Real Libraries Portability** workflow runs all seven on Linux x86-64,
+The **Real Libraries Portability** workflow runs all eight on Linux x86-64,
 Linux ARM64, macOS Intel, and macOS ARM64 with Python 3.12. See the [Examples
 Gallery](https://pynumlab.github.io/prik/user/examples/#tested-platforms) for the
 compiler matrix; each project guide also records its own tested platforms.

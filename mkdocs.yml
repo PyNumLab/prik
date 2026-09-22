@@ -84,6 +84,7 @@ nav:
               - FFTPACK Wrapper: user/examples/fortran/fftpack-wrapper.md
               - MINPACK Wrapper: user/examples/fortran/minpack-wrapper.md
               - BSPLINE-FORTRAN Wrapper: user/examples/fortran/bspline-wrapper.md
+              - PRIMA Wrapper: user/examples/fortran/prima-wrapper.md
           - C:
               - libm Wrapper: user/examples/c/libm-wrapper.md
               - TA-Lib Wrapper: user/examples/c/ta-lib-wrapper.md

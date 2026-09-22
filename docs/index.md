@@ -294,12 +294,13 @@ its `.pyi` contract. It needs no installation.
 
 ## Proven on real libraries
 
-The maintained example suite covers five Fortran libraries—
+The maintained example suite covers six Fortran libraries—
 [BLAS](user/examples/fortran/blas-wrapper.md),
 [LAPACK](user/examples/fortran/lapack-wrapper.md),
 [FFTPACK](user/examples/fortran/fftpack-wrapper.md),
-[MINPACK](user/examples/fortran/minpack-wrapper.md), and
-[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md)—and two C
+[MINPACK](user/examples/fortran/minpack-wrapper.md),
+[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md), and
+[PRIMA](user/examples/fortran/prima-wrapper.md)—and two C
 libraries: [libm](user/examples/c/libm-wrapper.md) and
 [TA-Lib](user/examples/c/ta-lib-wrapper.md). Each project has a complete build
 and numerical validation workflow, including its tested platforms and

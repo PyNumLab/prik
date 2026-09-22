@@ -99,6 +99,20 @@ Unknown names fail the build rather than silently producing a smaller module.
 Once you author or generate a semantic `.pyi` contract, that contract's own
 `__all__` states the public surface and `export_symbols` no longer applies.
 
+`build_fortran_extension` accepts the same option with module-qualified native
+procedure identities. PRIK retains signature dependencies while publishing
+only the selected procedures:
+
+```python
+from prik import build_fortran_extension
+
+build = build_fortran_extension(
+    fortran_sources,
+    output_dir="build",
+    export_symbols=["solver_mod::solve", "solver_mod::minimize"],
+)
+```
+
 For an authored C semantic contract, use `build_pyi_extension` with
 `native_language="c"` and `native_c_sources=[...]`. [C Pointers, Arrays, and
 Strings](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays)

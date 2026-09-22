@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
+  module-qualified Fortran procedure identities. Generated contracts and
+  source builds publish only that reviewed function surface while retaining
+  callback, type, and other declaration dependencies required by its
+  signatures.
+- The PRIMA example links five derivative-free solvers against one statically
+  compiled `libprimaf` archive through a generated semantic contract and runs
+  in the real-library portability matrix. Its guide includes a reproducible
+  build, source-checked build and test examples, and an optional SciPy COBYLA
+  parity check.
+
 - Forwardable Fortran optional arguments use a linear number of contained
   procedures and converge on one native call site instead of enumerating
   presence combinations. Descriptor categories that cannot be forwarded,

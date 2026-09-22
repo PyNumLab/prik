@@ -157,6 +157,10 @@ jobs:
         run: |
           source examples/fortran/bspline/build_all.sh
           python -m pytest -q examples/fortran/bspline/tests
+      - name: Run PRIMA example
+        run: |
+          source examples/fortran/prima/build_all.sh
+          python -m pytest -q examples/fortran/prima/tests
       - name: Run Pythonic BLAS API example
         run: |
           source examples/fortran/pythonic_blas/build.sh

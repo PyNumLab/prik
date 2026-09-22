@@ -1,0 +1,5 @@
+bobyqa_mod::bobyqa
+cobyla_mod::cobyla
+lincoa_mod::lincoa
+newuoa_mod::newuoa
+uobyqa_mod::uobyqa

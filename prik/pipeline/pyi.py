@@ -19,7 +19,13 @@ from prik.policy.completion import complete_semantic_policies
 from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
 from prik.printers.pyi import emit_module
-from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _module_semantic_types
+from prik.semantics.models import (
+    EXTERNAL_TYPE_REF_METADATA,
+    SemanticClass,
+    SemanticImport,
+    SemanticModule,
+    _module_semantic_types,
+)
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.semantics.pyi2ir import convert_pyi_to_ir, reconcile_external_type_refs
 
@@ -107,6 +113,7 @@ def emit_module_stubs(
     *,
     available_modules: Iterable[SemanticModule] | None = None,
     normalize_public_names: bool = False,
+    emit_imported_dependencies: bool = False,
 ) -> dict[str, str]:
     """Complete and render semantic modules plus opaque dependencies.
 
@@ -115,7 +122,8 @@ def emit_module_stubs(
     starter-contract extraction: they preserve parser facts without invoking
     direct-wrapper policy, which is only required by a build request. The
     returned mapping is keyed by module name and is normally written into a
-    generated contract package by a pipeline stage.
+    generated contract package by a pipeline stage. When requested, modules
+    reached by completed relative contract imports are emitted as well.
     """
     source_modules = _module_list(modules)
     available = _module_list(available_modules) if available_modules is not None else source_modules
@@ -152,10 +160,40 @@ def emit_module_stubs(
         emitted_modules.values(),
         dependencies=(module for name, module in naming_modules.items() if name not in emitted_modules),
     )
+    if emit_imported_dependencies:
+        _add_imported_contract_dependencies(emitted_modules, naming_modules)
     return {
         module_name: emit_module(module, normalize_public_names=normalize_public_names).strip()
         for module_name, module in emitted_modules.items()
     }
+
+
+def _add_imported_contract_dependencies(
+    emitted_modules: dict[str, SemanticModule],
+    naming_modules: dict[str, SemanticModule],
+) -> None:
+    """Emit the available modules completed contract imports actually bind."""
+    available = {name.casefold(): module for name, module in naming_modules.items()}
+    pending = list(emitted_modules.values())
+    while pending:
+        module = pending.pop(0)
+        dependency_names = {
+            statement.module.lstrip(".").casefold()
+            for statement in module.imports
+            if isinstance(statement, SemanticImport) and statement.module.startswith(".")
+        }
+        for dependency_name in sorted(dependency_names):
+            dependency = available.get(dependency_name)
+            if dependency is None or dependency.name in emitted_modules:
+                continue
+            completed = deepcopy(dependency)
+            complete_semantic_policies([completed])
+            complete_contract_imports(
+                [completed],
+                dependencies=(item for name, item in naming_modules.items() if name != completed.name),
+            )
+            emitted_modules[completed.name] = completed
+            pending.append(completed)
 
 
 @dataclass
