@@ -10508,7 +10508,7 @@ class CBindingGenerator(ClassVisitor):
         plan: FunctionPlan,
         context: _CFunctionContext,
     ) -> tuple:
-        """Supply a rank-zero placeholder beside an explicit presence value."""
+        """Supply a valid rank-zero ordinary descriptor beside explicit presence."""
         nodes = []
         for owner_path in context.inverted_descriptors:
             argument = self._argument_by_owner(plan, owner_path)
@@ -10520,8 +10520,15 @@ class CBindingGenerator(ClassVisitor):
             if argument.array is None:
                 raise ValueError(f"Placeholder descriptor {argument.owner_path!r} has no array handoff")
             names = context.arguments[owner_path]
+            placeholder = f"{names.value_name}_placeholder"
+            placeholder_type = (
+                "char"
+                if argument.datatype_family is DatatypeFamily.STRING
+                else PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).array_c_spelling
+            )
             nodes.extend(
                 (
+                    CDeclaration(placeholder, placeholder_type, CodeExpression("0")),
                     CExpressionStatement(
                         CodeExpression(
                             f"{names.present_name} = {names.object_name} != Py_None ? "
@@ -10533,8 +10540,8 @@ class CBindingGenerator(ClassVisitor):
                         body=(
                             CIf(
                                 CodeExpression(
-                                    f"CFI_establish((CFI_cdesc_t *)&{names.value_name}_section, NULL, "
-                                    f"CFI_attribute_pointer, {self._native_array_cfi_type(argument)}, "
+                                    f"CFI_establish((CFI_cdesc_t *)&{names.value_name}_section, &{placeholder}, "
+                                    f"CFI_attribute_other, {self._native_array_cfi_type(argument)}, "
                                     f"{self._native_array_expected_element_size(argument)}, 0, NULL) != CFI_SUCCESS"
                                 ),
                                 body=(

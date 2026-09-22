@@ -127,7 +127,7 @@ def test_optional_descriptor_is_forwarded_explicitly_into_the_native_call():
 
 
 def test_many_optional_scalars_generate_one_native_call_site():
-    """Use a linear number of forwarding procedures and one native call site."""
+    """Forwardable optionals use linear procedures and converge on one call site."""
     argument_count = 24
     arguments = ",\n    ".join(
         f"value_{index}: Annotated[Int32, Immutable] | None = ..." for index in range(argument_count)

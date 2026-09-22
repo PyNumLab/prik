@@ -123,8 +123,8 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
     assert "void bind_c_optional_any_rank(CFI_cdesc_t * values, void * values_present);" in c_source
     assert "bound_values_present = bound_values_obj != Py_None ? (void *)bound_values_obj : NULL;" in c_source
     assert (
-        "CFI_establish((CFI_cdesc_t *)&bound_values_section, NULL, CFI_attribute_pointer, "
-        "CFI_type_double, sizeof(double), 0, NULL)"
+        "CFI_establish((CFI_cdesc_t *)&bound_values_section, &bound_values_placeholder, "
+        "CFI_attribute_other, CFI_type_double, sizeof(double), 0, NULL)"
     ) in c_source
     # Runtime character width is part of the raw bridge ABI. The shared binder
     # returns it for either a NumPy array or a native handle.
