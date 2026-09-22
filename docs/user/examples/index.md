@@ -9,15 +9,15 @@ publication: reviewed
 
 # Examples Gallery
 
-This section includes seven complete real-library examples: BLAS, LAPACK,
-FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, and TA-Lib. Each one provides build
+This section includes eight complete real-library examples: BLAS, LAPACK,
+FFTPACK, MINPACK, BSPLINE-FORTRAN, PRIMA, libm, and TA-Lib. Each one provides build
 commands, Python usage, and numerical checks for its public routines.
 
 The native-language boundary is deliberately explicit:
 
 | Native language | Examples | What PRIK consumes |
 | --- | --- | --- |
-| Fortran | BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN | Fortran source and interfaces, which the native build compiles and the wrapper exposes |
+| Fortran | BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, PRIMA | Fortran source and interfaces; builds compile the implementation or link a separately built library |
 | C | libm, TA-Lib | Public C header declarations plus an already compiled library to link; implementation `.c` files are not wrapper inputs |
 
 For libm, the declaration source is the platform's `<math.h>` and the linked
@@ -38,6 +38,7 @@ coverage differs by project:
 | FFTPACK | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
 | MINPACK | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
 | BSPLINE-FORTRAN | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
+| PRIMA | GNU Fortran 13 + GCC 13 | GNU Fortran 13 + GNU GCC 13 | x86-64 and ARM64 |
 | libm | GCC 13 and Clang 18 | Apple Clang and GNU GCC 13 | x86-64/Intel and ARM64 |
 | TA-Lib | GCC 13 | Apple Clang | x86-64/Intel and ARM64 |
 
@@ -61,6 +62,7 @@ their source-level declarations and interfaces.
 | Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fortran/fftpack-wrapper.md) |
 | Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](fortran/minpack-wrapper.md) |
 | Build and validate modern Fortran classes and 15 interpolation routines | [BSPLINE-FORTRAN wrapper](fortran/bspline-wrapper.md) |
+| Build and validate five PRIMA optimization solvers with Python callbacks | [PRIMA wrapper](fortran/prima-wrapper.md) |
 
 ## C libraries
 

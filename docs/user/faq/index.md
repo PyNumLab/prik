@@ -42,9 +42,10 @@ into the same extension. The
 [shared-library guide](../guide/building-shared-library.md) explains the build
 options, while the tested [BLAS](../examples/fortran/blas-wrapper.md),
 [LAPACK](../examples/fortran/lapack-wrapper.md), [FFTPACK](../examples/fortran/fftpack-wrapper.md),
-[MINPACK](../examples/fortran/minpack-wrapper.md), and
-[BSPLINE-FORTRAN](../examples/fortran/bspline-wrapper.md) examples show complete
-libraries. The [example gallery](../examples/index.md) also includes the C
+[MINPACK](../examples/fortran/minpack-wrapper.md),
+[BSPLINE-FORTRAN](../examples/fortran/bspline-wrapper.md), and
+[PRIMA](../examples/fortran/prima-wrapper.md) examples show real-library
+builds. The [example gallery](../examples/index.md) also includes the C
 [libm](../examples/c/libm-wrapper.md) and
 [TA-Lib](../examples/c/ta-lib-wrapper.md).
 

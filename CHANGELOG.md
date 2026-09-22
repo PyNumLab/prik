@@ -13,7 +13,8 @@ release tags add a leading `v` to the package version.
   callback, type, and other declaration dependencies required by its
   signatures.
 - The PRIMA example links five derivative-free solvers against one statically
-  compiled `libprimaf` archive through a generated semantic contract.
+  compiled `libprimaf` archive through a generated semantic contract and runs
+  in the real-library portability matrix.
 
 - Forwardable Fortran optional arguments use a linear number of contained
   procedures and converge on one native call site instead of enumerating

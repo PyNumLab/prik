@@ -9,6 +9,20 @@ import pytest
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
 
+def test_public_api_is_exactly_the_five_selected_solvers(prima):
+    expected = {
+        "bobyqa_mod": "bobyqa",
+        "cobyla_mod": "cobyla",
+        "lincoa_mod": "lincoa",
+        "newuoa_mod": "newuoa",
+        "uobyqa_mod": "uobyqa",
+    }
+    assert {name for name in dir(prima) if not name.startswith("_")} == set(expected)
+    for module_name, procedure_name in expected.items():
+        module = getattr(prima, module_name)
+        assert {name for name in dir(module) if not name.startswith("_")} == {procedure_name}
+
+
 def _objective(x, f):
     f[...] = (x[0] - 1.0) ** 2 + (x[1] + 2.0) ** 2
 

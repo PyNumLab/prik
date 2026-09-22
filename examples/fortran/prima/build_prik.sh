@@ -10,11 +10,10 @@ cmake \
   -DCMAKE_Fortran_COMPILER="$(command -v gfortran)"
 cmake --build "$PRIMA_BUILD_ROOT/native" --target primaf --parallel 2
 
-mapfile -t PRIMA_SOURCE_NAMES < "$EXAMPLE_WORKSPACE/examples/fortran/prima/sources.txt"
 PRIMA_SOURCES=()
-for source in "${PRIMA_SOURCE_NAMES[@]}"; do
+while IFS= read -r source; do
   PRIMA_SOURCES+=("$EXAMPLE_WORKSPACE/examples/fortran/prima/native/$source")
-done
+done < "$EXAMPLE_WORKSPACE/examples/fortran/prima/sources.txt"
 
 python3 -m prik generate --pyi \
   "${PRIMA_SOURCES[@]}" \
