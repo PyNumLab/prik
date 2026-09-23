@@ -77,7 +77,6 @@ from prik.codegen.nodes import (
     CExpressionStatement,
     CFor,
     CFunction,
-    CFunctionPointerType,
     CFunctionPrototype,
     CGoto,
     CHeader,
@@ -183,10 +182,9 @@ class _CFunctionContext:
     python_result_name: str | None
     python_results: dict[str, str]
     role_values: dict[str, str]
-    # Every argument reached through its descriptor entry point, in call order.
-    # The call is made inside the innermost consumer, so each one is entered in
-    # turn and they are all live together by the time it happens.
-    inverted_descriptors: tuple[str, ...] = ()
+    # Every argument whose storage may need a scoped Fortran origin, in call
+    # order. The native call runs inside the innermost consumer.
+    inverted_carriers: tuple[str, ...] = ()
     # The function whose lowering this context serves, so an argument's nodes
     # can name helpers emitted once per function at module scope.
     function: FunctionPlan | None = None
@@ -275,7 +273,11 @@ class CBindingGenerator(ClassVisitor):
         datatype_family: DatatypeFamily | None,
     ) -> None:
         """Resolve primitive types; shared validation owns every plan decision."""
-        if semantic_type_name is None or datatype_family in {DatatypeFamily.STRING, DatatypeFamily.DERIVED}:
+        if semantic_type_name is None or datatype_family in {
+            DatatypeFamily.STRING,
+            DatatypeFamily.DERIVED,
+            DatatypeFamily.ASSUMED_NATIVE,
+        }:
             return
         PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
@@ -672,6 +674,7 @@ class CBindingGenerator(ClassVisitor):
             # Every published component converts through the bundled helpers, so a
             # type whose module exposes only `bind(C)` procedures still needs them.
             or any(derived.fields for derived in self._derived_types(plan))
+            or any(not derived.abstract for derived in self._derived_types(plan))
             # A namespace alias binds its target through a bundled helper, which a
             # module publishing nothing else would otherwise never include.
             or any(namespace.aliases for namespace in plan.namespaces)
@@ -698,6 +701,12 @@ class CBindingGenerator(ClassVisitor):
         if not needs_native_support:
             return ()
         definitions = [CMacroDefinition("PRIK_BINDING_IMPORT_ARRAY", "1")]
+        if any(
+            argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+            for function in self._functions(plan)
+            for argument in function.arguments
+        ):
+            definitions.append(CMacroDefinition("PRIK_BINDING_ASSUMED_TYPE", "1"))
         if any(
             argument.native_array_actual is not None
             for function in self._functions(plan)
@@ -1431,27 +1440,6 @@ class CBindingGenerator(ClassVisitor):
         if not (self._module_uses_derived_calls(plan) or self._module_uses_derived_origin_ops(plan)):
             return ()
         return (
-            CFunctionPointerType("prik_derived_consumer_fn", "int", ("void *", "void *")),
-            CFunctionPointerType(
-                "prik_derived_scoped_fn",
-                "int",
-                ("prik_derived_consumer_fn", "void *"),
-            ),
-            CFunctionPointerType("prik_derived_checkout_fn", "int", ("void **",)),
-            CFunctionPointerType("prik_derived_restore_fn", "int", ("void *",)),
-            CFunctionPointerType("prik_derived_present_fn", "int"),
-            CFunctionPointerType("prik_derived_address_fn", "void *"),
-            CStructDefinition(
-                "prik_derived_origin_ops",
-                (
-                    CParameter("type_symbol", "const char *"),
-                    CParameter("present", "prik_derived_present_fn"),
-                    CParameter("address", "prik_derived_address_fn"),
-                    CParameter("scoped", "prik_derived_scoped_fn"),
-                    CParameter("checkout", "prik_derived_checkout_fn"),
-                    CParameter("restore", "prik_derived_restore_fn"),
-                ),
-            ),
             CStructDefinition(
                 "prik_derived_call_case",
                 (
@@ -1785,7 +1773,8 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(
                 CodeExpression(
-                    '*ops = (prik_derived_origin_ops *)PyCapsule_GetPointer(ops_capsule, "prik.derived_origin_ops")'
+                    "*ops = (prik_derived_origin_ops *)PyCapsule_GetPointer("
+                    "ops_capsule, prik_derived_origin_ops_capsule_name())"
                 )
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(operation_map)")),
@@ -2128,7 +2117,7 @@ class CBindingGenerator(ClassVisitor):
                 CReturn(
                     CodeExpression(
                         f"PyCapsule_New((void *)&{self._derived_origin_table_name(variable)}, "
-                        '"prik.derived_origin_ops", NULL)'
+                        "prik_derived_origin_ops_capsule_name(), NULL)"
                     )
                 ),
             ),
@@ -2185,7 +2174,15 @@ class CBindingGenerator(ClassVisitor):
             *self._callback_runtime_declarations(plan),
             *self._derived_call_runtime_declarations(plan),
             *self._derived_origin_declarations(plan),
+            *self._derived_type_info_records(plan),
             *(self._entrypoint_prototype(function) for function in self._functions(plan)),
+            *(
+                self._generated_support_procedure_entrypoint_prototype(
+                    self._generated_support_procedure_entrypoint(derived.owner_path, "derived:element_size")
+                )
+                for derived in self._derived_types(plan)
+                if not derived.abstract
+            ),
             *self._class_constructor_prototypes(plan),
             *(
                 self._derived_destroy_entrypoint_prototype(derived)
@@ -2570,11 +2567,38 @@ class CBindingGenerator(ClassVisitor):
     def _derived_field_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Lower address-backed and plain-module field methods."""
         return (
+            *(self._derived_type_info_method(derived) for derived in self._derived_types(plan) if not derived.abstract),
             *self._direct_field_functions_for_plan(plan),
             *self._module_member_functions_for_plan(plan),
             *self._allocatable_holder_functions_for_plan(plan),
             *self._pointer_holder_functions_for_plan(plan),
             *self._module_proxy_guard_functions_for_plan(plan),
+        )
+
+    def _derived_type_info_records(self, plan: ModulePlan) -> tuple[CDeclaration, ...]:
+        """Keep compiler-measured derived-type facts in native storage."""
+        return tuple(
+            CDeclaration(
+                CBindingNames.derived_type_info_record(derived.backend_symbol),
+                "static prik_derived_type_info",
+                CodeExpression(
+                    "{" + self._c_string_literal(derived.backend_symbol) + f", 0, {int(derived.bind_c)}" + "}"
+                ),
+            )
+            for derived in self._derived_types(plan)
+            if not derived.abstract
+        )
+
+    def _derived_type_info_method(self, derived: DerivedTypePlan) -> CFunction:
+        """Publish native type facts in a layout-checked capsule."""
+        operation = self._generated_support_procedure_entrypoint(derived.owner_path, "derived:element_size")
+        record = CBindingNames.derived_type_info_record(derived.backend_symbol)
+        return self._derived_private_method(
+            CBindingNames.derived_type_info_method(derived.backend_symbol),
+            (
+                CExpressionStatement(CodeExpression(f"{record}.element_size = (size_t){operation.symbol_name}()")),
+                CReturn(CodeExpression(f"PyCapsule_New(&{record}, prik_derived_type_info_capsule_name(), NULL)")),
+            ),
         )
 
     def _direct_field_functions_for_plan(self, plan: ModulePlan) -> tuple[CFunction, ...]:
@@ -4349,7 +4373,7 @@ class CBindingGenerator(ClassVisitor):
             ),
             *((self._native_array_forward_descriptor_function(),) if self._emits_native_array_backend(plan) else ()),
             *self._array_actual_reader_functions(plan),
-            *self._inverted_descriptor_consumer_functions(plan),
+            *self._inverted_call_consumer_functions(plan),
             *(
                 callback
                 for variable in self._module_native_array_variables(plan)
@@ -6883,6 +6907,8 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Dispatch one completed binding optional mode explicitly."""
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return self._lower_assumed_native_argument(plan, context)
         if plan.callback is not None:
             return self._lower_argument_callback(plan, context)
         if plan.native_array_handle is not None:
@@ -6901,6 +6927,93 @@ class CBindingGenerator(ClassVisitor):
             case OptionalMode.DESCRIPTOR:
                 return self._lower_argument_descriptor(plan, context)
         raise ValueError(f"Unsupported C argument optional mode for {plan.owner_path!r}: {mode!r}")
+
+    def _lower_assumed_native_argument(self, plan: ArgumentTransferPlan, context: _CFunctionContext) -> tuple:
+        """Resolve actual storage once and marshal it using the dummy's completed ABI."""
+        names = context.arguments[plan.owner_path]
+        actual = f"{names.value_name}_actual"
+        descriptor = plan.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+        array = plan.array
+        minimum_rank = array.minimum_rank if array is not None else 0
+        maximum_rank = array.maximum_rank if array is not None else 0
+        layout = self._array_layout_selector(array) if array is not None else "PRIK_ARRAY_LAYOUT_ANY_STRIDED"
+        present = f"{names.object_name} != NULL && {names.object_name} != Py_None"
+        body = [
+            CIf(
+                CodeExpression(f"prik_assumed_type_actual_from_object({names.object_name}, &{actual}) < 0"),
+                body=(CReturn(CodeExpression("NULL")),),
+            ),
+            CIf(
+                CodeExpression(
+                    f"prik_assumed_type_validate(&{actual}, {names.object_name}, "
+                    f"{minimum_rank}, {maximum_rank}, {layout}, {int(plan.binding.writable)}, "
+                    f'"{plan.binding.python_name}") < 0'
+                ),
+                body=(CReturn(CodeExpression("NULL")),),
+            ),
+        ]
+        if descriptor:
+            body.extend(
+                (
+                    CIf(
+                        CodeExpression(f"!{actual}.descriptor_type_available"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} '
+                                    'has no supported descriptor dtype")'
+                                )
+                            ),
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                    CIf(
+                        CodeExpression(f"{actual}.rank > 0"),
+                        body=(
+                            CIf(
+                                CodeExpression(
+                                    f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{names.value_name}_parent, "
+                                    f"(CFI_cdesc_t *)&{names.value_name}_storage, "
+                                    f"(PyArrayObject *){names.object_name}, (CFI_type_t){actual}.cfi_type, "
+                                    f'"{plan.binding.python_name}") < 0'
+                                ),
+                                body=(CReturn(CodeExpression("NULL")),),
+                            ),
+                        ),
+                        else_body=(
+                            CIf(
+                                CodeExpression(
+                                    f"prik_assumed_type_descriptor(&{actual}, "
+                                    f"(CFI_cdesc_t *)&{names.value_name}_storage, "
+                                    f'"{plan.binding.python_name}") < 0'
+                                ),
+                                body=(CReturn(CodeExpression("NULL")),),
+                            ),
+                        ),
+                    ),
+                    CExpressionStatement(
+                        CodeExpression(f"{names.value_name} = (CFI_cdesc_t *)&{names.value_name}_storage")
+                    ),
+                )
+            )
+        else:
+            body.append(CExpressionStatement(CodeExpression(f"{names.value_name} = {actual}.data")))
+        return (
+            CDeclaration(
+                names.object_name,
+                "PyObject *",
+                CodeExpression("Py_None") if plan.binding.optional_mode is not OptionalMode.REQUIRED else None,
+            ),
+            CDeclaration(actual, "prik_assumed_type_actual", CodeExpression("{0}")),
+            CDeclaration(names.value_name, "CFI_cdesc_t *" if descriptor else "void *", CodeExpression("NULL")),
+            *((CDeclaration(f"{names.value_name}_storage", "CFI_CDESC_T(15)"),) if descriptor else ()),
+            *((CDeclaration(f"{names.value_name}_parent", "CFI_CDESC_T(15)"),) if descriptor else ()),
+            *(
+                (CIf(CodeExpression(present), body=tuple(body)),)
+                if plan.binding.optional_mode is not OptionalMode.REQUIRED
+                else tuple(body)
+            ),
+        )
 
     def _lower_argument_callback(
         self,
@@ -10401,8 +10514,8 @@ class CBindingGenerator(ClassVisitor):
         except KeyError:
             raise ValueError(f"Hidden result {plan.owner_path!r} has no C output storage") from None
 
-    def _inverted_descriptor_arguments(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Return every argument whose descriptor must be live across the call.
+    def _inverted_call_carriers(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
+        """Return arguments whose native storage must be live across the call.
 
         The descriptor the runtime builds for a module array or a field exists
         only while the consumer it was handed to is running.  Making the call
@@ -10421,7 +10534,11 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             argument
             for argument in plan.arguments
-            if self._array_crosses_as_descriptor(argument)
+            if (
+                self._array_crosses_as_descriptor(argument)
+                and argument.datatype_family is not DatatypeFamily.ASSUMED_NATIVE
+            )
+            or argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
             or (
                 argument.native_array_handle is not None
                 and argument.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
@@ -10455,7 +10572,7 @@ class CBindingGenerator(ClassVisitor):
                 )
             )
             acquired.append(backend)
-        body = self._lower_entrypoint_call_with_live_descriptors(plan, context)
+        body = self._lower_entrypoint_call_with_live_carriers(plan, context)
         release_nodes = tuple(
             CExpressionStatement(CodeExpression(f"prik_native_array_backend_release_call({backend})"))
             for backend in reversed(leased)
@@ -10467,20 +10584,28 @@ class CBindingGenerator(ClassVisitor):
             *release_nodes,
         )
 
-    def _lower_entrypoint_call_with_live_descriptors(
+    def _lower_entrypoint_call_with_live_carriers(
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
     ) -> tuple:
-        """Make the call where every transient descriptor remains live."""
-        if not context.inverted_descriptors:
+        """Make the call inside every transient storage scope."""
+        if not context.inverted_carriers:
             return self._lower_native_call(plan, self._entrypoint_call_statement(plan, context))
-        names = context.arguments[context.inverted_descriptors[0]]
-        record = self._inverted_context_name(plan)
-        chain = self._inverted_chain_fields(plan, context)
-        fields = self._inverted_context_fields(plan, context)
+        names = context.arguments[context.inverted_carriers[0]]
+        first_argument = self._argument_by_owner(plan, context.inverted_carriers[0])
+        first_backend = (
+            f"{names.value_name}_actual.origin_ops"
+            if first_argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+            else self._descriptor_backend_local(names)
+        )
+        record = self._inverted_carrier_context_name(plan)
+        chain = self._inverted_carrier_chain_fields(plan, context)
+        fields = self._inverted_carrier_context_fields(plan, context)
         values = [value for _declaration, value in chain + fields]
-        if self._inverted_carries_result(plan):
+        if self._inverted_carriers_carry_result(plan):
+            values.append("0")
+        if self._inverted_has_assumed_actuals(plan, context):
             values.append("0")
         return (
             CComment("Everything the call needs apart from the descriptors themselves is"),
@@ -10489,16 +10614,39 @@ class CBindingGenerator(ClassVisitor):
             CComment("Each descriptor is entered in turn and the call is made inside the last"),
             CComment("consumer, where they are all live, so what the callee writes into any of"),
             CComment("them is what Fortran copies back to that caller's entity."),
-            *self._inverted_enter_nodes(
+            *self._enter_inverted_carrier_nodes(
                 plan,
+                context,
                 0,
-                backend=self._descriptor_backend_local(names),
+                backend=first_backend,
                 call_context="&call_context",
-                placeholder=f"call_context.{self._inverted_descriptor_field(0)}",
+                placeholder=f"call_context.{self._inverted_carrier_field(0)}",
+            ),
+            *(
+                (
+                    CIf(
+                        CodeExpression("call_context.scoped_status != 0"),
+                        body=(
+                            CIf(
+                                CodeExpression("!PyErr_Occurred()"),
+                                body=(
+                                    CExpressionStatement(
+                                        CodeExpression(
+                                            'PyErr_SetString(PyExc_RuntimeError, "TYPE(*) module origin scope failed")'
+                                        )
+                                    ),
+                                ),
+                            ),
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                )
+                if self._inverted_has_assumed_actuals(plan, context)
+                else ()
             ),
             *(
                 (CExpressionStatement(CodeExpression(f"{context.result_name} = call_context.result")),)
-                if self._inverted_carries_result(plan) and context.result_name is not None
+                if self._inverted_carriers_carry_result(plan) and context.result_name is not None
                 else ()
             ),
         )
@@ -10510,7 +10658,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple:
         """Supply a valid rank-zero ordinary descriptor beside explicit presence."""
         nodes = []
-        for owner_path in context.inverted_descriptors:
+        for owner_path in context.inverted_carriers:
             argument = self._argument_by_owner(plan, owner_path)
             if (
                 argument.entrypoint.optionality
@@ -12133,12 +12281,12 @@ class CBindingGenerator(ClassVisitor):
             )
         return tuple(nodes)
 
-    def _inverted_descriptor_consumer_functions(self, plan: ModulePlan) -> tuple:
+    def _inverted_call_consumer_functions(self, plan: ModulePlan) -> tuple:
         """Emit the record and consumer chain for each entrypoint called inside one."""
         nodes: list = []
         for function in self._functions(plan):
             context = self._function_context(function)
-            if not context.inverted_descriptors:
+            if not context.inverted_carriers:
                 continue
             nodes.append(self._inverted_context_record(function, context))
             nodes.extend(self._inverted_consumer_chain(function, context))
@@ -12146,17 +12294,26 @@ class CBindingGenerator(ClassVisitor):
 
     def _inverted_context_record(self, plan: FunctionPlan, context: _CFunctionContext) -> CStructDefinition:
         """Declare everything the consumer chain carries between its links."""
-        chain = self._inverted_chain_fields(plan, context)
-        fields = self._inverted_context_fields(plan, context)
+        chain = self._inverted_carrier_chain_fields(plan, context)
+        fields = self._inverted_carrier_context_fields(plan, context)
         result = self._direct_result(plan)
         result_field = (
-            (CParameter("result", self._inverted_result_type(plan, result)),)
-            if self._inverted_carries_result(plan)
+            (CParameter("result", self._inverted_carrier_result_type(plan, result)),)
+            if self._inverted_carriers_carry_result(plan)
             else ()
         )
         return CStructDefinition(
-            self._inverted_context_name(plan),
-            tuple(declaration for declaration, _value in chain + fields) + result_field,
+            self._inverted_carrier_context_name(plan),
+            tuple(declaration for declaration, _value in chain + fields)
+            + result_field
+            + ((CParameter("scoped_status", "int"),) if self._inverted_has_assumed_actuals(plan, context) else ()),
+        )
+
+    def _inverted_has_assumed_actuals(self, plan: FunctionPlan, context: _CFunctionContext) -> bool:
+        """Report whether a call carrier may require a module-origin scope."""
+        return any(
+            self._argument_by_owner(plan, owner_path).datatype_family is DatatypeFamily.ASSUMED_NATIVE
+            for owner_path in context.inverted_carriers
         )
 
     def _inverted_consumer_chain(self, plan: FunctionPlan, context: _CFunctionContext) -> tuple[CFunction, ...]:
@@ -12169,21 +12326,34 @@ class CBindingGenerator(ClassVisitor):
         reallocates or reassociates any of its arguments writes into the
         descriptor the Fortran runtime copies back to that caller's entity.
         """
-        record = self._inverted_context_name(plan)
-        slots = len(context.inverted_descriptors)
-        fields = self._inverted_context_fields(plan, context)
+        record = self._inverted_carrier_context_name(plan)
+        slots = len(context.inverted_carriers)
+        fields = self._inverted_carrier_context_fields(plan, context)
         functions: list[CFunction] = []
         for slot in range(slots):
             last = slot == slots - 1
-            body: tuple = (
-                CExpressionStatement(
-                    CodeExpression(f"call->{self._inverted_descriptor_field(slot)} = (CFI_cdesc_t *)descriptor")
-                ),
-            )
+            argument = self._argument_by_owner(plan, context.inverted_carriers[slot])
+            assumed = argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+            field = self._inverted_carrier_field(slot)
+            if assumed and argument.entrypoint.passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER:
+                body: tuple = (
+                    CIf(
+                        CodeExpression(f"call->{field} != NULL"),
+                        body=(CExpressionStatement(CodeExpression(f"call->{field}->base_addr = carrier")),),
+                    ),
+                )
+            else:
+                body = (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"call->{field} = carrier" if assumed else f"call->{field} = (CFI_cdesc_t *)carrier"
+                        )
+                    ),
+                )
             if last:
                 body += self._lower_native_call(
                     plan,
-                    CExpressionStatement(CodeExpression(self._inverted_consumer_call(plan, context, fields))),
+                    CExpressionStatement(CodeExpression(self._inverted_carrier_call(plan, context, fields))),
                 )
                 doc = (
                     f"Call {self._entrypoint_function_name(plan)} with every descriptor live.",
@@ -12194,12 +12364,13 @@ class CBindingGenerator(ClassVisitor):
                     " because this runs outside the frame that computed them.",
                 )
             else:
-                body += self._inverted_enter_nodes(
+                body += self._enter_inverted_carrier_nodes(
                     plan,
+                    context,
                     slot + 1,
                     backend=f"call->{self._inverted_backend_field(slot + 1)}",
                     call_context="call",
-                    placeholder=f"call->{self._inverted_descriptor_field(slot + 1)}",
+                    placeholder=f"call->{self._inverted_carrier_field(slot + 1)}",
                 )
                 doc = (
                     f"Record descriptor {slot} of {self._entrypoint_function_name(plan)} and enter the next.",
@@ -12209,22 +12380,22 @@ class CBindingGenerator(ClassVisitor):
                 )
             functions.append(
                 CFunction(
-                    self._inverted_consumer_name(plan, slot),
-                    "void",
-                    parameters=(CParameter("descriptor", "void *"), CParameter("context", "void *")),
+                    self._inverted_carrier_consumer_name(plan, slot),
+                    "int" if assumed else "void",
+                    parameters=(CParameter("carrier", "void *"), CParameter("context", "void *")),
                     storage="static",
                     doc=doc,
                     body=(
                         CDeclaration("call", f"{record} *", CodeExpression(f"({record} *)context")),
                         *body,
-                        CReturn(),
+                        CReturn(CodeExpression("call->scoped_status")) if assumed else CReturn(),
                     ),
                 )
             )
         # A link may only be named once the one it enters has been defined.
         return tuple(reversed(functions))
 
-    def _inverted_carries_result(self, plan: FunctionPlan) -> bool:
+    def _inverted_carriers_carry_result(self, plan: FunctionPlan) -> bool:
         """Report whether the entrypoint returns a value the chain must carry out.
 
         A result the entrypoint writes through a parameter is already reaching
@@ -12232,7 +12403,7 @@ class CBindingGenerator(ClassVisitor):
         """
         return self._direct_result(plan) is not None and self._entrypoint_return_type(plan) != "void"
 
-    def _inverted_result_type(self, plan: FunctionPlan, result) -> str:
+    def _inverted_carrier_result_type(self, plan: FunctionPlan, result) -> str:
         """Return the C storage a carried direct result is written into.
 
         It is whatever the entrypoint returns, which is not always the scalar
@@ -12242,7 +12413,7 @@ class CBindingGenerator(ClassVisitor):
         del result
         return self._entrypoint_return_type(plan)
 
-    def _inverted_consumer_call(
+    def _inverted_carrier_call(
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
@@ -12251,10 +12422,10 @@ class CBindingGenerator(ClassVisitor):
         """Assemble the entrypoint call as the consumer makes it."""
         carried = {value: f"call->{declaration.name}" for declaration, value in fields}
         recorded = {
-            context.arguments[owner_path].value_name: f"call->{self._inverted_descriptor_field(slot)}"
-            for slot, owner_path in enumerate(context.inverted_descriptors)
+            context.arguments[owner_path].value_name: f"call->{self._inverted_carrier_field(slot)}"
+            for slot, owner_path in enumerate(context.inverted_carriers)
         }
-        owners = set(context.inverted_descriptors)
+        owners = set(context.inverted_carriers)
         arguments = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
             values = self._entrypoint_parameter_values(plan, group, context)
@@ -12266,13 +12437,13 @@ class CBindingGenerator(ClassVisitor):
                 continue
             arguments.extend(carried[value] for value in values)
         call = f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
-        return f"call->result = {call}" if self._inverted_carries_result(plan) else call
+        return f"call->result = {call}" if self._inverted_carriers_carry_result(plan) else call
 
-    def _inverted_context_name(self, plan: FunctionPlan) -> str:
+    def _inverted_carrier_context_name(self, plan: FunctionPlan) -> str:
         """Return the record carrying one inverted call's other values."""
         return f"{self._binding_function_name(plan)}_call_context"
 
-    def _inverted_context_fields(
+    def _inverted_carrier_context_fields(
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
@@ -12288,7 +12459,7 @@ class CBindingGenerator(ClassVisitor):
         stays valid because this frame outlives every consumer it enters.
         """
         descriptor_values = {
-            context.arguments[owner_path].value_name: owner_path for owner_path in context.inverted_descriptors
+            context.arguments[owner_path].value_name: owner_path for owner_path in context.inverted_carriers
         }
         pairs: list[tuple[CParameter, str]] = []
         for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position):
@@ -12303,7 +12474,7 @@ class CBindingGenerator(ClassVisitor):
             )
         return tuple(pairs)
 
-    def _inverted_chain_fields(
+    def _inverted_carrier_chain_fields(
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
@@ -12317,18 +12488,42 @@ class CBindingGenerator(ClassVisitor):
         consumer that enters it runs outside this frame.
         """
         pairs: list[tuple[CParameter, str]] = []
-        for slot, owner_path in enumerate(context.inverted_descriptors):
-            if slot > 0:
+        for slot, owner_path in enumerate(context.inverted_carriers):
+            argument = self._argument_by_owner(plan, owner_path)
+            if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+                names = context.arguments[owner_path]
                 pairs.append(
                     (
-                        CParameter(self._inverted_backend_field(slot), "prik_native_array_backend *"),
-                        self._descriptor_backend_local(context.arguments[owner_path]),
+                        CParameter(f"actual_{slot}", "prik_assumed_type_actual *"),
+                        f"&{names.value_name}_actual",
                     )
                 )
-        for slot, owner_path in enumerate(context.inverted_descriptors):
+        for slot, owner_path in enumerate(context.inverted_carriers):
+            if slot > 0:
+                argument = self._argument_by_owner(plan, owner_path)
+                assumed = argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+                pairs.append(
+                    (
+                        CParameter(
+                            self._inverted_backend_field(slot),
+                            "prik_derived_origin_ops *" if assumed else "prik_native_array_backend *",
+                        ),
+                        (
+                            f"{context.arguments[owner_path].value_name}_actual.origin_ops"
+                            if assumed
+                            else self._descriptor_backend_local(context.arguments[owner_path])
+                        ),
+                    )
+                )
+        for slot, owner_path in enumerate(context.inverted_carriers):
+            argument = self._argument_by_owner(plan, owner_path)
+            raw_assumed = (
+                argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+                and argument.entrypoint.passing is EntrypointPassingConvention.POINTER_REFERENCE
+            )
             pairs.append(
                 (
-                    CParameter(self._inverted_descriptor_field(slot), "CFI_cdesc_t *"),
+                    CParameter(self._inverted_carrier_field(slot), "void *" if raw_assumed else "CFI_cdesc_t *"),
                     context.arguments[owner_path].value_name,
                 )
             )
@@ -12340,7 +12535,7 @@ class CBindingGenerator(ClassVisitor):
         return f"{names.value_name}_native_backend"
 
     @staticmethod
-    def _inverted_descriptor_field(slot: int) -> str:
+    def _inverted_carrier_field(slot: int) -> str:
         """Return the record slot one entered descriptor is recorded in."""
         return f"descriptor_{slot}"
 
@@ -12349,13 +12544,14 @@ class CBindingGenerator(ClassVisitor):
         """Return the record slot one not-yet-entered backend is carried in."""
         return f"backend_{slot}"
 
-    def _inverted_consumer_name(self, plan: FunctionPlan, slot: int) -> str:
+    def _inverted_carrier_consumer_name(self, plan: FunctionPlan, slot: int) -> str:
         """Return the consumer that enters one descriptor of an inverted call."""
-        return f"{self._binding_function_name(plan)}_call_with_descriptor_{slot}"
+        return f"{self._binding_function_name(plan)}_call_with_carrier_{slot}"
 
-    def _inverted_enter_nodes(
+    def _enter_inverted_carrier_nodes(
         self,
         plan: FunctionPlan,
+        context: _CFunctionContext,
         slot: int,
         *,
         backend: str,
@@ -12370,7 +12566,27 @@ class CBindingGenerator(ClassVisitor):
         so the placeholder already recorded in its slot goes straight to the
         same consumer and the chain continues from there.
         """
-        consumer = self._inverted_consumer_name(plan, slot)
+        consumer = self._inverted_carrier_consumer_name(plan, slot)
+        owner_path = context.inverted_carriers[slot]
+        argument = self._argument_by_owner(plan, owner_path)
+        if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            status = f"({call_context})->scoped_status"
+            direct_address = f"({call_context})->actual_{slot}->data"
+            return (
+                CIf(
+                    CodeExpression(f"{backend} != NULL && {backend}->scoped != NULL"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(f"{status} = {backend}->scoped({consumer}, {call_context})")
+                        ),
+                    ),
+                    else_body=(
+                        CExpressionStatement(
+                            CodeExpression(f"{status} = {consumer}({direct_address}, {call_context})")
+                        ),
+                    ),
+                ),
+            )
         return (
             CIf(
                 CodeExpression(f"{backend} != NULL"),
@@ -13236,7 +13452,7 @@ class CBindingGenerator(ClassVisitor):
             python_result,
             python_results,
             role_values,
-            tuple(argument.owner_path for argument in self._inverted_descriptor_arguments(plan)),
+            tuple(argument.owner_path for argument in self._inverted_call_carriers(plan)),
             plan,
         )
 
@@ -14125,6 +14341,8 @@ class CBindingGenerator(ClassVisitor):
         passing: EntrypointPassingConvention,
     ) -> tuple[str, ...]:
         """Return one binding-to-entrypoint C handoff, including helper ABI fields."""
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return (names.value_name,)
         if plan.callback is not None:
             if not plan.entrypoint.pass_callback_parameter:
                 return ()
@@ -14428,6 +14646,12 @@ class CBindingGenerator(ClassVisitor):
         passing: EntrypointPassingConvention,
     ) -> tuple[CParameter, ...]:
         """Dispatch ordinary entrypoint parameters by completed handoff mode."""
+        if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return (
+                CParameter(
+                    name, "CFI_cdesc_t *" if passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER else "void *"
+                ),
+            )
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
             return self._string_entrypoint_argument_parameters(argument, name, passing=passing)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
@@ -15374,6 +15598,11 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CMethodDefEntry, ...]:
         """Expose private field callables used by generated Python properties."""
         names = (
+            *(
+                CBindingNames.derived_type_info_method(derived.backend_symbol)
+                for derived in namespace.derived_types
+                if not derived.abstract
+            ),
             *self._direct_field_method_names(namespace),
             *self._module_member_method_names(module, namespace),
             *self._allocatable_holder_method_names(namespace),

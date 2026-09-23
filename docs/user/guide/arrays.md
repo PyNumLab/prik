@@ -477,6 +477,65 @@ This checks the final Python axis and flattens the leading axes.
 
 ---
 
+## Pass Values To `TYPE(*)` Dummies
+
+Use `TYPE(*)` when a Fortran procedure accepts native values of more than one
+type. Pass a NumPy scalar for a read-only dummy, or an ndarray with the intended
+native dtype:
+
+```python
+from prik.contracts import Annotated, AnyNative, Flat, ReadOnly
+
+def scalar(value: AnyNative) -> None: ...
+def read_scalar(value: Annotated[AnyNative, ReadOnly]) -> None: ...
+def raw_buffer(values: AnyNative[Flat]) -> None: ...
+def vector(values: AnyNative[:]) -> None: ...
+def matrix(values: AnyNative[:, :]) -> None: ...
+def arbitrary_rank(values: AnyNative[...]) -> None: ...
+```
+
+`AnyNative` accepts values with PRIK-recognized native storage, including NumPy
+scalars and arrays and supported PRIK native objects. It does not accept an
+arbitrary Python object. `Flat` marks assumed-size storage; `...` marks assumed
+rank. Bare `AnyNative` permits native writes, so pass writable storage. When a
+procedure only reads its argument, use `Annotated[AnyNative, ReadOnly]` to also
+accept NumPy scalars; generated contracts use this marker for read-only dummies.
+
+```fortran
+subroutine consume(buf) bind(C)
+    type(*), dimension(..), intent(in) :: buf
+end subroutine
+```
+
+```python
+consume(np.int64(7))
+consume(np.array([1.0, 2.0], dtype=np.float64))
+```
+
+`type(*) :: x` passes the storage address. The supported assumed-size form,
+`type(*), dimension(*) :: x`, accepts contiguous array storage and passes its
+first element's address. Higher-rank assumed-size declarations are not yet
+supported.
+`dimension(:)`, higher-rank assumed shape, and `dimension(..)` pass a C
+descriptor containing the actual dtype, element size, rank, shape, and strides.
+Assumed rank also accepts a NumPy scalar, a rank-zero ndarray, or a PRIK native
+derived object. A PRIK native derived object can also be passed to a scalar
+`TYPE(*)` dummy. An arbitrary Python object has no native storage and is
+rejected. A writable dummy requires a writable ndarray when the actual is a
+NumPy value; NumPy scalars use call-local storage and are accepted only for
+read-only dummies.
+
+Descriptor dummies accept NumPy `bool`, signed integer dtypes from `int8`
+through `int64`, `float32`, `float64`, `complex64`, and `complex128`.
+Raw-address dummies can also receive other NumPy dtypes with native storage,
+including unsigned integers and fixed-width bytes. Dtypes containing Python
+object references are rejected. Arrays must be aligned and use native byte
+order.
+
+`ASYNCHRONOUS` is preserved in the generated Fortran declaration. For a
+nonblocking native operation, keep the Python buffer alive through its request
+completion; PRIK currently retains it only until the wrapper call returns.
+
 ## Strided Views
 
 Use `::` for an assumed-shape axis that accepts F-contiguous arrays and

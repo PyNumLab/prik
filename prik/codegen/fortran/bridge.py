@@ -261,7 +261,11 @@ class FortranBridgeGenerator(ClassVisitor):
         datatype_family: DatatypeFamily | None,
     ) -> None:
         """Resolve primitive types; shared validation owns every plan decision."""
-        if semantic_type_name is None or datatype_family in {DatatypeFamily.STRING, DatatypeFamily.DERIVED}:
+        if semantic_type_name is None or datatype_family in {
+            DatatypeFamily.STRING,
+            DatatypeFamily.DERIVED,
+            DatatypeFamily.ASSUMED_NATIVE,
+        }:
             return
         PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
@@ -353,6 +357,11 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return planned destruction and presence helpers for derived storage."""
         derived_types = self._derived_types(plan)
         return (
+            *(
+                self._derived_element_size_procedure(derived)
+                for derived in derived_types
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "derived:element_size")
+            ),
             *(
                 self._derived_destroy_procedure(derived)
                 for derived in derived_types
@@ -3835,6 +3844,8 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _lower_argument(self, plan: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Dispatch one completed bridge optional mode explicitly."""
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return (self._assumed_type_parameter(plan, plan.entrypoint.parameter_name),)
         if plan.callback is not None:
             if not plan.entrypoint.pass_callback_parameter:
                 return ()
@@ -3855,6 +3866,23 @@ class FortranBridgeGenerator(ClassVisitor):
         if plan.object_kind not in {ObjectKind.SCALAR, ObjectKind.STRING}:
             raise ValueError(f"Unsupported Fortran argument object kind for {plan.owner_path!r}: {plan.object_kind!r}")
         return self._lower_scalar_or_string_argument(plan, mode)
+
+    @staticmethod
+    def _assumed_type_parameter(plan: ArgumentTransferPlan, name: str) -> FortranParameter:
+        """Forward the source dummy's type-erased rank through an interoperable dummy."""
+        attributes = []
+        array = plan.array
+        if array is not None:
+            if array.category == "assumed_rank":
+                attributes.append("dimension(..)")
+            elif array.category == "assumed_size":
+                attributes.append("dimension(*)")
+            else:
+                attributes.append(f"dimension({', '.join(':' for _ in range(array.rank or 0))})")
+        attributes.extend(plan.fortran_assumed_attributes)
+        if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
+            attributes.append("optional")
+        return FortranParameter(name, "type(*)", tuple(attributes))
 
     # Derived-type argument lowering.
     def _lower_derived_argument(
@@ -4887,6 +4915,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _native_argument_expression(self, plan: ArgumentTransferPlan) -> str:
         """Return the native actual expression selected by one completed call slot."""
         name = plan.entrypoint.parameter_name
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return name
         if plan.callback is not None:
             return plan.callback.bridge.adapter_symbol
         if plan.derived_call is not None:
@@ -5267,6 +5297,8 @@ class FortranBridgeGenerator(ClassVisitor):
         for argument in plan.arguments:
             if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER:
                 continue
+            if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+                continue
             if self._array_crosses_as_descriptor(argument):
                 # The dummy is the view; there is no address to make one from.
                 continue
@@ -5302,6 +5334,8 @@ class FortranBridgeGenerator(ClassVisitor):
         initializers = []
         for argument in plan.arguments:
             if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER:
+                continue
+            if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
                 continue
             if argument.entrypoint.optional_mode is not OptionalMode.REQUIRED:
                 continue
@@ -8431,6 +8465,19 @@ class FortranBridgeGenerator(ClassVisitor):
             is_subroutine=True,
         )
 
+    def _derived_element_size_procedure(self, derived: DerivedTypePlan) -> FortranFunction:
+        """Ask Fortran for a concrete type's storage size without assuming its C layout."""
+        operation = self._generated_support_procedure_entrypoint(derived.owner_path, "derived:element_size")
+        return FortranFunction(
+            name=operation.symbol_name,
+            parameters=(),
+            result_name="result",
+            bind_name=operation.symbol_name,
+            result_type="integer(c_int64_t)",
+            declarations=(FortranDeclaration("value", f"type({self._derived_native_alias(derived.backend_symbol)})"),),
+            body=(FortranAssignment("result", CodeExpression("storage_size(value, kind=c_int64_t) / 8_c_int64_t")),),
+        )
+
     # Class construction is a thin allocator over Phase 8 opaque ownership.
     def _class_constructor_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
         """Allocate one persistent typed object for each constructible class."""
@@ -9368,6 +9415,8 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> FortranParameter:
         """Return the native external dummy declaration for one planned argument."""
         parameter_name = name or argument.bridge.native_name.casefold()
+        if argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return self._assumed_type_parameter(argument, parameter_name)
         if argument.callback is not None:
             return FortranParameter(parameter_name, "external")
         attributes = (

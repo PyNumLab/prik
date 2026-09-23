@@ -211,6 +211,9 @@ Int16 = _contract_type("Int16", _CONTRACT_NUMPY_FACTORIES["Int16"])
 Int32 = _contract_type("Int32", _CONTRACT_NUMPY_FACTORIES["Int32"])
 Int64 = _contract_type("Int64", _CONTRACT_NUMPY_FACTORIES["Int64"])
 Matrix = _contract_type("Matrix")
+AnyNative = _contract_type(
+    "AnyNative", constructor_error="AnyNative describes a native argument; it cannot be constructed"
+)
 SizeT = _contract_type("SizeT", _CONTRACT_NUMPY_FACTORIES["SizeT"])
 String = _contract_type("String", constructor_error="String requires an explicit native length and encoding contract")
 UInt = _contract_type("UInt", constructor_error="UInt requires a resolved native width")
@@ -227,7 +230,6 @@ private = _contract_type("private")
 
 Aliased = _ContractExpression()
 Allocatable = _DescriptorContract("allocatable")
-AssumedType = _ContractExpression()
 Contiguous = _ContractExpression()
 COPY_F = _ContractExpression()
 Flat = _ContractExpression()
@@ -239,9 +241,9 @@ ORDER_C = _ContractExpression()
 ORDER_F = _ContractExpression()
 Pointer = _DescriptorContract("pointer")
 Polymorphic = _ContractExpression()
+ReadOnly = _ContractExpression()
 
 Arg = _expression
-ArrayCategory = _expression
 Bounded = _expression
 Destruction = _expression
 Finite = _expression
@@ -351,8 +353,6 @@ CONTRACT_SYMBOLS = frozenset(
         "Annotated",
         "Any",
         "Arg",
-        "ArrayCategory",
-        "AssumedType",
         "Bool",
         "Bool8",
         "Bool16",
@@ -392,6 +392,7 @@ CONTRACT_SYMBOLS = frozenset(
         "IsPresent",
         "Len",
         "Matrix",
+        "AnyNative",
         "MaybeUnallocated",
         "Opaque",
         "OpaqueHandle",
@@ -405,6 +406,7 @@ CONTRACT_SYMBOLS = frozenset(
         "PointerAssociation",
         "PointerPolicy",
         "Polymorphic",
+        "ReadOnly",
         "Range",
         "Return",
         "Returns",
@@ -471,6 +473,7 @@ CONTRACT_TYPE_NAMES = frozenset(
         "Int32",
         "Int64",
         "Matrix",
+        "AnyNative",
         "Opaque",
         "OpaqueHandle",
         "Pointer",

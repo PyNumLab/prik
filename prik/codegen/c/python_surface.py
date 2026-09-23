@@ -167,6 +167,11 @@ class PythonSurfaceEmitter(ClassVisitor):
             f"class {name}{f'({base})' if base else ''}:",
             self._class_docstring_line(surface, name),
             f"    __slots__ = {slots}",
+            *(
+                (f"    _prik_type_info = {CBindingNames.derived_type_info_method(derived.backend_symbol)}()",)
+                if not derived.abstract
+                else ()
+            ),
         ]
         lines.extend(self._class_constructor_python_lines(surface))
         lines.extend(self._derived_class_member_python_lines(derived, surface))

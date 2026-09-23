@@ -713,6 +713,18 @@ class PyiPrinter(ClassVisitor):
         context: _PyiEmissionContext,
     ) -> list[str]:
         """Handle array dimensions for the current generation context."""
+        shape = self._array_shape_for_printing(semantic_type, array)
+        dimensions = [PyiPrinter._printed_array_dimension(dim) for dim in shape]
+        return [context.contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
+
+    @staticmethod
+    def _array_shape_for_printing(
+        semantic_type: SemanticType,
+        array: SemanticArrayContract | None,
+    ) -> list[str]:
+        """Select the one source shape represented by an array annotation."""
+        if semantic_type.name == "AnyNative" and array is not None and array.category == "assumed_shape":
+            return [":" for _ in range(array.rank or 0)]
         if array is not None and array.category == "assumed_size" and array.source_shape:
             shape = list(array.shape if array.shape else semantic_type.shape)
             if len(shape) != len(array.source_shape):
@@ -724,8 +736,7 @@ class PyiPrinter(ClassVisitor):
             shape = list(array.shape if array is not None and array.shape else semantic_type.shape)
         if not shape and semantic_type.rank > 0:
             shape = [":" for _ in range(semantic_type.rank)]
-        dimensions = [PyiPrinter._printed_array_dimension(dim) for dim in shape]
-        return [context.contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
+        return shape
 
     @staticmethod
     def _assumed_size_array_dimension(dimension: object) -> str:
@@ -798,7 +809,11 @@ class PyiPrinter(ClassVisitor):
         metadata: list[str] = []
         source_type = (semantic_type.origin.source_type or "").casefold().replace(" ", "")
         if source_type in {"type(*)", "class(*)"} or semantic_type.metadata.get("fortran_assumed_type"):
-            metadata.append(context.contract("AssumedType"))
+            if semantic_type.storage is not None and semantic_type.storage.read_only:
+                metadata.append(context.contract("ReadOnly"))
+            array = semantic_type.storage.array if semantic_type.storage is not None else None
+            if array is not None and array.contiguous and array.category != "assumed_size":
+                metadata.append(context.contract("Contiguous"))
         if semantic_type.metadata.get("fortran_polymorphic"):
             metadata.append(context.contract("Polymorphic"))
         if (

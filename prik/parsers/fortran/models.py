@@ -306,6 +306,14 @@ class FortranArgument(FortranVariable):
     target: bool = False
 
     @property
+    def asynchronous(self) -> bool:
+        return bool(getattr(self, "_asynchronous", False))
+
+    @asynchronous.setter
+    def asynchronous(self, value: bool) -> None:
+        self._asynchronous = bool(value)
+
+    @property
     def contiguous(self) -> bool:
         return bool(getattr(self, "_contiguous", False))
 

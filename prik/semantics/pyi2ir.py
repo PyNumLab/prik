@@ -2058,6 +2058,13 @@ class _PyiAstParser:
         if name == "Unknown":
             raise ValueError("Unknown semantic type is not allowed in .pyi annotations")
         if not isinstance(node, ast.Subscript):
+            if name == "AnyNative":
+                return SemanticType(
+                    name=name,
+                    dtype=name,
+                    metadata={"fortran_assumed_type": True},
+                    storage=SemanticStorageContract(kind="reference", pointer_depth=1),
+                )
             return SemanticType(name=name, dtype=name)
 
         if not self._is_array_subscript(node):
@@ -2244,6 +2251,8 @@ class _PyiAstParser:
         """Build array storage, bounds, axes, and layout from already-parsed dimensions."""
         strided_axes = [_STRIDED_DIMENSION_SENTINEL in dim for dim in dims]
         dims, category, source_shape, lower_bounds, upper_bounds = _PyiAstParser._flat_array_dimensions(dims)
+        if name == "AnyNative":
+            category = self._assumed_native_array_category(dims, category, source_shape)
         if not dims:
             category = SCALAR_STORAGE_CATEGORY
         runtime_rank = dims == ["..."]
@@ -2261,7 +2270,7 @@ class _PyiAstParser:
             axes=["strided" if strided else "dense" for strided in strided_axes],
             # ``T[...]`` states no rank, so it also states no layout. Policy
             # completes the language default; ``Contiguous`` still asserts one.
-            contiguous=None if runtime_rank else not any(strided_axes),
+            contiguous=self._array_contiguity_from_dimensions(name, category, runtime_rank, strided_axes),
             category=category,
             source_shape=source_shape,
             lower_bounds=lower_bounds,
@@ -2274,9 +2283,31 @@ class _PyiAstParser:
             dtype=name,
             shape=list(dims) if rank is not None else [],
             constraints=[],
-            metadata=dict(metadata or {}),
+            metadata={**dict(metadata or {}), **({"fortran_assumed_type": True} if name == "AnyNative" else {})},
             storage=storage,
         )
+
+    @staticmethod
+    def _assumed_native_array_category(dims: list[str], category: str | None, source_shape: list[str]) -> str | None:
+        """Let the public shape spelling determine assumed-type array semantics."""
+        if category == "assumed_size":
+            if len(dims) != 1 or source_shape != ["*"]:
+                raise ValueError("AnyNative[Flat] supports rank-one assumed-size storage only")
+            return category
+        if dims == ["..."]:
+            return category
+        if not dims or any(dim != ":" for dim in dims):
+            raise ValueError("AnyNative array shape must use Flat, : dimensions, or ...")
+        return "assumed_shape"
+
+    @staticmethod
+    def _array_contiguity_from_dimensions(
+        name: str, category: str | None, runtime_rank: bool, strided_axes: list[bool]
+    ) -> bool | None:
+        """Read layout from the array spelling before metadata narrows it."""
+        if runtime_rank or (name == "AnyNative" and category == "assumed_shape"):
+            return None
+        return not any(strided_axes)
 
     @staticmethod
     def _flat_array_dimensions(
@@ -2417,9 +2448,6 @@ class _PyiAstParser:
         if helper in {"Ownership", "Transfer", "Destruction"}:
             self._apply_ownership_annotation_metadata(semantic_type, node, helper)
             return
-        if helper == "ArrayCategory":
-            self._require_array_storage(semantic_type).category = str(ast.literal_eval(node.args[0]))
-            return
         if node.keywords:
             raise ValueError(f"Constraint metadata expects positional arguments only: {ast.unparse(node)!r}")
         self._append_constraint_metadata(
@@ -2525,6 +2553,14 @@ class _PyiAstParser:
         if name == "Immutable":
             semantic_type.metadata[PYTHON_VALUE_MUTABILITY_METADATA] = PYTHON_VALUE_IMMUTABLE
             return True
+        if name == "ReadOnly":
+            if semantic_type.name != "AnyNative":
+                raise ValueError("ReadOnly currently applies to AnyNative arguments")
+            if semantic_type.storage is None:
+                raise ValueError("ReadOnly requires native storage")
+            semantic_type.storage.read_only = True
+            semantic_type.storage.mutable = False
+            return True
         if name == "MaybeUnallocated":
             semantic_type.metadata[MAYBE_UNALLOCATED_METADATA] = True
             return True
@@ -2534,9 +2570,6 @@ class _PyiAstParser:
         if name == "Aliased":
             semantic_type.metadata["aliased"] = True
             semantic_type.metadata["fortran_target"] = True
-            return True
-        if name == "AssumedType":
-            semantic_type.metadata["fortran_assumed_type"] = True
             return True
         if name == "Polymorphic":
             semantic_type.metadata["fortran_polymorphic"] = True

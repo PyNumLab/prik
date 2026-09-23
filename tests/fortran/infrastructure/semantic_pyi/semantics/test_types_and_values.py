@@ -368,10 +368,10 @@ c_tensor: Annotated[Float64[Flat, 3, 4], ORDER_C]
     assert [array.order for array in arrays] == [None, "ORDER_F", "ORDER_F", "ORDER_C", "ORDER_C"]
 
 
-def test_convert_pyi_to_ir_preserves_extended_array_metadata_and_nested_selector():
+def test_convert_pyi_to_ir_preserves_array_layout_and_nested_selector():
     module = parse_pyi_text(
         """
-value: Annotated[Float64[:, :], Contiguous, ArrayCategory("deferred_shape")]
+value: Float64[:, :]
 nested: Float64[:, :][rank, kind]
 name: Annotated[String[16], FortranAllocatable]
 
@@ -388,7 +388,7 @@ def fill(x: Float64[:]) -> None: ...
     assert value.allocatable is False
     assert value.pointer is False
     assert value.contiguous is True
-    assert value.category == "deferred_shape"
+    assert value.category is None
     assert value.source_shape == []
     assert value.lower_bounds == []
     assert value.upper_bounds == []

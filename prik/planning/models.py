@@ -122,6 +122,7 @@ class DatatypeFamily(Enum):
     COMPLEX = "complex"
     STRING = "string"
     DERIVED = "derived"
+    ASSUMED_NATIVE = "assumed_native"
     CALLBACK = "callback"
 
 
@@ -1309,6 +1310,7 @@ class ArgumentTransferPlan(StageRecord):
     transformations: tuple[TransformationPlan, ...] = ()
     native_storage_c_type: str | None = None
     character_allows_embedded_nul: bool = False
+    fortran_assumed_attributes: tuple[str, ...] = ()
 
     @property
     def projects_character_descriptor_update(self) -> bool:

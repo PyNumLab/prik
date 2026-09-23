@@ -160,7 +160,7 @@ _REGEX: dict[str, re.Pattern[str]] = {
     "legacy_parameter": re.compile(r"^parameter\s*\(\s*(?P<body>.*)\s*\)$", re.IGNORECASE),
     "construct_name": re.compile(r"^[A-Za-z_]\w*\s*:(?!:)\s*(?P<body>.+)$"),
     "derived_type": re.compile(r"^type\s*(?P<attrs>(?:,\s*[^:]+)?)::\s*(?P<name>\w+)(?:\s*\([^)]*\))?$", re.IGNORECASE),
-    "type_field": re.compile(r"^type\s*\(\s*(?P<dtype>\w+(?:\s*\([^)]*\))?)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
+    "type_field": re.compile(r"^type\s*\(\s*(?P<dtype>\*|\w+(?:\s*\([^)]*\))?)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
     "class_field": re.compile(r"^class\s*\(\s*(?P<dtype>\w+(?:\s*\([^)]*\))?)\s*\)\s*(?P<attrs>.*)$", re.IGNORECASE),
     "procedure_binding": re.compile(
         r"^procedure\s*(?:\(\s*(?P<iface>\w+)\s*\))?\s*(?:,\s*[^:]*)?::\s*(?P<names>.*)$",
@@ -294,6 +294,7 @@ _DECLARATION_FLAG_FIELDS = MappingProxyType(
         "pointer": "pointer",
         "target": "target",
         "contiguous": "contiguous",
+        "asynchronous": "asynchronous",
         "external": "external",
         "parameter": "parameter",
         "protected": "protected",
@@ -363,6 +364,7 @@ class _Declaration:
     target: bool = False
     protected: bool = False
     contiguous: bool = False
+    asynchronous: bool = False
     external: bool = False
     parameter: bool = False
     polymorphic: bool = False
@@ -4103,6 +4105,15 @@ class FortranParser(ClassVisitor):
             )
             return
 
+        if declaration.base_type == "derived" and declaration.kind == "*":
+            raise FortranParseError(
+                "TYPE(*) is only valid for a procedure dummy argument",
+                filename=filename,
+                line_number=lineno,
+                source_line=source_line,
+                code="PARSE_UNSUPPORTED_DECLARATION",
+            )
+
         target = scope.model
         if target is None:  # pragma: no cover - internal helper misuse.
             raise FortranParseError(
@@ -4156,9 +4167,59 @@ class FortranParser(ClassVisitor):
                 self._proc_scope_add_external_symbol(proc_state, lowered_name)
             arg = self._proc_scope_get_symbol(proc_state, lowered_name)
             if arg is None:
+                if entity_declaration.base_type == "derived" and entity_declaration.kind == "*":
+                    raise FortranParseError(
+                        "TYPE(*) is only valid for a procedure dummy argument",
+                        filename=filename,
+                        line_number=lineno,
+                        source_line=source_line,
+                        code="PARSE_UNSUPPORTED_DECLARATION",
+                    )
                 self._proc_scope_set_declared_local_type(proc_state, lowered_name, entity_declaration)
                 continue
+            if entity_declaration.base_type == "derived" and entity_declaration.kind == "*":
+                self._validate_assumed_type_dummy(
+                    entity_declaration,
+                    shape or entity_declaration.shape,
+                    filename=filename,
+                    lineno=lineno,
+                    source_line=source_line,
+                )
             self._apply_declaration(arg, entity_declaration, shape)
+
+    @staticmethod
+    def _validate_assumed_type_dummy(
+        declaration: _Declaration,
+        shape: list[str],
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ) -> None:
+        """Keep the standard's assumed-type dummy restrictions at source parsing."""
+        invalid = (
+            "VALUE"
+            if declaration.value
+            else "POINTER"
+            if declaration.pointer
+            else "ALLOCATABLE"
+            if declaration.allocatable
+            else "INTENT(OUT)"
+            if declaration.intent == "out"
+            else "higher-rank assumed-size (only x(*) is supported)"
+            if len(shape) > 1 and shape[-1].strip() == "*"
+            else "explicit shape"
+            if shape and shape != [".."] and not (all(part.strip() == ":" for part in shape) or shape == ["*"])
+            else None
+        )
+        if invalid is not None:
+            raise FortranParseError(
+                f"TYPE(*) dummy cannot have {invalid}",
+                filename=filename,
+                line_number=lineno,
+                source_line=source_line,
+                code="PARSE_UNSUPPORTED_DECLARATION",
+            )
 
     def _store_type_field_declaration(self, target, declaration: _Declaration, right: str) -> None:
         """Append every entity in one declaration to a derived-type model.
@@ -4402,6 +4463,8 @@ class FortranParser(ClassVisitor):
         arg.pointer = declaration.pointer
         arg.target = declaration.target
         arg.contiguous = declaration.contiguous
+        if declaration.asynchronous:
+            arg.asynchronous = True
         arg.is_parameter = declaration.parameter
         arg.visibility = declaration.visibility
         FortranParser._apply_internal_type_metadata(arg, declaration)
