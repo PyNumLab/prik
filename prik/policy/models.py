@@ -1338,6 +1338,7 @@ class ArgumentPolicy:
     native_storage_c_type: str | None = None
     native_array_element_c_type: str | None = None
     character_allows_embedded_nul: bool = False
+    fortran_assumed_attributes: tuple[str, ...] = ()
 
     @property
     def projects_character_descriptor_update(self) -> bool:

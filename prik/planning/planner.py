@@ -179,6 +179,7 @@ _DATATYPE_FAMILIES = {
     "Complex128": DatatypeFamily.COMPLEX,
     "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
+    "NativeValue": DatatypeFamily.ASSUMED_NATIVE,
 }
 
 
@@ -1925,6 +1926,7 @@ class WrapperPlanner(ClassVisitor):
             transformations=tuple(self.visit(item) for item in policy.transformations),
             native_storage_c_type=policy.native_storage_c_type,
             character_allows_embedded_nul=policy.character_allows_embedded_nul,
+            fortran_assumed_attributes=policy.fortran_assumed_attributes,
         )
 
     def _callback_handoff_plan(
@@ -2821,6 +2823,12 @@ class WrapperPlanner(ClassVisitor):
             self._requires_derived_descriptor_header(namespaces)
             or self._accepts_array_handle_actual(namespaces)
             or self._uses_array_descriptor_abi(namespaces)
+            or any(
+                argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+                for namespace in namespaces
+                for function in namespace.functions
+                for argument in function.arguments
+            )
         ):
             headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         return tuple(dict.fromkeys(headers))

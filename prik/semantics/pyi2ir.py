@@ -2411,6 +2411,15 @@ class _PyiAstParser:
         if helper == "PointerAssociation":
             self._apply_pointer_association_metadata(semantic_type, node)
             return
+        if helper == "FortranIntent":
+            intent = str(self._require_single_metadata_argument(node, helper)).casefold()
+            if intent not in {"in", "out", "inout"} or semantic_type.name != "NativeValue":
+                raise ValueError("FortranIntent requires an assumed native type and in, out, or inout")
+            semantic_type.metadata["fortran_assumed_intent"] = intent
+            if semantic_type.storage is None:
+                semantic_type.storage = SemanticStorageContract(kind="reference", pointer_depth=1)
+            semantic_type.storage.read_only = intent == "in"
+            return
         if helper == "PointerPolicy":
             self._apply_pointer_policy_metadata(semantic_type, node)
             return
@@ -2535,13 +2544,25 @@ class _PyiAstParser:
             semantic_type.metadata["aliased"] = True
             semantic_type.metadata["fortran_target"] = True
             return True
-        if name == "AssumedType":
-            semantic_type.metadata["fortran_assumed_type"] = True
+        if name in {"AssumedType", "Asynchronous"}:
+            self._apply_assumed_type_metadata_name(semantic_type, name)
             return True
         if name == "Polymorphic":
             semantic_type.metadata["fortran_polymorphic"] = True
             return True
         return False
+
+    @staticmethod
+    def _apply_assumed_type_metadata_name(semantic_type: SemanticType, name: str) -> None:
+        """Preserve the two bare assumed-type markers in edited contracts."""
+        if name == "AssumedType":
+            semantic_type.metadata["fortran_assumed_type"] = True
+            if semantic_type.name == "NativeValue" and semantic_type.storage is None:
+                semantic_type.storage = SemanticStorageContract(kind="reference", pointer_depth=1)
+            return
+        if semantic_type.name != "NativeValue":
+            raise ValueError("Asynchronous requires an assumed native type")
+        semantic_type.metadata["fortran_asynchronous"] = True
 
     @staticmethod
     def _validate_array_copy_metadata(semantic_type: SemanticType) -> None:

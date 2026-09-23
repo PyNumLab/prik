@@ -799,6 +799,14 @@ class PyiPrinter(ClassVisitor):
         source_type = (semantic_type.origin.source_type or "").casefold().replace(" ", "")
         if source_type in {"type(*)", "class(*)"} or semantic_type.metadata.get("fortran_assumed_type"):
             metadata.append(context.contract("AssumedType"))
+            intent = semantic_type.metadata.get("fortran_assumed_intent")
+            if intent is not None:
+                metadata.append(f"{context.contract('FortranIntent')}({json.dumps(str(intent))})")
+            if semantic_type.metadata.get("fortran_asynchronous"):
+                metadata.append(context.contract("Asynchronous"))
+            array = semantic_type.storage.array if semantic_type.storage is not None else None
+            if array is not None and array.contiguous:
+                metadata.append(context.contract("Contiguous"))
         if semantic_type.metadata.get("fortran_polymorphic"):
             metadata.append(context.contract("Polymorphic"))
         if (

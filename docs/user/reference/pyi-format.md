@@ -922,7 +922,8 @@ type. Metadata falls into four groups.
 | `Aliased` | Native storage is addressable or may be exposed as an alias. | Fortran `target` and borrowed native objects. |
 | `Immutable` | Python-visible value is replace-only, not mutated in place. | Requires a compatible replacement/copy policy for writable native storage. |
 | `Polymorphic` | Fortran native declaration is `class(T)`. | Fortran. |
-| `AssumedType` | Fortran native declaration is assumed type. | Accepted/generated where source semantics require it; wrapper support is limited. |
+| `AssumedType` | Fortran native declaration is assumed type; pair with `NativeValue`. | Accepted/generated for supported assumed-type dummies. |
+| `FortranIntent("in")`, `Asynchronous` | Preserve assumed-type dummy intent and asynchronous semantics. | Generated from Fortran source and accepted in edited assumed-type contracts. |
 | `MaybeUnallocated` | Direct allocatable array function result can be unallocated. | Valid only on that result form. |
 | `PointerAssociation("runtime")` | Pointer association is runtime state. | Fortran pointer facts. |
 | `SourceName("native-name")` | Preserve a native name that the Python identifier cannot represent. | Shared. |
@@ -1090,12 +1091,12 @@ valid and whether it is buildable.
 | Group | Public names |
 | --- | --- |
 | Typing forms | `Annotated`, `Any`, `Final` |
-| Scalar types | `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Void` |
+| Scalar types | `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `NativeValue`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Void` |
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |
 | Shape and layout markers | `Contiguous`, `COPY_F`, `Flat`, `ORDER_ANY`, `ORDER_C`, `ORDER_F` |
-| General metadata | `Aliased`, `ArrayCategory`, `AssumedType`, `FortranAllocatable`, `Immutable`, `MaybeUnallocated`, `Polymorphic`, `SourceName` |
+| General metadata | `Aliased`, `ArrayCategory`, `AssumedType`, `Asynchronous`, `FortranAllocatable`, `FortranIntent`, `Immutable`, `MaybeUnallocated`, `Polymorphic`, `SourceName` |
 | Constraints and ownership | `Bounded`, `Finite`, `Range`, `Ownership`, `Transfer`, `Destruction`, `PointerAssociation`, `PointerPolicy` |
 | Prototype direction | `In`, `Out`, `InOut` |
 | Native-call helpers | `Arg`, `Hidden`, `IsPresent`, `Len`, `Pass`, `Return`, `Value`, `Work` |

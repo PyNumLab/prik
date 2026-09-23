@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Fortran `TYPE(*)` dummies accept native NumPy scalars and arrays through the
+  declaration's address or C-descriptor ABI. Direct `BIND(C)` entries remain
+  direct; generated contracts retain assumed-type intent and asynchronous
+  attributes.
+
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
   module-qualified Fortran procedure identities. Generated contracts and
   source builds publish only that reviewed function surface while retaining

@@ -2143,6 +2143,8 @@ class WrapperGenerator:
         available_roles: tuple[str, ...],
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch one argument from its completed object-kind decision."""
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
+            return self._assumed_native_argument_diagnostics(plan)
         if plan.callback is not None or plan.datatype_family is DatatypeFamily.CALLBACK:
             return self._callback_argument_diagnostics(plan)
         match plan.object_kind:
@@ -2159,6 +2161,7 @@ class WrapperGenerator:
                         )
                     )
                 return tuple(diagnostics)
+
             case ObjectKind.STRING:
                 diagnostics = list(self._string_boundary_diagnostics(plan))
                 if plan.array is not None:
@@ -2179,6 +2182,31 @@ class WrapperGenerator:
                         plan.object_kind.value,
                     ),
                 )
+
+    def _assumed_native_argument_diagnostics(self, plan: ArgumentTransferPlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Check that one assumed dummy's completed ABI agrees with its shape."""
+        diagnostics = []
+        if plan.binding.python_action is not PythonBarrierAction.ASSUMED_NATIVE:
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "invalid-assumed-native-action", plan.binding.python_action.value)
+            )
+        descriptor = plan.array is not None and plan.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        expected = (
+            EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+            if descriptor
+            else EntrypointPassingConvention.POINTER_REFERENCE
+        )
+        if plan.entrypoint.passing not in {expected, EntrypointPassingConvention.NULLABLE_POINTER}:
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "invalid-assumed-native-abi", plan.entrypoint.passing.value)
+            )
+        if (
+            plan.array is not None
+            and plan.array.category == "assumed_rank"
+            and (plan.array.minimum_rank, plan.array.maximum_rank) != (0, 15)
+        ):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-assumed-native-rank-bounds", None))
+        return tuple(diagnostics)
 
     def _callback_argument_diagnostics(
         self,
@@ -2882,6 +2910,8 @@ class WrapperGenerator:
     def _expected_argument_data_action(self, plan: ArgumentTransferPlan) -> BridgeDataAction:
         """Return the data action implied by completed orthogonal selectors."""
         if plan.callback is not None:
+            return BridgeDataAction.DIRECT_TRANSFER
+        if plan.datatype_family is DatatypeFamily.ASSUMED_NATIVE:
             return BridgeDataAction.DIRECT_TRANSFER
         if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
             return BridgeDataAction.COPY_REPRESENTATION

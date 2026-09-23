@@ -163,6 +163,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             support_procedures=(
                 *self._callback_operations(),
                 *self._class_constructor_operations(),
+                *(
+                    self._derived_element_size_operation(derived)
+                    for derived in self.derived_types
+                    if not derived.abstract
+                ),
                 *(self._derived_destroy_operation(derived) for derived in owned_types),
                 *(self._holder_destroy_operation(derived, "allocatable") for derived in allocatable_holders),
                 *(self._holder_destroy_operation(derived, "pointer") for derived in pointer_holders),
@@ -433,6 +438,15 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             "derived:destroy",
             f"bind_c_prik_destroy_{derived.backend_symbol.casefold()}",
             (self._opaque_parameter("address"),),
+        )
+
+    def _derived_element_size_operation(self, derived: DerivedTypePlan) -> GeneratedSupportProcedureEntrypointPlan:
+        """Expose the native size of one concrete type to its generic actual metadata."""
+        return self._operation(
+            derived.owner_path,
+            "derived:element_size",
+            f"bind_c_prik_element_size_{derived.backend_symbol.casefold()}",
+            result=self._int64_result(),
         )
 
     def _holder_destroy_operation(

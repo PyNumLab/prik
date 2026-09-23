@@ -477,6 +477,32 @@ This checks the final Python axis and flattens the leading axes.
 
 ---
 
+## Pass Values To `TYPE(*)` Dummies
+
+Use `TYPE(*)` when a Fortran procedure accepts native values of more than one
+type. Pass a NumPy scalar or array with the intended native dtype:
+
+```fortran
+subroutine consume(buf) bind(C)
+    type(*), dimension(..), intent(in) :: buf
+end subroutine
+```
+
+```python
+consume(np.int64(7))
+consume(np.array([1.0, 2.0], dtype=np.float64))
+```
+
+`type(*) :: x` passes the storage address. `type(*), dimension(*) :: x`
+accepts contiguous array storage and passes its first element's address.
+`dimension(:)`, higher-rank assumed shape, and `dimension(..)` pass a C
+descriptor containing the actual dtype, element size, rank, shape, and strides.
+Assumed rank also accepts a NumPy scalar, a rank-zero ndarray, or a PRIK native
+derived object. A PRIK native derived object can also be passed to a scalar
+`TYPE(*)` dummy. An arbitrary Python object has no native storage and is
+rejected. Use a writable ndarray when the procedure must modify the value;
+NumPy scalar values use call-local storage.
+
 ## Strided Views
 
 Use `::` for an assumed-shape axis that accepts F-contiguous arrays and

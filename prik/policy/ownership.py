@@ -225,6 +225,7 @@ class PythonBarrierAction(str, Enum):
     SCALAR_VALUE = "scalar_value"
     SCALAR_STORAGE = "scalar_storage"
     ARRAY_STORAGE = "array_storage"
+    ASSUMED_NATIVE = "assumed_native"
     STRING_VALUE = "string_value"
     STRING_STORAGE = "string_storage"
     RAW_ADDRESS = "raw_address"
@@ -2398,6 +2399,8 @@ class OwnershipPolicyResolver:
             return PythonBarrierAction.BLOCKED
         if not context.is_argument or not context.python_visible:
             return PythonBarrierAction.NONE
+        if facts.name == "NativeValue":
+            return PythonBarrierAction.ASSUMED_NATIVE
         if facts.address_role == ADDRESS_ROLE_RAW:
             return PythonBarrierAction.RAW_ADDRESS
         if _is_native_array_handle_facts(facts) and decision.descriptor_boundary:
@@ -2551,7 +2554,7 @@ class OwnershipPolicyResolver:
         name = str(getattr(semantic_type, "name", ""))
         rank = int(getattr(semantic_type, "rank", 0) or 0)
         is_string = name == "String"
-        is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES
+        is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES | {"NativeValue"}
         return _StorageFacts(
             rank=rank,
             name=name,

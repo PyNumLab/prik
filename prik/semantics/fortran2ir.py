@@ -531,6 +531,7 @@ class FortranToIRConverter(ClassVisitor):
             metadata[EXTERNAL_TYPE_REF_METADATA] = ref_metadata
         if var.base_type.lower() == "character":
             metadata["fortran_character_length"] = self._character_length(var)
+        metadata.update(self._assumed_type_metadata(var))
         if var.rank == 0 and getattr(var, "allocatable", False):
             metadata["fortran_allocatable"] = True
         if getattr(var, "polymorphic", False):
@@ -545,6 +546,8 @@ class FortranToIRConverter(ClassVisitor):
         if getattr(var, "pointer", False):
             metadata["fortran_pointer"] = True
             metadata["fortran_pointer_association"] = "runtime"
+        if getattr(var, "asynchronous", False):
+            metadata["fortran_asynchronous"] = True
         shape = [self._resolve_compile_time_text(dim) for dim in var.shape]
         if var.rank > 0:
             storage = self._array_storage_contract(var, shape, declaration_arrays=declaration_arrays)
@@ -563,6 +566,16 @@ class FortranToIRConverter(ClassVisitor):
         )
         self._add_variable_constraints(semantic_type, var)
         return semantic_type
+
+    @staticmethod
+    def _assumed_type_metadata(var: FortranVariable) -> dict[str, object]:
+        """Record source assumed-type facts without interpreting the actual value."""
+        if var.base_type.lower() != "derived" or var.kind != "*":
+            return {}
+        metadata: dict[str, object] = {"fortran_assumed_type": True}
+        if getattr(var, "intent", None) is not None:
+            metadata["fortran_assumed_intent"] = var.intent
+        return metadata
 
     def _character_length(self, var: FortranVariable) -> str:
         """Return the resolved character length recorded by a parsed declaration.
@@ -2430,7 +2443,7 @@ class FortranToIRConverter(ClassVisitor):
         procedure-local import is deliberately qualified to avoid colliding with
         module-level names; the returned metadata records wrapper availability.
         """
-        if var.base_type.lower() != "derived":
+        if var.base_type.lower() != "derived" or var.kind == "*":
             return None
         local_name = str(var.kind)
         if not local_name:
@@ -2532,6 +2545,8 @@ class FortranToIRConverter(ClassVisitor):
         if base_type == "derived":
             if not var.kind:
                 raise ValueError(f"Derived type variable '{var.name}' is missing concrete type name")
+            if var.kind == "*":
+                return "NativeValue"
             return str(var.kind)
         if base_type == "procedure":
             return "Procedure"
@@ -2698,12 +2713,14 @@ class FortranToIRConverter(ClassVisitor):
             "pointer": bool(getattr(var, "pointer", False)),
             "target": bool(getattr(var, "target", False)),
             "contiguous": bool(getattr(var, "contiguous", False)),
+            "asynchronous": bool(getattr(var, "asynchronous", False)),
         }
         if isinstance(var, FortranArgument):
             metadata.update(
                 {
                     "optional": var.optional,
                     "value": var.pass_by_value,
+                    "intent": var.intent,
                 }
             )
         if getattr(var, "pointer", False):

@@ -2042,6 +2042,7 @@ def _complete_entrypoint_argument_route(
         ),
         entrypoint_pass_array_metadata=(
             uses_adapter
+            and argument.semantic_type_name != "NativeValue"
             and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
             and argument.array is not None
             and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
@@ -2119,6 +2120,8 @@ def _argument_passes_by_value(
     slot: NativeCallSlotPolicy | None,
 ) -> bool:
     """Return the original declared value transport without backend inference."""
+    if argument.semantic_type.name == "NativeValue":
+        return False
     if "value" in argument.origin.metadata:
         return bool(argument.origin.metadata["value"])
     if slot is None:
@@ -2795,6 +2798,7 @@ def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
     """Return direct-route blockers owned by one completed argument policy."""
     callback_supported = _direct_callback_supported(argument.callback)
     descriptor_supported = _direct_descriptor_supported(argument)
+    assumed_supported = _direct_assumed_type_supported(argument)
     derived_reference_supported = _direct_derived_reference_supported(argument)
     mechanism_supported = any(
         (
@@ -2803,6 +2807,7 @@ def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
             derived_reference_supported,
             callback_supported,
             descriptor_supported,
+            assumed_supported,
         )
     )
 
@@ -2826,6 +2831,22 @@ def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
     if argument.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not _is_scalar_c_character(argument):
         reasons.append(f"argument {argument.name!r} requires adapter representation work")
     return tuple(reasons)
+
+
+def _direct_assumed_type_supported(argument: ArgumentPolicy) -> bool:
+    """Read the completed dummy ABI for a direct assumed-type entrypoint."""
+    if argument.semantic_type_name != "NativeValue":
+        return False
+    if argument.entrypoint_passing in {
+        EntrypointPassingConvention.POINTER_REFERENCE,
+        EntrypointPassingConvention.NULLABLE_POINTER,
+    }:
+        return argument.array is None or argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
+    return (
+        argument.array is not None
+        and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
+        and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+    )
 
 
 def _direct_scalar_supported(argument: ArgumentPolicy) -> bool:
@@ -3208,6 +3229,26 @@ def _argument_policy(
             transformations=transformations,
             entrypoint_passing=entrypoint_passing,
             entrypoint_optionality=entrypoint_optionality,
+            fortran_assumed_attributes=(
+                tuple(
+                    attr
+                    for attr in (
+                        f"intent({argument.semantic_type.metadata['fortran_assumed_intent']})"
+                        if argument.semantic_type.metadata.get("fortran_assumed_intent")
+                        else None,
+                        "asynchronous" if argument.semantic_type.metadata.get("fortran_asynchronous") else None,
+                        "target" if argument.semantic_type.metadata.get("fortran_target") else None,
+                        "contiguous"
+                        if argument.semantic_type.storage is not None
+                        and argument.semantic_type.storage.array is not None
+                        and argument.semantic_type.storage.array.contiguous
+                        else None,
+                    )
+                    if attr is not None
+                )
+                if argument.semantic_type.name == "NativeValue"
+                else ()
+            ),
         ),
         blockers,
     )
@@ -4856,6 +4897,12 @@ def _argument_shape_blockers(
     polymorphic: PolymorphicDispatchPolicy | None,
 ) -> tuple[str, ...]:
     """Dispatch one argument to its scalar/string or array policy family."""
+    if argument.semantic_type.name == "NativeValue":
+        return (
+            (f"argument {argument.name!r} has blocked ownership policy: {decision.blocker or decision.reason}",)
+            if decision.is_blocked
+            else ()
+        )
     if decision.kind is ObjectKind.DERIVED_TYPE:
         return _derived_argument_shape_blockers(argument, decision, polymorphic)
     if decision.kind is ObjectKind.NUMPY_ARRAY:
@@ -4977,6 +5024,12 @@ def _argument_boundary_blockers(
     decision: OwnershipDecision,
 ) -> tuple[str, ...]:
     """Return Python/native boundary-action blockers for one argument."""
+    if argument.semantic_type.name == "NativeValue":
+        return (
+            ()
+            if decision.python_barrier_action is PythonBarrierAction.ASSUMED_NATIVE
+            else (f"argument {argument.name!r} has no assumed-native Python action",)
+        )
     if decision.kind is ObjectKind.STRING:
         return _string_boundary_blockers(argument, decision)
     if decision.kind is ObjectKind.NUMPY_ARRAY:
@@ -7149,6 +7202,8 @@ def _argument_bridge_data_action(
     value_kind: str | None,
 ) -> tuple[BridgeDataAction, str | None]:
     """Complete whether the bridge reuses, views, or copies one input payload."""
+    if decision.python_barrier_action is PythonBarrierAction.ASSUMED_NATIVE:
+        return BridgeDataAction.DIRECT_TRANSFER, None
     if decision.kind is ObjectKind.DERIVED_TYPE:
         if (
             decision.python_barrier_action is PythonBarrierAction.WRAPPER_INSTANCE
@@ -7421,7 +7476,7 @@ def _is_scalar_derived_type(semantic_type: models.SemanticType) -> bool:
     """Return whether semantic facts name a concrete rank-zero custom type."""
     return bool(
         int(semantic_type.rank or 0) == 0
-        and semantic_type.name not in {"String", "Void"}
+        and semantic_type.name not in {"String", "Void", "NativeValue"}
         and not _is_plan_primitive_value_type(semantic_type)
         and semantic_type.name not in {"Procedure", "Callback", "FunctionPointer", "CFunctionPointer"}
     )
@@ -7439,7 +7494,7 @@ def _is_derived_value_array(semantic_type: models.SemanticType) -> bool:
     """Return whether an array contains custom derived values rather than primitives."""
     return bool(
         int(semantic_type.rank or 0) > 0
-        and semantic_type.name != "String"
+        and semantic_type.name not in {"String", "NativeValue"}
         and not _is_plan_primitive_value_type(semantic_type)
     )
 
@@ -7473,6 +7528,12 @@ def _native_result_bridge_data_action(
 
 def _argument_handoff_mode(decision: OwnershipDecision) -> ArgumentHandoffMode:
     """Return the completed ABI shape consumed by both backends."""
+    if decision.python_barrier_action is PythonBarrierAction.ASSUMED_NATIVE:
+        return (
+            ArgumentHandoffMode.ARRAY_BUFFER
+            if decision.kind is ObjectKind.NUMPY_ARRAY
+            else ArgumentHandoffMode.OPAQUE_ADDRESS
+        )
     if decision.kind is ObjectKind.DERIVED_TYPE:
         return ArgumentHandoffMode.OPAQUE_ADDRESS
     if decision.python_barrier_action is PythonBarrierAction.RAW_ADDRESS:
@@ -7523,6 +7584,8 @@ def _array_handoff_policy(
     axes = tuple(str(item) for item in array.axes)
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
+    if semantic_type.name == "NativeValue" and array.category == "assumed_rank":
+        minimum_rank = 0
     order = _array_handoff_order(array.order, array.category)
     entrypoint_abi = _array_entrypoint_abi(
         array.category,

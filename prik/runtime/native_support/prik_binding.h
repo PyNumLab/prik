@@ -25,6 +25,27 @@
 #include <numpy/arrayobject.h>
 #include <numpy/arrayscalars.h>
 
+/* Module-owned derived values publish these operations through _prik_ops.
+ * Scoped storage remains live only while its C consumer is running. */
+typedef int (*prik_derived_consumer_fn)(void *, void *);
+typedef int (*prik_derived_scoped_fn)(prik_derived_consumer_fn, void *);
+typedef int (*prik_derived_checkout_fn)(void **);
+typedef int (*prik_derived_restore_fn)(void *);
+typedef int (*prik_derived_present_fn)(void);
+typedef void *(*prik_derived_address_fn)(void);
+typedef struct prik_derived_origin_ops {
+    const char *type_symbol;
+    prik_derived_present_fn present;
+    prik_derived_address_fn address;
+    prik_derived_scoped_fn scoped;
+    prik_derived_checkout_fn checkout;
+    prik_derived_restore_fn restore;
+} prik_derived_origin_ops;
+
+#ifdef PRIK_BINDING_ASSUMED_TYPE
+#include <ISO_Fortran_binding.h>
+#endif
+
 /*
  * One capsule publishes everything a generated binding needs from another
  * extension's array handle, and its name is derived from the record's own
@@ -956,6 +977,216 @@ static inline int prik_array_validate(
         python_type,
         argument_name);
 }
+
+#ifdef PRIK_BINDING_ASSUMED_TYPE
+/* One call-local native actual.  Its CFI metadata describes the payload; the
+ * type tag also distinguishes PRIK derived types with identical storage sizes. */
+typedef struct {
+    void *data;
+    int32_t cfi_type;
+    size_t element_size;
+    uint64_t type_tag;
+    const char *type_identity;
+    int rank;
+    const npy_intp *shape;
+    const npy_intp *strides;
+    union { max_align_t alignment; unsigned char bytes[32]; } scalar_storage;
+    /* Borrowed from the Python call arguments, which outlive the native call. */
+    PyObject *owner;
+    prik_derived_origin_ops *origin_ops;
+} prik_assumed_type_actual;
+
+static inline void prik_assumed_type_actual_clear(prik_assumed_type_actual *actual)
+{
+    memset(actual, 0, sizeof(*actual));
+}
+
+static inline int prik_assumed_type_dtype(int dtype, int32_t *cfi_type)
+{
+    switch (dtype) {
+    case NPY_INT8: *cfi_type = CFI_type_int8_t; return 0;
+    case NPY_INT16: *cfi_type = CFI_type_int16_t; return 0;
+    case NPY_INT32: *cfi_type = CFI_type_int32_t; return 0;
+    case NPY_INT64: *cfi_type = CFI_type_int64_t; return 0;
+    case NPY_FLOAT32: *cfi_type = CFI_type_float; return 0;
+    case NPY_FLOAT64: *cfi_type = CFI_type_double; return 0;
+    case NPY_COMPLEX64: *cfi_type = CFI_type_float_Complex; return 0;
+    case NPY_COMPLEX128: *cfi_type = CFI_type_double_Complex; return 0;
+    default:
+        PyErr_SetString(PyExc_TypeError, "TYPE(*) actual has no supported native NumPy dtype");
+        return -1;
+    }
+}
+
+static inline uint64_t prik_assumed_type_derived_tag(const char *identity)
+{
+    uint64_t tag = UINT64_C(1469598103934665603);
+    const unsigned char *next = (const unsigned char *)identity;
+    while (*next) {
+        tag = (tag ^ (uint64_t)*next++) * UINT64_C(1099511628211);
+    }
+    return tag | (UINT64_C(1) << 63);
+}
+
+static inline int prik_assumed_type_derived_size(
+    PyObject *object, prik_assumed_type_actual *actual)
+{
+    PyObject *size_object = PyObject_GetAttrString(object, "_prik_element_size");
+    if (size_object == NULL) return -1;
+    actual->element_size = PyLong_AsSize_t(size_object);
+    Py_DECREF(size_object);
+    if (PyErr_Occurred()) return -1;
+    if (actual->element_size == 0) {
+        PyErr_SetString(PyExc_TypeError, "TYPE(*) native object has zero element size");
+        return -1;
+    }
+    return 0;
+}
+
+static inline int prik_assumed_type_origin_from_object(
+    PyObject *object, prik_assumed_type_actual *actual)
+{
+    PyObject *operation_map = PyObject_GetAttrString(object, "_prik_ops");
+    PyObject *ops_capsule;
+    prik_derived_origin_ops *ops;
+    if (operation_map == NULL) goto invalid;
+    ops_capsule = PyDict_Check(operation_map)
+        ? PyDict_GetItemString(operation_map, "_native_ops") : NULL;
+    if (ops_capsule == NULL) {
+        Py_DECREF(operation_map);
+        goto invalid;
+    }
+    ops = (prik_derived_origin_ops *)PyCapsule_GetPointer(ops_capsule, "prik.derived_origin_ops");
+    Py_DECREF(operation_map);
+    if (ops == NULL) return -1;
+    if (ops->type_symbol == NULL || (ops->address == NULL && ops->scoped == NULL)) goto invalid;
+    if (ops->present != NULL && !ops->present()) {
+        PyErr_SetString(PyExc_ValueError, "TYPE(*) native object has no present storage");
+        return -1;
+    }
+    actual->origin_ops = ops;
+    actual->data = ops->address != NULL ? ops->address() : NULL;
+    actual->cfi_type = CFI_type_struct;
+    actual->type_identity = ops->type_symbol;
+    actual->type_tag = prik_assumed_type_derived_tag(ops->type_symbol);
+    actual->owner = object;
+    return prik_assumed_type_derived_size(object, actual);
+invalid:
+    PyErr_Clear();
+    PyErr_SetString(PyExc_TypeError, "TYPE(*) requires NumPy storage or a PRIK native object");
+    return -1;
+}
+
+static inline int prik_assumed_type_actual_from_object(
+    PyObject *object, prik_assumed_type_actual *actual)
+{
+    PyArrayObject *array;
+    PyObject *capsule;
+    const char *identity;
+    memset(actual, 0, sizeof(*actual));
+    if (PyArray_Check(object) || PyArray_IsScalar(object, Generic)) {
+        int scalar = !PyArray_Check(object);
+        PyObject *array_object = scalar ? PyArray_FromScalar(object, NULL) : object;
+        if (array_object == NULL) return -1;
+        array = (PyArrayObject *)array_object;
+        if (!PyArray_ISNOTSWAPPED(array) || !PyArray_ISALIGNED(array)
+            || PyArray_ITEMSIZE(array) == 0 || PyArray_NDIM(array) > PRIK_MAX_ARRAY_RANK) {
+            if (scalar) Py_DECREF(array_object);
+            PyErr_SetString(PyExc_TypeError, "TYPE(*) actual must be aligned native-endian NumPy storage of rank at most 15");
+            return -1;
+        }
+        if (prik_assumed_type_dtype(PyArray_TYPE(array), &actual->cfi_type) < 0) {
+            if (scalar) Py_DECREF(array_object);
+            return -1;
+        }
+        actual->element_size = (size_t)PyArray_ITEMSIZE(array);
+        if (scalar && actual->element_size > sizeof(actual->scalar_storage.bytes)) {
+            Py_DECREF(array_object);
+            PyErr_SetString(PyExc_TypeError, "TYPE(*) scalar exceeds call-local native storage");
+            return -1;
+        }
+        actual->data = scalar ? (void *)actual->scalar_storage.bytes : PyArray_DATA(array);
+        if (scalar) memcpy(actual->data, PyArray_DATA(array), actual->element_size);
+        actual->type_tag = (uint64_t)PyArray_TYPE(array) + 1u;
+        actual->rank = PyArray_NDIM(array);
+        actual->shape = scalar ? NULL : PyArray_DIMS(array);
+        actual->strides = scalar ? NULL : PyArray_STRIDES(array);
+        actual->owner = object;
+        if (scalar) Py_DECREF(array_object);
+        return 0;
+    }
+    capsule = PyObject_GetAttrString(object, "_prik_capsule");
+    if (capsule == NULL) PyErr_Clear();
+    identity = capsule != NULL && PyCapsule_CheckExact(capsule) ? PyCapsule_GetName(capsule) : NULL;
+    if (identity == NULL || strncmp(identity, "prik.derived.", 13) != 0) {
+        Py_XDECREF(capsule);
+        return prik_assumed_type_origin_from_object(object, actual);
+    }
+    actual->data = PyCapsule_GetPointer(capsule, identity);
+    if (actual->data == NULL) {
+        Py_DECREF(capsule);
+        return -1;
+    }
+    actual->cfi_type = CFI_type_struct;
+    actual->type_identity = identity + 13;
+    actual->type_tag = prik_assumed_type_derived_tag(identity + 13);
+    actual->owner = object;
+    Py_DECREF(capsule);
+    return prik_assumed_type_derived_size(object, actual);
+}
+
+static inline int prik_assumed_type_validate(
+    const prik_assumed_type_actual *actual, PyObject *object,
+    int minimum_rank, int maximum_rank, int layout, int writable,
+    const char *argument_name)
+{
+    int axis;
+    if (actual->rank < minimum_rank || actual->rank > maximum_rank) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires rank %d..%d native storage",
+                     argument_name, minimum_rank, maximum_rank);
+        return -1;
+    }
+    if (PyArray_Check(object)) {
+        if (prik_array_validate_ndarray((PyArrayObject *)object, PyArray_TYPE((PyArrayObject *)object),
+                minimum_rank, maximum_rank, layout,
+                layout != PRIK_ARRAY_LAYOUT_ANY_STRIDED && layout != PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F,
+                writable, "native", argument_name) < 0) return -1;
+    }
+    if (PyArray_Check(object) && layout == PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F) {
+        for (axis = 0; axis < actual->rank; ++axis) {
+            if (prik_array_validate_strided_axis((PyArrayObject *)object, axis, argument_name) < 0) return -1;
+        }
+    }
+    return 0;
+}
+
+static inline int prik_assumed_type_descriptor(
+    const prik_assumed_type_actual *actual, CFI_cdesc_t *descriptor, int expected_rank,
+    const char *argument_name)
+{
+    CFI_index_t extents[PRIK_MAX_ARRAY_RANK];
+    int axis;
+    int status;
+    if (expected_rank >= 0 && actual->rank != expected_rank) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires rank %d native storage", argument_name, expected_rank);
+        return -1;
+    }
+    if (actual->cfi_type == CFI_type_struct && actual->element_size == 0) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires a known native derived-type element size for a descriptor", argument_name);
+        return -1;
+    }
+    for (axis = 0; axis < actual->rank; ++axis) extents[axis] = (CFI_index_t)actual->shape[axis];
+    status = CFI_establish(descriptor, actual->data, CFI_attribute_other,
+                           (CFI_type_t)actual->cfi_type, actual->element_size,
+                           actual->rank, actual->rank ? extents : NULL);
+    if (status != CFI_SUCCESS) {
+        PyErr_Format(PyExc_TypeError, "Argument %s could not be described to Fortran: %d", argument_name, status);
+        return -1;
+    }
+    for (axis = 0; axis < actual->rank; ++axis) descriptor->dim[axis].sm = (CFI_index_t)actual->strides[axis];
+    return 0;
+}
+#endif
 
 /*
  * Bind one ordinary array argument, replacing the sequence a generated wrapper

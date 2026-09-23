@@ -304,6 +304,7 @@ class FortranArgument(FortranVariable):
     allocatable: bool = False
     pointer: bool = False
     target: bool = False
+    asynchronous: bool = False
 
     @property
     def contiguous(self) -> bool:

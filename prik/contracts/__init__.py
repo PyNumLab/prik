@@ -211,6 +211,9 @@ Int16 = _contract_type("Int16", _CONTRACT_NUMPY_FACTORIES["Int16"])
 Int32 = _contract_type("Int32", _CONTRACT_NUMPY_FACTORIES["Int32"])
 Int64 = _contract_type("Int64", _CONTRACT_NUMPY_FACTORIES["Int64"])
 Matrix = _contract_type("Matrix")
+NativeValue = _contract_type(
+    "NativeValue", constructor_error="NativeValue describes a native argument; it cannot be constructed"
+)
 SizeT = _contract_type("SizeT", _CONTRACT_NUMPY_FACTORIES["SizeT"])
 String = _contract_type("String", constructor_error="String requires an explicit native length and encoding contract")
 UInt = _contract_type("UInt", constructor_error="UInt requires a resolved native width")
@@ -228,10 +231,12 @@ private = _contract_type("private")
 Aliased = _ContractExpression()
 Allocatable = _DescriptorContract("allocatable")
 AssumedType = _ContractExpression()
+Asynchronous = _ContractExpression()
 Contiguous = _ContractExpression()
 COPY_F = _ContractExpression()
 Flat = _ContractExpression()
 FortranAllocatable = _ContractExpression()
+FortranIntent = _expression
 Immutable = _ContractExpression()
 MaybeUnallocated = _ContractExpression()
 ORDER_ANY = _ContractExpression()
@@ -353,6 +358,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Arg",
         "ArrayCategory",
         "AssumedType",
+        "Asynchronous",
         "Bool",
         "Bool8",
         "Bool16",
@@ -381,6 +387,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Float64",
         "Float128",
         "FortranAllocatable",
+        "FortranIntent",
         "Immutable",
         "In",
         "InOut",
@@ -392,6 +399,7 @@ CONTRACT_SYMBOLS = frozenset(
         "IsPresent",
         "Len",
         "Matrix",
+        "NativeValue",
         "MaybeUnallocated",
         "Opaque",
         "OpaqueHandle",
@@ -471,6 +479,7 @@ CONTRACT_TYPE_NAMES = frozenset(
         "Int32",
         "Int64",
         "Matrix",
+        "NativeValue",
         "Opaque",
         "OpaqueHandle",
         "Pointer",
