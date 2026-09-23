@@ -2252,12 +2252,7 @@ class _PyiAstParser:
         strided_axes = [_STRIDED_DIMENSION_SENTINEL in dim for dim in dims]
         dims, category, source_shape, lower_bounds, upper_bounds = _PyiAstParser._flat_array_dimensions(dims)
         if name == "AnyNative":
-            if category == "assumed_size" and (len(dims) != 1 or source_shape != ["*"]):
-                raise ValueError("AnyNative[Flat] supports rank-one assumed-size storage only")
-            if category is None and dims != ["..."]:
-                if not dims or any(dim != ":" for dim in dims):
-                    raise ValueError("AnyNative array shape must use Flat, : dimensions, or ...")
-                category = "assumed_shape"
+            category = self._assumed_native_array_category(dims, category, source_shape)
         if not dims:
             category = SCALAR_STORAGE_CATEGORY
         runtime_rank = dims == ["..."]
@@ -2275,9 +2270,7 @@ class _PyiAstParser:
             axes=["strided" if strided else "dense" for strided in strided_axes],
             # ``T[...]`` states no rank, so it also states no layout. Policy
             # completes the language default; ``Contiguous`` still asserts one.
-            contiguous=None
-            if runtime_rank or (name == "AnyNative" and category == "assumed_shape")
-            else not any(strided_axes),
+            contiguous=self._array_contiguity_from_dimensions(name, category, runtime_rank, strided_axes),
             category=category,
             source_shape=source_shape,
             lower_bounds=lower_bounds,
@@ -2293,6 +2286,28 @@ class _PyiAstParser:
             metadata={**dict(metadata or {}), **({"fortran_assumed_type": True} if name == "AnyNative" else {})},
             storage=storage,
         )
+
+    @staticmethod
+    def _assumed_native_array_category(dims: list[str], category: str | None, source_shape: list[str]) -> str | None:
+        """Let the public shape spelling determine assumed-type array semantics."""
+        if category == "assumed_size":
+            if len(dims) != 1 or source_shape != ["*"]:
+                raise ValueError("AnyNative[Flat] supports rank-one assumed-size storage only")
+            return category
+        if dims == ["..."]:
+            return category
+        if not dims or any(dim != ":" for dim in dims):
+            raise ValueError("AnyNative array shape must use Flat, : dimensions, or ...")
+        return "assumed_shape"
+
+    @staticmethod
+    def _array_contiguity_from_dimensions(
+        name: str, category: str | None, runtime_rank: bool, strided_axes: list[bool]
+    ) -> bool | None:
+        """Read layout from the array spelling before metadata narrows it."""
+        if runtime_rank or (name == "AnyNative" and category == "assumed_shape"):
+            return None
+        return not any(strided_axes)
 
     @staticmethod
     def _flat_array_dimensions(

@@ -713,6 +713,16 @@ class PyiPrinter(ClassVisitor):
         context: _PyiEmissionContext,
     ) -> list[str]:
         """Handle array dimensions for the current generation context."""
+        shape = self._array_shape_for_printing(semantic_type, array)
+        dimensions = [PyiPrinter._printed_array_dimension(dim) for dim in shape]
+        return [context.contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
+
+    @staticmethod
+    def _array_shape_for_printing(
+        semantic_type: SemanticType,
+        array: SemanticArrayContract | None,
+    ) -> list[str]:
+        """Select the one source shape represented by an array annotation."""
         if semantic_type.name == "AnyNative" and array is not None and array.category == "assumed_shape":
             return [":" for _ in range(array.rank or 0)]
         if array is not None and array.category == "assumed_size" and array.source_shape:
@@ -726,8 +736,7 @@ class PyiPrinter(ClassVisitor):
             shape = list(array.shape if array is not None and array.shape else semantic_type.shape)
         if not shape and semantic_type.rank > 0:
             shape = [":" for _ in range(semantic_type.rank)]
-        dimensions = [PyiPrinter._printed_array_dimension(dim) for dim in shape]
-        return [context.contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
+        return shape
 
     @staticmethod
     def _assumed_size_array_dimension(dimension: object) -> str:
