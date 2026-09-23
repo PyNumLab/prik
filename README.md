@@ -235,7 +235,7 @@ code generation with a diagnostic naming the boundary and the reason.
 
 **Types and arrays**
 
-- arrays of derived types, and assumed-type `type(*)` arrays;
+- arrays of derived types and higher-rank assumed-size `type(*)` arrays;
 - parameterized derived types such as `type :: buffer_type(k, n)`;
 - character arrays that cannot be represented as a fixed-width NumPy bytes
   dtype, and `allocatable` and `pointer` character *fields*.

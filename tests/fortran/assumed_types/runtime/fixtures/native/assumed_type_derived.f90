@@ -9,6 +9,8 @@ module assumed_type_derived
   type, bind(C) :: interoperable
     integer(c_int64_t) :: value
   end type
+  type :: empty
+  end type
   type(first), target :: addressable
   type(first) :: plain
   type(first), target :: pointer_target
@@ -26,6 +28,9 @@ contains
   function make_interoperable() result(x)
     type(interoperable) :: x
     x%value = 33_c_int64_t
+  end function
+  function make_empty() result(x)
+    type(empty) :: x
   end function
   integer(c_int) function scalar(x)
     type(*), intent(in) :: x

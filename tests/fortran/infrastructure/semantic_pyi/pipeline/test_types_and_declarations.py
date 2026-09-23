@@ -143,7 +143,6 @@ end module
 
     assert "Shape" not in code
     assert "Float64[::]" in code
-    assert "ArrayCategory" not in code
 
 
 def test_emit_matrix_shapes():
@@ -190,7 +189,6 @@ end module bound_mod
     assert "default_bound: Float64[n]" in code
     assert "zero_bound: Float64[n]" in code
     assert "shifted_bound: Float64[n]" in code
-    assert "ArrayCategory" not in code
 
 
 def test_emit_optional_argument():

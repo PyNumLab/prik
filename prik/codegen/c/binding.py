@@ -2597,15 +2597,6 @@ class CBindingGenerator(ClassVisitor):
             CBindingNames.derived_type_info_method(derived.backend_symbol),
             (
                 CExpressionStatement(CodeExpression(f"{record}.element_size = (size_t){operation.symbol_name}()")),
-                CIf(
-                    CodeExpression(f"{record}.element_size == 0"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression('PyErr_SetString(PyExc_RuntimeError, "native type has no storage size")')
-                        ),
-                        CReturn(CodeExpression("NULL")),
-                    ),
-                ),
                 CReturn(CodeExpression(f"PyCapsule_New(&{record}, prik_derived_type_info_capsule_name(), NULL)")),
             ),
         )

@@ -2399,7 +2399,7 @@ class OwnershipPolicyResolver:
             return PythonBarrierAction.BLOCKED
         if not context.is_argument or not context.python_visible:
             return PythonBarrierAction.NONE
-        if facts.name == "NativeValue":
+        if facts.name == "AnyNative":
             return PythonBarrierAction.ASSUMED_NATIVE
         if facts.address_role == ADDRESS_ROLE_RAW:
             return PythonBarrierAction.RAW_ADDRESS
@@ -2554,7 +2554,7 @@ class OwnershipPolicyResolver:
         name = str(getattr(semantic_type, "name", ""))
         rank = int(getattr(semantic_type, "rank", 0) or 0)
         is_string = name == "String"
-        is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES | {"NativeValue"}
+        is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES | {"AnyNative"}
         return _StorageFacts(
             rank=rank,
             name=name,

@@ -6,18 +6,29 @@ import numpy as np
 import pytest
 
 from prik.pipeline.build import build_fortran_extension, build_pyi_extension
+from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.planning import WrapperPlanner
+from prik.policy import complete_semantic_policies
+from prik.policy.models import ArrayEntrypointABI, EntrypointPassingConvention
 from tests.fortran._support.wrapper_build import _import_from_build_dir
 
 
 SOURCE = Path(__file__).parent / "fixtures" / "native" / "assumed_type_calls.f90"
 MUTATION_SOURCE = Path(__file__).parent / "fixtures" / "native" / "assumed_type_mutation.f90"
+AUTHORED_CONTRACT = Path(__file__).parent / "fixtures" / "contracts" / "hand_authored.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 
 
+@pytest.fixture(scope="module")
+def native_build(tmp_path_factory):
+    output = tmp_path_factory.mktemp("assumed-type-native")
+    return build_fortran_extension(SOURCE, output_name="assumed_type_api", output_dir=output)
+
+
 @pytest.fixture(scope="module", params=("source", "generated-pyi"))
-def calls(request, tmp_path_factory):
-    output = tmp_path_factory.mktemp(f"assumed-type-{request.param}")
-    built = build_fortran_extension(SOURCE, output_name="assumed_type_api", output_dir=output)
+def calls(request, native_build, tmp_path_factory):
+    built = native_build
+    output = built.output_dir
     if request.param == "source":
         return _import_from_build_dir(built.module_name, built.output_dir).assumed_type_calls
     replay_dir = tmp_path_factory.mktemp("assumed-type-replay")
@@ -28,6 +39,62 @@ def calls(request, tmp_path_factory):
         output_dir=replay_dir,
     )
     return _import_from_build_dir(replay.module_name, replay.output_dir)
+
+
+def test_hand_authored_any_native_contract_loads_plans_and_calls(native_build, tmp_path):
+    semantic = pyi_file_to_semantic_module(AUTHORED_CONTRACT)
+    assert all(function.arguments[0].semantic_type.name == "AnyNative" for function in semantic.functions)
+    complete_semantic_policies(semantic)
+    plan = WrapperPlanner().build(semantic)
+    expected = {
+        "scalar": (EntrypointPassingConvention.POINTER_REFERENCE, None),
+        "assumed_size": (EntrypointPassingConvention.POINTER_REFERENCE, ArrayEntrypointABI.RAW_ADDRESS),
+        "assumed_shape": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
+        "assumed_shape_two": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
+        "assumed_shape_three": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
+        "assumed_rank": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
+    }
+    for function in plan.namespaces[0].functions:
+        passing, array_abi = expected[function.binding.python_name]
+        assert function.arguments[0].entrypoint.passing is passing
+        if array_abi is not None:
+            assert function.arguments[0].array.entrypoint_abi is array_abi
+    built = build_pyi_extension(
+        AUTHORED_CONTRACT,
+        native_objects=[native_build.output_dir / "assumed_type_calls.o"],
+        output_name="assumed_type_authored",
+        output_dir=tmp_path,
+    )
+    module = _import_from_build_dir(built.module_name, built.output_dir)
+    values = np.arange(5, dtype=np.int64)
+    assert module.scalar(np.array(3, dtype=np.int64)) == 10
+    assert module.assumed_size(values) == 20
+    assert module.assumed_shape(values[::-1]) == 5
+    assert module.assumed_shape_two(np.ones((2, 3), dtype=np.float64, order="F")) == 5
+    assert module.assumed_shape_three(np.ones((2, 3, 4), dtype=np.float64, order="F")) == 9
+    assert module.assumed_rank(np.array(3, dtype=np.int64)) == 0
+    with pytest.raises(TypeError, match="requires NumPy storage or a PRIK native object"):
+        module.scalar(object())
+
+
+def test_generated_contract_can_be_edited_and_rebuilt(native_build, tmp_path):
+    generated = (native_build.output_dir / "contracts" / "assumed_type_calls.pyi").read_text()
+    assert "AnyNative" in generated
+    assert not any(name in generated for name in ("NativeValue", "AssumedType", "FortranIntent", "Asynchronous"))
+    edited = generated.replace("from prik.contracts import ", "from prik.contracts import bind, ", 1)
+    edited = edited.replace("def scalar(\n", '@bind("scalar")\ndef inspect_scalar(\n', 1)
+    edited = edited.replace('"scalar",', '"inspect_scalar",', 1)
+    assert edited != generated and "def inspect_scalar(" in edited
+    contract = tmp_path / "assumed_type_calls.pyi"
+    contract.write_text(edited)
+    built = build_pyi_extension(
+        contract,
+        native_objects=[native_build.output_dir / "assumed_type_calls.o"],
+        output_name="assumed_type_edited",
+        output_dir=tmp_path / "build",
+    )
+    module = _import_from_build_dir(built.module_name, built.output_dir)
+    assert module.inspect_scalar(np.int64(3)) == 10
 
 
 def test_same_actual_uses_address_or_descriptor_from_dummy(calls):

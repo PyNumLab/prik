@@ -2546,7 +2546,7 @@ class FortranToIRConverter(ClassVisitor):
             if not var.kind:
                 raise ValueError(f"Derived type variable '{var.name}' is missing concrete type name")
             if var.kind == "*":
-                return "NativeValue"
+                return "AnyNative"
             return str(var.kind)
         if base_type == "procedure":
             return "Procedure"

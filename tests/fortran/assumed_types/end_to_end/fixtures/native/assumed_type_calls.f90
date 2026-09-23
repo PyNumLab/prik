@@ -30,6 +30,11 @@ contains
     assumed_shape_three = size(x, 1) + size(x, 2) + size(x, 3)
   end function
 
+  integer(c_int) function assumed_shape_two(x) bind(C)
+    type(*), dimension(:,:), intent(in) :: x
+    assumed_shape_two = size(x, 1) + size(x, 2)
+  end function
+
   integer(c_int) function assumed_rank(x) bind(C)
     type(*), dimension(..), intent(in), asynchronous :: x
     assumed_rank = rank(x)

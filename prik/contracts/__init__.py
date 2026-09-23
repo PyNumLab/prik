@@ -211,8 +211,8 @@ Int16 = _contract_type("Int16", _CONTRACT_NUMPY_FACTORIES["Int16"])
 Int32 = _contract_type("Int32", _CONTRACT_NUMPY_FACTORIES["Int32"])
 Int64 = _contract_type("Int64", _CONTRACT_NUMPY_FACTORIES["Int64"])
 Matrix = _contract_type("Matrix")
-NativeValue = _contract_type(
-    "NativeValue", constructor_error="NativeValue describes a native argument; it cannot be constructed"
+AnyNative = _contract_type(
+    "AnyNative", constructor_error="AnyNative describes a native argument; it cannot be constructed"
 )
 SizeT = _contract_type("SizeT", _CONTRACT_NUMPY_FACTORIES["SizeT"])
 String = _contract_type("String", constructor_error="String requires an explicit native length and encoding contract")
@@ -230,13 +230,10 @@ private = _contract_type("private")
 
 Aliased = _ContractExpression()
 Allocatable = _DescriptorContract("allocatable")
-AssumedType = _ContractExpression()
-Asynchronous = _ContractExpression()
 Contiguous = _ContractExpression()
 COPY_F = _ContractExpression()
 Flat = _ContractExpression()
 FortranAllocatable = _ContractExpression()
-FortranIntent = _expression
 Immutable = _ContractExpression()
 MaybeUnallocated = _ContractExpression()
 ORDER_ANY = _ContractExpression()
@@ -244,9 +241,9 @@ ORDER_C = _ContractExpression()
 ORDER_F = _ContractExpression()
 Pointer = _DescriptorContract("pointer")
 Polymorphic = _ContractExpression()
+ReadOnly = _ContractExpression()
 
 Arg = _expression
-ArrayCategory = _expression
 Bounded = _expression
 Destruction = _expression
 Finite = _expression
@@ -356,9 +353,6 @@ CONTRACT_SYMBOLS = frozenset(
         "Annotated",
         "Any",
         "Arg",
-        "ArrayCategory",
-        "AssumedType",
-        "Asynchronous",
         "Bool",
         "Bool8",
         "Bool16",
@@ -387,7 +381,6 @@ CONTRACT_SYMBOLS = frozenset(
         "Float64",
         "Float128",
         "FortranAllocatable",
-        "FortranIntent",
         "Immutable",
         "In",
         "InOut",
@@ -399,7 +392,7 @@ CONTRACT_SYMBOLS = frozenset(
         "IsPresent",
         "Len",
         "Matrix",
-        "NativeValue",
+        "AnyNative",
         "MaybeUnallocated",
         "Opaque",
         "OpaqueHandle",
@@ -413,6 +406,7 @@ CONTRACT_SYMBOLS = frozenset(
         "PointerAssociation",
         "PointerPolicy",
         "Polymorphic",
+        "ReadOnly",
         "Range",
         "Return",
         "Returns",
@@ -479,7 +473,7 @@ CONTRACT_TYPE_NAMES = frozenset(
         "Int32",
         "Int64",
         "Matrix",
-        "NativeValue",
+        "AnyNative",
         "Opaque",
         "OpaqueHandle",
         "Pointer",

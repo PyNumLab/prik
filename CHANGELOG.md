@@ -9,9 +9,10 @@ release tags add a leading `v` to the package version.
 
 - Fortran `TYPE(*)` dummies accept native NumPy scalars and arrays through the
   declaration's address or C-descriptor ABI. Direct `BIND(C)` entries remain
-  direct; generated contracts retain assumed-type intent and asynchronous
-  attributes. Descriptor dtypes are limited to supported interoperable NumPy
-  types, and nonblocking calls require the caller to retain buffers.
+  direct. Editable contracts use `AnyNative` with direct shape subscripts and
+  `ReadOnly` for immutable scalar inputs; source intent and asynchronous facts
+  remain internal. Descriptor dtypes cover a documented subset, and callers
+  retain buffers for nonblocking operations.
 
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
   module-qualified Fortran procedure identities. Generated contracts and

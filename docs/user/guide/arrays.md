@@ -483,6 +483,24 @@ Use `TYPE(*)` when a Fortran procedure accepts native values of more than one
 type. Pass a NumPy scalar for a read-only dummy, or an ndarray with the intended
 native dtype:
 
+```python
+from prik.contracts import Annotated, AnyNative, Flat, ReadOnly
+
+def scalar(value: AnyNative) -> None: ...
+def read_scalar(value: Annotated[AnyNative, ReadOnly]) -> None: ...
+def raw_buffer(values: AnyNative[Flat]) -> None: ...
+def vector(values: AnyNative[:]) -> None: ...
+def matrix(values: AnyNative[:, :]) -> None: ...
+def arbitrary_rank(values: AnyNative[...]) -> None: ...
+```
+
+`AnyNative` accepts values with PRIK-recognized native storage, including NumPy
+scalars and arrays and supported PRIK native objects. It does not accept an
+arbitrary Python object. `Flat` marks assumed-size storage; `...` marks assumed
+rank. Bare `AnyNative` permits native writes, so pass writable storage. When a
+procedure only reads its argument, use `Annotated[AnyNative, ReadOnly]` to also
+accept NumPy scalars; generated contracts use this marker for read-only dummies.
+
 ```fortran
 subroutine consume(buf) bind(C)
     type(*), dimension(..), intent(in) :: buf

@@ -1107,8 +1107,7 @@ static int prik_assumed_type_derived_info(
     Py_DECREF(capsule);
     if (info == NULL) return -1;
     if (info->type_symbol == NULL || actual->type_identity == NULL
-        || strcmp(info->type_symbol, actual->type_identity) != 0
-        || info->element_size == 0) {
+        || strcmp(info->type_symbol, actual->type_identity) != 0) {
         PyErr_SetString(PyExc_TypeError, "TYPE(*) native object has incompatible type metadata");
         return -1;
     }
@@ -1252,6 +1251,10 @@ PRIK_NO_INLINE static int prik_assumed_type_descriptor(
     }
     if (!actual->descriptor_type_available) {
         PyErr_Format(PyExc_TypeError, "Argument %s has no supported descriptor dtype", argument_name);
+        return -1;
+    }
+    if (actual->element_size == 0) {
+        PyErr_Format(PyExc_TypeError, "Argument %s has no native element storage for a descriptor", argument_name);
         return -1;
     }
     status = CFI_establish(descriptor, actual->data, CFI_attribute_other,

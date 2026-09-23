@@ -2042,7 +2042,7 @@ def _complete_entrypoint_argument_route(
         ),
         entrypoint_pass_array_metadata=(
             uses_adapter
-            and argument.semantic_type_name != "NativeValue"
+            and argument.semantic_type_name != "AnyNative"
             and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
             and argument.array is not None
             and argument.array.entrypoint_abi is ArrayEntrypointABI.RAW_ADDRESS
@@ -2120,7 +2120,7 @@ def _argument_passes_by_value(
     slot: NativeCallSlotPolicy | None,
 ) -> bool:
     """Return the original declared value transport without backend inference."""
-    if argument.semantic_type.name == "NativeValue":
+    if argument.semantic_type.name == "AnyNative":
         return False
     if "value" in argument.origin.metadata:
         return bool(argument.origin.metadata["value"])
@@ -2835,7 +2835,7 @@ def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
 
 def _direct_assumed_type_supported(argument: ArgumentPolicy) -> bool:
     """Read the completed dummy ABI for a direct assumed-type entrypoint."""
-    if argument.semantic_type_name != "NativeValue":
+    if argument.semantic_type_name != "AnyNative":
         return False
     if argument.entrypoint_passing in {
         EntrypointPassingConvention.POINTER_REFERENCE,
@@ -3246,7 +3246,7 @@ def _argument_policy(
                     )
                     if attr is not None
                 )
-                if argument.semantic_type.name == "NativeValue"
+                if argument.semantic_type.name == "AnyNative"
                 else ()
             ),
         ),
@@ -4897,7 +4897,7 @@ def _argument_shape_blockers(
     polymorphic: PolymorphicDispatchPolicy | None,
 ) -> tuple[str, ...]:
     """Dispatch one argument to its scalar/string or array policy family."""
-    if argument.semantic_type.name == "NativeValue":
+    if argument.semantic_type.name == "AnyNative":
         storage = argument.semantic_type.storage
         array = storage.array if storage is not None else None
         if array is not None and array.category == "assumed_size" and array.rank != 1:
@@ -5028,7 +5028,7 @@ def _argument_boundary_blockers(
     decision: OwnershipDecision,
 ) -> tuple[str, ...]:
     """Return Python/native boundary-action blockers for one argument."""
-    if argument.semantic_type.name == "NativeValue":
+    if argument.semantic_type.name == "AnyNative":
         return (
             ()
             if decision.python_barrier_action is PythonBarrierAction.ASSUMED_NATIVE
@@ -7480,7 +7480,7 @@ def _is_scalar_derived_type(semantic_type: models.SemanticType) -> bool:
     """Return whether semantic facts name a concrete rank-zero custom type."""
     return bool(
         int(semantic_type.rank or 0) == 0
-        and semantic_type.name not in {"String", "Void", "NativeValue"}
+        and semantic_type.name not in {"String", "Void", "AnyNative"}
         and not _is_plan_primitive_value_type(semantic_type)
         and semantic_type.name not in {"Procedure", "Callback", "FunctionPointer", "CFunctionPointer"}
     )
@@ -7498,7 +7498,7 @@ def _is_derived_value_array(semantic_type: models.SemanticType) -> bool:
     """Return whether an array contains custom derived values rather than primitives."""
     return bool(
         int(semantic_type.rank or 0) > 0
-        and semantic_type.name not in {"String", "NativeValue"}
+        and semantic_type.name not in {"String", "AnyNative"}
         and not _is_plan_primitive_value_type(semantic_type)
     )
 
@@ -7588,7 +7588,7 @@ def _array_handoff_policy(
     axes = tuple(str(item) for item in array.axes)
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
-    if semantic_type.name == "NativeValue" and array.category == "assumed_rank":
+    if semantic_type.name == "AnyNative" and array.category == "assumed_rank":
         minimum_rank = 0
     order = _array_handoff_order(array.order, array.category)
     entrypoint_abi = _array_entrypoint_abi(

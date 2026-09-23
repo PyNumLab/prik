@@ -75,6 +75,15 @@ def test_derived_types_of_equal_size_keep_distinct_identity(actuals):
     assert derived.scalar(derived.addressable) == 1
 
 
+def test_zero_storage_derived_class_keeps_address_abi_available(actuals):
+    probe, derived = actuals
+    empty = derived.make_empty()
+    assert probe.describe(empty)[2:] == (0, 0)
+    assert derived.direct_scalar(empty) == 2
+    with pytest.raises(TypeError, match="no native element storage for a descriptor"):
+        derived.direct_any_rank(empty)
+
+
 def test_derived_element_size_cannot_be_overridden_from_python(actuals, monkeypatch):
     probe, derived = actuals
     first = derived.make_first()

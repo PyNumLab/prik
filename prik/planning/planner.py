@@ -179,7 +179,7 @@ _DATATYPE_FAMILIES = {
     "Complex128": DatatypeFamily.COMPLEX,
     "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
-    "NativeValue": DatatypeFamily.ASSUMED_NATIVE,
+    "AnyNative": DatatypeFamily.ASSUMED_NATIVE,
 }
 
 

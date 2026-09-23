@@ -713,6 +713,8 @@ class PyiPrinter(ClassVisitor):
         context: _PyiEmissionContext,
     ) -> list[str]:
         """Handle array dimensions for the current generation context."""
+        if semantic_type.name == "AnyNative" and array is not None and array.category == "assumed_shape":
+            return [":" for _ in range(array.rank or 0)]
         if array is not None and array.category == "assumed_size" and array.source_shape:
             shape = list(array.shape if array.shape else semantic_type.shape)
             if len(shape) != len(array.source_shape):
@@ -798,14 +800,10 @@ class PyiPrinter(ClassVisitor):
         metadata: list[str] = []
         source_type = (semantic_type.origin.source_type or "").casefold().replace(" ", "")
         if source_type in {"type(*)", "class(*)"} or semantic_type.metadata.get("fortran_assumed_type"):
-            metadata.append(context.contract("AssumedType"))
-            intent = semantic_type.metadata.get("fortran_assumed_intent")
-            if intent is not None:
-                metadata.append(f"{context.contract('FortranIntent')}({json.dumps(str(intent))})")
-            if semantic_type.metadata.get("fortran_asynchronous"):
-                metadata.append(context.contract("Asynchronous"))
+            if semantic_type.storage is not None and semantic_type.storage.read_only:
+                metadata.append(context.contract("ReadOnly"))
             array = semantic_type.storage.array if semantic_type.storage is not None else None
-            if array is not None and array.contiguous:
+            if array is not None and array.contiguous and array.category != "assumed_size":
                 metadata.append(context.contract("Contiguous"))
         if semantic_type.metadata.get("fortran_polymorphic"):
             metadata.append(context.contract("Polymorphic"))
