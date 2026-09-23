@@ -674,6 +674,7 @@ class CBindingGenerator(ClassVisitor):
             # Every published component converts through the bundled helpers, so a
             # type whose module exposes only `bind(C)` procedures still needs them.
             or any(derived.fields for derived in self._derived_types(plan))
+            or any(not derived.abstract for derived in self._derived_types(plan))
             # A namespace alias binds its target through a bundled helper, which a
             # module publishing nothing else would otherwise never include.
             or any(namespace.aliases for namespace in plan.namespaces)
@@ -1772,7 +1773,8 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(
                 CodeExpression(
-                    '*ops = (prik_derived_origin_ops *)PyCapsule_GetPointer(ops_capsule, "prik.derived_origin_ops")'
+                    "*ops = (prik_derived_origin_ops *)PyCapsule_GetPointer("
+                    "ops_capsule, prik_derived_origin_ops_capsule_name())"
                 )
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(operation_map)")),
@@ -2115,7 +2117,7 @@ class CBindingGenerator(ClassVisitor):
                 CReturn(
                     CodeExpression(
                         f"PyCapsule_New((void *)&{self._derived_origin_table_name(variable)}, "
-                        '"prik.derived_origin_ops", NULL)'
+                        "prik_derived_origin_ops_capsule_name(), NULL)"
                     )
                 ),
             ),
@@ -2172,6 +2174,7 @@ class CBindingGenerator(ClassVisitor):
             *self._callback_runtime_declarations(plan),
             *self._derived_call_runtime_declarations(plan),
             *self._derived_origin_declarations(plan),
+            *self._derived_type_info_records(plan),
             *(self._entrypoint_prototype(function) for function in self._functions(plan)),
             *(
                 self._generated_support_procedure_entrypoint_prototype(
@@ -2564,11 +2567,7 @@ class CBindingGenerator(ClassVisitor):
     def _derived_field_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Lower address-backed and plain-module field methods."""
         return (
-            *(
-                self._derived_element_size_method(derived)
-                for derived in self._derived_types(plan)
-                if not derived.abstract
-            ),
+            *(self._derived_type_info_method(derived) for derived in self._derived_types(plan) if not derived.abstract),
             *self._direct_field_functions_for_plan(plan),
             *self._module_member_functions_for_plan(plan),
             *self._allocatable_holder_functions_for_plan(plan),
@@ -2576,12 +2575,39 @@ class CBindingGenerator(ClassVisitor):
             *self._module_proxy_guard_functions_for_plan(plan),
         )
 
-    def _derived_element_size_method(self, derived: DerivedTypePlan) -> CFunction:
-        """Publish Fortran-measured element size to generated native classes."""
+    def _derived_type_info_records(self, plan: ModulePlan) -> tuple[CDeclaration, ...]:
+        """Keep compiler-measured derived-type facts in native storage."""
+        return tuple(
+            CDeclaration(
+                CBindingNames.derived_type_info_record(derived.backend_symbol),
+                "static prik_derived_type_info",
+                CodeExpression(
+                    "{" + self._c_string_literal(derived.backend_symbol) + f", 0, {int(derived.bind_c)}" + "}"
+                ),
+            )
+            for derived in self._derived_types(plan)
+            if not derived.abstract
+        )
+
+    def _derived_type_info_method(self, derived: DerivedTypePlan) -> CFunction:
+        """Publish native type facts in a layout-checked capsule."""
         operation = self._generated_support_procedure_entrypoint(derived.owner_path, "derived:element_size")
+        record = CBindingNames.derived_type_info_record(derived.backend_symbol)
         return self._derived_private_method(
-            CBindingNames.derived_element_size_method(derived.backend_symbol),
-            (CReturn(CodeExpression(f"PyLong_FromLongLong((long long){operation.symbol_name}())")),),
+            CBindingNames.derived_type_info_method(derived.backend_symbol),
+            (
+                CExpressionStatement(CodeExpression(f"{record}.element_size = (size_t){operation.symbol_name}()")),
+                CIf(
+                    CodeExpression(f"{record}.element_size == 0"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression('PyErr_SetString(PyExc_RuntimeError, "native type has no storage size")')
+                        ),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CReturn(CodeExpression(f"PyCapsule_New(&{record}, prik_derived_type_info_capsule_name(), NULL)")),
+            ),
         )
 
     def _direct_field_functions_for_plan(self, plan: ModulePlan) -> tuple[CFunction, ...]:
@@ -6920,7 +6946,6 @@ class CBindingGenerator(ClassVisitor):
         minimum_rank = array.minimum_rank if array is not None else 0
         maximum_rank = array.maximum_rank if array is not None else 0
         layout = self._array_layout_selector(array) if array is not None else "PRIK_ARRAY_LAYOUT_ANY_STRIDED"
-        expected_rank = -1 if array is None or array.rank is None else array.rank
         present = f"{names.object_name} != NULL && {names.object_name} != Py_None"
         body = [
             CIf(
@@ -6940,12 +6965,40 @@ class CBindingGenerator(ClassVisitor):
             body.extend(
                 (
                     CIf(
-                        CodeExpression(
-                            f"prik_assumed_type_descriptor(&{actual}, "
-                            f"(CFI_cdesc_t *)&{names.value_name}_storage, {expected_rank}, "
-                            f'"{plan.binding.python_name}") < 0'
+                        CodeExpression(f"!{actual}.descriptor_type_available"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} '
+                                    'has no supported descriptor dtype")'
+                                )
+                            ),
+                            CReturn(CodeExpression("NULL")),
                         ),
-                        body=(CReturn(CodeExpression("NULL")),),
+                    ),
+                    CIf(
+                        CodeExpression(f"{actual}.rank > 0"),
+                        body=(
+                            CIf(
+                                CodeExpression(
+                                    f"{self.NUMPY_DESCRIPTOR_BUILDER}((CFI_cdesc_t *)&{names.value_name}_parent, "
+                                    f"(CFI_cdesc_t *)&{names.value_name}_storage, "
+                                    f"(PyArrayObject *){names.object_name}, (CFI_type_t){actual}.cfi_type, "
+                                    f'"{plan.binding.python_name}") < 0'
+                                ),
+                                body=(CReturn(CodeExpression("NULL")),),
+                            ),
+                        ),
+                        else_body=(
+                            CIf(
+                                CodeExpression(
+                                    f"prik_assumed_type_descriptor(&{actual}, "
+                                    f"(CFI_cdesc_t *)&{names.value_name}_storage, "
+                                    f'"{plan.binding.python_name}") < 0'
+                                ),
+                                body=(CReturn(CodeExpression("NULL")),),
+                            ),
+                        ),
                     ),
                     CExpressionStatement(
                         CodeExpression(f"{names.value_name} = (CFI_cdesc_t *)&{names.value_name}_storage")
@@ -6963,6 +7016,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(actual, "prik_assumed_type_actual", CodeExpression("{0}")),
             CDeclaration(names.value_name, "CFI_cdesc_t *" if descriptor else "void *", CodeExpression("NULL")),
             *((CDeclaration(f"{names.value_name}_storage", "CFI_CDESC_T(15)"),) if descriptor else ()),
+            *((CDeclaration(f"{names.value_name}_parent", "CFI_CDESC_T(15)"),) if descriptor else ()),
             *(
                 (CIf(CodeExpression(present), body=tuple(body)),)
                 if plan.binding.optional_mode is not OptionalMode.REQUIRED
@@ -15554,7 +15608,7 @@ class CBindingGenerator(ClassVisitor):
         """Expose private field callables used by generated Python properties."""
         names = (
             *(
-                CBindingNames.derived_element_size_method(derived.backend_symbol)
+                CBindingNames.derived_type_info_method(derived.backend_symbol)
                 for derived in namespace.derived_types
                 if not derived.abstract
             ),

@@ -6,6 +6,9 @@ module assumed_type_derived
   type :: second
     integer(c_int64_t) :: value = 22
   end type
+  type, bind(C) :: interoperable
+    integer(c_int64_t) :: value
+  end type
   type(first), target :: addressable
   type(first) :: plain
   type(first), target :: pointer_target
@@ -19,6 +22,10 @@ contains
   end function
   function make_second() result(x)
     type(second) :: x
+  end function
+  function make_interoperable() result(x)
+    type(interoperable) :: x
+    x%value = 33_c_int64_t
   end function
   integer(c_int) function scalar(x)
     type(*), intent(in) :: x

@@ -4204,13 +4204,12 @@ class FortranParser(ClassVisitor):
             if declaration.pointer
             else "ALLOCATABLE"
             if declaration.allocatable
+            else "INTENT(OUT)"
+            if declaration.intent == "out"
+            else "higher-rank assumed-size (only x(*) is supported)"
+            if len(shape) > 1 and shape[-1].strip() == "*"
             else "explicit shape"
-            if shape
-            and shape != [".."]
-            and not (
-                all(part.strip() == ":" for part in shape)
-                or (shape[-1].strip() == "*" and all(part.strip() == ":" for part in shape[:-1]))
-            )
+            if shape and shape != [".."] and not (all(part.strip() == ":" for part in shape) or shape == ["*"])
             else None
         )
         if invalid is not None:
@@ -4464,7 +4463,8 @@ class FortranParser(ClassVisitor):
         arg.pointer = declaration.pointer
         arg.target = declaration.target
         arg.contiguous = declaration.contiguous
-        arg.asynchronous = declaration.asynchronous
+        if declaration.asynchronous:
+            arg.asynchronous = True
         arg.is_parameter = declaration.parameter
         arg.visibility = declaration.visibility
         FortranParser._apply_internal_type_metadata(arg, declaration)

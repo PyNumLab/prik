@@ -42,12 +42,18 @@ def test_same_actual_uses_address_or_descriptor_from_dummy(calls):
     assert calls.assumed_rank(np.array(3, dtype=np.int64)) == 0
     assert calls.assumed_rank(np.int64(3)) == 0
     assert calls.assumed_rank(np.complex128(1 + 2j)) == 0
+    assert calls.assumed_rank(np.bool_(True)) == 0
     assert calls.scalar(np.int64(3)) == 10
     assert calls.scalar(np.float64(3)) == 10
     assert calls.scalar(np.complex128(3)) == 10
-    assert calls.scalar_without_intent(np.int64(3)) == 11
-    assert calls.scalar_without_intent(np.float64(3)) == 11
+    assert calls.scalar(np.uint64(3)) == 10
+    assert calls.scalar_without_intent(np.array(3, dtype=np.int64)) == 11
     assert calls.adapted_rank(np.float64(3)) == 0
+    assert calls.assumed_size(np.arange(3, dtype=np.uint64)) == 20
+    with pytest.raises(TypeError, match="no supported descriptor dtype"):
+        calls.assumed_rank(np.arange(3, dtype=np.uint64))
+    with pytest.raises(TypeError, match="cannot contain Python object references"):
+        calls.assumed_size(np.array([object()], dtype=object))
 
 
 def test_optional_absence_uses_dummy_specific_null_representation(calls):
@@ -62,6 +68,13 @@ def test_optional_absence_uses_dummy_specific_null_representation(calls):
 def test_arbitrary_python_object_is_not_a_native_actual(calls):
     with pytest.raises(TypeError, match="requires NumPy storage or a PRIK native object"):
         calls.scalar(object())
+
+
+def test_writable_scalar_requires_ndarray_storage(calls):
+    with pytest.raises(TypeError, match="writable TYPE\\(\\*\\) requires a writable NumPy ndarray"):
+        calls.modify_scalar(np.int64(7))
+    value = np.array(7, dtype=np.int64)
+    assert calls.modify_scalar(value) is None
 
 
 def test_mutation_uses_the_address_or_descriptor_selected_by_the_dummy(tmp_path):

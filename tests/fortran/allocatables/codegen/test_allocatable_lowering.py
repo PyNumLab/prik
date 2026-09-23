@@ -190,7 +190,7 @@ def test_nogil_releases_only_while_the_descriptor_consumer_calls_fortran():
         for source in WrapperGenerator().generate(_allocatable_argument_plan()).sources
         if source.path.suffix == ".c"
     )
-    start = c_source.index("static void wrap_total_call_with_descriptor_0(")
+    start = c_source.index("static void wrap_total_call_with_carrier_0(")
     end = c_source.index("\n}\n", start)
     consumer = c_source[start:end]
 

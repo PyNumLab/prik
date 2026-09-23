@@ -30,6 +30,14 @@ static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "assumed_type_probe",
 
 PyMODINIT_FUNC PyInit_assumed_type_probe(void)
 {
+    PyObject *result;
     import_array();
-    return PyModule_Create(&module);
+    result = PyModule_Create(&module);
+    if (result == NULL) return NULL;
+    if (PyModule_AddIntConstant(result, "CFI_TYPE_OTHER", CFI_type_other) < 0
+        || PyModule_AddIntConstant(result, "CFI_TYPE_STRUCT", CFI_type_struct) < 0) {
+        Py_DECREF(result);
+        return NULL;
+    }
+    return result;
 }

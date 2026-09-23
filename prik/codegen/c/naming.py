@@ -66,9 +66,14 @@ class CBindingNames:
         return f"_prik_{type_name.casefold()}_pointer_holder_require_present"
 
     @staticmethod
-    def derived_element_size_method(type_name: str) -> str:
-        """Name the private native element-size inquiry for a concrete type."""
-        return f"_prik_{type_name.casefold()}_element_size"
+    def derived_type_info_method(type_name: str) -> str:
+        """Name the private native type-record inquiry for a concrete type."""
+        return f"_prik_{type_name.casefold()}_type_info"
+
+    @staticmethod
+    def derived_type_info_record(type_name: str) -> str:
+        """Name native type facts retained inside the producer extension."""
+        return f"prik_{type_name.casefold()}_type_info"
 
     @staticmethod
     def allocatable_holder_ops(type_name: str) -> str:

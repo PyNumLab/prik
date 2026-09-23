@@ -2713,14 +2713,12 @@ class FortranToIRConverter(ClassVisitor):
             "pointer": bool(getattr(var, "pointer", False)),
             "target": bool(getattr(var, "target", False)),
             "contiguous": bool(getattr(var, "contiguous", False)),
-            "asynchronous": bool(getattr(var, "asynchronous", False)),
         }
         if isinstance(var, FortranArgument):
             metadata.update(
                 {
                     "optional": var.optional,
                     "value": var.pass_by_value,
-                    "intent": var.intent,
                 }
             )
         if getattr(var, "pointer", False):

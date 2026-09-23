@@ -168,7 +168,7 @@ class PythonSurfaceEmitter(ClassVisitor):
             self._class_docstring_line(surface, name),
             f"    __slots__ = {slots}",
             *(
-                (f"    _prik_element_size = {CBindingNames.derived_element_size_method(derived.backend_symbol)}()",)
+                (f"    _prik_type_info = {CBindingNames.derived_type_info_method(derived.backend_symbol)}()",)
                 if not derived.abstract
                 else ()
             ),

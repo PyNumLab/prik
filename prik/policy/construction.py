@@ -4898,6 +4898,10 @@ def _argument_shape_blockers(
 ) -> tuple[str, ...]:
     """Dispatch one argument to its scalar/string or array policy family."""
     if argument.semantic_type.name == "NativeValue":
+        storage = argument.semantic_type.storage
+        array = storage.array if storage is not None else None
+        if array is not None and array.category == "assumed_size" and array.rank != 1:
+            return (f"argument {argument.name!r} requires rank-one TYPE(*) assumed-size storage",)
         return (
             (f"argument {argument.name!r} has blocked ownership policy: {decision.blocker or decision.reason}",)
             if decision.is_blocked

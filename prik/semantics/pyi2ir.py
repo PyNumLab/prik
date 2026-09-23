@@ -2413,8 +2413,8 @@ class _PyiAstParser:
             return
         if helper == "FortranIntent":
             intent = str(self._require_single_metadata_argument(node, helper)).casefold()
-            if intent not in {"in", "out", "inout"} or semantic_type.name != "NativeValue":
-                raise ValueError("FortranIntent requires an assumed native type and in, out, or inout")
+            if intent not in {"in", "inout"} or semantic_type.name != "NativeValue":
+                raise ValueError("FortranIntent requires an assumed native type and in or inout")
             semantic_type.metadata["fortran_assumed_intent"] = intent
             if semantic_type.storage is None:
                 semantic_type.storage = SemanticStorageContract(kind="reference", pointer_depth=1)

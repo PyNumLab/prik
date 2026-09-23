@@ -1,14 +1,15 @@
 """Runtime native actual identity is independent of the dummy ABI."""
 
+import ctypes
 import importlib.util
-import subprocess
-import sysconfig
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from prik.compiler.native_support import install_native_support
+from prik.compiler.compilers import Compiler
+from prik.compiler.objects import ObjectFile
 from prik.pipeline.build import build_fortran_extension
 from tests.fortran._support.wrapper_build import _import_from_build_dir
 
@@ -20,24 +21,20 @@ FIXTURES = Path(__file__).parent / "fixtures" / "native"
 def actuals(tmp_path_factory):
     output = tmp_path_factory.mktemp("assumed-type-actuals")
     install_native_support(("binding_support/prik_binding.h",), prik_dirpath=output)
-    suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    probe_path = output / f"assumed_type_probe{suffix}"
-    subprocess.run(
-        [
-            "cc",
-            "-shared",
-            "-fPIC",
-            "-O3",
-            f"-I{output / 'binding_support'}",
-            f"-I{np.get_include()}",
-            f"-I{sysconfig.get_path('include')}",
-            str(FIXTURES / "assumed_type_probe.c"),
-            "-o",
-            str(probe_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+    compiler = Compiler.from_fortran_executable()
+    probe_object = ObjectFile(
+        source=FIXTURES / "assumed_type_probe.c",
+        object_path=output / "assumed_type_probe.o",
+        language="c",
+        include_dirs=(output / "binding_support",),
+        tools=frozenset({"python"}),
+    )
+    compiler.compile_object(probe_object)
+    probe_path = compiler.link_extension(
+        module_name="assumed_type_probe",
+        output_dir=output,
+        language="c",
+        objects=(probe_object,),
     )
     spec = importlib.util.spec_from_file_location("assumed_type_probe", probe_path)
     probe = importlib.util.module_from_spec(spec)
@@ -69,11 +66,47 @@ def test_derived_types_of_equal_size_keep_distinct_identity(actuals):
     second = derived.make_second()
     first_actual = probe.describe(first)
     second_actual = probe.describe(second)
+    assert first_actual[0] == second_actual[0] == probe.CFI_TYPE_OTHER
+    assert probe.describe(derived.make_interoperable())[0] == probe.CFI_TYPE_STRUCT
     assert first_actual[2:] == second_actual[2:] == (8, 0)
     assert first_actual[1] != second_actual[1]
     assert derived.scalar(first) == derived.scalar(second) == 1
     assert derived.any_rank(first) == derived.any_rank(second) == 0
     assert derived.scalar(derived.addressable) == 1
+
+
+def test_derived_element_size_cannot_be_overridden_from_python(actuals, monkeypatch):
+    probe, derived = actuals
+    first = derived.make_first()
+    second = derived.make_second()
+    monkeypatch.setattr(type(first), "_prik_element_size", 1, raising=False)
+    assert probe.describe(first)[2] == 8
+    assert derived.any_rank(first) == 0
+    monkeypatch.setattr(type(first), "_prik_type_info", type(second)._prik_type_info)
+    with pytest.raises(TypeError, match="incompatible type metadata"):
+        probe.describe(first)
+
+
+def test_cross_extension_origin_refuses_an_unversioned_capsule(actuals, monkeypatch):
+    probe, derived = actuals
+    original = derived.plain._prik_ops["_native_ops"]
+    get_name = ctypes.pythonapi.PyCapsule_GetName
+    get_name.argtypes = [ctypes.py_object]
+    get_name.restype = ctypes.c_char_p
+    name = get_name(original)
+    assert name.startswith(b"prik.derived_origin_ops.v2.")
+    get_pointer = ctypes.pythonapi.PyCapsule_GetPointer
+    get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
+    get_pointer.restype = ctypes.c_void_p
+    pointer = get_pointer(original, name)
+    create_capsule = ctypes.pythonapi.PyCapsule_New
+    create_capsule.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
+    create_capsule.restype = ctypes.py_object
+    old_name = ctypes.create_string_buffer(b"prik.derived_origin_ops")
+    stale = create_capsule(pointer, ctypes.cast(old_name, ctypes.c_char_p), None)
+    monkeypatch.setitem(derived.plain._prik_ops, "_native_ops", stale)
+    with pytest.raises(ValueError, match="incorrect name"):
+        probe.describe(derived.plain)
 
 
 def test_module_owned_actuals_keep_address_and_scoped_origins(actuals):

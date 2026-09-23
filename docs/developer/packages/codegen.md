@@ -216,7 +216,7 @@ _prik_ops_state_t = {}
 class State:
     'Opaque native state.'
     __slots__ = ('_prik_capsule', '_prik_owner', '_prik_ops', '_prik_origin')
-    _prik_element_size = _prik_state_t_element_size()
+    _prik_type_info = _prik_state_t_type_info()
     def __new__(cls, *args, **kwargs):
         'Construction is disabled.'
         raise TypeError('State objects come from native code.')

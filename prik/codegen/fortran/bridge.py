@@ -3876,8 +3876,7 @@ class FortranBridgeGenerator(ClassVisitor):
             if array.category == "assumed_rank":
                 attributes.append("dimension(..)")
             elif array.category == "assumed_size":
-                axes = [":"] * ((array.rank or 1) - 1) + ["*"]
-                attributes.append(f"dimension({', '.join(axes)})")
+                attributes.append("dimension(*)")
             else:
                 attributes.append(f"dimension({', '.join(':' for _ in range(array.rank or 0))})")
         attributes.extend(plan.fortran_assumed_attributes)

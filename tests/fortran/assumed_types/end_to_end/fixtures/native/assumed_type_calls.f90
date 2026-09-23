@@ -6,6 +6,10 @@ contains
     scalar_without_intent = 11
   end function
 
+  subroutine modify_scalar(x) bind(C)
+    type(*), intent(inout) :: x
+  end subroutine
+
   integer(c_int) function scalar(x) bind(C)
     type(*), intent(in) :: x
     scalar = 10
