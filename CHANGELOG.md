@@ -7,6 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Contributor test guidance focuses on supported behavior and meaningful
+  validation boundaries after a feature is removed.
+
 - Fortran `TYPE(*)` dummies accept native NumPy scalars and arrays through the
   declaration's address or C-descriptor ABI. Direct `BIND(C)` entries remain
   direct. Editable contracts use `AnyNative` with direct shape subscripts and

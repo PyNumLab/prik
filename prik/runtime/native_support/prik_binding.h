@@ -59,6 +59,7 @@ typedef struct {
 #define PRIK_RECORD_LAYOUT_FIELD(record, member) \
     {#member, offsetof(record, member), sizeof(((record *)0)->member)}
 
+/* Hash a record size and its named fields into a cross-extension layout tag. */
 static inline uint64_t prik_record_layout_tag(
     size_t record_size, const prik_record_layout_field *layout, size_t count)
 {
@@ -75,6 +76,7 @@ static inline uint64_t prik_record_layout_tag(
     return tag;
 }
 
+/* Name the derived-origin capsule using the local callback record layout. */
 static inline const char *prik_derived_origin_ops_capsule_name(void)
 {
     static const prik_record_layout_field layout[] = {
@@ -93,6 +95,7 @@ static inline const char *prik_derived_origin_ops_capsule_name(void)
     return name;
 }
 
+/* Name the native type-info capsule using the local metadata record layout. */
 static inline const char *prik_derived_type_info_capsule_name(void)
 {
     static const prik_record_layout_field layout[] = {
@@ -1063,11 +1066,13 @@ typedef struct {
     prik_derived_origin_ops *origin_ops;
 } prik_assumed_type_actual;
 
+/* Reset a call-local actual record before resolving native storage. */
 static inline void prik_assumed_type_actual_clear(prik_assumed_type_actual *actual)
 {
     memset(actual, 0, sizeof(*actual));
 }
 
+/* Map a supported NumPy dtype to its CFI type; report whether a descriptor can use it. */
 static int prik_assumed_type_dtype(int dtype, int32_t *cfi_type)
 {
     switch (dtype) {
@@ -1086,6 +1091,7 @@ static int prik_assumed_type_dtype(int dtype, int32_t *cfi_type)
     }
 }
 
+/* Hash a derived type identity into a tag distinct from intrinsic NumPy tags. */
 static inline uint64_t prik_assumed_type_derived_tag(const char *identity)
 {
     uint64_t tag = UINT64_C(14695981039346656037);
@@ -1096,6 +1102,9 @@ static inline uint64_t prik_assumed_type_derived_tag(const char *identity)
     return tag | (UINT64_C(1) << 63);
 }
 
+/* Read the derived type's compiler-measured element size and CFI category.
+ * The guarded capsule supplies ABI metadata; the actual retains no reference
+ * to it after this call. Return -1 with a Python exception on invalid metadata. */
 static int prik_assumed_type_derived_info(
     PyObject *object, prik_assumed_type_actual *actual)
 {
@@ -1117,6 +1126,9 @@ static int prik_assumed_type_derived_info(
     return 0;
 }
 
+/* Resolve a module-owned derived object through its generic origin operations.
+ * Addressable storage is exposed directly; scoped storage keeps its origin
+ * operations so the caller can use the existing inverted Fortran call. */
 PRIK_NO_INLINE static int prik_assumed_type_origin_from_object(
     PyObject *object, prik_assumed_type_actual *actual)
 {
@@ -1151,6 +1163,12 @@ invalid:
     return -1;
 }
 
+/* Resolve NumPy or PRIK-owned storage and concrete type facts for one call.
+ * NumPy scalars are copied into the record's call-local storage. Array and
+ * addressable derived-object storage is borrowed from the Python argument,
+ * which must stay alive until the native call completes. Scoped derived
+ * storage retains its origin operations instead of a C address. The dummy
+ * plan chooses whether an address or a CFI descriptor is required. */
 PRIK_NO_INLINE static int prik_assumed_type_actual_from_object(
     PyObject *object, prik_assumed_type_actual *actual)
 {
@@ -1211,6 +1229,9 @@ PRIK_NO_INLINE static int prik_assumed_type_actual_from_object(
     return prik_assumed_type_derived_info(object, actual);
 }
 
+/* Check a resolved actual against the completed rank, layout, and writeability
+ * policy. Writable NumPy scalars cannot receive native writeback; a mutable
+ * rank-zero ndarray can. Return -1 with a Python exception on failure. */
 PRIK_NO_INLINE static int prik_assumed_type_validate(
     const prik_assumed_type_actual *actual, PyObject *object,
     int minimum_rank, int maximum_rank, int layout, int writable,
@@ -1373,7 +1394,7 @@ PRIK_NO_INLINE static int prik_bind_array(
 }
 #endif
 
-/* Exact typed scalar input conversion. A mismatch deliberately sets no error. */
+/* Read an exact Python or NumPy boolean into native bool storage; return -1 on mismatch. */
 static inline int prik_bool_unpack_exact(PyObject *value, bool *destination)
 {
     int truth;
@@ -1388,6 +1409,7 @@ static inline int prik_bool_unpack_exact(PyObject *value, bool *destination)
     return 0;
 }
 
+/* Read an exact NumPy int8 scalar into native int8_t storage; return -1 on mismatch. */
 static inline int prik_int8_unpack_exact(PyObject *value, int8_t *destination)
 {
     if (!PyArray_IsScalar(value, Int8)) {
@@ -1397,6 +1419,7 @@ static inline int prik_int8_unpack_exact(PyObject *value, int8_t *destination)
     return 0;
 }
 
+/* Read an exact NumPy int16 scalar into native int16_t storage; return -1 on mismatch. */
 static inline int prik_int16_unpack_exact(PyObject *value, int16_t *destination)
 {
     if (!PyArray_IsScalar(value, Int16)) {
@@ -1406,6 +1429,7 @@ static inline int prik_int16_unpack_exact(PyObject *value, int16_t *destination)
     return 0;
 }
 
+/* Read an exact NumPy int32 scalar into native int32_t storage; return -1 on mismatch. */
 static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
 {
     if (!PyArray_IsScalar(value, Int)) {
@@ -1439,6 +1463,7 @@ static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
     return -1;
 }
 
+/* Read an exact NumPy float32 scalar into native float storage; return -1 on mismatch. */
 static inline int prik_float32_unpack_exact(PyObject *value, float *destination)
 {
     if (!PyArray_IsScalar(value, Float)) {
@@ -1448,6 +1473,7 @@ static inline int prik_float32_unpack_exact(PyObject *value, float *destination)
     return 0;
 }
 
+/* Read an exact NumPy float64 scalar into native double storage; return -1 on mismatch. */
 static inline int prik_float64_unpack_exact(PyObject *value, double *destination)
 {
     if (!PyArray_IsScalar(value, Double)) {
@@ -1457,6 +1483,7 @@ static inline int prik_float64_unpack_exact(PyObject *value, double *destination
     return 0;
 }
 
+/* Read an exact NumPy complex64 scalar into native float complex storage; return -1 on mismatch. */
 static inline int prik_complex64_unpack_exact(PyObject *value, float complex *destination)
 {
     if (!PyArray_IsScalar(value, CFloat)) {
@@ -1466,6 +1493,7 @@ static inline int prik_complex64_unpack_exact(PyObject *value, float complex *de
     return 0;
 }
 
+/* Read an exact NumPy complex128 scalar into native double complex storage; return -1 on mismatch. */
 static inline int prik_complex128_unpack_exact(PyObject *value, double complex *destination)
 {
     if (!PyArray_IsScalar(value, CDouble)) {
@@ -1475,7 +1503,7 @@ static inline int prik_complex128_unpack_exact(PyObject *value, double complex *
     return 0;
 }
 
-/* Type-specific coercive conversion for boundaries that permit Python scalars. */
+/* Convert Python truth value into native bool storage, propagating conversion errors. */
 static inline int prik_bool_unpack(PyObject *value, bool *destination)
 {
     int truth = PyObject_IsTrue(value);
@@ -1486,6 +1514,7 @@ static inline int prik_bool_unpack(PyObject *value, bool *destination)
     return 0;
 }
 
+/* Convert a Python integer within the requested signed range; set an exception on failure. */
 static inline int prik_signed_integer_unpack(
     PyObject *value,
     int64_t minimum,
@@ -1504,6 +1533,7 @@ static inline int prik_signed_integer_unpack(
     return 0;
 }
 
+/* Convert a Python integer within the requested unsigned range; set an exception on failure. */
 static inline int prik_unsigned_integer_unpack(
     PyObject *value,
     uint64_t maximum,
@@ -1521,6 +1551,7 @@ static inline int prik_unsigned_integer_unpack(
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native int8_t storage, checking range. */
 static inline int prik_int8_unpack(PyObject *value, int8_t *destination)
 {
     int64_t parsed;
@@ -1535,6 +1566,7 @@ static inline int prik_int8_unpack(PyObject *value, int8_t *destination)
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native int16_t storage, checking range. */
 static inline int prik_int16_unpack(PyObject *value, int16_t *destination)
 {
     int64_t parsed;
@@ -1549,6 +1581,7 @@ static inline int prik_int16_unpack(PyObject *value, int16_t *destination)
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native int32_t storage, checking range. */
 static inline int prik_int32_unpack(PyObject *value, int32_t *destination)
 {
     int64_t parsed;
@@ -1563,6 +1596,7 @@ static inline int prik_int32_unpack(PyObject *value, int32_t *destination)
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native int64_t storage, checking range. */
 static inline int prik_int64_unpack(PyObject *value, int64_t *destination)
 {
     if (PyArray_IsScalar(value, Int64)) {
@@ -1572,6 +1606,7 @@ static inline int prik_int64_unpack(PyObject *value, int64_t *destination)
     return prik_signed_integer_unpack(value, INT64_MIN, INT64_MAX, destination);
 }
 
+/* Convert a compatible Python or NumPy scalar into native float storage. */
 static inline int prik_float32_unpack(PyObject *value, float *destination)
 {
     if (PyArray_IsScalar(value, Float)) {
@@ -1582,6 +1617,7 @@ static inline int prik_float32_unpack(PyObject *value, float *destination)
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
+/* Convert a compatible Python or NumPy scalar into native double storage. */
 static inline int prik_float64_unpack(PyObject *value, double *destination)
 {
     if (PyArray_IsScalar(value, Double)) {
@@ -1592,6 +1628,7 @@ static inline int prik_float64_unpack(PyObject *value, double *destination)
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
+/* Convert a compatible Python or NumPy scalar into native float complex storage. */
 static inline int prik_complex64_unpack(PyObject *value, float complex *destination)
 {
     if (PyArray_IsScalar(value, CFloat)) {
@@ -1604,6 +1641,7 @@ static inline int prik_complex64_unpack(PyObject *value, float complex *destinat
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
+/* Convert a compatible Python or NumPy scalar into native double complex storage. */
 static inline int prik_complex128_unpack(PyObject *value, double complex *destination)
 {
     if (PyArray_IsScalar(value, CDouble)) {
@@ -1616,53 +1654,61 @@ static inline int prik_complex128_unpack(PyObject *value, double complex *destin
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
-/* Create normal Python scalars without a runtime dtype switch. */
+/* Box native bool storage as a new Python scalar reference. */
 static inline PyObject *prik_bool_to_python(const bool *value)
 {
     return PyBool_FromLong(*value);
 }
 
+/* Box native int8_t storage as a new Python scalar reference. */
 static inline PyObject *prik_int8_to_python(const int8_t *value)
 {
     return PyLong_FromLong(*value);
 }
 
+/* Box native int16_t storage as a new Python scalar reference. */
 static inline PyObject *prik_int16_to_python(const int16_t *value)
 {
     return PyLong_FromLong(*value);
 }
 
+/* Box native int32_t storage as a new Python scalar reference. */
 static inline PyObject *prik_int32_to_python(const int32_t *value)
 {
     return PyLong_FromLong(*value);
 }
 
+/* Box native int64_t storage as a new Python scalar reference. */
 static inline PyObject *prik_int64_to_python(const int64_t *value)
 {
     return PyLong_FromLongLong(*value);
 }
 
+/* Box native float storage as a new Python scalar reference. */
 static inline PyObject *prik_float32_to_python(const float *value)
 {
     return PyFloat_FromDouble(*value);
 }
 
+/* Box native double storage as a new Python scalar reference. */
 static inline PyObject *prik_float64_to_python(const double *value)
 {
     return PyFloat_FromDouble(*value);
 }
 
+/* Box native float complex storage as a new Python scalar reference. */
 static inline PyObject *prik_complex64_to_python(const float complex *value)
 {
     return PyComplex_FromDoubles(crealf(*value), cimagf(*value));
 }
 
+/* Box native double complex storage as a new Python scalar reference. */
 static inline PyObject *prik_complex128_to_python(const double complex *value)
 {
     return PyComplex_FromDoubles(creal(*value), cimag(*value));
 }
 
-/* Create typed NumPy scalars without a runtime dtype argument. */
+/* Box native bool storage as a new NumPy boolean scalar reference. */
 static inline PyObject *prik_bool_to_numpy(const bool *value)
 {
     PyObject *result = PyArrayScalar_New(Bool);
@@ -1672,6 +1718,7 @@ static inline PyObject *prik_bool_to_numpy(const bool *value)
     return result;
 }
 
+/* Box native int8_t storage as a new NumPy int8 scalar reference. */
 static inline PyObject *prik_int8_to_numpy(const int8_t *value)
 {
     PyObject *result = PyArrayScalar_New(Int8);
@@ -1681,6 +1728,7 @@ static inline PyObject *prik_int8_to_numpy(const int8_t *value)
     return result;
 }
 
+/* Box native int16_t storage as a new NumPy int16 scalar reference. */
 static inline PyObject *prik_int16_to_numpy(const int16_t *value)
 {
     PyObject *result = PyArrayScalar_New(Int16);
@@ -1690,6 +1738,7 @@ static inline PyObject *prik_int16_to_numpy(const int16_t *value)
     return result;
 }
 
+/* Box native int32_t storage as a new NumPy int32 scalar reference. */
 static inline PyObject *prik_int32_to_numpy(const int32_t *value)
 {
     PyObject *result = PyArrayScalar_New(Int);
@@ -1699,6 +1748,7 @@ static inline PyObject *prik_int32_to_numpy(const int32_t *value)
     return result;
 }
 
+/* Box native int64_t storage as a new NumPy int64 scalar reference. */
 static inline PyObject *prik_int64_to_numpy(const int64_t *value)
 {
     PyObject *result = PyArrayScalar_New(Int64);
@@ -1708,6 +1758,7 @@ static inline PyObject *prik_int64_to_numpy(const int64_t *value)
     return result;
 }
 
+/* Box native float storage as a new NumPy float32 scalar reference. */
 static inline PyObject *prik_float32_to_numpy(const float *value)
 {
     PyObject *result = PyArrayScalar_New(Float);
@@ -1733,6 +1784,7 @@ static inline int prik_bind_namespace_alias(PyObject *target, const char *name, 
     return status;
 }
 
+/* Box native double storage as a new NumPy float64 scalar reference. */
 static inline PyObject *prik_float64_to_numpy(const double *value)
 {
     PyObject *result = PyArrayScalar_New(Double);
@@ -1742,6 +1794,7 @@ static inline PyObject *prik_float64_to_numpy(const double *value)
     return result;
 }
 
+/* Box native float complex storage as a new NumPy complex64 scalar reference. */
 static inline PyObject *prik_complex64_to_numpy(const float complex *value)
 {
     PyObject *result = PyArrayScalar_New(CFloat);
@@ -1751,6 +1804,7 @@ static inline PyObject *prik_complex64_to_numpy(const float complex *value)
     return result;
 }
 
+/* Box native double complex storage as a new NumPy complex128 scalar reference. */
 static inline PyObject *prik_complex128_to_numpy(const double complex *value)
 {
     PyObject *result = PyArrayScalar_New(CDouble);
@@ -1765,6 +1819,7 @@ static inline PyObject *prik_complex128_to_numpy(const double complex *value)
    NumPy dropped the ``Intp`` scalar tag, so ``size_t`` selects the fixed-width
    tag that matches the target's pointer width instead. */
 
+/* Read an exact NumPy uint8 scalar into native uint8_t storage; return -1 on mismatch. */
 static inline int prik_uint8_unpack_exact(PyObject *value, uint8_t *destination)
 {
     if (!PyArray_IsScalar(value, UByte)) {
@@ -1774,6 +1829,7 @@ static inline int prik_uint8_unpack_exact(PyObject *value, uint8_t *destination)
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native uint8_t storage, checking range. */
 static inline int prik_uint8_unpack(PyObject *value, uint8_t *destination)
 {
     uint64_t parsed;
@@ -1788,11 +1844,13 @@ static inline int prik_uint8_unpack(PyObject *value, uint8_t *destination)
     return 0;
 }
 
+/* Box native uint8_t storage as a new Python scalar reference. */
 static inline PyObject *prik_uint8_to_python(const uint8_t *value)
 {
     return PyLong_FromUnsignedLong(*value);
 }
 
+/* Box native uint8_t storage as a new NumPy uint8 scalar reference. */
 static inline PyObject *prik_uint8_to_numpy(const uint8_t *value)
 {
     PyObject *result = PyArrayScalar_New(UByte);
@@ -1802,6 +1860,7 @@ static inline PyObject *prik_uint8_to_numpy(const uint8_t *value)
     return result;
 }
 
+/* Read an exact NumPy uint16 scalar into native uint16_t storage; return -1 on mismatch. */
 static inline int prik_uint16_unpack_exact(PyObject *value, uint16_t *destination)
 {
     if (!PyArray_IsScalar(value, UShort)) {
@@ -1811,6 +1870,7 @@ static inline int prik_uint16_unpack_exact(PyObject *value, uint16_t *destinatio
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native uint16_t storage, checking range. */
 static inline int prik_uint16_unpack(PyObject *value, uint16_t *destination)
 {
     uint64_t parsed;
@@ -1825,11 +1885,13 @@ static inline int prik_uint16_unpack(PyObject *value, uint16_t *destination)
     return 0;
 }
 
+/* Box native uint16_t storage as a new Python scalar reference. */
 static inline PyObject *prik_uint16_to_python(const uint16_t *value)
 {
     return PyLong_FromUnsignedLong(*value);
 }
 
+/* Box native uint16_t storage as a new NumPy uint16 scalar reference. */
 static inline PyObject *prik_uint16_to_numpy(const uint16_t *value)
 {
     PyObject *result = PyArrayScalar_New(UShort);
@@ -1839,6 +1901,7 @@ static inline PyObject *prik_uint16_to_numpy(const uint16_t *value)
     return result;
 }
 
+/* Read an exact NumPy uint32 scalar into native uint32_t storage; return -1 on mismatch. */
 static inline int prik_uint32_unpack_exact(PyObject *value, uint32_t *destination)
 {
     if (!PyArray_IsScalar(value, UInt)) {
@@ -1848,6 +1911,7 @@ static inline int prik_uint32_unpack_exact(PyObject *value, uint32_t *destinatio
     return 0;
 }
 
+/* Convert a compatible Python or NumPy integer into native uint32_t storage, checking range. */
 static inline int prik_uint32_unpack(PyObject *value, uint32_t *destination)
 {
     uint64_t parsed;
@@ -1862,11 +1926,13 @@ static inline int prik_uint32_unpack(PyObject *value, uint32_t *destination)
     return 0;
 }
 
+/* Box native uint32_t storage as a new Python scalar reference. */
 static inline PyObject *prik_uint32_to_python(const uint32_t *value)
 {
     return PyLong_FromUnsignedLong(*value);
 }
 
+/* Box native uint32_t storage as a new NumPy uint32 scalar reference. */
 static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
 {
     PyObject *result = PyArrayScalar_New(UInt);
@@ -1876,7 +1942,7 @@ static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
     return result;
 }
 
-/* Accepts either 64-bit spelling; see prik_int64_unpack_exact. */
+/* Read either NumPy 64-bit unsigned scalar spelling into native uint64_t storage. */
 static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destination)
 {
 #if NPY_SIZEOF_LONG == 8
@@ -1894,6 +1960,7 @@ static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destinatio
     return -1;
 }
 
+/* Convert a compatible Python or NumPy integer into native uint64_t storage, checking range. */
 static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
 {
     if (PyArray_IsScalar(value, ULongLong)) {
@@ -1903,11 +1970,13 @@ static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
     return prik_unsigned_integer_unpack(value, UINT64_MAX, destination);
 }
 
+/* Box native uint64_t storage as a new Python scalar reference. */
 static inline PyObject *prik_uint64_to_python(const uint64_t *value)
 {
     return PyLong_FromUnsignedLongLong(*value);
 }
 
+/* Box native uint64_t storage as a new NumPy uint64 scalar reference. */
 static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
 {
 #if NPY_SIZEOF_LONG == 8
@@ -1924,7 +1993,7 @@ static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
     return result;
 }
 
-/* Accepts every unsigned spelling of the target's pointer width. */
+/* Read any NumPy unsigned scalar matching pointer width into native size_t storage. */
 static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
 {
 #if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
@@ -1948,6 +2017,7 @@ static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
     return -1;
 }
 
+/* Convert a compatible Python or NumPy integer into native size_t storage, checking range. */
 static inline int prik_uintp_unpack(PyObject *value, size_t *destination)
 {
     uint64_t parsed;
@@ -1968,11 +2038,13 @@ static inline int prik_uintp_unpack(PyObject *value, size_t *destination)
     return 0;
 }
 
+/* Box native size_t storage as a new Python scalar reference. */
 static inline PyObject *prik_uintp_to_python(const size_t *value)
 {
     return PyLong_FromUnsignedLongLong((unsigned long long)*value);
 }
 
+/* Box native size_t storage using the NumPy unsigned scalar matching pointer width. */
 static inline PyObject *prik_uintp_to_numpy(const size_t *value)
 {
 #if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
@@ -1994,6 +2066,7 @@ static inline PyObject *prik_uintp_to_numpy(const size_t *value)
     return result;
 }
 
+/* Read an exact NumPy long double scalar into native long double storage; return -1 on mismatch. */
 static inline int prik_longdouble_unpack_exact(PyObject *value, long double *destination)
 {
     if (!PyArray_IsScalar(value, LongDouble)) {
@@ -2003,6 +2076,7 @@ static inline int prik_longdouble_unpack_exact(PyObject *value, long double *des
     return 0;
 }
 
+/* Convert a compatible Python or NumPy scalar into native long double storage. */
 static inline int prik_longdouble_unpack(PyObject *value, long double *destination)
 {
     if (PyArray_IsScalar(value, LongDouble)) {
@@ -2013,11 +2087,13 @@ static inline int prik_longdouble_unpack(PyObject *value, long double *destinati
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
+/* Box native long double storage as a Python float, narrowing to double precision. */
 static inline PyObject *prik_longdouble_to_python(const long double *value)
 {
     return PyFloat_FromDouble((double)*value);
 }
 
+/* Box native long double storage as a new NumPy long double scalar reference. */
 static inline PyObject *prik_longdouble_to_numpy(const long double *value)
 {
     PyObject *result = PyArrayScalar_New(LongDouble);
@@ -2027,6 +2103,7 @@ static inline PyObject *prik_longdouble_to_numpy(const long double *value)
     return result;
 }
 
+/* Read an exact NumPy long double complex scalar into native long double complex storage; return -1 on mismatch. */
 static inline int prik_clongdouble_unpack_exact(PyObject *value, long double complex *destination)
 {
     if (!PyArray_IsScalar(value, CLongDouble)) {
@@ -2036,6 +2113,7 @@ static inline int prik_clongdouble_unpack_exact(PyObject *value, long double com
     return 0;
 }
 
+/* Convert a compatible Python or NumPy scalar into native long double complex storage. */
 static inline int prik_clongdouble_unpack(PyObject *value, long double complex *destination)
 {
     if (PyArray_IsScalar(value, CLongDouble)) {
@@ -2047,11 +2125,13 @@ static inline int prik_clongdouble_unpack(PyObject *value, long double complex *
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
+/* Box native long double complex storage as a Python complex, narrowing each component. */
 static inline PyObject *prik_clongdouble_to_python(const long double complex *value)
 {
     return PyComplex_FromDoubles((double)creall(*value), (double)cimagl(*value));
 }
 
+/* Box native long double complex storage as a new NumPy long double complex scalar reference. */
 static inline PyObject *prik_clongdouble_to_numpy(const long double complex *value)
 {
     PyObject *result = PyArrayScalar_New(CLongDouble);
