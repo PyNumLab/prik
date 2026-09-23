@@ -158,7 +158,32 @@ from prik.planning.entrypoints import (
 )
 
 # Re-export reaches Python only where the published name is one exported object.
-_ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "derived_type"})
+_ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "generic", "derived_type"})
+
+
+def requires_cfi_header(namespaces: tuple[NamespacePlan, ...]) -> bool:
+    """Read completed plans that require the standard C descriptor header."""
+    accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
+    descriptor_fields = {
+        DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
+        DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
+    }
+    return any(
+        field.access in descriptor_fields
+        for namespace in namespaces
+        for derived in namespace.derived_types
+        for field in derived.fields
+    ) or any(
+        argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
+        or (argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR)
+        or (
+            argument.native_array_actual is not None
+            and bool(accepts.intersection(argument.native_array_actual.accepted_sources))
+        )
+        for namespace in namespaces
+        for function in namespace.functions
+        for argument in function.arguments
+    )
 
 
 _DATATYPE_FAMILIES = {
@@ -670,7 +695,7 @@ class WrapperPlanner(ClassVisitor):
         """
         wanted = source_name.casefold()
         published: str | None = None
-        for declaration in (*module.functions, *module.classes):
+        for declaration in (*module.functions, *module.overload_sets, *module.classes):
             if getattr(declaration, "visibility", "public") != "public":
                 continue
             native = str(getattr(declaration, "native_name", "") or declaration.name).casefold()
@@ -1088,6 +1113,7 @@ class WrapperPlanner(ClassVisitor):
             candidate_passed_objects=tuple(candidate.passed_object for candidate in policy.candidates),
             unsupported_extra_argument_message=policy.unsupported_extra_argument_message,
             identity_receiver_shortcut=policy.identity_receiver_shortcut,
+            direct_single_candidate=policy.direct_single_candidate,
         )
 
     def _class_callable_name(self, type_identity: tuple[str, str], name: str) -> str:
@@ -1372,7 +1398,7 @@ class WrapperPlanner(ClassVisitor):
                 native_assignment=policy.native_assignment,
             ),
             character_length=policy.character_length,
-            array_address=policy.array_address,
+            storage_address=policy.storage_address,
             array=self._array_plan(policy.array, policy.owner_path),
             native_array_handle=self._native_array_handle_plan(policy.native_array_handle, policy.owner_path),
             derived=(
@@ -2819,57 +2845,9 @@ class WrapperPlanner(ClassVisitor):
             if handle is not None
         )
         headers = list(self._native_array_headers(handles))
-        if (
-            self._requires_derived_descriptor_header(namespaces)
-            or self._accepts_array_handle_actual(namespaces)
-            or self._uses_array_descriptor_abi(namespaces)
-            or any(
-                argument.datatype_family is DatatypeFamily.ASSUMED_NATIVE
-                for namespace in namespaces
-                for function in namespace.functions
-                for argument in function.arguments
-            )
-        ):
+        if requires_cfi_header(namespaces):
             headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         return tuple(dict.fromkeys(headers))
-
-    @staticmethod
-    def _uses_array_descriptor_abi(namespaces: tuple[NamespacePlan, ...]) -> bool:
-        """Return whether an ordinary argument uses the standard descriptor ABI."""
-        return any(
-            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
-            for namespace in namespaces
-            for function in namespace.functions
-            for argument in function.arguments
-        )
-
-    @staticmethod
-    def _accepts_array_handle_actual(namespaces: tuple[NamespacePlan, ...]) -> bool:
-        """Return whether an ordinary array argument accepts an array handle.
-
-        The storage such a handle names is reached through its descriptor, so a
-        module whose ordinary array dummies accept one needs the interop header
-        even when nothing else about the module does.  Only a Fortran argument
-        accepts one, so no separate language test is needed here.
-        """
-        accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
-        return any(
-            argument.native_array_actual is not None
-            and accepts.intersection(argument.native_array_actual.accepted_sources)
-            for namespace in namespaces
-            for function in namespace.functions
-            for argument in function.arguments
-        )
-
-    @staticmethod
-    def _requires_derived_descriptor_header(namespaces: tuple[NamespacePlan, ...]) -> bool:
-        """Return whether one derived field uses a standard C descriptor callback."""
-        descriptor_access = {
-            DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
-            DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
-        }
-        fields = (field for namespace in namespaces for derived in namespace.derived_types for field in derived.fields)
-        return any(field.access in descriptor_access for field in fields)
 
     def _native_array_headers(self, handles: tuple[NativeArrayHandlePlan, ...]) -> tuple[str, ...]:
         """Deduplicate planned handle headers in encounter order."""

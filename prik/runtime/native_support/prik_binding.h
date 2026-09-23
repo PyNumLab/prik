@@ -211,6 +211,11 @@ void *prik_capture_address(void *base)
 {
     return base;
 }
+
+void *prik_capture_scalar_address(void *base)
+{
+    return base;
+}
 #endif
 
 /*

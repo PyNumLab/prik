@@ -46,6 +46,7 @@ from prik.semantics.models import (
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
     NATIVE_BY_VALUE_METADATA,
+    NATIVE_ACCESS_MODULE_METADATA,
     PYTHON_BOUND_POSITION_METADATA,
     PYTHON_METHOD_NAME_METADATA,
     PYTHON_STATIC_METADATA,
@@ -1082,6 +1083,8 @@ class PyiPrinter(ClassVisitor):
         semantic_type = self._without_constant_constraint(arg.semantic_type)
         type_text = self._visit(semantic_type, context)
         annotation_metadata = []
+        if arg.semantic_type.metadata.get("native_storage") and arg.origin.source_kind == "variable":
+            annotation_metadata.append(context.contract("NativeStorage"))
         if original_name is not None:
             annotation_metadata.append(f"{context.contract('SourceName')}({json.dumps(original_name)})")
         if annotation_metadata:
@@ -1970,7 +1973,9 @@ class PyiPrinter(ClassVisitor):
             and any(str(attribute).casefold() == "pure" for attribute in func.metadata.get("fortran_attributes", ()))
         ):
             decorators.append(f"{indent}@{context.contract('pure')}")
-        if not func.metadata.get(OVERLOAD_TARGET_METADATA) and self._requires_native_call(func):
+        overload_target = func.metadata.get(OVERLOAD_TARGET_METADATA)
+        is_specific_declaration = not overload_target or str(func.name).casefold() == str(overload_target).casefold()
+        if is_specific_declaration and self._requires_native_call(func):
             decorators.append(
                 f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func), func)}"
             )
@@ -2000,6 +2005,8 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"{indent}@staticmethod")
         if func.metadata.get(DEFERRED_BINDING_METADATA):
             decorators.append(f"{indent}@{context.contract('abstractmethod')}")
+        if native_module := func.metadata.get(NATIVE_ACCESS_MODULE_METADATA):
+            decorators.append(f"{indent}@{context.contract('native_module')}({json.dumps(str(native_module))})")
         is_native_c_abi = func.origin.source_language == "fortran" and func.origin.native_abi == "c"
         is_overload = bool(func.metadata.get(OVERLOAD_TARGET_METADATA))
         if is_native_c_abi and not is_overload:

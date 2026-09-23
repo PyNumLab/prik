@@ -10,7 +10,7 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.policy.ownership import AssignmentMode
 from prik.policy.models import (
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleVariablePolicy,
     NativeArrayDescriptorAttribute,
@@ -172,8 +172,8 @@ addressable: Annotated[Float64[4], Aliased]
     }
     assert [policy.supported for policy in policies.values()] == [True, True]
     assert policies["values"].getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
-    assert policies["values"].array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS
-    assert policies["addressable"].array_address is ModuleArrayAddressMechanism.TARGET_ADDRESS
+    assert policies["values"].storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+    assert policies["addressable"].storage_address is ModuleStorageAddressMechanism.TARGET_ADDRESS
     # Neither route hands Python the whole variable back to reassign.
     assert policies["values"].setter_action is SetterAction.REJECT_REPLACEMENT
     assert policies["addressable"].setter_action is SetterAction.REJECT_REPLACEMENT

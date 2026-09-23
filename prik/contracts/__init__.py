@@ -236,6 +236,7 @@ Flat = _ContractExpression()
 FortranAllocatable = _ContractExpression()
 Immutable = _ContractExpression()
 MaybeUnallocated = _ContractExpression()
+NativeStorage = _ContractExpression()
 ORDER_ANY = _ContractExpression()
 ORDER_C = _ContractExpression()
 ORDER_F = _ContractExpression()
@@ -329,6 +330,7 @@ def destroy(target):
 bind = _decorator
 nogil = _decorator
 native_abi = _decorator
+native_module = _decorator
 native_call = _decorator
 overload = _decorator
 prototype = _decorator
@@ -394,6 +396,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Matrix",
         "AnyNative",
         "MaybeUnallocated",
+        "NativeStorage",
         "Opaque",
         "OpaqueHandle",
         "ORDER_ANY",
@@ -430,6 +433,7 @@ CONTRACT_SYMBOLS = frozenset(
         "destroy",
         "nogil",
         "native_abi",
+        "native_module",
         "native_call",
         "overload",
         "prototype",

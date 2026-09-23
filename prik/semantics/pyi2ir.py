@@ -58,6 +58,7 @@ from prik.semantics.models import (
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
     NATIVE_BY_VALUE_METADATA,
+    NATIVE_ACCESS_MODULE_METADATA,
     PYTHON_BOUND_POSITION_METADATA,
     PYTHON_METHOD_NAME_METADATA,
     PYTHON_STATIC_METADATA,
@@ -164,6 +165,7 @@ class _Decorators:
     overload_generic: str | None = None
     bind_target: str | None = None
     native_abi: str | None = None
+    native_module: str | None = None
     standalone: bool = False
     is_static: bool = False
     release_gil: bool = False
@@ -896,6 +898,7 @@ class _PyiAstParser:
             "overload": self._apply_overload_decorator,
             "bind": self._apply_bind_decorator,
             "native_abi": self._apply_native_abi_decorator,
+            "native_module": self._apply_native_module_decorator,
             "standalone": self._apply_standalone_decorator,
             "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
@@ -1021,6 +1024,17 @@ class _PyiAstParser:
         if value.casefold() != "c":
             raise ValueError('native_abi accepts only "c"')
         parsed.native_abi = "c"
+
+    def _apply_native_module_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Record the Fortran module through which a native procedure is accessed."""
+        if parsed.native_module is not None:
+            raise ValueError(f"Duplicate {context} native_module decorator")
+        if self.native_language != "fortran":
+            raise ValueError("native_module is only valid for Fortran semantic .pyi declarations")
+        value = self._required_string_decorator_argument(node, "native_module")
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value) is None:
+            raise ValueError(f"native_module requires a Fortran module name: {value!r}")
+        parsed.native_module = value
 
     @staticmethod
     def _apply_nogil_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -1213,6 +1227,8 @@ class _PyiAstParser:
         for key in (RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA):
             if key in declaration.metadata:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
+        if NATIVE_ACCESS_MODULE_METADATA in declaration.metadata:
+            candidate.metadata[NATIVE_ACCESS_MODULE_METADATA] = declaration.metadata[NATIVE_ACCESS_MODULE_METADATA]
 
         if isinstance(owner, SemanticModule):
             if generic_name is not None:
@@ -2525,18 +2541,7 @@ class _PyiAstParser:
         ordinary constraints while contradictions raise immediately.
         """
         if name in {"ORDER_C", "ORDER_F", "ORDER_ANY"}:
-            array = self._require_array_storage(semantic_type)
-            if array.rank is None or array.rank <= 1:
-                raise ValueError(f"{name} requires a multidimensional array")
-            expected_order = self._flat_array_order(array.source_shape, array.rank)
-            if expected_order is not None and name != expected_order:
-                raise ValueError(f"{name} conflicts with {expected_order} implied by Flat placement")
-            default_order = self._array_order_for_dimensions(array.category, array.rank, array.source_shape)
-            if expected_order is None and name == default_order:
-                raise ValueError(
-                    f"{name} is implicit for {self.native_language} semantic .pyi contracts; remove the annotation"
-                )
-            array.order = name
+            self._apply_array_order_metadata(semantic_type, name)
             return True
         if name == "COPY_F":
             self._require_array_storage(semantic_type).copy_order = "ORDER_F"
@@ -2564,6 +2569,9 @@ class _PyiAstParser:
         if name == "MaybeUnallocated":
             semantic_type.metadata[MAYBE_UNALLOCATED_METADATA] = True
             return True
+        if name == "NativeStorage":
+            semantic_type.metadata["native_storage"] = True
+            return True
         if name == "FortranAllocatable":
             semantic_type.metadata["fortran_allocatable"] = True
             return True
@@ -2575,6 +2583,21 @@ class _PyiAstParser:
             semantic_type.metadata["fortran_polymorphic"] = True
             return True
         return False
+
+    def _apply_array_order_metadata(self, semantic_type: SemanticType, name: str) -> None:
+        """Validate one explicit order against the declaration's shape and default."""
+        array = self._require_array_storage(semantic_type)
+        if array.rank is None or array.rank <= 1:
+            raise ValueError(f"{name} requires a multidimensional array")
+        expected_order = self._flat_array_order(array.source_shape, array.rank)
+        if expected_order is not None and name != expected_order:
+            raise ValueError(f"{name} conflicts with {expected_order} implied by Flat placement")
+        default_order = self._array_order_for_dimensions(array.category, array.rank, array.source_shape)
+        if expected_order is None and name == default_order:
+            raise ValueError(
+                f"{name} is implicit for {self.native_language} semantic .pyi contracts; remove the annotation"
+            )
+        array.order = name
 
     @staticmethod
     def _validate_array_copy_metadata(semantic_type: SemanticType) -> None:
@@ -3667,6 +3690,8 @@ class _ClassBodyVisitor(ClassVisitor):
             return
         if decorators.standalone:
             raise ValueError("standalone is not valid for a class method")
+        if decorators.native_module is not None:
+            raise ValueError("native_module is only valid for module procedures")
         if not node.decorator_list and self._is_generated_constructor(node):
             self.constructor_from_fields = True
             return
@@ -3743,6 +3768,7 @@ class _ClassBodyVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
+            or decorators.native_module is not None
             or decorators.abstract_method
             or decorators.destroy
         ):
@@ -3877,6 +3903,8 @@ class _ModuleVisitor(ClassVisitor):
             # The same fact a Fortran source records, which a specification
             # function in a declaration expression is required to carry.
             function.metadata["fortran_attributes"] = [*function.metadata.get("fortran_attributes", ()), "pure"]
+        if decorators.native_module is not None:
+            function.metadata[NATIVE_ACCESS_MODULE_METADATA] = decorators.native_module
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
                 _PendingOverload(

@@ -41,7 +41,7 @@ from prik.policy.models import (
     DerivedWriteback,
     DirectResultABI,
     ModuleObjectAccessMechanism,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorAttribute,
     NativeArrayDescriptorKind,
@@ -218,6 +218,7 @@ _BINDING_GETTER_SUMMARIES = {
     ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Builds a Python object from the compiler-evaluated constant.",
     ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: "Copies the parameter array into one read-only NumPy array.",
     ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
+    ModuleGetterAction.NATIVE_SCALAR_VIEW: "Wraps live native scalar storage in a rank-zero NumPy view.",
     ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
     ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
@@ -729,7 +730,8 @@ class CBindingGenerator(ClassVisitor):
         plain module object, which is likewise not a target.
         """
         return any(
-            variable.array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS for variable in self._variables(plan)
+            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            for variable in self._variables(plan)
         ) or any(
             member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
             for variable in self._variables(plan)
@@ -4526,7 +4528,11 @@ class CBindingGenerator(ClassVisitor):
             variable
             for variable in self._variables(plan)
             if variable.binding.getter_action
-            in {ModuleGetterAction.BORROWED_ARRAY_VIEW, ModuleGetterAction.NATIVE_ARRAY_HANDLE}
+            in {
+                ModuleGetterAction.BORROWED_ARRAY_VIEW,
+                ModuleGetterAction.NATIVE_ARRAY_HANDLE,
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+            }
         )
 
     # Borrowed module native-array-handle operations.
@@ -6121,6 +6127,8 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.NATIVE_SCALAR_VIEW:
+                return self._lower_module_getter_native_scalar_view(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -6161,6 +6169,27 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(self._scalar_result_expression(scalar_type, "&value", module=True)),
                     ),
                     CReturn(CodeExpression("result")),
+                ),
+            ),
+        )
+
+    def _lower_module_getter_native_scalar_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Expose live scalar module storage as a rank-zero NumPy view."""
+        scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        owner = self._module_native_array_owner_name(plan)
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration("data", "void *", CodeExpression(f"{self._module_bridge_getter_name(plan)}()")),
+                    CDeclaration(
+                        "result",
+                        "PyObject *",
+                        CodeExpression(f"PyArray_SimpleNewFromData(0, NULL, {scalar.array_numpy_type}, data)"),
+                    ),
+                    *self._ordinary_array_field_owner_nodes("result", owner),
                 ),
             ),
         )
@@ -15224,24 +15253,29 @@ class CBindingGenerator(ClassVisitor):
             body.append(CDeclaration("user_nargs", "Py_ssize_t", CodeExpression("nargs")))
         body.append(CDeclaration("candidate_id", "int", CodeExpression("-1")))
         body.extend(self._overload_special_case_nodes(overload, dispatch.receiver))
-        body.extend(
-            CIf(
-                CodeExpression(
-                    "candidate_id < 0 && ("
-                    + self._overload_candidate_condition(
-                        matches,
-                        positional_offset=positional_offset,
-                    )
-                    + ")"
-                ),
-                body=(CExpressionStatement(CodeExpression(f"candidate_id = {candidate_id}")),),
+        if overload.direct_single_candidate:
+            # The sole wrapper validates open-ended native actuals after
+            # policy has selected direct dispatch.
+            body.append(CExpressionStatement(CodeExpression(f"candidate_id = {overload.candidate_ids[0]}")))
+        else:
+            body.extend(
+                CIf(
+                    CodeExpression(
+                        "candidate_id < 0 && ("
+                        + self._overload_candidate_condition(
+                            matches,
+                            positional_offset=positional_offset,
+                        )
+                        + ")"
+                    ),
+                    body=(CExpressionStatement(CodeExpression(f"candidate_id = {candidate_id}")),),
+                )
+                for candidate_id, matches in zip(
+                    overload.candidate_ids,
+                    overload.candidate_matches,
+                    strict=True,
+                )
             )
-            for candidate_id, matches in zip(
-                overload.candidate_ids,
-                overload.candidate_matches,
-                strict=True,
-            )
-        )
         cases = tuple(
             self._overload_candidate_case(
                 dispatch,
@@ -15933,6 +15967,7 @@ class CBindingGenerator(ClassVisitor):
             if variable.binding.getter_action not in {
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
             }:
                 continue
             owner = self._module_native_array_owner_name(variable)

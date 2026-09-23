@@ -136,6 +136,9 @@ Assign elements or slices, rather than rebinding the module variable.
 Fixed-shape module arrays and derived-type array fields expose live views
 whether or not their declarations include `target`. Logical array dtypes follow
 the [data-type mapping](data-types.md#scalar-type-mapping).
+An addressable scalar module variable declared with `bind(C)` is also a live
+rank-zero NumPy view. Use `value[()]` to read or update it; pass the view itself
+when a `TYPE(*)` dummy needs its original native storage.
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.

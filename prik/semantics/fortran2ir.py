@@ -506,6 +506,16 @@ class FortranToIRConverter(ClassVisitor):
             declaration_arrays=declaration_arrays,
         )
 
+    @staticmethod
+    def _has_native_scalar_storage(var: FortranVariable) -> bool:
+        """Identify concrete interoperable module storage with a stable address."""
+        return (
+            getattr(var, "_fortran_bind_c", False)
+            and var.rank == 0
+            and not var.is_parameter
+            and var.base_type.casefold() in {"integer", "real", "complex", "logical"}
+        )
+
     def _convert_variable_type(
         self,
         var: FortranVariable,
@@ -541,6 +551,8 @@ class FortranToIRConverter(ClassVisitor):
         if getattr(var, "target", False):
             metadata["aliased"] = True
             metadata["fortran_target"] = True
+        if self._has_native_scalar_storage(var):
+            metadata["native_storage"] = True
         if getattr(var, "_fortran_protected", False):
             metadata["fortran_protected"] = True
         if getattr(var, "pointer", False):
@@ -3128,20 +3140,20 @@ class FortranToIRConverter(ClassVisitor):
         ).key
 
     @staticmethod
-    def _bind_private_specifics_through_generic(
+    def _bind_unreachable_specifics_through_generic(
         overload_set: ProcedureOverloadSet,
         targets: list[_SpecificProcedure],
         lookup: dict[tuple[str, str], SemanticFunction],
         generic_name: str,
+        interface_body_targets: set[tuple[str, str]],
     ) -> None:
-        """Bind each private specific through the generic name that reaches it.
+        """Bind specifics without a module name through their reachable generic.
 
-        A specific its declaring module keeps private is unreachable by its own
-        name, while the generic -- or, for a constructor, the type name -- is
-        public and resolves to the same procedure.
+        A private module procedure and a procedure declared only inside an
+        interface body are both callable through the generic name.
         """
         for target, candidate in zip(targets, overload_set.procedures, strict=True):
-            if lookup[target.key].visibility == "private":
+            if lookup[target.key].visibility == "private" or target.key in interface_body_targets:
                 candidate.native_name = generic_name
                 candidate.metadata[BIND_TARGET_METADATA] = generic_name
 
@@ -3211,11 +3223,12 @@ class FortranToIRConverter(ClassVisitor):
                     # constructor, so its specifics become the class's own
                     # `__init__` overload set rather than a module generic.
                     constructor_set = self._normal_overload_set("__init__", procedures)
-                    self._bind_private_specifics_through_generic(
+                    self._bind_unreachable_specifics_through_generic(
                         constructor_set,
                         target_names,
                         own_lookup | inline_lookup | inherited_lookup,
                         interface.name,
+                        set(inline_lookup),
                     )
                     self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
                     self._mark_constructor_specifics(procedures, own_lookup, interface.name)
@@ -3228,11 +3241,12 @@ class FortranToIRConverter(ClassVisitor):
                     else module.name,
                     visibility=self._symbol_visibility(module, interface.name),
                 )
-                self._bind_private_specifics_through_generic(
+                self._bind_unreachable_specifics_through_generic(
                     overload_set,
                     target_names,
                     own_lookup | inline_lookup | inherited_lookup,
                     interface.name,
+                    set(inline_lookup),
                 )
                 overload_sets.append(overload_set)
                 continue

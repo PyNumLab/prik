@@ -903,7 +903,17 @@ def _complete_overload_policy(
     builtin_signatures = tuple(_overload_candidate_builtin_signature(candidate.arguments) for candidate in candidates)
     if len(set(builtin_signatures)) != len(builtin_signatures):
         blockers.append(f"overload {overload.owner_path!r} has overlapping reflected scalar signatures")
-    return replace(overload, candidates=tuple(candidates), blockers=tuple(dict.fromkeys(blockers)))
+    has_open_native_actual = any(
+        argument.semantic_type_name == "AnyNative" for candidate in candidates for argument in candidate.arguments
+    )
+    if has_open_native_actual and len(candidates) > 1:
+        blockers.append(f"overload {overload.owner_path!r} cannot select among open native actuals")
+    return replace(
+        overload,
+        candidates=tuple(candidates),
+        blockers=tuple(dict.fromkeys(blockers)),
+        direct_single_candidate=has_open_native_actual and len(candidates) == 1,
+    )
 
 
 def _overload_candidate_signature(arguments: tuple[OverloadArgumentPolicy, ...]) -> tuple:

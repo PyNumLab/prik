@@ -329,6 +329,7 @@ class ModuleGetterAction(str, Enum):
     NATIVE_CONSTANT_VALUE = "native_constant_value"
     NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
+    NATIVE_SCALAR_VIEW = "native_scalar_view"
     CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -336,18 +337,13 @@ class ModuleGetterAction(str, Enum):
     DERIVED_OBJECT = "derived_object"
 
 
-class ModuleArrayAddressMechanism(str, Enum):
-    """Completed native mechanism that yields a fixed module array's base address.
+class ModuleStorageAddressMechanism(str, Enum):
+    """Completed route to the original storage of a module scalar or array.
 
-    ``TARGET_ADDRESS`` applies to storage the declaration made addressable, where
-    ``c_loc`` names the array directly.  ``CAPTURED_ADDRESS`` applies to an
-    ordinary array without that attribute: ``c_loc`` cannot name it, so the whole
-    array is handed to ``prik_capture_address``, a ``bind(C)`` primitive whose
-    assumed-type assumed-size dummy receives the bare base address.  The
-    Fortran side forms no pointer and claims no target.  The captured address is
-    valid for as long as the module variable keeps its storage, which the Fortran
-    standard does not guarantee across the program's lifetime; see the module
-    variable guide for the responsibility that carries.
+    ``TARGET_ADDRESS`` uses ``c_loc`` on a target array. ``CAPTURED_ADDRESS``
+    passes a non-target scalar or array to a ``bind(C)`` identity procedure,
+    which returns its original address without copying. The captured address
+    remains valid only while the module variable keeps that storage.
     """
 
     TARGET_ADDRESS = "target_address"
@@ -742,6 +738,7 @@ class OverloadPolicy:
     blockers: tuple[str, ...] = ()
     unsupported_extra_argument_message: str | None = None
     identity_receiver_shortcut: bool = False
+    direct_single_candidate: bool = False
 
 
 @dataclass(frozen=True)
@@ -990,7 +987,7 @@ class ModuleVariablePolicy:
     blockers: tuple[str, ...] = ()
     character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
-    array_address: ModuleArrayAddressMechanism | None = None
+    storage_address: ModuleStorageAddressMechanism | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None
 

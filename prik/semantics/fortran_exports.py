@@ -7,11 +7,19 @@ from copy import deepcopy
 from dataclasses import dataclass
 import re
 
-from prik.semantics.models import ProcedureOverloadSet, SemanticFunction, SemanticModule
+from prik.semantics.metadata import BIND_TARGET_METADATA
+from prik.semantics.models import (
+    EXTERNAL_TYPE_REF_METADATA,
+    NATIVE_ACCESS_MODULE_METADATA,
+    ProcedureOverloadSet,
+    SemanticFunction,
+    SemanticModule,
+    _semantic_type_tree,
+)
 
 
 _FORTRAN_IDENTIFIER = r"[A-Za-z][A-Za-z0-9_]*"
-_FORTRAN_EXPORT_RE = re.compile(rf"^(?P<module>{_FORTRAN_IDENTIFIER})::(?P<procedure>{_FORTRAN_IDENTIFIER})$")
+_FORTRAN_EXPORT_RE = re.compile(rf"^(?P<module>{_FORTRAN_IDENTIFIER})::(?P<symbol>{_FORTRAN_IDENTIFIER})$")
 
 
 @dataclass(frozen=True)
@@ -28,23 +36,22 @@ class FortranExportSelection:
 
 
 def parse_fortran_export_identity(value: str) -> tuple[str, str]:
-    """Return one case-folded ``module::procedure`` identity or raise."""
+    """Return one case-folded ``module::symbol`` identity or raise."""
     match = _FORTRAN_EXPORT_RE.fullmatch(str(value))
     if match is None:
-        raise ValueError(f"invalid Fortran procedure identity: {value}")
-    return match.group("module").casefold(), match.group("procedure").casefold()
+        raise ValueError(f"invalid Fortran module symbol identity: {value}")
+    return match.group("module").casefold(), match.group("symbol").casefold()
 
 
-def select_fortran_export_functions(
+def select_fortran_export_symbols(
     modules: Iterable[SemanticModule],
     symbols: Iterable[str],
 ) -> FortranExportSelection:
-    """Select exact module procedures with their semantic source context.
+    """Select exact module procedures and variables with semantic source context.
 
     Selection is expressed in native identities before policy names anything.
-    Primary module copies contain only the requested callable declarations;
-    their classes, prototypes, variables, and reexports remain available as
-    signature facts but are not added to the stated public surface. Other
+    Primary module copies contain only requested procedures and variables;
+    classes and prototypes remain available as signature facts. Other
     source modules remain available as context. Contract-import policy decides
     which of them the generated contract needs to emit.
     """
@@ -55,35 +62,26 @@ def select_fortran_export_functions(
     )
     requested = _validated_fortran_export_symbols(symbols)
     module_index = {_native_module_name(module): module for module in source_modules}
-    callable_index, non_callable_index = _fortran_export_candidates(source_modules)
-    _validate_fortran_export_resolution(requested, callable_index, non_callable_index, module_index)
+    selectable, non_selectable = _fortran_export_candidates(source_modules)
+    _validate_fortran_export_resolution(requested, selectable, non_selectable, module_index)
 
-    selected = set(requested)
-    primary_names = {module_name for module_name, _procedure_name in requested}
+    selected, access_modules = _selection_routes(requested, module_index)
+    primary_names = {module_name for module_name, _symbol_name in selected}
     primary_sources = []
     primary_modules = []
     for module in source_modules:
         module_name = _native_module_name(module)
         if module_name not in primary_names:
             continue
-        selected_module = deepcopy(module)
-        selected_module.functions = [
-            function
-            for function in selected_module.functions
-            if (module_name, _native_procedure_name(function)) in selected
-        ]
-        selected_module.overload_sets = [
-            overload
-            for overload in selected_module.overload_sets
-            if (module_name, _native_procedure_name(overload)) in selected
-        ]
-        selected_module.exported_names = [
-            declaration.name for declaration in (*selected_module.functions, *selected_module.overload_sets)
-        ]
+        selected_module = _select_module_surface(module, selected, set(requested), access_modules)
         primary_sources.append(module)
         primary_modules.append(selected_module)
 
-    # Root selection owns only the requested callable surface. Contract-import
+    required_types = _required_type_identities(primary_modules, selected)
+    for module in primary_modules:
+        _retain_required_types(module, module_index[_native_module_name(module)], required_types)
+
+    # Root selection owns only the requested symbol surface. Contract-import
     # completion already owns which available modules selected declarations
     # actually name, including private callback prototypes and imported types
     # that are not Fortran reexports. Keep the remaining modules available and
@@ -93,10 +91,136 @@ def select_fortran_export_functions(
     return FortranExportSelection(tuple(primary_sources), tuple(primary_modules), context_modules)
 
 
+def _selection_routes(requested, module_index):
+    """Resolve selected facade names to their declaring identities and access routes."""
+    selected = set(requested)
+    access_modules: dict[tuple[str, str], str] = {}
+    for module_name, symbol_name in requested:
+        for reexport in module_index[module_name].reexports:
+            if reexport.local_name.casefold() == symbol_name:
+                identity = (reexport.origin_module.casefold(), reexport.source_name.casefold())
+                selected.add(identity)
+                access_modules[identity] = module_name
+    return selected, access_modules
+
+
+def _select_module_surface(module, selected, requested, access_modules):
+    """Retain selected declarations while keeping generic specifics private to them."""
+    selected_module = deepcopy(module)
+    module_name = _native_module_name(module)
+    selected_module.overload_sets = [
+        overload
+        for overload in selected_module.overload_sets
+        if (module_name, _native_symbol_name(overload)) in selected
+    ]
+    _retain_selected_procedures(selected_module, module_name, selected)
+    _route_selected_callables(selected_module, module_name, access_modules)
+    selected_module.variables = [
+        variable for variable in selected_module.variables if (module_name, _native_symbol_name(variable)) in selected
+    ]
+    selected_module.reexports = [
+        reexport for reexport in selected_module.reexports if (module_name, reexport.local_name.casefold()) in requested
+    ]
+    for reexport in selected_module.reexports:
+        reexport.explicitly_public = True
+        reexport.python_exported = None
+    selected_module.exported_names = [
+        declaration.name
+        for declaration in (*selected_module.functions, *selected_module.overload_sets, *selected_module.variables)
+        if (module_name, _native_symbol_name(declaration)) in selected
+    ]
+    selected_module.exported_names.extend(reexport.local_name for reexport in selected_module.reexports)
+    return selected_module
+
+
+def _retain_selected_procedures(module, module_name, selected):
+    """Keep named procedures and the specifics of each selected generic."""
+    specifics = {
+        _native_symbol_name(procedure): procedure
+        for overload in module.overload_sets
+        for procedure in overload.procedures
+    }
+    module.functions = [
+        function
+        for function in module.functions
+        if (module_name, _native_symbol_name(function)) in selected or _native_symbol_name(function) in specifics
+    ]
+    declared = {_native_symbol_name(function) for function in module.functions}
+    module.functions.extend(deepcopy(procedure) for name, procedure in specifics.items() if name not in declared)
+
+
+def _route_selected_callables(module, module_name, access_modules):
+    """Record the public native module and generic name used for each callable."""
+    for declaration in (*module.functions, *module.overload_sets):
+        access = access_modules.get((module_name, _native_symbol_name(declaration)))
+        if access is None:
+            continue
+        procedures = declaration.procedures if isinstance(declaration, ProcedureOverloadSet) else (declaration,)
+        for procedure in procedures:
+            procedure.metadata[NATIVE_ACCESS_MODULE_METADATA] = access
+            if isinstance(declaration, ProcedureOverloadSet):
+                procedure.native_name = declaration.name
+                procedure.metadata[BIND_TARGET_METADATA] = declaration.name
+
+
+def _retain_required_types(module, source_module, required_types):
+    """Publish only derived types required by selected values or signatures."""
+    module_name = _native_module_name(module)
+    module.classes = [cls for cls in module.classes if (module_name, _native_symbol_name(cls)) in required_types]
+    for cls in module.classes:
+        cls.methods = []
+        cls.overload_sets = []
+        if cls.name not in module.exported_names:
+            module.exported_names.append(cls.name)
+    for reexport in source_module.reexports:
+        identity = (reexport.origin_module.casefold(), reexport.source_name.casefold())
+        if reexport.entity_kind != "derived_type" or identity not in required_types:
+            continue
+        if any(item.local_name.casefold() == reexport.local_name.casefold() for item in module.reexports):
+            continue
+        dependency = deepcopy(reexport)
+        dependency.explicitly_public = True
+        dependency.python_exported = None
+        module.reexports.append(dependency)
+        module.exported_names.append(dependency.local_name)
+
+
+def _required_type_identities(modules: list[SemanticModule], selected: set[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Find derived declarations named by selected signatures and values."""
+    required: set[tuple[str, str]] = set()
+    for module in modules:
+        module_name = _native_module_name(module)
+        owners = (
+            *module.variables,
+            *module.functions,
+            *module.overload_sets,
+        )
+        for owner in owners:
+            if (module_name, _native_symbol_name(owner)) not in selected:
+                continue
+            functions = owner.procedures if isinstance(owner, ProcedureOverloadSet) else (owner,)
+            for declaration in functions:
+                types = (
+                    (declaration.semantic_type,)
+                    if hasattr(declaration, "semantic_type")
+                    else (
+                        *(argument.semantic_type for argument in declaration.arguments),
+                        declaration.return_type,
+                    )
+                )
+                for semantic_type in types:
+                    for item in _semantic_type_tree(semantic_type):
+                        reference = item.metadata.get(EXTERNAL_TYPE_REF_METADATA)
+                        origin = reference.get("origin_module") if isinstance(reference, dict) else module_name
+                        name = reference.get("name") if isinstance(reference, dict) else item.name
+                        required.add((str(origin).casefold(), str(name).casefold()))
+    return required
+
+
 def _validated_fortran_export_symbols(symbols: Iterable[str]) -> tuple[tuple[str, str], ...]:
     requested_text = tuple(str(symbol) for symbol in symbols)
     if not requested_text:
-        raise ValueError("Fortran export-symbol selection requires at least one module procedure identity")
+        raise ValueError("Fortran export-symbol selection requires at least one module symbol identity")
     requested = []
     invalid = []
     repeated = []
@@ -113,7 +237,7 @@ def _validated_fortran_export_symbols(symbols: Iterable[str]) -> tuple[tuple[str
         requested.append(identity)
     problems = []
     if invalid:
-        problems.append("invalid procedure identities: " + ", ".join(invalid))
+        problems.append("invalid symbol identities: " + ", ".join(invalid))
     if repeated:
         problems.append("repeated identities: " + ", ".join(repeated))
     if problems:
@@ -122,38 +246,43 @@ def _validated_fortran_export_symbols(symbols: Iterable[str]) -> tuple[tuple[str
 
 
 def _fortran_export_candidates(modules: tuple[SemanticModule, ...]):
-    callables: dict[tuple[str, str], list[object]] = {}
-    non_callables: set[tuple[str, str]] = set()
+    selectable: dict[tuple[str, str], list[object]] = {}
+    non_selectable: set[tuple[str, str]] = set()
     for module in modules:
         module_name = _native_module_name(module)
-        for declaration in (*module.functions, *module.overload_sets):
-            callables.setdefault((module_name, _native_procedure_name(declaration)), []).append(declaration)
-        for declaration in (*module.variables, *module.classes, *module.prototypes):
-            non_callables.add((module_name, _native_procedure_name(declaration)))
-    return callables, non_callables
+        for declaration in (*module.functions, *module.overload_sets, *module.variables):
+            selectable.setdefault((module_name, _native_symbol_name(declaration)), []).append(declaration)
+        for reexport in module.reexports:
+            if reexport.entity_kind in {"procedure", "generic", "variable"}:
+                selectable.setdefault((module_name, reexport.local_name.casefold()), []).append(reexport)
+        for declaration in (*module.classes, *module.prototypes):
+            non_selectable.add((module_name, _native_symbol_name(declaration)))
+    return selectable, non_selectable
 
 
-def _validate_fortran_export_resolution(requested, callables, non_callables, module_index) -> None:
+def _validate_fortran_export_resolution(requested, selectable, non_selectable, module_index) -> None:
     problems = []
     unknown_modules = [module for module, _name in requested if module not in module_index]
-    non_functions = [identity for identity in requested if identity in non_callables and identity not in callables]
+    non_symbols = [identity for identity in requested if identity in non_selectable and identity not in selectable]
     unknown = [
         identity
         for identity in requested
-        if identity[0] in module_index and identity not in callables and identity not in non_callables
+        if identity[0] in module_index and identity not in selectable and identity not in non_selectable
     ]
-    ambiguous = [identity for identity in requested if len(callables.get(identity, ())) > 1]
+    ambiguous = [identity for identity in requested if len(selectable.get(identity, ())) > 1]
     inaccessible = [
         identity
         for identity in requested
-        if any(getattr(declaration, "visibility", "public") == "private" for declaration in callables.get(identity, ()))
+        if any(
+            getattr(declaration, "visibility", "public") == "private" for declaration in selectable.get(identity, ())
+        )
     ]
     for label, identities in (
         ("unknown modules", tuple(dict.fromkeys(unknown_modules))),
-        ("unknown procedures", unknown),
-        ("non-function declarations", non_functions),
-        ("ambiguous procedures", ambiguous),
-        ("private procedures", inaccessible),
+        ("unknown symbols", unknown),
+        ("unsupported declarations", non_symbols),
+        ("ambiguous symbols", ambiguous),
+        ("private symbols", inaccessible),
     ):
         if identities:
             formatted = [item if isinstance(item, str) else "::".join(item) for item in identities]
@@ -166,7 +295,7 @@ def _native_module_name(module: SemanticModule) -> str:
     return str(module.origin.native_name or module.name).casefold()
 
 
-def _native_procedure_name(declaration: object) -> str:
+def _native_symbol_name(declaration: object) -> str:
     if isinstance(declaration, ProcedureOverloadSet):
         return str(declaration.name).casefold()
     if isinstance(declaration, SemanticFunction):

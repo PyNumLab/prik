@@ -41,7 +41,7 @@ from prik.policy.models import (
     DeclarationCallableAction,
     DirectResultABI,
     ExternalDeclarationMode,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     CharacterLocalRelease,
@@ -118,6 +118,7 @@ from prik.codegen.visitor import ClassVisitor
 # The C identity function that reports a non-target module array's base
 # address. The binding defines it; the bridge declares and calls it.
 _MODULE_ARRAY_CAPTURE_NAME = "prik_capture_address"
+_MODULE_SCALAR_CAPTURE_NAME = "prik_capture_scalar_address"
 
 # The binding answers these from the live descriptor the handle's entry point
 # supplies, so the bridge emits no procedure of its own for them.
@@ -1804,7 +1805,7 @@ class FortranBridgeGenerator(ClassVisitor):
                         FortranParameter("address", "type(c_ptr)", ("value",)),
                         FortranParameter("context", "type(c_ptr)", ("value",)),
                     ),
-                    result_name="status",
+                    result_name="prik_consumer_status",
                     result_type="integer(c_int)",
                     bind_c=True,
                     body=(
@@ -1813,9 +1814,9 @@ class FortranBridgeGenerator(ClassVisitor):
                             body=(
                                 FortranCall("c_f_pointer", (CodeExpression("address"), CodeExpression(name))),
                                 FortranCall(next_step, ()),
-                                FortranAssignment("status", CodeExpression("0_c_int")),
+                                FortranAssignment("prik_consumer_status", CodeExpression("0_c_int")),
                             ),
-                            else_body=(FortranAssignment("status", CodeExpression("1_c_int")),),
+                            else_body=(FortranAssignment("prik_consumer_status", CodeExpression("1_c_int")),),
                         ),
                     ),
                 )
@@ -2691,6 +2692,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_array_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.NATIVE_SCALAR_VIEW:
+                return self._lower_module_getter_native_scalar_view(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -3435,6 +3438,20 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
+    def _lower_module_getter_native_scalar_view(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Return the original module scalar's address without forming a copy."""
+        name = self._module_bridge_getter_name(plan)
+        native = self._native_variable_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                result_name="result",
+                result_type="type(c_ptr)",
+                bind_name=name,
+                body=(FortranAssignment("result", CodeExpression(f"{_MODULE_SCALAR_CAPTURE_NAME}({native})")),),
+            ),
+        )
+
     def _module_character_length(self, plan: ModuleVariablePlan) -> int:
         """Return the declared width one character module accessor copies."""
         length = plan.character_length
@@ -3606,10 +3623,10 @@ class FortranBridgeGenerator(ClassVisitor):
     @staticmethod
     def _module_array_address(plan: ModuleVariablePlan, native: str) -> str:
         """Return the address expression selected by the completed mechanism."""
-        mechanism = plan.array_address
-        if mechanism is ModuleArrayAddressMechanism.TARGET_ADDRESS:
+        mechanism = plan.storage_address
+        if mechanism is ModuleStorageAddressMechanism.TARGET_ADDRESS:
             return f"c_loc({native})"
-        if mechanism is ModuleArrayAddressMechanism.CAPTURED_ADDRESS:
+        if mechanism is ModuleStorageAddressMechanism.CAPTURED_ADDRESS:
             return f"{_MODULE_ARRAY_CAPTURE_NAME}({native})"
         raise ValueError(f"Module array view {plan.owner_path!r} has no completed address mechanism: {mechanism!r}")
 
@@ -3622,7 +3639,8 @@ class FortranBridgeGenerator(ClassVisitor):
         plain module object, which is likewise not a target.
         """
         return any(
-            variable.array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS for variable in self._variables(plan)
+            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            for variable in self._variables(plan)
         ) or any(
             member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
             for variable in self._derived_member_proxy_variables(plan)
@@ -3641,21 +3659,44 @@ class FortranBridgeGenerator(ClassVisitor):
         """
         if not self._requires_address_capture(plan):
             return ()
-        return (
-            FortranInterface(
-                (
-                    FortranInterfaceProcedure(
-                        name=_MODULE_ARRAY_CAPTURE_NAME,
-                        imports=("c_ptr",),
-                        parameters=(FortranParameter("base", "type(*)", ("dimension(*)",)),),
-                        result_name="address",
-                        result_type="type(c_ptr)",
-                        bind_name=_MODULE_ARRAY_CAPTURE_NAME,
-                        bind_c=True,
-                    ),
+        procedures = []
+        if any(
+            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            and variable.bridge.native_getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW
+            for variable in self._variables(plan)
+        ):
+            procedures.append(
+                FortranInterfaceProcedure(
+                    name=_MODULE_SCALAR_CAPTURE_NAME,
+                    imports=("c_ptr",),
+                    parameters=(FortranParameter("base", "type(*)"),),
+                    result_name="address",
+                    result_type="type(c_ptr)",
+                    bind_name=_MODULE_SCALAR_CAPTURE_NAME,
+                    bind_c=True,
                 )
-            ),
-        )
+            )
+        if any(
+            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            and variable.bridge.native_getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
+            for variable in self._variables(plan)
+        ) or any(
+            member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
+            for variable in self._derived_member_proxy_variables(plan)
+            for member in variable.derived.member_paths
+        ):
+            procedures.append(
+                FortranInterfaceProcedure(
+                    name=_MODULE_ARRAY_CAPTURE_NAME,
+                    imports=("c_ptr",),
+                    parameters=(FortranParameter("base", "type(*)", ("dimension(*)",)),),
+                    result_name="address",
+                    result_type="type(c_ptr)",
+                    bind_name=_MODULE_ARRAY_CAPTURE_NAME,
+                    bind_c=True,
+                )
+            )
+        return (FortranInterface(tuple(procedures)),)
 
     def _lower_module_getter_nullable_snapshot(
         self,

@@ -3,8 +3,8 @@
 A procedure or a derived type reaches Python as one object, so another
 namespace can bind it and PRIK re-exports it through an alias. A module
 variable likewise permits multiple publications, but all of them refer to the
-one variable plan and its live native state. A generic remains a dispatch
-surface rather than one object, so only its declaring namespace can publish it.
+one variable plan and its live native state. A generic's Python dispatcher is
+also one object that a facade can publish.
 """
 
 from __future__ import annotations
@@ -122,24 +122,18 @@ def test_a_facade_may_be_the_only_publication_of_a_declared_variable(tmp_path: P
 
 
 @pytest.mark.parametrize("home_exports", [ALL_NAMES, [item for item in ALL_NAMES if item != "area"]])
-def test_a_generic_cannot_be_published_from_a_facade(home_exports: list[str], tmp_path: Path):
-    """A generic is not one native entity that another namespace can bind.
-
-    The restriction holds whether its declaring namespace also publishes it or
-    the facade is its only requested publication.
-    """
+def test_a_generic_can_be_published_from_a_facade(home_exports: list[str], tmp_path: Path):
+    """One generic dispatcher serves its declaring namespace and facade."""
     entry = _package(
         tmp_path,
         home_exports=home_exports,
         facade='from .home import area\n\n__all__ = ["area"]\n',
     )
 
-    with pytest.raises(ValueError) as error:
-        _plan(entry, tmp_path, "facade_area")
+    result = _plan(entry, tmp_path, "facade_area")
 
-    message = str(error.value)
-    assert "generic 'area' is declared in home and published in facade" in message
-    assert "publishable only by the namespace declaring it" in message
+    generated = (result.output_dir / "facade_area_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count('"area"') >= 1
 
 
 def test_a_procedure_still_reaches_python_through_a_facade(tmp_path: Path):

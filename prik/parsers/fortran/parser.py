@@ -363,6 +363,7 @@ class _Declaration:
     pointer: bool = False
     target: bool = False
     protected: bool = False
+    bind_c: bool = False
     contiguous: bool = False
     asynchronous: bool = False
     external: bool = False
@@ -3500,6 +3501,11 @@ class FortranParser(ClassVisitor):
             target.uses.append(parsed_use)
             return
 
+        legacy_parameter = _REGEX["legacy_parameter"].match(stripped)
+        if legacy_parameter:
+            self._record_scope_legacy_parameters(target, legacy_parameter.group("body"))
+            return
+
         if _REGEX["derived_type"].match(stripped):
             parsed_type = self._source_unit_scanner.parse_derived_type_start(stripped)
             raise FortranParseError(
@@ -3529,6 +3535,24 @@ class FortranParser(ClassVisitor):
         if parsed:
             return
         self._raise_unsupported_module_like_declaration(target, stripped, filename, lineno, source_line)
+
+    @staticmethod
+    def _record_scope_legacy_parameters(target, assignments: str) -> None:
+        """Apply a separate PARAMETER statement to its module-like declarations."""
+        variables = {variable.name.casefold(): variable for variable in target.variables}
+        for assignment in split_csv(assignments):
+            if "=" not in assignment:
+                continue
+            name, expression = (part.strip() for part in assignment.split("=", 1))
+            variable = variables.get(name.casefold())
+            if variable is None:
+                variable = FortranArgument(name=name, base_type=FortranParser._infer_implicit_base_type(name))
+                target.variables.append(variable)
+                variables[name.casefold()] = variable
+            variable.is_parameter = True
+            variable.value = FortranParser._normalize_parameter_value(expression)
+            variable.symbolic_value = expression
+            variable.value_type = "expression"
 
     def _raise_unsupported_openmp_declaration(self, target, line, filename, lineno, source_line) -> None:
         """Raise the stable diagnostic for an unsupported OpenMP declaration.
@@ -4412,6 +4436,8 @@ class FortranParser(ClassVisitor):
             elif lowered in {"public", "private"}:
                 declaration.visibility = lowered
                 declaration.explicit_visibility = lowered
+            elif re.match(r"bind\s*\(\s*c\b", lowered):
+                declaration.bind_c = True
             elif lowered.startswith("dimension") and "(" in attribute and ")" in attribute:
                 shape = split_csv(attribute[attribute.find("(") + 1 : attribute.rfind(")")])
                 declaration.shape = shape
@@ -4493,6 +4519,8 @@ class FortranParser(ClassVisitor):
             arg._fortran_polymorphic = True
         if declaration.protected:
             arg._fortran_protected = True
+        if declaration.bind_c:
+            arg._fortran_bind_c = True
 
     @staticmethod
     def _split_dim_bounds(dim: str) -> tuple[str | None, str | None]:

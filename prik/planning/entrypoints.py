@@ -1133,6 +1133,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             elif variable.bridge.native_getter_action in {
                 ModuleGetterAction.NULLABLE_SNAPSHOT,
                 ModuleGetterAction.DERIVED_OBJECT,
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
             }:
                 parameters = ()
                 result = self._opaque_result()

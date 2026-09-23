@@ -18,10 +18,12 @@ release tags add a leading `v` to the package version.
   retain buffers for nonblocking operations.
 
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
-  module-qualified Fortran procedure identities. Generated contracts and
-  source builds publish only that reviewed function surface while retaining
-  callback, type, and other declaration dependencies required by its
-  signatures.
+  module-qualified Fortran procedures and variables, including symbols
+  re-exported by a public facade. Generated contracts retain the selected
+  access module, required type declarations, and native scalar storage views.
+- The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
+  wrapper from a restricted generated `.pyi` against a matching prebuilt
+  Open MPI installation and exercise NumPy communication and in-place reduction.
 - The PRIMA example links five derivative-free solvers against one statically
   compiled `libprimaf` archive through a generated semantic contract and runs
   in the real-library portability matrix. Its guide includes a reproducible

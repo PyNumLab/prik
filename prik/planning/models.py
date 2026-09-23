@@ -66,7 +66,7 @@ from prik.policy.models import (
     DirectResultABI,
     DeclarationCallableAction,
     ExternalDeclarationMode,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorInterop,
@@ -451,6 +451,7 @@ class OverloadPlan(StageRecord):
     candidate_passed_objects: tuple[bool, ...]
     unsupported_extra_argument_message: str | None = None
     identity_receiver_shortcut: bool = False
+    direct_single_candidate: bool = False
     docstring: str | None = None
 
 
@@ -818,10 +819,9 @@ class ModuleVariablePlan(StageRecord):
     derived: DerivedModuleObjectPlan | None = None
     character_length: int | None = None
     docstring: str | None = None
-    # Present only for a borrowed fixed-array view. Both backends read it: the
-    # bridge to reach the address, the binding to define the C helper that one
-    # of the two mechanisms calls. It is therefore a shared fact, not a facet.
-    array_address: ModuleArrayAddressMechanism | None = None
+    # The original address of borrowed scalar or fixed-array module storage.
+    # Both backends read this shared fact when an address capture is required.
+    storage_address: ModuleStorageAddressMechanism | None = None
 
 
 @dataclass

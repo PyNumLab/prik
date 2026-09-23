@@ -47,7 +47,9 @@ def _stated_export_names(module: models.SemanticModule) -> set[str] | None:
     """
     if module.exported_names is None:
         return None
-    return {str(name) for name in module.exported_names}
+    return {
+        str(name) for name in module.metadata.get(models.NATIVE_STATED_EXPORT_NAMES_METADATA, module.exported_names)
+    }
 
 
 def complete_python_export_policy(
@@ -69,6 +71,8 @@ def complete_python_export_policy(
     default, and completing one would publish what the contract declined to.
     """
     contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))
+    if not contract_named and module.exported_names is not None:
+        module.metadata.setdefault(models.NATIVE_STATED_EXPORT_NAMES_METADATA, list(module.exported_names))
     complete_reexport_publication_policy(module, contract_named=contract_named)
     stated = _stated_export_names(module)
     naming = NamingPolicy(
@@ -112,14 +116,29 @@ def complete_python_export_policy(
         strict_wrapper_names=strict_wrapper_names,
         contract_named=contract_named,
     )
+    if not contract_named and module.exported_names is not None:
+        _complete_source_export_names(module)
+
+
+def _complete_source_export_names(module: models.SemanticModule) -> None:
+    """Write the already-selected source surface with completed Python names."""
+    selected = _stated_export_names(module)
+    module.exported_names = [
+        models.completed_contract_name(owner)
+        for owner in _module_export_owners(module)
+        if str(owner.name) in selected and getattr(owner, "visibility", "public") == "public"
+    ]
+    module.exported_names.extend(
+        reexport.python_name
+        for reexport in module.reexports
+        if reexport.local_name in selected and reexport.publishes_to_python()
+    )
 
 
 #: Entity kinds a second namespace cannot publish, whatever it may reach.
 #:
-#: A generic dispatcher has no single object another namespace can bind, so it
-#: is published where it is declared and nowhere else. An intrinsic module's
-#: name has no declaration at all, so nothing is there to publish.
-UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"generic", "intrinsic"})
+#: An intrinsic module's name has no declaration a Python namespace can bind.
+UNPUBLISHABLE_REEXPORT_KINDS = frozenset({"intrinsic"})
 
 
 def complete_reexport_publication_policy(
@@ -135,10 +154,9 @@ def complete_reexport_publication_policy(
     export surface, so every re-export record constructed from that surface is
     published.
 
-    A generic is reachable through the importing module like any other name,
-    but it dispatches rather than naming one object, so PRIK publishes it in
-    its declaring namespace alone. That is a publication decision, settled here
-    once, rather than an accessibility one.
+    A generic dispatcher is one Python callable in its declaring namespace,
+    which an importing namespace can publish through the same alias path as
+    an ordinary procedure.
     """
     if contract_named is None:
         contract_named = bool(module.metadata.get(PYI_LOADED_METADATA))

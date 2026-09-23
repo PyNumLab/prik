@@ -2071,6 +2071,7 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
         for declaration, entity_kind in (
             *((item, "derived_type") for item in module.classes),
             *((item, "procedure") for item in module.functions),
+            *((item, "generic") for item in module.overload_sets),
         ):
             exports = _declaration_exports(declaration)
             if len(exports) < 2:
@@ -2092,7 +2093,6 @@ def _apply_pyi_python_exports(entry: Path, modules_by_path: dict[Path, SemanticM
                     )
                 )
             exports[:] = [primary]
-        _reject_unsupported_republication(path, module, home)
 
 
 def _pyi_export_tree(
@@ -2235,30 +2235,6 @@ def _merge_export_child(tree: _PyiExportNode, name: str, child: _PyiExportNode, 
         f"Conflicting .pyi exports for {name!r} while resolving {origin}: "
         f"existing from {existing_origins}; new from {new_origins}"
     )
-
-
-def _reject_unsupported_republication(
-    path: Path,
-    module: SemanticModule,
-    home: tuple[str, ...] | None,
-) -> None:
-    """Refuse a generic published outside the namespace declaring it.
-
-    A module variable has a dedicated publication plan that routes every
-    namespace to one native variable plan. A generic remains a dispatch
-    surface rather than one bindable object, so it cannot be republished.
-    """
-    for declaration, kind in ((item, "generic") for item in module.overload_sets):
-        exports = _declaration_exports(declaration)
-        relocated = [export for export in exports if home is None or tuple(export["namespace"]) != home]
-        if not relocated:
-            continue
-        declaring = "<unknown>" if home is None else (".".join(home) or "<root>")
-        namespaces = ", ".join(".".join(export["namespace"]) or "<root>" for export in relocated)
-        raise ValueError(
-            f"{path}: {kind} {declaration.name!r} is declared in {declaring} and published in "
-            f"{namespaces}; this kind is publishable only by the namespace declaring it"
-        )
 
 
 def _namespace_by_contract(tree: _PyiExportNode, entry: Path) -> dict[Path, tuple[str, ...]]:
@@ -3558,9 +3534,9 @@ def _fortran_wrapper_module(
         assume_intent_in_scalars=assume_intent_in_scalars,
     )
     if export_symbols is not None:
-        from prik.semantics.fortran_exports import select_fortran_export_functions
+        from prik.semantics.fortran_exports import select_fortran_export_symbols
 
-        selection = select_fortran_export_functions(modules, export_symbols)
+        selection = select_fortran_export_symbols(modules, export_symbols)
         for context_module in selection.context_modules:
             context_module.exported_names = []
         modules = list(selection.available_modules)

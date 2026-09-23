@@ -1,6 +1,11 @@
 module assumed_type_calls
   use iso_c_binding
+  integer(c_int), bind(C), target :: native_value = 17
 contains
+  logical(c_bool) function same_native_raw(x) bind(C)
+    type(*), dimension(*), target :: x
+    same_native_raw = c_associated(c_loc(x), c_loc(native_value))
+  end function
   integer(c_int) function scalar_without_intent(x) bind(C)
     type(*) :: x
     scalar_without_intent = 11

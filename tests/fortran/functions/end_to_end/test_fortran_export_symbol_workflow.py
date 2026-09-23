@@ -129,3 +129,56 @@ def test_source_and_generated_contract_builds_publish_and_run_the_same_callback(
 
         assert module.solve(np.int32(4), callback) == np.int32(5)
         assert seen == [(np.int32(5), None)]
+
+
+@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
+def test_facade_selection_and_contract_replay_share_generic_and_native_variable(tmp_path: Path):
+    """A selected facade binds one generic and one live native scalar in both lanes."""
+    sources = tuple((NATIVE.parent / "export_selection_facade" / name) for name in ("owner.f90", "facade.f90"))
+    exports = tmp_path / "exports.txt"
+    exports.write_text("facade::run\nfacade::marker\n", encoding="utf-8")
+    contract = tmp_path / "contract"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            *map(str, sources),
+            "--export-symbols",
+            str(exports),
+            "--out",
+            str(contract),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    facade_contract = (contract / "facade.pyi").read_text(encoding="utf-8")
+    owner_contract = (contract / "owner.pyi").read_text(encoding="utf-8")
+    assert "from .owner import" in facade_contract
+    assert '"run"' in facade_contract and '"marker"' in facade_contract
+    assert '@native_module("facade")' in owner_contract
+    assert "marker: Annotated[Int32, NativeStorage]" in owner_contract
+
+    source = build_fortran_extension(
+        sources,
+        output_name="facade_source",
+        output_dir=tmp_path / "source",
+        export_symbols=("facade::run", "facade::marker"),
+        jobs=2,
+    )
+    replay = build_pyi_extension(
+        contract / "__init__.pyi",
+        native_fortran_sources=sources,
+        output_name="facade_replay",
+        output_dir=tmp_path / "replay",
+        jobs=2,
+    )
+    for result in (source, replay):
+        module = _import_from_build_dir(result.module_name, result.output_dir).facade
+        assert module.run() == np.int32(7)
+        assert isinstance(module.marker, np.ndarray) and module.marker.shape == ()
+        module.marker[()] = np.int32(11)
+        assert module.run() == np.int32(11)

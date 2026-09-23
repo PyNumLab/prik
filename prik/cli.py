@@ -524,9 +524,9 @@ def _converted_semantic_files(
     if language != "fortran" or export_symbols is None:
         return _ConvertedSemanticSources(tuple(converted_files), available_modules)
 
-    from prik.semantics.fortran_exports import select_fortran_export_functions
+    from prik.semantics.fortran_exports import select_fortran_export_symbols
 
-    selection = select_fortran_export_functions(available_modules, export_symbols)
+    selection = select_fortran_export_symbols(available_modules, export_symbols)
     selected_by_source = {
         id(source): selected
         for source, selected in zip(selection.primary_sources, selection.primary_modules, strict=True)
@@ -1202,7 +1202,7 @@ def _validate_c_main_options(args: argparse.Namespace, parser: argparse.Argument
 
 
 def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
-    """Read one fail-closed source-function allowlist from a UTF-8 file."""
+    """Read one fail-closed source-symbol allowlist from a UTF-8 file."""
     source = Path(path)
     try:
         lines = source.read_text(encoding="utf-8").splitlines()
@@ -1232,8 +1232,8 @@ def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
                 valid = False
             else:
                 valid = True
-            label = "Fortran module procedure identity"
-            duplicate_label = "Fortran module procedure identity"
+            label = "Fortran module symbol identity"
+            duplicate_label = "Fortran module symbol identity"
         if not valid:
             raise ValueError(f"Invalid {label} in --export-symbols file {source}:{line_number}: {symbol!r}")
         identity = symbol if language == "c" else symbol.casefold()
@@ -1246,7 +1246,7 @@ def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
         locations[identity] = line_number
         symbols.append(symbol)
     if not symbols:
-        label = "C function names" if language == "c" else "Fortran module procedure identities"
+        label = "C function names" if language == "c" else "Fortran module symbol identities"
         raise ValueError(f"--export-symbols file contains no {label}: {source}")
     return tuple(symbols)
 

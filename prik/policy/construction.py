@@ -92,7 +92,7 @@ from prik.policy.models import (
     CallbackThreadAction,
     CallbackGILAction,
     CallbackFatalAction,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     DerivedFieldAccessMechanism,
@@ -1153,13 +1153,13 @@ def _ordinary_array_module_variable_policy(
         supported=not blockers,
         blockers=tuple(blockers),
         array=array,
-        array_address=address,
+        storage_address=address,
     )
 
 
 def _ordinary_array_module_address_mechanism(
     variable: models.SemanticVariable,
-) -> ModuleArrayAddressMechanism:
+) -> ModuleStorageAddressMechanism:
     """Select how the bridge obtains one fixed module array's base address.
 
     Addressable storage names itself directly.  An ordinary declaration cannot,
@@ -1168,8 +1168,8 @@ def _ordinary_array_module_address_mechanism(
     storage; only the route to its address differs.
     """
     if variable.semantic_type.metadata.get("aliased"):
-        return ModuleArrayAddressMechanism.TARGET_ADDRESS
-    return ModuleArrayAddressMechanism.CAPTURED_ADDRESS
+        return ModuleStorageAddressMechanism.TARGET_ADDRESS
+    return ModuleStorageAddressMechanism.CAPTURED_ADDRESS
 
 
 def _constant_array_module_variable_policy(
@@ -1271,6 +1271,11 @@ def _scalar_module_variable_policy(
         ),
         supported=not blockers,
         blockers=tuple(blockers),
+        storage_address=(
+            ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW
+            else None
+        ),
     )
 
 
@@ -3242,6 +3247,7 @@ def _argument_policy(
                         if argument.semantic_type.storage is not None
                         and argument.semantic_type.storage.array is not None
                         and argument.semantic_type.storage.array.contiguous
+                        and argument.semantic_type.storage.array.category != "assumed_size"
                         else None,
                     )
                     if attr is not None
@@ -6987,6 +6993,8 @@ def _scalar_module_getter_blockers(
         blockers.append("module variable getter is not a supported scalar policy")
     elif getter.codegen_action not in supported_getter_actions:
         blockers.append(f"module variable getter action {getter.codegen_action.value!r} is unsupported")
+    if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW and variable.semantic_type.name == "String":
+        blockers.append("native scalar storage view requires a primitive numeric type")
     return tuple(blockers)
 
 
@@ -7085,6 +7093,8 @@ def _scalar_module_getter_action(
         # A character value cannot cross the C ABI by value, so it copies
         # through a fixed-width byte buffer the way a character field does.
         return ModuleGetterAction.CHARACTER_VALUE
+    if variable.semantic_type.metadata.get("native_storage"):
+        return ModuleGetterAction.NATIVE_SCALAR_VIEW
     return ModuleGetterAction.DIRECT_VALUE
 
 
@@ -7588,7 +7598,7 @@ def _array_handoff_policy(
     axes = tuple(str(item) for item in array.axes)
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
-    if semantic_type.name == "AnyNative" and array.category == "assumed_rank":
+    if semantic_type.name == "AnyNative" and array.category in {"assumed_rank", "assumed_size"}:
         minimum_rank = 0
     order = _array_handoff_order(array.order, array.category)
     entrypoint_abi = _array_entrypoint_abi(
@@ -8228,7 +8238,11 @@ def _native_module(function: models.SemanticFunction, owner_path: str) -> str | 
     """Return the completed native module scope for non-standalone procedures."""
     if _is_standalone(function):
         return None
-    return str(function.origin.native_scope or owner_path.split(".", maxsplit=1)[0])
+    return str(
+        function.metadata.get(models.NATIVE_ACCESS_MODULE_METADATA)
+        or function.origin.native_scope
+        or owner_path.split(".", maxsplit=1)[0]
+    )
 
 
 def _native_is_subroutine(function: models.SemanticFunction) -> bool:

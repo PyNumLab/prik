@@ -380,7 +380,7 @@ locations come from the template's own output.
 
 ## Source export selection
 
-`--export-symbols FILE` selects the exact function surface to convert from
+`--export-symbols FILE` selects the exact symbol surface to convert from
 native source. It is available for C and Fortran source commands, including
 source builds, `semantics`, and `generate --pyi`. A generated contract records
 the corresponding Python names in `__all__`; when building that contract,
@@ -394,23 +394,24 @@ vendor_open
 vendor_close
 ```
 
-Fortran module procedures use a case-insensitive, module-qualified identity:
+Fortran module procedures and module variables use a case-insensitive,
+module-qualified identity:
 
 ```text
 bobyqa_mod::bobyqa
 cobyla_mod::cobyla
+state_mod::counter
 ```
 
-Qualification keeps procedures with the same spelling in different modules
+Qualification keeps symbols with the same spelling in different modules
 distinct. The module side must name a declared Fortran `module`, not a
 file-level external-procedure group. Every listed identity must resolve to
-exactly one reachable function. Empty files, invalid or repeated identities,
-unknown declarations, and names that do not denote functions fail the command.
+one public procedure or variable. Empty files, invalid or repeated identities,
+and unknown or private declarations fail the command.
 
-Fortran extraction retains declarations needed to express the selected
-signatures, such as callback prototypes and derived types, without publishing
-them as additional callable functions. Unselected procedures and unrelated
-modules are omitted from the generated contract. The positional inputs remain
+Fortran extraction retains declarations needed to express selected signatures
+and variable types, such as callback prototypes and derived types, without
+publishing unrelated declarations. The positional inputs remain
 the native source universe used to resolve those dependencies and, for a
 source build, the implementation sources compiled unless
 `--no-compile-input-sources` is selected.

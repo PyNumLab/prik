@@ -145,7 +145,7 @@ def _undecided_plan():
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
     variable = plan.variables[0]
-    return plan, variable, replace(variable, array_address=None)
+    return plan, variable, replace(variable, storage_address=None)
 
 
 def test_module_array_view_plan_rejects_a_missing_address_mechanism():

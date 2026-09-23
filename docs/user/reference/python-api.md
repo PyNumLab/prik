@@ -100,8 +100,8 @@ Once you author or generate a semantic `.pyi` contract, that contract's own
 `__all__` states the public surface and `export_symbols` no longer applies.
 
 `build_fortran_extension` accepts the same option with module-qualified native
-procedure identities. PRIK retains signature dependencies while publishing
-only the selected procedures:
+procedure and variable identities. PRIK retains signature and type
+dependencies while publishing only the selected symbols:
 
 ```python
 from prik import build_fortran_extension

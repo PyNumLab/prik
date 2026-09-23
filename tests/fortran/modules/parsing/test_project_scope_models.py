@@ -53,6 +53,24 @@ end module constants
     assert module.private_symbols == ["epsilon"]
 
 
+def test_separate_parameter_statement_and_bind_c_module_storage_are_preserved():
+    module = parse_fortran_file(
+        """
+module native_constants
+  integer :: limit
+  parameter (limit = 4)
+  integer, bind(c) :: addressable
+end module native_constants
+"""
+    ).modules[0]
+
+    variables = {variable.name: variable for variable in module.variables}
+    assert variables["limit"].is_parameter
+    assert variables["limit"].value == "4"
+    assert not variables["addressable"].is_parameter
+    assert variables["addressable"]._fortran_bind_c
+
+
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():
     code = """
 submodule (ancestor_mod:parent_mod) child_mod
