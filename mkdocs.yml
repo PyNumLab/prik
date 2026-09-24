@@ -52,8 +52,7 @@ nav:
               - Strings: user/guide/strings.md
               - Wrapping Functions: user/guide/wrapping-functions.md
               - Wrapping Subroutines: user/guide/wrapping-subroutines.md
-          - Wrapping Modules: user/guide/wrapping-modules.md
-          - Open MPI mpi_f08: user/tutorials/openmpi-f08.md
+              - Wrapping Modules: user/guide/wrapping-modules.md
               - Optional Arguments: user/guide/optional-arguments.md
               - Generic Interfaces (Overloading): user/guide/generic-interfaces.md
               - Wrapping Derived Types: user/guide/wrapping-derived-types.md
@@ -77,6 +76,7 @@ nav:
       - Tutorials:
           - Run PRIK in a Notebook: user/tutorials/notebook-quickstart.md
           - Design a Pythonic BLAS API: user/tutorials/pythonic-blas.md
+          - Wrap Open MPI mpi_f08: user/tutorials/openmpi-f08.md
       - Examples:
           - Overview: user/examples/index.md
           - Fortran:
