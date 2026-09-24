@@ -239,6 +239,9 @@ compilation should use the focused owners under
 `tests/fortran/infrastructure/building/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
+Run ad-hoc compiler and build commands outside the repository root, for example in a temporary
+directory, so no `.mod`, object, or library file lands there; the test session refuses to start
+while native build artifacts sit in the root, since a stale one silently shadows a later build.
 Run pytest with at most `-n 2`. Never `-n 4`, `-n 8`, or `-n auto`. The development machine has 12 cores but only about 7 GB of RAM, and every xdist worker loads NumPy while the Fortran end-to-end tests fork gfortran and cc per test on top of `pytest-monitor` profiling each one. Higher parallelism exhausts memory and thrashes swap, which has hard-frozen the machine and forced a reboot. Prefer the narrowest owning test path over a full suite run, and commit verified work promptly rather than batching it behind a long run.
 Do not run LAPACK wrapper tests locally unless the user explicitly asks for them. Local verification may run everything else, including BLAS-only real-library tests; leave LAPACK coverage to GitHub Actions by default.
 Do not run the full coverage workflow for routine changes. Run focused tests plus the required static-analysis suite. Reserve the complete CI-style coverage workflow for explicit pre-merge or pull-request verification, or when the user specifically requests it.
