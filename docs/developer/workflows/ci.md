@@ -17,6 +17,7 @@ contributors need to administer.
 | --- | --- |
 | Static analysis | Linting, formatting, security, dead code, and changed-code complexity policy. |
 | Compiler and platform tests | Supported Python versions, Linux and macOS, GNU Fortran, IFX, and Flang. |
+| Open MPI Integration | The Open MPI `mpi_f08` workflow on Ubuntu for one Open MPI 4.1 and one 5.0 release: each is built from source, a restricted contract is generated from `mpi-f08.F90` with module discovery, and a two-rank program runs against the built wrapper. |
 | Real Libraries Portability | Maintained real-library examples across the hosted Linux and macOS architecture/compiler matrix, with deep BLAS and LAPACK audits on Linux x86-64. |
 | Documentation and benchmarks | Required performance benchmark and generated snapshot, documentation tests, and a strict site build. |
 

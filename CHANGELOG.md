@@ -54,7 +54,12 @@ release tags add a leading `v` to the package version.
 - The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
   wrapper from a restricted generated `.pyi` against a matching prebuilt
   Open MPI installation and exercise NumPy communication and in-place reduction;
-  it is verified with Open MPI 4.1.2 and 5.0.11.
+  it is verified with Open MPI 4.1.2 and 5.0.11. Pull-request validation runs
+  it in an Open MPI Integration lane that builds Open MPI 4.1.8 and 5.0.11 from
+  source, and the test requires the configured tree and the installation to
+  share their version and Fortran compiler.
+- Export selection accepts a generic that shares its name with one of its
+  specifics; the name selects the generic instead of being reported ambiguous.
 - A contract keeps a dotted comparison spelling such as `operator(.EQ.)` in
   `@overload(..., generic=...)`, so a replayed bridge imports the operator
   under the name its module declares.

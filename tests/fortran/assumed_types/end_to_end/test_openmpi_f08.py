@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -35,28 +36,35 @@ EXPORTS = (
 )
 
 
+def _unavailable(reason: str) -> NoReturn:
+    """Skip locally, but fail where ``PRIK_OPENMPI_REQUIRED`` says Open MPI is provisioned."""
+    if os.environ.get("PRIK_OPENMPI_REQUIRED") == "1":
+        pytest.fail(reason)
+    pytest.skip(reason)
+
+
 def _configured_openmpi() -> tuple[Path, Path, str, str, str]:
     """Find matching configured sources, wrapper compiler, and Open MPI launcher."""
     source_text = os.environ.get("PRIK_OPENMPI_SOURCE")
     build_text = os.environ.get("PRIK_OPENMPI_BUILD")
     if not source_text or not build_text:
-        pytest.skip("set PRIK_OPENMPI_SOURCE and PRIK_OPENMPI_BUILD to a matching configured Open MPI tree")
+        _unavailable("set PRIK_OPENMPI_SOURCE and PRIK_OPENMPI_BUILD to a matching configured Open MPI tree")
     source, build = Path(source_text), Path(build_text)
     mpifort = os.environ.get("PRIK_OPENMPI_MPIFORT") or shutil.which("mpifort")
     launcher = os.environ.get("PRIK_OPENMPI_LAUNCHER") or shutil.which("orterun") or shutil.which("mpirun")
     if not mpifort or not launcher:
-        pytest.skip("Open MPI Fortran compiler wrapper and launcher are required")
+        _unavailable("Open MPI Fortran compiler wrapper and launcher are required")
     # Only the entry source is named; the modules it uses are discovered.
     for path in (
         source / "ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90",
         build / "ompi/mpi/fortran/configure-fortran-output.h",
     ):
         if not path.is_file():
-            pytest.skip(f"configured Open MPI semantic input is unavailable: {path}")
+            _unavailable(f"configured Open MPI semantic input is unavailable: {path}")
     version_file = (source / "VERSION").read_text(encoding="utf-8")
     parts = [re.search(rf"^{part}=(\d+)$", version_file, flags=re.MULTILINE) for part in ("major", "minor", "release")]
     if any(part is None for part in parts):
-        pytest.skip("Open MPI source version could not be read")
+        _unavailable("Open MPI source version could not be read")
     version = ".".join(part.group(1) for part in parts if part is not None)
     compiler_version = subprocess.check_output([mpifort, "--showme:version"], text=True)
     launcher_version = subprocess.check_output([launcher, "--version"], text=True)
@@ -65,8 +73,36 @@ def _configured_openmpi() -> tuple[Path, Path, str, str, str]:
         or version not in launcher_version
         or not any(label in launcher_version for label in ("Open MPI", "OpenRTE"))
     ):
-        pytest.skip("configured sources, mpifort, and launcher must belong to the same Open MPI version")
+        _unavailable("configured sources, mpifort, and launcher must belong to the same Open MPI version")
+    _require_same_fortran_configuration(build, mpifort)
     return source, build, mpifort, launcher, version
+
+
+def _require_same_fortran_configuration(build: Path, mpifort: str) -> None:
+    """Require the configured tree and the installation to share their Fortran build.
+
+    One version configured twice can generate different Fortran sources and
+    headers, so the tree the contract is read from must have been configured
+    with the Fortran compiler the installation was built with, and the
+    installation must provide the ``mpi_f08`` module.
+    """
+    ompi_info = Path(mpifort).with_name("ompi_info")
+    info = subprocess.check_output([str(ompi_info) if ompi_info.is_file() else "ompi_info", "--parsable"], text=True)
+    installed = re.search(r"^compiler:fortran:absolute:(.+)$", info, flags=re.MULTILINE)
+    configured_header = build / "opal/include/opal_config.h"
+    configured = (
+        re.search(r'^#define OMPI_FC_ABSOLUTE "([^"]+)"', configured_header.read_text(encoding="utf-8"), re.MULTILINE)
+        if configured_header.is_file()
+        else None
+    )
+    if re.search(r"^bindings:use_mpi_f08:yes", info, flags=re.MULTILINE) is None:
+        _unavailable("the installed Open MPI does not provide the mpi_f08 module")
+    if (
+        installed is None
+        or configured is None
+        or Path(installed.group(1).strip()).resolve() != Path(configured.group(1)).resolve()
+    ):
+        _unavailable("the configured Open MPI tree and the installation were built with different Fortran compilers")
 
 
 def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) -> None:

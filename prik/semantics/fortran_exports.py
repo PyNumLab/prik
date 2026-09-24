@@ -124,6 +124,8 @@ def _select_module_surface(module, selected, requested):
         if (module_name, _native_symbol_name(declaration)) in selected
     ]
     selected_module.exported_names.extend(reexport.local_name for reexport in selected_module.reexports)
+    # A generic and a specific sharing its name publish that one name.
+    selected_module.exported_names = list(dict.fromkeys(selected_module.exported_names))
     return selected_module
 
 
@@ -277,8 +279,18 @@ def _fortran_export_candidates(modules: tuple[SemanticModule, ...]):
     non_selectable: set[tuple[str, str]] = set()
     for module in modules:
         module_name = _native_module_name(module)
+        # A generic may share its name with one of its specifics; the name then
+        # denotes the generic, which keeps that specific when it is selected.
+        generic_specifics = {
+            (_native_symbol_name(overload), _native_symbol_name(procedure))
+            for overload in module.overload_sets
+            for procedure in overload.procedures
+        }
         for declaration in (*module.functions, *module.overload_sets, *module.variables):
-            selectable.setdefault((module_name, _native_symbol_name(declaration)), []).append(declaration)
+            name = _native_symbol_name(declaration)
+            if isinstance(declaration, SemanticFunction) and (name, name) in generic_specifics:
+                continue
+            selectable.setdefault((module_name, name), []).append(declaration)
         for reexport in module.reexports:
             if reexport.entity_kind in {"procedure", "generic", "variable"}:
                 selectable.setdefault((module_name, reexport.local_name.casefold()), []).append(reexport)

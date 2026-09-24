@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from prik.cli import _read_export_symbols
-from prik.parsers.fortran import parse_fortran_file
-from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module, fortran_project_to_semantic_modules
 from prik.semantics.fortran_exports import select_fortran_export_symbols
 from prik.semantics.models import (
     ProcedureOverloadSet,
@@ -216,3 +216,61 @@ end module shapes
 
     assert sorted(cls.name for cls in selected.classes) == ["base_t", "inner_t", "outer_t"]
     assert set(selected.exported_names) == {"use_outer", "base_t", "inner_t", "outer_t"}
+
+
+def test_selection_through_a_two_level_facade_reaches_each_declaring_module():
+    """A generic, a procedure, and a variable re-exported twice resolve to where they are declared."""
+    project = parse_fortran_project(
+        {
+            "base.f90": (
+                "module base\n  integer, parameter :: sentinel = 42\n  interface area\n"
+                "    module procedure area_real\n  end interface area\ncontains\n"
+                "  real function area_real(x)\n    real, intent(in) :: x\n    area_real = x\n"
+                "  end function area_real\n  subroutine unrelated()\n  end subroutine unrelated\nend module base\n"
+            ),
+            "middle.f90": "module middle\n  use base\nend module middle\n",
+            "tools.f90": "module tools\ncontains\n  subroutine touch()\n  end subroutine touch\nend module tools\n",
+            "facade.f90": "module facade\n  use middle\n  use tools\nend module facade\n",
+        }
+    )
+    modules = fortran_project_to_semantic_modules(project)
+
+    selected = select_fortran_export_symbols(modules, ["facade::area", "facade::sentinel", "facade::touch"])
+
+    owners = {module.name: module for module in selected.primary_modules}
+    assert [overload.name for overload in owners["base"].overload_sets] == ["area"]
+    assert [variable.name for variable in owners["base"].variables] == ["sentinel"]
+    assert "unrelated" not in {function.name for function in owners["base"].functions}
+    assert [function.name for function in owners["tools"].functions] == ["touch"]
+    assert sorted(owners["facade"].exported_names) == ["area", "sentinel", "touch"]
+    assert "middle" not in owners
+
+
+def test_a_generic_sharing_a_specific_name_is_one_selectable_name():
+    """Fortran lets a generic share a specific's name; the name then selects the generic."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_file(
+            """
+module shapes
+  interface area
+    module procedure area, area_int
+  end interface area
+contains
+  real function area(x)
+    real, intent(in) :: x
+    area = x
+  end function area
+  integer function area_int(i)
+    integer, intent(in) :: i
+    area_int = i
+  end function area_int
+end module shapes
+"""
+        ).modules[0]
+    )
+
+    selected = select_fortran_export_symbols([module], ["shapes::area"]).primary_modules[0]
+
+    assert [overload.name for overload in selected.overload_sets] == ["area"]
+    assert sorted(function.name for function in selected.functions) == ["area", "area_int"]
+    assert selected.exported_names == ["area"]

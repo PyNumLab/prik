@@ -1,0 +1,93 @@
+name: Open MPI Integration
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openmpi-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openmpi:
+    name: Open MPI mpi_f08 · ${{ matrix.version }} · Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One release per module layout: 4.1 declares the handle types in
+          # mpi_f08_types, 5.0 re-exports them from a configured mpi_types.
+          - version: "4.1.8"
+            series: "v4.1"
+          - version: "5.0.11"
+            series: "v5.0"
+    env:
+      OPENMPI_VERSION: ${{ matrix.version }}
+      OPENMPI_SERIES: ${{ matrix.series }}
+      PRIK_GFORTRAN_BINARY: gfortran-13
+      PRIK_GFORTRAN_PACKAGE: gfortran-13
+      PYTHONPATH: .
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Install pinned GFortran
+        shell: bash
+        run: |
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
+          fi
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+      - name: Restore the Open MPI source, configured build, and installation
+        id: openmpi-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/prik-openmpi/${{ matrix.version }}
+          key: openmpi-${{ matrix.version }}-ubuntu-24.04-gfortran-13-v1
+      - name: Build and install Open MPI
+        if: steps.openmpi-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          root="$HOME/prik-openmpi/$OPENMPI_VERSION"
+          mkdir -p "$root/build"
+          curl -fsSL "https://download.open-mpi.org/release/open-mpi/$OPENMPI_SERIES/openmpi-$OPENMPI_VERSION.tar.bz2" \
+            | tar -xj -C "$root"
+          mv "$root/openmpi-$OPENMPI_VERSION" "$root/source"
+          cd "$root/build"
+          ../source/configure --prefix="$root/install" --enable-mpi-fortran=usempif08 FC=gfortran
+          make -j"$(nproc)"
+          make install
+          # The test reads sources and generated headers from these trees and
+          # links the installation, so build objects are not cached.
+          find . \( -name '*.o' -o -name '*.lo' -o -name '*.a' -o -name '*.la' \) -delete
+          find . -type d -name .libs -prune -exec rm -rf {} +
+      - name: Run the Open MPI mpi_f08 workflow test
+        shell: bash
+        env:
+          PRIK_OPENMPI_REQUIRED: "1"
+        run: |
+          root="$HOME/prik-openmpi/$OPENMPI_VERSION"
+          export PATH="$root/install/bin:$PATH"
+          export LD_LIBRARY_PATH="$root/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export PRIK_OPENMPI_SOURCE="$root/source"
+          export PRIK_OPENMPI_BUILD="$root/build"
+          export PRIK_OPENMPI_MPIFORT="$root/install/bin/mpifort"
+          export PRIK_OPENMPI_LAUNCHER="$root/install/bin/mpirun"
+          python -m pytest -q -rs tests/fortran/assumed_types/end_to_end/test_openmpi_f08.py

@@ -22,7 +22,8 @@ Set `PRIK_OPENMPI_SOURCE` to the matching Open MPI source root and
 `configure-fortran-output.h` and `sizeof_f08.h`; `configure` also generates some
 module sources into the build tree, so search both trees. Confirm that
 `mpifort --showme:version` reports the same Open MPI version as the source
-tree.
+tree, and configure the tree with the Fortran compiler the installation was
+built with, which `ompi_info --parsable` reports as `compiler:fortran:absolute`.
 
 Select the public facade's small initial API:
 
