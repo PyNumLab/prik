@@ -306,8 +306,8 @@ def update(value: Float64[()]) -> None: ...
 
 The leaf filename supplies the native module. No placement decorator is needed.
 When a public Fortran facade re-exports a procedure from a supporting module,
-`@native_module("facade_name")` selects the module the bridge imports. Generated
-contracts retain this access route, so building from the `.pyi` uses the facade.
+`@bind("facade_name::procedure_name")` selects the module and procedure that the
+bridge calls. Generated contracts retain this access route.
 
 ### Standalone Procedures
 
@@ -406,9 +406,10 @@ scale: Float64 = 2.0
 Fortran module variables can be buildable getters, setters, constants, wrapped
 objects, or descriptor handles according to their completed policy. A literal
 default on supported mutable scalar state is an import-time native initializer.
-`Annotated[Int32, NativeStorage]` describes a scalar module variable whose
-Python value is a live rank-zero NumPy view over its native storage. Use this
-marker when rebuilding from a contract must preserve the variable's address.
+`Int32[()]` describes a numeric scalar module variable whose Python value is a
+live rank-zero NumPy view over its native storage. Pass that view to a native dummy
+when the variable's original address matters. Plain `Int32` provides a scalar
+value getter.
 
 C global declarations can be represented for inspection, but current C wrapper
 builds reject native global state. C functions remain the supported runtime
@@ -558,9 +559,8 @@ Python declaration and native callable names differ.
 | Decorator | Valid target | Language and meaning |
 | --- | --- | --- |
 | `@private` | Function or method | Shared: declaration remains available to contract dependencies but is not exported. |
-| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. |
+| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. For module-level Fortran procedures, `"module::symbol"` also selects the native module used for the call. |
 | `@native_abi("c")` | Function, method, or prototype | Fortran only: original declaration is `bind(C)`. |
-| `@native_module("module_name")` | Module-level function | Fortran only: import the procedure through this native module. |
 | `@standalone` | Module-level function | Fortran only: native procedure is outside a module. |
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |
 | `@overload("specific", generic=...)` | Function or method | Shared: add one exact candidate to a generated Python overload set. |
@@ -810,7 +810,7 @@ stores or passes it:
 | Contract | Meaning | Languages |
 | --- | --- | --- |
 | `T` | Scalar Python value or wrapped object. | Shared. |
-| `T[()]` | Caller-owned rank-zero NumPy storage. | Shared. |
+| `T[()]` | Rank-zero NumPy storage; supported numeric module variables expose live native storage. | Shared. |
 | `T[n]` | Rank-one array with extent `n`. | Shared. |
 | `T[:]` | Rank-one array with runtime extent. | Shared. |
 | `T[:, :]` | Rank-two array with runtime extents. | Shared. |
@@ -936,7 +936,6 @@ type. Metadata falls into four groups.
 | `PointerAssociation("runtime")` | Pointer association is runtime state. | Fortran pointer facts. |
 | `SourceName("native-name")` | Preserve a native name that the Python identifier cannot represent. | Shared. |
 | `FortranAllocatable` | Fortran allocatable source provenance. | Loaded source contracts. |
-| `NativeStorage` | Scalar module variable uses its existing native address. | Prebuilt Fortran library state exposed as a live rank-zero NumPy view. |
 | `CAnonymousMember` | Field is the containing member for a nested anonymous C aggregate. | C inspection contracts. |
 
 ### Constraints
@@ -1110,7 +1109,7 @@ valid and whether it is buildable.
 | Prototype direction | `In`, `Out`, `InOut` |
 | Native-call helpers | `Arg`, `Hidden`, `IsPresent`, `Len`, `Pass`, `Return`, `Value`, `Work` |
 | Exact C scalar helpers | `CBool`, `CChar`, `CSignedChar`, `CUnsignedChar`, `CShort`, `CUnsignedShort`, `CInt`, `CUnsignedInt`, `CLong`, `CUnsignedLong`, `CLongLong`, `CUnsignedLongLong`, `CFloat`, `CDouble`, `CLongDouble`, `CFloatComplex`, `CDoubleComplex`, `CLongDoubleComplex` |
-| Decorators | `abstract`, `abstractmethod`, `bind`, `destroy`, `native_abi`, `native_call`, `native_module`, `nogil`, `overload`, `private`, `prototype`, `pure`, `raises`, `standalone` |
+| Decorators | `abstract`, `abstractmethod`, `bind`, `destroy`, `native_abi`, `native_call`, `nogil`, `overload`, `private`, `prototype`, `pure`, `raises`, `standalone` |
 
 `staticmethod` is supported Python syntax for methods but is not exported by
 `prik.contracts`.

@@ -165,7 +165,7 @@ class _Decorators:
     overload_generic: str | None = None
     bind_target: str | None = None
     native_abi: str | None = None
-    native_module: str | None = None
+    bind_module: str | None = None
     standalone: bool = False
     is_static: bool = False
     release_gil: bool = False
@@ -898,7 +898,6 @@ class _PyiAstParser:
             "overload": self._apply_overload_decorator,
             "bind": self._apply_bind_decorator,
             "native_abi": self._apply_native_abi_decorator,
-            "native_module": self._apply_native_module_decorator,
             "standalone": self._apply_standalone_decorator,
             "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
@@ -1012,7 +1011,15 @@ class _PyiAstParser:
         """Store one native symbol binding in decorator state, rejecting duplicates."""
         if parsed.bind_target is not None:
             raise ValueError(f"Duplicate {context} bind decorator")
-        parsed.bind_target = self._required_string_decorator_argument(node, "bind")
+        target = self._required_string_decorator_argument(node, "bind")
+        if "::" in target:
+            if self.native_language != "fortran" or context != ".pyi":
+                raise ValueError("qualified bind is only valid for Fortran module procedures")
+            parts = target.split("::")
+            if len(parts) != 2 or any(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", part) is None for part in parts):
+                raise ValueError(f"bind requires a Fortran module::procedure name: {target!r}")
+            parsed.bind_module, target = parts
+        parsed.bind_target = target
 
     def _apply_native_abi_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
         """Retain the C ABI declared by an original Fortran declaration."""
@@ -1024,17 +1031,6 @@ class _PyiAstParser:
         if value.casefold() != "c":
             raise ValueError('native_abi accepts only "c"')
         parsed.native_abi = "c"
-
-    def _apply_native_module_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Record the Fortran module through which a native procedure is accessed."""
-        if parsed.native_module is not None:
-            raise ValueError(f"Duplicate {context} native_module decorator")
-        if self.native_language != "fortran":
-            raise ValueError("native_module is only valid for Fortran semantic .pyi declarations")
-        value = self._required_string_decorator_argument(node, "native_module")
-        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value) is None:
-            raise ValueError(f"native_module requires a Fortran module name: {value!r}")
-        parsed.native_module = value
 
     @staticmethod
     def _apply_nogil_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -2569,9 +2565,6 @@ class _PyiAstParser:
         if name == "MaybeUnallocated":
             semantic_type.metadata[MAYBE_UNALLOCATED_METADATA] = True
             return True
-        if name == "NativeStorage":
-            semantic_type.metadata["native_storage"] = True
-            return True
         if name == "FortranAllocatable":
             semantic_type.metadata["fortran_allocatable"] = True
             return True
@@ -3690,8 +3683,6 @@ class _ClassBodyVisitor(ClassVisitor):
             return
         if decorators.standalone:
             raise ValueError("standalone is not valid for a class method")
-        if decorators.native_module is not None:
-            raise ValueError("native_module is only valid for module procedures")
         if not node.decorator_list and self._is_generated_constructor(node):
             self.constructor_from_fields = True
             return
@@ -3768,7 +3759,6 @@ class _ClassBodyVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
-            or decorators.native_module is not None
             or decorators.abstract_method
             or decorators.destroy
         ):
@@ -3825,7 +3815,14 @@ class _ModuleVisitor(ClassVisitor):
 
     def _visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Convert a module variable declaration."""
-        self.parser.module.variables.append(self.parser.ann_assign(node))
+        variable = self.parser.ann_assign(node)
+        storage = variable.semantic_type.storage
+        if storage is not None and storage.array is not None and storage.array.category == SCALAR_STORAGE_CATEGORY:
+            if self.parser.native_language != "fortran":
+                raise ValueError("rank-zero module storage is only supported for Fortran")
+            variable.semantic_type.storage = None
+            variable.semantic_type.metadata["native_storage"] = True
+        self.parser.module.variables.append(variable)
 
     def _visit_Assign(self, node: ast.Assign) -> None:
         """Record the list of names this contract states that it publishes."""
@@ -3876,6 +3873,8 @@ class _ModuleVisitor(ClassVisitor):
         """Convert a function or overload declaration."""
         decorators = self.parser.decorators(node.decorator_list, context=".pyi")
         if decorators.prototype:
+            if decorators.bind_module is not None:
+                raise ValueError("qualified bind requires a Fortran module procedure")
             self.parser.module.prototypes.append(
                 self.parser.prototype_def(
                     node,
@@ -3903,8 +3902,10 @@ class _ModuleVisitor(ClassVisitor):
             # The same fact a Fortran source records, which a specification
             # function in a declaration expression is required to carry.
             function.metadata["fortran_attributes"] = [*function.metadata.get("fortran_attributes", ()), "pure"]
-        if decorators.native_module is not None:
-            function.metadata[NATIVE_ACCESS_MODULE_METADATA] = decorators.native_module
+        if decorators.bind_module is not None:
+            if decorators.standalone or decorators.prototype:
+                raise ValueError("qualified bind requires a Fortran module procedure")
+            function.metadata[NATIVE_ACCESS_MODULE_METADATA] = decorators.bind_module
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
                 _PendingOverload(

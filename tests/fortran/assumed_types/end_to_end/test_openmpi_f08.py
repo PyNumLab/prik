@@ -113,13 +113,13 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     assert all(f'"{symbol.lower()}"' in facade for symbol in EXPORTS)
     assert all(f'"Mpi_{name}"' in facade for name in ("Comm", "Datatype", "Op", "Status"))
     assert "mpi_waitall" not in facade
-    assert "mpi_in_place: Annotated[Int32, NativeStorage]" in types
+    assert "mpi_in_place: Int32[()]" in types
     assert "mpi_comm_world: Final[Mpi_Comm]" in types
     assert "mpi_sum: Final[Mpi_Op]" in types
     assert "mpi_int: Final[Mpi_Datatype]" in types
     assert "mpi_status_ignore: Mpi_Status" in types
     assert all(f"class Mpi_{name}" in types for name in ("Comm", "Datatype", "Op", "Status"))
-    assert "AnyNative[" in interfaces and '@native_module("mpi_f08")' in interfaces
+    assert "AnyNative[" in interfaces and '@bind("mpi_f08::MPI_Send")' in interfaces
 
     def show(flag: str) -> list[str]:
         return shlex.split(subprocess.check_output([mpifort, flag], text=True))

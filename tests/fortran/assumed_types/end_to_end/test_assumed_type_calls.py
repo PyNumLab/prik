@@ -127,7 +127,7 @@ def test_same_actual_uses_address_or_descriptor_from_dummy(calls):
 def test_native_scalar_module_storage_survives_generated_contract_replay(calls, native_build):
     """A BIND(C) scalar view passes its own native address through TYPE(*)."""
     generated = (native_build.output_dir / "contracts" / "assumed_type_calls.pyi").read_text()
-    assert "native_value: Annotated[Int32, Aliased, NativeStorage]" in generated
+    assert "native_value: Annotated[Int32[()], Aliased]" in generated
     native = calls.native_value
     assert isinstance(native, np.ndarray) and native.shape == () and native.dtype == np.dtype("int32")
     assert bool(calls.same_native_raw(native))

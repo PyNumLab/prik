@@ -415,6 +415,7 @@ class PyiPrinter(ClassVisitor):
                     if candidate.origin.native_symbol != candidate.origin.native_name
                     else None
                 )
+            bind_target = self._module_bind_target(candidate, bind_target)
             bind = f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
             native_abi = (
                 f'{indent}@{context.contract("native_abi")}("c")\n'
@@ -1081,10 +1082,14 @@ class PyiPrinter(ClassVisitor):
     ) -> str:
         """Emit typed name syntax."""
         semantic_type = self._without_constant_constraint(arg.semantic_type)
+        if arg.semantic_type.metadata.get("native_storage"):
+            semantic_type = deepcopy(semantic_type)
+            semantic_type.storage = SemanticStorageContract(
+                kind="array",
+                array=SemanticArrayContract(rank=0, category=SCALAR_STORAGE_CATEGORY),
+            )
         type_text = self._visit(semantic_type, context)
         annotation_metadata = []
-        if arg.semantic_type.metadata.get("native_storage") and arg.origin.source_kind == "variable":
-            annotation_metadata.append(context.contract("NativeStorage"))
         if original_name is not None:
             annotation_metadata.append(f"{context.contract('SourceName')}({json.dumps(original_name)})")
         if annotation_metadata:
@@ -2005,8 +2010,6 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"{indent}@staticmethod")
         if func.metadata.get(DEFERRED_BINDING_METADATA):
             decorators.append(f"{indent}@{context.contract('abstractmethod')}")
-        if native_module := func.metadata.get(NATIVE_ACCESS_MODULE_METADATA):
-            decorators.append(f"{indent}@{context.contract('native_module')}({json.dumps(str(native_module))})")
         is_native_c_abi = func.origin.source_language == "fortran" and func.origin.native_abi == "c"
         is_overload = bool(func.metadata.get(OVERLOAD_TARGET_METADATA))
         if is_native_c_abi and not is_overload:
@@ -2014,9 +2017,19 @@ class PyiPrinter(ClassVisitor):
         bind_target = self._bind_target(
             func, context=context, emitted_name=emitted_name, is_native_c_abi=is_native_c_abi
         )
+        bind_target = self._module_bind_target(func, bind_target)
         if bind_target and not is_overload:
             decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
         return decorators
+
+    @staticmethod
+    def _module_bind_target(func: SemanticFunction, bind_target: object | None) -> str | None:
+        """Render a Fortran module access route in the existing bind spelling."""
+        module = func.metadata.get(NATIVE_ACCESS_MODULE_METADATA)
+        if module is None:
+            return str(bind_target) if bind_target is not None else None
+        symbol = bind_target or func.native_name or func.name
+        return f"{module}::{symbol}"
 
     @staticmethod
     def _constructor_binds_its_own_type(
