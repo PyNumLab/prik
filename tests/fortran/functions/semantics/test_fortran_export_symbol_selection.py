@@ -7,7 +7,6 @@ import pytest
 from prik.cli import _read_export_symbols
 from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from prik.semantics.models import NATIVE_ACCESS_MODULE_METADATA
 from prik.semantics.fortran_exports import select_fortran_export_symbols
 from prik.semantics.models import (
     ProcedureOverloadSet,
@@ -147,7 +146,7 @@ def test_selection_keeps_one_generic_with_its_specific_candidates():
     assert selected.exported_names == ["solve"]
 
 
-def test_facade_selection_retains_only_requested_native_owners_and_access_route():
+def test_facade_selection_retains_only_requested_native_owners():
     """A facade allowlist selects owner declarations without publishing siblings."""
     specific = _function("owner", "run_impl")
     owner = _module(
@@ -174,9 +173,7 @@ def test_facade_selection_retains_only_requested_native_owners_and_access_route(
     assert [function.name for function in owner_selected.functions] == ["run_impl"]
     assert [variable.name for variable in owner_selected.variables] == ["marker"]
     assert [item.local_name for item in facade_selected.reexports] == ["run", "marker"]
-    candidate = owner_selected.overload_sets[0].procedures[0]
-    assert candidate.native_name == "run"
-    assert candidate.metadata[NATIVE_ACCESS_MODULE_METADATA] == "facade"
+    assert owner_selected.overload_sets[0].procedures[0].native_name == "run_impl"
 
 
 def test_external_root_cannot_satisfy_a_module_qualified_identity():

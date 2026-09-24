@@ -34,11 +34,11 @@ release tags add a leading `v` to the package version.
 
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
   module-qualified Fortran procedures and variables, including symbols
-  re-exported by a public facade. Generated contracts retain the selected
-  access module through qualified `@bind`, required type declarations
-  (including the component and parent types they declare), and native scalar
-  storage views through `T[()]`. Source builds and generated contracts publish
-  the same selected surface.
+  re-exported by a public facade; the bridge calls each procedure through the
+  module that declares it. Generated contracts retain required type
+  declarations (including the component and parent types they declare) and
+  native scalar storage views through `T[()]`. Source builds and generated
+  contracts publish the same selected surface.
 - The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
   wrapper from a restricted generated `.pyi` against a matching prebuilt
   Open MPI installation and exercise NumPy communication and in-place reduction.

@@ -8332,11 +8332,7 @@ def _native_module(function: models.SemanticFunction, owner_path: str) -> str | 
     """Return the completed native module scope for non-standalone procedures."""
     if _is_standalone(function):
         return None
-    return str(
-        function.metadata.get(models.NATIVE_ACCESS_MODULE_METADATA)
-        or function.origin.native_scope
-        or owner_path.split(".", maxsplit=1)[0]
-    )
+    return str(function.origin.native_scope or owner_path.split(".", maxsplit=1)[0])
 
 
 def _native_is_subroutine(function: models.SemanticFunction) -> bool:

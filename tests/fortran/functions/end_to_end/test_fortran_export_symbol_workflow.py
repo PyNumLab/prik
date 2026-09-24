@@ -159,7 +159,6 @@ def test_facade_selection_and_contract_replay_share_generic_and_native_variable(
     owner_contract = (contract / "owner.pyi").read_text(encoding="utf-8")
     assert "from .owner import" in facade_contract
     assert '"run"' in facade_contract and '"marker"' in facade_contract
-    assert '@bind("facade::run")' in owner_contract
     assert "marker: Int32[()]" in owner_contract
 
     source = build_fortran_extension(

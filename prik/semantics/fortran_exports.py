@@ -7,10 +7,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 import re
 
-from prik.semantics.metadata import BIND_TARGET_METADATA
 from prik.semantics.models import (
     EXTERNAL_TYPE_REF_METADATA,
-    NATIVE_ACCESS_MODULE_METADATA,
     ProcedureOverloadSet,
     SemanticFunction,
     SemanticModule,
@@ -65,7 +63,7 @@ def select_fortran_export_symbols(
     selectable, non_selectable = _fortran_export_candidates(source_modules)
     _validate_fortran_export_resolution(requested, selectable, non_selectable, module_index)
 
-    selected, access_modules = _selection_routes(requested, module_index)
+    selected = _selected_identities(requested, module_index)
     primary_names = {module_name for module_name, _symbol_name in selected}
     primary_sources = []
     primary_modules = []
@@ -73,7 +71,7 @@ def select_fortran_export_symbols(
         module_name = _native_module_name(module)
         if module_name not in primary_names:
             continue
-        selected_module = _select_module_surface(module, selected, set(requested), access_modules)
+        selected_module = _select_module_surface(module, selected, set(requested))
         primary_sources.append(module)
         primary_modules.append(selected_module)
 
@@ -91,20 +89,17 @@ def select_fortran_export_symbols(
     return FortranExportSelection(tuple(primary_sources), tuple(primary_modules), context_modules)
 
 
-def _selection_routes(requested, module_index):
-    """Resolve selected facade names to their declaring identities and access routes."""
+def _selected_identities(requested, module_index):
+    """Add the declaring identity of each name selected through a facade re-export."""
     selected = set(requested)
-    access_modules: dict[tuple[str, str], str] = {}
     for module_name, symbol_name in requested:
         for reexport in module_index[module_name].reexports:
             if reexport.local_name.casefold() == symbol_name:
-                identity = (reexport.origin_module.casefold(), reexport.source_name.casefold())
-                selected.add(identity)
-                access_modules[identity] = module_name
-    return selected, access_modules
+                selected.add((reexport.origin_module.casefold(), reexport.source_name.casefold()))
+    return selected
 
 
-def _select_module_surface(module, selected, requested, access_modules):
+def _select_module_surface(module, selected, requested):
     """Retain selected declarations while keeping generic specifics private to them."""
     selected_module = deepcopy(module)
     module_name = _native_module_name(module)
@@ -114,7 +109,6 @@ def _select_module_surface(module, selected, requested, access_modules):
         if (module_name, _native_symbol_name(overload)) in selected
     ]
     _retain_selected_procedures(selected_module, module_name, selected)
-    _route_selected_callables(selected_module, module_name, access_modules)
     selected_module.variables = [
         variable for variable in selected_module.variables if (module_name, _native_symbol_name(variable)) in selected
     ]
@@ -147,20 +141,6 @@ def _retain_selected_procedures(module, module_name, selected):
     ]
     declared = {_native_symbol_name(function) for function in module.functions}
     module.functions.extend(deepcopy(procedure) for name, procedure in specifics.items() if name not in declared)
-
-
-def _route_selected_callables(module, module_name, access_modules):
-    """Record the public native module and generic name used for each callable."""
-    for declaration in (*module.functions, *module.overload_sets):
-        access = access_modules.get((module_name, _native_symbol_name(declaration)))
-        if access is None:
-            continue
-        procedures = declaration.procedures if isinstance(declaration, ProcedureOverloadSet) else (declaration,)
-        for procedure in procedures:
-            procedure.metadata[NATIVE_ACCESS_MODULE_METADATA] = access
-            if isinstance(declaration, ProcedureOverloadSet):
-                procedure.native_name = declaration.name
-                procedure.metadata[BIND_TARGET_METADATA] = declaration.name
 
 
 def _retain_required_types(module, source_module, required_types):

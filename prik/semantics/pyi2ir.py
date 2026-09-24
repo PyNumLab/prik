@@ -58,7 +58,6 @@ from prik.semantics.models import (
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
     NATIVE_BY_VALUE_METADATA,
-    NATIVE_ACCESS_MODULE_METADATA,
     PYTHON_BOUND_POSITION_METADATA,
     PYTHON_METHOD_NAME_METADATA,
     PYTHON_STATIC_METADATA,
@@ -165,7 +164,6 @@ class _Decorators:
     overload_generic: str | None = None
     bind_target: str | None = None
     native_abi: str | None = None
-    bind_module: str | None = None
     standalone: bool = False
     is_static: bool = False
     release_gil: bool = False
@@ -1011,15 +1009,7 @@ class _PyiAstParser:
         """Store one native symbol binding in decorator state, rejecting duplicates."""
         if parsed.bind_target is not None:
             raise ValueError(f"Duplicate {context} bind decorator")
-        target = self._required_string_decorator_argument(node, "bind")
-        if "::" in target:
-            if self.native_language != "fortran" or context != ".pyi":
-                raise ValueError("qualified bind is only valid for Fortran module procedures")
-            parts = target.split("::")
-            if len(parts) != 2 or any(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", part) is None for part in parts):
-                raise ValueError(f"bind requires a Fortran module::procedure name: {target!r}")
-            parsed.bind_module, target = parts
-        parsed.bind_target = target
+        parsed.bind_target = self._required_string_decorator_argument(node, "bind")
 
     def _apply_native_abi_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
         """Retain the C ABI declared by an original Fortran declaration."""
@@ -1223,8 +1213,6 @@ class _PyiAstParser:
         for key in (RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA):
             if key in declaration.metadata:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
-        if NATIVE_ACCESS_MODULE_METADATA in declaration.metadata:
-            candidate.metadata[NATIVE_ACCESS_MODULE_METADATA] = declaration.metadata[NATIVE_ACCESS_MODULE_METADATA]
 
         if isinstance(owner, SemanticModule):
             if generic_name is not None:
@@ -3873,8 +3861,6 @@ class _ModuleVisitor(ClassVisitor):
         """Convert a function or overload declaration."""
         decorators = self.parser.decorators(node.decorator_list, context=".pyi")
         if decorators.prototype:
-            if decorators.bind_module is not None:
-                raise ValueError("qualified bind requires a Fortran module procedure")
             self.parser.module.prototypes.append(
                 self.parser.prototype_def(
                     node,
@@ -3902,10 +3888,6 @@ class _ModuleVisitor(ClassVisitor):
             # The same fact a Fortran source records, which a specification
             # function in a declaration expression is required to carry.
             function.metadata["fortran_attributes"] = [*function.metadata.get("fortran_attributes", ()), "pure"]
-        if decorators.bind_module is not None:
-            if decorators.standalone or decorators.prototype:
-                raise ValueError("qualified bind requires a Fortran module procedure")
-            function.metadata[NATIVE_ACCESS_MODULE_METADATA] = decorators.bind_module
         if decorators.overload_target is not None:
             self.parser._pending_overloads.append(
                 _PendingOverload(

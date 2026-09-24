@@ -28,7 +28,6 @@ INTERNAL_NATIVE_ARRAY_HANDLE_OWNER_CLASS_METADATA = "internal_native_array_handl
 PYTHON_VALUE_MUTABILITY_METADATA = "python_value_mutability"
 PYTHON_VALUE_IMMUTABLE = "immutable"
 NATIVE_BY_VALUE_METADATA = "native_by_value"
-NATIVE_ACCESS_MODULE_METADATA = "native_access_module"
 RUNTIME_RELEASE_GIL_METADATA = "runtime_release_gil"
 RUNTIME_RETAIN_RESULT_OWNER_METADATA = "runtime_retain_result_owner"
 RUNTIME_STATUS_ERROR_METADATA = "runtime_status_error"

@@ -42,27 +42,21 @@ def test_convert_pyi_to_ir_accepts_parsed_pyi_ast_only():
         convert_pyi_to_ir(source)
 
 
-def test_module_scalar_storage_and_facade_bind_round_trip():
-    """A contract retains native scalar storage and its public Fortran call route."""
-    source = """from prik.contracts import Int32, bind
+def test_module_scalar_storage_round_trips():
+    """A contract retains which module scalars expose native storage."""
+    source = """from prik.contracts import Int32
 
 live: Int32[()]
 plain: Int32
-
-@bind("facade::work")
-def run() -> None: ...
 """
     module = parse_pyi_text(source, module_name="owner")
     emitted = emit_module(module)
 
     assert "live: Int32[()]" in emitted
     assert "plain: Int32" in emitted
-    assert '@bind("facade::work")' in emitted
     replay = parse_pyi_text(emitted, module_name="owner")
     assert replay.variables[0].semantic_type.metadata["native_storage"] is True
     assert "native_storage" not in replay.variables[1].semantic_type.metadata
-    assert replay.functions[0].native_name == "work"
-    assert replay.functions[0].metadata["native_access_module"] == "facade"
 
 
 def test_pyi_parser_reports_unsupported_lines_and_invalid_helpers():

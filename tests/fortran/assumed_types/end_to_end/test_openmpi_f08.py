@@ -119,7 +119,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     assert "mpi_int: Final[Mpi_Datatype]" in types
     assert "mpi_status_ignore: Mpi_Status" in types
     assert all(f"class Mpi_{name}" in types for name in ("Comm", "Datatype", "Op", "Status"))
-    assert "AnyNative[" in interfaces and '@bind("mpi_f08::MPI_Send")' in interfaces
+    assert "AnyNative[" in interfaces and '@overload("mpi_send_f08")\ndef mpi_send(' in interfaces
 
     def show(flag: str) -> list[str]:
         return shlex.split(subprocess.check_output([mpifort, flag], text=True))
@@ -137,7 +137,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     )
     assert result.native_build_plan is not None and not result.native_build_plan.compilation_units
     bridge = next(path for path in result.generated_sources if path.suffix == ".f90").read_text(encoding="utf-8")
-    assert "use mpi_f08, only:" in bridge
+    assert "use mpi_f08_interfaces, only:" in bridge
     assert "=> MPI_Allreduce" in bridge and "=> MPI_Send" in bridge
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(result.output_dir), env.get("PYTHONPATH", ""))))

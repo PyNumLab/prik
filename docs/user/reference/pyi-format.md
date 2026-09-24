@@ -305,9 +305,6 @@ def update(value: Float64[()]) -> None: ...
 ```
 
 The leaf filename supplies the native module. No placement decorator is needed.
-When a public Fortran facade re-exports a procedure from a supporting module,
-`@bind("facade_name::procedure_name")` selects the module and procedure that the
-bridge calls. Generated contracts retain this access route.
 
 ### Standalone Procedures
 
