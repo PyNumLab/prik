@@ -416,6 +416,23 @@ class _ProcedureState:
 
 
 _IMPLICIT_LETTER_SPEC = re.compile(r"^(?P<type>.+?)\s*\((?P<letters>[^()]*)\)$")
+_IMPLICIT_NONE = re.compile(r"^none\s*(?:\((?P<specs>[^()]*)\))?\s*$", re.IGNORECASE)
+
+
+def _implicit_none_forbids_typing(body: str) -> bool | None:
+    """Return whether an ``IMPLICIT NONE`` body disables implicit typing, or None for another body.
+
+    Plain ``NONE``, an empty specifier list, or one naming ``TYPE`` disables
+    it; ``NONE(EXTERNAL)`` alone only requires external procedures to be
+    declared.
+    """
+    match = _IMPLICIT_NONE.match(body.strip())
+    if match is None:
+        return None
+    specs = match.group("specs")
+    if specs is None or not specs.strip():
+        return True
+    return "type" in {spec.strip().casefold() for spec in specs.split(",")}
 
 
 @dataclass
@@ -427,8 +444,9 @@ class _ImplicitTyping:
 
     def record(self, body: str) -> bool:
         """Apply one IMPLICIT statement body, or return False when it is not understood."""
-        if re.match(r"^none\b", body, flags=re.IGNORECASE):
-            self.none = True
+        forbids_typing = _implicit_none_forbids_typing(body)
+        if forbids_typing is not None:
+            self.none = self.none or forbids_typing
             return True
         mappings = []
         for item in split_csv(body):
@@ -4665,9 +4683,10 @@ class FortranParser(ClassVisitor):
             `_finalize_proc` can require every argument to have an explicit
             declaration.
         """
-        if not re.match(r"^implicit\b", line, flags=re.IGNORECASE):
+        implicit = re.match(r"^implicit\b\s*(?P<body>.*)$", line, flags=re.IGNORECASE)
+        if not implicit:
             return False
-        if re.match(r"^implicit\s+none\b", line, flags=re.IGNORECASE):
+        if _implicit_none_forbids_typing(implicit.group("body")):
             proc_state.implicit_none = True
         return True
 

@@ -4390,8 +4390,25 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     def _parameter(self, plan: ArgumentTransferPlan, attributes: tuple[str, ...]) -> FortranParameter:
-        """Return one entrypoint ABI parameter from its completed transfer plan."""
-        return FortranParameter(plan.entrypoint.parameter_name, self._scalar_argument_type(plan), attributes)
+        """Return one entrypoint ABI parameter from its completed transfer plan.
+
+        A logical wider than ``c_bool`` is not interoperable, so its native-width
+        storage crosses as an address or a same-width integer and takes its
+        logical type only behind the ``bind(C)`` boundary.
+        """
+        name = plan.entrypoint.parameter_name
+        if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_STORAGE:
+            if plan.entrypoint.handoff_mode is ArgumentHandoffMode.VALUE:
+                return FortranParameter(f"bound_{name}", self._logical_storage_integer(plan), ("value",))
+            return FortranParameter(f"bound_{name}", "type(c_ptr)", ("value",))
+        return FortranParameter(name, self._scalar_argument_type(plan), attributes)
+
+    @staticmethod
+    def _logical_storage_integer(plan: ArgumentTransferPlan) -> str:
+        """Spell the interoperable integer that carries a logical's native-width storage."""
+        if not plan.native_storage_c_type:
+            raise ValueError(f"Logical argument {plan.owner_path!r} has no native storage type")
+        return f"integer(c_{plan.native_storage_c_type})"
 
     @staticmethod
     def _scalar_argument_type(plan: ArgumentTransferPlan) -> str:
@@ -5331,6 +5348,12 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare exact-kind native locals selected by scalar logical policy."""
         declarations = []
         for argument in plan.arguments:
+            if self._required_logical_storage(argument):
+                attributes = () if argument.entrypoint.handoff_mode is ArgumentHandoffMode.VALUE else ("pointer",)
+                declarations.append(
+                    FortranDeclaration(argument.entrypoint.parameter_name, argument.scalar_native_type, attributes)
+                )
+                continue
             if argument.scalar_logical_abi is not ScalarLogicalABI.NATIVE_KIND_COPY:
                 continue
             if not argument.scalar_native_type:
@@ -5343,20 +5366,37 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         return tuple(declarations)
 
+    @staticmethod
+    def _required_logical_storage(argument: ArgumentTransferPlan) -> bool:
+        """Return whether a required logical takes its native type behind the boundary."""
+        return (
+            argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_STORAGE
+            and argument.entrypoint.optional_mode is OptionalMode.REQUIRED
+        )
+
     def _logical_scalar_argument_initializers(
         self,
         plan: FunctionPlan,
-    ) -> tuple[FortranAssignment, ...]:
-        """Copy required C Boolean values into their exact native kinds."""
-        return tuple(
-            FortranAssignment(
-                f"{argument.entrypoint.parameter_name}_native",
-                CodeExpression(argument.entrypoint.parameter_name),
-            )
-            for argument in plan.arguments
-            if argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
-            and argument.entrypoint.optional_mode is OptionalMode.REQUIRED
-        )
+    ) -> tuple[FortranAssignment | FortranCall, ...]:
+        """Give required logicals their exact native kinds behind the C boundary.
+
+        A copied C Boolean is assigned to its native local; native-width
+        storage is associated with, or reinterpreted as, the native logical.
+        """
+        nodes: list[FortranAssignment | FortranCall] = []
+        for argument in plan.arguments:
+            name = argument.entrypoint.parameter_name
+            if self._required_logical_storage(argument):
+                if argument.entrypoint.handoff_mode is ArgumentHandoffMode.VALUE:
+                    nodes.append(FortranAssignment(name, CodeExpression(f"transfer(bound_{name}, {name})")))
+                else:
+                    nodes.append(FortranCall("c_f_pointer", (CodeExpression(f"bound_{name}"), CodeExpression(name))))
+            elif (
+                argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
+                and argument.entrypoint.optional_mode is OptionalMode.REQUIRED
+            ):
+                nodes.append(FortranAssignment(f"{name}_native", CodeExpression(name)))
+        return tuple(nodes)
 
     def _logical_scalar_argument_finalizers(
         self,

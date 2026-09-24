@@ -124,12 +124,16 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     def show(flag: str) -> list[str]:
         return shlex.split(subprocess.check_output([mpifort, flag], text=True))
 
-    compile_flags, link_flags = show("--showme:compile"), show("--showme:link")
+    # The wrapper compiler's command may carry its own flags, and its compile
+    # flags are more than include directories; keep every one of them.
+    command, compile_flags = show("--showme:command"), show("--showme:compile")
+    include_dirs = [*show("--showme:incdirs"), *(flag[2:] for flag in compile_flags if flag.startswith("-I"))]
     result = build_pyi_extension(
         contract / "__init__.pyi",
-        input_compiler=show("--showme:command")[0],
-        native_include_dirs=[flag[2:] for flag in compile_flags if flag.startswith("-I")],
-        native_link_items=[NativeLinkItem("linker_argument", flag) for flag in link_flags],
+        input_compiler=command[0],
+        native_include_dirs=list(dict.fromkeys(include_dirs)),
+        wrapper_fortran_flags=[*command[1:], *(flag for flag in compile_flags if not flag.startswith("-I"))],
+        native_link_items=[NativeLinkItem("linker_argument", flag) for flag in show("--showme:link")],
         native_linker_language="fortran",
         output_name="prik_openmpi_f08",
         output_dir=tmp_path / "extension",
@@ -141,8 +145,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     assert "=> MPI_Allreduce" in bridge and "=> MPI_Send" in bridge
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(result.output_dir), env.get("PYTHONPATH", ""))))
-    libdirs = [flag[2:] for flag in link_flags if flag.startswith("-L")]
-    env["LD_LIBRARY_PATH"] = os.pathsep.join((*libdirs, env.get("LD_LIBRARY_PATH", "")))
+    env["LD_LIBRARY_PATH"] = os.pathsep.join((*show("--showme:libdirs"), env.get("LD_LIBRARY_PATH", "")))
     completed = subprocess.run(
         [launcher, "-n", "2", sys.executable, str(RUNTIME)],
         env=env,

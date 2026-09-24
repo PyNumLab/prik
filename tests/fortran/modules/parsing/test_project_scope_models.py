@@ -98,18 +98,32 @@ end module legacy_constants
     assert all(variable.is_parameter for variable in module.variables)
 
 
-def test_separate_parameter_statement_under_implicit_none_requires_a_declaration():
+@pytest.mark.parametrize("statement", ["implicit none", "implicit none (type)", "implicit none (type, external)"])
+def test_separate_parameter_statement_under_implicit_none_requires_a_declaration(statement: str):
     with pytest.raises(FortranParseError, match="implicit none is active") as error:
         parse_fortran_file(
-            """
+            f"""
 module strict_constants
-  implicit none
+  {statement}
   parameter (undeclared = 3)
 end module strict_constants
 """
         )
 
     assert error.value.code == "PARSE_UNKNOWN_PARAMETER_TYPE"
+
+
+def test_implicit_none_external_keeps_implicit_typing_for_a_separate_parameter():
+    module = parse_fortran_file(
+        """
+module external_only
+  implicit none (external)
+  parameter (n = 4)
+end module external_only
+"""
+    ).modules[0]
+
+    assert fortran_module_to_semantic_module(module).variables[0].semantic_type.name == "Int32"
 
 
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():

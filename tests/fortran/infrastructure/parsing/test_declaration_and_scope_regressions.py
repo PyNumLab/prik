@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik.parsers.fortran import FortranParseError
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
@@ -735,3 +735,27 @@ end module owner_mod
         ("file", None),
         ("module", "owner_mod"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("statement", "forbids_typing"),
+    [
+        pytest.param("implicit none", True, id="plain"),
+        pytest.param("implicit none (type)", True, id="type"),
+        pytest.param("implicit none (type, external)", True, id="type-and-external"),
+        pytest.param("implicit none (external)", False, id="external-only"),
+    ],
+)
+def test_implicit_none_specifiers_decide_whether_undeclared_dummies_are_typed(statement: str, forbids_typing: bool):
+    """Only NONE or NONE(TYPE) forbids implicit typing; NONE(EXTERNAL) keeps it."""
+    source = f"""
+subroutine scale(n)
+  {statement}
+end subroutine scale
+"""
+    if forbids_typing:
+        with pytest.raises(FortranParseError, match="implicit none is active"):
+            parse_fortran_file(source)
+        return
+    (argument,) = parse_fortran_file(source).procedures[0].arguments
+    assert argument.base_type == "integer"

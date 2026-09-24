@@ -21,6 +21,8 @@ release tags add a leading `v` to the package version.
   writes a pointer's current target.
 - A separate module-level `PARAMETER` statement types an undeclared name by the
   module's `IMPLICIT` rules and is rejected under `implicit none`.
+- `IMPLICIT NONE (EXTERNAL)` no longer disables implicit typing; only plain
+  `IMPLICIT NONE` or a specifier list naming `TYPE` does.
 
 - Contributor test guidance focuses on supported behavior and meaningful
   validation boundaries after a feature is removed.
