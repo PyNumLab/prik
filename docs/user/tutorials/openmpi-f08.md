@@ -11,8 +11,10 @@ publication: reviewed
 # Wrap Open MPI `mpi_f08`
 
 Use a configured Open MPI source tree and the corresponding installed Open MPI
-toolchain. PRIK reads the interface and type sources to generate a contract;
-the extension compiles against the installed modules and libraries.
+toolchain. PRIK reads `mpi-f08.F90` and finds the sources of the modules it
+uses in the source tree, whatever their names and layout in your Open MPI
+version, to generate a contract; the extension compiles against the installed
+modules and libraries.
 
 Set `PRIK_OPENMPI_SOURCE` to the matching Open MPI source root and
 `PRIK_OPENMPI_BUILD` to its configured build root. The build must contain its
@@ -41,9 +43,8 @@ mpi_f08::MPI_STATUS_IGNORE
 EOF
 
 python3 -m prik generate --pyi \
-  "$PRIK_OPENMPI_SOURCE/ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90" \
-  "$PRIK_OPENMPI_SOURCE/ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-interfaces.F90" \
   "$PRIK_OPENMPI_SOURCE/ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90" \
+  --module-source-dir "$PRIK_OPENMPI_SOURCE" \
   --export-symbols exports.txt --out contract --compiler mpifort \
   -I "$PRIK_OPENMPI_BUILD" \
   -I "$PRIK_OPENMPI_BUILD/ompi/mpi/fortran/use-mpi-f08" \

@@ -460,6 +460,7 @@ class _SemanticPipelineContext:
     refresh_fortran_type_probe: bool = False
     assume_intent_in_scalars: bool = False
     export_symbols: tuple[str, ...] | None = None
+    module_source_dirs: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -501,6 +502,7 @@ def _converted_semantic_files(
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: tuple[str, ...] | None = None,
+    module_source_dirs: tuple[Path, ...] = (),
 ) -> _ConvertedSemanticSources:
     context = _SemanticPipelineContext(
         paths=paths,
@@ -516,6 +518,7 @@ def _converted_semantic_files(
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
         export_symbols=export_symbols,
+        module_source_dirs=module_source_dirs,
     )
     pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
     parsed = pipeline.parser(context)
@@ -551,6 +554,7 @@ def _semantic_report(
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: tuple[str, ...] | None = None,
+    module_source_dirs: tuple[Path, ...] = (),
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
     converted = _converted_semantic_files(
@@ -564,6 +568,7 @@ def _semantic_report(
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
         export_symbols=export_symbols,
+        module_source_dirs=module_source_dirs,
     )
     return _semantic_payload_for_converted_files(
         converted.files,
@@ -623,9 +628,18 @@ def _convert_c_semantic_sources(
 def _parse_fortran_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
     if not context.source_paths:
         return _ParsedSemanticSources(context.source_paths, [])
+    source_paths = context.source_paths
+    if context.module_source_dirs:
+        from prik.parsers.fortran.module_sources import resolve_fortran_module_sources
+
+        source_paths = resolve_fortran_module_sources(
+            source_paths,
+            context.module_source_dirs,
+            lambda path: _fortran_source_for_path(path, context.preprocessing)[0],
+        )
     return _ParsedSemanticSources(
-        context.source_paths,
-        _parse_fortran_source_files(list(context.source_paths), context.preprocessing),
+        source_paths,
+        _parse_fortran_source_files(list(source_paths), context.preprocessing),
     )
 
 
@@ -1078,6 +1092,11 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
             "--export-symbols selects the public surface while reading native source; a semantic .pyi "
             "contract already states its public surface in __all__"
         )
+    if getattr(args, "module_source_dirs", None):
+        parser.error(
+            "--module-source-dir finds Fortran module sources while reading native source; a semantic .pyi "
+            "contract already states the modules it declares"
+        )
     if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_c_sources", None)
@@ -1116,6 +1135,7 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
         getattr(args, "strict_wrapper_names", False)
         or getattr(args, "assume_intent_in_scalars", False)
         or getattr(args, "export_symbols", None)
+        or getattr(args, "module_source_dirs", None)
         or _wrapper_compile_options_used(args)
     ):
         parser.error("--build-manifest replays saved wrapper behavior and compiler flags")
@@ -1322,7 +1342,18 @@ def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentPa
 
     _validate_output_options(args, parser)
     _complete_export_symbol_options(args, parser)
+    _validate_module_source_dirs(args, parser)
     return args.print_limit
+
+
+def _validate_module_source_dirs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Require existing directories and a Fortran source language for module discovery."""
+    directories = getattr(args, "module_source_dirs", None) or ()
+    if directories and args.language != "fortran":
+        parser.error("--module-source-dir finds Fortran module sources; it does not apply to C")
+    missing = [directory for directory in directories if not Path(directory).is_dir()]
+    if missing:
+        parser.error(f"--module-source-dir is not a directory: {', '.join(missing)}")
 
 
 def _c_type_facts_for_stages(args: argparse.Namespace, preprocessing: PreprocessingConfig):
@@ -1343,6 +1374,8 @@ def _semantic_stage_options(
         options["assume_intent_in_scalars"] = True
     if getattr(args, "_resolved_export_symbols", None) is not None:
         options["export_symbols"] = args._resolved_export_symbols
+    if getattr(args, "module_source_dirs", None):
+        options["module_source_dirs"] = tuple(Path(path) for path in args.module_source_dirs)
     return options
 
 
@@ -1729,6 +1762,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         positional_only=getattr(args, "positional_only", False),
         assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         export_symbols=getattr(args, "_resolved_export_symbols", None),
+        module_source_dirs=getattr(args, "module_source_dirs", None),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         standard_logicals=getattr(args, "standard_logicals", True),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
@@ -2380,6 +2414,16 @@ def _add_semantic_interpretation_options(
         ),
     )
     group.add_argument(
+        "--module-source-dir",
+        dest="module_source_dirs",
+        metavar="DIR",
+        action="append",
+        help=(
+            "Search DIR recursively for the Fortran sources of modules the given sources use, and read "
+            "them too, transitively; repeat to add directories"
+        ),
+    )
+    group.add_argument(
         "--export-symbols",
         metavar="FILE",
         help=(
@@ -2630,6 +2674,7 @@ _PIPELINE_DEFAULTS = {
     "public_includes": None,
     "private_includes": None,
     "export_symbols": None,
+    "module_source_dirs": None,
 }
 
 

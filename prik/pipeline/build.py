@@ -39,6 +39,7 @@ from prik.naming.generated_files import stub_identifier
 from prik.parsers.c import parse_c_file
 from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.parsers.fortran.parser import parse_fortran_project
+from prik.parsers.fortran.module_sources import resolve_fortran_module_sources
 from prik.parsers.fortran.scope import used_module_names
 from prik.preprocessing.probes.fortran_types import (
     evaluate_fortran_type_facts,
@@ -3662,6 +3663,7 @@ def build_fortran_extension(
     positional_only: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: Iterable[str] | None = None,
+    module_source_dirs: Iterable[str | Path] | None = None,
     fortran_type_report=None,
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | Path | None = None,
@@ -3734,6 +3736,12 @@ def build_fortran_extension(
         from the source universe. Signature dependencies remain available but
         are not added to the callable surface. A generated semantic contract
         records the corresponding Python surface in ``__all__``.
+    module_source_dirs
+        Directories searched recursively for the sources of modules that the
+        given sources ``use``. Each found source is read, and compiled with
+        ``compile_input_sources``, as if it had been passed, transitively and
+        before the sources that use it; a used module found in no directory,
+        or in several sources, is an error.
     fortran_type_report, fortran_type_probe_runner,
     fortran_type_probe_cache_dir, refresh_fortran_type_probe
         Optional controls for compiler-probed Fortran type facts used while
@@ -3800,6 +3808,12 @@ def build_fortran_extension(
     output_path, shared_library_output_path = _wrapper_output_paths(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     preprocessing = preprocessing or _default_preprocessing_config()
+    if module_source_dirs:
+        source_paths = resolve_fortran_module_sources(
+            source_paths,
+            tuple(Path(directory) for directory in module_source_dirs),
+            lambda path: _fortran_source_and_dependencies(path, preprocessing)[0],
+        )
     supplemental_source_paths = tuple(Path(path) for path in (native_fortran_sources or ()))
     input_implementation_paths = source_paths if compile_input_sources else ()
     implementation_source_paths = (*input_implementation_paths, *supplemental_source_paths)

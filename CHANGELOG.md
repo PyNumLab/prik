@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Fortran source commands accept `--module-source-dir DIR`, and
+  `build_fortran_extension` accepts `module_source_dirs`: from the given entry
+  sources, PRIK follows each `use` to the source under those directories that
+  defines the module and reads it too, so a multi-module library such as Open
+  MPI's `mpi_f08` is supplied by its entry file. A used module with no source,
+  or with several, is an error.
+
 - Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
   NumPy views, including fixed-length character bytes; primitive and fixed
   character value dummies accept matching rank-zero storage as well as scalar

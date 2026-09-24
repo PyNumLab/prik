@@ -46,12 +46,10 @@ def _configured_openmpi() -> tuple[Path, Path, str, str, str]:
     launcher = os.environ.get("PRIK_OPENMPI_LAUNCHER") or shutil.which("orterun") or shutil.which("mpirun")
     if not mpifort or not launcher:
         pytest.skip("Open MPI Fortran compiler wrapper and launcher are required")
+    # Only the entry source is named; the modules it uses are discovered.
     for path in (
-        source / "ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90",
-        source / "ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-interfaces.F90",
         source / "ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90",
         build / "ompi/mpi/fortran/configure-fortran-output.h",
-        build / "ompi/mpi/fortran/use-mpi-f08/sizeof_f08.h",
     ):
         if not path.is_file():
             pytest.skip(f"configured Open MPI semantic input is unavailable: {path}")
@@ -91,9 +89,9 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             "prik",
             "generate",
             "--pyi",
-            str(source / "ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90"),
-            str(source / "ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-interfaces.F90"),
             str(source / "ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90"),
+            "--module-source-dir",
+            str(source),
             "--export-symbols",
             str(exports),
             "--out",

@@ -115,6 +115,10 @@ build = build_fortran_extension(
 )
 ```
 
+Pass `module_source_dirs=[...]` to read the sources of the modules the given
+sources `use` from those directories, as `--module-source-dir` does, so a
+multi-module library can be supplied by its entry source.
+
 For an authored C semantic contract, use `build_pyi_extension` with
 `native_language="c"` and `native_c_sources=[...]`. [C Pointers, Arrays, and
 Strings](../guide/c/pointers-arrays-and-strings.md#author-a-contract-for-pointers-and-arrays)

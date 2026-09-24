@@ -64,6 +64,7 @@ The default build accepts either one or more Fortran or supported C source
 | `--version` | Prints the installed PRIK version and exits. |
 | `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C source and C-native contracts require `c`. |
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
+| `--module-source-dir DIR` | Fortran only. Finds the sources of modules the inputs `use` under DIR, recursively, and reads them too. Repeat to search several directories. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
 Compiled wrapper builds support Fortran and the documented C subset —
@@ -78,6 +79,17 @@ source files can usually be inferred from their suffix;
 [Fortran Support](../language-support/fortran-support.md#source-files-and-public-entry-points)
 lists the accepted ones. C files, directories, and unknown suffixes require
 `--language c`.
+
+A Fortran `use` names a module, not a file. Give only the entry source and
+point `--module-source-dir` at the tree that holds the rest: PRIK follows each
+`use`, after preprocessing, to the one source under those directories that
+defines the module, transitively, and reads those sources as if they were
+listed, dependencies first. Intrinsic modules need no source. A used module
+that no source defines, or that several sources define, fails the command.
+
+```bash
+python3 -m prik generate --pyi src/api/api.f90 --module-source-dir src --out contract
+```
 
 ## Wrapper builds
 
