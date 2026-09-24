@@ -119,6 +119,8 @@ from prik.codegen.visitor import ClassVisitor
 # address. The binding defines it; the bridge declares and calls it.
 _MODULE_ARRAY_CAPTURE_NAME = "prik_capture_address"
 _MODULE_SCALAR_CAPTURE_NAME = "prik_capture_scalar_address"
+# A descriptor setter's result: 0 assigned, 1 no pointer target, 2 width differs.
+_MODULE_SETTER_STATUS = "prik_setter_status"
 
 # The binding answers these from the live descriptor the handle's entry point
 # supplies, so the bridge emits no procedure of its own for them.
@@ -154,6 +156,8 @@ _MODULE_ASSIGNMENT_SUMMARIES = {
     AssignmentMode.NONE: "No native assignment is generated.",
     AssignmentMode.VALUE_COPY: "Copies the incoming value into the variable.",
     AssignmentMode.ALIAS: "Points the variable at the incoming storage.",
+    AssignmentMode.ALLOCATING_COPY: "Assigns the incoming value, allocating the variable when needed.",
+    AssignmentMode.TARGET_COPY: "Copies the incoming value into the current pointer target.",
 }
 
 
@@ -3866,7 +3870,84 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_setter_value_copy(plan)
             case AssignmentMode.CHARACTER_COPY:
                 return self._lower_module_setter_character_value(plan)
+            case AssignmentMode.ALLOCATING_COPY:
+                return self._lower_module_setter_allocating_copy(plan)
+            case AssignmentMode.TARGET_COPY:
+                return self._lower_module_setter_target_copy(plan)
         raise ValueError(f"Unsupported Fortran module setter assignment for {plan.owner_path!r}: {action!r}")
+
+    def _lower_module_setter_allocating_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Assign into a scalar allocatable; intrinsic assignment allocates it when needed."""
+        native = self._native_variable_name(plan)
+        return self._module_descriptor_setter(plan, (FortranAssignment(native, self._module_setter_value(plan)),))
+
+    def _lower_module_setter_target_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy into a scalar pointer's current target, reporting an absent or narrower target."""
+        native = self._native_variable_name(plan)
+        assignment: FortranAssignment | FortranIf = FortranAssignment(native, self._module_setter_value(plan))
+        if plan.datatype_family is DatatypeFamily.STRING:
+            assignment = FortranIf(
+                CodeExpression(f"len({native}, kind=c_int64_t) /= length"),
+                body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("2_c_int")),),
+                else_body=(assignment,),
+            )
+        return self._module_descriptor_setter(
+            plan,
+            (
+                FortranIf(
+                    CodeExpression(f"associated({native})"),
+                    body=(assignment,),
+                    else_body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("1_c_int")),),
+                ),
+            ),
+        )
+
+    def _module_descriptor_setter(
+        self,
+        plan: ModuleVariablePlan,
+        body: tuple[FortranAssignment | FortranIf, ...],
+    ) -> tuple[FortranFunction, ...]:
+        """Wrap one descriptor assignment in a setter that reports its status.
+
+        A character arrives as an address and a width, since a descriptor
+        character's width is only known when Python supplies the value.
+        """
+        name = self._module_bridge_setter_name(plan)
+        declarations: tuple[FortranDeclaration, ...] = ()
+        prologue: tuple[FortranCall, ...] = ()
+        if plan.datatype_family is DatatypeFamily.STRING:
+            parameters = (
+                FortranParameter("value", "type(c_ptr)", ("value",)),
+                FortranParameter("length", "integer(c_int64_t)", ("value",)),
+            )
+            declarations = (FortranDeclaration("bytes", "character(kind=c_char)", ("pointer", "dimension(:)")),)
+            prologue = (
+                FortranCall(
+                    "c_f_pointer",
+                    (CodeExpression("value"), CodeExpression("bytes"), CodeExpression("[length]")),
+                ),
+            )
+        else:
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+            parameters = (FortranParameter("value", scalar_type.fortran_spelling, ("value",)),)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=parameters,
+                result_name=_MODULE_SETTER_STATUS,
+                result_type="integer(c_int)",
+                bind_name=name,
+                declarations=declarations,
+                body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("0_c_int")), *prologue, *body),
+            ),
+        )
+
+    @staticmethod
+    def _module_setter_value(plan: ModuleVariablePlan) -> CodeExpression:
+        """Return the incoming value as the variable's native type."""
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return CodeExpression("transfer(bytes, repeat(' ', int(length)))")
+        return CodeExpression("value")
 
     def _lower_module_setter_none(self, _plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Return no native setter when the bridge assignment is omitted."""
@@ -4310,8 +4391,16 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _parameter(self, plan: ArgumentTransferPlan, attributes: tuple[str, ...]) -> FortranParameter:
         """Return one entrypoint ABI parameter from its completed transfer plan."""
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-        return FortranParameter(plan.entrypoint.parameter_name, scalar_type.fortran_spelling, attributes)
+        return FortranParameter(plan.entrypoint.parameter_name, self._scalar_argument_type(plan), attributes)
+
+    @staticmethod
+    def _scalar_argument_type(plan: ArgumentTransferPlan) -> str:
+        """Spell a scalar dummy, using the native logical kind when policy lends its storage."""
+        if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_STORAGE:
+            if not plan.scalar_native_type:
+                raise ValueError(f"Logical argument {plan.owner_path!r} has no native type spelling")
+            return plan.scalar_native_type
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
     def _function_body(
         self,
@@ -5225,7 +5314,7 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._derived_argument_declarations(argument)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
         if mode is OptionalMode.NULLABLE_VALUE:
-            return (FortranDeclaration(name, scalar_type.fortran_spelling, ("pointer",)),)
+            return (FortranDeclaration(name, self._scalar_argument_type(argument), ("pointer",)),)
         declarations = [FortranDeclaration(f"{name}_input", scalar_type.fortran_spelling, ("pointer",))]
         descriptor_attribute = "pointer" if argument.projected_call_slot.value_kind == "pointer" else "allocatable"
         declarations.append(
@@ -5331,7 +5420,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return the typed scalar or derived pointee selected by policy."""
         if argument.object_kind is ObjectKind.DERIVED_TYPE:
             return f"type({self._derived_native_alias(argument.derived.backend_symbol)})"
-        return PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).fortran_spelling
+        return self._scalar_argument_type(argument)
 
     def _opaque_address_initializers(
         self,

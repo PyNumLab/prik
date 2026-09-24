@@ -269,12 +269,19 @@ class AssignmentMode(str, Enum):
         incoming fixed-width byte buffer into existing native character
         storage, which has no by-value C ABI. ``ALIAS`` associates the
         destination with existing storage rather than copying it.
+        ``ALLOCATING_COPY`` assigns into a scalar allocatable, allocating it
+        when unallocated and giving a deferred-length character the incoming
+        width. ``TARGET_COPY`` copies into a scalar pointer's current target
+        and fails when the pointer is disassociated or, for a character, when
+        the incoming width differs from the target's.
     """
 
     NONE = "none"
     VALUE_COPY = "value_copy"
     CHARACTER_COPY = "character_copy"
     ALIAS = "alias"
+    ALLOCATING_COPY = "allocating_copy"
+    TARGET_COPY = "target_copy"
 
 
 class SetterAction(str, Enum):
@@ -1004,6 +1011,13 @@ class OwnershipPolicyResolver:
                 setter_action=SetterAction.OMIT,
             )
         incoming = self.decide_semantic_type(variable.semantic_type, OwnershipContext.argument())
+        descriptor_assignment = self._module_scalar_descriptor_assignment(storage, context, variable)
+        if descriptor_assignment is not None:
+            return replace(
+                incoming,
+                assignment_mode=descriptor_assignment,
+                setter_action=SetterAction.WRITE_THROUGH,
+            )
         return replace(
             incoming,
             assignment_mode=(
@@ -1015,6 +1029,27 @@ class OwnershipPolicyResolver:
             ),
             setter_action=self._setter_action(storage, incoming, context, variable),
         )
+
+    @staticmethod
+    def _module_scalar_descriptor_assignment(
+        storage: OwnershipDecision,
+        context: OwnershipContext,
+        variable: Any,
+    ) -> AssignmentMode | None:
+        """Select how a scalar allocatable or pointer module variable is assigned.
+
+        Its getter lends a read-only view of the current storage, so Python
+        writes only through the setter: an allocatable takes intrinsic
+        assignment, while a pointer's current target receives the value.
+        """
+        if not context.is_module_variable or storage.kind not in {ObjectKind.SCALAR, ObjectKind.STRING}:
+            return None
+        metadata = variable.semantic_type.metadata
+        if metadata.get("fortran_allocatable"):
+            return AssignmentMode.ALLOCATING_COPY
+        if metadata.get("fortran_pointer"):
+            return AssignmentMode.TARGET_COPY
+        return None
 
     @staticmethod
     def _setter_action(
@@ -1030,23 +1065,9 @@ class OwnershipPolicyResolver:
         ownership contract.
         """
         if storage.kind is ObjectKind.SCALAR:
-            if context.is_module_variable and (
-                variable.semantic_type.metadata.get("fortran_allocatable")
-                or variable.semantic_type.metadata.get("fortran_pointer")
-            ):
-                return SetterAction.REJECT_REPLACEMENT
             if storage.transfer is TransferMode.SNAPSHOT_COPY and storage.nullable:
                 return SetterAction.REJECT_REPLACEMENT
             return SetterAction.WRITE_THROUGH
-        if (
-            storage.kind is ObjectKind.STRING
-            and context.is_module_variable
-            and (
-                variable.semantic_type.metadata.get("fortran_allocatable")
-                or variable.semantic_type.metadata.get("fortran_pointer")
-            )
-        ):
-            return SetterAction.REJECT_REPLACEMENT
         if storage.kind is ObjectKind.STRING and context.is_field:
             return SetterAction.WRITE_THROUGH
         # A character module variable is written through the same fixed-width
@@ -1892,7 +1913,7 @@ class OwnershipPolicyResolver:
                 boundary_storage_mode=StorageMode.ALIAS,
                 nullable=True,
                 borrowed=True,
-                reason="scalar module descriptor supplies a current native view on each read",
+                reason="scalar module descriptor lends a read-only view of its current storage on each read",
             )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:

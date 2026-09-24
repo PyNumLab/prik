@@ -685,8 +685,8 @@ end module naming_mod
     complete_python_export_policy(module)
     code = emit_module(module, normalize_public_names=True)
 
-    assert 'lambda_: Annotated[Int32, SourceName("lambda")]' in code
-    assert 'lambda__2: Annotated[Int32, SourceName("LAMBDA_")]' in code
+    assert 'lambda_: Annotated[Int32[()], SourceName("lambda")]' in code
+    assert 'lambda__2: Annotated[Int32[()], SourceName("LAMBDA_")]' in code
     assert '@bind("ASSERT")\n@native_call([Addr(Arg(0))])\ndef assert_(' in code
 
 

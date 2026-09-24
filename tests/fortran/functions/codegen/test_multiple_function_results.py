@@ -64,7 +64,7 @@ def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "int32_t bind_c_with_scalar(int32_t * n, int32_t * status);" in c_source
-    assert "result = bind_c_with_scalar(&bound_n, &status);" in c_source
+    assert "result = bind_c_with_scalar(bound_n_storage, &status);" in c_source
     assert "PyObject * result_0_obj = prik_int32_to_numpy(&result);" in c_source
     assert "PyObject * result_1_obj = prik_int32_to_numpy(&status);" in c_source
     assert "PyObject * result_obj = PyTuple_New(2);" in c_source

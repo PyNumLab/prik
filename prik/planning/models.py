@@ -775,7 +775,8 @@ class BindingModuleVariablePlan(StageRecord):
     setter_action: SetterAction
     initializer: Any
     constant_value: Any
-    setter_converts_characters: bool = False
+    # The completed native assignment selects the setter's value transport.
+    native_assignment: AssignmentMode = AssignmentMode.NONE
 
 
 @dataclass

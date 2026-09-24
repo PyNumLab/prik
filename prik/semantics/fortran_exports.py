@@ -77,7 +77,7 @@ def select_fortran_export_symbols(
         primary_sources.append(module)
         primary_modules.append(selected_module)
 
-    required_types = _required_type_identities(primary_modules, selected)
+    required_types = _with_dependent_types(_required_type_identities(primary_modules, selected), module_index)
     for module in primary_modules:
         _retain_required_types(module, module_index[_native_module_name(module)], required_types)
 
@@ -209,12 +209,59 @@ def _required_type_identities(modules: list[SemanticModule], selected: set[tuple
                     )
                 )
                 for semantic_type in types:
-                    for item in _semantic_type_tree(semantic_type):
-                        reference = item.metadata.get(EXTERNAL_TYPE_REF_METADATA)
-                        origin = reference.get("origin_module") if isinstance(reference, dict) else module_name
-                        name = reference.get("name") if isinstance(reference, dict) else item.name
-                        required.add((str(origin).casefold(), str(name).casefold()))
+                    required.update(_type_identities(semantic_type, module_name))
     return required
+
+
+def _type_identities(semantic_type, module_name: str) -> set[tuple[str, str]]:
+    """Return the declaring identities one semantic type names, including callback types."""
+    identities = set()
+    for item in _semantic_type_tree(semantic_type):
+        reference = item.metadata.get(EXTERNAL_TYPE_REF_METADATA)
+        origin = reference.get("origin_module") if isinstance(reference, dict) else module_name
+        name = reference.get("name") if isinstance(reference, dict) else item.name
+        identities.add((str(origin).casefold(), str(name).casefold()))
+    return identities
+
+
+def _with_dependent_types(required: set[tuple[str, str]], module_index) -> set[tuple[str, str]]:
+    """Close required derived types over the component and parent types they declare.
+
+    A published type is usable only with the types its components and parent
+    name, so each of those is retained wherever it is declared.
+    """
+    closed: set[tuple[str, str]] = set()
+    pending = list(required)
+    while pending:
+        identity = pending.pop()
+        if identity in closed:
+            continue
+        closed.add(identity)
+        module = module_index.get(identity[0])
+        if module is None:
+            continue
+        declaration = next((cls for cls in module.classes if _native_symbol_name(cls) == identity[1]), None)
+        if declaration is None:
+            pending.extend(
+                (reexport.origin_module.casefold(), reexport.source_name.casefold())
+                for reexport in module.reexports
+                if reexport.entity_kind == "derived_type" and reexport.local_name.casefold() == identity[1]
+            )
+            continue
+        for component in declaration.fields:
+            pending.extend(_type_identities(component.semantic_type, identity[0]))
+        pending.extend(_named_type_identity(module, base) for base in declaration.base_classes)
+    return closed
+
+
+def _named_type_identity(module: SemanticModule, name: str) -> tuple[str, str]:
+    """Resolve a type name written in ``module`` to its local or use-associated declaration."""
+    wanted = name.casefold()
+    for semantic_import in module.imports:
+        for item in semantic_import.items:
+            if (item.target or item.source).casefold() == wanted:
+                return semantic_import.module.casefold(), item.source.casefold()
+    return _native_module_name(module), wanted
 
 
 def _validated_fortran_export_symbols(symbols: Iterable[str]) -> tuple[tuple[str, str], ...]:

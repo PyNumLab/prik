@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from prik.cli import _read_export_symbols
+from prik.parsers.fortran import parse_fortran_file
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import NATIVE_ACCESS_MODULE_METADATA
 from prik.semantics.fortran_exports import select_fortran_export_symbols
 from prik.semantics.models import (
@@ -183,3 +185,37 @@ def test_external_root_cannot_satisfy_a_module_qualified_identity():
 
     with pytest.raises(ValueError, match="unknown modules: foo"):
         select_fortran_export_symbols([external], ["foo::external"])
+
+
+def test_selection_retains_component_and_parent_types_of_a_selected_signature():
+    """A selected type brings the types its components and parent declare, and no others."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_file(
+            """
+module shapes
+  implicit none
+  type :: base_t
+    integer :: b = 1
+  end type base_t
+  type :: inner_t
+    integer :: a = 2
+  end type inner_t
+  type, extends(base_t) :: outer_t
+    type(inner_t) :: inner
+  end type outer_t
+  type :: unrelated_t
+    integer :: u = 0
+  end type unrelated_t
+contains
+  subroutine use_outer(x)
+    type(outer_t), intent(in) :: x
+  end subroutine use_outer
+end module shapes
+"""
+        ).modules[0]
+    )
+
+    selected = select_fortran_export_symbols([module], ["shapes::use_outer"]).primary_modules[0]
+
+    assert sorted(cls.name for cls in selected.classes) == ["base_t", "inner_t", "outer_t"]
+    assert set(selected.exported_names) == {"use_outer", "base_t", "inner_t", "outer_t"}

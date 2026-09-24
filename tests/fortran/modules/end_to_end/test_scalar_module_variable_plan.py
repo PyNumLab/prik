@@ -71,9 +71,9 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
         module.counter = np.float64(4.0)
     with pytest.raises(AttributeError):
         del module.counter
-    with pytest.raises(AttributeError):
-        module.optional_scale = np.float64(9.0)
-    with pytest.raises(AttributeError):
+    module.optional_scale = np.float64(9.0)
+    assert module.optional_scale[()] == np.float64(9.0)
+    with pytest.raises(ValueError, match="no pointer target"):
         module.selected_scale = np.float64(9.0)
 
     assert module.set_allocatable(np.float64(1.5)) == np.float64(1.5)

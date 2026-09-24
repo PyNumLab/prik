@@ -49,12 +49,12 @@ selected_scale: Pointer[Float64]
     assert policies["target_scale"].native_assignment is AssignmentMode.VALUE_COPY
     assert policies["optional_scale"].getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     assert policies["optional_scale"].descriptor_kind == "allocatable"
-    assert policies["optional_scale"].setter_action is SetterAction.REJECT_REPLACEMENT
-    assert policies["optional_scale"].native_assignment is AssignmentMode.NONE
+    assert policies["optional_scale"].setter_action is SetterAction.WRITE_THROUGH
+    assert policies["optional_scale"].native_assignment is AssignmentMode.ALLOCATING_COPY
     assert policies["selected_scale"].getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     assert policies["selected_scale"].descriptor_kind == "pointer"
-    assert policies["selected_scale"].setter_action is SetterAction.REJECT_REPLACEMENT
-    assert policies["selected_scale"].native_assignment is AssignmentMode.NONE
+    assert policies["selected_scale"].setter_action is SetterAction.WRITE_THROUGH
+    assert policies["selected_scale"].native_assignment is AssignmentMode.TARGET_COPY
 
 
 def test_fixed_character_handles_publish_only_the_descriptor_attribute_their_callback_can_supply():

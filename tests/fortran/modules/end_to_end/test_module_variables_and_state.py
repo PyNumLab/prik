@@ -302,7 +302,7 @@ def _character_descriptor_module(tmp_path: Path):
 
 
 def test_descriptor_character_module_variables_follow_current_storage(pyi_parity_build_mode: str, tmp_path: Path):
-    """Each attribute read borrows the current address and character width."""
+    """Each read lends the current storage read-only; assignment writes through the descriptor."""
     module = _build_source_or_generated_pyi_and_import(
         NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90",
         tmp_path,
@@ -327,13 +327,28 @@ def test_descriptor_character_module_variables_follow_current_storage(pyi_parity
     assert fixed is not None and fixed[()] == b"FIXEDV"
     assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
     assert view[()] == b"STORED"
-    view[()] = b"PYTHON"
+    with pytest.raises(ValueError, match="read-only"):
+        view[()] = b"PYTHON"
+    module.link = "PYTHON"
+    assert view[()] == b"PYTHON"
     assert module.store[()] == b"PYTHON"
+    with pytest.raises(TypeError, match="pointer target's width"):
+        module.link = "SHORT"
 
     module.grow()
     grown = module.deferred
     assert grown is not None and grown.shape == () and grown.dtype == np.dtype("S10")
     assert grown[()] == b"alpha-more"
+
+    # A deferred-length assignment reallocates to the encoded width, including zero.
+    module.deferred = "omega"
+    assert module.deferred[()] == b"omega"
+    module.deferred = ""
+    assert module.deferred is not None and module.deferred[()] == b""
+    with pytest.raises(TypeError, match="exactly 6 bytes"):
+        module.fixed = "WIDE!!!"
+    module.fixed = "NARROW"
+    assert module.fixed[()] == b"NARROW"
 
 
 def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):

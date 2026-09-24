@@ -5,6 +5,7 @@ import pytest
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.scope import ScopeUses
 from prik.parsers.fortran.parser import FortranParser
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 
 def test_module_visibility_public_and_private_spec_lines_are_applied():
@@ -69,6 +70,46 @@ end module native_constants
     assert variables["limit"].value == "4"
     assert not variables["addressable"].is_parameter
     assert variables["addressable"]._fortran_bind_c
+
+
+@pytest.mark.parametrize(
+    ("implicit", "expected"),
+    [
+        pytest.param("", {"pi": "Float32", "n": "Int32"}, id="default-letter-rules"),
+        pytest.param(
+            "implicit double precision (a-h,o-z), integer(kind=8) (n)",
+            {"pi": "Float64", "n": "Int64"},
+            id="implicit-statement-mapping",
+        ),
+    ],
+)
+def test_separate_parameter_statement_types_an_undeclared_name_by_module_implicit_rules(implicit, expected):
+    module = parse_fortran_file(
+        f"""
+module legacy_constants
+  {implicit}
+  parameter (pi = 3.14159265358979d0, n = 4)
+end module legacy_constants
+"""
+    ).modules[0]
+
+    semantic = fortran_module_to_semantic_module(module)
+    assert {variable.name: variable.semantic_type.name for variable in semantic.variables} == expected
+    assert all(variable.is_parameter for variable in module.variables)
+
+
+def test_separate_parameter_statement_under_implicit_none_requires_a_declaration():
+    with pytest.raises(FortranParseError, match="implicit none is active") as error:
+        parse_fortran_file(
+            """
+module strict_constants
+  implicit none
+  parameter (undeclared = 3)
+end module strict_constants
+"""
+        )
+
+    assert error.value.code == "PARSE_UNKNOWN_PARAMETER_TYPE"
 
 
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():

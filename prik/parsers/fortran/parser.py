@@ -415,6 +415,53 @@ class _ProcedureState:
     explicit_result: bool = False
 
 
+_IMPLICIT_LETTER_SPEC = re.compile(r"^(?P<type>.+?)\s*\((?P<letters>[^()]*)\)$")
+
+
+@dataclass
+class _ImplicitTyping:
+    """Record a module-like scope's IMPLICIT statements as type-spec text by letter."""
+
+    none: bool = False
+    type_specs: dict[str, str] = dataclass_field(default_factory=dict)
+
+    def record(self, body: str) -> bool:
+        """Apply one IMPLICIT statement body, or return False when it is not understood."""
+        if re.match(r"^none\b", body, flags=re.IGNORECASE):
+            self.none = True
+            return True
+        mappings = []
+        for item in split_csv(body):
+            match = _IMPLICIT_LETTER_SPEC.match(item.strip())
+            letters = self._letters(match.group("letters")) if match is not None else None
+            if letters is None:
+                return False
+            mappings.append((match.group("type").strip(), letters))
+        for type_spec, letters in mappings:
+            self.type_specs.update(dict.fromkeys(letters, type_spec))
+        return True
+
+    @staticmethod
+    def _letters(letter_specs: str) -> list[str] | None:
+        """Expand ``a-h, o`` style letter specifications, or return None."""
+        letters = []
+        for letter_spec in split_csv(letter_specs):
+            bounds = [part.strip().casefold() for part in letter_spec.split("-")]
+            if len(bounds) not in {1, 2} or not all(len(bound) == 1 and bound.isalpha() for bound in bounds):
+                return None
+            letters.extend(chr(code) for code in range(ord(bounds[0]), ord(bounds[-1]) + 1))
+        return letters
+
+    def type_spec_for(self, name: str) -> str | None:
+        """Return the type-spec text implied for ``name``, or None under ``implicit none``."""
+        first = name.strip()[:1].casefold()
+        if first in self.type_specs:
+            return self.type_specs[first]
+        if self.none:
+            return None
+        return "integer" if "i" <= first <= "n" else "real"
+
+
 @dataclass
 class _ParserScope:
     """Carry explicit ownership and mutable state while visiting one unit.
@@ -422,7 +469,8 @@ class _ParserScope:
     ``model`` receives parsed declarations, ``parent`` preserves lexical
     ownership, and procedure visitors attach their temporary
     :class:`_ProcedureState`. Helpers receive this record explicitly rather
-    than relying on parser-global scope.
+    than relying on parser-global scope. ``implicit`` holds a module-like
+    scope's IMPLICIT statements.
     """
 
     kind: str
@@ -431,6 +479,7 @@ class _ParserScope:
     parent: _ParserScope | None = None
     module_owner: str | None = None
     state: _ProcedureState | None = None
+    implicit: _ImplicitTyping = dataclass_field(default_factory=_ImplicitTyping)
 
 
 @dataclass(frozen=True)
@@ -3501,9 +3550,19 @@ class FortranParser(ClassVisitor):
             target.uses.append(parsed_use)
             return
 
+        implicit = re.match(r"^implicit\b\s*(?P<body>.*)$", stripped, flags=re.IGNORECASE)
+        if implicit and scope.implicit.record(implicit.group("body")):
+            return
+
         legacy_parameter = _REGEX["legacy_parameter"].match(stripped)
         if legacy_parameter:
-            self._record_scope_legacy_parameters(target, legacy_parameter.group("body"))
+            self._record_scope_legacy_parameters(
+                scope,
+                legacy_parameter.group("body"),
+                filename=filename,
+                lineno=lineno,
+                source_line=source_line,
+            )
             return
 
         if _REGEX["derived_type"].match(stripped):
@@ -3536,23 +3595,72 @@ class FortranParser(ClassVisitor):
             return
         self._raise_unsupported_module_like_declaration(target, stripped, filename, lineno, source_line)
 
-    @staticmethod
-    def _record_scope_legacy_parameters(target, assignments: str) -> None:
-        """Apply a separate PARAMETER statement to its module-like declarations."""
-        variables = {variable.name.casefold(): variable for variable in target.variables}
+    def _record_scope_legacy_parameters(
+        self,
+        scope: _ParserScope,
+        assignments: str,
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ) -> None:
+        """Apply a separate PARAMETER statement to its module-like declarations.
+
+        An undeclared name is declared from the scope's IMPLICIT rules through
+        the ordinary declaration backend, so an implied type-spec keeps its kind.
+        """
+        location = {"filename": filename, "lineno": lineno, "source_line": source_line}
         for assignment in split_csv(assignments):
             if "=" not in assignment:
                 continue
             name, expression = (part.strip() for part in assignment.split("=", 1))
-            variable = variables.get(name.casefold())
-            if variable is None:
-                variable = FortranArgument(name=name, base_type=FortranParser._infer_implicit_base_type(name))
-                target.variables.append(variable)
-                variables[name.casefold()] = variable
+            variable = self._scope_variable(scope.model, name) or self._declare_implicit_parameter(
+                scope, name, **location
+            )
             variable.is_parameter = True
             variable.value = FortranParser._normalize_parameter_value(expression)
             variable.symbolic_value = expression
             variable.value_type = "expression"
+
+    def _declare_implicit_parameter(
+        self,
+        scope: _ParserScope,
+        name: str,
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ):
+        """Declare an undeclared PARAMETER name from its scope's implicit type-spec."""
+        type_spec = scope.implicit.type_spec_for(name)
+        owner_kind, owner_name = self._variable_scope_label(scope.model)
+        owner = f"{owner_kind} '{owner_name or '<unnamed>'}'"
+        if type_spec is None:
+            problem = f"Unknown datatype for PARAMETER symbol '{name}' in {owner} (implicit none is active)."
+        elif self._helper_parse_declaration_line(
+            f"{type_spec} :: {name}",
+            scope,
+            role=self._source_unit_scanner.grammar(scope.kind).declaration_role or "module_variable",
+            filename=filename,
+            lineno=lineno,
+            source_line=source_line,
+        ):
+            return self._scope_variable(scope.model, name)
+        else:
+            problem = f"Unsupported implicit type '{type_spec}' for PARAMETER symbol '{name}' in {owner}."
+        raise FortranParseError(
+            problem,
+            filename=filename,
+            line_number=lineno,
+            source_line=source_line,
+            code="PARSE_UNKNOWN_PARAMETER_TYPE",
+        )
+
+    @staticmethod
+    def _scope_variable(target, name: str):
+        """Return the module-like variable declared under ``name``, if any."""
+        wanted = name.casefold()
+        return next((variable for variable in target.variables if variable.name.casefold() == wanted), None)
 
     def _raise_unsupported_openmp_declaration(self, target, line, filename, lineno, source_line) -> None:
         """Raise the stable diagnostic for an unsupported OpenMP declaration.

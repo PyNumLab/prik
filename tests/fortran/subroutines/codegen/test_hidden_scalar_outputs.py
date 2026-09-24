@@ -30,7 +30,7 @@ def scale(x: Float64) -> Float64: ...
     fortran_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "void bind_c_scale(double * x, double * result);" in c_source
-    assert "bind_c_scale(&bound_x, &result);" in c_source
+    assert "bind_c_scale(bound_x_storage, &result);" in c_source
     assert "PyObject * result_obj = prik_float64_to_numpy(&result);" in c_source
     assert 'subroutine bind_c_scale(x, result) bind(c, name="bind_c_scale")' in fortran_source
     assert "external :: SCALE_OUT" in fortran_source

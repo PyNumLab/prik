@@ -2468,7 +2468,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Int32",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Int32",
             "origin": {
               "metadata": {
@@ -2533,7 +2535,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Float64",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Float64",
             "origin": {
               "metadata": {

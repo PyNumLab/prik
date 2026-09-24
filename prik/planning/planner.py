@@ -73,7 +73,7 @@ from prik.policy.construction import (
 )
 from prik.naming.generated_files import bridge_source_name
 from prik.policy.exports import PythonExportPolicy
-from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
+from prik.policy.ownership import NativeBarrierAction, SetterAction
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -1386,7 +1386,7 @@ class WrapperPlanner(ClassVisitor):
                 setter_action=policy.setter_action,
                 initializer=policy.initializer,
                 constant_value=policy.constant_value,
-                setter_converts_characters=policy.native_assignment is AssignmentMode.CHARACTER_COPY,
+                native_assignment=policy.native_assignment,
             ),
             entrypoint=NativeEntrypointModuleVariablePlan(
                 descriptor_kind=policy.descriptor_kind,

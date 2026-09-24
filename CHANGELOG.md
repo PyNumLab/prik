@@ -10,9 +10,17 @@ release tags add a leading `v` to the package version.
 - Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
   NumPy views, including fixed-length character bytes; primitive and fixed
   character value dummies accept matching rank-zero storage as well as scalar
-  values, preserving the dummy's reference or `VALUE` ABI.
-- Scalar allocatable and pointer module variables return live rank-zero NumPy
-  views or `None` when storage is absent.
+  values, preserving the dummy's reference or `VALUE` ABI; an `Immutable`
+  argument copies the array instead of updating it. Logical scalar
+  dummies wider than one byte use integer storage of their own width, as
+  logical arrays do, so default-logical `intent(inout)` updates reach Python.
+- Omitting an optional `intent(inout)` scalar argument returns `None` for it.
+- Scalar allocatable and pointer module variables return live read-only
+  rank-zero NumPy views, or `None` when storage is absent. Assigning to the
+  attribute allocates an allocatable (resizing a deferred-length character) or
+  writes a pointer's current target.
+- A separate module-level `PARAMETER` statement types an undeclared name by the
+  module's `IMPLICIT` rules and is rejected under `implicit none`.
 
 - Contributor test guidance focuses on supported behavior and meaningful
   validation boundaries after a feature is removed.
@@ -27,8 +35,10 @@ release tags add a leading `v` to the package version.
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
   module-qualified Fortran procedures and variables, including symbols
   re-exported by a public facade. Generated contracts retain the selected
-  access module through qualified `@bind`, required type declarations, and
-  native scalar storage views through `T[()]`.
+  access module through qualified `@bind`, required type declarations
+  (including the component and parent types they declare), and native scalar
+  storage views through `T[()]`. Source builds and generated contracts publish
+  the same selected surface.
 - The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
   wrapper from a restricted generated `.pyi` against a matching prebuilt
   Open MPI installation and exercise NumPy communication and in-place reduction.

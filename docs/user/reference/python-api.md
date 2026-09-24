@@ -101,7 +101,9 @@ Once you author or generate a semantic `.pyi` contract, that contract's own
 
 `build_fortran_extension` accepts the same option with module-qualified native
 procedure and variable identities. PRIK retains signature and type
-dependencies while publishing only the selected symbols:
+dependencies while publishing only the selected symbols. A derived type a
+selected signature names is published with the component and parent types it
+needs, so its values can be constructed from Python:
 
 ```python
 from prik import build_fortran_extension

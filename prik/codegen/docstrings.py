@@ -13,6 +13,7 @@ from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
 from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ArrayPythonLayout,
+    ScalarActualMode,
     ClassConstructorKind,
     EntrypointOptionalityAction,
     ModuleGetterAction,
@@ -815,13 +816,24 @@ class WrapperDocstringBuilder:
             lines.append(f"    {state} state remains inside the returned handle.")
         if isinstance(output, ArgumentTransferPlan):
             lines.extend(self._ownership_lines(output.ownership_owner))
-            if output.transfer_mode is TransferMode.COPY_RETURN:
-                lines.append("    Detached replacement; the original Python value is unchanged.")
+            lines.extend(self._replacement_lines(output))
         elif output.datatype_family is DatatypeFamily.DERIVED or output.array is not None:
             lines.extend(self._ownership_lines(output.ownership_owner))
         if nullable and output.native_array_handle is None:
             lines.append("    May be None.")
         return tuple(lines)
+
+    @staticmethod
+    def _replacement_lines(output: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Say whether a returned replacement also updated the caller's storage."""
+        if output.transfer_mode is not TransferMode.COPY_RETURN:
+            return ()
+        if output.binding.scalar_actual_mode in {
+            ScalarActualMode.NUMERIC_REFERENCE,
+            ScalarActualMode.CHARACTER_REFERENCE,
+        }:
+            return ("    Replacement value; a rank-zero array argument is also updated in place.",)
+        return ("    Detached replacement; the original Python value is unchanged.",)
 
     @staticmethod
     def _optional_lines(argument: ArgumentTransferPlan) -> tuple[str, ...]:

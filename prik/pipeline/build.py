@@ -2318,29 +2318,48 @@ def _apply_source_python_exports(modules: list[SemanticModule]) -> None:
                 ),
             )
 
-    variables_by_identity = {
-        (module.name.casefold(), str(variable.origin.native_name or variable.name).casefold()): variable
+    _apply_source_reexport_publications(modules)
+
+
+def _apply_source_reexport_publications(modules: list[SemanticModule]) -> None:
+    """Publish re-exported variables, and unpublished re-exported types, where they are re-exported.
+
+    A variable gains one publication per re-export, all naming its one native
+    storage. A type its declaring module leaves unpublished, as export
+    selection does for context modules, is published where it is re-exported;
+    otherwise each re-export aliases the declaring publication.
+    """
+    declarations = {
+        (module.name.casefold(), str(declaration.origin.native_name or declaration.name).casefold()): declaration
         for module in modules
-        for variable in module.variables
+        for declaration in module.variables
     }
+    declarations.update(
+        {
+            (module.name.casefold(), str(semantic_class.native_name or semantic_class.name).casefold()): semantic_class
+            for module in modules
+            for semantic_class in module.classes
+            if not _declaration_exports(semantic_class)
+        }
+    )
     for module in modules:
         for reexport in module.reexports:
-            if not reexport.publishes_to_python():
+            if not reexport.publishes_to_python() or reexport.entity_kind not in {"variable", "derived_type"}:
                 continue
-            if reexport.entity_kind != "variable":
-                continue
-            variable = variables_by_identity.get(
+            declaration = declarations.get(
                 (str(reexport.origin_module).casefold(), str(reexport.source_name).casefold())
             )
-            if variable is None:
+            if declaration is None and reexport.entity_kind == "variable":
                 raise ValueError(
                     f"Cannot resolve re-exported module variable {reexport.origin_module}.{reexport.source_name}"
                 )
+            if declaration is None:
+                continue
             export = {
                 "namespace": tuple(part.casefold() for part in str(reexport.module).split(".") if part),
                 "name": str(reexport.local_name),
             }
-            exports = _declaration_exports(variable)
+            exports = _declaration_exports(declaration)
             if export not in exports:
                 exports.append(export)
 

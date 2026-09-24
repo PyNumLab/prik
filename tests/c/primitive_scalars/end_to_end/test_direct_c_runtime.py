@@ -166,7 +166,7 @@ def combine(scale: Float64, count: Int32) -> Float64: ...
 
     assert module.combine(np.float64(2.5), np.int32(4)) == np.float64(10.0)
     assert "double combine(int32_t count, double scale);" in binding
-    with pytest.raises(TypeError, match=r"numpy\.float64 for argument scale"):
+    with pytest.raises(TypeError, match=r"numpy\.float64 or rank-zero array for argument scale"):
         module.combine(np.int32(4), np.int32(4))
 
 

@@ -54,7 +54,7 @@ def hidden_storage_result() -> Int32[()]: ...
     assert native_counter.shape == ()
     assert native_counter[()] == np.int32(3)
     assert module.bump_value(native_counter) == np.int32(4)
-    assert module.counter[()] == np.int32(4)
+    assert module.counter[()] == np.int32(3)
     module.counter = np.int32(9)
     assert native_counter[()] == np.int32(9)
     assert module.answer == np.int32(42)
@@ -62,12 +62,12 @@ def hidden_storage_result() -> Int32[()]: ...
     original = np.int32(4)
     assert module.bump_value(original) == np.int32(5)
     assert original == np.int32(4)
+    # An Immutable value copies rank-zero storage in; only the replacement changes.
     borrowed = np.array(4, dtype=np.int32)
     assert module.bump_value(borrowed) == np.int32(5)
-    assert borrowed[()] == np.int32(5)
+    assert borrowed[()] == np.int32(4)
     borrowed.flags.writeable = False
-    with pytest.raises(TypeError, match="writeable"):
-        module.bump_value(borrowed)
+    assert module.bump_value(borrowed) == np.int32(5)
 
     storage = np.array(6, dtype=np.int32)
     assert module.bump_storage(storage) is None

@@ -99,8 +99,8 @@ def test_direct_binding_lowering_places_only_opted_in_native_call_outside_the_gi
     assert released.index("bind_c_pause_for_one_second()") < released.index("Py_END_ALLOW_THREADS")
     assert "Py_BEGIN_ALLOW_THREADS" not in held
     assert "Py_END_ALLOW_THREADS" not in held
-    assert solve.index("Py_BEGIN_ALLOW_THREADS") < solve.index("bind_c_solve(&bound_value, &status, &message)")
-    assert solve.index("bind_c_solve(&bound_value, &status, &message)") < solve.index("Py_END_ALLOW_THREADS")
+    assert solve.index("Py_BEGIN_ALLOW_THREADS") < solve.index("bind_c_solve(bound_value_storage, &status, &message)")
+    assert solve.index("bind_c_solve(bound_value_storage, &status, &message)") < solve.index("Py_END_ALLOW_THREADS")
     assert solve.index("Py_END_ALLOW_THREADS") < solve.index("prik_status_message_text")
     assert solve.index("prik_status_message_text") < solve.index("status != 0")
     assert "PyErr_SetObject(PyExc_RuntimeError, message_obj)" in solve

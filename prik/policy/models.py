@@ -217,10 +217,17 @@ class DirectResultABI(str, Enum):
 
 
 class ScalarLogicalABI(str, Enum):
-    """Completed scalar logical adaptation between the C and native dummies."""
+    """Completed scalar logical adaptation between the C and native dummies.
+
+    ``NATIVE_KIND_STORAGE`` passes integer storage of the logical's own width
+    straight to the dummy, as a logical array does, so nothing is copied.
+    ``NATIVE_KIND_COPY`` converts through ``c_bool``, for a hidden result or a
+    logical whose width no compiler probe established.
+    """
 
     NOT_APPLICABLE = "not_applicable"
     C_BOOL = "c_bool"
+    NATIVE_KIND_STORAGE = "native_kind_storage"
     NATIVE_KIND_COPY = "native_kind_copy"
 
 
