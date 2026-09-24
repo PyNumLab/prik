@@ -191,6 +191,52 @@ _FORTRAN_LINEMARKER_RE = re.compile(
     r'^\s*#\s*(?:line\s+)?\d+(?:\s+(?:"(?:[^"\\]|\\.)*"|\S+))?(?:\s+\d+)*\s*$',
     re.IGNORECASE,
 )
+_FORTRAN_LINEMARKER_PARTS_RE = re.compile(
+    r'^\s*#\s*(?:line\s+)?(?P<line>\d+)(?:\s+"(?P<file>(?:[^"\\]|\\.)*)")?',
+    re.IGNORECASE,
+)
+
+
+def _main_source_line_numbers(source: str) -> dict[int, int]:
+    """Map each preprocessed line to its line in the main source, following compiler line markers.
+
+    A marker ``# N "file"`` states that the next line is line ``N`` of that
+    file. The first real file named is the main source. A line an included
+    file contributes is reported at the ``#include`` line, the one before the
+    line the main source resumes at. Text before any marker keeps its own
+    line number.
+    """
+    origins: dict[int, int] = {}
+    main_file: str | None = None
+    current_file: str | None = None
+    next_line: int | None = None
+    included: list[int] = []
+    for index, text in enumerate(source.splitlines(), start=1):
+        marker = _FORTRAN_LINEMARKER_RE.match(text.strip()) and _FORTRAN_LINEMARKER_PARTS_RE.match(text.strip())
+        if marker:
+            named = marker.group("file")
+            if named is not None:
+                if main_file is None and not named.startswith("<"):
+                    main_file = named
+                current_file = named
+            next_line = int(marker.group("line"))
+            if current_file == main_file:
+                origins.update(dict.fromkeys(included, max(next_line - 1, 1)))
+                included.clear()
+            continue
+        if next_line is None:
+            origins[index] = index
+        elif current_file == main_file:
+            origins[index] = next_line
+        else:
+            included.append(index)
+        if next_line is not None:
+            next_line += 1
+    # An include still open at the end has no resume marker to place it.
+    origins.update(dict.fromkeys(included, next_line or 1))
+    return origins
+
+
 _INTRINSIC_COMPILE_TIME_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 _FORTRAN_SOURCE_SUFFIXES = (".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08")
 
@@ -2482,7 +2528,12 @@ class FortranParser(ClassVisitor):
                 re.sub(r"[^\r\n]", "", line) if _FORTRAN_LINEMARKER_RE.match(line.strip()) else line
                 for line in source.splitlines(keepends=True)
             )
-            lines = preprocess_lines(source_without_linemarkers, filename)
+            # Compiler output numbers its own lines; report the main source's.
+            origins = _main_source_line_numbers(source)
+            lines = [
+                (line, origins.get(lineno, lineno), source_line)
+                for line, lineno, source_line in preprocess_lines(source_without_linemarkers, filename)
+            ]
         for line, lineno, source_line in lines:
             self._raise_for_raw_cpp_directive(line, filename, lineno, source_line)
         return lines

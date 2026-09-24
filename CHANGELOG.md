@@ -31,6 +31,9 @@ release tags add a leading `v` to the package version.
 - A derived type a module reaches through another module's re-export is
   resolved to the module that declares it, so generated contracts name it
   instead of writing an undefined type.
+- Fortran parse diagnostics on compiler-preprocessed sources report the line
+  in the source file, or the `#include` line for text an included file
+  contributes, instead of a line in the preprocessor output.
 - `IMPLICIT NONE (EXTERNAL)` no longer disables implicit typing; only plain
   `IMPLICIT NONE` or a specifier list naming `TYPE` does.
 

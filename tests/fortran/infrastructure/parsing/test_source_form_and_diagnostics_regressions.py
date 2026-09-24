@@ -648,3 +648,30 @@ end block data init_data
     assert parsed.submodules[0].filename == "unit_models.f90"
     assert parsed.programs[0].filename == "unit_models.f90"
     assert parsed.block_data_units[0].filename == "unit_models.f90"
+
+
+@pytest.mark.parametrize(
+    ("preprocessed", "line_number"),
+    [
+        pytest.param(
+            '# 1 "bad.F90"\n# 1 "<built-in>"\n# 1 "<command-line>"\n# 1 "bad.F90"\n'
+            'module bad\n  implicit none\n\n# 1 "consts.h" 1\n  integer :: from_header\n'
+            '# 4 "bad.F90" 2\n\n\n\n  x = 3\nend module bad\n',
+            7,
+            id="main-source-after-include-and-conditional",
+        ),
+        pytest.param(
+            '# 1 "bad.F90"\n# 1 "<built-in>"\n# 1 "<command-line>"\n# 1 "bad.F90"\n'
+            'module bad\n  implicit none\n\n# 1 "bad_inc.h" 1\n  x = 3\n# 4 "bad.F90" 2\nend module bad\n',
+            3,
+            id="included-line-reports-the-include",
+        ),
+    ],
+)
+def test_diagnostics_on_compiler_output_report_main_source_lines(preprocessed: str, line_number: int):
+    """Compiler line markers renumber diagnostics to the source the user wrote."""
+    with pytest.raises(FortranParseError) as error:
+        parse_fortran_file(preprocessed, filename="bad.F90")
+
+    assert error.value.code == "PARSE_EXECUTABLE_IN_SPECIFICATION"
+    assert error.value.line_number == line_number
