@@ -107,7 +107,7 @@ def test_module_variable_plan_contains_only_completed_dispatch_facts():
     assert variables["counter"].bridge.native_assignment is AssignmentMode.VALUE_COPY
     assert variables["counter"].binding.initializer == 3
     assert variables["target_scale"].bridge.native_assignment is AssignmentMode.VALUE_COPY
-    assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+    assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NATIVE_SCALAR_HANDLE
     assert variables["optional_scale"].entrypoint.descriptor_kind == "allocatable"
     assert variables["optional_scale"].binding.setter_action is SetterAction.REJECT_REPLACEMENT
     assert variables["optional_scale"].bridge.native_assignment is AssignmentMode.NONE
@@ -260,7 +260,6 @@ def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
     assert "bind_c_set_counter(value)" in c_source
     assert "module variable optional_scale is read-only" in c_source
     assert "module variable selected_scale is read-only" in c_source
-    assert 'getenv("PRIK_WRAPPER_FAIL_ALLOC")' in c_source
     assert "result = native_counter" in fortran_source
     assert "native_counter = value" in fortran_source
     assert "allocated(native_optional_scale)" in fortran_source

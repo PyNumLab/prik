@@ -21,7 +21,7 @@ def test_scalar_values_and_rank_zero_storage_cross_the_native_boundary(tmp_path:
         contract_text="""
 from prik.contracts import Annotated, Final, Immutable, Int32, Float64, Return, Returns, native_call
 
-counter: Int32
+counter: Int32[()]
 answer: Final[Int32] = 42
 
 def value_input(value: Int32) -> Int32: ...
@@ -47,14 +47,27 @@ def hidden_storage_result() -> Int32[()]: ...
     )
 
     assert module.value_input(np.int32(5)) == np.int32(7)
-    assert module.counter == np.int32(3)
+    assert module.value_input(np.array(5, dtype=np.int32)) == np.int32(7)
+    with pytest.raises(TypeError):
+        module.value_input(np.array(5, dtype=np.int64))
+    native_counter = module.counter
+    assert native_counter.shape == ()
+    assert native_counter[()] == np.int32(3)
+    assert module.bump_value(native_counter) == np.int32(4)
+    assert module.counter[()] == np.int32(4)
     module.counter = np.int32(9)
-    assert module.counter == np.int32(9)
+    assert native_counter[()] == np.int32(9)
     assert module.answer == np.int32(42)
 
     original = np.int32(4)
     assert module.bump_value(original) == np.int32(5)
     assert original == np.int32(4)
+    borrowed = np.array(4, dtype=np.int32)
+    assert module.bump_value(borrowed) == np.int32(5)
+    assert borrowed[()] == np.int32(5)
+    borrowed.flags.writeable = False
+    with pytest.raises(TypeError, match="writeable"):
+        module.bump_value(borrowed)
 
     storage = np.array(6, dtype=np.int32)
     assert module.bump_storage(storage) is None

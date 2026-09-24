@@ -1125,7 +1125,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
                 result = self._opaque_result()
             elif (
-                variable.bridge.native_getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+                variable.bridge.native_getter_action
+                in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_SCALAR_HANDLE}
                 and variable.datatype_family is DatatypeFamily.STRING
             ):
                 parameters = (self._int64_parameter("length", reference=True, intent="out"),)
@@ -1134,6 +1135,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 ModuleGetterAction.NULLABLE_SNAPSHOT,
                 ModuleGetterAction.DERIVED_OBJECT,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
             }:
                 parameters = ()
                 result = self._opaque_result()
@@ -1163,7 +1166,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
             )
         if variable.entrypoint.setter_role is not None:
-            if variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+            if variable.binding.setter_converts_characters:
                 value = self._value(
                     "value",
                     NativeEntrypointABIValueKind.CHARACTER,

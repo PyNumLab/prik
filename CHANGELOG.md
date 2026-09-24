@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
+  NumPy views, including fixed-length character bytes; primitive and fixed
+  character value dummies accept matching rank-zero storage as well as scalar
+  values, preserving the dummy's reference or `VALUE` ABI.
+- Scalar allocatable and pointer module variables expose handles that follow
+  native allocation or association and provide current rank-zero NumPy views.
+
 - Contributor test guidance focuses on supported behavior and meaningful
   validation boundaries after a feature is removed.
 

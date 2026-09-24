@@ -142,6 +142,7 @@ _MODULE_GETTER_SUMMARIES = {
     ),
     ModuleGetterAction.DIRECT_VALUE: "Returns the variable's current value.",
     ModuleGetterAction.CHARACTER_VALUE: "Copies the characters into a fixed-width byte buffer.",
+    ModuleGetterAction.NATIVE_CHARACTER_VIEW: "Returns the address of fixed character storage.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: (
         "Copies the value into C-owned storage, or reports a null pointer when it holds nothing."
     ),
@@ -2694,6 +2695,10 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NATIVE_SCALAR_VIEW:
                 return self._lower_module_getter_native_scalar_view(plan)
+            case ModuleGetterAction.NATIVE_CHARACTER_VIEW:
+                return self._lower_module_getter_native_scalar_view(plan)
+            case ModuleGetterAction.NATIVE_SCALAR_HANDLE:
+                return self._lower_module_getter_native_scalar_handle(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -3452,6 +3457,41 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
+    def _lower_module_getter_native_scalar_handle(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Query a scalar descriptor's current storage without retaining an old address."""
+        native = self._native_variable_name(plan)
+        present = {"allocatable": "allocated", "pointer": "associated"}.get(plan.entrypoint.descriptor_kind)
+        if present is None:
+            raise ValueError(f"Scalar descriptor {plan.owner_path!r} has no descriptor kind")
+        character = plan.datatype_family is DatatypeFamily.STRING
+        return (
+            FortranFunction(
+                name=self._module_bridge_getter_name(plan),
+                parameters=((FortranParameter("length", "integer(c_int64_t)", ("intent(out)",)),) if character else ()),
+                result_name="result",
+                result_type="type(c_ptr)",
+                bind_name=self._module_bridge_getter_name(plan),
+                body=(
+                    FortranAssignment("result", CodeExpression("c_null_ptr")),
+                    *((FortranAssignment("length", CodeExpression("0_c_int64_t")),) if character else ()),
+                    FortranIf(
+                        CodeExpression(f"{present}({native})"),
+                        body=(
+                            *(
+                                (FortranAssignment("length", CodeExpression(f"len({native}, kind=c_int64_t)")),)
+                                if character
+                                else ()
+                            ),
+                            FortranAssignment(
+                                "result",
+                                CodeExpression(f"{_MODULE_SCALAR_CAPTURE_NAME}({native})"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
     def _module_character_length(self, plan: ModuleVariablePlan) -> int:
         """Return the declared width one character module accessor copies."""
         length = plan.character_length
@@ -3662,7 +3702,12 @@ class FortranBridgeGenerator(ClassVisitor):
         procedures = []
         if any(
             variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
-            and variable.bridge.native_getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW
+            and variable.bridge.native_getter_action
+            in {
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+            }
             for variable in self._variables(plan)
         ):
             procedures.append(

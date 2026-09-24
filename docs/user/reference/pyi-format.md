@@ -399,17 +399,17 @@ An annotated assignment declares native module state:
 ```python
 from prik.contracts import Float64, Int32
 
-counter: Int32
-scale: Float64 = 2.0
+counter: Int32[()]
+scale: Float64[()]
 ```
 
-Fortran module variables can be buildable getters, setters, constants, wrapped
-objects, or descriptor handles according to their completed policy. A literal
-default on supported mutable scalar state is an import-time native initializer.
-`Int32[()]` describes a numeric scalar module variable whose Python value is a
-live rank-zero NumPy view over its native storage. Pass that view to a native dummy
-when the variable's original address matters. Plain `Int32` provides a scalar
-value getter.
+Mutable Fortran module variables expose their native storage. Fixed-storage
+numeric and logical scalars use live rank-zero `T[()]` NumPy views; fixed-length
+character scalars use live rank-zero `String[n][()]` bytes views. `PARAMETER`
+declarations use `Final[...]` values. Allocatable and pointer storage uses a
+handle that follows allocation or association changes. An edited plain `T`
+module declaration requests a scalar value getter. A literal default on
+supported mutable scalar state is an import-time native initializer.
 
 C global declarations can be represented for inspection, but current C wrapper
 builds reject native global state. C functions remain the supported runtime
@@ -865,9 +865,15 @@ PRIK does not silently pad or truncate a fixed-length public `str`.
 ### Python And Native Boundaries
 
 `T` describes the Python value; `@native_call` can refine how it reaches the
-native procedure. A bare numeric scalar normally passes by value.
-`Addr(Arg(i))` creates call-local scalar storage and passes its address.
-`T[()]` and ranked arrays already expose storage and use `Arg(i)`.
+native procedure. A bare numeric scalar argument accepts either an exact
+NumPy scalar or a matching rank-zero NumPy array. For a reference dummy, the
+scalar uses call-local storage and the array supplies its own address. For a
+`VALUE` dummy, both supply a value. `T[()]` requires rank-zero array storage.
+`String[n]` likewise accepts a Python `str` or matching rank-zero `S<n>`
+storage; `String[n][()]` requires the latter. The dummy declaration determines
+the native ABI independently of the actual's Python representation. In a
+`@native_call` map, `Addr(Arg(i))` transports a reference; `Arg(i)` or
+`Value(Arg(i))` transports a value as required by the native type.
 
 Raw `Addr(T)` is different: the Python caller supplies the integer address
 itself. Wrapped class annotations pass generated wrapper instances and their

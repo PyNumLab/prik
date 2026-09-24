@@ -18,8 +18,8 @@ shape, and strides. It does not by itself say who owns that target.
 
 - A pointer descriptor refers to target storage; it does not own that storage
   by default.
-- Scalar pointers appear as `T | None`; array pointers use live
-  `Pointer[T[...]]` handles.
+- Scalar pointer dummies and results appear as values or `None`. Scalar module
+  variables use handles; array pointers use live `Pointer[T[...]]` handles.
 - `associated` describes association, not ownership or target lifetime.
 - NumPy arrays returned by `to_numpy()` are live views, not copies.
 - Reassociation, resizing, or deallocation can invalidate existing views.
@@ -75,8 +75,11 @@ assert target.associated is True
 The annotation supplies the element dtype and rank. The handle creates its
 native storage when first passed to a matching writable argument. It stays the
 same Python object after the call.
-`Pointer[Float64]()` is not supported because scalar pointers cross the Python
-boundary as values rather than array handles.
+`Pointer[Float64]()` is not supported. A scalar module variable declared
+`Pointer[Float64]` returns a native scalar handle that follows association
+changes. Its `associated` property reports presence, `value` reads the current
+NumPy scalar or `None`, and `to_numpy()` borrows a rank-zero view or returns
+`None`. Acquire a fresh view after reassociation.
 
 | Member | Type | Behavior |
 | --- | --- | --- |

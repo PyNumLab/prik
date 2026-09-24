@@ -74,6 +74,7 @@ from prik.policy.models import (
     EntrypointProjectionAction,
     OptionalMode,
     ArgumentHandoffMode,
+    ScalarActualMode,
     ArgumentConversionPhase,
     BridgeDataAction,
     DirectResultABI,
@@ -1273,7 +1274,12 @@ def _scalar_module_variable_policy(
         blockers=tuple(blockers),
         storage_address=(
             ModuleStorageAddressMechanism.CAPTURED_ADDRESS
-            if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW
+            if getter_action
+            in {
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+            }
             else None
         ),
     )
@@ -3204,6 +3210,8 @@ def _argument_policy(
             nullable=boundary.nullable,
             writable=boundary.writable,
             descriptor_boundary=boundary.descriptor_boundary,
+            scalar_actual_mode=_scalar_actual_mode(argument, boundary, entrypoint_passing),
+            scalar_storage_writable=decision.mutates_native,
             ownership=decision,
             codegen_action=boundary.codegen_action,
             python_barrier_action=boundary.python_barrier_action,
@@ -3258,6 +3266,34 @@ def _argument_policy(
         ),
         blockers,
     )
+
+
+def _scalar_actual_mode(
+    argument: models.SemanticArgument,
+    boundary: _ArgumentBoundaryPolicy,
+    passing: EntrypointPassingConvention,
+) -> ScalarActualMode | None:
+    """Complete dual scalar/value-or-storage input acceptance before planning."""
+    if int(argument.semantic_type.rank or 0) != 0:
+        return None
+    if boundary.descriptor_boundary:
+        return None
+    if boundary.python_barrier_action is PythonBarrierAction.SCALAR_VALUE:
+        if passing is EntrypointPassingConvention.C_VALUE:
+            return ScalarActualMode.NUMERIC_VALUE
+        if passing is EntrypointPassingConvention.POINTER_REFERENCE:
+            return ScalarActualMode.NUMERIC_REFERENCE
+        if passing is EntrypointPassingConvention.NULLABLE_POINTER:
+            return (
+                ScalarActualMode.NUMERIC_VALUE
+                if argument.origin.metadata.get("value")
+                else ScalarActualMode.NUMERIC_REFERENCE
+            )
+    if boundary.python_barrier_action is PythonBarrierAction.STRING_VALUE and _character_length(argument.semantic_type):
+        if _native_by_value_argument(argument):
+            return ScalarActualMode.CHARACTER_VALUE
+        return ScalarActualMode.CHARACTER_REFERENCE
+    return None
 
 
 def _callback_handoff_policy(argument: models.SemanticArgument) -> CallbackHandoffPolicy | None:
@@ -6972,20 +7008,30 @@ def _scalar_module_getter_blockers(
     """Validate one completed scalar or literal-string getter."""
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
-    character_value = getter_action is ModuleGetterAction.CHARACTER_VALUE
+    character_value = getter_action in {ModuleGetterAction.CHARACTER_VALUE, ModuleGetterAction.NATIVE_CHARACTER_VIEW}
     # A descriptor character module variable reaches Python through the same
     # nullable snapshot a descriptor scalar uses, carrying a runtime width.
     character_snapshot = (
-        getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT and variable.semantic_type.name == "String"
+        getter_action in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_SCALAR_HANDLE}
+        and variable.semantic_type.name == "String"
     )
-    string_getter = literal_string or character_value
+    string_getter = literal_string or character_value or character_snapshot
     if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter or character_snapshot):
         blockers.append("module variable is not a primitive rank-zero scalar")
     if character_value and _character_length(variable.semantic_type) is None:
         blockers.append("character module variable requires one declared length")
     expected_getter_kind = ObjectKind.STRING if string_getter else ObjectKind.SCALAR
     supported_getter_actions = (
-        {CodegenAction.COPY_OUT} if string_getter else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
+        {CodegenAction.BORROWED_VIEW}
+        if getter_action
+        in {
+            ModuleGetterAction.NATIVE_SCALAR_VIEW,
+            ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+            ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+        }
+        else {CodegenAction.COPY_OUT}
+        if string_getter
+        else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY, CodegenAction.BORROWED_VIEW}
     )
     if getter is None:
         blockers.append("module variable is missing completed getter policy")
@@ -7087,8 +7133,12 @@ def _scalar_module_getter_action(
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
+    if _scalar_module_descriptor_kind(variable) is not None:
+        return ModuleGetterAction.NATIVE_SCALAR_HANDLE
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
+    if variable.semantic_type.metadata.get("native_storage") and _is_fixed_length_character_scalar(variable):
+        return ModuleGetterAction.NATIVE_CHARACTER_VIEW
     if _is_fixed_length_character_scalar(variable):
         # A character value cannot cross the C ABI by value, so it copies
         # through a fixed-width byte buffer the way a character field does.

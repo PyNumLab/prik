@@ -41,6 +41,84 @@ def _retain_numpy_owner(value: np.ndarray, owner: Any) -> np.ndarray:
     return retained
 
 
+class NativeScalarHandle:
+    """Follow the current storage of a native scalar allocatable or pointer."""
+
+    def __init__(
+        self,
+        address: int,
+        semantic_type_name: str,
+        descriptor_kind: str,
+        owner: Any,
+        character: bool,
+    ) -> None:
+        if descriptor_kind not in {"allocatable", "pointer"}:
+            raise ValueError("scalar handle descriptor kind must be allocatable or pointer")
+        self._owner = owner
+        self._descriptor_kind = descriptor_kind
+        self._character = character
+        self._dtype = (
+            None
+            if character
+            else np.dtype("bool" if semantic_type_name in {"Bool", "Bool8"} else semantic_type_name.lower())
+        )
+        signature = (
+            ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.POINTER(ctypes.c_int64))
+            if character
+            else ctypes.CFUNCTYPE(ctypes.c_void_p)
+        )
+        self._query = signature(address)
+
+    def _current(self) -> tuple[int, np.dtype[Any] | None]:
+        if self._character:
+            width = ctypes.c_int64(0)
+            address = self._query(ctypes.byref(width))
+            dtype = np.dtype(f"S{width.value}") if address and width.value >= 0 else None
+        else:
+            address = self._query()
+            dtype = self._dtype if address else None
+        return int(address or 0), dtype
+
+    @property
+    def allocated(self) -> bool:
+        """Report whether the allocatable currently has storage."""
+        if self._descriptor_kind != "allocatable":
+            raise AttributeError("allocated is only available for allocatable handles")
+        return bool(self._current()[0])
+
+    @property
+    def associated(self) -> bool:
+        """Report whether the pointer currently has a target."""
+        if self._descriptor_kind != "pointer":
+            raise AttributeError("associated is only available for pointer handles")
+        return bool(self._current()[0])
+
+    def to_numpy(self) -> np.ndarray | None:
+        """Borrow a rank-zero view of the current native storage, if present."""
+        address, dtype = self._current()
+        if dtype is None:
+            return None
+        buffer = (ctypes.c_char * max(dtype.itemsize, 1)).from_address(address)
+        return _retain_numpy_owner(np.ndarray((), dtype=dtype, buffer=buffer), self)
+
+    @property
+    def value(self) -> np.generic | None:
+        """Read the scalar's current value without retaining an older address."""
+        view = self.to_numpy()
+        return None if view is None else view[()]
+
+
+def _native_scalar_handle_from_generated_address(
+    address: int,
+    semantic_type_name: str,
+    descriptor_kind: str,
+    owner: Any,
+    character: int,
+) -> NativeScalarHandle:
+    """Bind a generated native inquiry while retaining its extension owner."""
+    return NativeScalarHandle(address, semantic_type_name, descriptor_kind, owner, bool(character))
+
+
 def _descriptor_facts(value: Any, rank: int) -> tuple[int, ...]:
     """Validate one flat descriptor-fact tuple reported for a handle."""
     expected = _DESCRIPTOR_FACT_HEADER + _DESCRIPTOR_FACTS_PER_AXIS * int(rank)

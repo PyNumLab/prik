@@ -506,16 +506,6 @@ class FortranToIRConverter(ClassVisitor):
             declaration_arrays=declaration_arrays,
         )
 
-    @staticmethod
-    def _has_native_scalar_storage(var: FortranVariable) -> bool:
-        """Identify concrete interoperable module storage with a stable address."""
-        return (
-            getattr(var, "_fortran_bind_c", False)
-            and var.rank == 0
-            and not var.is_parameter
-            and var.base_type.casefold() in {"integer", "real", "complex", "logical"}
-        )
-
     def _convert_variable_type(
         self,
         var: FortranVariable,
@@ -551,8 +541,6 @@ class FortranToIRConverter(ClassVisitor):
         if getattr(var, "target", False):
             metadata["aliased"] = True
             metadata["fortran_target"] = True
-        if self._has_native_scalar_storage(var):
-            metadata["native_storage"] = True
         if getattr(var, "_fortran_protected", False):
             metadata["fortran_protected"] = True
         if getattr(var, "pointer", False):
@@ -751,6 +739,18 @@ class FortranToIRConverter(ClassVisitor):
             derived_type_context=derived_type_context,
             declaration_arrays=declaration_arrays,
         )
+        if (
+            source_kind == "variable"
+            and var.rank == 0
+            and not var.is_parameter
+            and not getattr(var, "allocatable", False)
+            and not getattr(var, "pointer", False)
+            and (
+                var.base_type.casefold() in {"integer", "real", "complex", "logical"}
+                or (semantic_type.name == "String" and self._character_length(var).isdigit())
+            )
+        ):
+            semantic_type.metadata["native_storage"] = True
         if semantic_type.storage is not None and semantic_type.storage.array is not None:
             semantic_type.storage.array.allocatable = getattr(var, "allocatable", False)
             semantic_type.storage.array.pointer = getattr(var, "pointer", False)

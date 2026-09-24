@@ -39,7 +39,6 @@ def _reload_native_module(build_dir: Path):
 
 
 def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
     source = _write_whole_scalar_module(tmp_path / "fixture")
@@ -57,8 +56,10 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert module.prefix == "D"
     assert module.counter == np.int32(3)
     assert module.target_scale == np.float64(1.5)
-    assert module.optional_scale is None
-    assert module.selected_scale is None
+    allocatable = module.optional_scale
+    pointer = module.selected_scale
+    assert not allocatable.allocated and allocatable.to_numpy() is None
+    assert not pointer.associated and pointer.to_numpy() is None
     values = module.values
     assert isinstance(values, AllocatableArray)
     assert values.allocated is False
@@ -78,14 +79,15 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
         module.selected_scale = np.float64(9.0)
 
     assert module.set_allocatable(np.float64(1.5)) == np.float64(1.5)
-    allocatable_snapshot = module.optional_scale
     assert module.point_to_target(np.float64(2.5)) == np.float64(2.5)
-    pointer_snapshot = module.selected_scale
+    allocatable_view = allocatable.to_numpy()
+    pointer_view = pointer.to_numpy()
+    assert allocatable_view is not None and pointer_view is not None
     assert module.bump_native() == np.float64(34.0)
-    assert allocatable_snapshot == np.float64(1.5)
-    assert pointer_snapshot == np.float64(2.5)
-    assert module.optional_scale == np.float64(11.5)
-    assert module.selected_scale == np.float64(22.5)
+    assert allocatable_view[()] == np.float64(11.5)
+    assert pointer_view[()] == np.float64(22.5)
+    assert allocatable.value == np.float64(11.5)
+    assert pointer.value == np.float64(22.5)
 
     module.allocate_values(np.int32(3))
     assert module.values is values
@@ -98,12 +100,8 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert values.allocated is False
     assert values.to_numpy() is None
 
-    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
-    assert module.optional_scale is None
-    assert module.selected_scale is None
-    monkeypatch.delenv("PRIK_WRAPPER_FAIL_ALLOC")
-    assert module.optional_scale == np.float64(11.5)
-    assert module.selected_scale == np.float64(22.5)
+    assert module.optional_scale.value == np.float64(11.5)
+    assert module.selected_scale.value == np.float64(22.5)
 
     module.nmax = np.int32(99)
     assert module.nmax == np.int32(99)

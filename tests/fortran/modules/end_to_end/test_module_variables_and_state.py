@@ -229,39 +229,40 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
 CHARACTER_MODULE_SCALAR_SOURCE = (NATIVE_FIXTURES / "fchar_module_scalars_f90.f90").read_text(encoding="utf-8")
 
 
-def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
-    """A character module variable is a `str` property, as a numeric one is a value.
-
-    A character value has no by-value C ABI, so the accessors copy through a
-    fixed-width buffer; what has to hold is that the copy runs in both
-    directions and that a wrong width is refused rather than truncated.
-    """
-    module = _build_text_and_import(
-        CHARACTER_MODULE_SCALAR_SOURCE,
-        "fchar_module_scalars_f90.f90",
+def test_scalar_character_module_variables_read_and_write_through(pyi_parity_build_mode: str, tmp_path: Path):
+    """Fixed character storage keeps one native address across reads and writes."""
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_scalars_f90.f90",
         tmp_path,
         {
             "bind_c_fchar_module_scalars_f90_wrapper.f90",
             "fchar_module_scalars_f90_wrapper.c",
             "fchar_module_scalars_f90_wrapper.h",
         },
+        CONTRACT_FIXTURES / "fchar_module_scalars_f90",
+        pyi_parity_build_mode,
     )
 
-    assert module.label == "alpha   "
-    assert module.code == "abc"
+    label = module.label
+    assert label.shape == () and label.dtype == np.dtype("S8")
+    assert label[()] == b"alpha   "
+    assert module.code[()] == b"abc"
     assert module.tag == "fixed"
 
     # A native write is observed by the next read, not cached from import.
     module.relabel()
-    assert module.label == "ALPHA!!!"
+    assert label[()] == b"ALPHA!!!"
 
     # A Python write reaches the storage Fortran reads.
     module.label = "PYTHON!!"
+    assert label[()] == b"PYTHON!!"
     assert module.read_label() == "PYTHON!!"
+    label[()] = b"VIEW!!!!"
+    assert module.read_label() == "VIEW!!!!"
 
     # The declared length is a byte width, so a multi-byte encoding still fits exactly.
     module.label = "café!!!"
-    assert module.label == "café!!!"
+    assert label[()] == "café!!!".encode()
     assert module.read_label() == "café!!!"
 
 
@@ -281,7 +282,7 @@ def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: s
 
     with pytest.raises(TypeError, match="exactly 3 bytes"):
         module.code = value
-    assert module.code == "abc"
+    assert module.code[()] == b"abc"
 
 
 CHARACTER_MODULE_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90").read_text(encoding="utf-8")
@@ -300,38 +301,51 @@ def _character_descriptor_module(tmp_path: Path):
     )
 
 
-def test_descriptor_character_module_variables_snapshot_their_runtime_value(tmp_path: Path):
-    """An allocatable or pointer character module variable reads as a detached `str`.
+def test_descriptor_character_module_variables_follow_current_storage(pyi_parity_build_mode: str, tmp_path: Path):
+    """A retained handle queries the current association, address, and width."""
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_descriptors_f90_wrapper.f90",
+            "fchar_module_descriptors_f90_wrapper.c",
+            "fchar_module_descriptors_f90_wrapper.h",
+        },
+        CONTRACT_FIXTURES / "fchar_module_descriptors_f90",
+        pyi_parity_build_mode,
+    )
+    deferred = module.deferred
+    fixed = module.fixed
+    link = module.link
 
-    Its width is established at runtime, so the snapshot has to report the
-    length the descriptor currently holds rather than a width fixed at build
-    time, and re-reading after native code changes it must observe the change.
-    """
-    module = _character_descriptor_module(tmp_path)
-
-    assert module.deferred is None
-    assert module.fixed is None
-    assert module.link is None
+    assert deferred.to_numpy() is None and not deferred.allocated
+    assert fixed.to_numpy() is None and not fixed.allocated
+    assert link.to_numpy() is None and not link.associated
 
     module.setup()
-    assert module.deferred == "alpha"
-    assert module.fixed == "FIXEDV"
-    assert module.link == "STORED"
+    assert deferred.allocated and deferred.value == b"alpha"
+    assert fixed.allocated and fixed.value == b"FIXEDV"
+    assert link.associated and link.value == b"STORED"
+    view = link.to_numpy()
+    assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
+    view[()] = b"PYTHON"
+    assert module.store[()] == b"PYTHON"
 
-    # A reallocation to a different width is observed by the next read.
     module.grow()
-    assert module.deferred == "alpha-more"
+    assert deferred.value == b"alpha-more"
+    assert deferred.to_numpy().dtype == np.dtype("S10")
 
 
 def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):
     """Deallocation and nullification are values Python observes, not stale reads."""
     module = _character_descriptor_module(tmp_path)
 
+    deferred, fixed, link = module.deferred, module.fixed, module.link
     module.setup()
     module.clear()
-    assert module.deferred is None
-    assert module.fixed is None
-    assert module.link is None
+    assert deferred.to_numpy() is None and not deferred.allocated
+    assert fixed.to_numpy() is None and not fixed.allocated
+    assert link.to_numpy() is None and not link.associated
 
 
 def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):

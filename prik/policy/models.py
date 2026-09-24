@@ -183,6 +183,15 @@ class ArgumentHandoffMode(str, Enum):
     NATIVE_DESCRIPTOR = "native_descriptor"
 
 
+class ScalarActualMode(str, Enum):
+    """Accepted scalar actuals and their completed native transport."""
+
+    NUMERIC_REFERENCE = "numeric_reference"
+    NUMERIC_VALUE = "numeric_value"
+    CHARACTER_REFERENCE = "character_reference"
+    CHARACTER_VALUE = "character_value"
+
+
 class ArgumentConversionPhase(str, Enum):
     """Completed binding conversion schedule for one Python argument."""
 
@@ -330,6 +339,8 @@ class ModuleGetterAction(str, Enum):
     NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
     NATIVE_SCALAR_VIEW = "native_scalar_view"
+    NATIVE_CHARACTER_VIEW = "native_character_view"
+    NATIVE_SCALAR_HANDLE = "native_scalar_handle"
     CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -714,6 +725,8 @@ class OverloadArgumentPolicy:
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
+    scalar_actual_mode: ScalarActualMode | None = None
+    character_length: int | None = None
     builtin_scalar_family: str | None = None
 
 
@@ -1306,6 +1319,8 @@ class ArgumentPolicy:
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    scalar_actual_mode: ScalarActualMode | None
+    scalar_storage_writable: bool
     ownership: OwnershipDecision
     codegen_action: CodegenAction
     python_barrier_action: PythonBarrierAction

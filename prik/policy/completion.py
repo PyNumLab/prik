@@ -992,6 +992,8 @@ def _overload_argument_match(
         semantic_type_name=argument.semantic_type_name,
         rank=argument.rank,
         derived_type_identity=derived_identity,
+        scalar_actual_mode=argument.scalar_actual_mode,
+        character_length=argument.character_length,
         builtin_scalar_family=_accepted_builtin_scalar_family(
             argument.semantic_type_name,
             match_kind=match_kind,

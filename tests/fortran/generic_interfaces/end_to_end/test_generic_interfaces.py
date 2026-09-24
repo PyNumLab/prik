@@ -58,7 +58,9 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
     assert "convert_complex" not in module.convert.__doc__
 
     assert module.convert(np.int32(4)) == np.int32(14)
+    assert module.convert(np.array(4, dtype=np.int32)) == np.int32(14)
     assert module.convert(np.float64(4.0)) == np.float64(4.5)
+    assert module.convert(np.array(4.0, dtype=np.float64)) == np.float64(4.5)
     assert module.convert(value=np.int32(5)) == np.int32(15)
     assert module.convert(np.complex128(2.0 + 3.0j)) == np.complex128(3.0 + 2.0j)
     assert module.summarize(np.float64(2.5)) == np.float64(2.5)

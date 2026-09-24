@@ -27,6 +27,7 @@ from prik.policy.ownership import (
 )
 from prik.policy.models import (
     ArgumentHandoffMode,
+    ScalarActualMode,
     ArrayEntrypointABI,
     ArrayPythonLayout,
     CallbackABIKind,
@@ -219,6 +220,8 @@ _BINDING_GETTER_SUMMARIES = {
     ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: "Copies the parameter array into one read-only NumPy array.",
     ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
     ModuleGetterAction.NATIVE_SCALAR_VIEW: "Wraps live native scalar storage in a rank-zero NumPy view.",
+    ModuleGetterAction.NATIVE_CHARACTER_VIEW: "Wraps live native character bytes in a rank-zero NumPy view.",
+    ModuleGetterAction.NATIVE_SCALAR_HANDLE: "Returns a handle that queries current native scalar storage.",
     ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
     ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
@@ -4532,6 +4535,8 @@ class CBindingGenerator(ClassVisitor):
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
             }
         )
 
@@ -6129,6 +6134,10 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NATIVE_SCALAR_VIEW:
                 return self._lower_module_getter_native_scalar_view(plan)
+            case ModuleGetterAction.NATIVE_CHARACTER_VIEW:
+                return self._lower_module_getter_native_character_view(plan)
+            case ModuleGetterAction.NATIVE_SCALAR_HANDLE:
+                return self._lower_module_getter_native_scalar_handle(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -6190,6 +6199,72 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(f"PyArray_SimpleNewFromData(0, NULL, {scalar.array_numpy_type}, data)"),
                     ),
                     *self._ordinary_array_field_owner_nodes("result", owner),
+                ),
+            ),
+        )
+
+    def _lower_module_getter_native_character_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Expose fixed character storage as a live rank-zero NumPy bytes view."""
+        length = self._module_character_length(plan)
+        owner = self._module_native_array_owner_name(plan)
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration("data", "void *", CodeExpression(f"{self._module_bridge_getter_name(plan)}()")),
+                    CDeclaration(
+                        "result",
+                        "PyObject *",
+                        CodeExpression(
+                            f"PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, data, {length}, "
+                            "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
+                        ),
+                    ),
+                    *self._ordinary_array_field_owner_nodes("result", owner),
+                ),
+            ),
+        )
+
+    def _lower_module_getter_native_scalar_handle(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Create a scalar descriptor handle around one callable native inquiry."""
+        owner = self._module_native_array_owner_name(plan)
+        descriptor = plan.entrypoint.descriptor_kind
+        if descriptor not in {"allocatable", "pointer"}:
+            raise ValueError(f"Scalar descriptor {plan.owner_path!r} has no completed descriptor kind")
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration(
+                        "runtime", "PyObject *", CodeExpression('PyImport_ImportModule("prik.runtime.handles")')
+                    ),
+                    CIf(CodeExpression("runtime == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CDeclaration(
+                        "factory",
+                        "PyObject *",
+                        CodeExpression(
+                            'PyObject_GetAttrString(runtime, "_native_scalar_handle_from_generated_address")'
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("Py_DECREF(runtime)")),
+                    CIf(CodeExpression("factory == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CDeclaration(
+                        "result",
+                        "PyObject *",
+                        CodeExpression(
+                            f'PyObject_CallFunction(factory, "KssOi", '
+                            f"(unsigned long long)(uintptr_t)&{self._module_bridge_getter_name(plan)}, "
+                            f"{self._c_string_literal(plan.semantic_type_name)}, "
+                            f"{self._c_string_literal(descriptor)}, {owner}, "
+                            f"{1 if plan.datatype_family is DatatypeFamily.STRING else 0})"
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression("Py_DECREF(factory)")),
+                    CReturn(CodeExpression("result")),
                 ),
             ),
         )
@@ -7460,6 +7535,11 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Unsupported scalar input type {plan.semantic_type_name!r}")
         names = context.arguments[plan.owner_path]
         storage_type = plan.native_storage_c_type or scalar_type.c_spelling
+        if plan.binding.scalar_actual_mode in {
+            ScalarActualMode.NUMERIC_REFERENCE,
+            ScalarActualMode.NUMERIC_VALUE,
+        }:
+            return self._lower_argument_required_scalar_or_storage(plan, names, scalar_type, storage_type)
         if storage_type != scalar_type.c_spelling:
             converted_name = f"{names.value_name}_converted"
             return (
@@ -7495,6 +7575,78 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def _lower_argument_required_scalar_or_storage(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        scalar_type,
+        storage_type: str,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
+        """Take a scalar value or borrow exact rank-zero native storage."""
+        array = f"(PyArrayObject *){names.object_name}"
+        pointer = f"{names.value_name}_storage"
+        numpy_type, expected = self._numeric_array_dtype_selectors(plan)
+        reference = plan.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE
+        array_nodes: list[CExpressionStatement] = [
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (PyArray_TYPE({array}) != {numpy_type} || PyArray_NDIM({array}) != 0) {{ "
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires exact '
+                    f'rank-zero {expected} storage"); return NULL; }}'
+                )
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (!PyArray_ISNOTSWAPPED({array}) || !PyArray_ISALIGNED({array})) {{ "
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires native '
+                    'byte order and aligned storage"); return NULL; }'
+                )
+            ),
+        ]
+        if reference and plan.binding.scalar_storage_writable:
+            array_nodes.append(
+                CExpressionStatement(
+                    CodeExpression(
+                        f"if (!PyArray_ISWRITEABLE({array})) {{ "
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
+                        'writeable storage"); return NULL; }'
+                    )
+                )
+            )
+        array_nodes.append(
+            CExpressionStatement(
+                CodeExpression(
+                    f"{pointer} = ({storage_type} *)PyArray_DATA({array})"
+                    if reference
+                    else f"memcpy(&{names.value_name}, PyArray_DATA({array}), sizeof({names.value_name}))"
+                )
+            )
+        )
+        return (
+            CDeclaration(names.object_name, "PyObject *"),
+            CDeclaration(names.value_name, storage_type),
+            *((CDeclaration(pointer, f"{storage_type} *", CodeExpression("NULL")),) if reference else ()),
+            CIf(
+                CodeExpression(f"PyArray_Check({names.object_name})"),
+                body=tuple(array_nodes),
+                else_body=(
+                    self._scalar_exact_unpack_statement(
+                        scalar_type,
+                        names.object_name,
+                        names.value_name,
+                        (
+                            f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
+                            f"{scalar_type.python_type_name} or rank-zero array for argument "
+                            f"{plan.binding.python_name}. Received <class '%s'>\", "
+                            f"Py_TYPE({names.object_name})->tp_name)"
+                        ),
+                        "NULL",
+                    ),
+                    *((CExpressionStatement(CodeExpression(f"{pointer} = &{names.value_name}")),) if reference else ()),
+                ),
+            ),
+        )
+
     # String argument lowering.
     def _lower_argument_required_string_value(
         self,
@@ -7516,11 +7668,16 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Validate and borrow one read-only UTF-8 payload for the call."""
         names = context.arguments[plan.owner_path]
+        validation = (
+            self._required_string_or_storage_nodes(plan, names, names.value_name)
+            if plan.binding.scalar_actual_mode is not None
+            else self._required_string_validation_nodes(plan, names, names.value_name)
+        )
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "const char *", CodeExpression("NULL")),
             CDeclaration(names.length_name, "Py_ssize_t", CodeExpression("0")),
-            *self._required_string_validation_nodes(plan, names, names.value_name),
+            *validation,
         )
 
     def _lower_argument_required_string_replacement(
@@ -7531,12 +7688,72 @@ class CBindingGenerator(ClassVisitor):
         """Validate one replacement string before call-local allocation."""
         names = context.arguments[plan.owner_path]
         source_name = f"{names.value_name}_source"
+        validation = (
+            self._required_string_or_storage_nodes(plan, names, source_name)
+            if plan.binding.scalar_actual_mode is not None
+            else self._required_string_validation_nodes(plan, names, source_name)
+        )
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(source_name, "const char *", CodeExpression("NULL")),
             CDeclaration(names.value_name, "char *", CodeExpression("NULL")),
             CDeclaration(names.length_name, "Py_ssize_t", CodeExpression("0")),
-            *self._required_string_validation_nodes(plan, names, source_name),
+            *validation,
+        )
+
+    def _required_string_or_storage_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        payload_name: str,
+    ) -> tuple[CIf, ...]:
+        """Accept either encoded text or exact fixed-width rank-zero bytes."""
+        length = plan.character_length
+        if length is None or length <= 0:
+            raise ValueError(f"Character storage {plan.owner_path!r} needs a fixed width")
+        array = f"(PyArrayObject *){names.object_name}"
+        checks = [
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (PyArray_TYPE({array}) != NPY_STRING || PyArray_NDIM({array}) != 0 || "
+                    f"PyArray_ITEMSIZE({array}) != {length}) {{ "
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
+                    f'rank-zero S{length} storage"); return NULL; }}'
+                )
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (!PyArray_ISALIGNED({array})) {{ "
+                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
+                    'aligned storage"); return NULL; }'
+                )
+            ),
+        ]
+        if (
+            plan.binding.scalar_storage_writable
+            and plan.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE
+        ):
+            checks.append(
+                CExpressionStatement(
+                    CodeExpression(
+                        f"if (!PyArray_ISWRITEABLE({array})) {{ "
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
+                        'writeable storage"); return NULL; }'
+                    )
+                )
+            )
+        checks.extend(
+            (
+                CExpressionStatement(CodeExpression(f"{payload_name} = (const char *)PyArray_DATA({array})")),
+                CExpressionStatement(CodeExpression(f"{names.length_name} = {length}")),
+            )
+        )
+        return (
+            CIf(
+                CodeExpression(f"PyArray_Check({names.object_name})"),
+                body=tuple(checks),
+                else_body=self._required_string_validation_nodes(plan, names, payload_name),
+            ),
         )
 
     def _string_replacement_allocation_nodes(
@@ -9585,6 +9802,32 @@ class CBindingGenerator(ClassVisitor):
             )
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         names = context.arguments[plan.owner_path]
+        if plan.binding.scalar_actual_mode in {
+            ScalarActualMode.NUMERIC_REFERENCE,
+            ScalarActualMode.NUMERIC_VALUE,
+        }:
+            required = self._lower_argument_required_scalar_or_storage(
+                plan,
+                names,
+                scalar_type,
+                plan.native_storage_c_type or scalar_type.c_spelling,
+            )
+            declarations = tuple(node for node in required if isinstance(node, CDeclaration))
+            body = tuple(node for node in required if not isinstance(node, CDeclaration))
+            target = (
+                f"{names.value_name}_storage"
+                if plan.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE
+                else f"&{names.value_name}"
+            )
+            return (
+                CDeclaration(names.object_name, "PyObject *", CodeExpression("Py_None")),
+                *(node for node in declarations if node.name != names.object_name),
+                CDeclaration(names.nullable_name, "void *", CodeExpression("NULL")),
+                CIf(
+                    CodeExpression(f"{names.object_name} != Py_None"),
+                    body=(*body, CExpressionStatement(CodeExpression(f"{names.nullable_name} = {target}"))),
+                ),
+            )
         return (
             CDeclaration(names.object_name, "PyObject *", CodeExpression("Py_None")),
             CDeclaration(names.value_name, scalar_type.c_spelling),
@@ -9654,7 +9897,11 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(names.value_name, "const char *", CodeExpression("NULL")),
                 CIf(
                     CodeExpression(f"{names.object_name} != Py_None"),
-                    body=self._required_string_validation_nodes(plan, names, names.value_name),
+                    body=(
+                        self._required_string_or_storage_nodes(plan, names, names.value_name)
+                        if plan.binding.scalar_actual_mode is not None
+                        else self._required_string_validation_nodes(plan, names, names.value_name)
+                    ),
                 ),
             )
         if action is CodegenAction.COPY_IN_OUT:
@@ -9665,7 +9912,11 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(names.value_name, "char *", CodeExpression("NULL")),
                 CIf(
                     CodeExpression(f"{names.object_name} != Py_None"),
-                    body=self._required_string_validation_nodes(plan, names, source_name),
+                    body=(
+                        self._required_string_or_storage_nodes(plan, names, source_name)
+                        if plan.binding.scalar_actual_mode is not None
+                        else self._required_string_validation_nodes(plan, names, source_name)
+                    ),
                 ),
             )
         raise ValueError(f"Unsupported optional C string action for {plan.owner_path!r}: {action!r}")
@@ -12811,6 +13062,36 @@ class CBindingGenerator(ClassVisitor):
                 *self._output_failure_nodes(converted, failure_label),
             ),
         )
+        if source.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE:
+            array_conversion = CExpressionStatement(
+                CodeExpression(
+                    f"{target} = PyUnicode_DecodeUTF8((const char *){names.value_name}, "
+                    f'(Py_ssize_t){names.length_name}, "strict")'
+                )
+            )
+            converted_value = CIf(
+                CodeExpression(f"PyArray_Check({names.object_name})"),
+                body=(array_conversion,),
+                else_body=(
+                    conversion,
+                    CExpressionStatement(CodeExpression(f"free({names.value_name})")),
+                    CExpressionStatement(CodeExpression(f"{names.value_name} = NULL")),
+                ),
+            )
+            if source.binding.optional_mode is OptionalMode.REQUIRED:
+                return CDeclaration(target, "PyObject *", CodeExpression("NULL")), converted_value, failure
+            if source.binding.optional_mode is OptionalMode.NULLABLE_VALUE:
+                return (
+                    CDeclaration(target, "PyObject *", CodeExpression("NULL")),
+                    CIf(
+                        CodeExpression(f"{names.value_name} == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
+                            CExpressionStatement(CodeExpression(f"{target} = Py_None")),
+                        ),
+                        else_body=(converted_value, failure),
+                    ),
+                )
         if source.binding.optional_mode is OptionalMode.REQUIRED:
             return (
                 CDeclaration(target, "PyObject *", CodeExpression("NULL")),
@@ -13374,6 +13655,19 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[str, tuple[CDeclaration, ...]]:
         """Convert an exact native scalar local back to public contract storage."""
         storage_type = source.native_storage_c_type or scalar_type.c_spelling
+        if source.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE:
+            pointer = f"{names.value_name}_storage"
+            if storage_type == scalar_type.c_spelling:
+                contract_name = f"{names.value_name}_contract"
+                return contract_name, (
+                    CDeclaration(contract_name, scalar_type.c_spelling, CodeExpression(f"*{pointer}")),
+                )
+            contract_name = f"{names.value_name}_contract"
+            return contract_name, (
+                CDeclaration(
+                    contract_name, scalar_type.c_spelling, CodeExpression(f"({scalar_type.c_spelling})*{pointer}")
+                ),
+            )
         if storage_type == scalar_type.c_spelling:
             return names.value_name, ()
         contract_name = f"{names.value_name}_contract"
@@ -13847,6 +14141,20 @@ class CBindingGenerator(ClassVisitor):
                 f"{names.value_name}_source",
                 cleanup,
             )
+            if argument.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE:
+                allocation = (
+                    CIf(
+                        CodeExpression(f"PyArray_Check({names.object_name})"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f"{names.value_name} = (char *)PyArray_DATA((PyArrayObject *){names.object_name})"
+                                )
+                            ),
+                        ),
+                        else_body=allocation,
+                    ),
+                )
             if argument.binding.optional_mode is OptionalMode.REQUIRED:
                 nodes.extend(allocation)
                 continue
@@ -13878,7 +14186,13 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             CExpressionStatement(
                 CodeExpression(
-                    f"if ({names.value_name} != NULL) {{ free({names.value_name}); {names.value_name} = NULL; }}"
+                    f"if ({names.value_name} != NULL"
+                    + (
+                        f" && !PyArray_Check({names.object_name})"
+                        if argument.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE
+                        else ""
+                    )
+                    + f") {{ free({names.value_name}); {names.value_name} = NULL; }}"
                 )
             )
             for argument in reversed(self._string_replacement_arguments(plan))
@@ -14421,12 +14735,16 @@ class CBindingGenerator(ClassVisitor):
         if passing is EntrypointPassingConvention.C_VALUE:
             return (names.value_name,)
         if passing is EntrypointPassingConvention.POINTER_REFERENCE:
+            if plan.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE:
+                return (f"{names.value_name}_storage",)
             return (f"&{names.value_name}",)
         if passing is not plan.entrypoint.passing:
             raise ValueError(f"Unsupported projected scalar passing convention {passing.value!r}")
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
             return (names.value_name,)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
+            if plan.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE:
+                return (f"{names.value_name}_storage",)
             return (f"&{names.value_name}",)
         return (names.value_name,)
 
@@ -15434,9 +15752,33 @@ class CBindingGenerator(ClassVisitor):
                 f"&& PyArray_TYPE((PyArrayObject *){value}) == {numpy_type}"
             )
         if match.kind is OverloadMatchKind.STRING:
-            return f"PyUnicode_Check({value})"
+            predicate = f"PyUnicode_Check({value})"
+            if (
+                match.scalar_actual_mode
+                in {
+                    ScalarActualMode.CHARACTER_REFERENCE,
+                    ScalarActualMode.CHARACTER_VALUE,
+                }
+                and match.character_length is not None
+            ):
+                array = f"(PyArrayObject *){value}"
+                predicate = (
+                    f"({predicate} || (PyArray_Check({value}) && PyArray_NDIM({array}) == 0 "
+                    f"&& PyArray_TYPE({array}) == NPY_STRING && PyArray_ITEMSIZE({array}) == {match.character_length}))"
+                )
+            return predicate
         if match.kind is OverloadMatchKind.NUMPY_SCALAR:
             predicate = f"PyArray_IsScalar({value}, {self._overload_numpy_scalar_kind(match.semantic_type_name)})"
+            if match.scalar_actual_mode in {
+                ScalarActualMode.NUMERIC_REFERENCE,
+                ScalarActualMode.NUMERIC_VALUE,
+            }:
+                array = f"(PyArrayObject *){value}"
+                numpy_type = PrimitiveScalarTypeRegistry.type_for(match.semantic_type_name).numpy_type_macro
+                predicate = (
+                    f"({predicate} || (PyArray_Check({value}) && PyArray_NDIM({array}) == 0 "
+                    f"&& PyArray_TYPE({array}) == {numpy_type}))"
+                )
             if match.builtin_scalar_family is not None:
                 predicate = f"({predicate} || {self._overload_builtin_scalar_condition(match, value)})"
             return predicate
@@ -15968,6 +16310,8 @@ class CBindingGenerator(ClassVisitor):
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
             }:
                 continue
             owner = self._module_native_array_owner_name(variable)

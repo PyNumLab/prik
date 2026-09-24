@@ -968,6 +968,13 @@ class OwnershipPolicyResolver:
         storage = self.decide_semantic_variable(variable, context)
         if storage.is_blocked or storage.kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return storage
+        if context.is_module_variable and variable.semantic_type.metadata.get("native_storage"):
+            return storage
+        if context.is_module_variable and (
+            variable.semantic_type.metadata.get("fortran_allocatable")
+            or variable.semantic_type.metadata.get("fortran_pointer")
+        ):
+            return storage
         if storage.kind is ObjectKind.SCALAR and storage.transfer is TransferMode.SNAPSHOT_COPY:
             return storage
         return self.decide_semantic_type(variable.semantic_type, OwnershipContext.result())
@@ -1000,7 +1007,11 @@ class OwnershipPolicyResolver:
         return replace(
             incoming,
             assignment_mode=(
-                AssignmentMode.ALIAS if storage.storage_mode is StorageMode.ALIAS else AssignmentMode.VALUE_COPY
+                AssignmentMode.VALUE_COPY
+                if context.is_module_variable and variable.semantic_type.metadata.get("native_storage")
+                else AssignmentMode.ALIAS
+                if storage.storage_mode is StorageMode.ALIAS
+                else AssignmentMode.VALUE_COPY
             ),
             setter_action=self._setter_action(storage, incoming, context, variable),
         )
@@ -1019,9 +1030,23 @@ class OwnershipPolicyResolver:
         ownership contract.
         """
         if storage.kind is ObjectKind.SCALAR:
+            if context.is_module_variable and (
+                variable.semantic_type.metadata.get("fortran_allocatable")
+                or variable.semantic_type.metadata.get("fortran_pointer")
+            ):
+                return SetterAction.REJECT_REPLACEMENT
             if storage.transfer is TransferMode.SNAPSHOT_COPY and storage.nullable:
                 return SetterAction.REJECT_REPLACEMENT
             return SetterAction.WRITE_THROUGH
+        if (
+            storage.kind is ObjectKind.STRING
+            and context.is_module_variable
+            and (
+                variable.semantic_type.metadata.get("fortran_allocatable")
+                or variable.semantic_type.metadata.get("fortran_pointer")
+            )
+        ):
+            return SetterAction.REJECT_REPLACEMENT
         if storage.kind is ObjectKind.STRING and context.is_field:
             return SetterAction.WRITE_THROUGH
         # A character module variable is written through the same fixed-width
@@ -1857,10 +1882,18 @@ class OwnershipPolicyResolver:
                     else "plain derived module storage uses live typed module access"
                 ),
             )
-        if facts.allocatable and facts.rank == 0:
-            return self._allocatable_scalar_decision(facts, context)
-        if facts.pointer and facts.rank == 0:
-            return self._pointer_scalar_decision(facts, context)
+        if (facts.allocatable or facts.pointer) and facts.rank == 0:
+            return OwnershipDecision(
+                self._kind(facts, OwnershipContext()),
+                OwnershipOwner.NATIVE,
+                TransferMode.BORROWED_VIEW,
+                DestructionPolicy.NATIVE_OWNER,
+                storage_mode=StorageMode.ALIAS,
+                boundary_storage_mode=StorageMode.ALIAS,
+                nullable=True,
+                borrowed=True,
+                reason="scalar module descriptor is queried through a persistent native handle",
+            )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:
                 return self._pointer_array_decision(facts, context)
@@ -1871,7 +1904,11 @@ class OwnershipPolicyResolver:
             OwnershipOwner.NATIVE,
             TransferMode.BORROWED_VIEW,
             DestructionPolicy.NATIVE_OWNER,
-            storage_mode=StorageMode.ALIAS if facts.rank > 0 else StorageMode.STACK,
+            storage_mode=(
+                StorageMode.ALIAS
+                if facts.rank > 0 or (facts.metadata or {}).get("native_storage")
+                else StorageMode.STACK
+            ),
             borrowed=True,
             reason="module variable storage is owned by native module state",
         )
@@ -2223,8 +2260,9 @@ class OwnershipPolicyResolver:
                     "use PointerPolicy for extraction and descriptor operations"
                 )
             return None
-        if decision.transfer is not TransferMode.SNAPSHOT_COPY:
-            return "scalar pointer field and module accessors require snapshot_copy detached values"
+        required_transfer = TransferMode.BORROWED_VIEW if context.is_module_variable else TransferMode.SNAPSHOT_COPY
+        if decision.transfer is not required_transfer:
+            return f"scalar pointer {context.location} accessor requires {required_transfer.value} transfer"
         return None
 
     @staticmethod

@@ -33,6 +33,7 @@ from prik.policy.ownership import (
 from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
+    ScalarActualMode,
     ArrayLogicalABI,
     ArrayEntrypointABI,
     ArrayPythonLayout,
@@ -430,6 +431,8 @@ class OverloadArgumentMatchPlan(StageRecord):
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
+    scalar_actual_mode: ScalarActualMode | None = None
+    character_length: int | None = None
     builtin_scalar_family: str | None = None
 
 
@@ -952,6 +955,8 @@ class BindingArgumentPlan(StageRecord):
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    scalar_actual_mode: ScalarActualMode | None
+    scalar_storage_writable: bool
     native_array_element_c_type: str | None = None
 
 

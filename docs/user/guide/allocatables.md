@@ -16,8 +16,9 @@ and a PRIK handle gives Python access to that descriptor.
 
 ## Key Concepts
 
-- Scalar allocatables appear as `T | None`; array allocatables use
-  `Allocatable[T[...]]` handles.
+- Scalar allocatable dummies and results appear as values or `None`. Scalar
+  module variables use handles; array allocatables use `Allocatable[T[...]]`
+  handles.
 - An array handle exposes allocation state and descriptor operations; it is not
   itself a NumPy array.
 - `allocated` reports whether storage exists; `to_numpy()` returns a live view
@@ -82,8 +83,11 @@ assert values.allocated is True
 The annotation supplies the element dtype and rank. The handle creates its
 native storage when first passed to a matching writable argument. It stays the
 same Python object after the call.
-`Allocatable[Float64]()` is not supported because scalar allocatables cross the
-Python boundary as values rather than array handles.
+`Allocatable[Float64]()` is not supported. A scalar module variable declared
+`Allocatable[Float64]` returns a native scalar handle that follows allocation
+changes. Its `allocated` property reports presence, `value` reads the current
+NumPy scalar or `None`, and `to_numpy()` borrows a rank-zero view or returns
+`None`. Acquire a fresh view after reallocation.
 
 A returned or attribute array handle remains present even when its descriptor
 is unallocated. Reading the Python attribute

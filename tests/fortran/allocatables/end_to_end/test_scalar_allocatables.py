@@ -30,18 +30,20 @@ def test_scalar_allocatables_project_values_and_unallocated_state(
     )
 
     module.clear_module_value()
-    assert module.optional_scale is None
+    handle = module.optional_scale
+    assert not handle.allocated and handle.to_numpy() is None
     assert not hasattr(module, "get_optional_scale")
     assert not hasattr(module, "set_optional_scale")
     with pytest.raises(AttributeError):
         module.optional_scale = np.float64(9.0)
 
     module.set_module_value(np.float64(1.5))
-    snapshot = module.optional_scale
-    assert snapshot == np.float64(1.5)
+    assert handle.allocated and handle.value == np.float64(1.5)
+    view = handle.to_numpy()
+    assert view is not None and view.shape == () and view.dtype == np.dtype("float64")
     module.bump_module_value()
-    assert snapshot == np.float64(1.5)
-    assert module.optional_scale == np.float64(11.5)
+    assert view[()] == np.float64(11.5)
+    assert handle.value == np.float64(11.5)
 
     assert module.echo_allocatable(np.float64(3.0)) == np.float64(4.0)
     assert module.echo_allocatable(None) == np.float64(-1.0)
@@ -53,4 +55,4 @@ def test_scalar_allocatables_project_values_and_unallocated_state(
     assert module.maybe_allocatable(np.int32(0)) is None
 
     module.clear_module_value()
-    assert module.optional_scale is None
+    assert not handle.allocated and handle.to_numpy() is None

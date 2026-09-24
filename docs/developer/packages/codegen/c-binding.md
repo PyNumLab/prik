@@ -264,7 +264,13 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
     double bound_value;
     double result;
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &bound_value_obj)) return NULL;
-    if (prik_float64_unpack_exact(bound_value_obj, &bound_value) < 0) { if (!PyErr_Occurred()) { PyErr_Format(PyExc_TypeError, "Expected an argument of type numpy.float64 for argument value. Received <class '%s'>", Py_TYPE(bound_value_obj)->tp_name); } return NULL; };
+    if (PyArray_Check(bound_value_obj)) {
+        if (PyArray_TYPE((PyArrayObject *)bound_value_obj) != NPY_FLOAT64 || PyArray_NDIM((PyArrayObject *)bound_value_obj) != 0) { PyErr_SetString(PyExc_TypeError, "Argument value requires exact rank-zero numpy.float64 storage"); return NULL; };
+        if (!PyArray_ISNOTSWAPPED((PyArrayObject *)bound_value_obj) || !PyArray_ISALIGNED((PyArrayObject *)bound_value_obj)) { PyErr_SetString(PyExc_TypeError, "Argument value requires native byte order and aligned storage"); return NULL; };
+        memcpy(&bound_value, PyArray_DATA((PyArrayObject *)bound_value_obj), sizeof(bound_value));
+    } else {
+        if (prik_float64_unpack_exact(bound_value_obj, &bound_value) < 0) { if (!PyErr_Occurred()) { PyErr_Format(PyExc_TypeError, "Expected an argument of type numpy.float64 or rank-zero array for argument value. Received <class '%s'>", Py_TYPE(bound_value_obj)->tp_name); } return NULL; };
+    }
     result = bind_c_double_value(bound_value);
     PyObject * result_obj = prik_float64_to_numpy(&result);
     if (result_obj == NULL) {

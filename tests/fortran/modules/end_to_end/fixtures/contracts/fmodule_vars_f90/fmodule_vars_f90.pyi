@@ -17,11 +17,11 @@ nmax: Final[Int32] = 12
 
 black: Final[Rgb_Color]
 
-counter: Int32
+counter: Int32[()]
 
-scale: Float64
+scale: Float64[()]
 
-saved_counter: Int32
+saved_counter: Int32[()]
 
 def summarize() -> Int32: ...
 

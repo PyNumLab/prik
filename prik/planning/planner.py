@@ -1104,6 +1104,8 @@ class WrapperPlanner(ClassVisitor):
                         semantic_type_name=argument.semantic_type_name,
                         rank=argument.rank,
                         derived_type_identity=argument.derived_type_identity,
+                        scalar_actual_mode=argument.scalar_actual_mode,
+                        character_length=argument.character_length,
                         builtin_scalar_family=argument.builtin_scalar_family,
                     )
                     for argument in candidate.arguments
@@ -2129,6 +2131,8 @@ class WrapperPlanner(ClassVisitor):
             nullable=policy.nullable,
             writable=policy.writable,
             descriptor_boundary=policy.descriptor_boundary,
+            scalar_actual_mode=policy.scalar_actual_mode,
+            scalar_storage_writable=policy.scalar_storage_writable,
             native_array_element_c_type=policy.native_array_element_c_type,
         )
 
