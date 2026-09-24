@@ -1278,7 +1278,7 @@ def _scalar_module_variable_policy(
             in {
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
                 ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }
             else None
         ),
@@ -7009,14 +7009,13 @@ def _scalar_module_getter_blockers(
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
     character_value = getter_action in {ModuleGetterAction.CHARACTER_VALUE, ModuleGetterAction.NATIVE_CHARACTER_VIEW}
-    # A descriptor character module variable reaches Python through the same
-    # nullable snapshot a descriptor scalar uses, carrying a runtime width.
-    character_snapshot = (
-        getter_action in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_SCALAR_HANDLE}
+    # A descriptor character getter reports its current width with the address.
+    character_descriptor = (
+        getter_action in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
         and variable.semantic_type.name == "String"
     )
-    string_getter = literal_string or character_value or character_snapshot
-    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter or character_snapshot):
+    string_getter = literal_string or character_value or character_descriptor
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter):
         blockers.append("module variable is not a primitive rank-zero scalar")
     if character_value and _character_length(variable.semantic_type) is None:
         blockers.append("character module variable requires one declared length")
@@ -7027,7 +7026,7 @@ def _scalar_module_getter_blockers(
         in {
             ModuleGetterAction.NATIVE_SCALAR_VIEW,
             ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-            ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+            ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
         }
         else {CodegenAction.COPY_OUT}
         if string_getter
@@ -7134,7 +7133,7 @@ def _scalar_module_getter_action(
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
     if _scalar_module_descriptor_kind(variable) is not None:
-        return ModuleGetterAction.NATIVE_SCALAR_HANDLE
+        return ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
     if variable.semantic_type.metadata.get("native_storage") and _is_fixed_length_character_scalar(variable):

@@ -1892,7 +1892,7 @@ class OwnershipPolicyResolver:
                 boundary_storage_mode=StorageMode.ALIAS,
                 nullable=True,
                 borrowed=True,
-                reason="scalar module descriptor is queried through a persistent native handle",
+                reason="scalar module descriptor supplies a current native view on each read",
             )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:

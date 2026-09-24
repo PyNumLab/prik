@@ -340,7 +340,7 @@ class ModuleGetterAction(str, Enum):
     DIRECT_VALUE = "direct_value"
     NATIVE_SCALAR_VIEW = "native_scalar_view"
     NATIVE_CHARACTER_VIEW = "native_character_view"
-    NATIVE_SCALAR_HANDLE = "native_scalar_handle"
+    NATIVE_NULLABLE_SCALAR_VIEW = "native_nullable_scalar_view"
     CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"

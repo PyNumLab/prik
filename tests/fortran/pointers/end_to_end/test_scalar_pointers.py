@@ -60,7 +60,7 @@ def _scalar_pointer_module(build_mode: str, tmp_path: Path):
     return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
 
 
-def test_scalar_pointers_project_nullable_copied_values(
+def test_scalar_pointers_project_nullable_native_views(
     pyi_parity_build_mode: str,
     tmp_path: Path,
 ):
@@ -72,11 +72,13 @@ def test_scalar_pointers_project_nullable_copied_values(
         module.selected_scale = np.float64(9.0)
 
     module.point_to_target(np.float64(2.5))
-    snapshot = module.selected_scale
-    assert snapshot == np.float64(2.5)
+    view = module.selected_scale
+    assert view is not None and view.shape == () and view.dtype == np.dtype("float64")
+    assert view[()] == np.float64(2.5)
+    view[()] = np.float64(3.5)
     module.bump_native()
-    assert snapshot == np.float64(2.5)
-    assert module.selected_scale == np.float64(22.5)
+    assert view[()] == np.float64(23.5)
+    assert module.selected_scale[()] == np.float64(23.5)
 
     assert module.echo_pointer(np.float64(3.0)) == np.float64(5.0)
     assert module.echo_pointer(None) == np.float64(-2.0)

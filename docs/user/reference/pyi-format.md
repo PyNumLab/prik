@@ -406,10 +406,11 @@ scale: Float64[()]
 Mutable Fortran module variables expose their native storage. Fixed-storage
 numeric and logical scalars use live rank-zero `T[()]` NumPy views; fixed-length
 character scalars use live rank-zero `String[n][()]` bytes views. `PARAMETER`
-declarations use `Final[...]` values. Allocatable and pointer storage uses a
-handle that follows allocation or association changes. An edited plain `T`
-module declaration requests a scalar value getter. A literal default on
-supported mutable scalar state is an import-time native initializer.
+declarations use `Final[...]` values. Scalar allocatable and pointer module
+variables return a live rank-zero view or `None` on each read; array descriptors
+use handles. An edited plain `T` module declaration requests a scalar value
+getter. A literal default on supported mutable scalar state is an import-time
+native initializer.
 
 C global declarations can be represented for inspection, but current C wrapper
 builds reject native global state. C functions remain the supported runtime

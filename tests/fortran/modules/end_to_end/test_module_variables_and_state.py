@@ -302,7 +302,7 @@ def _character_descriptor_module(tmp_path: Path):
 
 
 def test_descriptor_character_module_variables_follow_current_storage(pyi_parity_build_mode: str, tmp_path: Path):
-    """A retained handle queries the current association, address, and width."""
+    """Each attribute read borrows the current address and character width."""
     module = _build_source_or_generated_pyi_and_import(
         NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90",
         tmp_path,
@@ -314,38 +314,37 @@ def test_descriptor_character_module_variables_follow_current_storage(pyi_parity
         CONTRACT_FIXTURES / "fchar_module_descriptors_f90",
         pyi_parity_build_mode,
     )
-    deferred = module.deferred
-    fixed = module.fixed
-    link = module.link
-
-    assert deferred.to_numpy() is None and not deferred.allocated
-    assert fixed.to_numpy() is None and not fixed.allocated
-    assert link.to_numpy() is None and not link.associated
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
 
     module.setup()
-    assert deferred.allocated and deferred.value == b"alpha"
-    assert fixed.allocated and fixed.value == b"FIXEDV"
-    assert link.associated and link.value == b"STORED"
-    view = link.to_numpy()
+    deferred = module.deferred
+    fixed = module.fixed
+    view = module.link
+    assert deferred is not None and deferred.shape == () and deferred.dtype == np.dtype("S5")
+    assert deferred[()] == b"alpha"
+    assert fixed is not None and fixed[()] == b"FIXEDV"
     assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
+    assert view[()] == b"STORED"
     view[()] = b"PYTHON"
     assert module.store[()] == b"PYTHON"
 
     module.grow()
-    assert deferred.value == b"alpha-more"
-    assert deferred.to_numpy().dtype == np.dtype("S10")
+    grown = module.deferred
+    assert grown is not None and grown.shape == () and grown.dtype == np.dtype("S10")
+    assert grown[()] == b"alpha-more"
 
 
 def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):
     """Deallocation and nullification are values Python observes, not stale reads."""
     module = _character_descriptor_module(tmp_path)
 
-    deferred, fixed, link = module.deferred, module.fixed, module.link
     module.setup()
     module.clear()
-    assert deferred.to_numpy() is None and not deferred.allocated
-    assert fixed.to_numpy() is None and not fixed.allocated
-    assert link.to_numpy() is None and not link.associated
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
 
 
 def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):

@@ -2697,8 +2697,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_native_scalar_view(plan)
             case ModuleGetterAction.NATIVE_CHARACTER_VIEW:
                 return self._lower_module_getter_native_scalar_view(plan)
-            case ModuleGetterAction.NATIVE_SCALAR_HANDLE:
-                return self._lower_module_getter_native_scalar_handle(plan)
+            case ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW:
+                return self._lower_module_getter_native_nullable_scalar_view(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -3457,8 +3457,8 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
-    def _lower_module_getter_native_scalar_handle(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
-        """Query a scalar descriptor's current storage without retaining an old address."""
+    def _lower_module_getter_native_nullable_scalar_view(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Query a scalar descriptor's current storage for one attribute read."""
         native = self._native_variable_name(plan)
         present = {"allocatable": "allocated", "pointer": "associated"}.get(plan.entrypoint.descriptor_kind)
         if present is None:
@@ -3706,7 +3706,7 @@ class FortranBridgeGenerator(ClassVisitor):
             in {
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
                 ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }
             for variable in self._variables(plan)
         ):

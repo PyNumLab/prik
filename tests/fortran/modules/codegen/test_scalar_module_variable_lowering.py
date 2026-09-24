@@ -107,7 +107,7 @@ def test_module_variable_plan_contains_only_completed_dispatch_facts():
     assert variables["counter"].bridge.native_assignment is AssignmentMode.VALUE_COPY
     assert variables["counter"].binding.initializer == 3
     assert variables["target_scale"].bridge.native_assignment is AssignmentMode.VALUE_COPY
-    assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NATIVE_SCALAR_HANDLE
+    assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     assert variables["optional_scale"].entrypoint.descriptor_kind == "allocatable"
     assert variables["optional_scale"].binding.setter_action is SetterAction.REJECT_REPLACEMENT
     assert variables["optional_scale"].bridge.native_assignment is AssignmentMode.NONE

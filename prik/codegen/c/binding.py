@@ -221,7 +221,7 @@ _BINDING_GETTER_SUMMARIES = {
     ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
     ModuleGetterAction.NATIVE_SCALAR_VIEW: "Wraps live native scalar storage in a rank-zero NumPy view.",
     ModuleGetterAction.NATIVE_CHARACTER_VIEW: "Wraps live native character bytes in a rank-zero NumPy view.",
-    ModuleGetterAction.NATIVE_SCALAR_HANDLE: "Returns a handle that queries current native scalar storage.",
+    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: "Borrows the current native scalar storage, or returns None.",
     ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
     ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
@@ -4536,7 +4536,7 @@ class CBindingGenerator(ClassVisitor):
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
                 ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }
         )
 
@@ -6136,8 +6136,8 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_native_scalar_view(plan)
             case ModuleGetterAction.NATIVE_CHARACTER_VIEW:
                 return self._lower_module_getter_native_character_view(plan)
-            case ModuleGetterAction.NATIVE_SCALAR_HANDLE:
-                return self._lower_module_getter_native_scalar_handle(plan)
+            case ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW:
+                return self._lower_module_getter_native_nullable_scalar_view(plan)
             case ModuleGetterAction.CHARACTER_VALUE:
                 return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -6227,44 +6227,61 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _lower_module_getter_native_scalar_handle(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
-        """Create a scalar descriptor handle around one callable native inquiry."""
+    def _lower_module_getter_native_nullable_scalar_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Borrow the currently present scalar storage as one rank-zero view."""
         owner = self._module_native_array_owner_name(plan)
-        descriptor = plan.entrypoint.descriptor_kind
-        if descriptor not in {"allocatable", "pointer"}:
-            raise ValueError(f"Scalar descriptor {plan.owner_path!r} has no completed descriptor kind")
+        character = plan.datatype_family is DatatypeFamily.STRING
+        if character:
+            result = CodeExpression(
+                "PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, data, (int)length, "
+                "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
+            )
+        else:
+            scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+            result = CodeExpression(f"PyArray_SimpleNewFromData(0, NULL, {scalar.array_numpy_type}, data)")
         return (
             CFunction(
                 self._module_getter_name(plan),
                 "PyObject *",
                 storage="static",
                 body=(
+                    *((CDeclaration("length", "int64_t", CodeExpression("0")),) if character else ()),
                     CDeclaration(
-                        "runtime", "PyObject *", CodeExpression('PyImport_ImportModule("prik.runtime.handles")')
-                    ),
-                    CIf(CodeExpression("runtime == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                    CDeclaration(
-                        "factory",
-                        "PyObject *",
+                        "data",
+                        "void *",
                         CodeExpression(
-                            'PyObject_GetAttrString(runtime, "_native_scalar_handle_from_generated_address")'
+                            f"{self._module_bridge_getter_name(plan)}(&length)"
+                            if character
+                            else f"{self._module_bridge_getter_name(plan)}()"
                         ),
                     ),
-                    CExpressionStatement(CodeExpression("Py_DECREF(runtime)")),
-                    CIf(CodeExpression("factory == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+                    CIf(
+                        CodeExpression("data == NULL"),
+                        body=(CExpressionStatement(CodeExpression("Py_RETURN_NONE")),),
+                    ),
+                    *(
+                        (
+                            CIf(
+                                CodeExpression("length < 0 || (int64_t)(int)length != length"),
+                                body=(
+                                    CExpressionStatement(
+                                        CodeExpression(
+                                            'PyErr_SetString(PyExc_OverflowError, "Native character width exceeds NumPy itemsize")'
+                                        )
+                                    ),
+                                    CReturn(CodeExpression("NULL")),
+                                ),
+                            ),
+                        )
+                        if character
+                        else ()
+                    ),
                     CDeclaration(
                         "result",
                         "PyObject *",
-                        CodeExpression(
-                            f'PyObject_CallFunction(factory, "KssOi", '
-                            f"(unsigned long long)(uintptr_t)&{self._module_bridge_getter_name(plan)}, "
-                            f"{self._c_string_literal(plan.semantic_type_name)}, "
-                            f"{self._c_string_literal(descriptor)}, {owner}, "
-                            f"{1 if plan.datatype_family is DatatypeFamily.STRING else 0})"
-                        ),
+                        result,
                     ),
-                    CExpressionStatement(CodeExpression("Py_DECREF(factory)")),
-                    CReturn(CodeExpression("result")),
+                    *self._ordinary_array_field_owner_nodes("result", owner),
                 ),
             ),
         )
@@ -16311,7 +16328,7 @@ class CBindingGenerator(ClassVisitor):
                 ModuleGetterAction.NATIVE_ARRAY_HANDLE,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
                 ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }:
                 continue
             owner = self._module_native_array_owner_name(variable)

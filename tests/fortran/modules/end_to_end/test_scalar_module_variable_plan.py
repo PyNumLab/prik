@@ -56,10 +56,8 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert module.prefix == "D"
     assert module.counter == np.int32(3)
     assert module.target_scale == np.float64(1.5)
-    allocatable = module.optional_scale
-    pointer = module.selected_scale
-    assert not allocatable.allocated and allocatable.to_numpy() is None
-    assert not pointer.associated and pointer.to_numpy() is None
+    assert module.optional_scale is None
+    assert module.selected_scale is None
     values = module.values
     assert isinstance(values, AllocatableArray)
     assert values.allocated is False
@@ -80,14 +78,14 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
 
     assert module.set_allocatable(np.float64(1.5)) == np.float64(1.5)
     assert module.point_to_target(np.float64(2.5)) == np.float64(2.5)
-    allocatable_view = allocatable.to_numpy()
-    pointer_view = pointer.to_numpy()
+    allocatable_view = module.optional_scale
+    pointer_view = module.selected_scale
     assert allocatable_view is not None and pointer_view is not None
     assert module.bump_native() == np.float64(34.0)
     assert allocatable_view[()] == np.float64(11.5)
     assert pointer_view[()] == np.float64(22.5)
-    assert allocatable.value == np.float64(11.5)
-    assert pointer.value == np.float64(22.5)
+    assert module.optional_scale[()] == np.float64(11.5)
+    assert module.selected_scale[()] == np.float64(22.5)
 
     module.allocate_values(np.int32(3))
     assert module.values is values
@@ -100,8 +98,8 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert values.allocated is False
     assert values.to_numpy() is None
 
-    assert module.optional_scale.value == np.float64(11.5)
-    assert module.selected_scale.value == np.float64(22.5)
+    assert module.optional_scale[()] == np.float64(11.5)
+    assert module.selected_scale[()] == np.float64(22.5)
 
     module.nmax = np.int32(99)
     assert module.nmax == np.int32(99)

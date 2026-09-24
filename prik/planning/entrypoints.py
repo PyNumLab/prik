@@ -1126,7 +1126,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 result = self._opaque_result()
             elif (
                 variable.bridge.native_getter_action
-                in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_SCALAR_HANDLE}
+                in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
                 and variable.datatype_family is DatatypeFamily.STRING
             ):
                 parameters = (self._int64_parameter("length", reference=True, intent="out"),)
@@ -1136,7 +1136,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 ModuleGetterAction.DERIVED_OBJECT,
                 ModuleGetterAction.NATIVE_SCALAR_VIEW,
                 ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_SCALAR_HANDLE,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }:
                 parameters = ()
                 result = self._opaque_result()
