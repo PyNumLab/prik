@@ -1309,7 +1309,15 @@ class PyiPrinter(ClassVisitor):
             return "" if generic_name == public_name else f', generic="{generic_name}"'
         if procedure.metadata.get(OVERLOAD_KIND_METADATA) not in {"operator", "comparison"}:
             return ""
+        # A dotted spelling names the same operator as its symbol, but a
+        # compiler matches `use, only:` against the spelling the module wrote.
         if re.sub(r"\s+", "", generic_name).casefold() not in {
+            "operator(.eq.)",
+            "operator(.ne.)",
+            "operator(.lt.)",
+            "operator(.le.)",
+            "operator(.gt.)",
+            "operator(.ge.)",
             "operator(.eqv.)",
             "operator(.neqv.)",
         }:

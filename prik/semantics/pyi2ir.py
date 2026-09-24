@@ -1563,11 +1563,14 @@ class _PyiAstParser:
         if generic_name is None:
             return identity
         compact = re.sub(r"\s+", "", generic_name).casefold()
-        allowed_overrides = {
-            "__eq__": {"operator(==)", "operator(.eq.)", "operator(.eqv.)"},
-            "__ne__": {"operator(/=)", "operator(.ne.)", "operator(.neqv.)"},
-        }
-        if compact not in allowed_overrides.get(method_name, {identity[1].casefold()}):
+        canonical = identity[1].casefold()
+        # A comparison may be spelled with its dotted keyword; the logical
+        # equivalence operators also back equality on Boolean operands.
+        dotted = {"==": ".eq.", "/=": ".ne.", "<": ".lt.", "<=": ".le.", ">": ".gt.", ">=": ".ge."}
+        token = canonical.removeprefix("operator(").removesuffix(")")
+        allowed = {canonical, *((f"operator({dotted[token]})",) if token in dotted else ())}
+        allowed |= {"__eq__": {"operator(.eqv.)"}, "__ne__": {"operator(.neqv.)"}}.get(method_name, set())
+        if compact not in allowed:
             raise ValueError(f"overload generic {generic_name!r} is incompatible with method {method_name!r}")
         return identity[0], generic_name
 

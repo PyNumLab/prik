@@ -12,15 +12,17 @@ publication: reviewed
 
 Use a configured Open MPI source tree and the corresponding installed Open MPI
 toolchain. PRIK reads `mpi-f08.F90` and finds the sources of the modules it
-uses in the source tree, whatever their names and layout in your Open MPI
-version, to generate a contract; the extension compiles against the installed
-modules and libraries.
+uses in the source and build trees, whatever their names and layout in your
+Open MPI version, to generate a contract; the extension compiles against the
+installed modules and libraries.
 
 Set `PRIK_OPENMPI_SOURCE` to the matching Open MPI source root and
-`PRIK_OPENMPI_BUILD` to its configured build root. The build must contain its
-generated Fortran includes, including `configure-fortran-output.h` and
-`sizeof_f08.h`. Confirm that `mpifort --showme:version` reports the same
-Open MPI version as the source tree.
+`PRIK_OPENMPI_BUILD` to its build root. Use a tree that has been built with
+`make`, which generates the Fortran includes the sources read, such as
+`configure-fortran-output.h` and `sizeof_f08.h`; `configure` also generates some
+module sources into the build tree, so search both trees. Confirm that
+`mpifort --showme:version` reports the same Open MPI version as the source
+tree.
 
 Select the public facade's small initial API:
 
@@ -45,9 +47,11 @@ EOF
 python3 -m prik generate --pyi \
   "$PRIK_OPENMPI_SOURCE/ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90" \
   --module-source-dir "$PRIK_OPENMPI_SOURCE" \
+  --module-source-dir "$PRIK_OPENMPI_BUILD" \
   --export-symbols exports.txt --out contract --compiler mpifort \
   -I "$PRIK_OPENMPI_BUILD" \
   -I "$PRIK_OPENMPI_BUILD/ompi/mpi/fortran/use-mpi-f08" \
+  -I "$PRIK_OPENMPI_BUILD/ompi/mpi/fortran/use-mpi-f08/mod" \
   -I "$PRIK_OPENMPI_SOURCE" \
   -I "$PRIK_OPENMPI_BUILD/ompi/include" \
   -I "$PRIK_OPENMPI_SOURCE/ompi/include"
@@ -85,7 +89,7 @@ build_pyi_extension(
 Run a Python program under the matching Open MPI launcher. The selected
 functions live in `prik_openmpi_f08.mpi_f08`; Fortran `Int32` arguments such as
 counts and ranks use `numpy.int32` values. NumPy arrays provide the storage for
-choice buffers. In the tested Open MPI 4.1.2 configuration, `mpi_in_place` is
+choice buffers. In the tested Open MPI 4.1.2 and 5.0.11 configurations, `mpi_in_place` is
 a concrete integer module object exposed as a live rank-zero NumPy view, so
 pass that view directly to `mpi_allreduce`.
 A two-rank example lives at

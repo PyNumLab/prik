@@ -28,6 +28,9 @@ release tags add a leading `v` to the package version.
   writes a pointer's current target.
 - A separate module-level `PARAMETER` statement types an undeclared name by the
   module's `IMPLICIT` rules and is rejected under `implicit none`.
+- A derived type a module reaches through another module's re-export is
+  resolved to the module that declares it, so generated contracts name it
+  instead of writing an undefined type.
 - `IMPLICIT NONE (EXTERNAL)` no longer disables implicit typing; only plain
   `IMPLICIT NONE` or a specifier list naming `TYPE` does.
 
@@ -50,7 +53,11 @@ release tags add a leading `v` to the package version.
   contracts publish the same selected surface.
 - The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
   wrapper from a restricted generated `.pyi` against a matching prebuilt
-  Open MPI installation and exercise NumPy communication and in-place reduction.
+  Open MPI installation and exercise NumPy communication and in-place reduction;
+  it is verified with Open MPI 4.1.2 and 5.0.11.
+- A contract keeps a dotted comparison spelling such as `operator(.EQ.)` in
+  `@overload(..., generic=...)`, so a replayed bridge imports the operator
+  under the name its module declares.
 - The PRIMA example links five derivative-free solvers against one statically
   compiled `libprimaf` archive through a generated semantic contract and runs
   in the real-library portability matrix. Its guide includes a reproducible

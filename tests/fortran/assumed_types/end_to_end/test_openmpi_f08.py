@@ -78,6 +78,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     includes = (
         build,
         build / "ompi/mpi/fortran/use-mpi-f08",
+        build / "ompi/mpi/fortran/use-mpi-f08/mod",
         source,
         build / "ompi/include",
         source / "ompi/include",
@@ -92,6 +93,8 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             str(source / "ompi/mpi/fortran/use-mpi-f08/mpi-f08.F90"),
             "--module-source-dir",
             str(source),
+            "--module-source-dir",
+            str(build),
             "--export-symbols",
             str(exports),
             "--out",
@@ -116,7 +119,9 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     assert "mpi_sum: Final[Mpi_Op]" in types
     assert "mpi_int: Final[Mpi_Datatype]" in types
     assert "mpi_status_ignore: Mpi_Status" in types
-    assert all(f"class Mpi_{name}" in types for name in ("Comm", "Datatype", "Op", "Status"))
+    # Where the handle types are declared depends on the Open MPI version.
+    declarations = "".join(path.read_text(encoding="utf-8") for path in contract.glob("*.pyi"))
+    assert all(f"class Mpi_{name}" in declarations for name in ("Comm", "Datatype", "Op", "Status"))
     assert "AnyNative[" in interfaces and '@overload("mpi_send_f08")\ndef mpi_send(' in interfaces
 
     def show(flag: str) -> list[str]:

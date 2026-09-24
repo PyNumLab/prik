@@ -15,7 +15,7 @@ compile-time requirement utilities at the end of the module.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import NamedTuple
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -239,6 +239,9 @@ class _DerivedTypeContext:
     uses: list[FortranUseStatement] | None = None
     procedure_uses: list[FortranUseStatement] | None = None
     local_types: frozenset[str] = frozenset()
+    # The parsed modules a ``use`` can reach, so a type another module only
+    # re-exports resolves to the module that declares it.
+    module_index: Mapping[str, FortranModule] | None = None
 
 
 @dataclass(frozen=True)
@@ -1006,7 +1009,10 @@ class FortranToIRConverter(ClassVisitor):
         # it, so its dummies resolve there rather than in the module that
         # imported the interface -- which need not import the types it names.
         declaring_context = (
-            self._module_derived_type_context(resolved.module)
+            self._module_derived_type_context(
+                resolved.module,
+                derived_type_context.module_index if derived_type_context is not None else None,
+            )
             if resolved is not None and resolved.module is not None
             else derived_type_context
         )
@@ -1520,9 +1526,9 @@ class FortranToIRConverter(ClassVisitor):
         constants, imports, and visibility.  It deliberately records facts only;
         later policy completion owns wrapper behavior decisions.
         """
-        context = self._module_derived_type_context(module)
-        self._record_abstract_type_names(module)
         index = module_index if module_index is not None else self._callback_module_index([module])
+        context = self._module_derived_type_context(module, index)
+        self._record_abstract_type_names(module)
         callback_interfaces = self._module_callback_interfaces(index, module)
         source_procedures = [
             *module.procedures,
@@ -2406,12 +2412,16 @@ class FortranToIRConverter(ClassVisitor):
         }
 
     @staticmethod
-    def _module_derived_type_context(module: FortranModule) -> _DerivedTypeContext:
+    def _module_derived_type_context(
+        module: FortranModule,
+        module_index: Mapping[str, FortranModule] | None = None,
+    ) -> _DerivedTypeContext:
         """Create the lexical type lookup context owned by ``module``."""
         return _DerivedTypeContext(
             module=module.name,
             uses=module.uses,
             local_types=frozenset(dtype.name.lower() for dtype in module.derived_types),
+            module_index=module_index,
         )
 
     @staticmethod
@@ -2431,6 +2441,7 @@ class FortranToIRConverter(ClassVisitor):
             uses=uses,
             procedure_uses=FortranToIRConverter._procedure_local_uses(proc),
             local_types=parent.local_types if parent is not None else frozenset(),
+            module_index=parent.module_index if parent is not None else None,
         )
 
     @staticmethod
@@ -2497,10 +2508,12 @@ class FortranToIRConverter(ClassVisitor):
         if lname in context.local_types:
             return _ResolvedDerivedTypeOrigin(context.module, local_name)
 
-        resolved = self._resolve_derived_type_origin_from_uses(local_name, context.uses)
+        resolved = self._resolve_derived_type_origin_from_uses(local_name, context.uses, context.module_index)
         if resolved.module is None:
             return resolved
-        procedure_resolved = self._resolve_derived_type_origin_from_uses(local_name, context.procedure_uses)
+        procedure_resolved = self._resolve_derived_type_origin_from_uses(
+            local_name, context.procedure_uses, context.module_index
+        )
         if (procedure_resolved.module, procedure_resolved.name) == (resolved.module, resolved.name):
             return _ResolvedDerivedTypeOrigin(resolved.module, resolved.name, import_scope="procedure")
         return resolved
@@ -2509,25 +2522,69 @@ class FortranToIRConverter(ClassVisitor):
         self,
         local_name: str,
         uses: list[FortranUseStatement] | None,
+        module_index: Mapping[str, FortranModule] | None = None,
     ) -> _ResolvedDerivedTypeOrigin:
         """Resolve one derived-type spelling from explicit or wildcard ``use`` maps.
 
-        Only an unambiguous match is returned.  Ambiguous explicit or wildcard
-        imports intentionally remain unresolved so this conversion stage does
-        not invent a native identity.
+        A module offers the types it declares and those it publicly re-exports;
+        a match is reported where the type is declared, however many modules it
+        passed through.  Only an unambiguous match is returned.  Ambiguous
+        explicit or wildcard imports intentionally remain unresolved so this
+        conversion stage does not invent a native identity.
         """
         scope = ScopeUses(uses or ())
-        offered = self._wrapped_type_names()
+        index = module_index or {}
+        offered = self._offered_type_names(index)
         routes = scope.routes_for(local_name, offered)
-        identities = {route.key for route in routes}
+        identities = {self._declared_type_identity(index, route.module, route.source_name) for route in routes}
         if len(identities) == 1:
-            return _ResolvedDerivedTypeOrigin(routes[0].module, routes[0].source_name)
+            module, name = identities.pop()
+            return _ResolvedDerivedTypeOrigin(module, name)
         if identities:
             return _ResolvedDerivedTypeOrigin(None, local_name)
         unresolved = scope.unresolved_routes_for(local_name, offered)
         if len({route.key for route in unresolved}) == 1:
             return _ResolvedDerivedTypeOrigin(unresolved[0].module, unresolved[0].source_name)
         return _ResolvedDerivedTypeOrigin(None, local_name)
+
+    def _offered_type_names(self, index: Mapping[str, FortranModule]):
+        """Return the type names each module declares or publicly re-exports, or ``None``."""
+        declared = self._wrapped_type_names()
+
+        def offered(module_name: str):
+            names = declared(module_name)
+            module = index.get(module_name.casefold())
+            if names is None or module is None:
+                return names
+            return names | self._reexported_type_names(module, index)
+
+        return offered
+
+    def _reexported_type_names(self, module: FortranModule, index: Mapping[str, FortranModule]) -> set[str]:
+        """Return the derived-type names ``module`` makes public through ``use``."""
+        cache = self.__dict__.setdefault("_reexported_type_cache", {})
+        key = (id(module), id(index))
+        if key not in cache:
+            is_public = self._effective_accessibility(module)
+            cache[key] = {
+                local_name.casefold()
+                for local_name, routes, (kind, _origin_module, _origin_name) in self._use_associations(module, index)
+                if kind == "derived_type" and is_public(local_name, routes)
+            }
+        return cache[key]
+
+    @classmethod
+    def _declared_type_identity(
+        cls,
+        index: Mapping[str, FortranModule],
+        module_name: str,
+        source_name: str,
+    ) -> tuple[str, str]:
+        """Return the module and name declaring a type reached through ``module_name``."""
+        kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, source_name)
+        if kind == "derived_type":
+            return origin_module, origin_name
+        return module_name, source_name
 
     def _wrapped_type_names(self):
         """Return the wrapped type names each module declares, or ``None``."""
@@ -3704,7 +3761,7 @@ class FortranToIRConverter(ClassVisitor):
         lookup: dict[tuple[str, str], SemanticFunction] = {}
         for source_module, source_generic in self._imported_generic_interfaces(module, generic_name, modules):
             signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
-            source_context = self._module_derived_type_context(source_module)
+            source_context = self._module_derived_type_context(source_module, modules)
             names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
             for name in names:
                 target = _SpecificProcedure(source_module.name, name)
