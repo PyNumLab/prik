@@ -42,6 +42,15 @@ release tags add a leading `v` to the package version.
   may each have a submodule of the same name. `FortranProject.submodules` and
   its dependency keys use that identity, and an entity a submodule declares
   records it as its owner.
+- A Fortran file parsed alone and within a project resolves everything it
+  declares the same way: `parse_fortran_file` runs the project's resolution
+  pass on its one file, so a kind in an interface body, such as a callback
+  prototype's `real(wp)`, resolves there too. A file converted with its
+  sibling modules resolves their procedures and types as project conversion
+  does. `prik generate` converts its inputs through the project route, and
+  `fortran_project_to_semantic_files` returns that conversion grouped by
+  file. Both parse reports assemble their inputs first, so a kind one input
+  file declares for another is resolved in the report.
 - Compile ordering follows `use` natures: a scope using the processor's
   module through `use, intrinsic` no longer waits on a project source of the
   same name, and `use` statements in internal procedures and `BLOCK`

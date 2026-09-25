@@ -419,22 +419,79 @@ class FortranToIRConverter(ClassVisitor):
     ) -> list[SemanticModule]:
         """Convert every module and standalone procedure group in one file.
 
-        The method first expands the wrapped-derived-type lookup from the file,
-        then preserves parser module order.  Standalone procedures are emitted
-        last as the requested synthetic module when present.  ``sibling_modules``
-        supplies modules parsed from other files so that an abstract interface
-        imported across files resolves the same way it does for a project.
+        The file is converted exactly as a project file is, with the modules it
+        can reach as context: its own and ``sibling_modules``, the modules
+        parsed from other files alongside it. Parser module order is kept, and
+        standalone procedures come last as the requested synthetic module.
         """
-        siblings = tuple(sibling_modules)
-        converter = self._with_additional_known_modules(module.name for module in (*siblings, *parsed_file.modules))
-        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
-        converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
-        converter = converter._with_additional_abstract_types(self._abstract_types_from_file(parsed_file))
-        index = self._callback_module_index(siblings, parsed_file.modules)
-        modules = [converter.visit(module, module_index=index) for module in parsed_file.modules]
+        index = self._callback_module_index(tuple(sibling_modules), parsed_file.modules)
+        return self._with_reachable_modules(index)._convert_parsed_file(
+            parsed_file,
+            index,
+            standalone_module_name=standalone_module_name,
+        )
+
+    def _visit_FortranProject(self, project: FortranProject) -> list[SemanticModule]:
+        """Convert project files in order, every file with the whole project as context."""
+        return [
+            module for _parsed_file, modules in self.project_files_to_semantic_modules(project) for module in modules
+        ]
+
+    def project_files_to_semantic_modules(
+        self,
+        project: FortranProject,
+    ) -> list[tuple[FortranFile, list[SemanticModule]]]:
+        """Convert project files in order and report each file's semantic modules.
+
+        Every file sees every project module as context, so a derived type,
+        procedure, or interface one file imports from another resolves. A
+        caller that reports per source file reads the pairing; the modules in
+        file order are the project's conversion.
+        """
+        index = self._callback_module_index(
+            project.modules.values(),
+            (module for parsed_file in project.files for module in parsed_file.modules),
+        )
+        converter = self._with_reachable_modules(index)
+        return [(parsed_file, converter._convert_parsed_file(parsed_file, index)) for parsed_file in project.files]
+
+    def _with_reachable_modules(self, index: Mapping[str, FortranModule]) -> FortranToIRConverter:
+        """Return a converter that knows what every reachable module declares.
+
+        The modules are named, and their derived types, abstract types, and
+        procedures become known, so a name any of them declares resolves the
+        same way whether one file or a whole project is being converted.
+        """
+        modules = tuple(index.values())
+        converter = self._with_additional_known_modules(module.name for module in modules)
+        converter = converter._with_additional_wrapped_types(
+            (str(dtype.module).lower(), dtype.name.lower())
+            for module in modules
+            for dtype in module.derived_types
+            if dtype.module
+        )
+        converter = converter._with_additional_known_procedures(
+            (module.name, procedure.name) for module in modules for procedure in self._module_procedures(module)
+        )
+        return converter._with_additional_abstract_types(
+            (module.name.casefold(), dtype.name.casefold())
+            for module in modules
+            for dtype in module.derived_types
+            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
+        )
+
+    def _convert_parsed_file(
+        self,
+        parsed_file: FortranFile,
+        index: Mapping[str, FortranModule],
+        *,
+        standalone_module_name: str | None = None,
+    ) -> list[SemanticModule]:
+        """Convert one file's modules, then its standalone procedures as one synthetic module."""
+        modules = [self.visit(module, module_index=index) for module in parsed_file.modules]
         if parsed_file.procedures:
             modules.append(
-                converter.procedures_to_semantic_module(
+                self.procedures_to_semantic_module(
                     parsed_file.procedures,
                     name=standalone_module_name or self._standalone_module_name(parsed_file),
                     callback_interfaces=self._declared_callback_interfaces(parsed_file),
@@ -442,36 +499,6 @@ class FortranToIRConverter(ClassVisitor):
                 )
             )
         return modules
-
-    def _visit_FortranProject(self, project: FortranProject) -> list[SemanticModule]:
-        """Convert project files in order with project-wide type and callback context.
-
-        Each file receives the known project type set plus its own declarations,
-        while imported callback interfaces are resolved against the project.
-        The returned module ordering matches the input file and parser order.
-        """
-        index = self._callback_module_index(
-            project.modules.values(),
-            (module for parsed_file in project.files for module in parsed_file.modules),
-        )
-        converter = self._with_additional_known_modules(module.name for module in index.values())
-        converter = converter._with_additional_wrapped_types(self._wrapped_types_from_project(project))
-        converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
-        converter = converter._with_additional_abstract_types(self._abstract_types_from_project(project))
-        semantic_modules = []
-        for parsed_file in project.files:
-            file_converter = converter._with_additional_wrapped_types(converter._wrapped_types_from_file(parsed_file))
-            semantic_modules.extend(file_converter.visit(module, module_index=index) for module in parsed_file.modules)
-            if parsed_file.procedures:
-                semantic_modules.append(
-                    file_converter.procedures_to_semantic_module(
-                        parsed_file.procedures,
-                        name=self._standalone_module_name(parsed_file),
-                        callback_interfaces=self._declared_callback_interfaces(parsed_file),
-                        module_index=index,
-                    )
-                )
-        return semantic_modules
 
     # Variable and argument visitors
 
@@ -2405,44 +2432,6 @@ class FortranToIRConverter(ClassVisitor):
         converter._known_modules = self._known_modules | {module for module, _name in merged}
         return converter
 
-    @staticmethod
-    def _wrapped_types_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
-        """Collect module-qualified derived types declared by one parsed file."""
-        return {
-            (dtype.module.lower(), dtype.name.lower())
-            for module in parsed_file.modules
-            for dtype in module.derived_types
-            if dtype.module
-        }
-
-    @staticmethod
-    def _abstract_types_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
-        """Collect module-qualified abstract types declared by one parsed file."""
-        return {
-            (module.name.casefold(), dtype.name.casefold())
-            for module in parsed_file.modules
-            for dtype in module.derived_types
-            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
-        }
-
-    @classmethod
-    def _known_procedures_from_file(cls, parsed_file: FortranFile) -> set[tuple[str, str]]:
-        """Collect module-qualified procedures declared by one parsed file."""
-        return {
-            (module.name, procedure.name)
-            for module in parsed_file.modules
-            for procedure in cls._module_procedures(module)
-        }
-
-    @classmethod
-    def _known_procedures_from_project(cls, project: FortranProject) -> set[tuple[str, str]]:
-        """Collect module-qualified procedures known to one parsed project."""
-        return {
-            (module.name, procedure.name)
-            for module in project.modules.values()
-            for procedure in cls._module_procedures(module)
-        }
-
     @classmethod
     def _module_procedures(cls, module: FortranModule) -> tuple[FortranProcedureSignature, ...]:
         """Return every procedure one module declares, which is what a ``use`` of it can call.
@@ -2483,20 +2472,6 @@ class FortranToIRConverter(ClassVisitor):
                 declared_names.add(name)
                 procedures.append(procedure)
         return procedures
-
-    @staticmethod
-    def _wrapped_types_from_project(project: FortranProject) -> set[tuple[str, str]]:
-        """Collect project-known module-qualified derived types for import resolution."""
-        return {(dtype.module.lower(), dtype.name.lower()) for dtype in project.derived_types.values() if dtype.module}
-
-    @staticmethod
-    def _abstract_types_from_project(project: FortranProject) -> set[tuple[str, str]]:
-        """Collect project-known module-qualified abstract derived types."""
-        return {
-            (dtype.module.casefold(), dtype.name.casefold())
-            for dtype in project.derived_types.values()
-            if dtype.module and any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
-        }
 
     @staticmethod
     def _module_derived_type_context(
@@ -4953,6 +4928,26 @@ def fortran_project_to_semantic_modules(
         type_facts=type_facts,
         assume_intent_in_scalars=assume_intent_in_scalars,
     ).visit(project)
+
+
+def fortran_project_to_semantic_files(
+    project: FortranProject,
+    *,
+    compile_time_values: dict[str, int | str] | None = None,
+    type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+    assume_intent_in_scalars: bool = False,
+) -> list[tuple[FortranFile, list[SemanticModule]]]:
+    """Convert a parsed Fortran project and pair each file with its semantic modules.
+
+    This is :func:`fortran_project_to_semantic_modules` for a caller that
+    reports per source file, such as a generated contract for each input: the
+    conversion, and every file's view of the rest of the project, is the same.
+    """
+    return _converter_for(
+        compile_time_values,
+        type_facts=type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+    ).project_files_to_semantic_modules(project)
 
 
 if __name__ == "__main__":

@@ -232,8 +232,8 @@ end module direct_intrinsic_kind
         encoding="utf-8",
     )
 
-    parsed_files = prik_cli._parse_fortran_source_files([source], PreprocessingConfig())
-    parsed = parsed_files[0][1]
+    project = prik_cli._parse_fortran_source_files([source], PreprocessingConfig())
+    parsed = project.files[0]
     module = parsed.modules[0]
 
     assert module.variables[0].kind == "real64"
@@ -265,11 +265,11 @@ end module records
         encoding="utf-8",
     )
 
-    parsed_files = prik_cli._parse_fortran_source_files(
+    project = prik_cli._parse_fortran_source_files(
         [precision, records],
         PreprocessingConfig(),
     )
-    record_file = next(parsed for path, parsed in parsed_files if path == records)
+    record_file = next(parsed for parsed in project.files if parsed.filename == str(records))
 
     assert record_file.modules[0].derived_types[0].fields[0].kind == "8"
 
@@ -838,3 +838,22 @@ def test_doctor_cmake_reports_the_discovery_facts_a_build_would_use():
         assert report[label]
     for group in ("cmake.root", "cmake.module"):
         assert report[f"entry point {group}"]
+
+
+def test_parse_reports_resolve_kinds_one_input_file_declares_for_another(tmp_path: Path):
+    """Both parse commands assemble their inputs as a build does, so a kind from another file resolves."""
+    kinds = tmp_path / "kinds.f90"
+    kinds.write_text("module kinds\n  integer, parameter :: wp = 8\nend module kinds\n", encoding="utf-8")
+    user = tmp_path / "user.f90"
+    user.write_text(
+        "module user\n  use kinds, only: wp\ncontains\n  subroutine run(x)\n    real(wp) :: x\n"
+        "  end subroutine run\nend module user\n",
+        encoding="utf-8",
+    )
+
+    for report in (
+        prik_cli._parse_report([str(kinds), str(user)]),
+        fortran_parser_cli._parse_paths([str(kinds), str(user)]),
+    ):
+        procedure = report[str(user)]["modules"][0]["procedures"][0]
+        assert procedure["arguments"][0]["kind"] == "8"

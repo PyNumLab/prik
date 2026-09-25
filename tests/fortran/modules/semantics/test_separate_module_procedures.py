@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
-from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules, fortran_project_to_semantic_modules
 
 SIZES = """
 module sizes
@@ -89,3 +89,27 @@ def test_a_separate_interface_body_resolves_kinds_through_its_module(route: str)
     signature = module.separate_procedures[0]
 
     assert (signature.arguments[0].kind, signature.result.kind) == ("8", "8")
+
+
+def test_a_file_converted_with_its_siblings_resolves_their_procedures_as_a_project_does():
+    """The context sibling modules supply is the same one project conversion builds.
+
+    A single file converted with its siblings knew their module names but not
+    what they declared, so a sibling's procedure a plain ``use`` reaches stayed
+    unresolved there while the project route resolved it.
+    """
+    sizes_source, _header, user_body = SIZES.partition("\nmodule user\n")
+    project = parse_fortran_project({"sizes.f90": sizes_source, "user.f90": "module user\n" + user_body})
+    sizes_file, user_file = project.files
+    alone = fortran_file_to_semantic_modules(user_file, sibling_modules=sizes_file.modules)
+    within = [module for module in fortran_project_to_semantic_modules(project) if module.name == "user"]
+
+    def callables(modules):
+        x = modules[0].functions[0].arguments[1]
+        return [
+            (item.native_scope, item.placement)
+            for axis in x.semantic_type.storage.array.expression_callables
+            for item in axis
+        ]
+
+    assert callables(alone) == callables(within) == [("sizes", "module")]

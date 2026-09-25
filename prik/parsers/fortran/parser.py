@@ -1552,10 +1552,15 @@ class FortranParser(ClassVisitor):
         units = self._helper_parse_file_units(top_units, root_scope, filename)
         self._helper_resolve_file_types(units)
         interfaces = self._helper_attach_file_interfaces(lines, filename, units)
-        self._resolve_file_compile_time_facts(units)
 
         # Stage 3: assemble the stable file model and its source metadata.
-        return self._helper_build_fortran_file(code, filename, encoding, units, interfaces)
+        parsed_file = self._helper_build_fortran_file(code, filename, encoding, units, interfaces)
+
+        # Stage 4: resolve kinds, values, and shapes exactly as a project of
+        # this one file does, so one file parsed alone and within a project
+        # agree on everything the file itself declares.
+        self._resolve_project_compile_time_facts([parsed_file])
+        return parsed_file
 
     def parse_project(
         self,
@@ -2185,55 +2190,6 @@ class FortranParser(ClassVisitor):
             existing.specific_procedures.extend(interface.specific_procedures)
         return result
 
-    def _resolve_file_compile_time_facts(self, units: _ParsedFileUnits) -> None:
-        """Apply source-visible compile-time symbols within one parsed file.
-
-        ``units`` receives the models already constructed from one source file.
-        Their parameter variables build a resolved symbol table; that table is
-        then applied to procedure kinds, module-like values/shapes, and derived
-        fields. For example, module parameters ``word = 4`` and
-        ``rk = word * 2`` resolve ``real(rk)`` to kind ``8`` without rescanning
-        the source text. The method mutates the supplied parser models and
-        returns nothing.
-        """
-        variable_units = [*units.modules, *units.submodules, *units.programs, *units.block_data_units]
-        symbols = self._build_compile_time_symbols(units.modules, units.submodules)
-        if any(
-            var.kind or var.value is not None or var.symbolic_value is not None
-            for unit in variable_units
-            for var in getattr(unit, "variables", [])
-        ):
-            for unit in variable_units:
-                self._resolve_module_like_compile_time_facts(unit, symbols)
-        for procedure in self._helper_file_procedures(units):
-            self._resolve_procedure_compile_time_facts(
-                procedure,
-                symbols,
-                resolve_shapes=False,
-            )
-        derived_types = [
-            *units.derived_types,
-            *(derived_type for module in (*units.modules, *units.submodules) for derived_type in module.derived_types),
-        ]
-        for derived_type in derived_types:
-            self._resolve_derived_type_compile_time_facts(derived_type, symbols)
-
-    @staticmethod
-    def _helper_file_procedures(units: _ParsedFileUnits) -> tuple[FortranProcedureSignature, ...]:
-        """Return file procedures in their established resolution order.
-
-        A separate module procedure's interface body is host associated with
-        its module, as a contained procedure is, so its kinds resolve against
-        the module's parameters too.
-        """
-        procedures = list(units.procedures)
-        for module in units.modules:
-            procedures.extend(module.procedures)
-            procedures.extend(module.separate_procedures)
-        for submodule in units.submodules:
-            procedures.extend(submodule.procedures)
-        return tuple(procedures)
-
     def _helper_build_fortran_file(
         self,
         code: str,
@@ -2365,7 +2321,12 @@ class FortranParser(ClassVisitor):
         return project
 
     def _resolve_project_compile_time_facts(self, parsed_files: list[FortranFile]) -> None:
-        """Apply one resolved source-symbol table across parsed project files.
+        """Apply one resolved source-symbol table across parsed files.
+
+        This is the only resolution pass: :meth:`parse_file` runs it on its
+        one file, and project assembly runs it again across every file, so a
+        name declared anywhere in the project resolves while the declarations
+        visited are always the same ones.
 
         ``parsed_files`` contains models that were already parsed separately.
         The method combines their module and submodule parameters, imports,

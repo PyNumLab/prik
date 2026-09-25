@@ -15,11 +15,11 @@ from prik import __version__
 from prik.parsers.c.cli import attach_preprocessing_recipe, expand_c_paths, format_c_report, parse_c_report
 from prik.parsers.c.models import CParseError
 from prik.parsers.c.parser import CParser
-from prik.parsers.fortran.cli import _format_report, _limit_items
-from prik.parsers.fortran.models import FortranParseError
+from prik.parsers.fortran.cli import _format_report, _limit_items, parsed_file_report
+from prik.parsers.fortran.models import FortranParseError, FortranProject
 from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.c2ir import c_project_to_semantic_modules, select_c_export_functions
-from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.fortran2ir import fortran_project_to_semantic_files
 from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
     probe_c_standard_types_cached,
@@ -381,23 +381,24 @@ def _parse_c_project(
 
 
 def _parse_report(paths: list[str], preprocessing: PreprocessingConfig | None = None) -> dict[str, dict]:
+    """Parse the named sources as one project and report each file.
+
+    The sources are assembled together, as a build assembles them, so a kind
+    one file declares for another is resolved in the report too.
+    """
     preprocessing = preprocessing or PreprocessingConfig()
-    out: dict[str, dict] = {}
     parser = FortranParser()
+    parsed_files = []
+    recipes = {}
     for p in _expand_paths(paths):
-        code, preprocessing_recipe = _fortran_source_for_path(p, preprocessing)
-        parsed = parser.parse_file(code, filename=str(p))
-        payload = {
-            "signatures": [_to_dict_no_parent(s) for s in parsed.procedures],
-            "types": [_to_dict_no_parent(t) for t in parsed.derived_types],
-            "modules": [_to_dict_no_parent(m) for m in parsed.modules],
-            "submodules": [_to_dict_no_parent(m) for m in parsed.submodules],
-            "programs": [_to_dict_no_parent(m) for m in parsed.programs],
-            "block_data": [_to_dict_no_parent(m) for m in parsed.block_data_units],
-        }
-        if preprocessing_recipe is not None:
-            payload["preprocessing_recipe"] = preprocessing_recipe
-        out[str(p)] = payload
+        code, recipes[str(p)] = _fortran_source_for_path(p, preprocessing)
+        parsed_files.append(parser.parse_file(code, filename=str(p)))
+    out: dict[str, dict] = {}
+    for parsed in parser._assemble_project(parsed_files).files:
+        payload = parsed_file_report(parsed)
+        if recipes[str(parsed.filename)] is not None:
+            payload["preprocessing_recipe"] = recipes[str(parsed.filename)]
+        out[str(parsed.filename)] = payload
     return out
 
 
@@ -579,24 +580,19 @@ def _semantic_report(
 def _parse_fortran_source_files(
     paths: list[Path],
     preprocessing: PreprocessingConfig,
-):
-    """Parse Fortran sources and apply the parser's shared project resolution.
+) -> FortranProject:
+    """Parse Fortran sources in the given order into one assembled project.
 
-    Each path is preprocessed and parsed once while retaining its path/model
-    pair. The completed models are then passed together to the parser's project
-    compile-time coordinator. For example, a kind parameter from the first file
-    can resolve a procedure or derived field in the second file without the CLI
-    owning a second resolution algorithm. The ordered ``(path, file)`` pairs
-    are returned for stage reporting.
+    Each path is preprocessed and parsed once, and the parser's own project
+    assembly resolves names across them and indexes the result, so the CLI
+    owns no second resolution or conversion route. For example, a kind
+    parameter from the first file resolves a procedure in the second.
     """
     parser = FortranParser()
-    parsed_files = []
-    for path in paths:
-        code, _preprocessing_recipe = _fortran_source_for_path(path, preprocessing)
-        parsed_files.append((path, parser.parse_file(code, filename=str(path))))
-
-    parser._resolve_project_compile_time_facts([parsed for _path, parsed in parsed_files])
-    return parsed_files
+    parsed_files = [
+        parser.parse_file(_fortran_source_for_path(path, preprocessing)[0], filename=str(path)) for path in paths
+    ]
+    return parser._assemble_project(parsed_files)
 
 
 def _parse_c_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
@@ -627,7 +623,7 @@ def _convert_c_semantic_sources(
 
 def _parse_fortran_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
     if not context.source_paths:
-        return _ParsedSemanticSources(context.source_paths, [])
+        return _ParsedSemanticSources(context.source_paths, FortranProject())
     source_paths = context.source_paths
     if context.module_source_dirs:
         from prik.parsers.fortran.module_sources import resolve_fortran_module_sources
@@ -648,17 +644,15 @@ def _convert_fortran_semantic_sources(
     parsed_sources: _ParsedSemanticSources,
     context: _SemanticPipelineContext,
 ) -> list[tuple[Path, list[object]]]:
-    parsed_files = list(parsed_sources.parsed)
-    if not parsed_files:
+    project = parsed_sources.parsed
+    if not project.files:
         return []
-    wrapped_derived_types = _fortran_wrapped_derived_types(fobj for _p, fobj in parsed_files)
     probe_options = _fortran_probe_options(
         report=context.fortran_type_report,
         runner=context.fortran_type_probe_runner,
         cache_dir=context.fortran_type_probe_cache_dir,
         refresh=context.refresh_fortran_type_probe,
     )
-    project = FortranParser()._assemble_project([fobj for _path, fobj in parsed_files])
     compile_time_values = _fortran_compile_time_values(project, context.preprocessing, **probe_options)
     type_facts = _fortran_type_facts(
         project,
@@ -666,24 +660,18 @@ def _convert_fortran_semantic_sources(
         compile_time_values=compile_time_values,
         **probe_options,
     )
-    converted_files = []
-    # A module that imports an abstract interface from another supplied file
-    # must resolve it here, exactly as a multi-file wrapper build does.
-    modules_by_file = {id(fobj): list(fobj.modules) for _p, fobj in parsed_files}
-    for p, fobj in parsed_files:
-        modules = fortran_file_to_semantic_modules(
-            fobj,
-            standalone_module_name=p.stem,
+    # Every file is converted as part of the project, so a name one file
+    # imports from another resolves exactly as in a wrapper build.
+    paths = {str(path): path for path in parsed_sources.source_paths}
+    return [
+        (paths[str(parsed_file.filename)], modules)
+        for parsed_file, modules in fortran_project_to_semantic_files(
+            project,
             compile_time_values=compile_time_values,
-            wrapped_derived_types=wrapped_derived_types,
             assume_intent_in_scalars=context.assume_intent_in_scalars,
-            sibling_modules=[
-                module for key, modules in modules_by_file.items() if key != id(fobj) for module in modules
-            ],
             **({"type_facts": type_facts} if type_facts is not None else {}),
         )
-        converted_files.append((p, modules))
-    return converted_files
+    ]
 
 
 _SOURCE_SEMANTIC_PIPELINES = {
@@ -902,16 +890,6 @@ def _write_pyi_dependencies(
     for path, text in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-
-
-def _fortran_wrapped_derived_types(parsed_files) -> set[tuple[str, str]]:
-    return {
-        (dtype.module.lower(), dtype.name.lower())
-        for parsed in parsed_files
-        for module in parsed.modules
-        for dtype in module.derived_types
-        if dtype.module
-    }
 
 
 def _fortran_compile_time_values(

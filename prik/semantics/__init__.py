@@ -11,6 +11,7 @@ from .fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
+    fortran_project_to_semantic_files,
     fortran_project_to_semantic_modules,
     resolve_semantic_compile_time_values,
 )
@@ -42,6 +43,7 @@ __all__ = (
     "convert_pyi_to_ir",
     "fortran_file_to_semantic_modules",
     "fortran_module_to_semantic_module",
+    "fortran_project_to_semantic_files",
     "fortran_project_to_semantic_modules",
     "resolve_semantic_compile_time_values",
     "select_c_export_functions",
