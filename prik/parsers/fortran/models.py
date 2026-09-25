@@ -449,6 +449,9 @@ class FortranUseStatement:
     module: str
     only: bool = False
     mappings: tuple[FortranUseMapping, ...] = ()
+    # ``"intrinsic"`` or ``"non_intrinsic"`` when the statement names the
+    # module's nature, which decides whether a processor module is meant.
+    nature: str | None = None
 
 
 @dataclass

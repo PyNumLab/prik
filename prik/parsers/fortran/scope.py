@@ -128,13 +128,13 @@ class ScopeUses:
         return frozenset(item.source.casefold() for item in self.mappings(module) if item.target)
 
 
-def used_module_names(owner: object) -> set[str]:
-    """Return every module one scope names, lowercased.
+def used_module_statements(owner: object) -> list[FortranUseStatement]:
+    """Return every ``use`` statement one scope writes, including nested ones.
 
     A ``use`` written inside a contained procedure or an interface body is a
     dependency of the scope holding it just as much as one written at its top,
-    so the whole tree is read. Compile ordering and project dependencies both
-    ask this, and they have to get the same answer.
+    so the whole tree is read. Compile ordering, project dependencies, and
+    module source discovery all ask this, and they have to get the same answer.
     """
     statements: list[FortranUseStatement] = list(getattr(owner, "uses", ()))
     for procedure in getattr(owner, "procedures", ()):
@@ -142,4 +142,9 @@ def used_module_names(owner: object) -> set[str]:
     for interface in getattr(owner, "interfaces", ()):
         for procedure in getattr(interface, "procedures", ()):
             statements.extend(getattr(procedure, "uses", ()))
-    return {statement.module.lower() for statement in statements}
+    return statements
+
+
+def used_module_names(owner: object) -> set[str]:
+    """Return every module one scope names, lowercased."""
+    return {statement.module.lower() for statement in used_module_statements(owner)}

@@ -60,7 +60,8 @@ python3 -m prik generate --pyi \
 
 Build from the generated `contract/__init__.pyi`. Query the installed wrapper
 compiler for its compiler command, module and include directories, remaining
-compile flags, and ordered link arguments:
+compile flags, and ordered link arguments. The compiler command must be a single
+executable; a command such as `ccache gfortran` is not a compiler plus flags:
 
 ```python
 import shlex
@@ -74,12 +75,14 @@ def show(option):
 
 
 command, compile_flags = show("--showme:command"), show("--showme:compile")
+if len(command) != 1:
+    raise SystemExit(f"mpifort wraps the multi-token command {command}; set one compiler executable")
 include_dirs = [*show("--showme:incdirs"), *(flag[2:] for flag in compile_flags if flag.startswith("-I"))]
 build_pyi_extension(
     "contract/__init__.pyi",
     input_compiler=command[0],
     native_include_dirs=list(dict.fromkeys(include_dirs)),
-    wrapper_fortran_flags=[*command[1:], *(flag for flag in compile_flags if not flag.startswith("-I"))],
+    wrapper_fortran_flags=[flag for flag in compile_flags if not flag.startswith("-I")],
     native_link_items=[NativeLinkItem("linker_argument", flag) for flag in show("--showme:link")],
     native_linker_language="fortran",
     output_name="prik_openmpi_f08",

@@ -2,9 +2,9 @@
 
 A Fortran ``use`` names a module, not a file, and no rule ties the two: a
 module may live in any file under any directory. Given the sources a caller
-names and the directories to search, this resolver follows each ``use`` to the
-one file that defines that module, transitively, so a project can be supplied
-by its entry file alone.
+names and the directories to search, this resolver follows each ``use`` and
+each submodule's parent to the one file that defines it, transitively, so a
+project can be supplied by its entry file alone.
 
 Which modules a source defines and uses are parser facts, read here exactly as
 compile ordering reads them. The directory index only locates candidate files
@@ -20,17 +20,23 @@ import re
 
 from prik.parsers.fortran.models import FortranFile, FortranParseError
 from prik.parsers.fortran.parser import FortranParser
-from prik.parsers.fortran.scope import used_module_names
+from prik.parsers.fortran.scope import used_module_statements
 
 
 # Suffixes a Fortran compiler accepts as free- or fixed-form source.
 _FORTRAN_SOURCE_SUFFIXES = frozenset({".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08", ".fpp"})
+_SUBMODULE_LINE = re.compile(
+    r"^[ \t]*submodule[ \t]*\([ \t]*(?P<ancestor>[a-z][a-z0-9_]*)[ \t]*(?::[ \t]*[a-z][a-z0-9_]*[ \t]*)?\)"
+    r"[ \t]*(?P<name>[a-z][a-z0-9_]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
 _MODULE_LINE = re.compile(
     r"^[ \t]*module[ \t]+(?!(?:procedure|function|subroutine|pure|impure|elemental|recursive)\b)"
     r"(?P<name>[a-z][a-z0-9_]*)[ \t]*(?:!.*)?$",
     re.IGNORECASE | re.MULTILINE,
 )
-# Modules the processor supplies without a source file.
+# Modules a processor supplies. A ``use`` stating no nature falls back to one of
+# these only when no searched source defines a module of that name.
 _INTRINSIC_MODULES = frozenset(
     {
         "iso_c_binding",
@@ -53,22 +59,23 @@ def resolve_fortran_module_sources(
     """Return ``entries`` with the sources of every module they use, dependencies first.
 
     ``read_source`` returns a file's preprocessed text, so a ``use`` inside an
-    inactive conditional block is not followed. A used module that no source
-    read so far defines must be defined by exactly one Fortran source under
-    ``search_dirs``; otherwise a :class:`FortranParseError` names the module
-    and the source that uses it.
+    inactive conditional block is not followed. An ``intrinsic`` module is
+    never searched. Any other used module, and a submodule's parent, that no
+    source read so far defines must be defined by exactly one Fortran source
+    under ``search_dirs``; otherwise a :class:`FortranParseError` names it and
+    the source that needs it.
     """
-    candidates = _module_candidates(search_dirs)
+    candidates = _unit_candidates(search_dirs)
     parser = FortranParser()
-    facts: dict[Path, tuple[set[str], set[str]]] = {}
+    facts: dict[Path, tuple[set[str], dict[str, str | None]]] = {}
     owners: dict[str, Path] = {}
 
-    def read(path: Path) -> tuple[set[str], set[str]]:
+    def read(path: Path) -> tuple[set[str], dict[str, str | None]]:
         if path not in facts:
             parsed = parser.parse_file(read_source(path), filename=str(path))
-            facts[path] = _defined_and_used_modules(parsed)
-            for name in facts[path][0]:
-                owners.setdefault(name, path)
+            facts[path] = _defined_and_required_units(parsed)
+            for unit in facts[path][0]:
+                owners.setdefault(unit, path)
         return facts[path]
 
     for entry in entries:
@@ -80,10 +87,13 @@ def resolve_fortran_module_sources(
         if path in ordered or path in visiting:
             return
         visiting.add(path)
-        defined, used = read(path)
-        for name in sorted(used - defined - _INTRINSIC_MODULES):
-            dependency = owners.get(name) or _defining_source(name, candidates, path, read)
-            visit(dependency)
+        defined, required = read(path)
+        for unit, nature in sorted(required.items()):
+            if unit in defined or nature == "intrinsic":
+                continue
+            dependency = owners.get(unit) or _defining_source(unit, nature, candidates, path, read)
+            if dependency is not None:
+                visit(dependency)
         visiting.discard(path)
         ordered.append(path)
 
@@ -94,52 +104,81 @@ def resolve_fortran_module_sources(
 
 
 def _defining_source(
-    name: str,
+    unit: str,
+    nature: str | None,
     candidates: dict[str, list[Path]],
     user: Path,
-    read: Callable[[Path], tuple[set[str], set[str]]],
-) -> Path:
-    """Return the one searched source whose parsed modules define ``name``, or raise."""
-    defining = [path for path in candidates.get(name, ()) if name in read(path)[0]]
+    read: Callable[[Path], tuple[set[str], dict[str, str | None]]],
+) -> Path | None:
+    """Return the one searched source whose parsed units define ``unit``, or raise.
+
+    A ``use`` that states no nature names an intrinsic module only when no
+    other module of that name is accessible, so a known intrinsic name is
+    satisfied by the processor when no source defines it.
+    """
+    defining = [path for path in candidates.get(unit, ()) if unit in read(path)[0]]
     if len(defining) == 1:
         return defining[0]
+    if not defining and nature is None and unit in _INTRINSIC_MODULES:
+        return None
+    kind = "submodule" if ":" in unit else "module"
     if not defining:
         raise FortranParseError(
-            f"No Fortran source defines module '{name}' used by {user}; "
+            f"No Fortran source defines {kind} '{unit}' used by {user}; "
             "add the directory that contains it as a module source directory.",
             filename=str(user),
             code="PARSE_MODULE_SOURCE_NOT_FOUND",
         )
     listed = ", ".join(str(path) for path in defining)
     raise FortranParseError(
-        f"Module '{name}' used by {user} is defined by several sources ({listed}); "
+        f"{kind.capitalize()} '{unit}' used by {user} is defined by several sources ({listed}); "
         "narrow the module source directories to one of them.",
         filename=str(user),
         code="PARSE_AMBIGUOUS_MODULE_SOURCE",
     )
 
 
-def _module_candidates(search_dirs: Iterable[Path]) -> dict[str, list[Path]]:
-    """Map each module name to the Fortran sources under ``search_dirs`` with a matching ``module`` line."""
+def _unit_candidates(search_dirs: Iterable[Path]) -> dict[str, list[Path]]:
+    """Map each module or submodule to the Fortran sources under ``search_dirs`` that open it."""
     candidates: dict[str, list[Path]] = {}
     for directory in search_dirs:
         for path in sorted(Path(directory).rglob("*")):
             if path.suffix.casefold() not in _FORTRAN_SOURCE_SUFFIXES or not path.is_file():
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
-            for match in _MODULE_LINE.finditer(text):
-                paths = candidates.setdefault(match.group("name").casefold(), [])
+            units = [match.group("name").casefold() for match in _MODULE_LINE.finditer(text)]
+            units.extend(
+                f"{match.group('ancestor')}:{match.group('name')}".casefold()
+                for match in _SUBMODULE_LINE.finditer(text)
+            )
+            for unit in units:
+                paths = candidates.setdefault(unit, [])
                 if path.resolve() not in paths:
                     paths.append(path.resolve())
     return candidates
 
 
-def _defined_and_used_modules(parsed: FortranFile) -> tuple[set[str], set[str]]:
-    """Return the modules one parsed source defines and every module it uses."""
+def _defined_and_required_units(parsed: FortranFile) -> tuple[set[str], dict[str, str | None]]:
+    """Return the units one parsed source defines and the units it requires, with each ``use`` nature.
+
+    A module is named by itself and a submodule by ``ancestor:name``. A
+    submodule requires its direct parent: the submodule it names after its
+    ancestor, or the ancestor module itself.
+    """
     defined = {str(module.name).casefold() for module in parsed.modules}
-    used: set[str] = set()
+    defined.update(
+        f"{submodule.ancestor or submodule.parent}:{submodule.name}".casefold() for submodule in parsed.submodules
+    )
+    required: dict[str, str | None] = {}
     for owner in (*parsed.modules, *parsed.submodules, *parsed.programs, *parsed.procedures):
-        used.update(used_module_names(owner))
-    # A submodule extends the module it names first, which must be available.
-    used.update(str(submodule.ancestor or submodule.parent).casefold() for submodule in parsed.submodules)
-    return defined, used
+        for statement in used_module_statements(owner):
+            name = statement.module.casefold()
+            # An explicit nature is kept over a statement that states none.
+            if required.get(name) is None:
+                required[name] = statement.nature
+    for submodule in parsed.submodules:
+        parent = (
+            f"{submodule.ancestor}:{submodule.parent}" if submodule.ancestor else str(submodule.parent)
+        ).casefold()
+        required[parent] = "non_intrinsic"
+    return defined, required

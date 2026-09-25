@@ -148,7 +148,7 @@ _REGEX: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
     "use": re.compile(
-        r"^use\s*(?:,\s*(?:intrinsic|non_intrinsic)\s*)?(?:::)?\s*(?P<module>\w+)\s*(?P<rest>,\s*.*)?$",
+        r"^use\s*(?:,\s*(?P<nature>intrinsic|non_intrinsic)\s*)?(?:::)?\s*(?P<module>\w+)\s*(?P<rest>,\s*.*)?$",
         re.IGNORECASE,
     ),
     "include": re.compile(r"^(?:#\s*)?include\s*(?P<path>['\"][^'\"]+['\"])", re.IGNORECASE),
@@ -6106,8 +6106,9 @@ class FortranParser(ClassVisitor):
         if not match:
             return None
         rest = (match.group("rest") or "").strip()
+        nature = match.group("nature").casefold() if match.group("nature") else None
         if not rest:
-            return FortranUseStatement(match.group("module"))
+            return FortranUseStatement(match.group("module"), nature=nature)
         payload = rest.lstrip(",").strip()
         only_match = re.match(r"^only\s*:\s*(?P<symbols>.*)$", payload, re.IGNORECASE)
         if only_match:
@@ -6123,7 +6124,7 @@ class FortranParser(ClassVisitor):
                 source = token
                 target = None
             mappings.append(FortranUseMapping(source=source, target=target))
-        return FortranUseStatement(match.group("module"), only_match is not None, tuple(mappings))
+        return FortranUseStatement(match.group("module"), only_match is not None, tuple(mappings), nature=nature)
 
 
 # -----------------------------------------------------------------------------

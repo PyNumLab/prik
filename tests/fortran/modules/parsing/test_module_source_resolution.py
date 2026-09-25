@@ -56,3 +56,51 @@ def test_a_used_module_needs_exactly_one_defining_source(tmp_path: Path, definit
         _resolve([entry], [tmp_path / "search"])
 
     assert error.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("statement", "user_source", "found"),
+    [
+        pytest.param("use, intrinsic :: iso_fortran_env", True, False, id="intrinsic-never-searched"),
+        pytest.param("use, intrinsic :: vendor_runtime", False, False, id="unlisted-intrinsic-not-searched"),
+        pytest.param("use, non_intrinsic :: iso_fortran_env", True, True, id="non-intrinsic-uses-the-source"),
+        pytest.param("use iso_fortran_env", True, True, id="unstated-prefers-a-source"),
+        pytest.param("use iso_fortran_env", False, False, id="unstated-falls-back-to-the-processor"),
+    ],
+)
+def test_use_nature_decides_whether_a_module_source_is_needed(tmp_path: Path, statement, user_source, found):
+    user_module = "module iso_fortran_env\nend module iso_fortran_env\n"
+    definition = _write(tmp_path, "search/iso_fortran_env.f90", user_module) if user_source else None
+    (tmp_path / "search").mkdir(exist_ok=True)
+    entry = _write(tmp_path, "entry.f90", f"module entry\n  {statement}\nend module entry\n")
+
+    resolved = _resolve([entry], [tmp_path / "search"])
+
+    assert resolved == ((definition.resolve(), entry) if found else (entry,))
+
+
+def test_explicit_non_intrinsic_module_without_a_source_is_not_found(tmp_path: Path):
+    (tmp_path / "search").mkdir()
+    entry = _write(tmp_path, "entry.f90", "module entry\n  use, non_intrinsic :: iso_fortran_env\nend module entry\n")
+
+    with pytest.raises(FortranParseError) as error:
+        _resolve([entry], [tmp_path / "search"])
+
+    assert error.value.code == "PARSE_MODULE_SOURCE_NOT_FOUND"
+
+
+def test_nested_submodule_resolves_its_direct_parent_before_the_ancestor_module(tmp_path: Path):
+    """``submodule (base:middle) leaf`` needs the ``middle`` submodule, which needs ``base``."""
+    base = _write(
+        tmp_path,
+        "src/base.f90",
+        "module base\n  interface\n    module subroutine run()\n    end subroutine run\n  end interface\nend module base\n",
+    )
+    middle = _write(tmp_path, "src/impl/middle.f90", "submodule (base) middle\nend submodule middle\n")
+    leaf = _write(
+        tmp_path,
+        "leaf.f90",
+        "submodule (base:middle) leaf\ncontains\n  module subroutine run()\n  end subroutine run\nend submodule leaf\n",
+    )
+
+    assert _resolve([leaf], [tmp_path / "src"]) == (base.resolve(), middle.resolve(), leaf)
