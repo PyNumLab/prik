@@ -455,7 +455,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [],
@@ -928,7 +929,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [],

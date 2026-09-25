@@ -109,22 +109,144 @@ def test_nested_submodule_resolves_its_direct_parent_before_the_ancestor_module(
     assert _resolve([leaf], [tmp_path / "src"]) == (base.resolve(), middle.resolve(), leaf)
 
 
-@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran preprocessing")
-def test_a_module_named_through_a_macro_is_found_by_parsing_the_searched_sources(tmp_path: Path):
-    """A ``module`` line the raw index cannot read is found once the preprocessed sources are parsed."""
+requires_gfortran = pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran preprocessing")
+
+
+def _preprocessed_resolve(entries, search):
     config = PreprocessingConfig(mode="compiler", compiler="gfortran")
-    generated = _write(
-        tmp_path,
-        "lib/gen.F90",
-        "#define MODNAME generated_mod\nmodule MODNAME\n  integer, parameter :: answer = 42\nend module MODNAME\n",
+    return resolve_fortran_module_sources(
+        entries,
+        search,
+        lambda path: preprocess_source(path, language="fortran", config=config).source,
+        command_line_macros=False,
     )
+
+
+MACRO_NAMED = "#define MODNAME {name}\nmodule MODNAME\n  integer, parameter :: answer = 42\nend module MODNAME\n"
+
+
+@requires_gfortran
+def test_a_module_named_through_a_macro_is_found_by_its_preprocessed_text(tmp_path: Path):
+    """A module a macro names is located, and a source that cannot be preprocessed defines nothing."""
+    generated = _write(tmp_path, "lib/gen.F90", MACRO_NAMED.format(name="generated_mod"))
     _write(tmp_path, "lib/broken.F90", '#include "missing_header.h"\nmodule broken\nend module broken\n')
     entry = _write(tmp_path, "app.f90", "module app\n  use generated_mod, only: answer\nend module app\n")
 
-    resolved = resolve_fortran_module_sources(
-        [entry],
-        [tmp_path / "lib"],
-        lambda path: preprocess_source(path, language="fortran", config=config).source,
+    assert _preprocessed_resolve([entry], [tmp_path / "lib"]) == (generated.resolve(), entry)
+
+
+@requires_gfortran
+def test_a_macro_named_user_module_shadows_the_processor_module_it_is_named_after(tmp_path: Path):
+    """A ``use`` stating no nature falls back to the processor only when no source defines the module."""
+    user_module = _write(tmp_path, "lib/ieee.F90", MACRO_NAMED.format(name="ieee_arithmetic"))
+    entry = _write(tmp_path, "app.f90", "module app\n  use ieee_arithmetic, only: answer\nend module app\n")
+
+    assert _preprocessed_resolve([entry], [tmp_path / "lib"]) == (user_module.resolve(), entry)
+
+
+@requires_gfortran
+def test_a_macro_named_second_definition_makes_a_module_ambiguous(tmp_path: Path):
+    """One definition visible in the raw text does not hide another that only preprocessing reveals."""
+    _write(tmp_path, "lib/plain.f90", "module shared_mod\nend module shared_mod\n")
+    _write(tmp_path, "lib/generated.F90", MACRO_NAMED.format(name="shared_mod"))
+    entry = _write(tmp_path, "app.f90", "module app\n  use shared_mod\nend module app\n")
+
+    with pytest.raises(FortranParseError, match="shared_mod") as error:
+        _preprocessed_resolve([entry], [tmp_path / "lib"])
+
+    assert error.value.code == "PARSE_AMBIGUOUS_MODULE_SOURCE"
+
+
+@requires_gfortran
+def test_reading_every_source_for_one_module_selects_none_of_the_others(tmp_path: Path):
+    """Locating a macro-named module reads every source, but a later module is still checked for uniqueness."""
+    _write(tmp_path, "lib/gen.F90", MACRO_NAMED.format(name="aa_generated"))
+    _write(tmp_path, "lib/one.f90", "module zz_dup\nend module zz_dup\n")
+    _write(tmp_path, "lib/two.f90", "module zz_dup\nend module zz_dup\n")
+    entry = _write(tmp_path, "app.f90", "module app\n  use aa_generated\n  use zz_dup\nend module app\n")
+
+    with pytest.raises(FortranParseError, match="zz_dup") as error:
+        _preprocessed_resolve([entry], [tmp_path / "lib"])
+
+    assert error.value.code == "PARSE_AMBIGUOUS_MODULE_SOURCE"
+
+
+@pytest.mark.parametrize("non_intrinsic_first", [False, True])
+def test_scopes_in_one_file_that_name_a_module_differently_are_each_honored(tmp_path: Path, non_intrinsic_first: bool):
+    """One scope's ``intrinsic`` use never cancels another scope's need for the module's source."""
+    user_module = _write(
+        tmp_path, "lib/ieee.f90", "module ieee_arithmetic\n  integer :: mine\nend module ieee_arithmetic\n"
+    )
+    processor = "module a\n  use, intrinsic :: ieee_arithmetic\nend module a\n"
+    source = "module b\n  use, non_intrinsic :: ieee_arithmetic, only: mine\nend module b\n"
+    entry = _write(tmp_path, "app.f90", source + processor if non_intrinsic_first else processor + source)
+
+    assert _resolve([entry], [tmp_path / "lib"]) == (user_module.resolve(), entry)
+
+
+def test_uses_inside_internal_procedures_and_block_constructs_are_followed(tmp_path: Path):
+    """A nested scope's ``use`` is a dependency of the file even though its host cannot see it."""
+    inner = _write(tmp_path, "lib/inner.f90", "module inner_mod\nend module inner_mod\n")
+    block = _write(tmp_path, "lib/block.f90", "module block_mod\nend module block_mod\n")
+    entry = _write(
+        tmp_path,
+        "app.f90",
+        """module app
+contains
+  subroutine run()
+    block
+      use block_mod
+    end block
+  contains
+    subroutine helper()
+      use inner_mod
+    end subroutine helper
+  end subroutine run
+end module app
+""",
     )
 
-    assert resolved == (generated.resolve(), entry)
+    assert set(_resolve([entry], [tmp_path / "lib"])) == {inner.resolve(), block.resolve(), entry}
+
+
+def test_same_named_submodules_of_different_ancestors_are_separate_units(tmp_path: Path):
+    """``a:impl`` and ``b:impl`` are two submodules, and each nested child finds its own parent."""
+    units = {}
+    for ancestor in ("a", "b"):
+        units[ancestor] = _write(tmp_path, f"lib/{ancestor}.f90", f"module {ancestor}\nend module {ancestor}\n")
+        units[f"{ancestor}:impl"] = _write(
+            tmp_path, f"lib/{ancestor}_impl.f90", f"submodule ({ancestor}) impl\nend submodule impl\n"
+        )
+    leaves = [
+        _write(tmp_path, f"{ancestor}_leaf.f90", f"submodule ({ancestor}:impl) leaf\nend submodule leaf\n")
+        for ancestor in ("a", "b")
+    ]
+
+    resolved = _resolve(leaves, [tmp_path / "lib"])
+
+    assert set(resolved) == {path.resolve() for path in units.values()} | set(leaves)
+    for ancestor, leaf in zip(("a", "b"), leaves, strict=True):
+        order = resolved.index
+        assert order(units[ancestor].resolve()) < order(units[f"{ancestor}:impl"].resolve()) < order(leaf)
+
+
+def test_submodules_implementing_a_used_module_are_selected_with_it(tmp_path: Path):
+    """No ``use`` names a submodule, yet the module's separate procedures are implemented there."""
+    api = _write(
+        tmp_path,
+        "lib/api.f90",
+        "module api\n  interface\n    module subroutine run()\n    end subroutine run\n  end interface\nend module api\n",
+    )
+    impl = _write(tmp_path, "lib/impl/api_impl.f90", "submodule (api) impl\nend submodule impl\n")
+    leaf = _write(
+        tmp_path,
+        "lib/impl/api_leaf.f90",
+        "submodule (api:impl) leaf\ncontains\n  module subroutine run()\n  end subroutine run\nend submodule leaf\n",
+    )
+    _write(tmp_path, "lib/other.f90", "module other\nend module other\nsubmodule (other) impl\nend submodule impl\n")
+    entry = _write(tmp_path, "app.f90", "module app\n  use api\nend module app\n")
+
+    resolved = _resolve([entry], [tmp_path / "lib"])
+
+    assert set(resolved) == {api.resolve(), impl.resolve(), leaf.resolve(), entry}
+    assert resolved.index(api.resolve()) < resolved.index(impl.resolve()) < resolved.index(leaf.resolve())

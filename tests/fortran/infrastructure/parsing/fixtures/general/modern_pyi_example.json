@@ -191,7 +191,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "kinetic_energy",
@@ -309,7 +310,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "scale_vector",
@@ -371,7 +373,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "dot3",
@@ -459,7 +462,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "fill_identity3",
@@ -503,7 +507,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "normalize_particle",
@@ -538,7 +543,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "hidden_proc",
@@ -573,7 +579,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [
@@ -952,7 +959,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "kinetic_energy",
@@ -1070,7 +1078,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "scale_vector",
@@ -1132,7 +1141,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "dot3",
@@ -1220,7 +1230,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "fill_identity3",
@@ -1264,7 +1275,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "normalize_particle",
@@ -1299,7 +1311,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         },
         {
           "name": "hidden_proc",
@@ -1334,7 +1347,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [

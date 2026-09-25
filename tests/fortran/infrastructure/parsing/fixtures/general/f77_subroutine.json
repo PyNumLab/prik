@@ -116,7 +116,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     }
   ],
   "interfaces": [],
@@ -233,7 +234,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     }
   }
 }

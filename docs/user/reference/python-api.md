@@ -99,8 +99,8 @@ Unknown names fail the build rather than silently producing a smaller module.
 Once you author or generate a semantic `.pyi` contract, that contract's own
 `__all__` states the public surface and `export_symbols` no longer applies.
 
-`build_fortran_extension` accepts the same option with module-qualified native
-procedure and variable identities. PRIK retains signature and type
+`build_fortran_extension` accepts the same option with module-qualified public
+Fortran symbols: procedures, generics, and module variables. PRIK retains signature and type
 dependencies while publishing only the selected symbols. A derived type a
 selected signature names is published with the component and parent types it
 needs, so its values can be constructed from Python:

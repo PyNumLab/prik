@@ -2442,11 +2442,15 @@ class FortranToIRConverter(ClassVisitor):
     def _module_explicit_interface_procedures(
         module: FortranModule,
     ) -> list[FortranProcedureSignature]:
-        """Return explicitly public procedures declared by unnamed interfaces.
+        """Return the module procedures unnamed interface blocks declare.
 
-        An explicit public list makes the module declaration the authoritative
-        wrapper contract. Other unnamed interface declarations remain
-        interface-only facts even when a matching implementation is parsed.
+        A ``module function`` or ``module subroutine`` body declares a separate
+        module procedure: it is this module's own procedure, implemented in a
+        submodule, so it is one exactly as a contained procedure is and follows
+        the same accessibility. Any other body describes an external procedure,
+        which becomes part of the wrapper contract only when an explicit public
+        list names it; otherwise it stays an interface-only fact even when a
+        matching implementation is parsed.
         """
         public_names = {name.casefold() for name in module.public_symbols}
         declared_names = {procedure.name.casefold() for procedure in module.procedures}
@@ -2458,7 +2462,7 @@ class FortranToIRConverter(ClassVisitor):
                 name = procedure.name.casefold()
                 if name in declared_names:
                     continue
-                if name not in public_names:
+                if name not in public_names and "module" not in procedure.attributes:
                     continue
                 declared_names.add(name)
                 procedures.append(procedure)
@@ -4469,8 +4473,12 @@ class _FortranVariableContextVisitor(ClassVisitor):
         *,
         unit_kind: str,
     ):
-        """Return variable, procedure, and type contexts owned by a module-like node."""
-        owner = node.name
+        """Return variable, procedure, and type contexts owned by a module-like node.
+
+        A submodule is labelled ``ancestor:name``, since its name alone is local
+        to its ancestor and two submodules may share it.
+        """
+        owner = node.identity if isinstance(node, FortranSubmodule) else node.name
         contexts = [
             _variable_context(variable, unit_kind=unit_kind, unit=owner, module=owner, role="variable")
             for variable in node.variables

@@ -73,6 +73,22 @@ _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rath
 
 _UNKNOWN_EXTENTS = frozenset({"", ":", "*", ".."})
 
+# A module getter that may find no storage reports ``None`` for it.
+_NULLABLE_MODULE_GETTERS = frozenset(
+    {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
+)
+
+# A scalar view reads and writes the module's own storage rather than a copy.
+_MODULE_SCALAR_VIEW_NOTES = {
+    ModuleGetterAction.NATIVE_SCALAR_VIEW: "Live view of the module's storage; writing through it updates the module.",
+    ModuleGetterAction.NATIVE_CHARACTER_VIEW: (
+        "Live view of the module's fixed-width character bytes; writing through it updates the module."
+    ),
+    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: (
+        "Live read-only view of the current storage, or None when it holds none."
+    ),
+}
+
 
 class WrapperDocstringBuilder:
     """Build compact, public NumPy-style documentation from completed plans.
@@ -489,8 +505,24 @@ class WrapperDocstringBuilder:
         comes directly from the completed variable plan.
         """
         name = variable.owner_path.rsplit(".", 1)[-1]
-        nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
-        lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
+        action = variable.binding.getter_action
+        nullable = action in _NULLABLE_MODULE_GETTERS
+        view_note = _MODULE_SCALAR_VIEW_NOTES.get(action)
+        if view_note is not None:
+            # A scalar view is a rank-zero array over the module's storage.
+            type_name = variable.semantic_type_name
+            element = (
+                "bytes" if type_name == "String" else _ARRAY_ELEMENT_TYPES.get(type_name, self._base_type(variable))
+            )
+            lines = [
+                f"{name} : ndarray[{element}]" + (" or None" if nullable else ""),
+                "    Rank: 0",
+                f"    {view_note}",
+            ]
+            if type_name in _ARRAY_ELEMENT_TYPES:
+                lines.append(f"    {_LOGICAL_ARRAY_NOTE}")
+        else:
+            lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
         lines.extend(self._logical_array_lines(variable))
         if variable.binding.getter_action in {

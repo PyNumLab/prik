@@ -40,7 +40,7 @@ from prik.parsers.c import parse_c_file
 from prik.parsers.c.cli import attach_preprocessing_recipe
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.parsers.fortran.module_sources import resolve_fortran_module_sources
-from prik.parsers.fortran.scope import used_module_names
+from prik.parsers.fortran.scope import file_defined_units, file_unit_requirements
 from prik.preprocessing.probes.fortran_types import (
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
@@ -1640,31 +1640,6 @@ def _serial_compile_batches(object_files: Iterable[ObjectFile]) -> tuple[tuple[O
     return tuple((object_file,) for object_file in object_files)
 
 
-def _fortran_file_used_modules(parsed_file: object) -> set[str]:
-    """Return lowercased module dependencies declared by one parsed file.
-
-    Scans top-level parsed owners, interfaces, and submodule parent/ancestor
-    relationships.  The returned names let the scheduler order object files;
-    the parsed file remains unmodified.
-    """
-    owners = (
-        *getattr(parsed_file, "modules", ()),
-        *getattr(parsed_file, "submodules", ()),
-        *getattr(parsed_file, "programs", ()),
-        *getattr(parsed_file, "procedures", ()),
-    )
-    used = set()
-    for owner in owners:
-        used.update(used_module_names(owner))
-    for interface in getattr(parsed_file, "interfaces", ()):
-        used.update(used_module_names(interface))
-    for submodule in getattr(parsed_file, "submodules", ()):
-        used.add(str(submodule.parent).lower())
-        if submodule.ancestor:
-            used.add(str(submodule.ancestor).lower())
-    return used
-
-
 def _dependency_compile_batches(
     object_files: tuple[ObjectFile, ...],
     dependencies: dict[Path, set[Path]],
@@ -1706,20 +1681,21 @@ def _project_compile_batches(
     if set(parsed_by_source) != object_sources:
         return _serial_compile_batches(object_files)
 
-    # Map providers before resolving each file's module dependencies.
+    # Map providers before resolving each file's module dependencies. A
+    # submodule is provided as ``ancestor:name``, and an ``intrinsic`` use
+    # never waits on a project source sharing the processor module's name.
     module_sources: dict[str, Path] = {}
     for source, parsed_file in parsed_by_source.items():
-        for module in getattr(parsed_file, "modules", ()):
-            module_sources[str(module.name).lower()] = source
-        for submodule in getattr(parsed_file, "submodules", ()):
-            module_sources[str(submodule.name).lower()] = source
+        module_sources.update(dict.fromkeys(file_defined_units(parsed_file), source))
 
     dependencies: dict[Path, set[Path]] = {}
     for source, parsed_file in parsed_by_source.items():
         dependencies[source] = {
             dependency_source
-            for name in _fortran_file_used_modules(parsed_file)
-            if (dependency_source := module_sources.get(name)) is not None and dependency_source != source
+            for name, nature in file_unit_requirements(parsed_file).items()
+            if nature != "intrinsic"
+            and (dependency_source := module_sources.get(name)) is not None
+            and dependency_source != source
         }
     return _dependency_compile_batches(object_files, dependencies)
 
@@ -3732,8 +3708,9 @@ def build_fortran_extension(
         always honored, and arrays, derived-type objects, and allocatable or
         pointer scalars are unaffected.
     export_symbols
-        Exact case-insensitive ``module::procedure`` identities to publish
-        from the source universe. Signature dependencies remain available but
+        Exact case-insensitive ``module::name`` identities of module-qualified
+        public Fortran symbols -- procedures, generics, and module variables --
+        to publish from the source universe. Signature dependencies remain available but
         are not added to the callable surface. A generated semantic contract
         records the corresponding Python surface in ``__all__``.
     module_source_dirs
@@ -3813,6 +3790,7 @@ def build_fortran_extension(
             source_paths,
             tuple(Path(directory) for directory in module_source_dirs),
             lambda path: _fortran_source_and_dependencies(path, preprocessing)[0],
+            command_line_macros=preprocessing.defines_command_line_macros,
         )
     supplemental_source_paths = tuple(Path(path) for path in (native_fortran_sources or ()))
     input_implementation_paths = source_paths if compile_input_sources else ()

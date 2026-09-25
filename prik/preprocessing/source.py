@@ -375,6 +375,23 @@ class PreprocessingConfig:
         """Whether this configuration authorizes compiler-backed preprocessing."""
         return self.mode == "compiler"
 
+    @property
+    def defines_command_line_macros(self) -> bool:
+        """Whether compiler preprocessing may define macros that no source states.
+
+        ``-D`` flags, a compile database, or a command template can each
+        define a macro, and then any name in any source may expand, so a
+        source without directives is not known to read as it is written.
+        """
+        if not self.uses_compiler:
+            return False
+        return bool(
+            self.defines
+            or self.compile_commands
+            or self.command_template
+            or any(str(arg).startswith(("-D", "-include", "-imacros")) for arg in self.compiler_args)
+        )
+
     def fortran_internal_recipe(self, path: Path) -> dict[str, object] | None:
         """Return parser-test macro metadata when compiler invocation is absent.
 

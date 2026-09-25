@@ -406,19 +406,22 @@ vendor_open
 vendor_close
 ```
 
-Fortran module procedures and module variables use a case-insensitive,
-module-qualified identity:
+Module-qualified public Fortran symbols -- procedures, generics, and module
+variables -- use a case-insensitive, module-qualified identity:
 
 ```text
 bobyqa_mod::bobyqa
 cobyla_mod::cobyla
 state_mod::counter
+facade_mod::convert
 ```
 
 Qualification keeps symbols with the same spelling in different modules
 distinct. The module side must name a declared Fortran `module`, not a
 file-level external-procedure group. Every listed identity must resolve to
-one public procedure or variable. Empty files, invalid or repeated identities,
+one public procedure, generic, or variable. A generic a module merges from
+several imported generics of one name is that module's own, so selecting it
+selects every specific it dispatches over. Empty files, invalid or repeated identities,
 and unknown or private declarations fail the command.
 
 Fortran extraction retains declarations needed to express selected signatures

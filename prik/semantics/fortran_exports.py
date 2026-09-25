@@ -45,10 +45,10 @@ def select_fortran_export_symbols(
     modules: Iterable[SemanticModule],
     symbols: Iterable[str],
 ) -> FortranExportSelection:
-    """Select exact module procedures and variables with semantic source context.
+    """Select exact module procedures, generics, and variables with semantic source context.
 
     Selection is expressed in native identities before policy names anything.
-    Primary module copies contain only requested procedures and variables;
+    Primary module copies contain only requested procedures, generics, and variables;
     classes and prototypes remain available as signature facts. Other
     source modules remain available as context. Contract-import policy decides
     which of them the generated contract needs to emit.

@@ -6,87 +6,83 @@ names and the directories to search, this resolver follows each ``use`` and
 each submodule's parent to the one file that defines it, transitively, so a
 project can be supplied by its entry file alone.
 
-Which modules a source defines and uses are parser facts, read here exactly as
-compile ordering reads them. The directory index only locates candidate files
-by their ``module`` lines, since parsing every file under a search root to
-find one module would be needlessly slow.
+What a source defines is decided by its preprocessed text, never by its raw
+text: a macro or an ``#include`` can name a module, and a conditional block can
+remove one. Every searched source is therefore located by the ``module`` and
+``submodule`` statements its preprocessed text holds, and a source whose raw
+text has nothing a preprocessor could change is read as it stands, which spares
+the preprocessor for it. The sources located for a unit are then parsed, and
+their parsed units are the definition. A source is selected into the project
+only once it is the unit's one definition, so reading a candidate never makes
+it part of the project.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 import re
 
 from prik.parsers.fortran.intrinsic_modules import INTRINSIC_FORTRAN_MODULES
-from prik.parsers.fortran.models import FortranFile, FortranParseError
+from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
-from prik.parsers.fortran.scope import used_module_statements
-
+from prik.parsers.fortran.scope import file_defined_units, file_unit_requirements
 
 # Suffixes a Fortran compiler accepts as free- or fixed-form source.
 _FORTRAN_SOURCE_SUFFIXES = frozenset({".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08", ".fpp"})
-_SUBMODULE_LINE = re.compile(
-    r"^[ \t]*submodule[ \t]*\([ \t]*(?P<ancestor>[a-z][a-z0-9_]*)[ \t]*(?::[ \t]*[a-z][a-z0-9_]*[ \t]*)?\)"
-    r"[ \t]*(?P<name>[a-z][a-z0-9_]*)",
+# A statement may follow another on one line after ``;``, and a name may
+# follow its keyword on a continuation line, so both are accepted. Locating a
+# source that turns out not to define a unit costs a parse, never a result.
+_STATEMENT_START = r"(?:^|;)[ \t]*"
+_CONTINUATION = r"(?:[ \t]*&[ \t]*(?:!.*)?\n[ \t]*&?)?"
+_MODULE_STATEMENT = re.compile(
+    _STATEMENT_START + r"module" + r"(?:[ \t]+|" + _CONTINUATION + r"[ \t]*)"
+    r"(?!(?:procedure|function|subroutine|pure|impure|elemental|recursive|non_recursive)\b)"
+    r"(?P<name>[a-z][a-z0-9_]*)\b(?![ \t]*[(=%])",
     re.IGNORECASE | re.MULTILINE,
 )
-_MODULE_LINE = re.compile(
-    r"^[ \t]*module[ \t]+(?!(?:procedure|function|subroutine|pure|impure|elemental|recursive)\b)"
-    r"(?P<name>[a-z][a-z0-9_]*)[ \t]*(?:!.*)?$",
+_SUBMODULE_STATEMENT = re.compile(
+    _STATEMENT_START + r"submodule[ \t]*" + _CONTINUATION + r"\([ \t]*(?P<ancestor>[a-z][a-z0-9_]*)[ \t]*"
+    r"(?::[ \t]*[a-z][a-z0-9_]*[ \t]*)?\)[ \t]*" + _CONTINUATION + r"[ \t]*(?P<name>[a-z][a-z0-9_]*)",
     re.IGNORECASE | re.MULTILINE,
 )
+# Raw text a preprocessor can change: a directive, or a Fortran ``include``,
+# which PRIK's preprocessing expands as well.
+_PREPROCESSED_TEXT = re.compile(r"^[ \t]*(?:#|include[ \t]*['\"])", re.IGNORECASE | re.MULTILINE)
+# Sources are preprocessed by separate compiler processes, which is I/O-bound
+# work for this process, so a few run at once.
+_LOCATE_WORKERS = 4
 
 
 def resolve_fortran_module_sources(
     entries: Sequence[Path],
     search_dirs: Iterable[Path],
     read_source: Callable[[Path], str],
+    *,
+    command_line_macros: bool = True,
 ) -> tuple[Path, ...]:
     """Return ``entries`` with the sources of every module they use, dependencies first.
 
-    ``read_source`` returns a file's preprocessed text, so a ``use`` inside an
-    inactive conditional block is not followed. An ``intrinsic`` module is
-    never searched. Any other used module, and a submodule's parent, that no
-    source read so far defines must be defined by exactly one Fortran source
-    under ``search_dirs``; otherwise a :class:`FortranParseError` names it and
+    ``read_source`` returns a file's preprocessed text. ``command_line_macros``
+    states whether the preprocessing defines macros of its own, such as ``-D``
+    flags; then every searched source is preprocessed, since any of its names
+    may be one, and otherwise a source without directives is read as written.
+
+    Every submodule descending from a selected module is selected as well,
+    since it implements that module's separate module procedures. A unit
+    every scope uses as ``intrinsic`` is the processor's and is never
+    searched. A ``use`` stating no nature reads a module's source when one is
+    defined, and the processor's module of that name only when none is. Any
+    other needed module, and a submodule's parent, must be defined by exactly
+    one searched source; otherwise a :class:`FortranParseError` names it and
     the source that needs it.
     """
-    candidates, searched_files = _unit_candidates(search_dirs)
-    parser = FortranParser()
-    facts: dict[Path, tuple[set[str], dict[str, str | None]]] = {}
-    owners: dict[str, Path] = {}
-
-    def read(path: Path) -> tuple[set[str], dict[str, str | None]]:
-        if path not in facts:
-            parsed = parser.parse_file(read_source(path), filename=str(path))
-            facts[path] = _defined_and_required_units(parsed)
-            for unit in facts[path][0]:
-                owners.setdefault(unit, path)
-        return facts[path]
-
-    scanned: set[Path] = set()
-
-    def parsed_definers(unit: str) -> list[Path]:
-        """Parse every searched source not yet read and return those defining ``unit``.
-
-        A module named through a macro or an included line has no ``module``
-        line the fast index can see, so the preprocessed sources are read
-        once, when a needed unit is otherwise missing. A source that cannot
-        be preprocessed or parsed cannot define it.
-        """
-        for path in searched_files:
-            if path in scanned:
-                continue
-            scanned.add(path)
-            try:
-                read(path)
-            except Exception:  # an unreadable candidate defines nothing
-                continue
-        return [path for path in searched_files if path in facts and unit in facts[path][0]]
-
+    searched = _SearchedSources(tuple(search_dirs), read_source, command_line_macros=command_line_macros)
+    project = _SelectedSources(searched)
     for entry in entries:
-        read(entry.resolve())
+        project.select(entry.resolve(), requested_by=None)
     ordered: list[Path] = []
     visiting: set[Path] = set()
 
@@ -94,11 +90,11 @@ def resolve_fortran_module_sources(
         if path in ordered or path in visiting:
             return
         visiting.add(path)
-        defined, required = read(path)
-        for unit, nature in sorted(required.items()):
-            if unit in defined or nature == "intrinsic":
+        facts = searched.facts(path)
+        for unit, nature in sorted(facts.required.items(), key=lambda item: item[0]):
+            if unit in facts.defined or nature == "intrinsic":
                 continue
-            dependency = owners.get(unit) or _defining_source(unit, nature, candidates, path, read, parsed_definers)
+            dependency = project.provider(unit, nature, user=path)
             if dependency is not None:
                 visit(dependency)
         visiting.discard(path)
@@ -106,43 +102,150 @@ def resolve_fortran_module_sources(
 
     for entry in entries:
         visit(entry.resolve())
+    # A separate module procedure is implemented in a submodule, which no
+    # ``use`` names, so every submodule descending from a selected module is
+    # part of the project too, however deeply nested.
+    added = True
+    while added:
+        added = False
+        for unit in searched.located_units():
+            ancestor = unit.partition(":")[0]
+            if ":" not in unit or project.owner(unit) is not None or project.owner(ancestor) is None:
+                continue
+            if searched.definers(unit):
+                descendant = project.provider(unit, "non_intrinsic", user=project.owner(ancestor))
+                if descendant is not None:
+                    visit(descendant)
+                    added = True
     originals = {entry.resolve(): entry for entry in entries}
     return tuple(originals.get(path, path) for path in ordered)
 
 
-def _defining_source(
-    unit: str,
-    nature: str | None,
-    candidates: dict[str, list[Path]],
-    user: Path,
-    read: Callable[[Path], tuple[set[str], dict[str, str | None]]],
-    parsed_definers: Callable[[str], list[Path]],
-) -> Path | None:
-    """Return the one searched source whose parsed units define ``unit``, or raise.
+@dataclass(frozen=True)
+class _UnitFacts:
+    """The units one parsed source defines, and those it requires with their natures."""
 
-    A ``use`` that states no nature names an intrinsic module only when no
-    other module of that name is accessible, so a known intrinsic name is
-    satisfied by the processor when no source defines it. Only a unit that is
-    still missing reads every searched source in full.
-    """
-    defining = [path for path in candidates.get(unit, ()) if unit in read(path)[0]]
-    if len(defining) == 1:
-        return defining[0]
-    if not defining and nature is None and unit in INTRINSIC_FORTRAN_MODULES:
-        return None
-    if not defining:
-        defining = parsed_definers(unit)
-    if len(defining) == 1:
-        return defining[0]
-    kind = "submodule" if ":" in unit else "module"
-    if not defining:
+    defined: frozenset[str]
+    required: dict[str, str | None]
+
+
+class _SearchedSources:
+    """What every searched source defines, read once and never selected here."""
+
+    def __init__(
+        self,
+        search_dirs: tuple[Path, ...],
+        read_source: Callable[[Path], str],
+        *,
+        command_line_macros: bool,
+    ) -> None:
+        self._read_source = read_source
+        self._command_line_macros = command_line_macros
+        self.files = _searched_files(search_dirs)
+        self._located: dict[Path, frozenset[str]] | None = None
+        self._texts: dict[Path, str] = {}
+        self._facts: dict[Path, _UnitFacts] = {}
+        self.unreadable: dict[Path, Exception] = {}
+        self._parser = FortranParser()
+
+    def facts(self, path: Path) -> _UnitFacts:
+        """Parse one source once and return its units."""
+        if path not in self._facts:
+            text = self._texts.pop(path, None)
+            parsed = self._parser.parse_file(self._read_source(path) if text is None else text, filename=str(path))
+            self._facts[path] = _UnitFacts(frozenset(file_defined_units(parsed)), file_unit_requirements(parsed))
+        return self._facts[path]
+
+    def definers(self, unit: str) -> list[Path]:
+        """Return every searched source whose parsed units define ``unit``, in search order."""
+        located = self._locate()
+        return [path for path in self.files if unit in located.get(path, ()) and unit in self.facts(path).defined]
+
+    def located_units(self) -> list[str]:
+        """Return every unit some searched source's text states, sorted."""
+        return sorted({unit for units in self._locate().values() for unit in units})
+
+    def raw_definers(self, unit: str) -> list[Path]:
+        """Return the unreadable sources whose raw text shows ``unit``, to explain a missing one."""
+        return [path for path in self.unreadable if unit in _statement_units(path.read_text(errors="replace"))]
+
+    def _locate(self) -> dict[Path, frozenset[str]]:
+        """Return the units each searched source's preprocessed text states, computed once."""
+        if self._located is None:
+            located: dict[Path, frozenset[str]] = {}
+            opaque: list[Path] = []
+            for path in self.files:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+                if self._command_line_macros or _PREPROCESSED_TEXT.search(raw):
+                    opaque.append(path)
+                else:
+                    located[path] = _statement_units(raw)
+            with ThreadPoolExecutor(max_workers=_LOCATE_WORKERS) as pool:
+                for path, text in zip(opaque, pool.map(self._preprocessed_text, opaque), strict=True):
+                    if isinstance(text, Exception):
+                        # A source that cannot be preprocessed here defines
+                        # nothing; it is named if a needed unit stays missing.
+                        self.unreadable[path] = text
+                        continue
+                    located[path] = _statement_units(text)
+                    if located[path]:
+                        self._texts[path] = text
+            self._located = located
+        return self._located
+
+    def _preprocessed_text(self, path: Path) -> str | Exception:
+        try:
+            return self._read_source(path)
+        except Exception as error:  # reported through ``unreadable``
+            return error
+
+
+class _SelectedSources:
+    """The sources chosen into the project, and the units each one provides."""
+
+    def __init__(self, searched: _SearchedSources) -> None:
+        self._searched = searched
+        self._owners: dict[str, Path] = {}
+
+    def select(self, path: Path, *, requested_by: Path | None) -> None:
+        """Add one source to the project; a unit another selected source defines is ambiguous."""
+        for unit in sorted(self._searched.facts(path).defined):
+            owner = self._owners.setdefault(unit, path)
+            if owner != path:
+                _raise_ambiguous(unit, requested_by or path, [owner, path])
+
+    def owner(self, unit: str) -> Path | None:
+        """Return the selected source defining ``unit``, if one is selected."""
+        return self._owners.get(unit)
+
+    def provider(self, unit: str, nature: str | None, *, user: Path) -> Path | None:
+        """Return the one source defining ``unit``, or ``None`` for the processor's module."""
+        if unit in self._owners:
+            return self._owners[unit]
+        definers = self._searched.definers(unit)
+        if len(definers) > 1:
+            _raise_ambiguous(unit, user, definers)
+        if definers:
+            self.select(definers[0], requested_by=user)
+            return definers[0]
+        if nature is None and unit in INTRINSIC_FORTRAN_MODULES:
+            return None
+        kind = "submodule" if ":" in unit else "module"
+        unreadable = self._searched.raw_definers(unit)
+        detail = "".join(
+            f" {path} names it but could not be preprocessed: {self._searched.unreadable[path]}" for path in unreadable
+        )
         raise FortranParseError(
             f"No Fortran source defines {kind} '{unit}' used by {user}; "
-            "add the directory that contains it as a module source directory.",
+            f"add the directory that contains it as a module source directory.{detail}",
             filename=str(user),
             code="PARSE_MODULE_SOURCE_NOT_FOUND",
         )
-    listed = ", ".join(str(path) for path in defining)
+
+
+def _raise_ambiguous(unit: str, user: Path, definers: Sequence[Path]) -> None:
+    kind = "submodule" if ":" in unit else "module"
+    listed = ", ".join(str(path) for path in definers)
     raise FortranParseError(
         f"{kind.capitalize()} '{unit}' used by {user} is defined by several sources ({listed}); "
         "narrow the module source directories to one of them.",
@@ -151,55 +254,20 @@ def _defining_source(
     )
 
 
-def _unit_candidates(search_dirs: Iterable[Path]) -> tuple[dict[str, list[Path]], list[Path]]:
-    """Map each module or submodule to the sources under ``search_dirs`` that open it, and list every source.
-
-    The map reads raw ``module`` and ``submodule`` lines, the fast path; the
-    list lets a unit those lines cannot show be found by parsing.
-    """
-    candidates: dict[str, list[Path]] = {}
-    searched: list[Path] = []
+def _searched_files(search_dirs: Iterable[Path]) -> tuple[Path, ...]:
+    """Return every Fortran source under ``search_dirs`` once, in a stable order."""
+    files: dict[Path, None] = {}
     for directory in search_dirs:
         for path in sorted(Path(directory).rglob("*")):
-            if path.suffix.casefold() not in _FORTRAN_SOURCE_SUFFIXES or not path.is_file():
-                continue
-            resolved = path.resolve()
-            if resolved not in searched:
-                searched.append(resolved)
-            text = path.read_text(encoding="utf-8", errors="replace")
-            units = [match.group("name").casefold() for match in _MODULE_LINE.finditer(text)]
-            units.extend(
-                f"{match.group('ancestor')}:{match.group('name')}".casefold()
-                for match in _SUBMODULE_LINE.finditer(text)
-            )
-            for unit in units:
-                paths = candidates.setdefault(unit, [])
-                if resolved not in paths:
-                    paths.append(resolved)
-    return candidates, searched
+            if path.suffix.casefold() in _FORTRAN_SOURCE_SUFFIXES and path.is_file():
+                files.setdefault(path.resolve(), None)
+    return tuple(files)
 
 
-def _defined_and_required_units(parsed: FortranFile) -> tuple[set[str], dict[str, str | None]]:
-    """Return the units one parsed source defines and the units it requires, with each ``use`` nature.
-
-    A module is named by itself and a submodule by ``ancestor:name``. A
-    submodule requires its direct parent: the submodule it names after its
-    ancestor, or the ancestor module itself.
-    """
-    defined = {str(module.name).casefold() for module in parsed.modules}
-    defined.update(
-        f"{submodule.ancestor or submodule.parent}:{submodule.name}".casefold() for submodule in parsed.submodules
+def _statement_units(text: str) -> frozenset[str]:
+    """Return the modules and ``ancestor:name`` submodules the statements of ``text`` open."""
+    units = {match.group("name").casefold() for match in _MODULE_STATEMENT.finditer(text)}
+    units.update(
+        f"{match.group('ancestor')}:{match.group('name')}".casefold() for match in _SUBMODULE_STATEMENT.finditer(text)
     )
-    required: dict[str, str | None] = {}
-    for owner in (*parsed.modules, *parsed.submodules, *parsed.programs, *parsed.procedures):
-        for statement in used_module_statements(owner):
-            name = statement.module.casefold()
-            # An explicit nature is kept over a statement that states none.
-            if required.get(name) is None:
-                required[name] = statement.nature
-    for submodule in parsed.submodules:
-        parent = (
-            f"{submodule.ancestor}:{submodule.parent}" if submodule.ancestor else str(submodule.parent)
-        ).casefold()
-        required[parent] = "non_intrinsic"
-    return defined, required
+    return frozenset(units)

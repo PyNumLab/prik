@@ -636,6 +636,7 @@ def _parse_fortran_semantic_sources(context: _SemanticPipelineContext) -> _Parse
             source_paths,
             context.module_source_dirs,
             lambda path: _fortran_source_for_path(path, context.preprocessing)[0],
+            command_line_macros=context.preprocessing.defines_command_line_macros,
         )
     return _ParsedSemanticSources(
         source_paths,
@@ -2427,9 +2428,9 @@ def _add_semantic_interpretation_options(
         "--export-symbols",
         metavar="FILE",
         help=(
-            "Select exact reachable C functions or module-qualified Fortran procedures from a UTF-8 "
-            "name file as the source-side public surface; generate --pyi records the corresponding "
-            "Python names in __all__"
+            "Select exact reachable C functions, or module-qualified public Fortran symbols "
+            "(procedures, generics, and module variables), from a UTF-8 name file as the "
+            "source-side public surface; generate --pyi records the corresponding Python names in __all__"
         ),
     )
 

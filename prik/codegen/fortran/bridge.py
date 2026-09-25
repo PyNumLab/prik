@@ -143,6 +143,10 @@ _MODULE_GETTER_SUMMARIES = {
         "Copies the parameter array into persistent storage and reports its width and extents."
     ),
     ModuleGetterAction.DIRECT_VALUE: "Returns the variable's current value.",
+    ModuleGetterAction.NATIVE_SCALAR_VIEW: "Returns the address of the scalar's storage, without copying.",
+    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: (
+        "Returns the address of the scalar's current storage, or a null pointer when it holds nothing."
+    ),
     ModuleGetterAction.CHARACTER_VALUE: "Copies the characters into a fixed-width byte buffer.",
     ModuleGetterAction.NATIVE_CHARACTER_VIEW: "Returns the address of fixed character storage.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: (

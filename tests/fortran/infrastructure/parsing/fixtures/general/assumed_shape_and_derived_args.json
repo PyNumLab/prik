@@ -50,7 +50,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     },
     {
       "name": "update_plane",
@@ -94,7 +95,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     },
     {
       "name": "step",
@@ -129,7 +131,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     }
   ],
   "interfaces": [],
@@ -180,7 +183,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     },
     "update_plane": {
       "name": "update_plane",
@@ -224,7 +228,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     },
     "step": {
       "name": "step",
@@ -259,7 +264,8 @@
       "uses": [],
       "in_interface": false,
       "variables": {},
-      "common_variables": []
+      "common_variables": [],
+      "nested_uses": []
     }
   }
 }

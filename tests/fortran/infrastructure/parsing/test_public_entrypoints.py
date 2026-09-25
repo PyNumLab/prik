@@ -141,7 +141,8 @@ end subroutine lone_proc
             "  type :: file_state\n"
             "  end type file_state\n"
             "end submodule owner_submod\n",
-            "owner_submod",
+            # A submodule name is local to its ancestor, so it owns as ``ancestor:name``.
+            "parent_mod:owner_submod",
         ),
         ("program driver\n  type :: file_state\n  end type file_state\nend program driver\n", None),
         (

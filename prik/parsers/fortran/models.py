@@ -380,6 +380,12 @@ class FortranProcedureSignature:
     in_interface: bool = False
     variables: dict[str, FortranVariable] = field(default_factory=dict)
     common_variables: list[str] = field(default_factory=list)
+    nested_uses: list[FortranUseStatement] = field(default_factory=list)
+    """``use`` statements of the internal procedures and ``BLOCK`` constructs inside.
+
+    They name modules this procedure depends on, so discovery and compile
+    ordering read them, but they make nothing visible in the procedure itself.
+    """
 
 
 @dataclass
@@ -472,6 +478,14 @@ class FortranModule:
 
 @dataclass
 class FortranSubmodule:
+    """One submodule, named relative to the module it descends from.
+
+    A submodule name is local to its ancestor module, so ``submodule (a) impl``
+    and ``submodule (b) impl`` are two units. ``parent`` is the direct parent
+    as written: the ancestor module itself, or with ``ancestor`` set, another
+    submodule of that ancestor.
+    """
+
     name: str
     parent: str
     ancestor: str | None = None
@@ -484,6 +498,21 @@ class FortranSubmodule:
     enums: list[FortranEnum] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
 
+    @property
+    def ancestor_module(self) -> str:
+        """Return the module this submodule descends from."""
+        return self.ancestor or self.parent
+
+    @property
+    def identity(self) -> str:
+        """Return ``ancestor:name``, the name that identifies this submodule."""
+        return f"{self.ancestor_module}:{self.name}"
+
+    @property
+    def parent_identity(self) -> str:
+        """Return the identity of the direct parent: a module, or ``ancestor:parent``."""
+        return f"{self.ancestor}:{self.parent}" if self.ancestor else self.parent
+
 
 @dataclass
 class FortranProgram:
@@ -494,6 +523,11 @@ class FortranProgram:
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     enums: list[FortranEnum] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
+    nested_uses: list[FortranUseStatement] = field(default_factory=list)
+    """``use`` statements of the internal procedures and ``BLOCK`` constructs inside.
+
+    They are dependencies of the program, but make nothing visible in it.
+    """
 
 
 @dataclass

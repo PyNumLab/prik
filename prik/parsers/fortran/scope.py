@@ -158,20 +158,79 @@ class ScopeUses:
 def used_module_statements(owner: object) -> list[FortranUseStatement]:
     """Return every ``use`` statement one scope writes, including nested ones.
 
-    A ``use`` written inside a contained procedure or an interface body is a
-    dependency of the scope holding it just as much as one written at its top,
-    so the whole tree is read. Compile ordering, project dependencies, and
-    module source discovery all ask this, and they have to get the same answer.
+    A ``use`` written inside a contained procedure, an interface body, an
+    internal procedure or a ``BLOCK`` construct is a dependency of the scope
+    holding it just as much as one written at its top, so the whole tree is
+    read. Compile ordering, project dependencies, and module source discovery
+    all ask this, and they have to get the same answer.
     """
-    statements: list[FortranUseStatement] = list(getattr(owner, "uses", ()))
+    statements: list[FortranUseStatement] = [*getattr(owner, "uses", ()), *getattr(owner, "nested_uses", ())]
     for procedure in getattr(owner, "procedures", ()):
         statements.extend(getattr(procedure, "uses", ()))
+        statements.extend(getattr(procedure, "nested_uses", ()))
     for interface in getattr(owner, "interfaces", ()):
         for procedure in getattr(interface, "procedures", ()):
             statements.extend(getattr(procedure, "uses", ()))
     return statements
 
 
-def used_module_names(owner: object) -> set[str]:
-    """Return every module one scope names, lowercased."""
-    return {statement.module.lower() for statement in used_module_statements(owner)}
+# How strongly a requirement asks for a module's source: ``non_intrinsic``
+# requires one, a ``use`` stating no nature prefers one over the processor's
+# module of that name, and ``intrinsic`` names the processor's module only.
+_NATURE_STRENGTH = {"intrinsic": 0, None: 1, "non_intrinsic": 2}
+
+
+def used_module_natures(owners: Iterable[object]) -> dict[str, str | None]:
+    """Return each module the scopes use, with the nature that decides where it is read from.
+
+    Scopes naming one module differently are read together: one needing the
+    module's source outweighs one that would accept the processor's module,
+    so ``non_intrinsic`` wins over no stated nature, which wins over
+    ``intrinsic``. Only a module every scope uses as ``intrinsic`` is the
+    processor's alone. Names are case-folded.
+    """
+    natures: dict[str, str | None] = {}
+    for owner in owners:
+        for statement in used_module_statements(owner):
+            name = statement.module.casefold()
+            if name not in natures or _NATURE_STRENGTH[statement.nature] > _NATURE_STRENGTH[natures[name]]:
+                natures[name] = statement.nature
+    return natures
+
+
+def source_module_dependencies(owners: Iterable[object]) -> set[str]:
+    """Return the modules the scopes use that a parsed source may provide.
+
+    An ``intrinsic`` use names the processor's module, so a project source
+    that happens to share its name is not a dependency.
+    """
+    return {name for name, nature in used_module_natures(owners).items() if nature != "intrinsic"}
+
+
+def file_unit_requirements(parsed_file: object) -> dict[str, str | None]:
+    """Return every unit one parsed file needs, with the nature each is needed by.
+
+    A module is named by itself and a submodule by ``ancestor:name``. Every
+    scope in the file is read, including file-level interface bodies, and a
+    submodule needs its direct parent's source. This is the one reading that
+    module source discovery, project file ordering, and compile scheduling
+    share.
+    """
+    owners = (
+        *getattr(parsed_file, "modules", ()),
+        *getattr(parsed_file, "submodules", ()),
+        *getattr(parsed_file, "programs", ()),
+        *getattr(parsed_file, "procedures", ()),
+        *getattr(parsed_file, "interfaces", ()),
+    )
+    requirements = used_module_natures(owners)
+    for submodule in getattr(parsed_file, "submodules", ()):
+        requirements[submodule.parent_identity.casefold()] = "non_intrinsic"
+    return requirements
+
+
+def file_defined_units(parsed_file: object) -> set[str]:
+    """Return the units one parsed file defines: modules by name, submodules by ``ancestor:name``."""
+    defined = {str(module.name).casefold() for module in getattr(parsed_file, "modules", ())}
+    defined.update(submodule.identity.casefold() for submodule in getattr(parsed_file, "submodules", ()))
+    return defined

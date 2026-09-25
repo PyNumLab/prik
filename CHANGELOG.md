@@ -11,18 +11,38 @@ release tags add a leading `v` to the package version.
   `build_fortran_extension` accepts `module_source_dirs`: from the given entry
   sources, PRIK follows each `use` to the source under those directories that
   defines the module and reads it too, so a multi-module library such as Open
-  MPI's `mpi_f08` is supplied by its entry file. Discovery honors
-  `use, intrinsic` and `use, non_intrinsic`, and follows each submodule to its
-  direct parent. A module whose name a macro or an `#include` supplies is
-  found by preprocessing and parsing the searched sources when a plain scan
-  of them does not name it. A needed module with no source, or with several,
-  is an error.
+  MPI's `mpi_f08` is supplied by its entry file. What a source defines is
+  read from its preprocessed text, so a module a macro or an `#include`
+  names is found, and a second definition only preprocessing reveals makes
+  the module ambiguous. A needed module with no source, or with several, is
+  an error. Discovery honors `use, intrinsic` and `use, non_intrinsic` for
+  each scope separately, and an unstated `use` of an intrinsic module's name
+  reads a source defining it before falling back to the processor. It
+  follows `use` statements in internal procedures and `BLOCK` constructs,
+  follows each submodule to its direct parent, and brings in every submodule
+  descending from a used module, which implements its separate module
+  procedures.
   Import, re-export, callback, generic, specification-expression, and constant
   resolution follow the same rule, so a user module named like an intrinsic
   one, such as `iso_fortran_env`, is read when a `use` selects it and never
   when `use, intrinsic` selects the processor module. A derived type reached
   from a processor module, such as `ieee_arithmetic`'s, is left to the
   processor rather than read from a parsed module of that name.
+- A separate module procedure declared by a `module function` or
+  `module subroutine` interface body is wrapped as its module's own
+  procedure, under ordinary accessibility; it previously needed an explicit
+  `public` statement naming it.
+- Fortran submodules are identified by `ancestor:name` throughout parsing,
+  project ordering, compile scheduling, and kind resolution, so two modules
+  may each have a submodule of the same name. `FortranProject.submodules` and
+  its dependency keys use that identity, and an entity a submodule declares
+  records it as its owner.
+- Compile ordering follows `use` natures: a scope using the processor's
+  module through `use, intrinsic` no longer waits on a project source of the
+  same name, and `use` statements in internal procedures and `BLOCK`
+  constructs order compilation too.
+- Generated module docstrings describe mutable module scalars as live
+  rank-zero views and include `None` for allocatable and pointer scalars.
 - A module that reaches two generics of one name through separate `use`
   statements, without declaring the generic itself, owns the merged generic:
   it dispatches over every contributor's specifics in source and contract
@@ -63,7 +83,8 @@ release tags add a leading `v` to the package version.
   retain buffers for nonblocking operations.
 
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
-  module-qualified Fortran procedures and variables, including symbols
+  module-qualified public Fortran symbols -- procedures, generics, and module
+  variables -- including symbols
   re-exported by a public facade; the bridge calls each procedure through the
   module that declares it. Generated contracts retain required type
   declarations (including the component and parent types they declare) and

@@ -1,5 +1,7 @@
 """Project-level registries, dependencies, and scope model behavior."""
 
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
@@ -153,9 +155,10 @@ end submodule child_mod
     assert [iface.name for iface in submodule.interfaces] == ["callbacks"]
     assert [proc.name for proc in submodule.procedures] == ["reset"]
 
+    # A nested submodule depends on its direct parent, identified through its ancestor.
     project = parse_fortran_project({"child.f90": code})
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod"}
-    assert "child_mod.reset" in project.procedures
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod"}
+    assert "ancestor_mod:child_mod.reset" in project.procedures
 
 
 def test_project_registry_includes_module_types_interfaces_and_program_dependencies():
@@ -214,9 +217,8 @@ end module ancestor_mod
     )
     (tmp_path / "parent.f90").write_text(
         """
-module parent_mod
-  use ancestor_mod
-end module parent_mod
+submodule (ancestor_mod) parent_mod
+end submodule parent_mod
 """,
         encoding="utf-8",
     )
@@ -242,9 +244,10 @@ end module helper_mod
     project = parse_fortran_project(tmp_path)
 
     assert "ancestor_mod" in project.modules
-    assert "parent_mod" in project.modules
-    assert "child_mod" in project.submodules
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
+    assert {"ancestor_mod:parent_mod", "ancestor_mod:child_mod"} <= set(project.submodules)
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod", "helper_mod"}
+    ordered = [Path(parsed.filename).name for parsed in project.files]
+    assert ordered.index("ancestor.f90") < ordered.index("parent.f90") < ordered.index("child.f90")
 
 
 def test_program_contains_and_unnamed_block_data_public_models():
@@ -517,7 +520,7 @@ end module precision
         }
     )
 
-    procedure = project.submodules["transform_impl"].procedures[0]
+    procedure = project.submodules["transform_api:transform_impl"].procedures[0]
     assert procedure.arguments[0].kind == "real64"
     assert procedure.result.kind == "real64"
     prototype = project.modules["transform_api"].interfaces[0].procedures[0]
@@ -547,7 +550,7 @@ end submodule child_mod
 
     project = parse_fortran_project(tmp_path)
 
-    assert project.dependencies["child_mod"] == {"parent_mod", "missing_mod"}
+    assert project.dependencies["parent_mod:child_mod"] == {"parent_mod", "missing_mod"}
 
 
 def test_program_and_block_data_scope_errors_use_public_parse_paths():
@@ -667,3 +670,47 @@ def test_an_imported_kind_constant_follows_the_use_nature(nature: str, kind: str
     )
 
     assert project.modules["consumer"].variables[0].kind == kind
+
+
+def test_same_named_submodules_of_different_ancestors_are_separate_project_scopes():
+    """A submodule name is local to its ancestor, so ``a:impl`` and ``b:impl`` coexist.
+
+    Each is keyed by its identity, depends on its own parent, and resolves
+    kinds through its own ancestor's parameters. A nested child of each does
+    the same through its direct parent.
+    """
+    sources = {}
+    for ancestor, kind in (("a", 4), ("b", 8)):
+        sources[f"{ancestor}.f90"] = f"""
+module {ancestor}
+  integer, parameter :: wp = {kind}
+  interface
+    module subroutine run(x)
+      real(wp), intent(inout) :: x
+    end subroutine run
+  end interface
+end module {ancestor}
+"""
+        sources[f"{ancestor}_impl.f90"] = f"""
+submodule ({ancestor}) impl
+contains
+  module subroutine run(x)
+    real(wp), intent(inout) :: x
+  end subroutine run
+end submodule impl
+"""
+        sources[f"{ancestor}_leaf.f90"] = f"""
+submodule ({ancestor}:impl) leaf
+  real(wp) :: scale
+end submodule leaf
+"""
+
+    project = parse_fortran_project(sources)
+
+    assert set(project.submodules) == {"a:impl", "b:impl", "a:leaf", "b:leaf"}
+    assert project.dependencies["a:leaf"] == {"a:impl"}
+    assert project.dependencies["b:impl"] == {"b"}
+    assert project.submodules["a:impl"].procedures[0].arguments[0].kind == "4"
+    assert project.submodules["b:impl"].procedures[0].arguments[0].kind == "8"
+    assert project.submodules["a:leaf"].variables[0].kind == "4"
+    assert project.submodules["b:leaf"].variables[0].kind == "8"

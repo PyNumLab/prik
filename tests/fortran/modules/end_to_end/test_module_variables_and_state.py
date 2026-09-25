@@ -53,9 +53,10 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert module_docstring.index("Module Attributes") < module_docstring.index("Functions")
     assert module_docstring.index("Functions") < module_docstring.index("Classes")
     assert "nmax : int32\n    Read-only constant." in module_docstring
-    assert "counter : int32" in module_docstring
-    assert "scale : float64" in module_docstring
-    assert "saved_counter : int32" in module_docstring
+    # A mutable module scalar is a live rank-zero view, and the docstring says so.
+    assert "counter : ndarray[int32]\n    Rank: 0\n    Live view" in module_docstring
+    assert "scale : ndarray[float64]\n    Rank: 0\n    Live view" in module_docstring
+    assert "saved_counter : ndarray[int32]" in module_docstring
     assert "Assignment writes through to native storage." not in module_docstring
 
     assert module.nmax == np.int32(12)
@@ -360,6 +361,9 @@ def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: 
     assert module.deferred is None
     assert module.fixed is None
     assert module.link is None
+    # The documented type admits the ``None`` those reads return.
+    for name in ("deferred", "fixed", "link"):
+        assert f"{name} : ndarray[bytes] or None" in module.__doc__
 
 
 def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):

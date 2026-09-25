@@ -28,7 +28,12 @@ from prik.utilities.declaration_expressions import (
 from prik.utilities.visitor import ClassVisitor
 
 from prik.parsers.fortran.lexer import preprocess_lines
-from prik.parsers.fortran.scope import ScopeUses, used_module_names
+from prik.parsers.fortran.scope import (
+    ScopeUses,
+    file_defined_units,
+    file_unit_requirements,
+    source_module_dependencies,
+)
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
@@ -1752,7 +1757,8 @@ class FortranParser(ClassVisitor):
         ``exclude_interface`` keeps interface procedure signatures attached to
         their interface instead of duplicating them in ``target.procedures``.
         """
-        belongs = bool(item.module and item.module.lower() == target.name.lower())
+        owner = target.identity if isinstance(target, FortranSubmodule) else target.name
+        belongs = bool(item.module and item.module.lower() == owner.lower())
         return belongs and not (exclude_interface and item.in_interface)
 
     def _populate_module_like_children(self, target, child_units, *, scope, filename) -> None:
@@ -1805,6 +1811,7 @@ class FortranParser(ClassVisitor):
         program.enums.extend(
             self._visit(child, parent_scope=scope, filename=filename) for child in child_units if child.kind == "enum"
         )
+        program.nested_uses = self._nested_use_statements(unit)
         self._validate_variable_declarations(
             program.variables,
             owner_kind="program",
@@ -1812,6 +1819,25 @@ class FortranParser(ClassVisitor):
             filename=filename,
         )
         return program
+
+    @classmethod
+    def _nested_use_statements(cls, unit: SourceUnit) -> list[FortranUseStatement]:
+        """Return the ``use`` statements written inside one unit but outside its own specification.
+
+        An internal procedure and a ``BLOCK`` construct each have a scope of
+        their own, so their imports are dependencies of the unit without being
+        visible in it. An interface body inside the unit is modeled with its
+        own ``use`` statements, so its lines are left to that model.
+        """
+        own = {(line[1], line[0]) for line in unit.specification}
+        modeled = {(line[1], line[0]) for child in unit.children if child.kind == "interface" for line in child.lines}
+        return [
+            statement
+            for line in unit.lines
+            if (line[1], line[0]) not in own
+            and (line[1], line[0]) not in modeled
+            and (statement := cls._parse_use_statement(line[0].strip())) is not None
+        ]
 
     def _visit_BlockDataUnit(
         self,
@@ -2001,6 +2027,7 @@ class FortranParser(ClassVisitor):
             filename=filename,
         )
         self._helper_apply_local_interface_declarations(proc_state, unit, scope, filename=filename)
+        proc_state.signature.nested_uses = self._nested_use_statements(unit)
         return self._finalize_proc(proc_state)
 
     # ------------------------------------------------------------------
@@ -2079,7 +2106,7 @@ class FortranParser(ClassVisitor):
             ]
         for submodule in units.submodules:
             submodule.interfaces = [
-                iface for iface in interfaces if iface.module and iface.module.lower() == submodule.name.lower()
+                iface for iface in interfaces if iface.module and iface.module.lower() == submodule.identity.lower()
             ]
         return [iface for iface in interfaces if iface.module is None]
 
@@ -2208,7 +2235,7 @@ class FortranParser(ClassVisitor):
         for model in [*units.modules, *units.submodules, *units.procedures]:
             self._insert_unique_scope_symbol(
                 parsed_file.symbols,
-                model.name.lower(),
+                (model.identity if isinstance(model, FortranSubmodule) else model.name).lower(),
                 model,
                 label="file scope",
                 filename=filename,
@@ -2261,22 +2288,13 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _project_file_requirements(parsed_file: FortranFile) -> set[str]:
-        """Return module or submodule names required by one parsed file.
+        """Return the modules and submodules one parsed file needs from project sources.
 
-        Requirements come from module and submodule ``use`` statements plus a
-        submodule's parent and optional ancestor. For example, a child
-        submodule with parent ``api`` and ``use kinds`` returns at least
-        ``{"api", "kinds"}``.
+        Every scope's ``use`` counts, with a submodule's direct parent, but an
+        ``intrinsic`` use names the processor's module and never a project
+        file that shares its name. A submodule is named ``ancestor:name``.
         """
-        requirements: set[str] = set()
-        for module in parsed_file.modules:
-            requirements.update(used_module_names(module))
-        for submodule in parsed_file.submodules:
-            requirements.update(used_module_names(submodule))
-            requirements.add(submodule.parent.lower())
-            if submodule.ancestor:
-                requirements.add(submodule.ancestor.lower())
-        return requirements
+        return {name for name, nature in file_unit_requirements(parsed_file).items() if nature != "intrinsic"}
 
     def _order_project_files(self, parsed_files: list[FortranFile]) -> list[FortranFile]:
         """Return existing file models in dependency-first order.
@@ -2294,8 +2312,7 @@ class FortranParser(ClassVisitor):
             if filename is None:
                 raise ValueError("Dependency ordering requires every parsed project file to have a filename.")
             files_by_name[filename] = parsed_file
-            unit_to_file.update((module.name.lower(), filename) for module in parsed_file.modules)
-            unit_to_file.update((submodule.name.lower(), filename) for submodule in parsed_file.submodules)
+            unit_to_file.update((unit, filename) for unit in file_defined_units(parsed_file))
 
         file_dependencies: dict[str, set[str]] = {}
         for filename, parsed_file in files_by_name.items():
@@ -2421,22 +2438,24 @@ class FortranParser(ClassVisitor):
         """Index one module and its owned public models."""
         module_key = module.name.lower()
         self._insert_unique_scope_symbol(project.modules, module_key, module, label="project module scope")
-        project.dependencies[module_key] = used_module_names(module)
+        project.dependencies[module_key] = source_module_dependencies([module])
         self._helper_index_project_owner_members(project, module, module_key)
 
     def _helper_index_project_submodule(self, project: FortranProject, submodule: FortranSubmodule) -> None:
         """Index one submodule, its dependencies, and its public models."""
-        submodule_key = submodule.name.lower()
+        # A submodule name is local to its ancestor, so ``a:impl`` and
+        # ``b:impl`` are two submodules, and each depends on its direct parent.
+        submodule_key = submodule.identity.lower()
         self._insert_unique_scope_symbol(
             project.submodules,
             submodule_key,
             submodule,
             label="project submodule scope",
         )
-        dependencies = {submodule.parent.lower(), *used_module_names(submodule)}
-        if submodule.ancestor:
-            dependencies.add(submodule.ancestor.lower())
-        project.dependencies[submodule_key] = dependencies
+        project.dependencies[submodule_key] = {
+            submodule.parent_identity.lower(),
+            *source_module_dependencies([submodule]),
+        }
         self._helper_index_project_owner_members(project, submodule, submodule_key)
 
     def _helper_index_project_owner_members(
@@ -2491,7 +2510,7 @@ class FortranParser(ClassVisitor):
             return
         program_key = program.name.lower()
         self._insert_unique_scope_symbol(project.programs, program_key, program, label="project program scope")
-        project.dependencies[program_key] = used_module_names(program)
+        project.dependencies[program_key] = source_module_dependencies([program])
 
     def _helper_index_project_interface(
         self,
@@ -2604,11 +2623,12 @@ class FortranParser(ClassVisitor):
                     interfaces.append((child, scope))
                     continue
                 if child.kind in {"module", "submodule"}:
+                    owner = self._module_like_unit_owner(child)
                     child_scope = _ParserScope(
                         kind=child.kind,
-                        name=child.name,
+                        name=owner,
                         parent=scope,
-                        module_owner=child.name,
+                        module_owner=owner,
                     )
                     collect(child_scope, child.children)
                     continue
@@ -2640,11 +2660,12 @@ class FortranParser(ClassVisitor):
                     types.append((child, scope))
                     continue
                 if child.kind in {"module", "submodule", "program"}:
+                    owner = self._module_like_unit_owner(child) if child.kind != "program" else child.name
                     child_scope = _ParserScope(
                         kind=child.kind,
-                        name=child.name,
+                        name=owner,
                         parent=scope,
-                        module_owner=child.name if child.kind in {"module", "submodule"} else scope.module_owner,
+                        module_owner=owner if child.kind != "program" else scope.module_owner,
                     )
                     collect(child_scope, child.children)
                     continue
@@ -3345,8 +3366,12 @@ class FortranParser(ClassVisitor):
         """
         name = getattr(model, "name", None)
         inherited_owner = module_owner if module_owner is not None else (parent.module_owner if parent else None)
-        if kind in {"module", "submodule"}:
+        if kind == "module":
             inherited_owner = name
+        elif kind == "submodule":
+            # A submodule name is local to its ancestor, so what it owns is
+            # identified by ``ancestor:name``.
+            inherited_owner = model.identity
         return _ParserScope(
             kind=kind,
             name=name,
@@ -3355,6 +3380,13 @@ class FortranParser(ClassVisitor):
             module_owner=inherited_owner,
             state=state,
         )
+
+    def _module_like_unit_owner(self, unit: SourceUnit) -> str | None:
+        """Return the owner name of a module or submodule unit: a submodule's is ``ancestor:name``."""
+        if unit.kind != "submodule":
+            return unit.name
+        submodule = self._parse_submodule_header(unit.header[0].strip(), None)
+        return submodule.identity if submodule is not None else unit.name
 
     @staticmethod
     def _scope_key(name: str) -> str:
@@ -5428,8 +5460,15 @@ class FortranParser(ClassVisitor):
                 expression = variable.symbolic_value if variable.symbolic_value is not None else variable.value
                 if expression is not None:
                     owner_expressions[variable.name.casefold()] = expression
-            expressions[owner.name.casefold()] = owner_expressions
+            expressions[FortranParser._module_like_key(owner)] = owner_expressions
         return expressions
+
+    @staticmethod
+    def _module_like_key(owner: object) -> str:
+        """Return the symbol-table key of a module-like owner: a submodule's is ``ancestor:name``."""
+        if isinstance(owner, FortranSubmodule):
+            return owner.identity.casefold()
+        return str(getattr(owner, "name", "") or "").casefold()
 
     @staticmethod
     def _resolve_compile_time_symbols(
@@ -5468,7 +5507,7 @@ class FortranParser(ClassVisitor):
         The returned table is immutable and already transitively resolved.
         """
         owners: dict[str, FortranModule | FortranSubmodule] = {
-            owner.name.casefold(): owner for owner in (*modules, *submodules)
+            self._module_like_key(owner): owner for owner in (*modules, *submodules)
         }
         raw_expressions = self._module_parameter_expressions([*modules, *submodules])
         initial = self._resolve_compile_time_symbols(raw_expressions)
@@ -5480,9 +5519,11 @@ class FortranParser(ClassVisitor):
                 active = _CompileTimeSymbols(resolved)
                 owner_symbols = dict(active.in_module(owner_name))
                 if isinstance(owner, FortranSubmodule):
+                    # Host association runs through the ancestor module and,
+                    # for a nested submodule, its direct parent submodule.
+                    owner_symbols.update(active.in_module(owner.ancestor_module))
                     if owner.ancestor:
-                        owner_symbols.update(active.in_module(owner.ancestor))
-                    owner_symbols.update(active.in_module(owner.parent))
+                        owner_symbols.update(active.in_module(owner.parent_identity))
                 owner_symbols.update(
                     self._imported_compile_time_symbols(
                         owner.uses,
@@ -5531,9 +5572,15 @@ class FortranParser(ClassVisitor):
         if not include_intrinsic_aliases:
             return imported
         # An intrinsic module has no parsed symbols, so a name imported from
-        # one stands for its own target-dependent spelling.
+        # one stands for its own target-dependent spelling. A ``use`` stating
+        # no nature reads a parsed module of that name instead when one exists.
         for module in scope.modules():
-            if module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES or scope.nature(module) == "non_intrinsic":
+            nature = scope.nature(module)
+            if (
+                module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES
+                or nature == "non_intrinsic"
+                or (nature is None and module.casefold() in symbols.modules)
+            ):
                 continue
             for mapping in scope.mappings(module):
                 imported.setdefault(mapping.local_name.casefold(), mapping.source)
@@ -5680,7 +5727,7 @@ class FortranParser(ClassVisitor):
         the method returns nothing.
         """
         visible = FortranParser._compile_time_symbols_for_scope(
-            getattr(owner, "name", None),
+            FortranParser._module_like_key(owner) or None,
             getattr(owner, "uses", {}),
             symbols,
         )
