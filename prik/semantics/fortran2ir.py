@@ -872,6 +872,28 @@ class FortranToIRConverter(ClassVisitor):
         return {name: resolved for name, resolved in visible.items() if resolved.visible_name.casefold() in public}
 
     @classmethod
+    def _procedure_callback_interfaces(
+        cls,
+        modules: dict[str, FortranModule],
+        module: FortranModule,
+        procedure: FortranProcedureSignature,
+    ) -> dict[str, _CallbackInterface]:
+        """Return the interfaces one procedure of ``module`` can name as a callback's type.
+
+        A ``use`` written in the procedure, or in the interface body declaring
+        it, names an interface only there, so each procedure -- contained,
+        separate, or a generic's specific -- resolves against its module's
+        interfaces and its own imports.
+        """
+        return cls._scope_callback_interfaces(
+            modules,
+            procedure.uses,
+            base=cls._module_callback_interfaces(modules, module),
+            owner=module,
+            scope_name=procedure.name,
+        )
+
+    @classmethod
     def _scope_callback_interfaces(
         cls,
         modules: dict[str, FortranModule],
@@ -1273,12 +1295,15 @@ class FortranToIRConverter(ClassVisitor):
                 if identity in seen:
                     continue
                 seen.add(identity)
-                arguments = [self.visit(item, derived_type_context=context) for item in signature.arguments]
+                # An interface body reads types through its own ``use`` too,
+                # exactly as a callback argument naming it does.
+                signature_context = self._procedure_derived_type_context(signature, context)
+                arguments = [self.visit(item, derived_type_context=signature_context) for item in signature.arguments]
                 for source_argument, argument in zip(signature.arguments, arguments, strict=True):
                     self._normalize_callback_reference_storage(argument, source_argument)
                     self._record_prototype_argument_intent(argument, source_argument)
                 return_type = (
-                    self.visit(signature.result, derived_type_context=context, as_type=True)
+                    self.visit(signature.result, derived_type_context=signature_context, as_type=True)
                     if signature.result is not None
                     else SemanticType("None", dtype="None")
                 )
@@ -1561,22 +1586,13 @@ class FortranToIRConverter(ClassVisitor):
         index = module_index if module_index is not None else self._callback_module_index([module])
         context = self._module_derived_type_context(module, index)
         self._record_abstract_type_names(module)
-        callback_interfaces = self._module_callback_interfaces(index, module)
         source_procedures = list(self._module_procedures(module))
         semantic_functions = [
             self.visit(
                 proc,
                 visibility=self._symbol_visibility(module, proc.name),
                 derived_type_context=context,
-                # A procedure-local ``use`` names an interface only inside that
-                # procedure, so each one resolves against its own imports.
-                callback_interfaces=self._scope_callback_interfaces(
-                    index,
-                    proc.uses,
-                    base=callback_interfaces,
-                    owner=module,
-                    scope_name=proc.name,
-                ),
+                callback_interfaces=self._procedure_callback_interfaces(index, module, proc),
             )
             for proc in source_procedures
         ]
@@ -2540,7 +2556,8 @@ class FortranToIRConverter(ClassVisitor):
             return None
         wrapped = not origin.processor and (origin.module.lower(), origin.name.lower()) in self.wrapped_derived_types
         public_name = local_name
-        if origin.import_scope == "procedure":
+        # A processor type has no contract module to qualify it through.
+        if origin.import_scope == "procedure" and not origin.processor:
             public_name = f"{origin.module}.{origin.name}"
         metadata: dict[str, object] = {
             "name": origin.name,
@@ -3342,6 +3359,7 @@ class FortranToIRConverter(ClassVisitor):
                     signature,
                     visibility=self._symbol_visibility(module, signature.name),
                     derived_type_context=context,
+                    callback_interfaces=self._procedure_callback_interfaces(module_index or {}, module, signature),
                 )
                 for signature in interface.procedures
             }
@@ -3863,7 +3881,12 @@ class FortranToIRConverter(ClassVisitor):
                 signature = signatures.get(name.casefold())
                 if signature is None or target.key in lookup:
                     continue
-                function = self.visit(signature, visibility="private", derived_type_context=source_context)
+                function = self.visit(
+                    signature,
+                    visibility="private",
+                    derived_type_context=source_context,
+                    callback_interfaces=self._procedure_callback_interfaces(modules, source_module, signature),
+                )
                 lookup[target.key] = function
                 inherited.append(target)
         return inherited, lookup

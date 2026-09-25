@@ -15876,6 +15876,8 @@ class CBindingGenerator(ClassVisitor):
             namespace = self._type_namespace(match.derived_type_identity)
             expected = f"PyDict_GetItemString(PyModule_GetDict({namespace}), {class_name})"
             return f"{expected} != NULL && (PyObject *)Py_TYPE({value}) == {expected}"
+        if match.kind is OverloadMatchKind.CALLBACK:
+            return f"PyCallable_Check({value})"
         if match.kind is OverloadMatchKind.NUMPY_ARRAY:
             numpy_type = PrimitiveScalarTypeRegistry.type_for(match.semantic_type_name).numpy_type_macro
             return (

@@ -274,3 +274,45 @@ end module shapes
     assert [overload.name for overload in selected.overload_sets] == ["area"]
     assert sorted(function.name for function in selected.functions) == ["area", "area_int"]
     assert selected.exported_names == ["area"]
+
+
+def test_selection_drops_imports_only_unselected_declarations_used(tmp_path: Path):
+    """A name only a removed declaration was written with is not imported by the contract.
+
+    Every type ``consts`` re-exports stays declared where it is; the selected
+    constant names one of them, so that is the one the contract binds, under
+    its class name.
+    """
+    from prik.pipeline.pyi import emit_module_stubs
+
+    source = tmp_path / "handles.f90"
+    source.write_text(
+        """module handles
+  implicit none
+  type, bind(c) :: Handle_A
+    integer :: val
+  end type
+  type, bind(c) :: Handle_B
+    integer :: val
+  end type
+end module handles
+
+module consts
+  use handles
+  implicit none
+  type(Handle_A), parameter :: A_NULL = Handle_A(0)
+  type(Handle_B), parameter :: B_NULL = Handle_B(0)
+end module consts
+""",
+        encoding="utf-8",
+    )
+    modules = fortran_project_to_semantic_modules(parse_fortran_project(tmp_path))
+    selection = select_fortran_export_symbols(modules, ["consts::A_NULL"])
+
+    contract = emit_module_stubs(
+        list(selection.primary_modules),
+        available_modules=list(selection.available_modules),
+        normalize_public_names=True,
+    )["consts"]
+
+    assert [line for line in contract.splitlines() if line.startswith("from .")] == ["from .handles import Handle_A"]

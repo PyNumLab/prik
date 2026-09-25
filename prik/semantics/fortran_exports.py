@@ -12,8 +12,10 @@ from prik.semantics.models import (
     ProcedureOverloadSet,
     SemanticFunction,
     SemanticModule,
+    _module_semantic_types,
     _semantic_type_tree,
 )
+from prik.utilities.declaration_expressions import declaration_expression_identifiers
 
 
 _FORTRAN_IDENTIFIER = r"[A-Za-z][A-Za-z0-9_]*"
@@ -78,6 +80,7 @@ def select_fortran_export_symbols(
     required_types = _with_dependent_types(_required_type_identities(primary_modules, selected), module_index)
     for module in primary_modules:
         _retain_required_types(module, module_index[_native_module_name(module)], required_types)
+        _drop_unused_imports(module)
 
     # Root selection owns only the requested symbol surface. Contract-import
     # completion already owns which available modules selected declarations
@@ -87,6 +90,31 @@ def select_fortran_export_symbols(
     context_names = tuple(name for name in module_index if name not in primary_names)
     context_modules = tuple(deepcopy(module_index[name]) for name in context_names)
     return FortranExportSelection(tuple(primary_sources), tuple(primary_modules), context_modules)
+
+
+def _drop_unused_imports(module: SemanticModule) -> None:
+    """Keep only the use associations the declarations a selection retains still name.
+
+    A module's imports record what its source declarations were written with.
+    Selection removes declarations, and a name only a removed declaration used
+    would otherwise stay imported with nothing in the contract to name it.
+    """
+    used = {reexport.local_name.casefold() for reexport in module.reexports}
+    for semantic_type in _module_semantic_types(module):
+        used.add(semantic_type.name.casefold())
+        reference = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
+        if isinstance(reference, dict):
+            used.update(str(reference.get(key) or "").casefold() for key in ("name", "local_name"))
+        array = semantic_type.storage.array if semantic_type.storage is not None else None
+        if array is None:
+            continue
+        for extent in (*array.shape, *array.lower_bounds, *array.upper_bounds):
+            if extent is not None:
+                used.update(name.casefold() for name in declaration_expression_identifiers(str(extent)))
+        used.update(item.name.casefold() for axis in array.expression_callables for item in axis)
+    for statement in module.imports:
+        statement.items = [item for item in statement.items if (item.target or item.source).casefold() in used]
+    module.imports = [statement for statement in module.imports if statement.items]
 
 
 def _selected_identities(requested, module_index):

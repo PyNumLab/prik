@@ -121,13 +121,25 @@ release tags add a leading `v` to the package version.
   declarations (including the component and parent types they declare) and
   native scalar storage views through `T[()]`. Source builds and generated
   contracts publish the same selected surface.
-- The Open MPI `mpi_f08` tutorial and opt-in two-rank integration test build a
-  wrapper from a restricted generated `.pyi` against a matching prebuilt
-  Open MPI installation and exercise NumPy communication and in-place reduction;
-  it is verified with Open MPI 4.1.2 and 5.0.11. Pull-request validation runs
-  it in an Open MPI Integration lane that builds Open MPI 4.1.8 and 5.0.11 from
-  source, and the test requires the configured tree and the installation to
-  share their version and Fortran compiler.
+- A tutorial turns a reviewed part of Open MPI's Fortran `mpi_f08` interface
+  into a Python MPI API: it generates a restricted `.pyi` contract from the
+  configured Open MPI sources, builds it with the CLI against the installed
+  Open MPI without compiling any Open MPI source, and runs a two-rank NumPy
+  program under `mpirun`. An opt-in integration test runs the same commands
+  and program; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
+  5.0.11 built from source. The test requires the configured tree to record the
+  same configure run as the installation, and reports missing or failing
+  Open MPI tools as unavailable -- a skip locally, a failure where Open MPI is
+  required.
+- Export selection drops a use association that only unselected declarations
+  were written with, so a selected contract no longer imports an unused type
+  under a lowercase alias.
+- A generic whose specific takes a callback dispatches any Python callable to
+  it. A callback prototype imported by a `use` inside an interface body is
+  resolved, a prototype's own argument types resolve through the `use`
+  statements in its body, and a selected contract set includes the modules a
+  prototype names that way. A processor type such as `c_ptr` keeps its own
+  spelling when a procedure-local `use` imports it.
 - Export selection accepts a generic that shares its name with one of its
   specifics; the name selects the generic instead of being reported ambiguous.
 - A contract keeps a dotted comparison spelling such as `operator(.EQ.)` in

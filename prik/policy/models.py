@@ -564,6 +564,9 @@ class OverloadMatchKind(str, Enum):
     NUMPY_ARRAY = "numpy_array"
     STRING = "string"
     DERIVED = "derived"
+    # Any Python callable. A callable carries no prototype to test, so two
+    # candidates that differ only in their callback types cannot be told apart.
+    CALLBACK = "callback"
 
 
 @dataclass(frozen=True)
