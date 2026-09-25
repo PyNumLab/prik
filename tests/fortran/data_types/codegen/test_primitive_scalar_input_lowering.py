@@ -33,10 +33,11 @@ def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     assert f"{c_type} bound_x;" in c_source
-    assert (
-        f"if (prik_{helper_suffix.casefold().removeprefix('npy_')}_unpack_exact(bound_x_obj, &bound_x) < 0)" in c_source
-    )
-    assert "if (!PyErr_Occurred())" in c_source
+    # The value, or rank-zero storage of the same dtype, crosses in one call
+    # to the type's native-support helper.
+    suffix = helper_suffix.casefold().removeprefix("npy_")
+    assert f"if (prik_{suffix}_or_storage(bound_x_obj, {helper_suffix}, " in c_source
+    assert "&bound_x, " in c_source
 
 
 def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
@@ -51,5 +52,6 @@ def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
 
     assert '#include "binding_support/prik_binding.h"' in c_source
     assert "double bound_complex;" in c_source
-    assert "prik_float64_unpack_exact(bound_complex_obj, &bound_complex)" in c_source
+    assert "prik_float64_or_storage(bound_complex_obj, NPY_FLOAT64, " in c_source
+    assert "&bound_complex, " in c_source
     assert "double complex;" not in c_source

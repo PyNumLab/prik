@@ -236,6 +236,13 @@ _BINDING_SETTER_SUMMARIES = {
 }
 
 
+# Scalar types whose bundled runtime takes a scalar-or-rank-zero-storage
+# argument in one call (``prik_<suffix>_or_storage``).
+_SCALAR_OR_STORAGE_HELPERS = frozenset(
+    {"bool", "int8", "int16", "int32", "int64", "float32", "float64", "complex64", "complex128"}
+)
+
+
 class CBindingGenerator(ClassVisitor):
     """Build the CPython C half of a wrapper from validated binding-plan views.
 
@@ -7716,58 +7723,61 @@ class CBindingGenerator(ClassVisitor):
         scalar_type,
         storage_type: str,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
-        """Take a scalar value or borrow exact rank-zero native storage."""
-        array = f"(PyArrayObject *){names.object_name}"
+        """Take a scalar value or borrow exact rank-zero native storage.
+
+        The rank-zero checks are one call into the bundled runtime, so a module
+        wrapping many routines with many scalar arguments does not repeat them
+        in every conversion it generates.
+        """
         pointer = f"{names.value_name}_storage"
+        data = f"{names.value_name}_data"
         numpy_type, expected = self._numeric_array_dtype_selectors(plan)
         reference = plan.binding.scalar_actual_mode is ScalarActualMode.NUMERIC_REFERENCE
-        array_nodes: list[CExpressionStatement] = [
+        writeable = int(reference and plan.binding.scalar_storage_writable)
+        array_nodes = (
             CExpressionStatement(
                 CodeExpression(
-                    f"if (PyArray_TYPE({array}) != {numpy_type} || PyArray_NDIM({array}) != 0) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires exact '
-                    f'rank-zero {expected} storage"); return NULL; }}'
+                    f"if (prik_rank_zero_storage({names.object_name}, {numpy_type}, {writeable}, "
+                    f'"{expected}", "{plan.binding.python_name}", &{data}) < 0) {{ return NULL; }}'
                 )
             ),
             CExpressionStatement(
                 CodeExpression(
-                    f"if (!PyArray_ISNOTSWAPPED({array}) || !PyArray_ISALIGNED({array})) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires native '
-                    'byte order and aligned storage"); return NULL; }'
-                )
-            ),
-        ]
-        if reference and plan.binding.scalar_storage_writable:
-            array_nodes.append(
-                CExpressionStatement(
-                    CodeExpression(
-                        f"if (!PyArray_ISWRITEABLE({array})) {{ "
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
-                        'writeable storage"); return NULL; }'
-                    )
-                )
-            )
-        array_nodes.append(
-            CExpressionStatement(
-                CodeExpression(
-                    f"{pointer} = ({storage_type} *)PyArray_DATA({array})"
+                    f"{pointer} = ({storage_type} *){data}"
                     if reference
-                    else f"memcpy(&{names.value_name}, PyArray_DATA({array}), sizeof({names.value_name}))"
+                    else f"memcpy(&{names.value_name}, {data}, sizeof({names.value_name}))"
                 )
-            )
+            ),
         )
         # A Python value unpacks as its canonical C type, then converts to the
         # storage the native dummy declares when that spelling differs.
         converted = storage_type != scalar_type.c_spelling
+        suffix = self._scalar_helper_suffix(scalar_type)
+        if not converted and suffix in _SCALAR_OR_STORAGE_HELPERS:
+            # The whole transfer is one call into the bundled runtime.
+            target = f"&{pointer}" if reference else "NULL"
+            return (
+                CDeclaration(names.object_name, "PyObject *"),
+                CDeclaration(names.value_name, storage_type),
+                *((CDeclaration(pointer, f"{storage_type} *", CodeExpression("NULL")),) if reference else ()),
+                CExpressionStatement(
+                    CodeExpression(
+                        f"if (prik_{suffix}_or_storage({names.object_name}, {numpy_type}, {writeable}, "
+                        f'"{scalar_type.python_type_name}", "{expected}", "{plan.binding.python_name}", '
+                        f"&{names.value_name}, {target}) < 0) {{ return NULL; }}"
+                    )
+                ),
+            )
         unpacked = f"{names.value_name}_converted" if converted else names.value_name
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, storage_type),
             *((CDeclaration(unpacked, scalar_type.c_spelling),) if converted else ()),
             *((CDeclaration(pointer, f"{storage_type} *", CodeExpression("NULL")),) if reference else ()),
+            CDeclaration(data, "void *", CodeExpression("NULL")),
             CIf(
                 CodeExpression(f"PyArray_Check({names.object_name})"),
-                body=tuple(array_nodes),
+                body=array_nodes,
                 else_body=(
                     self._scalar_exact_unpack_statement(
                         scalar_type,
@@ -7850,53 +7860,26 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
         payload_name: str,
-    ) -> tuple[CIf, ...]:
-        """Accept either encoded text or exact fixed-width rank-zero bytes."""
+    ) -> tuple[CExpressionStatement, ...]:
+        """Accept either encoded text or exact fixed-width rank-zero bytes.
+
+        Both routes are one call into the bundled runtime, so each character
+        argument of every wrapped routine does not repeat them.
+        """
         length = plan.character_length
         if length is None or length <= 0:
             raise ValueError(f"Character storage {plan.owner_path!r} needs a fixed width")
-        array = f"(PyArrayObject *){names.object_name}"
-        checks = [
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (PyArray_TYPE({array}) != NPY_STRING || PyArray_NDIM({array}) != 0 || "
-                    f"PyArray_ITEMSIZE({array}) != {length}) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
-                    f'rank-zero S{length} storage"); return NULL; }}'
-                )
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (!PyArray_ISALIGNED({array})) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
-                    'aligned storage"); return NULL; }'
-                )
-            ),
-        ]
-        if (
+        writeable = int(
             plan.binding.scalar_storage_writable
             and plan.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE
-        ):
-            checks.append(
-                CExpressionStatement(
-                    CodeExpression(
-                        f"if (!PyArray_ISWRITEABLE({array})) {{ "
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} requires '
-                        'writeable storage"); return NULL; }'
-                    )
-                )
-            )
-        checks.extend(
-            (
-                CExpressionStatement(CodeExpression(f"{payload_name} = (const char *)PyArray_DATA({array})")),
-                CExpressionStatement(CodeExpression(f"{names.length_name} = {length}")),
-            )
         )
         return (
-            CIf(
-                CodeExpression(f"PyArray_Check({names.object_name})"),
-                body=tuple(checks),
-                else_body=self._required_string_validation_nodes(plan, names, payload_name),
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (prik_character_input({names.object_name}, {length}, "
+                    f"{int(bool(plan.character_allows_embedded_nul))}, {writeable}, "
+                    f'"{plan.binding.python_name}", &{payload_name}, &{names.length_name}) < 0) {{ return NULL; }}'
+                )
             ),
         )
 
@@ -13207,20 +13190,13 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
         if source.binding.scalar_actual_mode is ScalarActualMode.CHARACTER_REFERENCE:
-            array_conversion = CExpressionStatement(
+            # Decoding updated storage or converting and releasing the copy is
+            # one runtime call.
+            converted_value = CExpressionStatement(
                 CodeExpression(
-                    f"{target} = PyUnicode_DecodeUTF8((const char *){names.value_name}, "
-                    f'(Py_ssize_t){names.length_name}, "strict")'
+                    f"{target} = prik_character_result({names.object_name}, &{names.value_name}, "
+                    f"(Py_ssize_t){names.length_name})"
                 )
-            )
-            converted_value = CIf(
-                CodeExpression(f"PyArray_Check({names.object_name})"),
-                body=(array_conversion,),
-                else_body=(
-                    conversion,
-                    CExpressionStatement(CodeExpression(f"free({names.value_name})")),
-                    CExpressionStatement(CodeExpression(f"{names.value_name} = NULL")),
-                ),
             )
             if source.binding.optional_mode is OptionalMode.REQUIRED:
                 return CDeclaration(target, "PyObject *", CodeExpression("NULL")), converted_value, failure

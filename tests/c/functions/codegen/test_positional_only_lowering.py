@@ -28,7 +28,8 @@ def test_a_positional_only_binding_takes_no_keyword_dictionary():
     # The native declaration keeps the header's spelling; the Python surface does not.
     assert "double blend(double __x, double __y);" in binding
     assert "blend(arg0, arg1) -> float64" in binding
-    assert "for argument arg0." in binding
+    # Errors name the argument the way Python does.
+    assert '"arg0", &bound_arg0' in binding
     assert "__x" not in binding.split("static PyObject * wrap_blend")[1]
 
 

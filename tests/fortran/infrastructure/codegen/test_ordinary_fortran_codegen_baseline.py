@@ -25,8 +25,8 @@ def test_ordinary_fortran_wrapper_preserves_exact_generated_bytes():
             "01c092ac9eaa0d90b58f0289a49ba0c71c967510e60a384602fe2e6e1e9b035f",
         ),
         "ordinary_entrypoint_baseline_wrapper.c": (
-            2613,
-            "19180196b0e7a25848c88e8985e94da0bda5ffecb78d68bf38909893cae58c3a",
+            1823,
+            "ccefd674a96a84969abe54dbc9f599f9f004c2deefd1c3edc37117e34b9a1151",
         ),
         "ordinary_entrypoint_baseline_wrapper.h": (
             248,

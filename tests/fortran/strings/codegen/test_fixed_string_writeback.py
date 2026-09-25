@@ -93,11 +93,10 @@ def test_fixed_string_writeback_dispatches_to_named_binding_and_bridge_lowering(
     assert "memcpy(bound_name, bound_name_source, (size_t)bound_name_length);" in c_source
     assert "bound_name[bound_name_length] = '\\0';" in c_source
     assert "bind_c_replace_name(bound_name, (int64_t)bound_name_length);" in c_source
-    assert 'Py_BuildValue("s", (const char *)bound_name)' in c_source
-    conversion = c_source.index('Py_BuildValue("s", (const char *)bound_name)')
-    release = c_source.index("free(bound_name);", conversion)
-    assert conversion < release
-    assert release < c_source.index("if (result_obj == NULL)", conversion)
+    # Converting the updated value and releasing the copied buffer is one
+    # runtime call, made before the result is checked.
+    conversion = c_source.index("prik_character_result(bound_name_obj, &bound_name, ")
+    assert conversion < c_source.index("if (result_obj == NULL)", conversion)
     assert "void bind_c_discard_name(const char * name, int64_t name_length);" in c_source
     assert "bind_c_discard_name(bound_name, (int64_t)bound_name_length);" in c_source
 
@@ -127,18 +126,18 @@ def replace_names(
 
     first_allocation = "bound_first = (char *)prik_malloc((size_t)bound_first_length + 1);"
     second_allocation = "bound_second = (char *)prik_malloc((size_t)bound_second_length + 1);"
-    assert c_source.index("prik_int32_unpack_exact(bound_count_obj, &bound_count)") < c_source.index(first_allocation)
-    assert c_source.index("bound_second_source = PyUnicode_AsUTF8AndSize") < c_source.index(first_allocation)
+    assert c_source.index("prik_int32_or_storage(bound_count_obj, ") < c_source.index(first_allocation)
+    assert c_source.index("prik_character_input(bound_second_obj, ") < c_source.index(first_allocation)
     assert c_source.index(first_allocation) < c_source.index(second_allocation)
 
     second_failure = c_source[c_source.index("if (bound_second == NULL)") : c_source.index(second_allocation) + 900]
     assert "free(bound_first); bound_first = NULL;" in second_failure
     assert "free(bound_second); bound_second = NULL;" in second_failure
 
-    first_conversion = 'result_0_obj = Py_BuildValue("s", (const char *)bound_first);'
+    # Converting the first string also releases its buffer, before the scalar result is read.
+    first_conversion = "result_0_obj = prik_character_result(bound_first_obj, &bound_first, "
     scalar_conversion = "prik_int32_to_numpy(&__return_0)"
     assert c_source.index(first_conversion) < c_source.index(scalar_conversion)
-    assert c_source.index("free(bound_first);", c_source.index(first_conversion)) < c_source.index(scalar_conversion)
 
 
 def test_string_writeback_conversion_failure_releases_unpublished_native_results():

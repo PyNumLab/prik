@@ -70,10 +70,12 @@ def test_required_string_values_dispatch_to_named_binding_and_bridge_lowering():
 
     assert "#include <string.h>" in c_source
     assert "const char * bound_text = NULL;" in c_source
+    # A fixed width also accepts rank-zero bytes; both routes and their checks
+    # are one runtime call with the width and the NUL rule.
+    assert 'prik_character_input(bound_text_obj, 8, 0, 0, "text", &bound_text, &bound_text_length)' in c_source
+    # An assumed length has no storage route, so it validates encoded text inline.
     assert "bound_text = PyUnicode_AsUTF8AndSize(bound_text_obj, &bound_text_length);" in c_source
     assert "strlen(bound_text) != bound_text_length" in c_source
-    assert "bound_text_length != 8" in c_source
-    assert "must encode to exactly 8 bytes" in c_source
     assert "bind_c_fixed(bound_text, (int64_t)bound_text_length)" in c_source
     assert "bind_c_assumed(bound_text, (int64_t)bound_text_length)" in c_source
 
