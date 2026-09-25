@@ -14,9 +14,10 @@ release tags add a leading `v` to the package version.
   MPI's `mpi_f08` is supplied by its entry file. Discovery honors
   `use, intrinsic` and `use, non_intrinsic`, and follows each submodule to its
   direct parent. A needed module with no source, or with several, is an error.
-  Import and re-export resolution follows the same rule, so a user module
-  named like an intrinsic one, such as `iso_fortran_env`, is imported and
-  re-exported when a `use` selects it.
+  Import, re-export, callback, generic, specification-expression, and constant
+  resolution follow the same rule, so a user module named like an intrinsic
+  one, such as `iso_fortran_env`, is read when a `use` selects it and never
+  when `use, intrinsic` selects the processor module.
 
 - Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
   NumPy views, including fixed-length character bytes; primitive and fixed

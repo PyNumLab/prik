@@ -41,6 +41,15 @@ class UseRoute:
         """Return the case-folded identity two spellings of one route share."""
         return self.module.casefold(), self.source_name.casefold()
 
+    @property
+    def names_parsed_module(self) -> bool:
+        """Return whether this route can name a parsed module rather than the processor's.
+
+        An ``intrinsic`` use selects the processor module even when a parsed
+        module shares its name, so nothing it reaches is read from that module.
+        """
+        return self.nature != "intrinsic"
+
 
 class ScopeUses:
     """One scope's ``use`` statements, grouped by the module each names.

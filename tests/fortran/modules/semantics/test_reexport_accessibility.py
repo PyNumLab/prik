@@ -986,3 +986,68 @@ def test_use_nature_decides_whether_an_intrinsic_name_is_the_users_module(tmp_pa
     facade = next(module for module in modules if module.name == "facade")
 
     assert [(item.local_name, item.entity_kind, item.origin_module) for item in facade.reexports] == [expected]
+
+
+USER_IEEE_ARITHMETIC = """\
+module ieee_arithmetic
+  implicit none
+  abstract interface
+    subroutine ieee_cb(x)
+      real, intent(inout) :: x
+    end subroutine ieee_cb
+  end interface
+  interface ieee_scale
+    module procedure scale_real
+  end interface ieee_scale
+contains
+  subroutine scale_real(x)
+    real, intent(inout) :: x
+  end subroutine scale_real
+  pure integer function ieee_size(n)
+    integer, intent(in) :: n
+    ieee_size = n
+  end function ieee_size
+end module ieee_arithmetic
+"""
+
+
+@pytest.mark.parametrize(
+    ("nature", "callback_storage", "bound_scope", "specifics"),
+    [
+        pytest.param("non_intrinsic", "callback", "ieee_arithmetic", ["scale_real", "scale_int"], id="user-module"),
+        pytest.param("intrinsic", "reference", None, ["scale_int"], id="processor-module"),
+    ],
+)
+def test_an_intrinsic_use_reads_nothing_from_a_same_named_user_module(
+    tmp_path: Path, nature, callback_storage, bound_scope, specifics
+):
+    """Callbacks, specification-expression calls, and generics all follow the ``use`` nature."""
+    consumer = f"""\
+module consumer
+  use, {nature} :: ieee_arithmetic, only: ieee_cb, ieee_scale, ieee_size
+  implicit none
+  interface ieee_scale
+    module procedure scale_int
+  end interface ieee_scale
+contains
+  subroutine scale_int(i)
+    integer, intent(inout) :: i
+  end subroutine scale_int
+  subroutine apply(cb, n, values)
+    procedure(ieee_cb) :: cb
+    integer, intent(in) :: n
+    real, intent(inout) :: values(ieee_size(n))
+  end subroutine apply
+end module consumer
+"""
+    source = tmp_path / "project.f90"
+    source.write_text(f"{USER_IEEE_ARITHMETIC}\n{consumer}", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    module = next(item for item in modules if item.name == "consumer")
+    callback, _count, values = next(function for function in module.functions if function.name == "apply").arguments
+    (bound_call,) = values.semantic_type.storage.array.expression_callables[0]
+
+    assert callback.semantic_type.storage.kind == callback_storage
+    assert (bound_call.name, bound_call.native_scope) == ("ieee_size", bound_scope)
+    assert [procedure.name for procedure in module.overload_sets[0].procedures] == specifics

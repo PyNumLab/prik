@@ -5522,7 +5522,7 @@ class FortranParser(ClassVisitor):
             expressions = {
                 offered[route.module][route.source_name.casefold()]
                 for route in scope.routes_for(name, lambda module: offered[module])
-                if route.source_name.casefold() in offered[route.module]
+                if route.names_parsed_module and route.source_name.casefold() in offered[route.module]
             }
             # Routes that disagree leave the name meaning more than one value,
             # which is not something to choose between.
@@ -5533,7 +5533,7 @@ class FortranParser(ClassVisitor):
         # An intrinsic module has no parsed symbols, so a name imported from
         # one stands for its own target-dependent spelling.
         for module in scope.modules():
-            if module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES:
+            if module.casefold() not in _INTRINSIC_COMPILE_TIME_MODULES or scope.nature(module) == "non_intrinsic":
                 continue
             for mapping in scope.mappings(module):
                 imported.setdefault(mapping.local_name.casefold(), mapping.source)

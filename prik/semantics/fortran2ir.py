@@ -944,7 +944,9 @@ class FortranToIRConverter(ClassVisitor):
         route: UseRoute,
         exported: dict[str, dict[str, _CallbackInterface]],
     ) -> _CallbackInterface | None:
-        """Return the interface one route reaches, or ``None`` for an unread module."""
+        """Return the interface one route reaches, or ``None`` for an unread or processor module."""
+        if not route.names_parsed_module:
+            return None
         lookup = exported.get(route.module)
         return None if lookup is None else lookup.get(route.source_name.casefold())
 
@@ -2245,7 +2247,8 @@ class FortranToIRConverter(ClassVisitor):
         scope = ScopeUses(context.uses)
         offered = self._known_procedure_names()
         routes = scope.routes_for(name, offered)
-        if len({route.key for route in routes}) != 1:
+        # A processor module's procedure has no parsed declaration to name.
+        if len({route.key for route in routes}) != 1 or not routes[0].names_parsed_module:
             return None
         return SemanticExpressionCallable(
             name=name,
@@ -3827,6 +3830,8 @@ class FortranToIRConverter(ClassVisitor):
         """
         contributors: list[tuple[FortranModule, FortranInterface]] = []
         for route in cls._name_routes(module, modules, generic_name):
+            if not route.names_parsed_module:
+                continue
             source_module = modules.get(route.module.casefold())
             if source_module is None:
                 continue

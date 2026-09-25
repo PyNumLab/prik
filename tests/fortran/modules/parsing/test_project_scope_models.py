@@ -645,3 +645,25 @@ end subroutine file_level_worker
         "rk",
         "n",
     ]
+
+
+@pytest.mark.parametrize(
+    ("nature", "kind"),
+    [
+        pytest.param("non_intrinsic", "3", id="user-module-value"),
+        pytest.param("intrinsic", "real64", id="processor-spelling"),
+    ],
+)
+def test_an_imported_kind_constant_follows_the_use_nature(nature: str, kind: str):
+    """A kind named through ``use, intrinsic`` is the processor's, even beside a same-named user module."""
+    project = parse_fortran_project(
+        {
+            "user.f90": "module iso_fortran_env\n  integer, parameter :: real64 = 3\nend module iso_fortran_env\n",
+            "consumer.f90": (
+                f"module consumer\n  use, {nature} :: iso_fortran_env, only: wp => real64\n"
+                "  real(kind=wp) :: v\nend module consumer\n"
+            ),
+        }
+    )
+
+    assert project.modules["consumer"].variables[0].kind == kind
