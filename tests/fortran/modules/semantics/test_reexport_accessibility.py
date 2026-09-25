@@ -947,3 +947,42 @@ end module use_mod
     )
 
     assert (declared.kind, declared.shape) == ("8", ["4"])
+
+
+USER_ISO_FORTRAN_ENV = """\
+module iso_fortran_env
+  implicit none
+  integer :: my_value = 7
+end module iso_fortran_env
+"""
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected"),
+    [
+        pytest.param(
+            "use, non_intrinsic :: iso_fortran_env, only: my_value",
+            ("my_value", "variable", "iso_fortran_env"),
+            id="non-intrinsic-names-the-user-module",
+        ),
+        pytest.param(
+            "use iso_fortran_env, only: my_value",
+            ("my_value", "variable", "iso_fortran_env"),
+            id="unstated-prefers-the-parsed-module",
+        ),
+        pytest.param(
+            "use, intrinsic :: iso_fortran_env, only: int32",
+            ("int32", "intrinsic", "iso_fortran_env"),
+            id="intrinsic-names-the-processor-module",
+        ),
+    ],
+)
+def test_use_nature_decides_whether_an_intrinsic_name_is_the_users_module(tmp_path: Path, statement, expected):
+    """A user module may share an intrinsic module's name; the ``use`` nature decides which is meant."""
+    source = tmp_path / "project.f90"
+    source.write_text(f"{USER_ISO_FORTRAN_ENV}\nmodule facade\n  {statement}\nend module facade\n", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    facade = next(module for module in modules if module.name == "facade")
+
+    assert [(item.local_name, item.entity_kind, item.origin_module) for item in facade.reexports] == [expected]

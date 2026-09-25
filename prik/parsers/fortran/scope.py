@@ -26,10 +26,15 @@ OfferedNames = Callable[[str], Collection[str] | None]
 
 @dataclass(frozen=True)
 class UseRoute:
-    """One way a scope reaches a name: the module used, and the name there."""
+    """One way a scope reaches a name: the module used, and the name there.
+
+    ``nature`` is the ``intrinsic`` or ``non_intrinsic`` the ``use`` stated, if
+    any; it decides whether the processor module or a same-named one is meant.
+    """
 
     module: str
     source_name: str
+    nature: str | None = None
 
     @property
     def key(self) -> tuple[str, str]:
@@ -52,6 +57,17 @@ class ScopeUses:
     def modules(self) -> tuple[str, ...]:
         """Return each used module once, spelled as its first statement wrote it."""
         return tuple(statements[0].module for statements in self._by_module.values())
+
+    def nature(self, module: str) -> str | None:
+        """Return the nature the statements for ``module`` state, or ``None``."""
+        return next(
+            (statement.nature for statement in self._by_module.get(module.casefold(), ()) if statement.nature),
+            None,
+        )
+
+    def _offered(self, module: str, offered: OfferedNames) -> Collection[str] | None:
+        """Return the names ``module`` offers; an intrinsic module's cannot be enumerated."""
+        return None if self.nature(module) == "intrinsic" else offered(module)
 
     def imports_all(self, module: str) -> bool:
         """Return whether any statement for ``module`` omitted ``only``."""
@@ -78,14 +94,14 @@ class ScopeUses:
         for module in self.modules():
             for mapping in self.mappings(module):
                 if mapping.local_name.casefold() == folded:
-                    route = UseRoute(module, mapping.source)
+                    route = UseRoute(module, mapping.source, self.nature(module))
                     routes.setdefault(route.key, route)
         for module in self.modules():
             if not self.imports_all(module) or folded in self._renamed_away(module):
                 continue
-            names = offered(module)
+            names = self._offered(module, offered)
             if names is not None and folded in names:
-                route = UseRoute(module, local_name)
+                route = UseRoute(module, local_name, self.nature(module))
                 routes.setdefault(route.key, route)
         return tuple(routes.values())
 
@@ -103,7 +119,7 @@ class ScopeUses:
             if not self.imports_all(module):
                 continue
             renamed_away = self._renamed_away(module)
-            for name in sorted(offered(module) or ()):
+            for name in sorted(self._offered(module, offered) or ()):
                 if name not in renamed_away:
                     names.setdefault(name.casefold(), name)
         return tuple(names.values())
@@ -118,9 +134,11 @@ class ScopeUses:
         """
         folded = local_name.casefold()
         return tuple(
-            UseRoute(module, local_name)
+            UseRoute(module, local_name, self.nature(module))
             for module in self.modules()
-            if self.imports_all(module) and offered(module) is None and folded not in self._renamed_away(module)
+            if self.imports_all(module)
+            and self._offered(module, offered) is None
+            and folded not in self._renamed_away(module)
         )
 
     def _renamed_away(self, module: str) -> frozenset[str]:

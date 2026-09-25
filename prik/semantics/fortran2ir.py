@@ -2005,7 +2005,10 @@ class FortranToIRConverter(ClassVisitor):
             if local_name.casefold() in declared or not routes:
                 continue
             origin = cls._reconcile_routes(
-                [cls._resolve_reexport_origin(index, route.module, route.source_name) for route in routes]
+                [
+                    cls._resolve_reexport_origin(index, route.module, route.source_name, nature=route.nature)
+                    for route in routes
+                ]
             )
             if origin is not None:
                 yield local_name, tuple(dict.fromkeys(route.module for route in routes)), origin
@@ -2075,6 +2078,7 @@ class FortranToIRConverter(ClassVisitor):
         module_name: str,
         source_name: str,
         seen: frozenset[tuple[str, str]] = frozenset(),
+        nature: str | None = None,
     ) -> tuple[str, str, str]:
         """Return where a published name is declared, following every hop.
 
@@ -2091,10 +2095,18 @@ class FortranToIRConverter(ClassVisitor):
         only while every route through that module names one entity. Two routes
         naming different declarations leave the origin genuinely ambiguous
         there, exactly as they would in the importing module.
+
+        ``nature`` is what the ``use`` reaching this module stated. An
+        ``intrinsic`` use names the processor's module, which has no declaration
+        to name and no contract a name could be read from. A ``use`` stating no
+        nature does too for a known intrinsic name, but only when no parsed
+        module of that name exists; ``non_intrinsic`` always names that module.
         """
-        if module_name.casefold() in _INTRINSIC_FORTRAN_MODULES:
-            # The compiler supplies it: there is no declaration to name, and no
-            # contract a name could be read from.
+        if nature == "intrinsic" or (
+            nature is None
+            and module_name.casefold() in _INTRINSIC_FORTRAN_MODULES
+            and module_name.casefold() not in index
+        ):
             return "intrinsic", module_name, source_name
         key = (module_name.casefold(), source_name.casefold())
         declaring = index.get(module_name.casefold())
@@ -2109,7 +2121,10 @@ class FortranToIRConverter(ClassVisitor):
         if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
             return "unknown", module_name, source_name
         origin = cls._reconcile_routes(
-            [cls._resolve_reexport_origin(index, route.module, route.source_name, seen) for route in routes]
+            [
+                cls._resolve_reexport_origin(index, route.module, route.source_name, seen, nature=route.nature)
+                for route in routes
+            ]
         )
         return origin if origin is not None else ("unknown", module_name, source_name)
 
@@ -2536,7 +2551,9 @@ class FortranToIRConverter(ClassVisitor):
         index = module_index or {}
         offered = self._offered_type_names(index)
         routes = scope.routes_for(local_name, offered)
-        identities = {self._declared_type_identity(index, route.module, route.source_name) for route in routes}
+        identities = {
+            self._declared_type_identity(index, route.module, route.source_name, route.nature) for route in routes
+        }
         if len(identities) == 1:
             module, name = identities.pop()
             return _ResolvedDerivedTypeOrigin(module, name)
@@ -2579,9 +2596,10 @@ class FortranToIRConverter(ClassVisitor):
         index: Mapping[str, FortranModule],
         module_name: str,
         source_name: str,
+        nature: str | None = None,
     ) -> tuple[str, str]:
         """Return the module and name declaring a type reached through ``module_name``."""
-        kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, source_name)
+        kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, source_name, nature=nature)
         if kind == "derived_type":
             return origin_module, origin_name
         return module_name, source_name
