@@ -550,7 +550,9 @@ generated constructor form.
 
 Methods use the same rules plus an untyped `self`. `Pass()` places that object
 in an explicit native argument list. `@bind(...)` is needed only when the
-Python declaration and native callable names differ.
+Python declaration and native callable names differ. For an `@overload(...)`
+declaration the native callable defaults to the linked specific, not the
+Python name; see [Generic Procedure Overloads](#generic-procedure-overloads).
 
 ### Function And Method Decorators
 
@@ -605,9 +607,10 @@ def convert(value: Int32) -> Int32: ...
 def convert(value: Float64) -> Float64: ...
 ```
 
-The linked concrete declaration owns `@native_call`. An overload-level
-`@bind(...)` selects a public native generic when the specific itself is not the
-link target. Runtime dispatch distinguishes exact scalar dtype, array element
+The linked concrete declaration owns `@native_call`, and without `@bind(...)`
+the candidate calls that specific by its own name, whatever the Python name.
+An overload-level `@bind(...)` calls a public native generic instead, which is
+needed when the module keeps the specific private. Runtime dispatch distinguishes exact scalar dtype, array element
 dtype and rank, or wrapped class; it does not use implicit numeric coercion.
 An `AnyNative` choice-buffer argument can appear in a generic with one selected
 candidate; its concrete wrapper validates the actual storage at the call.

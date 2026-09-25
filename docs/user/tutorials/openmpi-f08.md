@@ -247,7 +247,6 @@ and each selected routine keeps its Fortran interface in
 `contract/mpi_f08_interfaces.pyi`:
 
 ```python
-@bind("MPI_Allreduce")
 @overload("mpi_allreduce_f08")
 def mpi_allreduce(
     sendbuf: Annotated[AnyNative[Flat], ReadOnly],
@@ -259,6 +258,10 @@ def mpi_allreduce(
     ierror: Int32[()] = ...
 ) -> Returns["ierror", Int32[()]] | None: ...
 ```
+
+`MPI_Allreduce` is a generic whose one specific is `MPI_Allreduce_f08`, so
+`mpi_allreduce` is an overload of the specific declared as `mpi_allreduce_f08`
+in the same file, and a call to it calls that specific.
 
 Three mappings are worth a closer look.
 

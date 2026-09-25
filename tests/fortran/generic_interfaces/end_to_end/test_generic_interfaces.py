@@ -22,6 +22,10 @@ PRIVATE_INLINE_GENERIC_MODULE = (NATIVE_FIXTURES / "private_inline_generic.f90")
 
 PRIVATE_INLINE_GENERIC_SUBMODULE = (NATIVE_FIXTURES / "private_inline_generic_impl.f90").read_text(encoding="utf-8")
 
+INTERFACE_BODY_GENERIC_MODULE = (NATIVE_FIXTURES / "interface_body_generic.f90").read_text(encoding="utf-8")
+
+INTERFACE_BODY_GENERIC_IMPL = (NATIVE_FIXTURES / "interface_body_generic_impl.f90").read_text(encoding="utf-8")
+
 
 @pytest.fixture
 def compiled_generic_module(
@@ -100,6 +104,23 @@ def test_public_generic_dispatches_to_private_inline_submodule_specifics(tmp_pat
     assert "native__prik_overload_shift_1 => shift" in bridge
     assert "=> shift_integer" not in bridge
     assert "=> shift_real" not in bridge
+
+
+def test_public_generic_calls_public_interface_body_specifics_by_their_own_names(tmp_path: Path):
+    """A public specific an interface body declares needs no route through the generic."""
+    module, _payload = _build_sources_and_import(
+        [
+            ("interface_body_generic.f90", INTERFACE_BODY_GENERIC_MODULE),
+            ("interface_body_generic_impl.f90", INTERFACE_BODY_GENERIC_IMPL),
+        ],
+        tmp_path,
+    )
+
+    assert module.interface_body_generic.scale(np.int32(4)) == np.int32(8)
+    assert module.interface_body_generic.scale(np.float64(4.0)) == np.float64(10.0)
+    bridge = (tmp_path / "bind_c_interface_body_generic_wrapper.f90").read_text(encoding="utf-8").lower()
+    assert "native__prik_overload_scale_0 => scale_integer" in bridge
+    assert "native__prik_overload_scale_1 => scale_real" in bridge
 
 
 EXTENDED_GENERIC_SOURCE = (NATIVE_FIXTURES / "extended_generic.f90").read_text(encoding="utf-8")

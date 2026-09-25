@@ -39,6 +39,12 @@ print(result)  # 7.5
 A contract declaration normally uses one name for both Python and the native
 procedure. Use `@bind("native_name")` only when those names differ.
 
+An `@overload("specific")` declaration is the exception: it calls the specific
+it links, not a procedure named like the Python function, so it needs
+`@bind("generic")` only to call through the generic instead -- as when the
+module keeps the specific private. See
+[Generic Interfaces](generic-interfaces.md).
+
 For example, rename the generated declaration to `multiply` and add
 `@bind("scale")`. The Python name changes, while the native target remains
 `scale`. The generated contract and its edited replacement are shown below.
