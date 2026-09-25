@@ -1,0 +1,118 @@
+"""An mpi4py-style Python API over the PRIK-generated Open MPI extension."""
+
+import atexit
+import pickle
+
+import numpy as np
+
+from prik_openmpi_f08 import mpi_f08 as _mpi
+
+ANY_SOURCE = int(_mpi.mpi_any_source)
+ANY_TAG = int(_mpi.mpi_any_tag)
+IN_PLACE = _mpi.mpi_in_place
+BYTE = _mpi.mpi_byte
+INT = _mpi.mpi_int
+DOUBLE = _mpi.mpi_double
+SUM = _mpi.mpi_sum
+MAX = _mpi.mpi_max
+
+# The MPI datatype of each NumPy element type, for buffers given without one.
+_DATATYPES = {np.dtype(np.uint8): BYTE, np.dtype(np.int32): INT, np.dtype(np.float64): DOUBLE}
+
+
+def _message(buf):
+    """Return a buffer's array and MPI datatype; ``buf`` is an array or ``[array, datatype]``."""
+    if isinstance(buf, list | tuple):
+        array, datatype = buf
+        return array, datatype
+    return buf, _DATATYPES[buf.dtype]
+
+
+class Status:
+    """What MPI reports about a received message."""
+
+    def __init__(self):
+        self._native = None
+
+    @property
+    def source(self):
+        return int(self._native.mpi_source)
+
+    @property
+    def tag(self):
+        return int(self._native.mpi_tag)
+
+    def Get_source(self):
+        return self.source
+
+    def Get_tag(self):
+        return self.tag
+
+    def Get_count(self, datatype=BYTE):
+        return int(_mpi.get_count(self._native, datatype))
+
+
+def _report(status, native):
+    if status is not None:
+        status._native = native
+
+
+class Comm:
+    """A communicator, with the methods mpi4py spells for it."""
+
+    def __init__(self, handle):
+        self.handle = handle
+
+    def Get_rank(self):
+        return int(_mpi.comm_rank(self.handle))
+
+    def Get_size(self):
+        return int(_mpi.comm_size(self.handle))
+
+    rank = property(Get_rank)
+    size = property(Get_size)
+
+    def Barrier(self):
+        _mpi.barrier(self.handle)
+
+    def Send(self, buf, dest, tag=0):
+        array, datatype = _message(buf)
+        _mpi.send(array, datatype, np.int32(dest), np.int32(tag), self.handle)
+
+    def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG, status=None):
+        array, datatype = _message(buf)
+        _report(status, _mpi.recv(array, datatype, np.int32(source), np.int32(tag), self.handle))
+
+    def Probe(self, source=ANY_SOURCE, tag=ANY_TAG, status=None):
+        _report(status, _mpi.probe(np.int32(source), np.int32(tag), self.handle))
+        return True
+
+    def Bcast(self, buf, root=0):
+        array, datatype = _message(buf)
+        _mpi.bcast(array, datatype, np.int32(root), self.handle)
+
+    def Reduce(self, sendbuf, recvbuf, op=SUM, root=0):
+        array, datatype = _message(recvbuf)
+        _mpi.reduce(sendbuf, array, datatype, op, np.int32(root), self.handle)
+
+    def Allreduce(self, sendbuf, recvbuf, op=SUM):
+        array, datatype = _message(recvbuf)
+        _mpi.allreduce(sendbuf, array, datatype, op, self.handle)
+
+    # Python objects travel pickled, as with mpi4py's lowercase methods.
+    def send(self, obj, dest, tag=0):
+        self.Send(np.frombuffer(pickle.dumps(obj), dtype=np.uint8), dest, tag)
+
+    def recv(self, buf=None, source=ANY_SOURCE, tag=ANY_TAG, status=None):
+        status = status if status is not None else Status()
+        self.Probe(source, tag, status)
+        data = np.empty(status.Get_count(BYTE), dtype=np.uint8)
+        self.Recv(data, status.source, status.tag, status)
+        return pickle.loads(data.tobytes())
+
+
+COMM_WORLD = Comm(_mpi.mpi_comm_world)
+
+# Like mpi4py, MPI starts when this module is imported and stops at exit.
+_mpi.init()
+atexit.register(_mpi.finalize)

@@ -4060,14 +4060,26 @@ def _external_module_candidates(module_name: str) -> tuple[str, ...]:
 
 
 def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str, str], SemanticPrototype]:
-    """Index every prototype name a contract module binds, declared or re-exported.
+    """Index every prototype name a contract module binds, declared or re-exported."""
+    declared = {
+        (module.name, prototype.name): (module.name, prototype) for module in modules for prototype in module.prototypes
+    }
+    return {key: declaration for key, (_module, declaration) in _bound_with_reexports(modules, declared).items()}
 
-    A module that imports a prototype and publishes it binds that name without
-    declaring it, so a consumer importing it from there must still resolve to
-    the declaring module.  Repeating to a fixed point follows a chain of any
-    length.
+
+def _bound_with_reexports(
+    modules: list[SemanticModule],
+    declared: dict[tuple[str, str], tuple[str, object]],
+) -> dict[tuple[str, str], tuple[str, object]]:
+    """Index every name a contract module binds to a declaration, declared or re-exported.
+
+    ``declared`` maps ``(module, name)`` to ``(declaring module, declaration)``.
+    A module that imports a declaration and publishes it binds that name
+    without declaring it, so a consumer importing it from there must still
+    resolve to the declaring module. Repeating to a fixed point follows a
+    chain of any length.
     """
-    resolved = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    resolved = dict(declared)
     changed = True
     while changed:
         changed = False
@@ -4079,16 +4091,16 @@ def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str,
                     local_name = item.target or item.source
                     if (module.name, local_name) in resolved:
                         continue
-                    prototype = next(
+                    found = next(
                         (
-                            found
+                            match
                             for candidate in _external_module_candidates(imported.module)
-                            if (found := resolved.get((candidate, item.source))) is not None
+                            if (match := resolved.get((candidate, item.source))) is not None
                         ),
                         None,
                     )
-                    if prototype is not None:
-                        resolved[(module.name, local_name)] = prototype
+                    if found is not None:
+                        resolved[(module.name, local_name)] = found
                         changed = True
     return resolved
 
@@ -4133,7 +4145,16 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     classes are marked ``wrapped`` or ``opaque``.  The same list is returned for
     pipeline chaining; absent external definitions remain opaque references.
     """
-    definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
+    # A class imported through a module that re-exports it is the class its
+    # declaring module defines, so the reference names that module.
+    definitions = _bound_with_reexports(
+        modules,
+        {
+            (module.name, declaration.name): (module.name, declaration)
+            for module in modules
+            for declaration in module.classes
+        },
+    )
     declared_class_names = {
         module.name: frozenset(declaration.name for declaration in module.classes) for module in modules
     }
@@ -4146,7 +4167,20 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
                 continue
             if _bind_referenced_prototype(semantic_type, ref, prototypes, declared_class_names):
                 continue
-            declaration = definitions.get((ref.get("origin_module"), ref.get("name")))
+            candidates = _external_module_candidates(str(ref.get("origin_module") or ""))
+            found = next(
+                (
+                    match
+                    for candidate in candidates
+                    if (match := definitions.get((candidate, ref.get("name")))) is not None
+                ),
+                None,
+            )
+            declaration = None
+            if found is not None:
+                declaring_module, declaration = found
+                if declaring_module not in candidates:
+                    ref["origin_module"] = declaring_module
             wrapped = declaration is not None and (
                 not isinstance(declaration, SemanticClass) or "Opaque" not in declaration.base_classes
             )

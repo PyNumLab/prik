@@ -1,44 +1,41 @@
 import numpy as np
 
-from prik_openmpi_f08 import mpi_f08 as mpi
+import prik_mpi as MPI
 
-mpi.mpi_init()
-world = mpi.mpi_comm_world
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
-rank, _ = mpi.mpi_comm_rank(world)
-size, _ = mpi.mpi_comm_size(world)
-rank, size = int(rank), int(size)
-
-# Point to point: rank 0 sends four integers, rank 1 receives them.
+# Python objects travel pickled.
 if rank == 0:
-    sent = np.array([3, 5, 7, 11], dtype=np.int32)
-    mpi.mpi_send(sent, np.int32(sent.size), mpi.mpi_int, np.int32(1), np.int32(13), world)
+    comm.send({"a": 7, "b": 3.14}, dest=1, tag=11)
 elif rank == 1:
-    received = np.empty(4, dtype=np.int32)
-    mpi.mpi_recv(
-        received,
-        np.int32(received.size),
-        mpi.mpi_int,
-        np.int32(0),
-        np.int32(13),
-        world,
-        mpi.mpi_status_ignore,
-    )
-    print(f"rank 1 received {received.tolist()}")
+    data = comm.recv(source=0, tag=11)
+    print(f"rank 1 received {data}")
 
-# Collective: every rank contributes and every rank receives the sum.
-values = np.array([rank + 1, rank + 2], dtype=np.int32)
-reduced = np.empty_like(values)
-mpi.mpi_allreduce(values, reduced, np.int32(values.size), mpi.mpi_int, mpi.mpi_sum, world)
+# NumPy arrays travel as buffers, with an explicit MPI datatype ...
+if rank == 0:
+    data = np.arange(4, dtype="i")
+    comm.Send([data, MPI.INT], dest=1, tag=77)
+elif rank == 1:
+    data = np.empty(4, dtype="i")
+    status = MPI.Status()
+    comm.Recv([data, MPI.INT], source=MPI.ANY_SOURCE, tag=77, status=status)
+    print(f"rank 1 received {data.tolist()} from rank {status.Get_source()}")
 
-readings = np.array([20.0 + rank], dtype=np.float64)
-total = np.empty_like(readings)
-mpi.mpi_allreduce(readings, total, np.int32(readings.size), mpi.mpi_double_precision, mpi.mpi_sum, world)
+# ... or with the datatype taken from the array.
+data = np.arange(3, dtype=np.float64) if rank == 0 else np.empty(3, dtype=np.float64)
+comm.Bcast(data, root=0)
 
-# In place: MPI_IN_PLACE as the send buffer reduces the receive buffer itself.
-in_place = values.copy()
-mpi.mpi_allreduce(mpi.mpi_in_place, in_place, np.int32(in_place.size), mpi.mpi_int, mpi.mpi_sum, world)
+# Collectives: every rank contributes.
+values = np.array([rank + 1, rank + 2], dtype="i")
+total = np.empty_like(values)
+comm.Allreduce(values, total, op=MPI.SUM)
+largest = np.empty_like(values)
+comm.Reduce(values, largest, op=MPI.MAX, root=0)
+comm.Allreduce(MPI.IN_PLACE, values, op=MPI.SUM)
 
-mpi.mpi_barrier(world)
-print(f"rank {rank} of {size}: sum {reduced.tolist()}, in place {in_place.tolist()}, total {total.tolist()}")
-mpi.mpi_finalize()
+comm.Barrier()
+print(f"rank {rank} of {size}: bcast {data.tolist()}, sum {total.tolist()}, in place {values.tolist()}")
+if rank == 0:
+    print(f"rank 0 max {largest.tolist()}")

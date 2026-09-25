@@ -557,7 +557,7 @@ Python declaration and native callable names differ.
 | Decorator | Valid target | Language and meaning |
 | --- | --- | --- |
 | `@private` | Function or method | Shared: declaration remains available to contract dependencies but is not exported. |
-| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. For module-level Fortran procedures, `"module::symbol"` also selects the native module used for the call. |
+| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. A module-level Fortran procedure is called through the native module the contract module names, so the symbol may be any procedure or generic that module provides, including one it imports. |
 | `@native_abi("c")` | Function, method, or prototype | Fortran only: original declaration is `bind(C)`. |
 | `@standalone` | Module-level function | Fortran only: native procedure is outside a module. |
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |

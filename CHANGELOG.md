@@ -97,6 +97,9 @@ release tags add a leading `v` to the package version.
 - A derived type a module reaches through another module's re-export is
   resolved to the module that declares it, so generated contracts name it
   instead of writing an undefined type.
+- A `.pyi` contract class imported through a contract module that re-exports
+  it resolves to the declaring module's class, however long the chain, so the
+  build wraps it instead of failing with no completed wrapper type definition.
 - Fortran parse diagnostics on compiler-preprocessed sources report the line
   in the source file, or the `#include` line for text an included file
   contributes, instead of a line in the preprocessor output.
@@ -122,11 +125,14 @@ release tags add a leading `v` to the package version.
   native scalar storage views through `T[()]`. Source builds and generated
   contracts publish the same selected surface.
 - A tutorial turns a reviewed part of Open MPI's Fortran `mpi_f08` interface
-  into a Python MPI API: it generates a restricted `.pyi` contract from the
-  configured Open MPI sources, builds it with the CLI against the installed
-  Open MPI without compiling any Open MPI source, and runs a two-rank NumPy
-  program under `mpirun`. An opt-in integration test runs the same commands
-  and program; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
+  into an mpi4py-style Python MPI API: it generates a restricted `.pyi`
+  contract from the configured Open MPI sources, edits its facade to hide
+  counts and error codes and return results, builds it with the CLI against
+  the installed Open MPI without compiling any Open MPI source, adds a short
+  Python module spelling mpi4py's `COMM_WORLD`, `Send`/`Recv`, pickled
+  `send`/`recv`, `Bcast`, `Reduce`, and `Allreduce`, and runs a two-rank
+  program under `mpirun` that mpi4py also runs unchanged but for its import.
+  An opt-in integration test runs the same commands and program; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
   5.0.11 built from source. The test requires the configured tree to record the
   same configure run as the installation, and reports missing or failing
   Open MPI tools as unavailable -- a skip locally, a failure where Open MPI is

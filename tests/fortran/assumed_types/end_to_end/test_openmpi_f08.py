@@ -1,9 +1,10 @@
 """Real Open MPI source to generated contract to two-rank execution.
 
 The test runs the commands the Open MPI ``mpi_f08`` tutorial shows: generate
-a restricted contract from the configured Open MPI sources, build it against
-the installation without compiling any Open MPI source, and run the tutorial's
-program under the Open MPI launcher.
+a restricted contract from the configured Open MPI sources, replace its facade
+with the tutorial's edited one, build it against the installation without
+compiling any Open MPI source, and run the tutorial's mpi4py-style program
+under the Open MPI launcher.
 """
 
 from __future__ import annotations
@@ -23,8 +24,10 @@ import pytest
 
 
 pytestmark = pytest.mark.fortran_end_to_end
-# The tutorial displays this program; the test runs it as written.
-RUNTIME = Path(__file__).parent / "fixtures" / "runtime" / "mpi_example.py"
+# The tutorial displays these files; the test uses them as written.
+FIXTURES = Path(__file__).parent / "fixtures"
+EDITED_FACADE = FIXTURES / "contracts" / "openmpi" / "mpi_f08.pyi"
+PROGRAM = (FIXTURES / "runtime" / "prik_mpi.py", FIXTURES / "runtime" / "mpi_example.py")
 EXPORTS = (
     "MPI_Init",
     "MPI_Finalize",
@@ -33,13 +36,20 @@ EXPORTS = (
     "MPI_Barrier",
     "MPI_Send",
     "MPI_Recv",
+    "MPI_Probe",
+    "MPI_Get_count",
+    "MPI_Bcast",
+    "MPI_Reduce",
     "MPI_Allreduce",
     "MPI_COMM_WORLD",
+    "MPI_BYTE",
     "MPI_INT",
-    "MPI_DOUBLE_PRECISION",
+    "MPI_DOUBLE",
     "MPI_SUM",
+    "MPI_MAX",
     "MPI_IN_PLACE",
-    "MPI_STATUS_IGNORE",
+    "MPI_ANY_SOURCE",
+    "MPI_ANY_TAG",
 )
 # ``ompi_info`` reports these for the configure run that built the
 # installation, and a configured tree records the same values, so they
@@ -201,11 +211,13 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     assert "mpi_comm_world: Final[Mpi_Comm]" in types
     assert "mpi_sum: Final[Mpi_Op]" in types
     assert "mpi_int: Final[Mpi_Datatype]" in types
-    assert "mpi_status_ignore: Mpi_Status" in types
+    assert "mpi_any_source: Final[Int32]" in types
     # Where the handle types are declared depends on the Open MPI version.
     declarations = "".join(path.read_text(encoding="utf-8") for path in contract.glob("*.pyi"))
     assert all(f"class Mpi_{name}" in declarations for name in ("Comm", "Datatype", "Op", "Status"))
     assert "AnyNative[" in interfaces and '@overload("mpi_send_f08")\ndef mpi_send(' in interfaces
+    # The tutorial edits the generated facade into the Python API it wants.
+    shutil.copyfile(EDITED_FACADE, contract / "mpi_f08.pyi")
 
     def showme(flag: str) -> list[str]:
         return shlex.split(_tool_output([mpifort, f"--showme:{flag}"], f"mpifort --showme:{flag}"))
@@ -250,21 +262,25 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         "prik_openmpi_f08_wrapper.o",
     ]
     bridge = (tmp_path / "extension" / "bind_c_prik_openmpi_f08_wrapper.f90").read_text(encoding="utf-8")
-    assert "use mpi_f08_interfaces, only:" in bridge
-    assert "=> MPI_Allreduce" in bridge and "=> MPI_Send" in bridge
+    assert "native_allreduce => MPI_Allreduce" in bridge and "native_send => MPI_Send" in bridge
+    for path in PROGRAM:
+        shutil.copyfile(path, tmp_path / "extension" / path.name)
 
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(tmp_path / "extension"), env.get("PYTHONPATH", ""))))
     env["LD_LIBRARY_PATH"] = os.pathsep.join((*showme("libdirs"), env.get("LD_LIBRARY_PATH", "")))
     completed = subprocess.run(
-        [launcher, "-n", "2", sys.executable, str(RUNTIME)],
+        [launcher, "-n", "2", sys.executable, str(tmp_path / "extension" / "mpi_example.py")],
         env=env,
         check=True,
         capture_output=True,
         text=True,
         timeout=120,
     )
-    output = completed.stdout.splitlines()
-    assert "rank 1 received [3, 5, 7, 11]" in output
-    for rank in (0, 1):
-        assert f"rank {rank} of 2: sum [3, 5], in place [3, 5], total [41.0]" in output
+    assert sorted(completed.stdout.splitlines()) == [
+        "rank 0 max [2, 3]",
+        "rank 0 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
+        "rank 1 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
+        "rank 1 received [0, 1, 2, 3] from rank 0",
+        "rank 1 received {'a': 7, 'b': 3.14}",
+    ]
