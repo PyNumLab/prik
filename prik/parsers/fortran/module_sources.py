@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 import re
 
+from prik.parsers.fortran.intrinsic_modules import INTRINSIC_FORTRAN_MODULES
 from prik.parsers.fortran.models import FortranFile, FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.parsers.fortran.scope import used_module_statements
@@ -35,20 +36,6 @@ _MODULE_LINE = re.compile(
     r"(?P<name>[a-z][a-z0-9_]*)[ \t]*(?:!.*)?$",
     re.IGNORECASE | re.MULTILINE,
 )
-# Modules a processor supplies. A ``use`` stating no nature falls back to one of
-# these only when no searched source defines a module of that name.
-_INTRINSIC_MODULES = frozenset(
-    {
-        "iso_c_binding",
-        "iso_fortran_env",
-        "ieee_arithmetic",
-        "ieee_exceptions",
-        "ieee_features",
-        "omp_lib",
-        "omp_lib_kinds",
-        "openacc",
-    }
-)
 
 
 def resolve_fortran_module_sources(
@@ -65,7 +52,7 @@ def resolve_fortran_module_sources(
     under ``search_dirs``; otherwise a :class:`FortranParseError` names it and
     the source that needs it.
     """
-    candidates = _unit_candidates(search_dirs)
+    candidates, searched_files = _unit_candidates(search_dirs)
     parser = FortranParser()
     facts: dict[Path, tuple[set[str], dict[str, str | None]]] = {}
     owners: dict[str, Path] = {}
@@ -77,6 +64,26 @@ def resolve_fortran_module_sources(
             for unit in facts[path][0]:
                 owners.setdefault(unit, path)
         return facts[path]
+
+    scanned: set[Path] = set()
+
+    def parsed_definers(unit: str) -> list[Path]:
+        """Parse every searched source not yet read and return those defining ``unit``.
+
+        A module named through a macro or an included line has no ``module``
+        line the fast index can see, so the preprocessed sources are read
+        once, when a needed unit is otherwise missing. A source that cannot
+        be preprocessed or parsed cannot define it.
+        """
+        for path in searched_files:
+            if path in scanned:
+                continue
+            scanned.add(path)
+            try:
+                read(path)
+            except Exception:  # an unreadable candidate defines nothing
+                continue
+        return [path for path in searched_files if path in facts and unit in facts[path][0]]
 
     for entry in entries:
         read(entry.resolve())
@@ -91,7 +98,7 @@ def resolve_fortran_module_sources(
         for unit, nature in sorted(required.items()):
             if unit in defined or nature == "intrinsic":
                 continue
-            dependency = owners.get(unit) or _defining_source(unit, nature, candidates, path, read)
+            dependency = owners.get(unit) or _defining_source(unit, nature, candidates, path, read, parsed_definers)
             if dependency is not None:
                 visit(dependency)
         visiting.discard(path)
@@ -109,18 +116,24 @@ def _defining_source(
     candidates: dict[str, list[Path]],
     user: Path,
     read: Callable[[Path], tuple[set[str], dict[str, str | None]]],
+    parsed_definers: Callable[[str], list[Path]],
 ) -> Path | None:
     """Return the one searched source whose parsed units define ``unit``, or raise.
 
     A ``use`` that states no nature names an intrinsic module only when no
     other module of that name is accessible, so a known intrinsic name is
-    satisfied by the processor when no source defines it.
+    satisfied by the processor when no source defines it. Only a unit that is
+    still missing reads every searched source in full.
     """
     defining = [path for path in candidates.get(unit, ()) if unit in read(path)[0]]
     if len(defining) == 1:
         return defining[0]
-    if not defining and nature is None and unit in _INTRINSIC_MODULES:
+    if not defining and nature is None and unit in INTRINSIC_FORTRAN_MODULES:
         return None
+    if not defining:
+        defining = parsed_definers(unit)
+    if len(defining) == 1:
+        return defining[0]
     kind = "submodule" if ":" in unit else "module"
     if not defining:
         raise FortranParseError(
@@ -138,13 +151,21 @@ def _defining_source(
     )
 
 
-def _unit_candidates(search_dirs: Iterable[Path]) -> dict[str, list[Path]]:
-    """Map each module or submodule to the Fortran sources under ``search_dirs`` that open it."""
+def _unit_candidates(search_dirs: Iterable[Path]) -> tuple[dict[str, list[Path]], list[Path]]:
+    """Map each module or submodule to the sources under ``search_dirs`` that open it, and list every source.
+
+    The map reads raw ``module`` and ``submodule`` lines, the fast path; the
+    list lets a unit those lines cannot show be found by parsing.
+    """
     candidates: dict[str, list[Path]] = {}
+    searched: list[Path] = []
     for directory in search_dirs:
         for path in sorted(Path(directory).rglob("*")):
             if path.suffix.casefold() not in _FORTRAN_SOURCE_SUFFIXES or not path.is_file():
                 continue
+            resolved = path.resolve()
+            if resolved not in searched:
+                searched.append(resolved)
             text = path.read_text(encoding="utf-8", errors="replace")
             units = [match.group("name").casefold() for match in _MODULE_LINE.finditer(text)]
             units.extend(
@@ -153,9 +174,9 @@ def _unit_candidates(search_dirs: Iterable[Path]) -> dict[str, list[Path]]:
             )
             for unit in units:
                 paths = candidates.setdefault(unit, [])
-                if path.resolve() not in paths:
-                    paths.append(path.resolve())
-    return candidates
+                if resolved not in paths:
+                    paths.append(resolved)
+    return candidates, searched
 
 
 def _defined_and_required_units(parsed: FortranFile) -> tuple[set[str], dict[str, str | None]]:

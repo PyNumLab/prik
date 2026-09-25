@@ -168,12 +168,11 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     command, compile_flags = show("--showme:command"), show("--showme:compile")
     if len(command) != 1:
         _unavailable(f"mpifort --showme:command is a multi-token command {command}; pass one compiler executable")
-    include_dirs = [*show("--showme:incdirs"), *(flag[2:] for flag in compile_flags if flag.startswith("-I"))]
     result = build_pyi_extension(
         contract / "__init__.pyi",
         input_compiler=command[0],
-        native_include_dirs=list(dict.fromkeys(include_dirs)),
-        wrapper_fortran_flags=[flag for flag in compile_flags if not flag.startswith("-I")],
+        native_include_dirs=show("--showme:incdirs"),
+        wrapper_fortran_flags=compile_flags,
         native_link_items=[NativeLinkItem("linker_argument", flag) for flag in show("--showme:link")],
         native_linker_language="fortran",
         output_name="prik_openmpi_f08",

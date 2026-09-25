@@ -677,7 +677,7 @@ def imported_type_reference(semantic_type: models.SemanticType) -> ImportedTypeR
     a module the contract imports itself.
     """
     ref = semantic_type.metadata.get(models.EXTERNAL_TYPE_REF_METADATA)
-    if not isinstance(ref, dict):
+    if not isinstance(ref, dict) or ref.get("processor"):
         return None
     module, name = ref.get("origin_module"), ref.get("name")
     local = ref.get("local_name") or name

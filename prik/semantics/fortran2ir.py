@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 import re
 from pathlib import Path
 
+from prik.parsers.fortran.intrinsic_modules import INTRINSIC_FORTRAN_MODULES
 from prik.parsers.fortran.scope import ScopeUses, UseRoute
 from prik.parsers.fortran.models import (
     FortranArgument,
@@ -250,11 +251,14 @@ class _ResolvedDerivedTypeOrigin:
 
     ``import_scope`` records when a procedure-local ``use`` made the selected
     name visible, which determines whether the public semantic name is scoped.
+    ``processor`` records that the type belongs to a processor module, so no
+    parsed module of the same name declares or wraps it.
     """
 
     module: str | None
     name: str
     import_scope: str | None = None
+    processor: bool = False
 
 
 @dataclass(frozen=True)
@@ -324,7 +328,6 @@ def _resolve_compile_time_text(text: str, compile_time_values: dict[str, str]) -
 
 
 # Language-owned modules are contract vocabulary, not sibling contract leaves.
-_INTRINSIC_FORTRAN_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 
 
 class FortranToIRConverter(ClassVisitor):
@@ -1946,6 +1949,51 @@ class FortranToIRConverter(ClassVisitor):
         return None
 
     @classmethod
+    def _merges_generics(cls, name: str, origins: list[tuple[str, str, str]]) -> bool:
+        """Return whether a name's routes reach several generics, which merge into one.
+
+        Only a procedure generic is assembled into a module's overload set; a
+        defined operator attaches to the types it operates on instead.
+        """
+        distinct = set(origins)
+        return (
+            len(distinct) > 1
+            and all(kind == "generic" for kind, _module, _name in distinct)
+            and cls._is_procedure_generic_name(name)
+        )
+
+    @classmethod
+    def _route_origins(
+        cls,
+        module: FortranModule,
+        index: dict[str, FortranModule],
+        routes: tuple[UseRoute, ...],
+    ) -> list[tuple[str, str, str]]:
+        """Return the declaration each of one module's routes to a name reaches."""
+        return [
+            cls._resolve_reexport_origin(index, route.module, route.source_name, nature=route.nature)
+            for route in routes
+        ]
+
+    @classmethod
+    def _merged_imported_generics(cls, module: FortranModule, index: dict[str, FortranModule]) -> tuple[str, ...]:
+        """Return the generics this module assembles from several imported ones.
+
+        Two accessible generics spelled alike are one generic in the module
+        reaching both, and neither contributor declares that whole generic, so
+        the module where they meet owns it: it becomes that module's overload
+        set rather than a re-export naming one contributor. A module that
+        declares the name itself already owns it through its own block.
+        """
+        declared = cls._module_declared_names(module)
+        return tuple(
+            name
+            for name in cls._use_associated_names(module, index)
+            if name.casefold() not in declared
+            and cls._merges_generics(name, cls._route_origins(module, index, cls._name_routes(module, index, name)))
+        )
+
+    @classmethod
     def _offered_names(cls, index: dict[str, FortranModule], seen: frozenset[str] = frozenset()):
         """Return what each used module publishes, or ``None`` when unparsed."""
 
@@ -2006,12 +2054,11 @@ class FortranToIRConverter(ClassVisitor):
             routes = cls._name_routes(module, index, local_name)
             if local_name.casefold() in declared or not routes:
                 continue
-            origin = cls._reconcile_routes(
-                [
-                    cls._resolve_reexport_origin(index, route.module, route.source_name, nature=route.nature)
-                    for route in routes
-                ]
-            )
+            origins = cls._route_origins(module, index, routes)
+            if cls._merges_generics(local_name, origins):
+                # The generic these routes merge into is this module's own.
+                continue
+            origin = cls._reconcile_routes(origins)
             if origin is not None:
                 yield local_name, tuple(dict.fromkeys(route.module for route in routes)), origin
 
@@ -2106,7 +2153,7 @@ class FortranToIRConverter(ClassVisitor):
         """
         if nature == "intrinsic" or (
             nature is None
-            and module_name.casefold() in _INTRINSIC_FORTRAN_MODULES
+            and module_name.casefold() in INTRINSIC_FORTRAN_MODULES
             and module_name.casefold() not in index
         ):
             return "intrinsic", module_name, source_name
@@ -2122,12 +2169,14 @@ class FortranToIRConverter(ClassVisitor):
         route_names = tuple(dict.fromkeys(route.module for route in routes))
         if not routes or not cls._effective_accessibility(declaring)(source_name, route_names):
             return "unknown", module_name, source_name
-        origin = cls._reconcile_routes(
-            [
-                cls._resolve_reexport_origin(index, route.module, route.source_name, seen, nature=route.nature)
-                for route in routes
-            ]
-        )
+        origins = [
+            cls._resolve_reexport_origin(index, route.module, route.source_name, seen, nature=route.nature)
+            for route in routes
+        ]
+        if cls._merges_generics(source_name, origins):
+            # Generics merged here form a generic this module owns.
+            return "generic", declaring.name, source_name
+        origin = cls._reconcile_routes(origins)
         return origin if origin is not None else ("unknown", module_name, source_name)
 
     @staticmethod
@@ -2494,7 +2543,7 @@ class FortranToIRConverter(ClassVisitor):
         local_type = bool(context is not None and context.module and local_name.lower() in context.local_types)
         if local_type or origin.module is None:
             return None
-        wrapped = bool((origin.module.lower(), origin.name.lower()) in self.wrapped_derived_types)
+        wrapped = not origin.processor and (origin.module.lower(), origin.name.lower()) in self.wrapped_derived_types
         public_name = local_name
         if origin.import_scope == "procedure":
             public_name = f"{origin.module}.{origin.name}"
@@ -2507,6 +2556,9 @@ class FortranToIRConverter(ClassVisitor):
         }
         if origin.import_scope is not None:
             metadata["import_scope"] = origin.import_scope
+        if origin.processor:
+            # No parsed module declares it, so no contract imports it.
+            metadata["processor"] = True
         return public_name, metadata
 
     def _resolve_derived_type_origin(
@@ -2533,7 +2585,9 @@ class FortranToIRConverter(ClassVisitor):
             local_name, context.procedure_uses, context.module_index
         )
         if (procedure_resolved.module, procedure_resolved.name) == (resolved.module, resolved.name):
-            return _ResolvedDerivedTypeOrigin(resolved.module, resolved.name, import_scope="procedure")
+            return _ResolvedDerivedTypeOrigin(
+                resolved.module, resolved.name, import_scope="procedure", processor=resolved.processor
+            )
         return resolved
 
     def _resolve_derived_type_origin_from_uses(
@@ -2558,14 +2612,32 @@ class FortranToIRConverter(ClassVisitor):
             self._declared_type_identity(index, route.module, route.source_name, route.nature) for route in routes
         }
         if len(identities) == 1:
-            module, name = identities.pop()
-            return _ResolvedDerivedTypeOrigin(module, name)
+            module, name, processor = identities.pop()
+            return _ResolvedDerivedTypeOrigin(module, name, processor=processor)
         if identities:
             return _ResolvedDerivedTypeOrigin(None, local_name)
         unresolved = scope.unresolved_routes_for(local_name, offered)
         if len({route.key for route in unresolved}) == 1:
-            return _ResolvedDerivedTypeOrigin(unresolved[0].module, unresolved[0].source_name)
+            route = unresolved[0]
+            return _ResolvedDerivedTypeOrigin(
+                route.module, route.source_name, processor=self._names_processor_module(index, route)
+            )
         return _ResolvedDerivedTypeOrigin(None, local_name)
+
+    @staticmethod
+    def _names_processor_module(index: Mapping[str, FortranModule], route: UseRoute) -> bool:
+        """Return whether a route names a processor module rather than a parsed one.
+
+        ``use, intrinsic`` always does. A ``use`` stating no nature does for a
+        known intrinsic name that no parsed module provides.
+        """
+        if not route.names_parsed_module:
+            return True
+        return (
+            route.nature is None
+            and route.module.casefold() in INTRINSIC_FORTRAN_MODULES
+            and route.module.casefold() not in index
+        )
 
     def _offered_type_names(self, index: Mapping[str, FortranModule]):
         """Return the type names each module declares or publicly re-exports, or ``None``."""
@@ -2600,12 +2672,12 @@ class FortranToIRConverter(ClassVisitor):
         module_name: str,
         source_name: str,
         nature: str | None = None,
-    ) -> tuple[str, str]:
-        """Return the module and name declaring a type reached through ``module_name``."""
+    ) -> tuple[str, str, bool]:
+        """Return the module and name declaring a type reached through ``module_name``, and whether the processor does."""
         kind, origin_module, origin_name = cls._resolve_reexport_origin(index, module_name, source_name, nature=nature)
         if kind == "derived_type":
-            return origin_module, origin_name
-        return module_name, source_name
+            return origin_module, origin_name, False
+        return module_name, source_name, kind == "intrinsic"
 
     def _wrapped_type_names(self):
         """Return the wrapped type names each module declares, or ``None``."""
@@ -3253,7 +3325,14 @@ class FortranToIRConverter(ClassVisitor):
         overload_sets: list[ProcedureOverloadSet] = []
         inherited_functions: list[SemanticFunction] = []
         class_map = {semantic_class.name.casefold(): semantic_class for semantic_class in semantic_classes}
-        for interface in module.interfaces:
+        # A generic merged from several imported ones is declared by no block
+        # here, yet this module owns it, so it is assembled as a block that
+        # adds no specifics of its own to what it inherits.
+        merged = [
+            FortranInterface(name=name, module=module.name)
+            for name in self._merged_imported_generics(module, module_index or {})
+        ]
+        for interface in [*module.interfaces, *merged]:
             if not interface.name or interface.abstract:
                 continue
             if interface.declaring_scope_kind == "procedure":

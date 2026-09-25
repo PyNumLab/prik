@@ -13,11 +13,21 @@ release tags add a leading `v` to the package version.
   defines the module and reads it too, so a multi-module library such as Open
   MPI's `mpi_f08` is supplied by its entry file. Discovery honors
   `use, intrinsic` and `use, non_intrinsic`, and follows each submodule to its
-  direct parent. A needed module with no source, or with several, is an error.
+  direct parent. A module whose name a macro or an `#include` supplies is
+  found by preprocessing and parsing the searched sources when a plain scan
+  of them does not name it. A needed module with no source, or with several,
+  is an error.
   Import, re-export, callback, generic, specification-expression, and constant
   resolution follow the same rule, so a user module named like an intrinsic
   one, such as `iso_fortran_env`, is read when a `use` selects it and never
-  when `use, intrinsic` selects the processor module.
+  when `use, intrinsic` selects the processor module. A derived type reached
+  from a processor module, such as `ieee_arithmetic`'s, is left to the
+  processor rather than read from a parsed module of that name.
+- A module that reaches two generics of one name through separate `use`
+  statements, without declaring the generic itself, owns the merged generic:
+  it dispatches over every contributor's specifics in source and contract
+  builds, and `--export-symbols facade_mod::convert` selects the merged
+  generic. It previously re-exported the first contributor only.
 
 - Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
   NumPy views, including fixed-length character bytes; primitive and fixed

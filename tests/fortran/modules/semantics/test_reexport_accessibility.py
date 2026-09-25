@@ -1051,3 +1051,38 @@ end module consumer
     assert callback.semantic_type.storage.kind == callback_storage
     assert (bound_call.name, bound_call.native_scope) == ("ieee_size", bound_scope)
     assert [procedure.name for procedure in module.overload_sets[0].procedures] == specifics
+
+
+@pytest.mark.parametrize(
+    ("nature", "processor", "wrapped"),
+    [
+        pytest.param("intrinsic", True, False, id="processor-type"),
+        pytest.param("non_intrinsic", False, True, id="user-type"),
+    ],
+)
+def test_a_wildcard_use_resolves_a_derived_type_by_its_nature(tmp_path: Path, nature, processor, wrapped):
+    """A type reached through ``use, intrinsic`` is the processor's even beside a same-named user module."""
+    user = "module ieee_arithmetic\n  type :: ieee_class_type\n    integer :: v\n  end type ieee_class_type\nend module ieee_arithmetic\n"
+    consumer = (
+        f"module consumer\n  use, {nature} :: ieee_arithmetic\ncontains\n  subroutine inspect(value)\n"
+        "    type(ieee_class_type), intent(in) :: value\n  end subroutine inspect\nend module consumer\n"
+    )
+    source = tmp_path / "project.f90"
+    source.write_text(f"{user}\n{consumer}", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    argument = next(module for module in modules if module.name == "consumer").functions[0].arguments[0]
+    reference = argument.semantic_type.metadata["external_type_ref"]
+
+    assert reference["origin_module"] == "ieee_arithmetic"
+    assert (bool(reference.get("processor")), reference["wrapped"]) == (processor, wrapped)
+
+
+def test_a_plain_use_of_an_ieee_module_names_the_processor_module(tmp_path: Path):
+    """Semantic resolution and source discovery share one inventory of processor modules."""
+    source = tmp_path / "facade.f90"
+    source.write_text("module facade\n  use ieee_arithmetic, only: ieee_is_nan\nend module facade\n", encoding="utf-8")
+
+    (facade,) = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+
+    assert [(item.local_name, item.entity_kind) for item in facade.reexports] == [("ieee_is_nan", "intrinsic")]

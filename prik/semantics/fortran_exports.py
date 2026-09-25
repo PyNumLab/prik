@@ -200,6 +200,8 @@ def _type_identities(semantic_type, module_name: str) -> set[tuple[str, str]]:
     identities = set()
     for item in _semantic_type_tree(semantic_type):
         reference = item.metadata.get(EXTERNAL_TYPE_REF_METADATA)
+        if isinstance(reference, dict) and reference.get("processor"):
+            continue
         origin = reference.get("origin_module") if isinstance(reference, dict) else module_name
         name = reference.get("name") if isinstance(reference, dict) else item.name
         identities.add((str(origin).casefold(), str(name).casefold()))

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
 
 from prik.parsers.fortran import FortranParseError
 from prik.parsers.fortran.module_sources import resolve_fortran_module_sources
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 
 def _write(root: Path, relative: str, text: str) -> Path:
@@ -66,6 +68,7 @@ def test_a_used_module_needs_exactly_one_defining_source(tmp_path: Path, definit
         pytest.param("use, non_intrinsic :: iso_fortran_env", True, True, id="non-intrinsic-uses-the-source"),
         pytest.param("use iso_fortran_env", True, True, id="unstated-prefers-a-source"),
         pytest.param("use iso_fortran_env", False, False, id="unstated-falls-back-to-the-processor"),
+        pytest.param("use ieee_arithmetic", False, False, id="unstated-ieee-module-falls-back-to-the-processor"),
     ],
 )
 def test_use_nature_decides_whether_a_module_source_is_needed(tmp_path: Path, statement, user_source, found):
@@ -104,3 +107,24 @@ def test_nested_submodule_resolves_its_direct_parent_before_the_ancestor_module(
     )
 
     assert _resolve([leaf], [tmp_path / "src"]) == (base.resolve(), middle.resolve(), leaf)
+
+
+@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran preprocessing")
+def test_a_module_named_through_a_macro_is_found_by_parsing_the_searched_sources(tmp_path: Path):
+    """A ``module`` line the raw index cannot read is found once the preprocessed sources are parsed."""
+    config = PreprocessingConfig(mode="compiler", compiler="gfortran")
+    generated = _write(
+        tmp_path,
+        "lib/gen.F90",
+        "#define MODNAME generated_mod\nmodule MODNAME\n  integer, parameter :: answer = 42\nend module MODNAME\n",
+    )
+    _write(tmp_path, "lib/broken.F90", '#include "missing_header.h"\nmodule broken\nend module broken\n')
+    entry = _write(tmp_path, "app.f90", "module app\n  use generated_mod, only: answer\nend module app\n")
+
+    resolved = resolve_fortran_module_sources(
+        [entry],
+        [tmp_path / "lib"],
+        lambda path: preprocess_source(path, language="fortran", config=config).source,
+    )
+
+    assert resolved == (generated.resolve(), entry)
