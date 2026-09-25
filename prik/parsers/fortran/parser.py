@@ -54,6 +54,7 @@ from prik.parsers.fortran.models import (
 )
 from prik.parsers.fortran.type_resolver import extract_character_selector, extract_kind_from_type_spec
 from prik.parsers.fortran.utils import split_csv
+from prik.preprocessing.languages import FORTRAN_SOURCE_SUFFIXES, expand_source_paths, fortran_source_form
 
 _PARSER_ARCHITECTURE_GUIDE = """
 Parser architecture quick guide
@@ -243,7 +244,6 @@ def _main_source_line_numbers(source: str) -> dict[int, int]:
 
 
 _INTRINSIC_COMPILE_TIME_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
-_FORTRAN_SOURCE_SUFFIXES = (".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08")
 
 
 _PreprocessedLine = tuple[str, int | None, str | None]
@@ -1581,7 +1581,7 @@ class FortranParser(ClassVisitor):
         if isinstance(files, dict):
             parsed_files = self._parse_named_project_sources(files, encoding=encoding)
         elif isinstance(files, str | Path):
-            paths = self._discover_project_paths(Path(files))
+            paths = list(expand_source_paths([files], FORTRAN_SOURCE_SUFFIXES))
             parsed_files = self._parse_project_files(paths, encoding=encoding)
             parsed_files = self._order_project_files(parsed_files)
         else:
@@ -2203,7 +2203,7 @@ class FortranParser(ClassVisitor):
             filename=filename,
             source=code,
             encoding=encoding,
-            format=self._source_form(filename),
+            format=fortran_source_form(code, filename),
             modules=units.modules,
             submodules=units.submodules,
             programs=units.programs,
@@ -2221,20 +2221,6 @@ class FortranParser(ClassVisitor):
                 filename=filename,
             )
         return parsed_file
-
-    @staticmethod
-    def _discover_project_paths(
-        root: Path,
-        extensions: tuple[str, ...] = _FORTRAN_SOURCE_SUFFIXES,
-    ) -> list[Path]:
-        """Return supported Fortran paths below one project directory.
-
-        Discovery only identifies files; it does not read or parse them. The
-        paths are sorted so unrelated files have deterministic order before
-        dependency analysis. For example, a directory containing ``b.f90``,
-        ``a.f90``, and ``notes.txt`` produces ``[a.f90, b.f90]``.
-        """
-        return sorted(path for path in root.rglob("*") if path.suffix.lower() in extensions)
 
     def _parse_project_files(
         self,
@@ -6035,18 +6021,6 @@ class FortranParser(ClassVisitor):
             filename=filename,
             code="PARSE_AMBIGUOUS_ENTRYPOINT",
         )
-
-    @staticmethod
-    def _source_form(filename: str | None) -> str:
-        """Infer fixed, modern, or unknown source form from a filename suffix."""
-        if not filename:
-            return "unknown"
-        ext = Path(filename).suffix.lower()
-        if ext in {".f", ".for", ".ftn", ".f77"}:
-            return "f77"
-        if ext in {".f90", ".f95", ".f03", ".f08"}:
-            return "modern"
-        return "unknown"
 
     @staticmethod
     def _infer_implicit_base_type(symbol_name: str) -> str:

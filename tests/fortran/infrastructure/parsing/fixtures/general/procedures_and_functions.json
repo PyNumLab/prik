@@ -2,7 +2,7 @@
   "filename": "procedures_and_functions.f90",
   "source": "module math_mod\ncontains\n  function norm2(x) result(res)\n    real(kind=8), intent(in) :: x(:)\n    real(kind=8) :: res\n  end function norm2\n\n  subroutine scale(a, x)\n    real(kind=8), intent(in) :: a\n    real(kind=8), intent(inout) :: x(:)\n  end subroutine scale\nend module math_mod\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [
     {
       "name": "math_mod",

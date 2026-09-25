@@ -14,6 +14,9 @@ import types
 import prik
 import pytest
 
+from prik.preprocessing import PreprocessResult
+from prik.preprocessing import source as preprocessing_source
+
 import prik.cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
 from prik.preprocessing import (
@@ -602,7 +605,8 @@ def test_prik_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path,
     upper_stub.write_text("def upper() -> None: ...\n", encoding="utf-8")
     (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
 
-    assert prik_cli._expand_pyi_paths([str(tmp_path), str(stub)]) == [stub]
+    # A directory yields every contract it holds, whatever the suffix's case, and each once.
+    assert prik_cli._expand_pyi_paths([str(tmp_path), str(stub)]) == [stub, upper_stub]
     assert prik_cli._expand_pyi_paths([str(stub)]) == [stub]
     assert prik_cli._expand_pyi_paths([str(upper_stub)]) == [upper_stub]
     assert prik_cli._expand_pyi_paths([str(tmp_path / "notes.txt")]) == []
@@ -618,30 +622,25 @@ def test_prik_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path,
             parser,
         )
 
-    class Recipe:
-        def to_dict(self):
-            return {"mode": "compiler"}
-
     def preprocess(path, *, language, config):
         assert path == source
         assert language == "fortran"
         assert config.compiler == "gfortran"
-        return "subroutine work()\nend subroutine work\n", Recipe()
+        return PreprocessResult(
+            source="subroutine work()\nend subroutine work\n",
+            recipe={"language": "fortran", "mode": "compiler"},
+        )
 
+    # A parse report reads each file through the shared reader, recipe included.
     source = tmp_path / "api.f90"
     source.write_text("subroutine ignored()\nend subroutine ignored\n", encoding="utf-8")
-    monkeypatch.setattr(prik_cli, "run_compiler_preprocessor_with_recipe", preprocess)
-    code, recipe = prik_cli._fortran_source_for_path(
-        source,
-        PreprocessingConfig(mode="compiler", compiler="gfortran"),
-    )
-    assert "subroutine work" in code
-    assert recipe == {"mode": "compiler"}
+    monkeypatch.setattr(preprocessing_source, "preprocess_source", preprocess)
     report = prik_cli._parse_report(
         [str(source)],
         PreprocessingConfig(mode="compiler", compiler="gfortran"),
     )
-    assert report[str(source)]["preprocessing_recipe"] == {"mode": "compiler"}
+    assert report[str(source)]["signatures"][0]["name"] == "work"
+    assert report[str(source)]["preprocessing_recipe"]["mode"] == "compiler"
 
 
 def test_cli_help_is_concise_and_points_to_detailed_help():
@@ -745,7 +744,6 @@ def test_fortran_parser_cli_helper_branches(tmp_path: Path, monkeypatch):
     source.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
     (source.parent / "notes.txt").write_text("ignore", encoding="utf-8")
 
-    assert fortran_parser_cli._collect_extensions(tmp_path) == [source]
     report = fortran_parser_cli._parse_paths([str(tmp_path)])
     assert list(report) == [str(source)]
     assert report[str(source)]["signatures"][0]["name"] == "work"
@@ -909,7 +907,6 @@ def test_prik_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
 
     source = tmp_path / "mini.f90"
     source.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    assert prik_cli._collect_extensions(tmp_path) == [source]
     assert prik_cli._expand_paths([str(tmp_path)]) == [source]
 
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)

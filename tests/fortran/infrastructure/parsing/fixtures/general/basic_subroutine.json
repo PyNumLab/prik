@@ -2,7 +2,7 @@
   "filename": "basic_subroutine.f90",
   "source": "module m1\ncontains\nsubroutine add1(n, x)\n  integer, intent(in) :: n\n  real(kind=8), intent(inout), dimension(n) :: x\nend subroutine add1\nend module m1\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [
     {
       "name": "m1",

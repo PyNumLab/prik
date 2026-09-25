@@ -19,6 +19,7 @@ from pathlib import Path
 
 from prik.parsers.fortran.models import FortranFile, FortranParseError, FortranProject
 from prik.parsers.fortran.parser import FortranParser
+from prik.preprocessing.languages import FORTRAN_SOURCE_SUFFIXES, expand_source_paths
 
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -56,24 +57,6 @@ def _to_dict_no_parent(obj):
     return obj
 
 
-def _collect_extensions(path: Path) -> list[Path]:
-    """Recursively collect Fortran source files under a directory."""
-    exts = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
-    return sorted(p for p in path.rglob("*") if p.suffix.lower() in exts)
-
-
-def _source_paths(paths: list[str]) -> list[Path]:
-    """Expand files and directories into the sorted Fortran sources they name."""
-    expanded: list[Path] = []
-    for raw in paths:
-        p = Path(raw)
-        if p.is_dir():
-            expanded.extend(_collect_extensions(p))
-        else:
-            expanded.append(p)
-    return sorted(set(expanded))
-
-
 def _parsed_project(paths: list[str]) -> FortranProject:
     """Parse every named source once and assemble them as one project.
 
@@ -82,7 +65,10 @@ def _parsed_project(paths: list[str]) -> FortranProject:
     """
     parser = FortranParser()
     return parser._assemble_project(
-        [parser.parse_file(p.read_text(encoding="utf-8"), filename=str(p)) for p in _source_paths(paths)]
+        [
+            parser.parse_file(p.read_text(encoding="utf-8"), filename=str(p))
+            for p in expand_source_paths(paths, FORTRAN_SOURCE_SUFFIXES)
+        ]
     )
 
 

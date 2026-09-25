@@ -4,8 +4,8 @@ from pathlib import Path
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.paths import FORTRAN_ROOT
 from prik.parsers.fortran.parser import parse_fortran_project
-from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.preprocessing import PreprocessingConfig
+from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
+from prik.preprocessing import PreprocessingConfig, read_fortran_source
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.policy.ownership import (
     NativeBarrierAction,
@@ -32,7 +32,7 @@ CALLS_NATIVE = (
 
 def _source_semantic_module(filename: str, *, module_name: str):
     source = CALLS_NATIVE / filename
-    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    parsed = parse_fortran_project({str(source): read_fortran_source(source, PreprocessingConfig()).source})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)

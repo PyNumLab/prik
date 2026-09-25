@@ -2,7 +2,7 @@
   "filename": "f77_subroutine.f",
   "source": "      subroutine daxpy(n,a,x,y)\n      integer n\n      double precision a,x(n),y(n)\n      do 10 i=1,n\n     1y(i)=y(i)+a*x(i)\n 10   continue\n      return\n      end\n",
   "encoding": "utf-8",
-  "format": "f77",
+  "format": "fixed",
   "modules": [],
   "submodules": [],
   "programs": [],

@@ -51,6 +51,23 @@ release tags add a leading `v` to the package version.
   `fortran_project_to_semantic_files` returns that conversion grouped by
   file. Both parse reports assemble their inputs first, so a kind one input
   file declares for another is resolved in the report.
+- Wrapper builds and `prik generate` turn Fortran sources into semantic IR
+  through one route (`prik.pipeline.sources`): both read sources through
+  `prik.preprocessing.read_fortran_source`, parse them as one
+  dependency-ordered project, measure compile-time values and type storage,
+  and apply `--export-symbols` the same way, so a generated contract
+  describes what a build of the same sources wraps. C builds, `prik generate`,
+  and C parse reports parse each input through
+  `prik.parsers.c.sources.parse_c_source`; `parse_c_report` takes a
+  `PreprocessingConfig`.
+- Source suffixes, a Fortran file's source form, and input expansion have one
+  owner, `prik.preprocessing.languages`. `.fpp` is a fixed-form Fortran source
+  everywhere, `FortranFile.format` reports the form the lexer read (`"fixed"`
+  or `"free"`), and every command keeps its inputs in the order named, with
+  each directory's sources in sorted order.
+- `c_project_to_semantic_module` is removed; convert C projects per file with
+  `c_project_to_semantic_modules`. The C `.pyi` fixtures record each fixture
+  project's implementation file.
 - Compile ordering follows `use` natures: a scope using the processor's
   module through `use, intrinsic` no longer waits on a project source of the
   same name, and `use` statements in internal procedures and `BLOCK`

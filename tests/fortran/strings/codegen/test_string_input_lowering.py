@@ -144,15 +144,14 @@ def _source_route_plan(tmp_path, text: str, module_name: str):
     from prik.parsers.fortran.parser import parse_fortran_project
     from prik.pipeline.build import (
         _apply_source_python_exports,
-        _fortran_source_for_pipeline,
         _merge_wrapper_modules,
     )
-    from prik.preprocessing import PreprocessingConfig
+    from prik.preprocessing import PreprocessingConfig, read_fortran_source
     from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 
     source = tmp_path / f"{module_name}.f90"
     source.write_text(text, encoding="utf-8")
-    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    parsed = parse_fortran_project({str(source): read_fortran_source(source, PreprocessingConfig()).source})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)

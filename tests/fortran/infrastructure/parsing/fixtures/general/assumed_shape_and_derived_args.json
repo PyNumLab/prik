@@ -2,7 +2,7 @@
   "filename": "assumed_shape_and_derived_args.f90",
   "source": "subroutine fill_grid(x)\n  integer, intent(inout) :: x(0:,0:)\nend subroutine fill_grid\n\nsubroutine update_plane(x)\n  real, intent(inout), dimension(0:, 1:n) :: x\n  integer, intent(in) :: n\nend subroutine update_plane\n\nsubroutine step(state)\n  type(sim_state), intent(inout) :: state\nend subroutine step\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [],
   "submodules": [],
   "programs": [],

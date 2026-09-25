@@ -1,40 +1,14 @@
 """Grammar-neutral lexical helpers for the Fortran parser.
 
-``detect_source_form`` selects fixed or free form before lexical preparation.
 ``split_csv`` separates only top-level comma lists after a caller has chosen
-the relevant Fortran construct. Neither function builds parser models or
-interprets declarations; ``lexer.py`` and ``parser.py`` own those next steps.
+the relevant Fortran construct. It builds no parser models and interprets no
+declarations; ``lexer.py`` and ``parser.py`` own those next steps. Which
+source form a file uses is ``prik.preprocessing.languages.fortran_source_form``.
 """
 
 from __future__ import annotations
 
 from prik.utilities.declaration_expressions import split_top_level_expression
-
-
-def detect_source_form(code: str, filename: str | None = None) -> str:
-    """Detect whether a source looks like fixed-form or free-form Fortran.
-
-    Resolution order:
-    - If ``filename`` is provided, decide based on its suffix (most reliable).
-    - Otherwise, use a small heuristic on the first ~20 lines to detect the
-      fixed-form continuation column (column 6).
-
-    Returns
-    -------
-    str
-        ``"fixed"`` or ``"free"``.
-    """
-    if filename:
-        lowered = filename.lower()
-        if lowered.endswith((".f", ".for", ".ftn", ".f77")):
-            return "fixed"
-        if lowered.endswith((".f90", ".f95", ".f03", ".f08")):
-            return "free"
-
-    for line in code.splitlines()[:20]:
-        if len(line) >= 6 and line[:5].strip() == "" and line[5:6].strip():
-            return "fixed"
-    return "free"
 
 
 def split_csv(text: str | None) -> list[str]:

@@ -30,9 +30,8 @@ from prik.parsers.fortran.intrinsic_modules import INTRINSIC_FORTRAN_MODULES
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.parsers.fortran.scope import file_defined_units, file_unit_requirements
+from prik.preprocessing.languages import FORTRAN_SOURCE_SUFFIXES, expand_source_paths
 
-# Suffixes a Fortran compiler accepts as free- or fixed-form source.
-_FORTRAN_SOURCE_SUFFIXES = frozenset({".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08", ".fpp"})
 # Raw text a preprocessor can change: a directive, or a Fortran ``include``,
 # which PRIK's preprocessing expands as well.
 _PREPROCESSED_TEXT = re.compile(r"^[ \t]*(?:#|include[ \t]*['\"])", re.IGNORECASE | re.MULTILINE)
@@ -249,9 +248,4 @@ def _raise_ambiguous(unit: str, user: Path, definers: Sequence[Path]) -> None:
 
 def _searched_files(search_dirs: Iterable[Path]) -> tuple[Path, ...]:
     """Return every Fortran source under ``search_dirs`` once, in a stable order."""
-    files: dict[Path, None] = {}
-    for directory in search_dirs:
-        for path in sorted(Path(directory).rglob("*")):
-            if path.suffix.casefold() in _FORTRAN_SOURCE_SUFFIXES and path.is_file():
-                files.setdefault(path.resolve(), None)
-    return tuple(files)
+    return tuple(dict.fromkeys(path.resolve() for path in expand_source_paths(search_dirs, FORTRAN_SOURCE_SUFFIXES)))

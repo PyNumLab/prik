@@ -12,6 +12,8 @@ import pytest
 
 from prik.cmake import cmake_module_dir
 from prik.parsers.fortran import FortranParseError
+from prik.pipeline.sources import fortran_sources_to_semantic_modules
+from prik.preprocessing import read_fortran_source
 import prik.cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
 from prik.preprocessing import (
@@ -232,7 +234,7 @@ end module direct_intrinsic_kind
         encoding="utf-8",
     )
 
-    project = prik_cli._parse_fortran_source_files([source], PreprocessingConfig())
+    project = fortran_sources_to_semantic_modules([source], PreprocessingConfig()).project
     parsed = project.files[0]
     module = parsed.modules[0]
 
@@ -265,10 +267,7 @@ end module records
         encoding="utf-8",
     )
 
-    project = prik_cli._parse_fortran_source_files(
-        [precision, records],
-        PreprocessingConfig(),
-    )
+    project = fortran_sources_to_semantic_modules([precision, records], PreprocessingConfig()).project
     record_file = next(parsed for parsed in project.files if parsed.filename == str(records))
 
     assert record_file.modules[0].derived_types[0].fields[0].kind == "8"
@@ -669,26 +668,16 @@ end module m
     assert "module m" in capsys.readouterr().out
 
 
-def test_prik_fortran_source_for_path_raw_uses_utf8_and_internal_recipe():
-    class RawPath:
-        def read_text(self, *, encoding):
-            assert encoding is not None
-            assert encoding.lower() == "utf-8"
-            return "subroutine raw()\nend subroutine raw\n"
+def test_a_fortran_source_read_as_written_carries_its_internal_recipe(tmp_path: Path):
+    """Without compiler preprocessing the text is read as UTF-8 and the macros are recorded."""
+    path = tmp_path / "raw.f90"
+    path.write_text("subroutine raw()\n  ! \u00e9\nend subroutine raw\n", encoding="utf-8")
 
-    class RawPreprocessing:
-        uses_compiler = False
+    text = read_fortran_source(path, PreprocessingConfig(defines=["FLAG=1"]))
 
-        def fortran_internal_recipe(self, received):
-            assert received is path
-            return {"mode": "internal"}
-
-    path = RawPath()
-
-    assert prik_cli._fortran_source_for_path(path, RawPreprocessing()) == (
-        "subroutine raw()\nend subroutine raw\n",
-        {"mode": "internal"},
-    )
+    assert text.source == path.read_text(encoding="utf-8")
+    assert text.recipe is not None and text.recipe["mode"] == "internal"
+    assert text.included_files == ()
 
 
 def test_prik_probe_subcommand_dispatches_one_flag_driven_probe(monkeypatch, capsys):

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import prik.cli as prik_cli
+from prik.parsers.c import sources as c_sources
 from tests.c._support.cli import (
     _install_main_parser,
     _main_args,
@@ -18,8 +19,6 @@ def test_prik_main_preserves_c_parse_dispatch_contract(monkeypatch):
     args = _main_args(language="requested", parse=True)
     _install_main_parser(monkeypatch, args)
     preprocessing = type("Preprocessing", (), {"include_dirs": ("include",)})()
-    parser_mode = object()
-    source_loader = object()
     parse_payload = {"parse": "payload"}
     calls = []
 
@@ -31,18 +30,8 @@ def test_prik_main_preserves_c_parse_dispatch_contract(monkeypatch):
     )
     monkeypatch.setattr(
         prik_cli,
-        "_c_parser_preprocessing_mode",
-        lambda active_preprocessing: calls.append(("mode", active_preprocessing)) or parser_mode,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_source_loader",
-        lambda active_preprocessing: calls.append(("loader", active_preprocessing)) or source_loader,
-    )
-    monkeypatch.setattr(
-        prik_cli,
         "parse_c_report",
-        lambda paths, **kwargs: calls.append(("parse", paths, kwargs)) or parse_payload,
+        lambda paths, active_preprocessing: calls.append(("parse", paths, active_preprocessing)) or parse_payload,
     )
     monkeypatch.setattr(
         prik_cli,
@@ -53,19 +42,8 @@ def test_prik_main_preserves_c_parse_dispatch_contract(monkeypatch):
     with pytest.raises(StopAfterDispatch):
         prik_cli.main()
 
-    assert calls == [
-        ("mode", preprocessing),
-        ("loader", preprocessing),
-        (
-            "parse",
-            args.paths,
-            {
-                "include_dirs": preprocessing.include_dirs,
-                "preprocessing": parser_mode,
-                "source_loader": source_loader,
-            },
-        ),
-    ]
+    # The C parse report receives the one preprocessing configuration the CLI built.
+    assert calls == [("parse", args.paths, preprocessing)]
 
 
 @pytest.mark.parametrize("stage", ["semantics", "pyi"])
@@ -92,10 +70,11 @@ def test_prik_main_accepts_each_non_parse_c_stage(monkeypatch, stage):
         prik_cli.main()
 
 
-def test_prik_parse_c_path_preserves_parser_and_preprocessing_arguments(
+def test_one_c_parse_preserves_parser_and_preprocessing_arguments(
     tmp_path: Path,
     monkeypatch,
 ):
+    """Every C route parses a path through parse_c_source, raw or compiler-preprocessed."""
     path = tmp_path / "api.h"
     raw_parsed = object()
     compiled_parsed = object()
@@ -109,7 +88,7 @@ def test_prik_parse_c_path_preserves_parser_and_preprocessing_arguments(
             return raw_parsed
 
     raw_config = prik_cli.PreprocessingConfig(include_dirs=["include"])
-    assert prik_cli._parse_c_path(RawParser(), path, raw_config) is raw_parsed
+    assert c_sources.parse_c_source(path, raw_config, parser=RawParser()) is raw_parsed
 
     class Recipe:
         def to_dict(self):
@@ -138,10 +117,10 @@ def test_prik_parse_c_path_preserves_parser_and_preprocessing_arguments(
         compiler="cc",
         include_dirs=["include"],
     )
-    monkeypatch.setattr(prik_cli, "run_compiler_preprocessor_with_recipe", preprocess)
-    monkeypatch.setattr(prik_cli, "attach_preprocessing_recipe", attach_recipe)
+    monkeypatch.setattr(c_sources, "run_compiler_preprocessor_with_recipe", preprocess)
+    monkeypatch.setattr(c_sources, "attach_preprocessing_recipe", attach_recipe)
 
-    assert prik_cli._parse_c_path(CompilerParser(), path, compiler_config) is compiled_parsed
+    assert c_sources.parse_c_source(path, compiler_config, parser=CompilerParser()) is compiled_parsed
 
 
 def test_prik_main_preserves_c_parse_error_rendering_contract(monkeypatch, capsys):
@@ -171,16 +150,6 @@ def test_prik_main_preserves_c_parse_error_rendering_contract(monkeypatch, capsy
         prik_cli.CParseError,
         "format_diagnostic",
         lambda self, *, color, debug: calls.append(("render", color, debug)) or "rendered diagnostic",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_parser_preprocessing_mode",
-        lambda active_preprocessing: "mode",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_source_loader",
-        lambda active_preprocessing: "loader",
     )
     monkeypatch.setattr(
         prik_cli,
@@ -214,16 +183,6 @@ def test_prik_main_reraises_c_parse_errors_for_debug_environment(monkeypatch):
         prik_cli,
         "_env_flag",
         lambda name: calls.append(name) or name == "C_PARSER_DEBUG",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_parser_preprocessing_mode",
-        lambda active_preprocessing: "mode",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_source_loader",
-        lambda active_preprocessing: "loader",
     )
     monkeypatch.setattr(
         prik_cli,

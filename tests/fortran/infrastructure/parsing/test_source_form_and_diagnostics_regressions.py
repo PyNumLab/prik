@@ -134,9 +134,6 @@ end subroutine global_step
         "subroutine global_step()",
         "end subroutine global_step",
     ]
-    assert parser._source_form("fixed.f") == "f77"
-    assert parser._source_form("modern.f90") == "modern"
-    assert parser._source_form(None) == "unknown"
 
     source_path = tmp_path / "path_input.f90"
     source_path.write_text("module from_path\nend module from_path\n", encoding="utf-8")

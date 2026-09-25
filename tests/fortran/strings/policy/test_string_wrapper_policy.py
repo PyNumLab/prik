@@ -5,8 +5,8 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.wrapper_build import wrapper_source
 from prik.parsers.fortran.parser import parse_fortran_project
-from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.preprocessing import PreprocessingConfig
+from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
+from prik.preprocessing import PreprocessingConfig, read_fortran_source
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
@@ -39,7 +39,7 @@ FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/contracts/fm
 
 def _source_semantic_module(filename: str, *, module_name: str):
     source = wrapper_source(filename)
-    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    parsed = parse_fortran_project({str(source): read_fortran_source(source, PreprocessingConfig()).source})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)
@@ -135,7 +135,7 @@ def _semantic_module_from_text(source_text: str, tmp_path: Path, *, module_name:
     """Complete policy for one inline Fortran source without a shared fixture."""
     source = tmp_path / f"{module_name}.f90"
     source.write_text(source_text, encoding="utf-8")
-    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    parsed = parse_fortran_project({str(source): read_fortran_source(source, PreprocessingConfig()).source})
     modules = fortran_project_to_semantic_modules(parsed)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)

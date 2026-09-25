@@ -27,11 +27,10 @@ from prik.pipeline.build import (
     NativeBuildPlan,
     _apply_source_python_exports,
     _build_generated_wrapper_extension,
-    _fortran_source_for_pipeline,
     _merge_wrapper_modules,
     _new_compiler,
 )
-from prik.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig, read_fortran_source
 from prik.pipeline.build import build_fortran_extension
 from prik.runtime.handles import AllocatableArray
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
@@ -349,10 +348,10 @@ def _build_source_wrapper_plan_and_import(
     )
     parsed = parse_fortran_project(
         {
-            str(source): _fortran_source_for_pipeline(
+            str(source): read_fortran_source(
                 source,
                 PreprocessingConfig(mode="compiler", compiler=_compiler()),
-            )
+            ).source
         }
     )
     modules = fortran_project_to_semantic_modules(parsed)

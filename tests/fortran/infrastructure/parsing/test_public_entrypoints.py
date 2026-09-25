@@ -91,9 +91,10 @@ end subroutine from_unknown
         parse_fortran_file(12345)
 
     assert parsed_from_path.filename == str(source_path)
-    assert parsed_from_path.format == "modern"
+    # A file records the source form its lexer read: by suffix, else by its text.
+    assert parsed_from_path.format == "free"
     assert parsed_from_path.procedures[0].name == "from_path"
-    assert parsed_unknown_suffix.format == "unknown"
+    assert parsed_unknown_suffix.format == "free"
 
 
 def test_public_instance_visitor_entrypoints_use_source_strings():

@@ -290,57 +290,6 @@ class CToIRConverter(ClassVisitor):
         self._classify_project_external_types(modules, project)
         return modules
 
-    def project_to_semantic_module(
-        self,
-        project: CProject,
-        *,
-        name: str = "c_project",
-    ) -> SemanticModule:
-        """Merge a project registry into one synthetic semantic module.
-
-        This compatibility entrypoint converts project-level registries without
-        file-module exposure processing.  It restores every converter registry
-        in ``finally`` so a reused converter has no project-state leakage.
-        """
-        previous = self.typedefs, self.structs, self.unions, self.enums, self.opaque_standard_types
-        self.typedefs = dict(project.typedefs)
-        self.structs = dict(project.structs)
-        self.unions = dict(project.unions)
-        self.enums = dict(project.enums)
-        self.opaque_standard_types = set()
-        try:
-            semantic_functions = [self.visit(function) for function in project.functions.values()]
-            semantic_variables = [
-                *[
-                    enumerator
-                    for enum in self._project_enum_declarations(project)
-                    for enumerator in self._enum_constants_for_enum(enum)
-                ],
-                *self._macro_constants_from_macros(list(project.macros.values())),
-                *[self.visit(variable) for variable in project.variables.values()],
-            ]
-            semantic_classes = [
-                *[self.visit(struct) for struct in project.structs.values()],
-                *[self.visit(union) for union in project.unions.values()],
-                *self._opaque_standard_type_classes(),
-            ]
-            return SemanticModule(
-                name=self._identifier(name),
-                functions=semantic_functions,
-                classes=semantic_classes,
-                variables=semantic_variables,
-                metadata=self._project_metadata(project),
-                origin=SemanticOrigin(
-                    source_language="c",
-                    native_name=name,
-                    native_scope=name,
-                    source_kind="project",
-                    metadata={"files": sorted(project.files)},
-                ),
-            )
-        finally:
-            self.typedefs, self.structs, self.unions, self.enums, self.opaque_standard_types = previous
-
     def _visit_CFile(
         self,
         c_file: CFile,
@@ -1518,26 +1467,6 @@ class CToIRConverter(ClassVisitor):
             "representation": "wrapped" if wrapped else "opaque",
         }
 
-    def _project_metadata(self, project: CProject) -> dict[str, Any]:
-        """Return stable language and aggregate-count metadata for a merged project module."""
-        metadata: dict[str, Any] = {
-            "source_language": "c",
-            "counts": {
-                "files": len(project.files),
-                "functions": len(project.functions),
-                "structs": len(project.structs),
-                "unions": len(project.unions),
-                "enums": len(self._project_enum_declarations(project)),
-                "typedefs": len(project.typedefs),
-                "macros": len(project.macros),
-                "includes": len(project.includes),
-                "diagnostics": len(project.diagnostics),
-            },
-        }
-        return metadata
-
-    # Type lookup, target facts, and naming helpers
-
     def _resolve_typedef(self, typedef: CTypedef, stack: tuple[str, ...] = ()) -> CTypedef | None:
         """Resolve typedef aliases through the current registry without following cycles.
 
@@ -1772,22 +1701,6 @@ class CToIRConverter(ClassVisitor):
         if enum.name and enum.name in self.enums:
             return self.enums[enum.name]
         return enum
-
-    @staticmethod
-    def _project_enum_declarations(project: CProject) -> list[CEnum]:
-        """Return project enums once, including anonymous declarations stored only on files."""
-        declarations = list(project.enums.values())
-        anonymous_ids: set[str | int] = {enum.anonymous_id or id(enum) for enum in declarations if enum.name is None}
-        for c_file in project.files.values():
-            for enum in c_file.enums:
-                if enum.name is not None:
-                    continue
-                identity: str | int = enum.anonymous_id or id(enum)
-                if identity in anonymous_ids:
-                    continue
-                anonymous_ids.add(identity)
-                declarations.append(enum)
-        return declarations
 
     def _typedef_alias_for_type(self, target: CType) -> str | None:
         """Find the first registry typedef whose target is the same parser type object."""
@@ -2162,31 +2075,12 @@ def _apply_c_export_selection(module: SemanticModule, selected: set[str]) -> Non
     module.variables = []
 
 
-def c_project_to_semantic_module(
-    project: CProject,
-    *,
-    name: str = "c_project",
-    standard_type_report: Any | None = None,
-) -> SemanticModule:
-    """Merge project registries into one synthetic semantic module.
-
-    Use this compatibility entrypoint when consumers require one aggregate
-    module rather than file-level ownership and external references.  ``name``
-    is normalized into a semantic identifier; the project itself is not mutated.
-    """
-    return CToIRConverter(standard_type_report=standard_type_report).project_to_semantic_module(
-        project,
-        name=name,
-    )
-
-
 __all__ = (
     "CToIRConverter",
     "c_file_to_semantic_module",
     "c_file_to_semantic_modules",
     "c_function_to_semantic_function",
     "c_parameter_to_semantic_argument",
-    "c_project_to_semantic_module",
     "c_project_to_semantic_modules",
     "c_struct_to_semantic_class",
     "c_type_to_semantic_type",
