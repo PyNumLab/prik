@@ -8,11 +8,12 @@ project can be supplied by its entry file alone.
 
 What a source defines is decided by its preprocessed text, never by its raw
 text: a macro or an ``#include`` can name a module, and a conditional block can
-remove one. Every searched source is therefore located by the ``module`` and
-``submodule`` statements its preprocessed text holds, and a source whose raw
-text has nothing a preprocessor could change is read as it stands, which spares
-the preprocessor for it. The sources located for a unit are then parsed, and
-their parsed units are the definition. A source is selected into the project
+remove one. Every searched source is therefore located by the program units
+the parser's own unit scanner finds in its preprocessed text -- the same first
+step parsing takes, with the same logical lines in either source form -- and a
+source whose raw text has nothing a preprocessor could change is read as it
+stands, which spares the preprocessor for it. The sources located for a unit
+are then parsed, and their parsed units are the definition. A source is selected into the project
 only once it is the unit's one definition, so reading a candidate never makes
 it part of the project.
 """
@@ -32,22 +33,6 @@ from prik.parsers.fortran.scope import file_defined_units, file_unit_requirement
 
 # Suffixes a Fortran compiler accepts as free- or fixed-form source.
 _FORTRAN_SOURCE_SUFFIXES = frozenset({".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08", ".fpp"})
-# A statement may follow another on one line after ``;``, and a name may
-# follow its keyword on a continuation line, so both are accepted. Locating a
-# source that turns out not to define a unit costs a parse, never a result.
-_STATEMENT_START = r"(?:^|;)[ \t]*"
-_CONTINUATION = r"(?:[ \t]*&[ \t]*(?:!.*)?\n[ \t]*&?)?"
-_MODULE_STATEMENT = re.compile(
-    _STATEMENT_START + r"module" + r"(?:[ \t]+|" + _CONTINUATION + r"[ \t]*)"
-    r"(?!(?:procedure|function|subroutine|pure|impure|elemental|recursive|non_recursive)\b)"
-    r"(?P<name>[a-z][a-z0-9_]*)\b(?![ \t]*[(=%])",
-    re.IGNORECASE | re.MULTILINE,
-)
-_SUBMODULE_STATEMENT = re.compile(
-    _STATEMENT_START + r"submodule[ \t]*" + _CONTINUATION + r"\([ \t]*(?P<ancestor>[a-z][a-z0-9_]*)[ \t]*"
-    r"(?::[ \t]*[a-z][a-z0-9_]*[ \t]*)?\)[ \t]*" + _CONTINUATION + r"[ \t]*(?P<name>[a-z][a-z0-9_]*)",
-    re.IGNORECASE | re.MULTILINE,
-)
 # Raw text a preprocessor can change: a directive, or a Fortran ``include``,
 # which PRIK's preprocessing expands as well.
 _PREPROCESSED_TEXT = re.compile(r"^[ \t]*(?:#|include[ \t]*['\"])", re.IGNORECASE | re.MULTILINE)
@@ -167,7 +152,7 @@ class _SearchedSources:
 
     def raw_definers(self, unit: str) -> list[Path]:
         """Return the unreadable sources whose raw text shows ``unit``, to explain a missing one."""
-        return [path for path in self.unreadable if unit in _statement_units(path.read_text(errors="replace"))]
+        return [path for path in self.unreadable if unit in self._scan(path, path.read_text(errors="replace"))]
 
     def _locate(self) -> dict[Path, frozenset[str]]:
         """Return the units each searched source's preprocessed text states, computed once."""
@@ -179,7 +164,7 @@ class _SearchedSources:
                 if self._command_line_macros or _PREPROCESSED_TEXT.search(raw):
                     opaque.append(path)
                 else:
-                    located[path] = _statement_units(raw)
+                    located[path] = self._scan(path, raw)
             with ThreadPoolExecutor(max_workers=_LOCATE_WORKERS) as pool:
                 for path, text in zip(opaque, pool.map(self._preprocessed_text, opaque), strict=True):
                     if isinstance(text, Exception):
@@ -187,11 +172,19 @@ class _SearchedSources:
                         # nothing; it is named if a needed unit stays missing.
                         self.unreadable[path] = text
                         continue
-                    located[path] = _statement_units(text)
+                    located[path] = self._scan(path, text)
                     if located[path]:
                         self._texts[path] = text
             self._located = located
         return self._located
+
+    def _scan(self, path: Path, text: str) -> frozenset[str]:
+        """Return the units one source's text opens; text the parser rejects opens none."""
+        try:
+            return self._parser.defined_units(text, str(path))
+        except FortranParseError as error:
+            self.unreadable.setdefault(path, error)
+            return frozenset()
 
     def _preprocessed_text(self, path: Path) -> str | Exception:
         try:
@@ -262,12 +255,3 @@ def _searched_files(search_dirs: Iterable[Path]) -> tuple[Path, ...]:
             if path.suffix.casefold() in _FORTRAN_SOURCE_SUFFIXES and path.is_file():
                 files.setdefault(path.resolve(), None)
     return tuple(files)
-
-
-def _statement_units(text: str) -> frozenset[str]:
-    """Return the modules and ``ancestor:name`` submodules the statements of ``text`` open."""
-    units = {match.group("name").casefold() for match in _MODULE_STATEMENT.finditer(text)}
-    units.update(
-        f"{match.group('ancestor')}:{match.group('name')}".casefold() for match in _SUBMODULE_STATEMENT.finditer(text)
-    )
-    return frozenset(units)

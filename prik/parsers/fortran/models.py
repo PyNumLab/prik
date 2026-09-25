@@ -475,6 +475,24 @@ class FortranModule:
     private_symbols: list[str] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
 
+    @property
+    def separate_procedures(self) -> list[FortranProcedureSignature]:
+        """Return the separate module procedures this module declares.
+
+        A ``module function`` or ``module subroutine`` body in one of the
+        module's own interface blocks declares a procedure of this module that
+        a submodule implements. It is as much the module's procedure as one it
+        contains, but its declaration lives with the interface block rather
+        than in ``procedures``, which holds the bodies the module contains.
+        """
+        return [
+            signature
+            for interface in self.interfaces
+            if interface.name is None and not interface.abstract and interface.declaring_scope_kind == "module"
+            for signature in interface.procedures
+            if "module" in signature.attributes
+        ]
+
 
 @dataclass
 class FortranSubmodule:
@@ -614,6 +632,12 @@ class FortranProject:
     programs: dict[str, FortranProgram] = field(default_factory=dict)
 
     procedures: dict[str, FortranProcedureSignature] = field(default_factory=dict)
+    """Procedures by ``owner.name`` and, first seen, by bare name.
+
+    A module's entries include its separate module procedures, keyed by the
+    module, as well as those it contains; a submodule's entries are the bodies
+    it contains, keyed by its ``ancestor:name``.
+    """
 
     derived_types: dict[str, FortranDerivedType] = field(default_factory=dict)
 

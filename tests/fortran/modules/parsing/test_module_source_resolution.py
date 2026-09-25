@@ -250,3 +250,40 @@ def test_submodules_implementing_a_used_module_are_selected_with_it(tmp_path: Pa
 
     assert set(resolved) == {api.resolve(), impl.resolve(), leaf.resolve(), entry}
     assert resolved.index(api.resolve()) < resolved.index(impl.resolve()) < resolved.index(leaf.resolve())
+
+
+@pytest.mark.parametrize(
+    ("relative", "text", "unit"),
+    [
+        pytest.param(
+            "lib/dep.f",
+            "      module\n     &fixed_dep\n      integer x\n      end module fixed_dep\n",
+            "fixed_dep",
+            id="fixed-form-column-six-continuation",
+        ),
+        pytest.param(
+            "lib/dep.f90",
+            "modu&\n&le split_dep\n  integer :: x\nend module split_dep\n",
+            "split_dep",
+            id="free-form-keyword-split-across-lines",
+        ),
+    ],
+)
+def test_a_module_statement_continued_across_lines_is_located(tmp_path: Path, relative: str, text: str, unit: str):
+    """Sources are located by the parser's own logical lines, so a continued ``module`` statement counts."""
+    definition = _write(tmp_path, relative, text)
+    entry = _write(tmp_path, "app.f90", f"module app\n  use {unit}\nend module app\n")
+
+    assert _resolve([entry], [tmp_path / "lib"]) == (definition.resolve(), entry)
+
+
+@requires_gfortran
+def test_a_preprocessed_fixed_form_submodule_header_continued_across_lines_is_located(tmp_path: Path):
+    """A ``.F`` source is preprocessed and still read in fixed form, continuation included."""
+    base = _write(tmp_path, "lib/base.F", "#define UNUSED 1\n      module base\n      end module base\n")
+    child = _write(
+        tmp_path, "lib/child.F", "#define UNUSED 1\n      submodule\n     &(base) child\n      end submodule child\n"
+    )
+    leaf = _write(tmp_path, "leaf.f90", "submodule (base:child) leaf\nend submodule leaf\n")
+
+    assert _preprocessed_resolve([leaf], [tmp_path / "lib"]) == (base.resolve(), child.resolve(), leaf)

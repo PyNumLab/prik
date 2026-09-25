@@ -12,8 +12,9 @@ release tags add a leading `v` to the package version.
   sources, PRIK follows each `use` to the source under those directories that
   defines the module and reads it too, so a multi-module library such as Open
   MPI's `mpi_f08` is supplied by its entry file. What a source defines is
-  read from its preprocessed text, so a module a macro or an `#include`
-  names is found, and a second definition only preprocessing reveals makes
+  read from its preprocessed text by the parser's own unit scanner, so a
+  module a macro or an `#include` names is found, a `module` or `submodule`
+  statement continued across lines in either source form is found, and a second definition only preprocessing reveals makes
   the module ambiguous. A needed module with no source, or with several, is
   an error. Discovery honors `use, intrinsic` and `use, non_intrinsic` for
   each scope separately, and an unstated `use` of an intrinsic module's name
@@ -29,9 +30,13 @@ release tags add a leading `v` to the package version.
   from a processor module, such as `ieee_arithmetic`'s, is left to the
   processor rather than read from a parsed module of that name.
 - A separate module procedure declared by a `module function` or
-  `module subroutine` interface body is wrapped as its module's own
-  procedure, under ordinary accessibility; it previously needed an explicit
-  `public` statement naming it.
+  `module subroutine` interface body is its module's own procedure
+  everywhere: it is wrapped under ordinary accessibility (it previously
+  needed an explicit `public` statement naming it), a module extending a
+  generic inherits it as a specific, a declaration another module writes
+  resolves it as a specification function, it is indexed in
+  `FortranProject.procedures`, and its kinds resolve through its module's
+  parameters when a single file is parsed.
 - Fortran submodules are identified by `ancestor:name` throughout parsing,
   project ordering, compile scheduling, and kind resolution, so two modules
   may each have a submodule of the same name. `FortranProject.submodules` and

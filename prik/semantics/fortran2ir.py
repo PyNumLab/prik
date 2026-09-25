@@ -1278,15 +1278,15 @@ class FortranToIRConverter(ClassVisitor):
                 )
         return prototypes
 
-    @staticmethod
-    def _module_declaration_call_names(module: FortranModule) -> set[str]:
+    @classmethod
+    def _module_declaration_call_names(cls, module: FortranModule) -> set[str]:
         """Collect bare call names appearing in module-owned declaration shapes."""
         variables = [
             *getattr(module, "variables", ()),
             *(field for derived in module.derived_types for field in derived.fields),
             *(
                 variable
-                for procedure in module.procedures
+                for procedure in cls._module_procedures(module)
                 for variable in (*procedure.arguments, procedure.result)
                 if variable is not None
             ),
@@ -1535,10 +1535,7 @@ class FortranToIRConverter(ClassVisitor):
         context = self._module_derived_type_context(module, index)
         self._record_abstract_type_names(module)
         callback_interfaces = self._module_callback_interfaces(index, module)
-        source_procedures = [
-            *module.procedures,
-            *self._module_explicit_interface_procedures(module),
-        ]
+        source_procedures = list(self._module_procedures(module))
         semantic_functions = [
             self.visit(
                 proc,
@@ -2428,20 +2425,38 @@ class FortranToIRConverter(ClassVisitor):
             if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
         }
 
-    @staticmethod
-    def _known_procedures_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
+    @classmethod
+    def _known_procedures_from_file(cls, parsed_file: FortranFile) -> set[tuple[str, str]]:
         """Collect module-qualified procedures declared by one parsed file."""
-        return {(module.name, procedure.name) for module in parsed_file.modules for procedure in module.procedures}
+        return {
+            (module.name, procedure.name)
+            for module in parsed_file.modules
+            for procedure in cls._module_procedures(module)
+        }
 
-    @staticmethod
-    def _known_procedures_from_project(project: FortranProject) -> set[tuple[str, str]]:
+    @classmethod
+    def _known_procedures_from_project(cls, project: FortranProject) -> set[tuple[str, str]]:
         """Collect module-qualified procedures known to one parsed project."""
-        return {(module.name, procedure.name) for module in project.modules.values() for procedure in module.procedures}
+        return {
+            (module.name, procedure.name)
+            for module in project.modules.values()
+            for procedure in cls._module_procedures(module)
+        }
 
-    @staticmethod
-    def _module_explicit_interface_procedures(
-        module: FortranModule,
-    ) -> list[FortranProcedureSignature]:
+    @classmethod
+    def _module_procedures(cls, module: FortranModule) -> tuple[FortranProcedureSignature, ...]:
+        """Return every procedure one module declares, which is what a ``use`` of it can call.
+
+        That is each procedure the module contains, each separate module
+        procedure an interface body declares, and each external procedure an
+        explicit public list publishes from an unnamed interface block. Every
+        reading of "this module's procedures" -- wrapping, generic specifics a
+        later module inherits, and callables declarations name -- is this one.
+        """
+        return (*module.procedures, *cls._module_interface_procedures(module))
+
+    @classmethod
+    def _module_interface_procedures(cls, module: FortranModule) -> list[FortranProcedureSignature]:
         """Return the module procedures unnamed interface blocks declare.
 
         A ``module function`` or ``module subroutine`` body declares a separate
@@ -2453,16 +2468,17 @@ class FortranToIRConverter(ClassVisitor):
         matching implementation is parsed.
         """
         public_names = {name.casefold() for name in module.public_symbols}
+        separate = {id(signature) for signature in module.separate_procedures}
         declared_names = {procedure.name.casefold() for procedure in module.procedures}
         procedures: list[FortranProcedureSignature] = []
-        for interface in module.interfaces:
+        for interface in cls._module_interfaces(module):
             if interface.name is not None or interface.abstract:
                 continue
             for procedure in interface.procedures:
                 name = procedure.name.casefold()
                 if name in declared_names:
                     continue
-                if name not in public_names and "module" not in procedure.attributes:
+                if name not in public_names and id(procedure) not in separate:
                     continue
                 declared_names.add(name)
                 procedures.append(procedure)
@@ -3864,7 +3880,7 @@ class FortranToIRConverter(ClassVisitor):
         inherited: list[_SpecificProcedure] = []
         lookup: dict[tuple[str, str], SemanticFunction] = {}
         for source_module, source_generic in self._imported_generic_interfaces(module, generic_name, modules):
-            signatures = {procedure.name.casefold(): procedure for procedure in source_module.procedures}
+            signatures = {procedure.name.casefold(): procedure for procedure in self._module_procedures(source_module)}
             source_context = self._module_derived_type_context(source_module, modules)
             names = source_generic.specific_procedures or [item.name for item in source_generic.procedures]
             for name in names:

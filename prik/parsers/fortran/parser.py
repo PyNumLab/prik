@@ -1510,6 +1510,24 @@ class FortranParser(ClassVisitor):
         """Create the stateless structural scanner used by parser entrypoints."""
         self._source_unit_scanner = _SourceUnitScanner()
 
+    def defined_units(self, code: str, filename: str | None = None) -> frozenset[str]:
+        """Return the modules and submodules one source opens, without visiting them.
+
+        This is the first step of :meth:`parse_file`: the source is read by
+        the parser's own logical-line rules, including both source forms'
+        continuation, and sliced into its program units. A module is named by
+        itself and a submodule by ``ancestor:name``, case-folded. A source the
+        slicer rejects raises :class:`FortranParseError`, as parsing it would.
+        """
+        _lines, _root, units = self._helper_prepare_source_units(code, filename)
+        return frozenset(
+            str(owner).casefold()
+            for unit in units
+            if unit.kind in {"module", "submodule"}
+            for owner in (self._module_like_unit_owner(unit),)
+            if owner
+        )
+
     def parse_file(
         self,
         source_or_path: str | Path,
@@ -2202,10 +2220,16 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _helper_file_procedures(units: _ParsedFileUnits) -> tuple[FortranProcedureSignature, ...]:
-        """Return file procedures in their established resolution order."""
+        """Return file procedures in their established resolution order.
+
+        A separate module procedure's interface body is host associated with
+        its module, as a contained procedure is, so its kinds resolve against
+        the module's parameters too.
+        """
         procedures = list(units.procedures)
         for module in units.modules:
             procedures.extend(module.procedures)
+            procedures.extend(module.separate_procedures)
         for submodule in units.submodules:
             procedures.extend(submodule.procedures)
         return tuple(procedures)
@@ -2440,6 +2464,16 @@ class FortranParser(ClassVisitor):
         self._insert_unique_scope_symbol(project.modules, module_key, module, label="project module scope")
         project.dependencies[module_key] = source_module_dependencies([module])
         self._helper_index_project_owner_members(project, module, module_key)
+        # A separate module procedure is the module's procedure though an
+        # interface body declares it, so it is indexed as the module's own.
+        for procedure in module.separate_procedures:
+            self._insert_unique_scope_symbol(
+                project.procedures,
+                f"{module_key}.{procedure.name.lower()}",
+                procedure,
+                label="project procedure scope",
+            )
+            project.procedures.setdefault(procedure.name.lower(), procedure)
 
     def _helper_index_project_submodule(self, project: FortranProject, submodule: FortranSubmodule) -> None:
         """Index one submodule, its dependencies, and its public models."""
