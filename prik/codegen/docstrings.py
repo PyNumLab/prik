@@ -13,6 +13,7 @@ from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
 from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ArrayPythonLayout,
+    ScalarActualMode,
     ClassConstructorKind,
     EntrypointOptionalityAction,
     ModuleGetterAction,
@@ -71,6 +72,22 @@ _ARRAY_ELEMENT_TYPES = {
 _LOGICAL_ARRAY_NOTE = "Fortran logical elements; compare with .astype(bool) rather than to 1."
 
 _UNKNOWN_EXTENTS = frozenset({"", ":", "*", ".."})
+
+# A module getter that may find no storage reports ``None`` for it.
+_NULLABLE_MODULE_GETTERS = frozenset(
+    {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
+)
+
+# A scalar view reads and writes the module's own storage rather than a copy.
+_MODULE_SCALAR_VIEW_NOTES = {
+    ModuleGetterAction.NATIVE_SCALAR_VIEW: "Live view of the module's storage; writing through it updates the module.",
+    ModuleGetterAction.NATIVE_CHARACTER_VIEW: (
+        "Live view of the module's fixed-width character bytes; writing through it updates the module."
+    ),
+    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: (
+        "Live read-only view of the current storage, or None when it holds none."
+    ),
+}
 
 
 class WrapperDocstringBuilder:
@@ -488,8 +505,24 @@ class WrapperDocstringBuilder:
         comes directly from the completed variable plan.
         """
         name = variable.owner_path.rsplit(".", 1)[-1]
-        nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
-        lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
+        action = variable.binding.getter_action
+        nullable = action in _NULLABLE_MODULE_GETTERS
+        view_note = _MODULE_SCALAR_VIEW_NOTES.get(action)
+        if view_note is not None:
+            # A scalar view is a rank-zero array over the module's storage.
+            type_name = variable.semantic_type_name
+            element = (
+                "bytes" if type_name == "String" else _ARRAY_ELEMENT_TYPES.get(type_name, self._base_type(variable))
+            )
+            lines = [
+                f"{name} : ndarray[{element}]" + (" or None" if nullable else ""),
+                "    Rank: 0",
+                f"    {view_note}",
+            ]
+            if type_name in _ARRAY_ELEMENT_TYPES:
+                lines.append(f"    {_LOGICAL_ARRAY_NOTE}")
+        else:
+            lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
         lines.extend(self._logical_array_lines(variable))
         if variable.binding.getter_action in {
@@ -815,13 +848,24 @@ class WrapperDocstringBuilder:
             lines.append(f"    {state} state remains inside the returned handle.")
         if isinstance(output, ArgumentTransferPlan):
             lines.extend(self._ownership_lines(output.ownership_owner))
-            if output.transfer_mode is TransferMode.COPY_RETURN:
-                lines.append("    Detached replacement; the original Python value is unchanged.")
+            lines.extend(self._replacement_lines(output))
         elif output.datatype_family is DatatypeFamily.DERIVED or output.array is not None:
             lines.extend(self._ownership_lines(output.ownership_owner))
         if nullable and output.native_array_handle is None:
             lines.append("    May be None.")
         return tuple(lines)
+
+    @staticmethod
+    def _replacement_lines(output: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Say whether a returned replacement also updated the caller's storage."""
+        if output.transfer_mode is not TransferMode.COPY_RETURN:
+            return ()
+        if output.binding.scalar_actual_mode in {
+            ScalarActualMode.NUMERIC_REFERENCE,
+            ScalarActualMode.CHARACTER_REFERENCE,
+        }:
+            return ("    Replacement value; a rank-zero array argument is also updated in place.",)
+        return ("    Detached replacement; the original Python value is unchanged.",)
 
     @staticmethod
     def _optional_lines(argument: ArgumentTransferPlan) -> tuple[str, ...]:

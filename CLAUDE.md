@@ -169,6 +169,11 @@ table and markers (`fortran_end_to_end`, `real_library`, `toolchain_smoke`, `pro
 - Update `CHANGELOG.md` under **Unreleased** for any user/maintainer-visible
   change (public APIs, features, examples, CI/build workflow, benchmark
   methodology, documented limitations). Skip it for invisible internal cleanup.
+- One question, one path: when two entry points (single file vs. project,
+  library vs. CLI, discovery vs. compile ordering) answer the same question,
+  they call the same owner and differ only in inputs. Never add a second
+  list, regex, or route that re-derives an existing owner's answer; merge
+  duplicates into one owner and test both entry points against each other.
 - When asked to move/change an API, import path, command, or behavior, remove
   the old path — do not add compatibility shims, aliases, or fallbacks unless
   explicitly asked to keep them.

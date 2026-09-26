@@ -61,7 +61,7 @@ def test_a_multi_hop_publication_resolves_to_the_declaring_variable(built):
 def test_a_character_scalar_and_array_publish_one_storage(built):
     """String storage is shared the same way a scalar is."""
     built.store_mod.label = "second  "
-    assert built.facade_mod.label == "second  "
+    assert built.facade_mod.label[()] == b"second  "
 
     built.store_mod.tags[0] = b"zz  "
     assert bytes(built.facade_mod.tags[0]) == b"zz  "

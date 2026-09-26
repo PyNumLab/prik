@@ -50,8 +50,9 @@ def update(value: Int64) -> Returns["value", Int64]: ...
     assert "void update(long long * value);" in binding
     assert "long long bound_value;" in binding
     assert "bound_value = (long long)bound_value_converted;" in binding
-    assert "update(&bound_value);" in binding
-    assert "int64_t bound_value_contract = (int64_t)bound_value;" in binding
+    assert "bound_value_storage = &bound_value;" in binding
+    assert "update(bound_value_storage);" in binding
+    assert "int64_t bound_value_contract = (int64_t)*bound_value_storage;" in binding
     assert "prik_int64_to_numpy(&bound_value_contract)" in binding
 
 

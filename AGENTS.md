@@ -36,6 +36,21 @@ Ignore:
 - *.json
 
 Do not spend context window or analysis on those files unless explicitly requested.
+Keep one path for one question. When two entry points answer the same
+question -- one file and a project, a library route and its CLI wrapper, source
+discovery and compile ordering, a source build and a contract replay -- they
+must call the same owner and differ only in the inputs they pass, such as which
+files or modules are in scope. Do not write a second loop, list, inventory,
+regex, lexer, or conversion route that re-derives what an existing owner
+decides, even as a fast path: a fast path may narrow what the owner reads, but
+the owner's answer stays the only answer. Before adding a helper that
+enumerates or classifies something -- a module's procedures, a file's program
+units, a `use` nature, the intrinsic modules, Fortran source suffixes, a
+submodule's identity -- find the existing owner and extend it. When two copies
+are found, merge them into one owner instead of fixing only the copy that
+failed, and prove the merge with a test that runs both entry points on one
+input and compares their results.
+
 When asked to change or move an API, import path, command, feature, or behavior, do not add or keep compatibility layers, aliases, shims, fallback paths, or legacy entrypoints unless explicitly requested. A requested change means the old behavior should be removed.
 When updating tests, remove obsolete tests that only assert removed/old implementation behavior does not exist. Do not preserve rejection or absence checks for API/features that were intentionally removed unless explicitly requested.
 Do not add tests whose purpose is only to prove that removed or nonexistent features are rejected. Test supported behavior and meaningful validation boundaries instead. For example, if `ArrayCategory` is removed, delete its tests; do not add a test asserting that `ArrayCategory` now fails.
@@ -239,6 +254,9 @@ compilation should use the focused owners under
 `tests/fortran/infrastructure/building/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
+Run ad-hoc compiler and build commands outside the repository root, for example in a temporary
+directory, so no `.mod`, object, or library file lands there; the test session refuses to start
+while native build artifacts sit in the root, since a stale one silently shadows a later build.
 Run pytest with at most `-n 2`. Never `-n 4`, `-n 8`, or `-n auto`. The development machine has 12 cores but only about 7 GB of RAM, and every xdist worker loads NumPy while the Fortran end-to-end tests fork gfortran and cc per test on top of `pytest-monitor` profiling each one. Higher parallelism exhausts memory and thrashes swap, which has hard-frozen the machine and forced a reboot. Prefer the narrowest owning test path over a full suite run, and commit verified work promptly rather than batching it behind a long run.
 Do not run LAPACK wrapper tests locally unless the user explicitly asks for them. Local verification may run everything else, including BLAS-only real-library tests; leave LAPACK coverage to GitHub Actions by default.
 Do not run the full coverage workflow for routine changes. Run focused tests plus the required static-analysis suite. Reserve the complete CI-style coverage workflow for explicit pre-merge or pull-request verification, or when the user specifically requests it.

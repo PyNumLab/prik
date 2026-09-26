@@ -1080,6 +1080,12 @@ class PyiPrinter(ClassVisitor):
     ) -> str:
         """Emit typed name syntax."""
         semantic_type = self._without_constant_constraint(arg.semantic_type)
+        if arg.semantic_type.metadata.get("native_storage"):
+            semantic_type = deepcopy(semantic_type)
+            semantic_type.storage = SemanticStorageContract(
+                kind="array",
+                array=SemanticArrayContract(rank=0, category=SCALAR_STORAGE_CATEGORY),
+            )
         type_text = self._visit(semantic_type, context)
         annotation_metadata = []
         if original_name is not None:
@@ -1303,7 +1309,15 @@ class PyiPrinter(ClassVisitor):
             return "" if generic_name == public_name else f', generic="{generic_name}"'
         if procedure.metadata.get(OVERLOAD_KIND_METADATA) not in {"operator", "comparison"}:
             return ""
+        # A dotted spelling names the same operator as its symbol, but a
+        # compiler matches `use, only:` against the spelling the module wrote.
         if re.sub(r"\s+", "", generic_name).casefold() not in {
+            "operator(.eq.)",
+            "operator(.ne.)",
+            "operator(.lt.)",
+            "operator(.le.)",
+            "operator(.gt.)",
+            "operator(.ge.)",
             "operator(.eqv.)",
             "operator(.neqv.)",
         }:
@@ -1970,7 +1984,9 @@ class PyiPrinter(ClassVisitor):
             and any(str(attribute).casefold() == "pure" for attribute in func.metadata.get("fortran_attributes", ()))
         ):
             decorators.append(f"{indent}@{context.contract('pure')}")
-        if not func.metadata.get(OVERLOAD_TARGET_METADATA) and self._requires_native_call(func):
+        overload_target = func.metadata.get(OVERLOAD_TARGET_METADATA)
+        is_specific_declaration = not overload_target or str(func.name).casefold() == str(overload_target).casefold()
+        if is_specific_declaration and self._requires_native_call(func):
             decorators.append(
                 f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func), func)}"
             )

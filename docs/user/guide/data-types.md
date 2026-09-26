@@ -274,10 +274,13 @@ their own default constructors, described in their later user-guide pages.
 
 ## Important Rules
 
-- Use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.) for
-  numeric scalar arguments and expect the matching NumPy scalar result.
+- Use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.) or matching
+  rank-zero NumPy arrays for numeric scalar arguments. Scalar results use the
+  matching NumPy scalar type.
   Boolean arguments accept `bool` or `np.bool_`, and Boolean scalar results
-  are Python `bool` values.
+  are Python `bool` values. A logical dummy also accepts rank-zero storage with
+  the dtype its arrays use: `bool` for `logical(c_bool)` and 1-byte kinds, and
+  `int16`, `int32`, or `int64` for wider kinds.
 - Plain Python `float` and `int` values raise `TypeError` for numeric scalar
   arguments.
 - PRIK resolves kinds using the selected compiler (`gfortran` by default).
@@ -293,10 +296,13 @@ A bare primitive type represents a Python-visible scalar:
 def double(value: Float64) -> Float64: ...
 ```
 
-The wrapper requires a `numpy.float64` input and returns a `numpy.float64`.
+The wrapper accepts a `numpy.float64` scalar or a rank-zero `float64` array
+and returns a `numpy.float64`. For a reference dummy, the array supplies its
+own storage; a scalar uses call-local storage. A `VALUE` dummy, or an argument
+annotated `Immutable`, receives a copy of the value from either actual.
 Other primitive result types follow the mapping table above.
 
-`T[()]` represents rank-zero NumPy storage: arguments accept a 0-D NumPy
+`T[()]` represents rank-zero NumPy storage: arguments require a 0-D NumPy
 array, and results return a 0-D NumPy array. Raw integer addresses are an
 advanced boundary covered later in the guide. A bare numeric `T` result is the
 NumPy scalar listed in the mapping table; Boolean scalar results are Python

@@ -14,7 +14,7 @@ class Visible_T:
     @bind("Visible_T.from")
     def from_(self) -> Int32: ...
 
-value: Int32
+value: Int32[()]
 
 @bind("lambda")
 @native_call([Addr(Arg(0))])

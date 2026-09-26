@@ -1,10 +1,13 @@
 """Project-level registries, dependencies, and scope model behavior."""
 
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.scope import ScopeUses
 from prik.parsers.fortran.parser import FortranParser
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 
 def test_module_visibility_public_and_private_spec_lines_are_applied():
@@ -53,6 +56,78 @@ end module constants
     assert module.private_symbols == ["epsilon"]
 
 
+def test_separate_parameter_statement_and_bind_c_module_storage_are_preserved():
+    module = parse_fortran_file(
+        """
+module native_constants
+  integer :: limit
+  parameter (limit = 4)
+  integer, bind(c) :: addressable
+end module native_constants
+"""
+    ).modules[0]
+
+    variables = {variable.name: variable for variable in module.variables}
+    assert variables["limit"].is_parameter
+    assert variables["limit"].value == "4"
+    assert not variables["addressable"].is_parameter
+    assert variables["addressable"]._fortran_bind_c
+
+
+@pytest.mark.parametrize(
+    ("implicit", "expected"),
+    [
+        pytest.param("", {"pi": "Float32", "n": "Int32"}, id="default-letter-rules"),
+        pytest.param(
+            "implicit double precision (a-h,o-z), integer(kind=8) (n)",
+            {"pi": "Float64", "n": "Int64"},
+            id="implicit-statement-mapping",
+        ),
+    ],
+)
+def test_separate_parameter_statement_types_an_undeclared_name_by_module_implicit_rules(implicit, expected):
+    module = parse_fortran_file(
+        f"""
+module legacy_constants
+  {implicit}
+  parameter (pi = 3.14159265358979d0, n = 4)
+end module legacy_constants
+"""
+    ).modules[0]
+
+    semantic = fortran_module_to_semantic_module(module)
+    assert {variable.name: variable.semantic_type.name for variable in semantic.variables} == expected
+    assert all(variable.is_parameter for variable in module.variables)
+
+
+@pytest.mark.parametrize("statement", ["implicit none", "implicit none (type)", "implicit none (type, external)"])
+def test_separate_parameter_statement_under_implicit_none_requires_a_declaration(statement: str):
+    with pytest.raises(FortranParseError, match="implicit none is active") as error:
+        parse_fortran_file(
+            f"""
+module strict_constants
+  {statement}
+  parameter (undeclared = 3)
+end module strict_constants
+"""
+        )
+
+    assert error.value.code == "PARSE_UNKNOWN_PARAMETER_TYPE"
+
+
+def test_implicit_none_external_keeps_implicit_typing_for_a_separate_parameter():
+    module = parse_fortran_file(
+        """
+module external_only
+  implicit none (external)
+  parameter (n = 4)
+end module external_only
+"""
+    ).modules[0]
+
+    assert fortran_module_to_semantic_module(module).variables[0].semantic_type.name == "Int32"
+
+
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():
     code = """
 submodule (ancestor_mod:parent_mod) child_mod
@@ -80,9 +155,10 @@ end submodule child_mod
     assert [iface.name for iface in submodule.interfaces] == ["callbacks"]
     assert [proc.name for proc in submodule.procedures] == ["reset"]
 
+    # A nested submodule depends on its direct parent, identified through its ancestor.
     project = parse_fortran_project({"child.f90": code})
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod"}
-    assert "child_mod.reset" in project.procedures
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod"}
+    assert "ancestor_mod:child_mod.reset" in project.procedures
 
 
 def test_project_registry_includes_module_types_interfaces_and_program_dependencies():
@@ -141,9 +217,8 @@ end module ancestor_mod
     )
     (tmp_path / "parent.f90").write_text(
         """
-module parent_mod
-  use ancestor_mod
-end module parent_mod
+submodule (ancestor_mod) parent_mod
+end submodule parent_mod
 """,
         encoding="utf-8",
     )
@@ -169,9 +244,10 @@ end module helper_mod
     project = parse_fortran_project(tmp_path)
 
     assert "ancestor_mod" in project.modules
-    assert "parent_mod" in project.modules
-    assert "child_mod" in project.submodules
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
+    assert {"ancestor_mod:parent_mod", "ancestor_mod:child_mod"} <= set(project.submodules)
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod", "helper_mod"}
+    ordered = [Path(parsed.filename).name for parsed in project.files]
+    assert ordered.index("ancestor.f90") < ordered.index("parent.f90") < ordered.index("child.f90")
 
 
 def test_program_contains_and_unnamed_block_data_public_models():
@@ -444,7 +520,7 @@ end module precision
         }
     )
 
-    procedure = project.submodules["transform_impl"].procedures[0]
+    procedure = project.submodules["transform_api:transform_impl"].procedures[0]
     assert procedure.arguments[0].kind == "real64"
     assert procedure.result.kind == "real64"
     prototype = project.modules["transform_api"].interfaces[0].procedures[0]
@@ -474,7 +550,7 @@ end submodule child_mod
 
     project = parse_fortran_project(tmp_path)
 
-    assert project.dependencies["child_mod"] == {"parent_mod", "missing_mod"}
+    assert project.dependencies["parent_mod:child_mod"] == {"parent_mod", "missing_mod"}
 
 
 def test_program_and_block_data_scope_errors_use_public_parse_paths():
@@ -572,3 +648,69 @@ end subroutine file_level_worker
         "rk",
         "n",
     ]
+
+
+@pytest.mark.parametrize(
+    ("nature", "kind"),
+    [
+        pytest.param("non_intrinsic", "3", id="user-module-value"),
+        pytest.param("intrinsic", "real64", id="processor-spelling"),
+    ],
+)
+def test_an_imported_kind_constant_follows_the_use_nature(nature: str, kind: str):
+    """A kind named through ``use, intrinsic`` is the processor's, even beside a same-named user module."""
+    project = parse_fortran_project(
+        {
+            "user.f90": "module iso_fortran_env\n  integer, parameter :: real64 = 3\nend module iso_fortran_env\n",
+            "consumer.f90": (
+                f"module consumer\n  use, {nature} :: iso_fortran_env, only: wp => real64\n"
+                "  real(kind=wp) :: v\nend module consumer\n"
+            ),
+        }
+    )
+
+    assert project.modules["consumer"].variables[0].kind == kind
+
+
+def test_same_named_submodules_of_different_ancestors_are_separate_project_scopes():
+    """A submodule name is local to its ancestor, so ``a:impl`` and ``b:impl`` coexist.
+
+    Each is keyed by its identity, depends on its own parent, and resolves
+    kinds through its own ancestor's parameters. A nested child of each does
+    the same through its direct parent.
+    """
+    sources = {}
+    for ancestor, kind in (("a", 4), ("b", 8)):
+        sources[f"{ancestor}.f90"] = f"""
+module {ancestor}
+  integer, parameter :: wp = {kind}
+  interface
+    module subroutine run(x)
+      real(wp), intent(inout) :: x
+    end subroutine run
+  end interface
+end module {ancestor}
+"""
+        sources[f"{ancestor}_impl.f90"] = f"""
+submodule ({ancestor}) impl
+contains
+  module subroutine run(x)
+    real(wp), intent(inout) :: x
+  end subroutine run
+end submodule impl
+"""
+        sources[f"{ancestor}_leaf.f90"] = f"""
+submodule ({ancestor}:impl) leaf
+  real(wp) :: scale
+end submodule leaf
+"""
+
+    project = parse_fortran_project(sources)
+
+    assert set(project.submodules) == {"a:impl", "b:impl", "a:leaf", "b:leaf"}
+    assert project.dependencies["a:leaf"] == {"a:impl"}
+    assert project.dependencies["b:impl"] == {"b"}
+    assert project.submodules["a:impl"].procedures[0].arguments[0].kind == "4"
+    assert project.submodules["b:impl"].procedures[0].arguments[0].kind == "8"
+    assert project.submodules["a:leaf"].variables[0].kind == "4"
+    assert project.submodules["b:leaf"].variables[0].kind == "8"

@@ -177,11 +177,16 @@ def _add_imported_contract_dependencies(
     pending = list(emitted_modules.values())
     while pending:
         module = pending.pop(0)
-        dependency_names = {
-            statement.module.lstrip(".").casefold()
-            for statement in module.imports
-            if isinstance(statement, SemanticImport) and statement.module.startswith(".")
-        }
+        dependency_names = set()
+        for statement in module.imports:
+            if not isinstance(statement, SemanticImport) or not statement.module.startswith("."):
+                continue
+            package_module = statement.module.lstrip(".")
+            if package_module:
+                dependency_names.add(package_module.casefold())
+            else:
+                # ``from . import name`` binds sibling modules, each a dependency.
+                dependency_names.update(item.source.casefold() for item in statement.items)
         for dependency_name in sorted(dependency_names):
             dependency = available.get(dependency_name)
             if dependency is None or dependency.name in emitted_modules:

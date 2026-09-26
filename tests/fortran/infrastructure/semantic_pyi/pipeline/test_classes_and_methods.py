@@ -482,3 +482,41 @@ def test_generic_specifics_with_projected_outputs_round_trip():
     overloads = [item for item in module.overload_sets if item.name == "ink"]
     assert len(overloads) == 1
     assert [procedure.name for procedure in overloads[0].procedures] == ["ink_default", "ink_extended"]
+
+
+def test_dotted_comparison_spelling_survives_contract_replay_into_the_bridge_import():
+    """A compiler matches `use, only:` by spelling, so `.EQ.` stays `.EQ.` through the contract."""
+    source = """
+module handles
+  implicit none
+  private
+  public :: handle_t, operator(.EQ.), operator(.LT.)
+  type :: handle_t
+    integer :: val = 0
+  end type handle_t
+  interface operator (.EQ.)
+    module procedure handle_eq
+  end interface operator (.EQ.)
+  interface operator (.LT.)
+    module procedure handle_lt
+  end interface operator (.LT.)
+contains
+  logical function handle_eq(a, b)
+    type(handle_t), intent(in) :: a, b
+    handle_eq = a%val == b%val
+  end function handle_eq
+  logical function handle_lt(a, b)
+    type(handle_t), intent(in) :: a, b
+    handle_lt = a%val < b%val
+  end function handle_lt
+end module handles
+"""
+    semantic_module = fortran_module_to_semantic_module(parse_fortran_source(source, filename="handles.f90"))
+    pyi = emit_module(semantic_module)
+    loaded = parse_pyi_text(pyi, module_name=semantic_module.name)
+
+    assert '@overload("handle_eq", generic="operator (.EQ.)")' in pyi
+    assert '@overload("handle_lt", generic="operator (.LT.)")' in pyi
+    assert emit_module(loaded) == pyi
+    bridge = rendered_source(generate_wrapper(loaded), ".f90")
+    assert "operator (.EQ.)" in bridge and "operator (.LT.)" in bridge

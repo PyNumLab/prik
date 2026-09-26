@@ -22,16 +22,6 @@ def test_prik_main_preserves_c_readable_stdout_contract(monkeypatch, capsys):
         "_build_preprocessing_config",
         lambda active_args, parser: preprocessing,
     )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_parser_preprocessing_mode",
-        lambda active_preprocessing: "mode",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_c_source_loader",
-        lambda active_preprocessing: "loader",
-    )
     monkeypatch.setattr(prik_cli, "parse_c_report", lambda *args, **kwargs: parse_payload)
     monkeypatch.setattr(
         prik_cli,

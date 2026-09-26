@@ -21,14 +21,12 @@ from prik.semantics.c2ir import (
     CToIRConverter,
     c_file_to_semantic_module,
     c_parameter_to_semantic_argument,
-    c_project_to_semantic_module,
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
 )
 from prik.semantics.models import SemanticArgument, SemanticModule, SemanticOrigin, SemanticType
 from tests.c._support.semantic_conversion import (
-    _assert_c_origin,
     _function,
 )
 
@@ -156,33 +154,6 @@ def test_c2ir_visitor_and_project_compatibility_entrypoints_cover_supported_node
     assert default_argument.metadata == {"native_position": 0}
     assert c_struct_to_semantic_class(first.structs[0]).name == "point"
     assert [module.name for module in c_project_to_semantic_modules(project)] == ["a", "b"]
-    merged = c_project_to_semantic_module(project, name="42 api/project")
-    assert merged.name == "_42_api_project"
-    assert {function.name for function in merged.functions} == {"f", "g"}
-    assert [cls.name for cls in merged.classes] == ["point"]
-    assert [variable.name for variable in merged.variables] == ["value"]
-    assert merged.metadata == {
-        "source_language": "c",
-        "counts": {
-            "files": 2,
-            "functions": 2,
-            "structs": 1,
-            "unions": 0,
-            "enums": 0,
-            "typedefs": 0,
-            "macros": 0,
-            "includes": 0,
-            "diagnostics": 0,
-        },
-    }
-    _assert_c_origin(
-        merged.origin,
-        native_name="42 api/project",
-        native_scope="42 api/project",
-        source_kind="project",
-        metadata={"files": ["a.h", "b.h"]},
-    )
-    assert converter.project_to_semantic_module(project).name == "c_project"
     typedef_project = parse_c_project(
         {
             "types.h": "typedef unsigned long count_t;\n",
@@ -192,9 +163,6 @@ def test_c2ir_visitor_and_project_compatibility_entrypoints_cover_supported_node
     typedef_modules = {module.name: module for module in converter.visit(typedef_project)}
     assert _function(typedef_modules["api"], "count").return_type.name == "UInt64"
     assert _function(typedef_modules["api"], "count").return_type.metadata == {"c_typedefs": ["count_t"]}
-    typedef_merged = converter.project_to_semantic_module(typedef_project)
-    assert _function(typedef_merged, "count").return_type.name == "UInt64"
-    assert _function(typedef_merged, "count").return_type.metadata == {"c_typedefs": ["count_t"]}
     count_reference = CTypedef(name="global_count_t")
     count_function = CFunction(name="global_count", result_type=count_reference)
     reference_project = CProject(
@@ -204,8 +172,6 @@ def test_c2ir_visitor_and_project_compatibility_entrypoints_cover_supported_node
     )
     reference_modules = converter.visit(reference_project)
     assert _function(reference_modules[0], "global_count").return_type.name == "Int"
-    reference_merged = converter.project_to_semantic_module(reference_project)
-    assert _function(reference_merged, "global_count").return_type.name == "Int"
     record = CStruct(name="global_record", members=[CVariable(name="value", type=CInt())])
     choice = CUnion(name="global_choice", members=[CVariable(name="value", type=CInt())])
     registry_function = CFunction(
@@ -225,10 +191,3 @@ def test_c2ir_visitor_and_project_compatibility_entrypoints_cover_supported_node
     registry_args = _function(registry_modules[0], "use_global_types").arguments
     assert registry_args[0].semantic_type.metadata == {"c_kind": "struct", "incomplete": False}
     assert registry_args[1].semantic_type.metadata["incomplete"] is False
-    registry_merged = converter.project_to_semantic_module(registry_project)
-    registry_merged_args = _function(registry_merged, "use_global_types").arguments
-    assert [arg.semantic_type.name for arg in registry_merged_args] == [
-        "global_record",
-        "global_choice",
-    ]
-    assert [arg.semantic_type.metadata["incomplete"] for arg in registry_merged_args] == [False, False]

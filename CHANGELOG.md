@@ -7,6 +7,112 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated bindings pass a wrapped derived-type object about twice as fast:
+  they read its native storage through attribute names interned once instead
+  of building a new name string on every call, and no longer scan the
+  environment for PRIK's own test failure hooks, which a binding now compiles
+  only when built with `-DPRIK_WRAPPER_FAULT_INJECTION`. An Open MPI 8-byte
+  round trip through the generated `mpi_f08` extension drops from 2.1 to
+  1.1 µs.
+- Fortran source commands accept `--module-source-dir DIR`, and
+  `build_fortran_extension` accepts `module_source_dirs`: from the given entry
+  sources, PRIK follows each `use` to the source under those directories that
+  defines the module and reads it too, so a multi-module library such as Open
+  MPI's `mpi_f08` is supplied by its entry file. What a source defines is
+  read from its preprocessed text by the parser's own unit scanner, so a
+  module a macro or an `#include` names is found, a `module` or `submodule`
+  statement continued across lines in either source form is found, and a second definition only preprocessing reveals makes
+  the module ambiguous. A needed module with no source, or with several, is
+  an error. Discovery honors `use, intrinsic` and `use, non_intrinsic` for
+  each scope separately, and an unstated `use` of an intrinsic module's name
+  reads a source defining it before falling back to the processor. It
+  follows `use` statements in internal procedures and `BLOCK` constructs,
+  follows each submodule to its direct parent, and brings in every submodule
+  descending from a used module, which implements its separate module
+  procedures.
+  Import, re-export, callback, generic, specification-expression, and constant
+  resolution follow the same rule, so a user module named like an intrinsic
+  one, such as `iso_fortran_env`, is read when a `use` selects it and never
+  when `use, intrinsic` selects the processor module. A derived type reached
+  from a processor module, such as `ieee_arithmetic`'s, is left to the
+  processor rather than read from a parsed module of that name.
+- A separate module procedure declared by a `module function` or
+  `module subroutine` interface body is its module's own procedure
+  everywhere: it is wrapped under ordinary accessibility (it previously
+  needed an explicit `public` statement naming it), a module extending a
+  generic inherits it as a specific, a declaration another module writes
+  resolves it as a specification function, it is indexed in
+  `FortranProject.procedures`, and its kinds resolve through its module's
+  parameters when a single file is parsed.
+- Fortran submodules are identified by `ancestor:name` throughout parsing,
+  project ordering, compile scheduling, and kind resolution, so two modules
+  may each have a submodule of the same name. `FortranProject.submodules` and
+  its dependency keys use that identity, and an entity a submodule declares
+  records it as its owner.
+- A Fortran file parsed alone and within a project resolves everything it
+  declares the same way: `parse_fortran_file` runs the project's resolution
+  pass on its one file, so a kind in an interface body, such as a callback
+  prototype's `real(wp)`, resolves there too. A file converted with its
+  sibling modules resolves their procedures and types as project conversion
+  does. `prik generate` converts its inputs through the project route, and
+  `fortran_project_to_semantic_files` returns that conversion grouped by
+  file. Both parse reports assemble their inputs first, so a kind one input
+  file declares for another is resolved in the report.
+- Wrapper builds and `prik generate` turn Fortran sources into semantic IR
+  through one route (`prik.pipeline.sources`): both read sources through
+  `prik.preprocessing.read_fortran_source`, parse them as one
+  dependency-ordered project, measure compile-time values and type storage,
+  and apply `--export-symbols` the same way, so a generated contract
+  describes what a build of the same sources wraps. C builds, `prik generate`,
+  and C parse reports parse each input through
+  `prik.parsers.c.sources.parse_c_source`; `parse_c_report` takes a
+  `PreprocessingConfig`.
+- Source suffixes, a Fortran file's source form, and input expansion have one
+  owner, `prik.preprocessing.languages`. `.fpp` is a fixed-form Fortran source
+  everywhere, `FortranFile.format` reports the form the lexer read (`"fixed"`
+  or `"free"`), and every command keeps its inputs in the order named, with
+  each directory's sources in sorted order.
+- `c_project_to_semantic_module` is removed; convert C projects per file with
+  `c_project_to_semantic_modules`. The C `.pyi` fixtures record each fixture
+  project's implementation file.
+- Compile ordering follows `use` natures: a scope using the processor's
+  module through `use, intrinsic` no longer waits on a project source of the
+  same name, and `use` statements in internal procedures and `BLOCK`
+  constructs order compilation too.
+- Generated module docstrings describe mutable module scalars as live
+  rank-zero views and include `None` for allocatable and pointer scalars.
+- A module that reaches two generics of one name through separate `use`
+  statements, without declaring the generic itself, owns the merged generic:
+  it dispatches over every contributor's specifics in source and contract
+  builds, and `--export-symbols facade_mod::convert` selects the merged
+  generic. It previously re-exported the first contributor only.
+
+- Mutable fixed-storage Fortran module scalars expose native-backed rank-zero
+  NumPy views, including fixed-length character bytes; primitive and fixed
+  character value dummies accept matching rank-zero storage as well as scalar
+  values, preserving the dummy's reference or `VALUE` ABI; an `Immutable`
+  argument copies the array instead of updating it. Logical scalar
+  dummies wider than one byte use integer storage of their own width, as
+  logical arrays do, so default-logical `intent(inout)` updates reach Python.
+- Omitting an optional `intent(inout)` scalar argument returns `None` for it.
+- Scalar allocatable and pointer module variables return live read-only
+  rank-zero NumPy views, or `None` when storage is absent. Assigning to the
+  attribute allocates an allocatable (resizing a deferred-length character) or
+  writes a pointer's current target.
+- A separate module-level `PARAMETER` statement types an undeclared name by the
+  module's `IMPLICIT` rules and is rejected under `implicit none`.
+- A derived type a module reaches through another module's re-export is
+  resolved to the module that declares it, so generated contracts name it
+  instead of writing an undefined type.
+- A `.pyi` contract class imported through a contract module that re-exports
+  it resolves to the declaring module's class, however long the chain, so the
+  build wraps it instead of failing with no completed wrapper type definition.
+- Fortran parse diagnostics on compiler-preprocessed sources report the line
+  in the source file, or the `#include` line for text an included file
+  contributes, instead of a line in the preprocessor output.
+- `IMPLICIT NONE (EXTERNAL)` no longer disables implicit typing; only plain
+  `IMPLICIT NONE` or a specifier list naming `TYPE` does.
+
 - Contributor test guidance focuses on supported behavior and meaningful
   validation boundaries after a feature is removed.
 
@@ -18,10 +124,43 @@ release tags add a leading `v` to the package version.
   retain buffers for nonblocking operations.
 
 - `--export-symbols` and `build_fortran_extension(export_symbols=...)` accept
-  module-qualified Fortran procedure identities. Generated contracts and
-  source builds publish only that reviewed function surface while retaining
-  callback, type, and other declaration dependencies required by its
-  signatures.
+  module-qualified public Fortran symbols -- procedures, generics, and module
+  variables -- including symbols
+  re-exported by a public facade; the bridge calls each procedure through the
+  module that declares it. Generated contracts retain required type
+  declarations (including the component and parent types they declare) and
+  native scalar storage views through `T[()]`. Source builds and generated
+  contracts publish the same selected surface.
+- A tutorial turns a reviewed part of Open MPI's Fortran `mpi_f08` interface
+  into an mpi4py-style Python MPI API: it generates a restricted `.pyi`
+  contract from the configured Open MPI sources, edits its facade to hide
+  counts and error codes and return results, builds it with the CLI against
+  the installed Open MPI without compiling any Open MPI source, adds a short
+  illustrative Python module spelling mpi4py's `COMM_WORLD`, `Send`/`Recv`,
+  `Bcast`, `Reduce`, and `Allreduce` over `np.int32` buffers, and runs a
+  two-rank program under `mpirun` that mpi4py also runs unchanged but for its
+  import. `Recv` passes Open MPI's own `MPI_STATUS_IGNORE`, a generated
+  `Mpi_Status` module object. An opt-in integration test follows
+  the tutorial's steps in one working directory and checks that Open MPI
+  recognizes that object; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
+  5.0.11 built from source. The test requires the configured tree to record the
+  same configure run as the installation, and reports missing or failing
+  Open MPI tools as unavailable -- a skip locally, a failure where Open MPI is
+  required.
+- Export selection drops a use association that only unselected declarations
+  were written with, so a selected contract no longer imports an unused type
+  under a lowercase alias.
+- A generic whose specific takes a callback dispatches any Python callable to
+  it. A callback prototype imported by a `use` inside an interface body is
+  resolved, a prototype's own argument types resolve through the `use`
+  statements in its body, and a selected contract set includes the modules a
+  prototype names that way. A processor type such as `c_ptr` keeps its own
+  spelling when a procedure-local `use` imports it.
+- Export selection accepts a generic that shares its name with one of its
+  specifics; the name selects the generic instead of being reported ambiguous.
+- A contract keeps a dotted comparison spelling such as `operator(.EQ.)` in
+  `@overload(..., generic=...)`, so a replayed bridge imports the operator
+  under the name its module declares.
 - The PRIMA example links five derivative-free solvers against one statically
   compiled `libprimaf` archive through a generated semantic contract and runs
   in the real-library portability matrix. Its guide includes a reproducible

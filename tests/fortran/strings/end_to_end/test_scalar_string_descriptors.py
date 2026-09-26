@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
+from tests.fortran._support.wrapper_build import FAULT_INJECTION_C_FLAGS, _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DESCRIPTOR_SOURCE = FIXTURES / "native" / "fstring_descriptors_f90.f90"
@@ -32,6 +32,7 @@ def compiled_descriptor_module(pyi_parity_build_mode: str, tmp_path: Path):
         },
         CONTRACT_FIXTURES / "fstring_descriptors_f90",
         pyi_parity_build_mode,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
 
 

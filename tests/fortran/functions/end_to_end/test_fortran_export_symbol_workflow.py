@@ -129,3 +129,123 @@ def test_source_and_generated_contract_builds_publish_and_run_the_same_callback(
 
         assert module.solve(np.int32(4), callback) == np.int32(5)
         assert seen == [(np.int32(5), None)]
+
+
+@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
+def test_facade_selection_and_contract_replay_share_generic_and_native_variable(tmp_path: Path):
+    """A selected facade binds one generic and one live native scalar in both lanes."""
+    sources = tuple((NATIVE.parent / "export_selection_facade" / name) for name in ("owner.f90", "facade.f90"))
+    exports = tmp_path / "exports.txt"
+    exports.write_text("facade::run\nfacade::marker\n", encoding="utf-8")
+    contract = tmp_path / "contract"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            *map(str, sources),
+            "--export-symbols",
+            str(exports),
+            "--out",
+            str(contract),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    facade_contract = (contract / "facade.pyi").read_text(encoding="utf-8")
+    owner_contract = (contract / "owner.pyi").read_text(encoding="utf-8")
+    assert "from .owner import" in facade_contract
+    assert '"run"' in facade_contract and '"marker"' in facade_contract
+    assert "marker: Int32[()]" in owner_contract
+
+    source = build_fortran_extension(
+        sources,
+        output_name="facade_source",
+        output_dir=tmp_path / "source",
+        export_symbols=("facade::run", "facade::marker"),
+        jobs=2,
+    )
+    replay = build_pyi_extension(
+        contract / "__init__.pyi",
+        native_fortran_sources=sources,
+        output_name="facade_replay",
+        output_dir=tmp_path / "replay",
+        jobs=2,
+    )
+    for result in (source, replay):
+        module = _import_from_build_dir(result.module_name, result.output_dir).facade
+        assert module.run() == np.int32(7)
+        assert isinstance(module.marker, np.ndarray) and module.marker.shape == ()
+        module.marker[()] = np.int32(11)
+        assert module.run() == np.int32(11)
+
+
+@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
+def test_selection_keeps_the_component_and_parent_types_a_selected_signature_needs(tmp_path: Path):
+    """A selected type is usable in both lanes: its parent and component types come with it."""
+    sources = tuple(
+        NATIVE.parent / "export_selection_dependencies" / name for name in ("leaf_types.f90", "nested_types.f90")
+    )
+    exports = tmp_path / "exports.txt"
+    exports.write_text("nested_types::use_outer\n", encoding="utf-8")
+    contract = tmp_path / "contract"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            *map(str, sources),
+            "--export-symbols",
+            str(exports),
+            "--out",
+            str(contract),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    nested_contract = (contract / "nested_types.pyi").read_text(encoding="utf-8")
+    assert "class Outer_T(Base_T):" in nested_contract
+    assert "inner: Inner_T" in nested_contract
+    assert "leaf: Leaf_T" in nested_contract
+    assert "Unrelated" not in nested_contract and "def unrelated(" not in nested_contract
+
+    source = build_fortran_extension(
+        sources,
+        output_name="dependencies_source",
+        output_dir=tmp_path / "source",
+        export_symbols=("nested_types::use_outer",),
+        jobs=2,
+    )
+    replay = build_pyi_extension(
+        contract / "__init__.pyi",
+        native_fortran_sources=sources,
+        output_name="dependencies_replay",
+        output_dir=tmp_path / "replay",
+        jobs=2,
+    )
+    published = []
+    for result in (source, replay):
+        root = _import_from_build_dir(result.module_name, result.output_dir)
+        module = root.nested_types
+        published.append(
+            (
+                {name for name in dir(root) if not name.startswith("_")},
+                {name for name in dir(module) if not name.startswith("_")},
+            )
+        )
+        assert module.use_outer(module.Outer_T()) == np.int32(10)
+        assert module.Outer_T().inner.leaf.v == np.int32(7)
+    assert (
+        published[0]
+        == published[1]
+        == (
+            {"nested_types"},
+            {"Base_T", "Inner_T", "Leaf_T", "Outer_T", "use_outer"},
+        )
+    )

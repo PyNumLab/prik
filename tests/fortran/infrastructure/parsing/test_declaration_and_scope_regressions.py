@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik.parsers.fortran import FortranParseError
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
@@ -309,13 +309,13 @@ def test_directory_project_parses_once_and_assembles_dependency_ordered_models(t
         "parent.f90": "module Parent_Mod\n  use Ancestor_Mod\n  type :: Parent_State\n  end type Parent_State\nend module Parent_Mod\n",
         "helper.f90": "module Helper_Mod\nend module Helper_Mod\n",
         "child.f90": (
-            "submodule (Ancestor_Mod:Parent_Mod) Child_Mod\n"
+            "submodule (Parent_Mod) Child_Mod\n"
             "  use Helper_Mod\n"
             "  type :: Child_State\n"
             "  end type Child_State\n"
             "end submodule Child_Mod\n"
         ),
-        "grandchild.f90": "submodule (Child_Mod) Grandchild_Mod\nend submodule Grandchild_Mod\n",
+        "grandchild.f90": "submodule (Parent_Mod:Child_Mod) Grandchild_Mod\nend submodule Grandchild_Mod\n",
         "units.f90": (
             "type :: File_State\n"
             "end type File_State\n"
@@ -386,9 +386,10 @@ def test_directory_project_parses_once_and_assembles_dependency_ordered_models(t
         "Child_Mod": child,
         "Grandchild_Mod": grandchild,
     }
+    # A submodule is keyed ``ancestor:name`` and depends on its direct parent.
     assert project.dependencies["parent_mod"] == {"ancestor_mod"}
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
-    assert project.dependencies["grandchild_mod"] == {"child_mod"}
+    assert project.dependencies["parent_mod:child_mod"] == {"parent_mod", "helper_mod"}
+    assert project.dependencies["parent_mod:grandchild_mod"] == {"parent_mod:child_mod"}
 
 
 def test_project_registries_preserve_qualified_aliases_values_and_dependencies():
@@ -441,37 +442,37 @@ end program driver
     )
 
     module = project.modules["api_mod"]
-    submodule = project.submodules["child_mod"]
+    submodule = project.submodules["api_mod:child_mod"]
 
     assert set(project.modules) == {"api_mod"}
-    assert set(project.submodules) == {"child_mod"}
+    assert set(project.submodules) == {"api_mod:child_mod"}
     assert set(project.programs) == {"driver"}
     assert project.dependencies == {
         "api_mod": set(),
-        "child_mod": {"api_mod"},
+        "api_mod:child_mod": {"api_mod"},
         "driver": {"api_mod"},
     }
-    assert set(project.procedures) == {"api_mod.step", "step", "child_mod.reset", "reset"}
+    assert set(project.procedures) == {"api_mod.step", "step", "api_mod:child_mod.reset", "reset"}
     assert project.procedures["api_mod.step"] is project.procedures["step"] is module.procedures[0]
-    assert project.procedures["child_mod.reset"] is project.procedures["reset"] is submodule.procedures[0]
+    assert project.procedures["api_mod:child_mod.reset"] is project.procedures["reset"] is submodule.procedures[0]
     assert set(project.derived_types) == {
         "api_mod.state_t",
         "state_t",
-        "child_mod.child_state_t",
+        "api_mod:child_mod.child_state_t",
         "child_state_t",
         "global_state_t",
     }
     assert project.derived_types["api_mod.state_t"] is project.derived_types["state_t"]
-    assert project.derived_types["child_mod.child_state_t"] is project.derived_types["child_state_t"]
+    assert project.derived_types["api_mod:child_mod.child_state_t"] is project.derived_types["child_state_t"]
     assert set(project.interfaces) == {
         "api_mod.callback",
         "callback",
-        "child_mod.child_callback",
+        "api_mod:child_mod.child_callback",
         "child_callback",
         "global_callback",
     }
     assert project.interfaces["api_mod.callback"] is project.interfaces["callback"]
-    assert project.interfaces["child_mod.child_callback"] is project.interfaces["child_callback"]
+    assert project.interfaces["api_mod:child_mod.child_callback"] is project.interfaces["child_callback"]
 
 
 @pytest.mark.parametrize("standalone_first", [False, True])
@@ -735,3 +736,27 @@ end module owner_mod
         ("file", None),
         ("module", "owner_mod"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("statement", "forbids_typing"),
+    [
+        pytest.param("implicit none", True, id="plain"),
+        pytest.param("implicit none (type)", True, id="type"),
+        pytest.param("implicit none (type, external)", True, id="type-and-external"),
+        pytest.param("implicit none (external)", False, id="external-only"),
+    ],
+)
+def test_implicit_none_specifiers_decide_whether_undeclared_dummies_are_typed(statement: str, forbids_typing: bool):
+    """Only NONE or NONE(TYPE) forbids implicit typing; NONE(EXTERNAL) keeps it."""
+    source = f"""
+subroutine scale(n)
+  {statement}
+end subroutine scale
+"""
+    if forbids_typing:
+        with pytest.raises(FortranParseError, match="implicit none is active"):
+            parse_fortran_file(source)
+        return
+    (argument,) = parse_fortran_file(source).procedures[0].arguments
+    assert argument.base_type == "integer"

@@ -53,9 +53,10 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert module_docstring.index("Module Attributes") < module_docstring.index("Functions")
     assert module_docstring.index("Functions") < module_docstring.index("Classes")
     assert "nmax : int32\n    Read-only constant." in module_docstring
-    assert "counter : int32" in module_docstring
-    assert "scale : float64" in module_docstring
-    assert "saved_counter : int32" in module_docstring
+    # A mutable module scalar is a live rank-zero view, and the docstring says so.
+    assert "counter : ndarray[int32]\n    Rank: 0\n    Live view" in module_docstring
+    assert "scale : ndarray[float64]\n    Rank: 0\n    Live view" in module_docstring
+    assert "saved_counter : ndarray[int32]" in module_docstring
     assert "Assignment writes through to native storage." not in module_docstring
 
     assert module.nmax == np.int32(12)
@@ -229,39 +230,40 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
 CHARACTER_MODULE_SCALAR_SOURCE = (NATIVE_FIXTURES / "fchar_module_scalars_f90.f90").read_text(encoding="utf-8")
 
 
-def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
-    """A character module variable is a `str` property, as a numeric one is a value.
-
-    A character value has no by-value C ABI, so the accessors copy through a
-    fixed-width buffer; what has to hold is that the copy runs in both
-    directions and that a wrong width is refused rather than truncated.
-    """
-    module = _build_text_and_import(
-        CHARACTER_MODULE_SCALAR_SOURCE,
-        "fchar_module_scalars_f90.f90",
+def test_scalar_character_module_variables_read_and_write_through(pyi_parity_build_mode: str, tmp_path: Path):
+    """Fixed character storage keeps one native address across reads and writes."""
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_scalars_f90.f90",
         tmp_path,
         {
             "bind_c_fchar_module_scalars_f90_wrapper.f90",
             "fchar_module_scalars_f90_wrapper.c",
             "fchar_module_scalars_f90_wrapper.h",
         },
+        CONTRACT_FIXTURES / "fchar_module_scalars_f90",
+        pyi_parity_build_mode,
     )
 
-    assert module.label == "alpha   "
-    assert module.code == "abc"
+    label = module.label
+    assert label.shape == () and label.dtype == np.dtype("S8")
+    assert label[()] == b"alpha   "
+    assert module.code[()] == b"abc"
     assert module.tag == "fixed"
 
     # A native write is observed by the next read, not cached from import.
     module.relabel()
-    assert module.label == "ALPHA!!!"
+    assert label[()] == b"ALPHA!!!"
 
     # A Python write reaches the storage Fortran reads.
     module.label = "PYTHON!!"
+    assert label[()] == b"PYTHON!!"
     assert module.read_label() == "PYTHON!!"
+    label[()] = b"VIEW!!!!"
+    assert module.read_label() == "VIEW!!!!"
 
     # The declared length is a byte width, so a multi-byte encoding still fits exactly.
     module.label = "café!!!"
-    assert module.label == "café!!!"
+    assert label[()] == "café!!!".encode()
     assert module.read_label() == "café!!!"
 
 
@@ -281,7 +283,7 @@ def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: s
 
     with pytest.raises(TypeError, match="exactly 3 bytes"):
         module.code = value
-    assert module.code == "abc"
+    assert module.code[()] == b"abc"
 
 
 CHARACTER_MODULE_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90").read_text(encoding="utf-8")
@@ -300,27 +302,54 @@ def _character_descriptor_module(tmp_path: Path):
     )
 
 
-def test_descriptor_character_module_variables_snapshot_their_runtime_value(tmp_path: Path):
-    """An allocatable or pointer character module variable reads as a detached `str`.
-
-    Its width is established at runtime, so the snapshot has to report the
-    length the descriptor currently holds rather than a width fixed at build
-    time, and re-reading after native code changes it must observe the change.
-    """
-    module = _character_descriptor_module(tmp_path)
-
+def test_descriptor_character_module_variables_follow_current_storage(pyi_parity_build_mode: str, tmp_path: Path):
+    """Each read lends the current storage read-only; assignment writes through the descriptor."""
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_descriptors_f90_wrapper.f90",
+            "fchar_module_descriptors_f90_wrapper.c",
+            "fchar_module_descriptors_f90_wrapper.h",
+        },
+        CONTRACT_FIXTURES / "fchar_module_descriptors_f90",
+        pyi_parity_build_mode,
+    )
     assert module.deferred is None
     assert module.fixed is None
     assert module.link is None
 
     module.setup()
-    assert module.deferred == "alpha"
-    assert module.fixed == "FIXEDV"
-    assert module.link == "STORED"
+    deferred = module.deferred
+    fixed = module.fixed
+    view = module.link
+    assert deferred is not None and deferred.shape == () and deferred.dtype == np.dtype("S5")
+    assert deferred[()] == b"alpha"
+    assert fixed is not None and fixed[()] == b"FIXEDV"
+    assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
+    assert view[()] == b"STORED"
+    with pytest.raises(ValueError, match="read-only"):
+        view[()] = b"PYTHON"
+    module.link = "PYTHON"
+    assert view[()] == b"PYTHON"
+    assert module.store[()] == b"PYTHON"
+    with pytest.raises(TypeError, match="pointer target's width"):
+        module.link = "SHORT"
 
-    # A reallocation to a different width is observed by the next read.
     module.grow()
-    assert module.deferred == "alpha-more"
+    grown = module.deferred
+    assert grown is not None and grown.shape == () and grown.dtype == np.dtype("S10")
+    assert grown[()] == b"alpha-more"
+
+    # A deferred-length assignment reallocates to the encoded width, including zero.
+    module.deferred = "omega"
+    assert module.deferred[()] == b"omega"
+    module.deferred = ""
+    assert module.deferred is not None and module.deferred[()] == b""
+    with pytest.raises(TypeError, match="exactly 6 bytes"):
+        module.fixed = "WIDE!!!"
+    module.fixed = "NARROW"
+    assert module.fixed[()] == b"NARROW"
 
 
 def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):
@@ -332,6 +361,9 @@ def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: 
     assert module.deferred is None
     assert module.fixed is None
     assert module.link is None
+    # The documented type admits the ``None`` those reads return.
+    for name in ("deferred", "fixed", "link"):
+        assert f"{name} : ndarray[bytes] or None" in module.__doc__
 
 
 def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):
@@ -699,3 +731,26 @@ def test_a_reexport_binds_one_callable_from_source_and_from_its_contract(tmp_pat
     # One wrapper defines the procedure on either route.
     generated = (result.output_dir / "reexport_contract_wrapper.c").read_text(encoding="utf-8")
     assert generated.count("static PyObject * wrap_scale_value") == 1
+
+
+def test_a_derived_module_variable_argument_is_the_variable_itself(pyi_parity_build_mode: str, tmp_path: Path):
+    """A procedure given a module variable receives that variable's storage, not a copy.
+
+    Libraries recognize predefined objects by address -- Open MPI's
+    ``MPI_STATUS_IGNORE`` is one -- so passing one must pass the object itself.
+    """
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "module_variable_arguments.f90",
+        tmp_path,
+        {
+            "bind_c_module_variable_arguments_wrapper.f90",
+            "module_variable_arguments_wrapper.c",
+            "module_variable_arguments_wrapper.h",
+        },
+        None,
+        pyi_parity_build_mode,
+    )
+
+    assert module.is_shared(module.shared)
+    assert module.is_shared_c(module.shared_c)
+    assert not module.is_shared(module.Box())

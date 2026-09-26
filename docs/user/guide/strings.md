@@ -21,7 +21,7 @@ caller-owned storage.
 | Contract | Python value | Native mutation |
 | --- | --- | --- |
 | `String` | Variable-length `str` | Returned only when projected |
-| `String[8]` | `str` encoded as exactly 8 bytes | Returned as a new `str` |
+| `String[8]` | `str` or rank-zero NumPy `S8` array | `str` returns a new value; array storage changes in place |
 | `String[8][()]` | Rank-zero NumPy array with dtype `S8` | Visible in place |
 | `String[8][count]` | NumPy bytes array with dtype `S8` | Visible in place |
 | `Addr(String[8])` | Integer address | Visible through caller-owned memory |
@@ -162,8 +162,9 @@ For the complete result-mapping rules, see
 
 ## Immutable Values
 
-`String[8]` accepts a Python `str` whose encoded length is exactly eight bytes.
-The wrapper copies it into native storage.
+`String[8]` accepts a Python `str` whose encoded length is exactly eight bytes,
+or a rank-zero NumPy array with dtype `S8`. A `str` uses call-local storage;
+the array supplies its own bytes to a reference dummy.
 
 ```python
 import sys
@@ -180,7 +181,8 @@ print(repr(make_text()))  # 'ready   '
 ```
 
 Python strings are immutable. `Returns[...]` copies the changed native buffer
-into a new `str`. Without that projection, the mutation is discarded.
+into a new `str`. A rank-zero array passed to `edit_text` also changes in place.
+Without a projection, only array mutation remains visible.
 
 ## Mutable Scalar Storage
 

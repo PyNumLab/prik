@@ -8,7 +8,7 @@ class modern_particle(CStruct):
 class vector3(CStruct):
     values: Float64[3]
 
-modern_counter: Int
+modern_counter: Int = 0
 
 hidden_scale: private[Float64] = 1.0
 

@@ -46,7 +46,6 @@ from prik.semantics.c2ir import (
     c_file_to_semantic_modules,
     c_function_to_semantic_function,
     c_parameter_to_semantic_argument,
-    c_project_to_semantic_module,
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
@@ -438,9 +437,6 @@ def test_c_compatibility_helpers_forward_standard_type_reports():
     ).return_type.name == ("UInt32")
     assert _function(
         c_project_to_semantic_modules(project, standard_type_report=report)[0], "measure"
-    ).return_type.name == ("UInt32")
-    assert _function(
-        c_project_to_semantic_module(project, standard_type_report=report), "measure"
     ).return_type.name == ("UInt32")
 
 

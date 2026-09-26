@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prik.parsers.fortran.utils import detect_source_form
+from prik.preprocessing.languages import fortran_source_form
 
 
 def strip_comment(line: str, form: str) -> str:
@@ -46,7 +46,7 @@ def preprocess_lines(code: str, filename: str | None = None) -> list[tuple[str, 
     This is the lexer/preprocessing stage used by all parsing entrypoints.
     It performs:
 
-    - **Source-form detection** (fixed vs free) via `detect_source_form`.
+    - **Source-form detection** (fixed vs free) via `fortran_source_form`.
     - **Comment stripping** (including fixed-form comment-line rules).
     - **Continuation folding**:
       - fixed-form: continuation in column 6 (1-based)
@@ -56,7 +56,7 @@ def preprocess_lines(code: str, filename: str | None = None) -> list[tuple[str, 
     tuples so downstream parsers can raise `FortranParseError` with accurate
     location context even after folding.
     """
-    form = detect_source_form(code, filename)
+    form = fortran_source_form(code, filename)
     raw_lines = code.splitlines()
     raw = [
         (strip_comment(raw_line.rstrip("\n"), form), i + 1, raw_line.rstrip("\n"))
@@ -130,6 +130,6 @@ subroutine shift(value, &
   real, intent(in) :: offset
 end subroutine shift
 """
-    print("Detected source form:", detect_source_form(example_source, "shift.f90"))
+    print("Detected source form:", fortran_source_form(example_source, "shift.f90"))
     for logical_line, source_line, _original_line in preprocess_lines(example_source, "shift.f90"):
         print(f"line {source_line}: {logical_line}")

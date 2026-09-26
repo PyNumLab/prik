@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    FAULT_INJECTION_C_FLAGS,
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
     _import_from_build_dir,
@@ -34,6 +35,7 @@ def compiled_character_edges_module(
         },
         CONTRACT_FIXTURES / "fcharacter_edges_f90",
         pyi_parity_build_mode,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
 
 
@@ -103,6 +105,7 @@ def fixed_discard(name: String[8]) -> None: ...
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=tmp_path / "build",
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
     package = _import_from_build_dir(result.module_name, result.output_dir)
     module = package if hasattr(package, "fixed_replacement") else _sole_native_module(package)

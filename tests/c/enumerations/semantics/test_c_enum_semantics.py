@@ -12,7 +12,6 @@ from prik.semantics.c2ir import (
     CToIRConverter,
     c_file_to_semantic_module,
     c_file_to_semantic_modules,
-    c_project_to_semantic_module,
     c_project_to_semantic_modules,
 )
 from prik.semantics.models import (
@@ -79,7 +78,7 @@ def test_c2ir_names_anonymous_typedef_enums_and_keeps_enumerators_unscoped():
     parsed = parse_c_file(source, filename="flags.h")
 
     module = c_file_to_semantic_module(parsed)
-    project_module = c_project_to_semantic_module(parse_c_project({"flags.h": source}), name="flags")
+    project_module = c_project_to_semantic_modules(parse_c_project({"flags.h": source}))[0]
 
     assert module.classes == []
     assert project_module.classes == []

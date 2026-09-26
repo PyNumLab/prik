@@ -103,8 +103,8 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert "double bind_c_swap_args(double * y, double * x);" in c_source
     assert 'static char * kwlist[] = {"x", "y", NULL};' in c_source
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
-    assert "prik_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
-    assert "result = bind_c_swap_args(&bound_y, &bound_x);" in c_source
+    assert "prik_float64_or_storage(bound_x_obj, NPY_FLOAT64, " in c_source
+    assert "result = bind_c_swap_args(bound_y_storage, bound_x_storage);" in c_source
     assert "PyObject * result_obj = prik_float64_to_numpy(&result);" in c_source
     assert "PyMODINIT_FUNC PyInit_render_demo(void)" in c_source
     assert "static PyObject * wrap_swap_args" in c_header
@@ -533,7 +533,7 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     bridge_source = next(source.text for source in generated_wrapper.sources if source.path.suffix == ".f90")
 
     assert c_source.count("int32_t bound_value;") == 1
-    assert "prik_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
+    assert "prik_int32_or_storage(bound_value_obj, NPY_INT32, " in c_source
     assert "bind_c_bump(&bound_value);" in c_source
     assert "PyObject * result_obj = NULL;" in c_source
     assert "result_obj = prik_int32_to_numpy(&bound_value);" in c_source

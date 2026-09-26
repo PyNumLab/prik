@@ -2,7 +2,7 @@
   "filename": "derived_types_and_methods.f90",
   "source": "module mesh_mod\n  type :: node\n    integer :: id\n    real(kind=8), dimension(3) :: xyz\n  contains\n    procedure :: move\n  end type node\n\n  type :: mesh\n    integer :: nnodes\n    type(node), allocatable :: nodes(:)\n  contains\n    procedure :: init, clear\n  end type mesh\nend module mesh_mod\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [
     {
       "name": "mesh_mod",

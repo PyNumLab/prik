@@ -947,3 +947,142 @@ end module use_mod
     )
 
     assert (declared.kind, declared.shape) == ("8", ["4"])
+
+
+USER_ISO_FORTRAN_ENV = """\
+module iso_fortran_env
+  implicit none
+  integer :: my_value = 7
+end module iso_fortran_env
+"""
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected"),
+    [
+        pytest.param(
+            "use, non_intrinsic :: iso_fortran_env, only: my_value",
+            ("my_value", "variable", "iso_fortran_env"),
+            id="non-intrinsic-names-the-user-module",
+        ),
+        pytest.param(
+            "use iso_fortran_env, only: my_value",
+            ("my_value", "variable", "iso_fortran_env"),
+            id="unstated-prefers-the-parsed-module",
+        ),
+        pytest.param(
+            "use, intrinsic :: iso_fortran_env, only: int32",
+            ("int32", "intrinsic", "iso_fortran_env"),
+            id="intrinsic-names-the-processor-module",
+        ),
+    ],
+)
+def test_use_nature_decides_whether_an_intrinsic_name_is_the_users_module(tmp_path: Path, statement, expected):
+    """A user module may share an intrinsic module's name; the ``use`` nature decides which is meant."""
+    source = tmp_path / "project.f90"
+    source.write_text(f"{USER_ISO_FORTRAN_ENV}\nmodule facade\n  {statement}\nend module facade\n", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    facade = next(module for module in modules if module.name == "facade")
+
+    assert [(item.local_name, item.entity_kind, item.origin_module) for item in facade.reexports] == [expected]
+
+
+USER_IEEE_ARITHMETIC = """\
+module ieee_arithmetic
+  implicit none
+  abstract interface
+    subroutine ieee_cb(x)
+      real, intent(inout) :: x
+    end subroutine ieee_cb
+  end interface
+  interface ieee_scale
+    module procedure scale_real
+  end interface ieee_scale
+contains
+  subroutine scale_real(x)
+    real, intent(inout) :: x
+  end subroutine scale_real
+  pure integer function ieee_size(n)
+    integer, intent(in) :: n
+    ieee_size = n
+  end function ieee_size
+end module ieee_arithmetic
+"""
+
+
+@pytest.mark.parametrize(
+    ("nature", "callback_storage", "bound_scope", "specifics"),
+    [
+        pytest.param("non_intrinsic", "callback", "ieee_arithmetic", ["scale_real", "scale_int"], id="user-module"),
+        pytest.param("intrinsic", "reference", None, ["scale_int"], id="processor-module"),
+    ],
+)
+def test_an_intrinsic_use_reads_nothing_from_a_same_named_user_module(
+    tmp_path: Path, nature, callback_storage, bound_scope, specifics
+):
+    """Callbacks, specification-expression calls, and generics all follow the ``use`` nature."""
+    consumer = f"""\
+module consumer
+  use, {nature} :: ieee_arithmetic, only: ieee_cb, ieee_scale, ieee_size
+  implicit none
+  interface ieee_scale
+    module procedure scale_int
+  end interface ieee_scale
+contains
+  subroutine scale_int(i)
+    integer, intent(inout) :: i
+  end subroutine scale_int
+  subroutine apply(cb, n, values)
+    procedure(ieee_cb) :: cb
+    integer, intent(in) :: n
+    real, intent(inout) :: values(ieee_size(n))
+  end subroutine apply
+end module consumer
+"""
+    source = tmp_path / "project.f90"
+    source.write_text(f"{USER_IEEE_ARITHMETIC}\n{consumer}", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    module = next(item for item in modules if item.name == "consumer")
+    callback, _count, values = next(function for function in module.functions if function.name == "apply").arguments
+    (bound_call,) = values.semantic_type.storage.array.expression_callables[0]
+
+    assert callback.semantic_type.storage.kind == callback_storage
+    assert (bound_call.name, bound_call.native_scope) == ("ieee_size", bound_scope)
+    assert [procedure.name for procedure in module.overload_sets[0].procedures] == specifics
+
+
+@pytest.mark.parametrize(
+    ("nature", "processor", "wrapped"),
+    [
+        pytest.param("intrinsic", True, False, id="processor-type"),
+        pytest.param("non_intrinsic", False, True, id="user-type"),
+    ],
+)
+def test_a_wildcard_use_resolves_a_derived_type_by_its_nature(tmp_path: Path, nature, processor, wrapped):
+    """A type reached through ``use, intrinsic`` is the processor's even beside a same-named user module."""
+    user = "module ieee_arithmetic\n  type :: ieee_class_type\n    integer :: v\n  end type ieee_class_type\nend module ieee_arithmetic\n"
+    consumer = (
+        f"module consumer\n  use, {nature} :: ieee_arithmetic\ncontains\n  subroutine inspect(value)\n"
+        "    type(ieee_class_type), intent(in) :: value\n  end subroutine inspect\nend module consumer\n"
+    )
+    source = tmp_path / "project.f90"
+    source.write_text(f"{user}\n{consumer}", encoding="utf-8")
+
+    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+    argument = next(module for module in modules if module.name == "consumer").functions[0].arguments[0]
+    reference = argument.semantic_type.metadata["external_type_ref"]
+
+    assert reference["origin_module"] == "ieee_arithmetic"
+    assert (bool(reference.get("processor")), reference["wrapped"]) == (processor, wrapped)
+
+
+def test_a_plain_use_of_an_ieee_module_names_the_processor_module(tmp_path: Path):
+    """Semantic resolution and source discovery share one inventory of processor modules."""
+    source = tmp_path / "facade.f90"
+    source.write_text("module facade\n  use ieee_arithmetic, only: ieee_is_nan\nend module facade\n", encoding="utf-8")
+
+    (facade,) = fortran_project_to_semantic_modules(parse_fortran_project([source]))
+
+    assert [(item.local_name, item.entity_kind) for item in facade.reexports] == [("ieee_is_nan", "intrinsic")]

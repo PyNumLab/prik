@@ -1513,7 +1513,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Int32",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Int32",
             "origin": {
               "metadata": {
@@ -1578,7 +1580,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Float32",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Float32",
             "origin": {
               "metadata": {
@@ -1643,7 +1647,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Bool",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Bool",
             "origin": {
               "metadata": {
@@ -1708,7 +1714,9 @@
             "coercions": [],
             "constraints": [],
             "dtype": "Complex64",
-            "metadata": {},
+            "metadata": {
+              "native_storage": true
+            },
             "name": "Complex64",
             "origin": {
               "metadata": {
@@ -1774,7 +1782,8 @@
             "constraints": [],
             "dtype": "String",
             "metadata": {
-              "fortran_character_length": "8"
+              "fortran_character_length": "8",
+              "native_storage": true
             },
             "name": "String",
             "origin": {

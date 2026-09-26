@@ -10,7 +10,7 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.policy.ownership import AssignmentMode
 from prik.policy.models import (
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleVariablePolicy,
     NativeArrayDescriptorAttribute,
@@ -47,14 +47,14 @@ selected_scale: Pointer[Float64]
     assert policies["target_scale"].getter_action is ModuleGetterAction.DIRECT_VALUE
     assert policies["target_scale"].setter_action is SetterAction.WRITE_THROUGH
     assert policies["target_scale"].native_assignment is AssignmentMode.VALUE_COPY
-    assert policies["optional_scale"].getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+    assert policies["optional_scale"].getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     assert policies["optional_scale"].descriptor_kind == "allocatable"
-    assert policies["optional_scale"].setter_action is SetterAction.REJECT_REPLACEMENT
-    assert policies["optional_scale"].native_assignment is AssignmentMode.NONE
-    assert policies["selected_scale"].getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+    assert policies["optional_scale"].setter_action is SetterAction.WRITE_THROUGH
+    assert policies["optional_scale"].native_assignment is AssignmentMode.ALLOCATING_COPY
+    assert policies["selected_scale"].getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     assert policies["selected_scale"].descriptor_kind == "pointer"
-    assert policies["selected_scale"].setter_action is SetterAction.REJECT_REPLACEMENT
-    assert policies["selected_scale"].native_assignment is AssignmentMode.NONE
+    assert policies["selected_scale"].setter_action is SetterAction.WRITE_THROUGH
+    assert policies["selected_scale"].native_assignment is AssignmentMode.TARGET_COPY
 
 
 def test_fixed_character_handles_publish_only_the_descriptor_attribute_their_callback_can_supply():
@@ -172,8 +172,8 @@ addressable: Annotated[Float64[4], Aliased]
     }
     assert [policy.supported for policy in policies.values()] == [True, True]
     assert policies["values"].getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
-    assert policies["values"].array_address is ModuleArrayAddressMechanism.CAPTURED_ADDRESS
-    assert policies["addressable"].array_address is ModuleArrayAddressMechanism.TARGET_ADDRESS
+    assert policies["values"].storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+    assert policies["addressable"].storage_address is ModuleStorageAddressMechanism.TARGET_ADDRESS
     # Neither route hands Python the whole variable back to reassign.
     assert policies["values"].setter_action is SetterAction.REJECT_REPLACEMENT
     assert policies["addressable"].setter_action is SetterAction.REJECT_REPLACEMENT

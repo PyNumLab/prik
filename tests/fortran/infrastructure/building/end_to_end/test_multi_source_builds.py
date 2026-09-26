@@ -483,3 +483,41 @@ def test_reexport_is_owned_by_its_declaring_contract_whatever_the_entry_lists_fi
     assert generated.count("static PyObject * wrap_scale_twice") == 1
     assert 'prik_bind_namespace_alias(namespace_facade_mod, "scale_twice", namespace_owner_mod' in generated
     assert 'prik_bind_namespace_alias(namespace_renaming_mod, "doubled", namespace_owner_mod' in generated
+
+
+def test_same_named_submodules_of_two_modules_build_and_dispatch_separately(tmp_path: Path):
+    """``a:impl`` and ``b:impl`` are two submodules, each compiled after its own parent.
+
+    After the first module, the sources arrive children first, so each nested
+    ``leaf`` compiles only because scheduling follows its ``ancestor:impl``
+    parent rather than a bare ``impl`` that two files define.
+    """
+
+    def module(name: str) -> tuple[str, str]:
+        return (
+            f"{name}.f90",
+            f"module {name}\n  implicit none\n  interface\n    module function answer() result(value)\n"
+            f"      integer :: value\n    end function answer\n  end interface\nend module {name}\n",
+        )
+
+    sources = [module("a")]
+    for ancestor, value in (("a", 1), ("b", 2)):
+        sources.append(
+            (
+                f"{ancestor}_leaf.f90",
+                f"submodule ({ancestor}:impl) leaf\ncontains\n  module procedure answer\n"
+                f"    value = offset + {value}\n  end procedure answer\nend submodule leaf\n",
+            )
+        )
+        sources.append(
+            (
+                f"{ancestor}_impl.f90",
+                f"submodule ({ancestor}) impl\n  integer, parameter :: offset = {10 * value}\nend submodule impl\n",
+            )
+        )
+    sources.append(module("b"))
+
+    package, _payload = _build_sources_and_import(sources, tmp_path)
+
+    assert package.a.answer() == 11
+    assert package.b.answer() == 22

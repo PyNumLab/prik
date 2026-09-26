@@ -264,7 +264,7 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
     double bound_value;
     double result;
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &bound_value_obj)) return NULL;
-    if (prik_float64_unpack_exact(bound_value_obj, &bound_value) < 0) { if (!PyErr_Occurred()) { PyErr_Format(PyExc_TypeError, "Expected an argument of type numpy.float64 for argument value. Received <class '%s'>", Py_TYPE(bound_value_obj)->tp_name); } return NULL; };
+    if (prik_float64_or_storage(bound_value_obj, NPY_FLOAT64, 0, "numpy.float64", "numpy.float64", "value", &bound_value, NULL) < 0) { return NULL; };
     result = bind_c_double_value(bound_value);
     PyObject * result_obj = prik_float64_to_numpy(&result);
     if (result_obj == NULL) {

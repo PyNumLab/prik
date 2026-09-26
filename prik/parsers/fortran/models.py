@@ -380,6 +380,12 @@ class FortranProcedureSignature:
     in_interface: bool = False
     variables: dict[str, FortranVariable] = field(default_factory=dict)
     common_variables: list[str] = field(default_factory=list)
+    nested_uses: list[FortranUseStatement] = field(default_factory=list)
+    """``use`` statements of the internal procedures and ``BLOCK`` constructs inside.
+
+    They name modules this procedure depends on, so discovery and compile
+    ordering read them, but they make nothing visible in the procedure itself.
+    """
 
 
 @dataclass
@@ -449,6 +455,9 @@ class FortranUseStatement:
     module: str
     only: bool = False
     mappings: tuple[FortranUseMapping, ...] = ()
+    # ``"intrinsic"`` or ``"non_intrinsic"`` when the statement names the
+    # module's nature, which decides whether a processor module is meant.
+    nature: str | None = None
 
 
 @dataclass
@@ -466,9 +475,35 @@ class FortranModule:
     private_symbols: list[str] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
 
+    @property
+    def separate_procedures(self) -> list[FortranProcedureSignature]:
+        """Return the separate module procedures this module declares.
+
+        A ``module function`` or ``module subroutine`` body in one of the
+        module's own interface blocks declares a procedure of this module that
+        a submodule implements. It is as much the module's procedure as one it
+        contains, but its declaration lives with the interface block rather
+        than in ``procedures``, which holds the bodies the module contains.
+        """
+        return [
+            signature
+            for interface in self.interfaces
+            if interface.name is None and not interface.abstract and interface.declaring_scope_kind == "module"
+            for signature in interface.procedures
+            if "module" in signature.attributes
+        ]
+
 
 @dataclass
 class FortranSubmodule:
+    """One submodule, named relative to the module it descends from.
+
+    A submodule name is local to its ancestor module, so ``submodule (a) impl``
+    and ``submodule (b) impl`` are two units. ``parent`` is the direct parent
+    as written: the ancestor module itself, or with ``ancestor`` set, another
+    submodule of that ancestor.
+    """
+
     name: str
     parent: str
     ancestor: str | None = None
@@ -481,6 +516,21 @@ class FortranSubmodule:
     enums: list[FortranEnum] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
 
+    @property
+    def ancestor_module(self) -> str:
+        """Return the module this submodule descends from."""
+        return self.ancestor or self.parent
+
+    @property
+    def identity(self) -> str:
+        """Return ``ancestor:name``, the name that identifies this submodule."""
+        return f"{self.ancestor_module}:{self.name}"
+
+    @property
+    def parent_identity(self) -> str:
+        """Return the identity of the direct parent: a module, or ``ancestor:parent``."""
+        return f"{self.ancestor}:{self.parent}" if self.ancestor else self.parent
+
 
 @dataclass
 class FortranProgram:
@@ -491,6 +541,11 @@ class FortranProgram:
     procedures: list[FortranProcedureSignature] = field(default_factory=list)
     enums: list[FortranEnum] = field(default_factory=list)
     common_variables: list[str] = field(default_factory=list)
+    nested_uses: list[FortranUseStatement] = field(default_factory=list)
+    """``use`` statements of the internal procedures and ``BLOCK`` constructs inside.
+
+    They are dependencies of the program, but make nothing visible in it.
+    """
 
 
 @dataclass
@@ -577,6 +632,12 @@ class FortranProject:
     programs: dict[str, FortranProgram] = field(default_factory=dict)
 
     procedures: dict[str, FortranProcedureSignature] = field(default_factory=dict)
+    """Procedures by ``owner.name`` and, first seen, by bare name.
+
+    A module's entries include its separate module procedures, keyed by the
+    module, as well as those it contains; a submodule's entries are the bodies
+    it contains, keyed by its ``ancestor:name``.
+    """
 
     derived_types: dict[str, FortranDerivedType] = field(default_factory=dict)
 

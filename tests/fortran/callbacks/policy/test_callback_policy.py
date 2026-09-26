@@ -4,8 +4,8 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.parsers.fortran.parser import parse_fortran_project
-from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.preprocessing import PreprocessingConfig
+from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
+from prik.preprocessing import PreprocessingConfig, read_fortran_source
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
@@ -25,7 +25,7 @@ FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 
 def _source_semantic_module(filename: str, *, module_name: str, assume_intent_in_scalars: bool = False):
     source = FIXTURES / "native" / filename
-    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    parsed = parse_fortran_project({str(source): read_fortran_source(source, PreprocessingConfig()).source})
     modules = fortran_project_to_semantic_modules(parsed, assume_intent_in_scalars=assume_intent_in_scalars)
     _apply_source_python_exports(modules)
     module = _merge_wrapper_modules(modules, name=module_name)

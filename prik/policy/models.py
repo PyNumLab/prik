@@ -183,6 +183,15 @@ class ArgumentHandoffMode(str, Enum):
     NATIVE_DESCRIPTOR = "native_descriptor"
 
 
+class ScalarActualMode(str, Enum):
+    """Accepted scalar actuals and their completed native transport."""
+
+    NUMERIC_REFERENCE = "numeric_reference"
+    NUMERIC_VALUE = "numeric_value"
+    CHARACTER_REFERENCE = "character_reference"
+    CHARACTER_VALUE = "character_value"
+
+
 class ArgumentConversionPhase(str, Enum):
     """Completed binding conversion schedule for one Python argument."""
 
@@ -208,10 +217,17 @@ class DirectResultABI(str, Enum):
 
 
 class ScalarLogicalABI(str, Enum):
-    """Completed scalar logical adaptation between the C and native dummies."""
+    """Completed scalar logical adaptation between the C and native dummies.
+
+    ``NATIVE_KIND_STORAGE`` passes integer storage of the logical's own width
+    straight to the dummy, as a logical array does, so nothing is copied.
+    ``NATIVE_KIND_COPY`` converts through ``c_bool``, for a hidden result or a
+    logical whose width no compiler probe established.
+    """
 
     NOT_APPLICABLE = "not_applicable"
     C_BOOL = "c_bool"
+    NATIVE_KIND_STORAGE = "native_kind_storage"
     NATIVE_KIND_COPY = "native_kind_copy"
 
 
@@ -329,6 +345,9 @@ class ModuleGetterAction(str, Enum):
     NATIVE_CONSTANT_VALUE = "native_constant_value"
     NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
+    NATIVE_SCALAR_VIEW = "native_scalar_view"
+    NATIVE_CHARACTER_VIEW = "native_character_view"
+    NATIVE_NULLABLE_SCALAR_VIEW = "native_nullable_scalar_view"
     CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -336,18 +355,13 @@ class ModuleGetterAction(str, Enum):
     DERIVED_OBJECT = "derived_object"
 
 
-class ModuleArrayAddressMechanism(str, Enum):
-    """Completed native mechanism that yields a fixed module array's base address.
+class ModuleStorageAddressMechanism(str, Enum):
+    """Completed route to the original storage of a module scalar or array.
 
-    ``TARGET_ADDRESS`` applies to storage the declaration made addressable, where
-    ``c_loc`` names the array directly.  ``CAPTURED_ADDRESS`` applies to an
-    ordinary array without that attribute: ``c_loc`` cannot name it, so the whole
-    array is handed to ``prik_capture_address``, a ``bind(C)`` primitive whose
-    assumed-type assumed-size dummy receives the bare base address.  The
-    Fortran side forms no pointer and claims no target.  The captured address is
-    valid for as long as the module variable keeps its storage, which the Fortran
-    standard does not guarantee across the program's lifetime; see the module
-    variable guide for the responsibility that carries.
+    ``TARGET_ADDRESS`` uses ``c_loc`` on a target array. ``CAPTURED_ADDRESS``
+    passes a non-target scalar or array to a ``bind(C)`` identity procedure,
+    which returns its original address without copying. The captured address
+    remains valid only while the module variable keeps that storage.
     """
 
     TARGET_ADDRESS = "target_address"
@@ -550,6 +564,9 @@ class OverloadMatchKind(str, Enum):
     NUMPY_ARRAY = "numpy_array"
     STRING = "string"
     DERIVED = "derived"
+    # Any Python callable. A callable carries no prototype to test, so two
+    # candidates that differ only in their callback types cannot be told apart.
+    CALLBACK = "callback"
 
 
 @dataclass(frozen=True)
@@ -718,6 +735,8 @@ class OverloadArgumentPolicy:
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
+    scalar_actual_mode: ScalarActualMode | None = None
+    character_length: int | None = None
     builtin_scalar_family: str | None = None
 
 
@@ -742,6 +761,7 @@ class OverloadPolicy:
     blockers: tuple[str, ...] = ()
     unsupported_extra_argument_message: str | None = None
     identity_receiver_shortcut: bool = False
+    direct_single_candidate: bool = False
 
 
 @dataclass(frozen=True)
@@ -990,7 +1010,7 @@ class ModuleVariablePolicy:
     blockers: tuple[str, ...] = ()
     character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
-    array_address: ModuleArrayAddressMechanism | None = None
+    storage_address: ModuleStorageAddressMechanism | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None
 
@@ -1309,6 +1329,8 @@ class ArgumentPolicy:
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    scalar_actual_mode: ScalarActualMode | None
+    scalar_storage_writable: bool
     ownership: OwnershipDecision
     codegen_action: CodegenAction
     python_barrier_action: PythonBarrierAction

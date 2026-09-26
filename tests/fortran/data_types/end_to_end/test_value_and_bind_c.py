@@ -31,12 +31,17 @@ def test_value_and_existing_bind_c_renamed_symbol_use_correct_abi(
     )
 
     assert module.plus_value(np.int32(5)) == np.int32(12)
+    value_storage = np.array(5, dtype=np.int32)
+    assert module.plus_value(value_storage) == np.int32(12)
+    assert value_storage[()] == np.int32(5)
     assert module.double_value(np.int32(6)) == np.int32(12)
     assert module.plus_reference(np.int32(5)) == np.int32(16)
+    assert module.plus_reference(np.array(5, dtype=np.int32)) == np.int32(16)
     assert module.scale_real(np.float64(4.0)) == np.float64(10.0)
     assert module.conjugate_value(np.complex128(2.0 + 3.0j)) == np.complex128(2.0 - 3.0j)
     assert bool(module.invert_flag(True)) is False
     assert module.char_code("A") == np.int32(65)
+    assert module.char_code(np.array("A", dtype="S1")) == np.int32(65)
 
     if pyi_parity_build_mode == "source":
         binding_source = (tmp_path / "source_build" / "fbind_value_f90_wrapper.c").read_text(encoding="utf-8")

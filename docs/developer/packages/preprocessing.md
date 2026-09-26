@@ -52,6 +52,7 @@ plus its recipe; it is not a stable semantic scalar or NumPy dtype.
 ```text
 prik/preprocessing/
 ├── __init__.py
+├── languages.py
 ├── source.py
 ├── fortran.py
 ├── c.py                         C source preparation
@@ -65,7 +66,8 @@ prik/preprocessing/
 | Module | Public boundary and result | Change it when |
 | --- | --- | --- |
 | [`prik/preprocessing/__init__.py`](../../../prik/preprocessing/__init__.py) | Re-exports the supported shared source-preparation records, adapters, and entrypoints. | The shared preprocessing import surface changes. |
-| [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `preprocess_source()` is the compiler-backed route. `PreprocessingConfig` selects its command; `PreprocessResult` returns expanded text, provenance, and diagnostics. | Compiler adapters, invocations, recipes, mappings, dependencies, macros, or diagnostics change. |
+| [`prik/preprocessing/languages.py`](../../../prik/preprocessing/languages.py) | The one owner of source suffixes, a Fortran file's fixed or free form, and the sources a list of files and directories names (`expand_source_paths()`, and `validated_source_paths()` for a build). | A supported suffix, source-form rule, or input expansion changes. |
+| [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `preprocess_source()` is the compiler-backed route, and `read_fortran_source()` is how every route reads a Fortran path for parsing. `PreprocessingConfig` selects its command; `PreprocessResult` returns expanded text, provenance, and diagnostics. | Compiler adapters, invocations, recipes, mappings, dependencies, macros, or diagnostics change. |
 | [`prik/preprocessing/fortran.py`](../../../prik/preprocessing/fortran.py) | `expand_native_fortran_includes()` turns remaining textual `INCLUDE` statements into parser input while retaining mappings and diagnostics. | Native Fortran include discovery or expansion changes. |
 | [`prik/preprocessing/c.py`](../../../prik/preprocessing/c.py) | Collects C directive and include metadata and normalizes prepared C source without interpreting declarations. | C directive provenance, include metadata, or parser preparation changes. |
 | [`prik/preprocessing/probes/fortran_types.py`](../../../prik/preprocessing/probes/fortran_types.py) | `evaluate_fortran_type_requirements()` and `evaluate_fortran_type_facts()` turn semantic requirements into cached compiler measurements; `FortranTypeProbeReport` retains values and recipe. | Fortran fact generation, validation, cache identity, or semantic-facing probe results change. |

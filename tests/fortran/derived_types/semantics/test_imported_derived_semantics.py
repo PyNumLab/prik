@@ -20,6 +20,7 @@ from prik.semantics.fortran2ir import (
     fortran_project_to_semantic_modules,
 )
 from prik.semantics.models import (
+    EXTERNAL_TYPE_REF_METADATA,
     SemanticField,
     SemanticVariable,
 )
@@ -72,19 +73,25 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
 
     assert converter.visit(imported_type, derived_type_context=context).metadata["external_type_ref"] == external_ref
     assert (
-        converter.visit(imported_argument, derived_type_context=context).semantic_type.metadata["external_type_ref"]
+        converter.visit(imported_argument, derived_type_context=context).semantic_type.metadata[
+            EXTERNAL_TYPE_REF_METADATA
+        ]
         == external_ref
     )
     assert converter.visit(proc, derived_type_context=context).arguments[0].semantic_type.metadata[
         "external_type_ref"
     ] == (external_ref)
     assert (
-        converter.visit(parsed_file)[0].classes[0].fields[0].semantic_type.metadata["external_type_ref"] == external_ref
+        converter.visit(parsed_file)[0].classes[0].fields[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA]
+        == external_ref
     )
-    assert converter.visit(project)[0].classes[0].fields[0].semantic_type.metadata["external_type_ref"] == external_ref
-    assert semantic_module.classes[0].fields[0].semantic_type.metadata["external_type_ref"] == external_ref
+    assert (
+        converter.visit(project)[0].classes[0].fields[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA]
+        == external_ref
+    )
+    assert semantic_module.classes[0].fields[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] == external_ref
     assert "external_type_ref" not in semantic_module.classes[0].fields[1].semantic_type.metadata
-    assert semantic_class.fields[0].semantic_type.metadata["external_type_ref"] == external_ref
+    assert semantic_class.fields[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] == external_ref
     assert isinstance(semantic_class.fields[0], SemanticField)
     assert semantic_class.visibility == "private"
     assert semantic_class.origin.source_language == "fortran"
@@ -94,8 +101,8 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     semantic_proc = semantic_module.functions[0]
     assert semantic_proc.native_name == "step"
     assert semantic_proc.locals == []
-    assert semantic_proc.arguments[0].semantic_type.metadata["external_type_ref"] == external_ref
-    assert semantic_module.variables[0].semantic_type.metadata["external_type_ref"] == external_ref
+    assert semantic_proc.arguments[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] == external_ref
+    assert semantic_module.variables[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA] == external_ref
     assert isinstance(semantic_module.variables[0], SemanticVariable)
     assert [method.name for method in semantic_module.classes[0].methods] == ["step"]
     assert semantic_module.classes[0].methods[0].projection == semantic_proc.projection
@@ -234,7 +241,8 @@ end module physics
         wrapped_derived_types={("types_mod", "particle")},
     )
     assert (
-        get_function(wrapped_module, "move").arguments[0].semantic_type.metadata["external_type_ref"]["wrapped"] is True
+        get_function(wrapped_module, "move").arguments[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA]["wrapped"]
+        is True
     )
 
 
@@ -273,3 +281,22 @@ end module physics
         "wrapped": True,
         "representation": "wrapped",
     }
+
+
+def test_type_reached_through_a_reexporting_module_resolves_to_its_declaration():
+    """A module that only re-exports a type still leads to the module declaring it."""
+    project = parse_fortran_project(
+        {
+            "base.f90": "module base\n  type :: handle_t\n    integer :: val\n  end type handle_t\nend module base\n",
+            "middle.f90": "module middle\n  use base\nend module middle\n",
+            "api.f90": (
+                "module api\n  use middle\ncontains\n  subroutine touch(h)\n"
+                "    type(handle_t), intent(inout) :: h\n  end subroutine touch\nend module api\n"
+            ),
+        }
+    )
+
+    api = next(module for module in fortran_project_to_semantic_modules(project) if module.name == "api")
+    reference = api.functions[0].arguments[0].semantic_type.metadata[EXTERNAL_TYPE_REF_METADATA]
+
+    assert (reference["origin_module"], reference["name"]) == ("base", "handle_t")

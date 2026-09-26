@@ -216,7 +216,7 @@ def test_external_interface_declares_late_extent_before_dependent_array():
         "late_extent_external.late_extent.n",
         "late_extent_external.late_extent.values",
     )
-    assert c_source.index("prik_int32_unpack_exact(bound_n_obj, &bound_n)") < c_source.index(
+    assert c_source.index("prik_int32_or_storage(bound_n_obj, ") < c_source.index(
         "bound_values_bind_fixed[0] = (long long)(bound_n);"
     )
     signature = "subroutine late_extent(values, n)"

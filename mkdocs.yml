@@ -76,6 +76,7 @@ nav:
       - Tutorials:
           - Run PRIK in a Notebook: user/tutorials/notebook-quickstart.md
           - Design a Pythonic BLAS API: user/tutorials/pythonic-blas.md
+          - Wrap Open MPI mpi_f08: user/tutorials/openmpi-f08.md
       - Examples:
           - Overview: user/examples/index.md
           - Fortran:

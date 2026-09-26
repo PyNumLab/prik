@@ -17,7 +17,7 @@ class vector3:
 
     values: Float64[3]
 
-counter: Int32
+counter: Int32[()]
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2)), Addr(Arg(3)), Addr(Arg(4)), Addr(Arg(5))])
 def init_particle(

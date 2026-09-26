@@ -12,6 +12,7 @@ import pytest
 
 from prik.parsers.c import CParseError
 from prik.parsers.c import cli as c_parser_cli
+from prik.parsers.c import sources as c_sources
 import prik.cli as prik_cli
 from prik.preprocessing import PreprocessingConfig
 
@@ -127,15 +128,15 @@ def test_cli_c_parse_preprocesses_macros_by_default(tmp_path: Path):
 
 
 def test_attach_preprocessing_recipe_filters_invalid_and_duplicate_macros():
-    empty = c_parser_cli.CFile()
-    c_parser_cli.attach_preprocessing_recipe(empty, None)
+    empty = c_sources.CFile()
+    c_sources.attach_preprocessing_recipe(empty, None)
     assert empty.preprocessing_recipe is None
 
-    parsed = c_parser_cli.CFile(
+    parsed = c_sources.CFile(
         macros=[
-            c_parser_cli.CMacro(
+            c_sources.CMacro(
                 name="EXISTING",
-                source_location=c_parser_cli.CSourceLocation(filename="api.h", line=2),
+                source_location=c_sources.CSourceLocation(filename="api.h", line=2),
             )
         ]
     )
@@ -149,7 +150,7 @@ def test_attach_preprocessing_recipe_filters_invalid_and_duplicate_macros():
         ]
     }
 
-    c_parser_cli.attach_preprocessing_recipe(parsed, recipe)
+    c_sources.attach_preprocessing_recipe(parsed, recipe)
 
     assert parsed.preprocessing_recipe == recipe
     assert [macro.name for macro in parsed.macros] == ["EXISTING", "NEW", "WITH_LOC"]
@@ -479,12 +480,8 @@ def test_c_parser_cli_module_handles_directory_loader_and_output_modes(tmp_path:
     (tmp_path / "ignored.txt").write_text("ignored\n", encoding="utf-8")
 
     assert c_parser_cli.expand_c_paths([str(tmp_path), str(header)]) == [header]
-    loaded = c_parser_cli.parse_c_report(
-        [str(header)],
-        source_loader=lambda _path: ("int generated(void);\n", {"mode": "test"}),
-    )
-    assert loaded[str(header)]["functions"][0]["name"] == "generated"
-    assert loaded[str(header)]["preprocessing_recipe"] == {"mode": "test"}
+    loaded = c_parser_cli.parse_c_report([str(header)])
+    assert loaded[str(header)]["functions"][0]["name"] == "add"
 
     assert c_parser_cli.main([str(header)]) == 0
     assert "Functions: 1" in capsys.readouterr().out
@@ -559,7 +556,7 @@ def test_prik_c_compiler_source_loader_drives_semantics_and_pyi(tmp_path: Path, 
             SimpleNamespace(to_dict=lambda: {"mode": "compiler", "compiler": config.compiler}),
         )
 
-    monkeypatch.setattr(prik_cli, "run_compiler_preprocessor_with_recipe", preprocess)
+    monkeypatch.setattr(c_sources, "run_compiler_preprocessor_with_recipe", preprocess)
     config = PreprocessingConfig(mode="compiler", compiler="cc")
 
     semantics = prik_cli._semantic_report([str(header)], config, language="c")

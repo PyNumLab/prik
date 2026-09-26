@@ -52,7 +52,7 @@ def test_optional_scalar_lowering_distinguishes_absent_or_none_from_value():
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "O|O"' in c_source
     assert "PyObject * bound_factor_obj = Py_None;" in c_source
     assert "if (bound_factor_obj != Py_None)" in c_source
-    assert "bound_factor_nullable = &bound_factor;" in c_source
+    assert "bound_factor_nullable = bound_factor_storage;" in c_source
     assert "bind_c_optional_scale(base, bound_factor)" in fortran_source
     assert "if (c_associated(bound_factor)) then" in fortran_source
     assert "result = optional_scale(base=base, factor=prik_optional_factor)" in fortran_source

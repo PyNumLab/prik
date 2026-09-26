@@ -396,13 +396,18 @@ An annotated assignment declares native module state:
 ```python
 from prik.contracts import Float64, Int32
 
-counter: Int32
-scale: Float64 = 2.0
+counter: Int32[()]
+scale: Float64[()]
 ```
 
-Fortran module variables can be buildable getters, setters, constants, wrapped
-objects, or descriptor handles according to their completed policy. A literal
-default on supported mutable scalar state is an import-time native initializer.
+Mutable Fortran module variables expose their native storage. Fixed-storage
+numeric and logical scalars use live rank-zero `T[()]` NumPy views; fixed-length
+character scalars use live rank-zero `String[n][()]` bytes views. `PARAMETER`
+declarations use `Final[...]` values. Scalar allocatable and pointer module
+variables return a live rank-zero view or `None` on each read; array descriptors
+use handles. An edited plain `T` module declaration requests a scalar value
+getter. A literal default on supported mutable scalar state is an import-time
+native initializer.
 
 C global declarations can be represented for inspection, but current C wrapper
 builds reject native global state. C functions remain the supported runtime
@@ -545,14 +550,16 @@ generated constructor form.
 
 Methods use the same rules plus an untyped `self`. `Pass()` places that object
 in an explicit native argument list. `@bind(...)` is needed only when the
-Python declaration and native callable names differ.
+Python declaration and native callable names differ. For an `@overload(...)`
+declaration the native callable defaults to the linked specific, not the
+Python name; see [Generic Procedure Overloads](#generic-procedure-overloads).
 
 ### Function And Method Decorators
 
 | Decorator | Valid target | Language and meaning |
 | --- | --- | --- |
 | `@private` | Function or method | Shared: declaration remains available to contract dependencies but is not exported. |
-| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. |
+| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. A module-level Fortran procedure is called through the native module the contract module names, so the symbol may be any procedure or generic that module provides, including one it imports. |
 | `@native_abi("c")` | Function, method, or prototype | Fortran only: original declaration is `bind(C)`. |
 | `@standalone` | Module-level function | Fortran only: native procedure is outside a module. |
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |
@@ -600,10 +607,13 @@ def convert(value: Int32) -> Int32: ...
 def convert(value: Float64) -> Float64: ...
 ```
 
-The linked concrete declaration owns `@native_call`. An overload-level
-`@bind(...)` selects a public native generic when the specific itself is not the
-link target. Runtime dispatch distinguishes exact scalar dtype, array element
+The linked concrete declaration owns `@native_call`, and without `@bind(...)`
+the candidate calls that specific by its own name, whatever the Python name.
+An overload-level `@bind(...)` calls a public native generic instead, which is
+needed when the module keeps the specific private. Runtime dispatch distinguishes exact scalar dtype, array element
 dtype and rank, or wrapped class; it does not use implicit numeric coercion.
+An `AnyNative` choice-buffer argument can appear in a generic with one selected
+candidate; its concrete wrapper validates the actual storage at the call.
 
 The optional `generic=` string preserves a Fortran operator spelling when the
 Python method name is ambiguous, such as `.eqv.` versus `==`.
@@ -801,7 +811,7 @@ stores or passes it:
 | Contract | Meaning | Languages |
 | --- | --- | --- |
 | `T` | Scalar Python value or wrapped object. | Shared. |
-| `T[()]` | Caller-owned rank-zero NumPy storage. | Shared. |
+| `T[()]` | Rank-zero NumPy storage; supported numeric module variables expose live native storage. | Shared. |
 | `T[n]` | Rank-one array with extent `n`. | Shared. |
 | `T[:]` | Rank-one array with runtime extent. | Shared. |
 | `T[:, :]` | Rank-two array with runtime extents. | Shared. |
@@ -856,9 +866,15 @@ PRIK does not silently pad or truncate a fixed-length public `str`.
 ### Python And Native Boundaries
 
 `T` describes the Python value; `@native_call` can refine how it reaches the
-native procedure. A bare numeric scalar normally passes by value.
-`Addr(Arg(i))` creates call-local scalar storage and passes its address.
-`T[()]` and ranked arrays already expose storage and use `Arg(i)`.
+native procedure. A bare numeric scalar argument accepts either an exact
+NumPy scalar or a matching rank-zero NumPy array. For a reference dummy, the
+scalar uses call-local storage and the array supplies its own address. For a
+`VALUE` dummy, both supply a value. `T[()]` requires rank-zero array storage.
+`String[n]` likewise accepts a Python `str` or matching rank-zero `S<n>`
+storage; `String[n][()]` requires the latter. The dummy declaration determines
+the native ABI independently of the actual's Python representation. In a
+`@native_call` map, `Addr(Arg(i))` transports a reference; `Arg(i)` or
+`Value(Arg(i))` transports a value as required by the native type.
 
 Raw `Addr(T)` is different: the Python caller supplies the integer address
 itself. Wrapped class annotations pass generated wrapper instances and their

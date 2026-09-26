@@ -416,12 +416,13 @@ end submodule child_impl
     namespace = parse_fortran_project({str(p.name): p.read_text(encoding="utf-8") for p in tmp_path.glob("*.f90")})
     assert len(namespace.files) == 2
     assert len(namespace.submodules) == 1
-    submodule = namespace.submodules["child_impl"]
+    submodule = namespace.submodules["parent_mod:child_impl"]
     assert submodule.name == "child_impl"
     assert submodule.parent == "parent_mod"
     assert submodule.ancestor is None
     assert [p.name for p in submodule.procedures] == ["scale"]
-    assert submodule.procedures[0].module == "child_impl"
+    # A submodule name is local to its ancestor, so its procedures are owned by ``ancestor:name``.
+    assert submodule.procedures[0].module == "parent_mod:child_impl"
 
 
 def test_submodule_module_procedure_stub_and_additional_program_units():

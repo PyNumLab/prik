@@ -272,7 +272,7 @@ def test_f77_source_with_module_keyword_is_parsed():
       end module bad_module
 """
     parsed = parse_fortran_file(code, filename="legacy.f77")
-    assert parsed.format == "f77"
+    assert parsed.format == "fixed"
     assert parsed.modules[0].name == "bad_module"
 
 

@@ -26,15 +26,29 @@ OfferedNames = Callable[[str], Collection[str] | None]
 
 @dataclass(frozen=True)
 class UseRoute:
-    """One way a scope reaches a name: the module used, and the name there."""
+    """One way a scope reaches a name: the module used, and the name there.
+
+    ``nature`` is the ``intrinsic`` or ``non_intrinsic`` the ``use`` stated, if
+    any; it decides whether the processor module or a same-named one is meant.
+    """
 
     module: str
     source_name: str
+    nature: str | None = None
 
     @property
     def key(self) -> tuple[str, str]:
         """Return the case-folded identity two spellings of one route share."""
         return self.module.casefold(), self.source_name.casefold()
+
+    @property
+    def names_parsed_module(self) -> bool:
+        """Return whether this route can name a parsed module rather than the processor's.
+
+        An ``intrinsic`` use selects the processor module even when a parsed
+        module shares its name, so nothing it reaches is read from that module.
+        """
+        return self.nature != "intrinsic"
 
 
 class ScopeUses:
@@ -52,6 +66,17 @@ class ScopeUses:
     def modules(self) -> tuple[str, ...]:
         """Return each used module once, spelled as its first statement wrote it."""
         return tuple(statements[0].module for statements in self._by_module.values())
+
+    def nature(self, module: str) -> str | None:
+        """Return the nature the statements for ``module`` state, or ``None``."""
+        return next(
+            (statement.nature for statement in self._by_module.get(module.casefold(), ()) if statement.nature),
+            None,
+        )
+
+    def _offered(self, module: str, offered: OfferedNames) -> Collection[str] | None:
+        """Return the names ``module`` offers; an intrinsic module's cannot be enumerated."""
+        return None if self.nature(module) == "intrinsic" else offered(module)
 
     def imports_all(self, module: str) -> bool:
         """Return whether any statement for ``module`` omitted ``only``."""
@@ -78,14 +103,14 @@ class ScopeUses:
         for module in self.modules():
             for mapping in self.mappings(module):
                 if mapping.local_name.casefold() == folded:
-                    route = UseRoute(module, mapping.source)
+                    route = UseRoute(module, mapping.source, self.nature(module))
                     routes.setdefault(route.key, route)
         for module in self.modules():
             if not self.imports_all(module) or folded in self._renamed_away(module):
                 continue
-            names = offered(module)
+            names = self._offered(module, offered)
             if names is not None and folded in names:
-                route = UseRoute(module, local_name)
+                route = UseRoute(module, local_name, self.nature(module))
                 routes.setdefault(route.key, route)
         return tuple(routes.values())
 
@@ -103,7 +128,7 @@ class ScopeUses:
             if not self.imports_all(module):
                 continue
             renamed_away = self._renamed_away(module)
-            for name in sorted(offered(module) or ()):
+            for name in sorted(self._offered(module, offered) or ()):
                 if name not in renamed_away:
                     names.setdefault(name.casefold(), name)
         return tuple(names.values())
@@ -118,9 +143,11 @@ class ScopeUses:
         """
         folded = local_name.casefold()
         return tuple(
-            UseRoute(module, local_name)
+            UseRoute(module, local_name, self.nature(module))
             for module in self.modules()
-            if self.imports_all(module) and offered(module) is None and folded not in self._renamed_away(module)
+            if self.imports_all(module)
+            and self._offered(module, offered) is None
+            and folded not in self._renamed_away(module)
         )
 
     def _renamed_away(self, module: str) -> frozenset[str]:
@@ -128,18 +155,82 @@ class ScopeUses:
         return frozenset(item.source.casefold() for item in self.mappings(module) if item.target)
 
 
-def used_module_names(owner: object) -> set[str]:
-    """Return every module one scope names, lowercased.
+def used_module_statements(owner: object) -> list[FortranUseStatement]:
+    """Return every ``use`` statement one scope writes, including nested ones.
 
-    A ``use`` written inside a contained procedure or an interface body is a
-    dependency of the scope holding it just as much as one written at its top,
-    so the whole tree is read. Compile ordering and project dependencies both
-    ask this, and they have to get the same answer.
+    A ``use`` written inside a contained procedure, an interface body, an
+    internal procedure or a ``BLOCK`` construct is a dependency of the scope
+    holding it just as much as one written at its top, so the whole tree is
+    read. Compile ordering, project dependencies, and module source discovery
+    all ask this, and they have to get the same answer.
     """
-    statements: list[FortranUseStatement] = list(getattr(owner, "uses", ()))
+    statements: list[FortranUseStatement] = [*getattr(owner, "uses", ()), *getattr(owner, "nested_uses", ())]
     for procedure in getattr(owner, "procedures", ()):
         statements.extend(getattr(procedure, "uses", ()))
+        statements.extend(getattr(procedure, "nested_uses", ()))
     for interface in getattr(owner, "interfaces", ()):
         for procedure in getattr(interface, "procedures", ()):
             statements.extend(getattr(procedure, "uses", ()))
-    return {statement.module.lower() for statement in statements}
+    return statements
+
+
+# How strongly a requirement asks for a module's source: ``non_intrinsic``
+# requires one, a ``use`` stating no nature prefers one over the processor's
+# module of that name, and ``intrinsic`` names the processor's module only.
+_NATURE_STRENGTH = {"intrinsic": 0, None: 1, "non_intrinsic": 2}
+
+
+def used_module_natures(owners: Iterable[object]) -> dict[str, str | None]:
+    """Return each module the scopes use, with the nature that decides where it is read from.
+
+    Scopes naming one module differently are read together: one needing the
+    module's source outweighs one that would accept the processor's module,
+    so ``non_intrinsic`` wins over no stated nature, which wins over
+    ``intrinsic``. Only a module every scope uses as ``intrinsic`` is the
+    processor's alone. Names are case-folded.
+    """
+    natures: dict[str, str | None] = {}
+    for owner in owners:
+        for statement in used_module_statements(owner):
+            name = statement.module.casefold()
+            if name not in natures or _NATURE_STRENGTH[statement.nature] > _NATURE_STRENGTH[natures[name]]:
+                natures[name] = statement.nature
+    return natures
+
+
+def source_module_dependencies(owners: Iterable[object]) -> set[str]:
+    """Return the modules the scopes use that a parsed source may provide.
+
+    An ``intrinsic`` use names the processor's module, so a project source
+    that happens to share its name is not a dependency.
+    """
+    return {name for name, nature in used_module_natures(owners).items() if nature != "intrinsic"}
+
+
+def file_unit_requirements(parsed_file: object) -> dict[str, str | None]:
+    """Return every unit one parsed file needs, with the nature each is needed by.
+
+    A module is named by itself and a submodule by ``ancestor:name``. Every
+    scope in the file is read, including file-level interface bodies, and a
+    submodule needs its direct parent's source. This is the one reading that
+    module source discovery, project file ordering, and compile scheduling
+    share.
+    """
+    owners = (
+        *getattr(parsed_file, "modules", ()),
+        *getattr(parsed_file, "submodules", ()),
+        *getattr(parsed_file, "programs", ()),
+        *getattr(parsed_file, "procedures", ()),
+        *getattr(parsed_file, "interfaces", ()),
+    )
+    requirements = used_module_natures(owners)
+    for submodule in getattr(parsed_file, "submodules", ()):
+        requirements[submodule.parent_identity.casefold()] = "non_intrinsic"
+    return requirements
+
+
+def file_defined_units(parsed_file: object) -> set[str]:
+    """Return the units one parsed file defines: modules by name, submodules by ``ancestor:name``."""
+    defined = {str(module.name).casefold() for module in getattr(parsed_file, "modules", ())}
+    defined.update(submodule.identity.casefold() for submodule in getattr(parsed_file, "submodules", ()))
+    return defined

@@ -16,7 +16,6 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
     assert "static inline int prik_array_validate(" in header
     assert "static inline int prik_array_validate_ndarray(" in header
     assert "PyArrayObject *array," in header
-    assert header.count("PyArray_Check(value)") == 1
     assert "PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F" in header
     assert "prik_array_actual" in header
     assert "prik_release_owned_memory" in header
@@ -35,6 +34,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
     )
     for suffix in scalar_suffixes:
         assert f"prik_{suffix}_unpack_exact" in header
+        assert f"PRIK_DEFINE_SCALAR_OR_STORAGE({suffix}, " in header
         assert f"prik_{suffix}_unpack" in header
         assert f"prik_{suffix}_to_python" in header
         assert f"prik_{suffix}_to_numpy" in header
