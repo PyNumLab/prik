@@ -638,6 +638,14 @@ Time per call, compared with mpi4py:
 | `Barrier` | 0.35 µs | 0.49 µs (41% slower) | 0.52 µs (49% slower) |
 | `Get_rank` | 34 ns | 289 ns (about 9× slower) | 307 ns (about 9× slower) |
 
+Every PRIK call pays a fixed cost of about a quarter of a microsecond: it
+parses its arguments, unwraps the `Mpi_Comm` wrapper to reach its native
+handle, and returns a new `np.int32`. mpi4py, written in Cython, keeps the C
+handle inside its `Comm` object and returns a cached Python `int`. `Get_rank`
+and `Barrier` do almost no work of their own, so that fixed cost is what
+their times show; when data moves, it is small next to the work, and PRIK
+comes out ahead.
+
 These were measured on a local machine, with two ranks on it: an AMD Ryzen 5
 5600H laptop (x86-64, 6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory)
 running Ubuntu 22.04, with Python 3.10, NumPy 2.2, GCC and gfortran 11.4,
