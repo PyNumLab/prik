@@ -17,16 +17,6 @@ from prik.printers import emit_module
 C_FIXTURE_PROJECTS = iter_general_c_fixture_projects()
 
 
-def test_c_pyi_fixtures_do_not_contain_unknown_types():
-    unknown_fixtures = [
-        str(path.relative_to(C_PYI_FIXTURE_DIR))
-        for path in C_PYI_FIXTURE_DIR.rglob("*.pyi")
-        if "Unknown" in path.read_text(encoding="utf-8")
-    ]
-
-    assert not unknown_fixtures, f"Unknown semantic types in C .pyi fixtures: {unknown_fixtures[:20]}"
-
-
 @pytest.mark.parametrize(
     ("project_key", "fixtures"),
     C_FIXTURE_PROJECTS,

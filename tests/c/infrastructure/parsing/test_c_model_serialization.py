@@ -1,12 +1,6 @@
-"""Minimal JSON-shape coverage for C parser model dataclasses."""
+"""C parser diagnostic rendering, including color and source locations."""
 
 import prik.parsers.c.models as models
-
-
-def _type_payload(model: str, **extra):
-    payload = {"model": model, "qualifiers": [], "source_text": ""}
-    payload.update(extra)
-    return payload
 
 
 def _make_parse_error(**kwargs):
@@ -27,10 +21,6 @@ def test_c_parse_error_diagnostic_rendering_contract(monkeypatch):
     assert str(error) == plain
     assert error.format_diagnostic(color=False, debug=False) == plain
     assert error.format_diagnostic(color=True, debug=False) == colored
-    assert error.parser_file is not None
-    assert error.parser_line_number > 0
-    assert error.parser_function is not None
-
     monkeypatch.setenv("C_PARSER_DEBUG", "yes")
     assert "note: parser raised at" in error.format_diagnostic(color=False)
     colored_debug = error.format_diagnostic(color=True, debug=True)

@@ -10,6 +10,8 @@ release tags add a leading `v` to the package version.
 - The test suite consolidates overlapping checks around compiled workflows and
   retains focused parser, semantic, diagnostic, and ABI boundary coverage;
   contributor guidance now favors observable behavior over implementation shape.
+  The parked C parser benchmark and redundant parser walkthroughs no longer
+  appear in test collection.
 
 - Generated bindings pass a wrapped derived-type object about twice as fast:
   they read its native storage through attribute names interned once instead
