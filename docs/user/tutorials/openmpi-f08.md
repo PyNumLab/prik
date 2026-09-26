@@ -638,8 +638,9 @@ Time per call, compared with mpi4py:
 | `Barrier` | 0.32 µs | 0.32 µs (the same) | 0.50 µs (57% slower) |
 | `Get_rank` | 19 ns | 134 ns (about 7× slower) | 297 ns (about 15× slower) |
 
-`Get_rank` does almost no work, so its time is just the overhead of making a
-call, which is higher through PRIK than through mpi4py.
+`Get_rank` is the cheapest call, so its time is almost all the overhead of
+making a call. That overhead is small, but higher through PRIK than through
+mpi4py, and can be optimized later.
 
 These were measured on a local machine, with two ranks on it, and timed with
 mpi4py's `MPI.Wtime` for all three: an AMD Ryzen 5 5600H laptop (x86-64,
