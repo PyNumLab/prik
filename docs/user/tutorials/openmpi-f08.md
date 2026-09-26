@@ -25,33 +25,39 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+# Ranks and tags are np.int32 from the start: Get_rank returns one, these
+# constants are, and rank + 1 stays one.
+ROOT = np.int32(0)
+OBJECT_TAG = np.int32(11)
+ARRAY_TAG = np.int32(77)
+
 # Python objects travel pickled.
 if rank == 0:
-    comm.send({"a": 7, "b": 3.14}, dest=1, tag=11)
+    comm.send({"a": 7, "b": 3.14}, dest=rank + 1, tag=OBJECT_TAG)
 elif rank == 1:
     status = MPI.Status()
-    data = comm.recv(source=MPI.ANY_SOURCE, tag=11, status=status)
+    data = comm.recv(source=MPI.ANY_SOURCE, tag=OBJECT_TAG, status=status)
     print(f"rank 1 received {data} from rank {status.Get_source()}")
 
 # NumPy arrays travel as buffers, with an explicit MPI datatype ...
 if rank == 0:
     data = np.arange(4, dtype="i")
-    comm.Send([data, MPI.INT], dest=1, tag=77)
+    comm.Send([data, MPI.INT], dest=rank + 1, tag=ARRAY_TAG)
 elif rank == 1:
     data = np.empty(4, dtype="i")
-    comm.Recv([data, MPI.INT], source=0, tag=77)
+    comm.Recv([data, MPI.INT], source=rank - 1, tag=ARRAY_TAG)
     print(f"rank 1 received {data.tolist()}")
 
 # ... or with the datatype taken from the array.
 data = np.arange(3, dtype=np.float64) if rank == 0 else np.empty(3, dtype=np.float64)
-comm.Bcast(data, root=0)
+comm.Bcast(data, root=ROOT)
 
 # Collectives: every rank contributes.
 values = np.array([rank + 1, rank + 2], dtype="i")
 total = np.empty_like(values)
 comm.Allreduce(values, total, op=MPI.SUM)
 largest = np.empty_like(values)
-comm.Reduce(values, largest, op=MPI.MAX, root=0)
+comm.Reduce(values, largest, op=MPI.MAX, root=ROOT)
 comm.Allreduce(MPI.IN_PLACE, values, op=MPI.SUM)
 
 comm.Barrier()
@@ -549,8 +555,13 @@ import numpy as np
 
 from prik_openmpi_f08 import mpi_f08 as _mpi
 
-ANY_SOURCE = int(_mpi.mpi_any_source)
-ANY_TAG = int(_mpi.mpi_any_tag)
+# Ranks, tags, and counts are np.int32, the type the contract takes, from the
+# start: the extension returns them as np.int32, the constants and defaults
+# here are np.int32, and arithmetic with Python integers keeps the type. So
+# they pass straight to the contract, never converted.
+ANY_SOURCE = _mpi.mpi_any_source
+ANY_TAG = _mpi.mpi_any_tag
+_ZERO = np.int32(0)
 IN_PLACE = _mpi.mpi_in_place
 STATUS_IGNORE = _mpi.mpi_status_ignore
 BYTE = _mpi.mpi_byte
@@ -562,13 +573,12 @@ MAX = _mpi.mpi_max
 # The MPI datatype of each NumPy element type, for buffers given without one.
 _DATATYPES = {np.dtype(np.uint8): BYTE, np.dtype(np.int32): INT, np.dtype(np.float64): DOUBLE}
 
-
 def _message(buf):
     """Return a buffer's array and MPI datatype; ``buf`` is an array or ``[array, datatype]``."""
-    if isinstance(buf, list | tuple):
-        array, datatype = buf
-        return array, datatype
-    return buf, _DATATYPES[buf.dtype]
+    if isinstance(buf, np.ndarray):
+        return buf, _DATATYPES[buf.dtype]
+    array, datatype = buf
+    return array, datatype
 
 
 class Status:
@@ -579,11 +589,11 @@ class Status:
 
     @property
     def source(self):
-        return int(self._native.mpi_source)
+        return self._native.mpi_source
 
     @property
     def tag(self):
-        return int(self._native.mpi_tag)
+        return self._native.mpi_tag
 
     def Get_source(self):
         return self.source
@@ -592,7 +602,7 @@ class Status:
         return self.tag
 
     def Get_count(self, datatype=BYTE):
-        return int(_mpi.get_count(self._native, datatype))
+        return _mpi.get_count(self._native, datatype)
 
 
 def _native_status(status):
@@ -607,10 +617,10 @@ class Comm:
         self.handle = handle
 
     def Get_rank(self):
-        return int(_mpi.comm_rank(self.handle))
+        return _mpi.comm_rank(self.handle)
 
     def Get_size(self):
-        return int(_mpi.comm_size(self.handle))
+        return _mpi.comm_size(self.handle)
 
     rank = property(Get_rank)
     size = property(Get_size)
@@ -618,32 +628,32 @@ class Comm:
     def Barrier(self):
         _mpi.barrier(self.handle)
 
-    def Send(self, buf, dest, tag=0):
+    def Send(self, buf, dest, tag=_ZERO):
         array, datatype = _message(buf)
-        _mpi.send(array, datatype, np.int32(dest), np.int32(tag), self.handle)
+        _mpi.send(array, datatype, dest, tag, self.handle)
 
     def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG, status=None):
         array, datatype = _message(buf)
-        _mpi.recv(array, datatype, np.int32(source), np.int32(tag), self.handle, _native_status(status))
+        _mpi.recv(array, datatype, source, tag, self.handle, _native_status(status))
 
     def Probe(self, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        _mpi.probe(np.int32(source), np.int32(tag), self.handle, _native_status(status))
+        _mpi.probe(source, tag, self.handle, _native_status(status))
         return True
 
-    def Bcast(self, buf, root=0):
+    def Bcast(self, buf, root=_ZERO):
         array, datatype = _message(buf)
-        _mpi.bcast(array, datatype, np.int32(root), self.handle)
+        _mpi.bcast(array, datatype, root, self.handle)
 
-    def Reduce(self, sendbuf, recvbuf, op=SUM, root=0):
+    def Reduce(self, sendbuf, recvbuf, op=SUM, root=_ZERO):
         array, datatype = _message(recvbuf)
-        _mpi.reduce(sendbuf, array, datatype, op, np.int32(root), self.handle)
+        _mpi.reduce(sendbuf, array, datatype, op, root, self.handle)
 
     def Allreduce(self, sendbuf, recvbuf, op=SUM):
         array, datatype = _message(recvbuf)
         _mpi.allreduce(sendbuf, array, datatype, op, self.handle)
 
     # Python objects travel pickled, as with mpi4py's lowercase methods.
-    def send(self, obj, dest, tag=0):
+    def send(self, obj, dest, tag=_ZERO):
         self.Send(np.frombuffer(pickle.dumps(obj), dtype=np.uint8), dest, tag)
 
     def recv(self, buf=None, source=ANY_SOURCE, tag=ANY_TAG, status=None):
@@ -671,9 +681,12 @@ Everything in it calls the generated functions of step 5:
 - **Buffers.** A buffer is a NumPy array, whose MPI datatype is chosen from
   its element type, or an `[array, datatype]` pair naming the datatype
   explicitly, as in mpi4py.
-- **Defaults and Python integers.** `tag=0`, `source=ANY_SOURCE`, `root=0`,
-  and `op=SUM` are keyword defaults, and plain Python integers are converted
-  to the `np.int32` values the contract's `Int32` arguments take.
+- **Defaults and `np.int32` values.** `tag`, `source=ANY_SOURCE`, `root`,
+  and `op=SUM` are keyword defaults. Ranks and tags are the `np.int32` values
+  the contract's `Int32` arguments take from the start -- `Get_rank` returns
+  one, `ANY_SOURCE` and the defaults are, and `rank + 1` stays one -- so they
+  pass straight through. Converting a plain integer on every call would cost
+  more than a small MPI call.
 - **Python objects.** Lowercase `send` pickles an object into a byte array and
   sends it; `recv` probes the incoming message, sizes a byte array with
   `Get_count`, receives it, and unpickles it.
@@ -776,7 +789,9 @@ way when you select it, within these limits of what PRIK supports today:
   a faithful imitation would need arrays of requests, the first limitation.
 
 `prik_mpi.py` imitates the part of mpi4py this program uses, not all of it.
-It passes contiguous NumPy arrays only -- a strided view is refused with a
+Ranks and tags must be `np.int32`, as in the program above; a plain Python
+`int` is refused with a `TypeError`, where mpi4py accepts one. It passes
+contiguous NumPy arrays only -- a strided view is refused with a
 `TypeError` -- and picks a datatype for `int32`, `float64`, and `uint8`
 arrays. It has none of mpi4py's other communicators, lowercase collectives,
 or `MPI.Exception`: under Open MPI's default error handler an MPI error aborts

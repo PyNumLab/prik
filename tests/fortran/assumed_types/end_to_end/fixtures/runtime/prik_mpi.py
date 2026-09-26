@@ -7,8 +7,13 @@ import numpy as np
 
 from prik_openmpi_f08 import mpi_f08 as _mpi
 
-ANY_SOURCE = int(_mpi.mpi_any_source)
-ANY_TAG = int(_mpi.mpi_any_tag)
+# Ranks, tags, and counts are np.int32, the type the contract takes, from the
+# start: the extension returns them as np.int32, the constants and defaults
+# here are np.int32, and arithmetic with Python integers keeps the type. So
+# they pass straight to the contract, never converted.
+ANY_SOURCE = _mpi.mpi_any_source
+ANY_TAG = _mpi.mpi_any_tag
+_ZERO = np.int32(0)
 IN_PLACE = _mpi.mpi_in_place
 STATUS_IGNORE = _mpi.mpi_status_ignore
 BYTE = _mpi.mpi_byte
@@ -20,13 +25,12 @@ MAX = _mpi.mpi_max
 # The MPI datatype of each NumPy element type, for buffers given without one.
 _DATATYPES = {np.dtype(np.uint8): BYTE, np.dtype(np.int32): INT, np.dtype(np.float64): DOUBLE}
 
-
 def _message(buf):
     """Return a buffer's array and MPI datatype; ``buf`` is an array or ``[array, datatype]``."""
-    if isinstance(buf, list | tuple):
-        array, datatype = buf
-        return array, datatype
-    return buf, _DATATYPES[buf.dtype]
+    if isinstance(buf, np.ndarray):
+        return buf, _DATATYPES[buf.dtype]
+    array, datatype = buf
+    return array, datatype
 
 
 class Status:
@@ -37,11 +41,11 @@ class Status:
 
     @property
     def source(self):
-        return int(self._native.mpi_source)
+        return self._native.mpi_source
 
     @property
     def tag(self):
-        return int(self._native.mpi_tag)
+        return self._native.mpi_tag
 
     def Get_source(self):
         return self.source
@@ -50,7 +54,7 @@ class Status:
         return self.tag
 
     def Get_count(self, datatype=BYTE):
-        return int(_mpi.get_count(self._native, datatype))
+        return _mpi.get_count(self._native, datatype)
 
 
 def _native_status(status):
@@ -65,10 +69,10 @@ class Comm:
         self.handle = handle
 
     def Get_rank(self):
-        return int(_mpi.comm_rank(self.handle))
+        return _mpi.comm_rank(self.handle)
 
     def Get_size(self):
-        return int(_mpi.comm_size(self.handle))
+        return _mpi.comm_size(self.handle)
 
     rank = property(Get_rank)
     size = property(Get_size)
@@ -76,32 +80,32 @@ class Comm:
     def Barrier(self):
         _mpi.barrier(self.handle)
 
-    def Send(self, buf, dest, tag=0):
+    def Send(self, buf, dest, tag=_ZERO):
         array, datatype = _message(buf)
-        _mpi.send(array, datatype, np.int32(dest), np.int32(tag), self.handle)
+        _mpi.send(array, datatype, dest, tag, self.handle)
 
     def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG, status=None):
         array, datatype = _message(buf)
-        _mpi.recv(array, datatype, np.int32(source), np.int32(tag), self.handle, _native_status(status))
+        _mpi.recv(array, datatype, source, tag, self.handle, _native_status(status))
 
     def Probe(self, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        _mpi.probe(np.int32(source), np.int32(tag), self.handle, _native_status(status))
+        _mpi.probe(source, tag, self.handle, _native_status(status))
         return True
 
-    def Bcast(self, buf, root=0):
+    def Bcast(self, buf, root=_ZERO):
         array, datatype = _message(buf)
-        _mpi.bcast(array, datatype, np.int32(root), self.handle)
+        _mpi.bcast(array, datatype, root, self.handle)
 
-    def Reduce(self, sendbuf, recvbuf, op=SUM, root=0):
+    def Reduce(self, sendbuf, recvbuf, op=SUM, root=_ZERO):
         array, datatype = _message(recvbuf)
-        _mpi.reduce(sendbuf, array, datatype, op, np.int32(root), self.handle)
+        _mpi.reduce(sendbuf, array, datatype, op, root, self.handle)
 
     def Allreduce(self, sendbuf, recvbuf, op=SUM):
         array, datatype = _message(recvbuf)
         _mpi.allreduce(sendbuf, array, datatype, op, self.handle)
 
     # Python objects travel pickled, as with mpi4py's lowercase methods.
-    def send(self, obj, dest, tag=0):
+    def send(self, obj, dest, tag=_ZERO):
         self.Send(np.frombuffer(pickle.dumps(obj), dtype=np.uint8), dest, tag)
 
     def recv(self, buf=None, source=ANY_SOURCE, tag=ANY_TAG, status=None):
