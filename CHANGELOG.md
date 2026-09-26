@@ -15,6 +15,9 @@ release tags add a leading `v` to the package version.
 - A character entity's own length now wins over its statement's: in
   `character(len=4) :: label*(8), code*8`, `label` and `code` are scalars of
   length 8 rather than `label` becoming a four-character array of extent 8.
+- Printing an edited `.pyi` contract again keeps what it stated: a
+  `SourceName(...)` on a module variable or class field, a class's `@bind(...)`,
+  and a plain `tuple[...]` return no longer gain an explicit `@native_call`.
 
 - Generated bindings pass a wrapped derived-type object about twice as fast:
   they read its native storage through attribute names interned once instead

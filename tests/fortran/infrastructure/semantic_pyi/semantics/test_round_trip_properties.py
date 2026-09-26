@@ -223,6 +223,18 @@ def transform(
     values: Float64[:]
 ) -> Float64: ...
 """,
+    "native-spellings-of-renamed-entities": """
+@bind("native_state")
+class state:
+    tally: Annotated[Int32, SourceName("TALLY")]
+
+counter: Annotated[Int32, SourceName("COUNTER")]
+""",
+    "plain-tuple-return": """
+def pair(
+    x: Int32
+) -> tuple[Int32, Float64]: ...
+""",
     "visibility-and-module-state": """
 import iso_c_binding
 

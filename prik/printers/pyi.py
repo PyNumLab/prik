@@ -97,6 +97,8 @@ class _PyiEmissionContext:
     contract_aliases: dict[str, str] = field(default_factory=dict)
     contract_imports: set[str] = field(default_factory=set)
     public_namespace: tuple[str, ...] = ()
+    # A contract read back from .pyi: its native layouts were stated there.
+    contract_loaded: bool = False
 
     def contract(self, name: str) -> str:
         """Return one local contract spelling and record its required import."""
@@ -177,6 +179,7 @@ class PyiPrinter(ClassVisitor):
                 if cls.origin.source_language == "fortran" and cls.origin.source_kind == "derived_type"
             ),
             contract_aliases=self._contract_aliases_for_module(node),
+            contract_loaded=bool(node.metadata.get(PYI_LOADED_METADATA)),
         )
 
     @staticmethod
@@ -445,11 +448,11 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"@{context.contract('abstract')}")
         if self._class_uses_c_abi(cls):
             decorators.append(f'@{context.contract("native_abi")}("c")')
-        # Only a Fortran type states a separate native name here. A C struct
-        # keeps its native spelling -- `struct node` for `node` -- through its
-        # own representation rules, which state it without a decorator.
+        # A C struct keeps its native spelling -- `struct node` for `node` --
+        # through its own representation rules, which state it without a
+        # decorator. Every other class states a separate native name here.
         if (
-            cls.origin.source_language == "fortran"
+            cls.origin.source_language != "c"
             and cls.native_name
             and self._renames_native_entity(cls, cls.native_name, emitted_name)
         ):
@@ -1045,7 +1048,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             variable,
             context,
-            original_name=variable.name if self._renames_native_entity(variable, variable.name, name) else None,
+            original_name=self._renamed_native_spelling(variable, name),
         )
 
     def _emit_module_variable(
@@ -1059,7 +1062,7 @@ class PyiPrinter(ClassVisitor):
             self._annotation_target(name),
             arg,
             context,
-            original_name=arg.name if self._renames_native_entity(arg, arg.name, name) else None,
+            original_name=self._renamed_native_spelling(arg, name),
         )
 
     @staticmethod
@@ -1465,10 +1468,11 @@ class PyiPrinter(ClassVisitor):
             or self._python_literal_text(field.default_value)
             or "..."
         )
-        if self._renames_native_entity(field, field.name, name):
+        native_spelling = self._renamed_native_spelling(field, name)
+        if native_spelling is not None:
             type_text = self._annotated_type_text(
                 type_text,
-                [f"{context.contract('SourceName')}({json.dumps(field.name)})"],
+                [f"{context.contract('SourceName')}({json.dumps(native_spelling)})"],
                 context,
             )
         return f"{name}: {type_text} = {default_value}"
@@ -1986,7 +1990,7 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"{indent}@{context.contract('pure')}")
         overload_target = func.metadata.get(OVERLOAD_TARGET_METADATA)
         is_specific_declaration = not overload_target or str(func.name).casefold() == str(overload_target).casefold()
-        if is_specific_declaration and self._requires_native_call(func):
+        if is_specific_declaration and self._requires_native_call(func, contract_loaded=context.contract_loaded):
             decorators.append(
                 f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func), func)}"
             )
@@ -2400,8 +2404,15 @@ class PyiPrinter(ClassVisitor):
         raise ValueError(f"Unsupported native_call value reference: {kind!r}")
 
     @staticmethod
-    def _requires_native_call(func: SemanticFunction) -> bool:
-        """Return whether requires native call."""
+    def _requires_native_call(func: SemanticFunction, *, contract_loaded: bool = False) -> bool:
+        """Return whether requires native call.
+
+        A loaded contract states a native layout with ``@native_call`` exactly
+        when it wrote one; otherwise its annotations produced the layout and
+        printing them again restates it.
+        """
+        if contract_loaded and not func.metadata.get(NATIVE_PROJECTION_METADATA):
+            return False
         if isinstance(func, SemanticMethod) and func.name == "__init__" and func.metadata.get(BIND_TARGET_METADATA):
             return True
         if PyiPrinter._scalar_descriptor_kind(func.return_type) is not None:
@@ -2475,6 +2486,16 @@ class PyiPrinter(ClassVisitor):
     def _is_private(node) -> bool:
         """Return whether is private."""
         return getattr(node, "visibility", "public") == "private"
+
+    @classmethod
+    def _renamed_native_spelling(cls, declaration: SemanticVariable, emitted_name: str) -> str | None:
+        """Return the native spelling a data declaration must record, if any.
+
+        A contract's ``SourceName`` lives on the origin, so a loaded contract
+        prints it back; a source-built declaration is named natively already.
+        """
+        native = declaration.origin.native_name or declaration.name
+        return native if cls._renames_native_entity(declaration, native, emitted_name) else None
 
     @staticmethod
     def _renames_native_entity(declaration: object, native_name: object, emitted_name: str) -> bool:
