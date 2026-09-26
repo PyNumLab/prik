@@ -1,5 +1,7 @@
 """Declaration forms, compile-time kind and shape resolution, and type definitions."""
 
+import pytest
+
 from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.scope import ScopeUses
 
@@ -120,6 +122,7 @@ end program type_stmt_program
     assert (variables["kept"].base_type, variables["values"].shape) == ("integer", ["2"])
     assert (variables["wide"].base_type, variables["wide"].kind) == ("real", "8")
     # An entity's own character length does not leak into the next entity.
+    assert (variables["label"].kind, variables["label"].shape) == ("name_len", [])
     assert (variables["other"].kind, variables["other"].shape) == ("len=default_len", [])
     dtype = module.derived_types[0]
     assert [field.name for field in dtype.fields] == ["x", "y"]
@@ -234,8 +237,31 @@ end subroutine sized
 
     assert [arg.kind for arg in modern.arguments] == ["8", "16"]
     assert [arg.shape for arg in legacy.arguments] == [["2"], ["3"]]
-    # A parameter defined through another resolves; an entity length stays on its entity.
-    assert [(arg.kind, arg.shape) for arg in dependent.arguments] == [("len=4", ["8"]), ("len=4", []), ("", ["4"])]
+    # A parameter defined through another resolves; an entity length is a length on its entity only.
+    assert [(arg.kind, arg.shape) for arg in dependent.arguments] == [("8", []), ("len=4", []), ("", ["4"])]
+    assert [arg.character_length_expression for arg in dependent.arguments[:2]] == ["8", "4"]
+
+
+@pytest.mark.parametrize(
+    ("declaration", "expected"),
+    [
+        pytest.param("character(len=4) :: x*8", ("8", []), id="literal-length-overrides-statement"),
+        pytest.param("character(len=4) :: x*(*)", ("*", []), id="assumed-length"),
+        pytest.param("character(len=4) :: x(3)*2", ("2", ["3"]), id="array-spec-then-length"),
+        pytest.param("character(len=4) :: x*2(3)", ("2", ["3"]), id="legacy-length-then-array-spec"),
+        pytest.param("character*3 :: x*5", ("5", []), id="legacy-statement-length"),
+    ],
+)
+def test_character_entity_length_is_a_length_not_a_dimension(declaration, expected):
+    """``name[(array-spec)][*char-length]`` gives the entity its own length."""
+    procedure = parse_fortran_file(
+        f"subroutine sized(x)\n  {declaration}\nend subroutine sized\n",
+        filename="entity_length.f90",
+    ).procedures[0]
+    (argument,) = procedure.arguments
+
+    assert (argument.kind, argument.shape) == expected
+    assert argument.character_length_expression == expected[0]
 
 
 def test_local_compile_time_arithmetic_is_folded_for_shapes_and_parameters():

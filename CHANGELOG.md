@@ -12,6 +12,9 @@ release tags add a leading `v` to the package version.
   contributor guidance now favors observable behavior over implementation shape.
   The parked C parser benchmark and redundant parser walkthroughs no longer
   appear in test collection.
+- A character entity's own length now wins over its statement's: in
+  `character(len=4) :: label*(8), code*8`, `label` and `code` are scalars of
+  length 8 rather than `label` becoming a four-character array of extent 8.
 
 - Generated bindings pass a wrapped derived-type object about twice as fast:
   they read its native storage through attribute names interned once instead

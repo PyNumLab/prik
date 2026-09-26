@@ -337,6 +337,12 @@ _SOURCE_UNIT_TYPES = {
 
 
 _DeclarationRole = Literal["procedure_symbol", "type_field", "module_variable"]
+_PARENTHESIZED = r"\((?:[^()]|\([^()]*\))*\)"
+_CHARACTER_ENTITY = re.compile(
+    rf"(?P<name>[A-Za-z_]\w*)\s*(?P<dims>{_PARENTHESIZED})?"
+    rf"\s*\*\s*(?P<length>{_PARENTHESIZED}|\d+|[A-Za-z_]\w*)"
+    rf"\s*(?P<late_dims>{_PARENTHESIZED})?"
+)
 _DECLARATION_FLAG_FIELDS = MappingProxyType(
     {
         "optional": "optional",
@@ -4494,11 +4500,14 @@ class FortranParser(ClassVisitor):
         entities: list[tuple[str, list[str], str | None, _Declaration]] = []
         for entity in split_csv(right):
             declared_entity, initializer = split_declaration_assignment(entity)
-            raw_name, shape = self._var(declared_entity)
+            raw_name, shape, entity_length = self._var(
+                declared_entity,
+                character=declaration.base_type == "character",
+            )
             if not raw_name:
                 continue
-            entity_declaration = self._entity_declaration(raw_name, declaration)
-            normalized_name = self._normalize_declared_name(raw_name, entity_declaration)
+            entity_declaration = self._entity_declaration(entity_length, declaration)
+            normalized_name = self._normalize_declared_name(raw_name)
             if normalized_name:
                 entities.append((normalized_name, shape, initializer, entity_declaration))
         return entities
@@ -4519,27 +4528,21 @@ class FortranParser(ClassVisitor):
             symbols.append(var.name)
 
     @staticmethod
-    def _entity_declaration(raw_name: str, declaration: _Declaration) -> _Declaration:
-        """Return the effective declaration for one entity spelling.
+    def _entity_declaration(length: str | None, declaration: _Declaration) -> _Declaration:
+        """Return the effective declaration for one entity's character length.
 
-        Non-character entities and declarations without an entity-level star
-        return the shared record unchanged. For ``character`` entities such as
-        ``label*8``, a copied declaration records kind ``8`` without mutating
-        sibling entities from the same statement.
+        Entities without an entity-level length share the statement record.
+        For ``character(len=4) :: label*8``, a copied declaration records
+        length ``8`` without mutating sibling entities from the same statement.
         """
-        if declaration.base_type != "character":
+        if length is None:
             return declaration
-        match = re.search(r"\*\s*(\([^)]*\)|\*|[A-Za-z_]\w*|\d+)\s*$", raw_name)
-        if match is None:
-            return declaration
-        length = match.group(1).strip()
-        if length.startswith("(") and length.endswith(")"):
-            length = length[1:-1].strip()
         return replace(
             declaration,
             kind=length,
             shape=list(declaration.shape),
             character_length_syntax=True,
+            character_length_expression=length,
         )
 
     @staticmethod
@@ -4634,15 +4637,9 @@ class FortranParser(ClassVisitor):
                 declaration.rank = len(shape)
 
     @staticmethod
-    def _normalize_declared_name(name: str, declaration: _Declaration) -> str:
-        """Strip legacy entity-local spelling from a declared symbol name."""
-        normalized_name = re.sub(r"^\*\s*[0-9]+\s*", "", name).strip()
-        if declaration.base_type == "character" and "*" in normalized_name:
-            # Legacy CHARACTER declarations may carry entity-local length
-            # specifiers (e.g. NAME*(*) or SUBNAM*6). Strip the `*len`
-            # suffix so symbol lookup matches procedure arguments.
-            normalized_name = normalized_name.split("*", 1)[0].strip()
-        return normalized_name
+    def _normalize_declared_name(name: str) -> str:
+        """Strip a legacy leading ``*len`` from a declared symbol name."""
+        return re.sub(r"^\*\s*[0-9]+\s*", "", name).strip()
 
     @staticmethod
     def _strip_legacy_star_kind_prefix(left: str) -> str:
@@ -4655,15 +4652,30 @@ class FortranParser(ClassVisitor):
         ).strip()
 
     @staticmethod
-    def _var(entry: str):
-        """Split one declaration entity into its name and inline dimensions."""
+    def _var(entry: str, *, character: bool = False) -> tuple[str, list[str], str | None]:
+        """Split one declaration entity into its name, inline dimensions, and length.
+
+        A character entity is ``name[(array-spec)][*char-length]``, so in
+        ``label*(8)`` the parenthesized ``8`` is a length, not a dimension; the
+        legacy ``name*len(array-spec)`` order is accepted as well. The length is
+        returned without its parentheses, e.g. ``*`` for ``name*(*)``.
+        """
         e, _initializer = split_declaration_assignment(entry)
         if not e:  # pragma: no cover - split_csv omits empty declaration entities for valid declarations.
-            return "", []
+            return "", [], None
+        if character:
+            match = _CHARACTER_ENTITY.fullmatch(e.strip())
+            if match is not None and match.group("length") is not None:
+                length = match.group("length").strip()
+                if length.startswith("(") and length.endswith(")"):
+                    length = length[1:-1].strip()
+                dims = match.group("dims") or match.group("late_dims")
+                shape = split_csv(dims.strip()[1:-1]) if dims else []
+                return match.group("name").strip(), shape, length
         if "(" in e and e.endswith(")"):
             name = e[: e.find("(")].strip()
-            return name, split_csv(e[e.find("(") + 1 : -1])
-        return e, []
+            return name, split_csv(e[e.find("(") + 1 : -1]), None
+        return e, [], None
 
     @staticmethod
     def _apply_declaration(arg: FortranArgument, declaration: _Declaration, shape: list[str]) -> None:
