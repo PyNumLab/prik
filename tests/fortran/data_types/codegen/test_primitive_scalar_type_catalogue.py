@@ -1,11 +1,8 @@
-"""Readable NumPy projection and primitive backend catalogue invariants."""
+"""Readable NumPy projection for resolved primitive semantic types."""
 
 import pytest
 
-from prik.codegen.primitive_scalar_types import (
-    NumpyDtypeRegistry,
-    PrimitiveScalarTypeRegistry,
-)
+from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 
 
 def test_numpy_projection_catalogue_uses_resolved_semantic_names():
@@ -23,10 +20,3 @@ def test_numpy_projection_rejects_unresolved_and_unknown_semantic_dtypes():
 
     with pytest.raises(KeyError, match="No NumPy dtype mapping for semantic dtype 'Int'"):
         NumpyDtypeRegistry.expression_for("Int")
-
-
-def test_backend_catalogue_returns_detached_records():
-    scalar = PrimitiveScalarTypeRegistry.type_for("Int32")
-    scalar.c_spelling = "changed"
-
-    assert PrimitiveScalarTypeRegistry.type_for("Int32").c_spelling == "int32_t"

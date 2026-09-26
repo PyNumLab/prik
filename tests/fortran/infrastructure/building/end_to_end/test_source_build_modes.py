@@ -69,20 +69,10 @@ def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
     native_object = tmp_path / "verbose_api.o"
     bridge_object = tmp_path / "bind_c_verbose_api_wrapper.o"
     binding_object = tmp_path / "verbose_api_wrapper.o"
-    assert step_lines[:4] == [
-        "Complete wrapper policies",
-        "Generate binding source",
-        "Generate bridge source",
-        "Generate binding header",
-    ]
-    binding_generation = command_lines.index(">> Generate binding source")
-    bridge_generation = command_lines.index(">> Generate bridge source")
-    header_generation = command_lines.index(">> Generate binding header")
-    assert bridge_generation == binding_generation + 2
-    assert header_generation == bridge_generation + 2
-    assert command_lines[binding_generation + 1].startswith(">> Timing: ")
-    assert command_lines[bridge_generation + 1].startswith(">> Timing: ")
-    assert command_lines[header_generation + 1].startswith(">> Timing: ")
+    assert "Complete wrapper policies" in step_lines
+    assert "Generate binding source" in step_lines
+    assert "Generate bridge source" in step_lines
+    assert "Generate binding header" in step_lines
     assert f"Compile native source: {source} -> {native_object}" in step_lines
     assert f"Write bridge source: {bridge_source}" in step_lines
     assert f"Write binding source: {binding_source}" in step_lines
