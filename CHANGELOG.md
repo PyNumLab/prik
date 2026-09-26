@@ -18,6 +18,9 @@ release tags add a leading `v` to the package version.
 - Printing an edited `.pyi` contract again keeps what it stated: a
   `SourceName(...)` on a module variable or class field, a class's `@bind(...)`,
   and a plain `tuple[...]` return no longer gain an explicit `@native_call`.
+- The feature matrix and Fortran support pages no longer list optional
+  callbacks as unsupported: an optional dummy procedure may be omitted or
+  passed `None`, as the Callbacks guide describes.
 
 - Generated bindings pass a wrapped derived-type object about twice as fast:
   they read its native storage through attribute names interned once instead

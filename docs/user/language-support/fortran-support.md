@@ -44,8 +44,9 @@ Fortran declaration:
 - Pointer arrays and projections have useful supported forms, but target
   lifetime, deallocation, and writable reassociation remain policy-gated. See
   [Pointers](../guide/pointers.md) and [Memory Management](../guide/memory-management.md).
-- Callbacks are immediate and call-scoped. Stored, asynchronous, optional, and
-  cross-thread callbacks are unsupported. See [Callbacks](../guide/callbacks.md).
+- Callbacks are immediate and call-scoped, and an optional callback may be
+  omitted. Stored, asynchronous, and cross-thread callbacks are unsupported. See
+  [Callbacks](../guide/callbacks.md).
 - Scalar derived types are supported, but arrays of derived types and several
   mutable or result polymorphic forms are not. See [Wrapping Derived
   Types](../guide/wrapping-derived-types.md).

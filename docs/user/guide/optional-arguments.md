@@ -206,7 +206,8 @@ association. If its updated value is returned, Python receives a scalar or
 
 ## Limitations
 
-- Optional procedure pointers and passed procedures are not yet supported.
+- Optional procedure pointers are not yet supported. An optional dummy procedure
+  is supported; see [Callbacks](callbacks.md).
 - PRIK does not invent default values. The Fortran procedure handles missing
   arguments.
 
