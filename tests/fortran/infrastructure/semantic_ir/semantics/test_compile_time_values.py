@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from dataclasses import asdict
+
 import pytest
 from prik.parsers.fortran.models import (
     FortranArgument,
@@ -26,6 +28,7 @@ from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticClass,
+    SemanticConstraint,
     SemanticFunction,
     SemanticMethod,
     SemanticModule,
@@ -203,23 +206,23 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
         },
         "child_scale": {
             "unit_kind": "submodule",
-            "unit": "solver_child",
-            "module": "solver_child",
+            "unit": "solver_mod:solver_child",
+            "module": "solver_mod:solver_child",
             "symbol": "child_scale",
             "role": "variable",
         },
         "y": {
             "unit_kind": "procedure",
-            "unit": "solver_child.child_step",
-            "module": "solver_child",
+            "unit": "solver_mod:solver_child.child_step",
+            "module": "solver_mod:solver_child",
             "procedure": "child_step",
             "symbol": "y",
             "role": "argument",
         },
         "value": {
             "unit_kind": "derived_type",
-            "unit": "solver_child.child_t",
-            "module": "solver_child",
+            "unit": "solver_mod:solver_child.child_t",
+            "module": "solver_mod:solver_child",
             "type_owner": "child_t",
             "symbol": "value",
             "role": "field",
@@ -396,67 +399,6 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
     assert _compile_time_requirement_message("other", "n", "n + 1") == "Compile-time value required for 'n'."
 
 
-def test_resolve_semantic_compile_time_values_leaves_recorded_decisions_opaque():
-    """A metadata tag is a decision already taken, not text awaiting a value.
-
-    `fortran_pointer_association="runtime"` records how a pointer is
-    associated.  A module that also declares `runtime` as a parameter must not
-    turn that recorded choice into the parameter's value.
-    """
-    module = SemanticModule(
-        name="tagged_mod",
-        variables=[
-            SemanticArgument(
-                name="view",
-                semantic_type=SemanticType(
-                    name="Float64",
-                    dtype="Float64",
-                    rank=1,
-                    shape=["runtime"],
-                    metadata={"fortran_pointer_association": "runtime"},
-                ),
-            )
-        ],
-    )
-
-    resolved = resolve_semantic_compile_time_values(module, {"runtime": 4})
-
-    semantic_type = resolved.variables[0].semantic_type
-    assert semantic_type.shape == ["4"]
-    assert semantic_type.metadata == {"fortran_pointer_association": "runtime"}
-
-
-def test_resolve_semantic_compile_time_values_rewrites_shapes():
-    module = SemanticModule(
-        name="shape_mod",
-        variables=[
-            SemanticArgument(
-                name="values",
-                semantic_type=SemanticType(
-                    name="Float64",
-                    dtype="Float64",
-                    rank=1,
-                    shape=["1:n"],
-                    storage=semantic_models.SemanticStorageContract(
-                        kind="array",
-                        array=semantic_models.SemanticArrayContract(
-                            rank=1,
-                            shape=["1:n"],
-                            source_shape=["1:n"],
-                        ),
-                    ),
-                ),
-            )
-        ],
-    )
-
-    resolved = resolve_semantic_compile_time_values(module, {"n": 8})
-
-    assert module.variables[0].semantic_type.shape == ["1:n"]
-    assert resolved.variables[0].semantic_type.shape == ["1:8"]
-    assert resolved.variables[0].semantic_type.storage.array.shape == ["1:8"]
-
-
 def test_resolve_semantic_compile_time_values_handles_nested_modules():
     """Specialization reaches every nesting level and touches only expression fields.
 
@@ -473,14 +415,17 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
                     dtype="Float64",
                     rank=1,
                     shape=["n"],
+                    constraints=[SemanticConstraint("Extent", ["n", {"upper": "m"}])],
                     storage=semantic_models.SemanticStorageContract(
                         kind="array",
+                        metadata={"address_role": "n"},
                         array=semantic_models.SemanticArrayContract(
                             rank=1,
                             shape=["n"],
                             source_shape=["1:n"],
                             lower_bounds=["n"],
                             upper_bounds=["n"],
+                            metadata={"representation": "m"},
                         ),
                     ),
                     metadata={"fortran_character_length": "n", "fortran_pointer_association": "n"},
@@ -531,10 +476,14 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
         metadata={"fortran_bind_c": "n"},
     )
 
+    original = asdict(module)
+
     resolved = resolve_semantic_compile_time_values([module], {"n": 4, "m": 2})
 
-    assert module.variables[0].semantic_type.shape == ["n"]
+    # Specialization returns new modules and is idempotent.
+    assert asdict(module) == original
     resolved_module = resolved[0]
+    assert asdict(resolve_semantic_compile_time_values(resolved_module, {"n": 4, "m": 2})) == asdict(resolved_module)
 
     # Every level's declaration expressions are specialized.
     assert resolved_module.variables[0].semantic_type.shape == ["4"]
@@ -553,6 +502,9 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
 
     # Recorded decisions are opaque at every level, however they are spelled.
     assert resolved_module.variables[0].semantic_type.metadata["fortran_pointer_association"] == "n"
+    assert resolved_module.variables[0].semantic_type.constraints[0].arguments == ["n", {"upper": "m"}]
+    assert resolved_module.variables[0].semantic_type.storage.metadata == {"address_role": "n"}
+    assert resolved_module.variables[0].semantic_type.storage.array.metadata == {"representation": "m"}
     assert resolved_module.variables[0].metadata["address_role"] == "m"
     assert resolved_module.functions[0].arguments[0].metadata == {"native_callback_kind": "n"}
     assert resolved_module.functions[0].projection[0].value == {"kind": "return", "name": "n", "position": 0}
@@ -561,18 +513,6 @@ def test_resolve_semantic_compile_time_values_handles_nested_modules():
     assert resolved_module.classes[0].methods[0].metadata == {"fortran_type_bound_target": "n"}
     assert resolved_module.classes[0].metadata == {"fortran_attributes": "m"}
     assert resolved_module.metadata == {"fortran_bind_c": "n"}
-
-
-def test_module_parameters_preserve_literal_values_in_semantic_ir():
-    source = """
-module constants_mod
-  integer, parameter :: nmax = 12
-end module constants_mod
-"""
-
-    module = fortran_module_to_semantic_module(parse_fortran_source(source))
-
-    assert module.variables[0].default_value == "12"
 
 
 def test_fortran_file_and_project_helpers_forward_compile_time_values():

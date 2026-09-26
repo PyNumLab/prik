@@ -42,36 +42,30 @@ def modules(tmp_path_factory: pytest.TempPathFactory):
     return module.shapes, module.ops
 
 
-def test_a_returned_type_is_the_declaring_module_class(modules):
+def test_results_and_components_are_the_declaring_module_class(modules):
+    """A returned, allocatable-returned, or component value is the declaring module's class."""
     shapes, ops = modules
 
     item = ops.boxed(np.int32(3))
-
     assert type(item) is shapes.Box
     assert item.value == 3
 
-
-def test_an_allocatable_result_is_the_declaring_module_class(modules):
-    shapes, ops = modules
-
     item = ops.maybe_box(np.int32(4))
-
     assert type(item) is shapes.Box
     assert item.value == 4
 
+    holder = ops.Holder()
+    assert type(holder.inner) is shapes.Box
+    holder.inner = shapes.Box(value=np.int32(12))
+    assert holder.inner.value == 12
 
-def test_a_callback_result_is_checked_against_the_declaring_module_class(modules):
-    shapes, ops = modules
 
-    assert ops.total(lambda: shapes.Box(value=np.int32(9))) == 9
-
-
-def test_a_callback_argument_is_the_declaring_module_class(modules):
+def test_callback_arguments_and_results_use_the_declaring_module_class(modules):
     shapes, ops = modules
     seen = []
 
+    assert ops.total(lambda: shapes.Box(value=np.int32(9))) == 9
     ops.visit(lambda item: seen.append((type(item), int(item.value))))
-
     assert seen == [(shapes.Box, 41)]
 
 
@@ -103,15 +97,6 @@ def test_a_generic_dispatches_on_the_declaring_module_class(modules):
 
     assert ops.weigh(shapes.Box(value=np.int32(5))) == 5
     assert ops.weigh(np.int32(5)) == -5
-
-
-def test_a_component_of_another_module_type_is_that_module_class(modules):
-    shapes, ops = modules
-    holder = ops.Holder()
-
-    assert type(holder.inner) is shapes.Box
-    holder.inner = shapes.Box(value=np.int32(12))
-    assert holder.inner.value == 12
 
 
 def test_two_modules_may_each_declare_a_type_spelled_alike(tmp_path: Path):

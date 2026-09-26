@@ -34,46 +34,39 @@ def array_forms(tmp_path_factory):
     return module
 
 
-# A fixed shape is entirely in the declaration, so these are plain views; an
-# allocatable or pointer carries runtime state, so those are handles.
-@pytest.mark.parametrize(
-    ("name", "exposed_as", "dtype"),
-    [
-        ("fixed_plain", np.ndarray, "float64"),
-        ("fixed_target", np.ndarray, "float64"),
-        ("fixed_matrix", np.ndarray, "float64"),
-        ("fixed_shifted", np.ndarray, "float64"),
-        ("fixed_counts", np.ndarray, "int32"),
-        ("fixed_flags", np.ndarray, "bool"),
-        ("char_fixed", np.ndarray, "S5"),
-        ("char_target", np.ndarray, "S5"),
-    ],
-)
-def test_fixed_shape_module_arrays_are_plain_views(array_forms, name, exposed_as, dtype):
-    """A declared shape needs no handle: the value is the storage itself."""
-    value = getattr(array_forms, name)
+def test_fixed_shapes_are_plain_views_and_allocatables_are_handles(array_forms):
+    """A declared shape needs no handle: the value is the storage itself.
 
-    assert isinstance(value, exposed_as)
-    assert value.dtype == np.dtype(dtype)
+    Allocation state is not in the declaration, so an allocatable carries it
+    explicitly as a handle.
+    """
+    fixed = {
+        "fixed_plain": "float64",
+        "fixed_target": "float64",
+        "fixed_matrix": "float64",
+        "fixed_shifted": "float64",
+        "fixed_counts": "int32",
+        "fixed_flags": "bool",
+        "char_fixed": "S5",
+        "char_target": "S5",
+    }
+    for name, dtype in fixed.items():
+        value = getattr(array_forms, name)
+        assert isinstance(value, np.ndarray), name
+        assert value.dtype == np.dtype(dtype), name
 
-
-@pytest.mark.parametrize(
-    ("name", "dtype"),
-    [
-        ("alloc_plain", "float64"),
-        ("alloc_target", "float64"),
-        ("alloc_matrix", "float64"),
-        ("alloc_shifted", "float64"),
-        ("char_alloc", "S5"),
-        ("char_deferred", "S6"),
-    ],
-)
-def test_allocatable_module_arrays_are_handles(array_forms, name, dtype):
-    """Allocation state is not in the declaration, so these carry it explicitly."""
-    handle = getattr(array_forms, name)
-
-    assert handle.allocated is True
-    assert handle.to_numpy().dtype == np.dtype(dtype)
+    allocatable = {
+        "alloc_plain": "float64",
+        "alloc_target": "float64",
+        "alloc_matrix": "float64",
+        "alloc_shifted": "float64",
+        "char_alloc": "S5",
+        "char_deferred": "S6",
+    }
+    for name, dtype in allocatable.items():
+        handle = getattr(array_forms, name)
+        assert handle.allocated is True, name
+        assert handle.to_numpy().dtype == np.dtype(dtype), name
 
 
 def test_a_bare_pointer_is_a_handle_that_declines_to_hand_out_a_view(array_forms):
@@ -98,26 +91,23 @@ def test_derived_array_fields_are_views_through_either_owner(array_forms):
     assert array_forms.obj_plain.grid.shape == (2, 3)
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["fixed_plain", "fixed_target", "fixed_shifted", "obj_plain", "obj_target"],
-)
-def test_views_stay_live_across_native_writes(array_forms, name):
+def test_views_stay_live_across_native_writes(array_forms):
     """Every borrowed view names the storage native code writes, not a copy."""
+    for name in ("fixed_plain", "fixed_target", "fixed_shifted", "obj_plain", "obj_target"):
 
-    def current():
-        owner = getattr(array_forms, name)
-        return owner.grid if name.startswith("obj") else owner
+        def current(name=name):
+            owner = getattr(array_forms, name)
+            return owner.grid if name.startswith("obj") else owner
 
-    view = current()
-    before = float(view.flat[0])
-    try:
-        view.flat[0] = before + 1.0
-        assert float(current().flat[0]) == before + 1.0
-    finally:
-        # The storage is shared with every other test in this module, so the
-        # write is undone rather than left for whatever runs next.
-        view.flat[0] = before
+        view = current()
+        before = float(view.flat[0])
+        try:
+            view.flat[0] = before + 1.0
+            assert float(current().flat[0]) == before + 1.0, name
+        finally:
+            # The storage is shared with every other test in this module, so the
+            # write is undone rather than left for whatever runs next.
+            view.flat[0] = before
 
 
 def test_every_numeric_form_reaches_one_ordinary_array_dummy(array_forms):

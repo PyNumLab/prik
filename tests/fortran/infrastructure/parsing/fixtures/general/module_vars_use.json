@@ -2,7 +2,7 @@
   "filename": "module_vars_use.f90",
   "source": "module constants_mod\n  use iso_c_binding, only: c_int, c_double\n  integer(kind=c_int), parameter :: nmax = 100\n  real(kind=c_double), dimension(3) :: origin\nend module constants_mod\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [
     {
       "name": "constants_mod",
@@ -20,7 +20,8 @@
               "source": "c_double",
               "target": null
             }
-          ]
+          ],
+          "nature": null
         }
       ],
       "variables": [
@@ -109,7 +110,8 @@
               "source": "c_double",
               "target": null
             }
-          ]
+          ],
+          "nature": null
         }
       ],
       "variables": [

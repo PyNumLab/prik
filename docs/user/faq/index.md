@@ -133,7 +133,8 @@ controls what the contract publishes and `--export-symbols` is no longer used.
 Adding a name to `__all__` publishes a declaration the contract already
 reaches; it cannot conjure one the C sources never declared.
 
-For Fortran, list module-qualified procedures instead:
+For Fortran, list module-qualified public symbols (procedures, generics, and
+module variables) instead:
 
 ```text
 solver_mod::solve

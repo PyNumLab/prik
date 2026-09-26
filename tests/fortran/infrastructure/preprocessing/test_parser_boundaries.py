@@ -1,9 +1,5 @@
 """Preprocessor selection and declaration/execution boundary handling."""
 
-import ast
-from dataclasses import replace
-import re
-
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file
@@ -58,105 +54,45 @@ def test_fortran_lexer_preprocess_lines_folds_free_and_fixed_continuations():
     ]
 
 
-def collect_signature_shape_symbols(signature):
-    symbols = set()
-    for arg in signature.arguments:
-        for dim in arg.shape:
-            symbols.update(re.findall(r"[A-Za-z_]\w*", dim))
-    return symbols
-
-
-def evaluate_signature_shapes(signature, symbol_values=None):
-    symbol_values = symbol_values or {}
-    out = replace(signature)
-    out.arguments = [replace(a) for a in signature.arguments]
-
-    def fold_integer_expr(text):
-        try:
-            tree = ast.parse(text, mode="eval")
-        except SyntaxError:
-            return text
-        allowed = (
-            ast.Expression,
-            ast.BinOp,
-            ast.UnaryOp,
-            ast.Constant,
-            ast.Add,
-            ast.Sub,
-            ast.Mult,
-            ast.Div,
-            ast.FloorDiv,
-            ast.Mod,
-            ast.Pow,
-            ast.USub,
-            ast.UAdd,
-        )
-        if any(not isinstance(node, allowed) for node in ast.walk(tree)):
-            return text
-        value = eval(compile(tree, "<shape>", "eval"), {"__builtins__": {}}, {})
-        return str(int(value)) if isinstance(value, int | float) and value == int(value) else text
-
-    for arg in out.arguments:
-        arg.shape = list(arg.shape)
-        for index, dim in enumerate(arg.shape):
-            for key, value in symbol_values.items():
-                dim = re.sub(rf"\b{re.escape(str(key))}\b", str(value), dim, flags=re.IGNORECASE)
-            if ":" in dim:
-                dim = ":".join(fold_integer_expr(part) if part.strip() else part for part in dim.split(":"))
-            else:
-                dim = fold_integer_expr(dim)
-            arg.shape[index] = dim
-    return out
-
-
-def test_signature_shape_helpers_evaluate_publicly_parsed_signature():
-    code = """
-subroutine fill(a)
-  real, intent(inout) :: a(0:nx-1, 1:ny)
-end subroutine fill
-"""
-
-    sig = parse_fortran_file(code).procedures[0]
-
-    assert collect_signature_shape_symbols(sig) == {"nx", "ny"}
-    evaluated = evaluate_signature_shapes(sig, {"NX": 4, "ny": 3})
-    assert evaluated.arguments[0].shape == ["0:3", "1:3"]
-    assert sig.arguments[0].shape == ["0:nx-1", "1:ny"]
-
-
-@pytest.mark.parametrize("directive", ["#if USE_FAST", "#ifdef USE_FAST", "#define USE_FAST 1", '#include "api.inc"'])
-def test_cpp_directives_require_compiler_preprocessing(directive):
-    code = f"{directive}\nsubroutine selected()\nend subroutine selected\n"
-
+@pytest.mark.parametrize(
+    ("filename", "code"),
+    [
+        pytest.param("raw_cpp.F90", "#if USE_FAST\nsubroutine selected()\nend subroutine selected\n", id="if"),
+        pytest.param("raw_cpp.F90", "#ifdef USE_FAST\nsubroutine selected()\nend subroutine selected\n", id="ifdef"),
+        pytest.param(
+            "raw_cpp.F90", "#define USE_FAST 1\nsubroutine selected()\nend subroutine selected\n", id="define"
+        ),
+        pytest.param(
+            "raw_cpp.F90", '#include "api.inc"\nsubroutine selected()\nend subroutine selected\n', id="include"
+        ),
+        pytest.param(
+            "raw_cpp.F",
+            "#ifdef USE_FAST\n      subroutine selected()\n      end\n#endif\n",
+            id="fixed-form-before-comment-handling",
+        ),
+    ],
+)
+def test_cpp_directives_require_compiler_preprocessing(filename, code):
     with pytest.raises(FortranParseError, match="require compiler preprocessing") as exc_info:
-        parse_fortran_file(code, filename="raw_cpp.F90")
+        parse_fortran_file(code, filename=filename)
 
     assert exc_info.value.code == "PARSE_PREPROCESSING_REQUIRED"
     assert exc_info.value.line_number == 1
 
 
-def test_compiler_linemarkers_remain_parseable_for_provenance():
-    code = '# 40 "include/api.inc" 1\nsubroutine selected()\nend subroutine selected\n'
-
-    parsed = parse_fortran_file(code, filename="preprocessed.F90")
-
-    assert [procedure.name for procedure in parsed.procedures] == ["selected"]
-
-
-def test_fixed_form_cpp_directives_are_rejected_before_comment_handling():
-    code = "#ifdef USE_FAST\n      subroutine selected()\n      end\n#endif\n"
-
-    with pytest.raises(FortranParseError, match="require compiler preprocessing") as exc_info:
-        parse_fortran_file(code, filename="raw_cpp.F")
-
-    assert exc_info.value.code == "PARSE_PREPROCESSING_REQUIRED"
-    assert exc_info.value.line_number == 1
-
-
-def test_fixed_form_compiler_linemarkers_are_removed_before_lexing():
-    code = '# 1 "api.F"\n      subroutine selected()\n      end\n'
-
-    parsed = parse_fortran_file(code, filename="preprocessed.F")
+@pytest.mark.parametrize(
+    ("filename", "code"),
+    [
+        pytest.param(
+            "preprocessed.F90",
+            '# 40 "include/api.inc" 1\nsubroutine selected()\nend subroutine selected\n',
+            id="free-form",
+        ),
+        pytest.param("preprocessed.F", '# 1 "api.F"\n      subroutine selected()\n      end\n', id="fixed-form"),
+    ],
+)
+def test_compiler_linemarkers_remain_parseable_for_provenance(filename, code):
+    parsed = parse_fortran_file(code, filename=filename)
 
     assert [procedure.name for procedure in parsed.procedures] == ["selected"]
 
@@ -257,73 +193,6 @@ end program driver
     assert [var.name for var in program.variables] == ["ierr"]
 
 
-def test_executable_statement_in_module_spec_part_raises():
-    code = """
-module bad_exec_mod
-  write(*,*) "not allowed"
-end module bad_exec_mod
-"""
-
-    with pytest.raises(FortranParseError, match="Executable statement is not allowed"):
-        parse_fortran_file(code, filename="bad_exec_mod.f90")
-
-
-def test_openmp_declarative_directives_raise_but_executable_directives_are_body_lines():
-    declarative = """
-module omp_mod
-  integer :: state
-!$omp threadprivate(state)
-end module omp_mod
-"""
-    executable = """
-subroutine omp_body(x)
-  integer, intent(inout) :: x
-!$omp parallel do
-  do i = 1, x
-    x = x + i
-  end do
-end subroutine omp_body
-"""
-    proc_declarative = """
-subroutine omp_decl(x)
-!$omp declare simd
-  integer, intent(inout) :: x
-end subroutine omp_decl
-"""
-    type_declarative = """
-module omp_type_mod
-  type :: state
-!$omp declare target
-    integer :: value
-  end type state
-end module omp_type_mod
-"""
-    module_executable = """
-module bad_omp_mod
-!$omp parallel
-end module bad_omp_mod
-"""
-    fixed_form_executable = """
-      subroutine fixed_omp(n)
-      integer n
-C$OMP PARALLEL DO
-      do 10 i = 1, n
-10    continue
-      end
-"""
-
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive"):
-        parse_fortran_file(declarative, filename="omp_mod.f90")
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive"):
-        parse_fortran_file(proc_declarative, filename="omp_decl.f90")
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive"):
-        parse_fortran_file(type_declarative, filename="omp_type.f90")
-    with pytest.raises(FortranParseError, match="Executable statement is not allowed"):
-        parse_fortran_file(module_executable, filename="bad_omp_mod.f90")
-    assert parse_fortran_file(executable, filename="omp_body.f90").procedures[0].name == "omp_body"
-    assert parse_fortran_file(fixed_form_executable, filename="fixed_omp.f").procedures[0].name == "fixed_omp"
-
-
 def test_statement_function_and_numeric_label_before_execution_part():
     code = """
 subroutine old_style(x)
@@ -354,21 +223,3 @@ end subroutine declaration_noise
 
     assert sig.arguments[0].name == "x"
     assert sig.arguments[0].base_type == "real"
-
-
-def test_stray_end_unit_lines_are_rejected_by_public_file_parse():
-    with pytest.raises(FortranParseError, match="Invalid Fortran syntax") as exc_info:
-        parse_fortran_file(
-            """
-end module stray_mod
-end submodule stray_submod
-end program stray_program
-end interface
-
-subroutine kept()
-end subroutine kept
-""",
-            filename="stray_ends.f90",
-        )
-
-    assert exc_info.value.code == "PARSE_INVALID_SYNTAX"

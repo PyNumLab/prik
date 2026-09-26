@@ -36,9 +36,69 @@ Ignore:
 - *.json
 
 Do not spend context window or analysis on those files unless explicitly requested.
+Keep one path for one question. When two entry points answer the same
+question -- one file and a project, a library route and its CLI wrapper, source
+discovery and compile ordering, a source build and a contract replay -- they
+must call the same owner and differ only in the inputs they pass, such as which
+files or modules are in scope. Do not write a second loop, list, inventory,
+regex, lexer, or conversion route that re-derives what an existing owner
+decides, even as a fast path: a fast path may narrow what the owner reads, but
+the owner's answer stays the only answer. Before adding a helper that
+enumerates or classifies something -- a module's procedures, a file's program
+units, a `use` nature, the intrinsic modules, Fortran source suffixes, a
+submodule's identity -- find the existing owner and extend it. When two copies
+are found, merge them into one owner instead of fixing only the copy that
+failed, and prove the merge with a test that runs both entry points on one
+input and compares their results.
+
 When asked to change or move an API, import path, command, feature, or behavior, do not add or keep compatibility layers, aliases, shims, fallback paths, or legacy entrypoints unless explicitly requested. A requested change means the old behavior should be removed.
 When updating tests, remove obsolete tests that only assert removed/old implementation behavior does not exist. Do not preserve rejection or absence checks for API/features that were intentionally removed unless explicitly requested.
 Do not add tests whose purpose is only to prove that removed or nonexistent features are rejected. Test supported behavior and meaningful validation boundaries instead. For example, if `ArrayCategory` is removed, delete its tests; do not add a test asserting that `ArrayCategory` now fails.
+
+Optimize the test suite for maximum confidence per test and minimum
+maintenance burden, not for test count. Treat end-to-end tests as the primary
+proof that a feature works: where practical, demonstrate a feature through the
+real workflow (source, preprocessing, parsing, semantic IR, `.pyi` contract,
+replay or build, generated wrapper, compile and link, import, runtime call) and
+finish by checking a concrete, repeatable result such as runtime values, native
+state, generated contract or source text, or the native build plan. One strong
+end-to-end test that covers several cooperating features should replace
+several lower-level tests that only repeat pieces of the same behavior.
+
+Delete a test, rather than preserve it because it exists, when its only
+purpose is to check implementation details, trivial getters, constructors,
+dataclass fields, or plumbing; to repeat behavior a stronger end-to-end test
+already proves; to assert an intermediate object only because it currently
+exists; to test a tiny helper that is exercised thoroughly elsewhere; to repeat
+one case at several stages; to lock internal architecture without protecting
+user-visible behavior; or to add near-identical permutations that do not
+represent distinct failure modes.
+
+Keep a focused isolated test only when it is the cheapest or clearest way to
+protect a boundary that end-to-end tests do not cover economically, and when
+it has a clear answer to: **what realistic regression does this catch that
+would otherwise be difficult, expensive, or ambiguous to detect?** Typical
+answers are parser grammar edge cases; preprocessing and source-discovery
+rules; semantic transformations with many meaningful combinations; export and
+re-export resolution; diagnostics and error locations; contract round trips;
+compiler-independent behavior that would otherwise need many native builds;
+subtle regressions whose end-to-end failure would not say which rule broke;
+and negative validation paths that are cumbersome or unsafe to reproduce
+through a full build. If there is no good answer, remove the test. In PRIK,
+scrutinize especially tests of parser internals, semantic IR details,
+policy and planning intermediates, generated-code string fragments,
+source-versus-build route parity, and duplicated source-versus-generated-`.pyi`
+assertions; where the two routes are meant to agree, prefer one shared parity
+test over the same behavioral assertions in both.
+
+When fixing a real bug, first ask whether an existing end-to-end test can be
+strengthened to cover the regression. If not, add the smallest focused
+regression test at the layer where the bug reproduces clearly. Do not add a
+unit test merely because production code changed. Before testing a subsystem
+in isolation, list the distinct realistic ways it could fail and test those
+behavioral boundaries with a small table of meaningful cases instead of
+mirroring the implementation line by line. Do not change production behavior
+to make a test easier to delete.
 
 Treat tests as evidence for a named invariant, not as specifications merely
 because they already exist. Add or retain automated tests when they protect at
@@ -72,7 +132,10 @@ and the earliest stage that can prove it. Keep the resulting evidence concise:
 - One test may assert several related consequences of the same setup and
   invariant. Do not create one test function per field or incidental detail.
 - Use parametrization when cases exercise the same operation and assertion
-  shape with different inputs, and give every row a descriptive ID.
+  shape with different inputs, and give every row a descriptive ID. Keep only
+  the rows that exercise distinct code paths instead of a full matrix.
+- Prefer one end-to-end workflow that exercises several cooperating features
+  over a separate native build for every small operation.
 - Do not repeat the same invariant at adjacent stages. Add another stage test
   only when it protects a real handoff, completed decision, generated artifact,
   ABI mechanism, or runtime behavior.
@@ -239,6 +302,9 @@ compilation should use the focused owners under
 `tests/fortran/infrastructure/building/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
+Run ad-hoc compiler and build commands outside the repository root, for example in a temporary
+directory, so no `.mod`, object, or library file lands there; the test session refuses to start
+while native build artifacts sit in the root, since a stale one silently shadows a later build.
 Run pytest with at most `-n 2`. Never `-n 4`, `-n 8`, or `-n auto`. The development machine has 12 cores but only about 7 GB of RAM, and every xdist worker loads NumPy while the Fortran end-to-end tests fork gfortran and cc per test on top of `pytest-monitor` profiling each one. Higher parallelism exhausts memory and thrashes swap, which has hard-frozen the machine and forced a reboot. Prefer the narrowest owning test path over a full suite run, and commit verified work promptly rather than batching it behind a long run.
 Do not run LAPACK wrapper tests locally unless the user explicitly asks for them. Local verification may run everything else, including BLAS-only real-library tests; leave LAPACK coverage to GitHub Actions by default.
 Do not run the full coverage workflow for routine changes. Run focused tests plus the required static-analysis suite. Reserve the complete CI-style coverage workflow for explicit pre-merge or pull-request verification, or when the user specifically requests it.

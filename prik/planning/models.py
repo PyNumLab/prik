@@ -33,6 +33,7 @@ from prik.policy.ownership import (
 from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
+    ScalarActualMode,
     ArrayLogicalABI,
     ArrayEntrypointABI,
     ArrayPythonLayout,
@@ -66,7 +67,7 @@ from prik.policy.models import (
     DirectResultABI,
     DeclarationCallableAction,
     ExternalDeclarationMode,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorInterop,
@@ -430,6 +431,8 @@ class OverloadArgumentMatchPlan(StageRecord):
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
+    scalar_actual_mode: ScalarActualMode | None = None
+    character_length: int | None = None
     builtin_scalar_family: str | None = None
 
 
@@ -451,6 +454,7 @@ class OverloadPlan(StageRecord):
     candidate_passed_objects: tuple[bool, ...]
     unsupported_extra_argument_message: str | None = None
     identity_receiver_shortcut: bool = False
+    direct_single_candidate: bool = False
     docstring: str | None = None
 
 
@@ -771,7 +775,8 @@ class BindingModuleVariablePlan(StageRecord):
     setter_action: SetterAction
     initializer: Any
     constant_value: Any
-    setter_converts_characters: bool = False
+    # The completed native assignment selects the setter's value transport.
+    native_assignment: AssignmentMode = AssignmentMode.NONE
 
 
 @dataclass
@@ -818,10 +823,9 @@ class ModuleVariablePlan(StageRecord):
     derived: DerivedModuleObjectPlan | None = None
     character_length: int | None = None
     docstring: str | None = None
-    # Present only for a borrowed fixed-array view. Both backends read it: the
-    # bridge to reach the address, the binding to define the C helper that one
-    # of the two mechanisms calls. It is therefore a shared fact, not a facet.
-    array_address: ModuleArrayAddressMechanism | None = None
+    # The original address of borrowed scalar or fixed-array module storage.
+    # Both backends read this shared fact when an address capture is required.
+    storage_address: ModuleStorageAddressMechanism | None = None
 
 
 @dataclass
@@ -952,6 +956,8 @@ class BindingArgumentPlan(StageRecord):
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    scalar_actual_mode: ScalarActualMode | None
+    scalar_storage_writable: bool
     native_array_element_c_type: str | None = None
 
 

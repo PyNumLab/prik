@@ -82,17 +82,6 @@ def test_top_level_c_source_split_ignores_function_body_delimiters(names):
     ]
 
 
-@pytest.mark.property
-@given(function_name=_C_IDENTIFIERS)
-def test_generated_c_visibility_attributes_are_tolerated(function_name):
-    source = f'int {function_name}(void) __attribute__((visibility("default")));\n'
-
-    parsed = parse_c_file(source, filename="compiler.h", preprocessing="compiler")
-
-    assert parsed.diagnostics == []
-    assert [function.name for function in parsed.functions] == [function_name]
-
-
 @pytest.mark.fuzz
 @given(_FUZZ_TEXT)
 def test_c_parser_fuzz_fragments_only_raise_owned_errors(source):

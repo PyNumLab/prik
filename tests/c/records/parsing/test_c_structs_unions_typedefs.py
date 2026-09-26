@@ -19,17 +19,27 @@ def test_named_struct_members_are_variables_in_source_order():
     assert point.members[2].type.components[0].bound == "2"
 
 
-def test_typedef_struct_alias_refers_to_the_concrete_struct_object():
-    from prik.parsers.c import parse_c_file
+def test_typedef_aliases_refer_to_the_concrete_tag_objects():
+    from prik.parsers.c import CUnion, parse_c_file
 
     parsed = parse_c_file(
-        "typedef struct point { double x; double y; } point_t;\n",
-        filename="typedef_struct.h",
+        "typedef struct point { double x; double y; } point_t;\n"
+        "typedef struct { int code; } result_t;\n"
+        "typedef union { int i; double d; } value_t;\n",
+        filename="typedef_tags.h",
     )
 
-    assert parsed.structs[0].name == "point"
-    assert parsed.typedefs[0].name == "point_t"
-    assert parsed.typedefs[0].type is parsed.structs[0]
+    point, result = parsed.structs
+    typedefs = {typedef.name: typedef for typedef in parsed.typedefs}
+    assert point.name == "point"
+    assert typedefs["point_t"].type is point
+    assert result.name is None
+    assert result.anonymous_id
+    assert typedefs["result_t"].type is result
+    assert isinstance(parsed.unions[0], CUnion)
+    assert parsed.unions[0].anonymous_id
+    assert result.anonymous_id != parsed.unions[0].anonymous_id
+    assert typedefs["value_t"].type is parsed.unions[0]
 
 
 def test_forward_struct_declaration_is_completed_by_later_definition():
@@ -44,49 +54,6 @@ def test_forward_struct_declaration_is_completed_by_later_definition():
     assert parsed.structs[0].is_incomplete is False
     assert parsed.structs[0].members[0].name == "id"
     assert parsed.diagnostics == []
-
-
-def test_duplicate_complete_tag_definitions_report_diagnostics():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        "struct state { int id; };\nstruct state { int id; };\n",
-        filename="duplicate_struct.h",
-    )
-
-    assert [struct.name for struct in parsed.structs] == ["state"]
-    assert any(diag.code == "C_DUPLICATE_TAG_DEFINITION" for diag in parsed.diagnostics)
-
-
-def test_anonymous_struct_typedef_gets_stable_anonymous_id():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file("typedef struct { int code; } result_t;\n", filename="anon_struct.h")
-
-    assert parsed.structs[0].name is None
-    assert parsed.structs[0].anonymous_id
-    assert parsed.typedefs[0].type is parsed.structs[0]
-
-
-def test_union_members_are_variables_without_struct_field_class():
-    from prik.parsers.c import CUnion, CVariable, parse_c_file
-
-    parsed = parse_c_file("union value { int i; double d; };\n", filename="union.h")
-
-    value = parsed.unions[0]
-    assert isinstance(value, CUnion)
-    assert [member.name for member in value.members] == ["i", "d"]
-    assert all(isinstance(member, CVariable) for member in value.members)
-
-
-def test_anonymous_union_typedef_refers_to_the_concrete_union_object():
-    from prik.parsers.c import CUnion, parse_c_file
-
-    parsed = parse_c_file("typedef union { int i; double d; } value_t;\n", filename="anon_union.h")
-
-    assert isinstance(parsed.unions[0], CUnion)
-    assert parsed.unions[0].anonymous_id
-    assert parsed.typedefs[0].type is parsed.unions[0]
 
 
 def test_function_signatures_using_unions_by_value_report_diagnostics():
@@ -151,11 +118,13 @@ def test_incomplete_union_and_tag_typedef_aliases_use_concrete_tag_classes():
     assert typedefs["payload_t"].type.name == "payload"
 
 
-def test_repeated_union_and_enum_tags_normalize_with_duplicate_diagnostics():
+def test_repeated_struct_union_and_enum_tags_normalize_with_duplicate_diagnostics():
     from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
+struct state { int id; };
+struct state { int id; };
 union value;
 union value { int integer; };
 union value { double real; };
@@ -167,7 +136,9 @@ enum status { STATUS_ERROR };
 
     assert [member.name for member in parsed.unions[0].members] == ["integer"]
     assert [constant.name for constant in parsed.enums[0].constants] == ["STATUS_OK"]
+    assert [struct.name for struct in parsed.structs] == ["state"]
     assert [(diagnostic.code, diagnostic.unit_kind) for diagnostic in parsed.diagnostics] == [
+        ("C_DUPLICATE_TAG_DEFINITION", "struct"),
         ("C_DUPLICATE_TAG_DEFINITION", "union"),
         ("C_DUPLICATE_TAG_DEFINITION", "enum"),
     ]
@@ -372,88 +343,46 @@ def test_struct_field_missing_semicolon_reports_syntax_location():
     assert error.source_line == "struct broken {"
 
 
-def test_nested_aggregate_field_with_function_declarator_is_rejected():
+@pytest.mark.parametrize(
+    ("field", "message", "members"),
+    [
+        pytest.param(
+            "int broken @@;",
+            "Unsupported declarator syntax after parsed type layers: '@@'.",
+            ["kept"],
+            id="bad-declarator",
+        ),
+        pytest.param(
+            "int broken @@, kept_too;",
+            "Unsupported declarator syntax",
+            ["kept_too", "kept"],
+            id="bad-declarator-in-list",
+        ),
+        pytest.param("int *;", "Unnamed field type is not supported.", ["kept"], id="unnamed-field"),
+        pytest.param(
+            "struct inner { int x; } field, make(void);",
+            "Unsupported nested aggregate field declaration.",
+            ["kept"],
+            id="nested-aggregate-function-declarator",
+        ),
+    ],
+)
+def test_unsupported_field_declaration_is_reported_and_later_members_continue(field, message, members):
     from prik.parsers.c import parse_c_file
 
-    parsed = parse_c_file(
-        """struct outer {
-    struct inner { int x; } field, make(void);
-    int kept;
-};
-""",
-        filename="nested_bad_field.h",
-    )
+    parsed = parse_c_file(f"struct bad {{\n    {field}\n    int kept;\n}};\n", filename="bad_field.h")
 
-    assert [member.name for member in parsed.structs[0].members] == ["kept"]
-    assert len(parsed.diagnostics) == 1
-    diagnostic = parsed.diagnostics[0]
-    assert diagnostic.code == "C_UNSUPPORTED_FIELD_DECLARATION"
-    assert diagnostic.message == "Unsupported nested aggregate field declaration."
-    assert diagnostic.location is not None
-    assert diagnostic.location.line == 2
-    assert diagnostic.location.column == 5
-
-
-def test_bad_field_declarator_does_not_stop_later_declarators():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """struct bad {
-    int broken @@, kept;
-};
-""",
-        filename="bad_field_multi.h",
-    )
-
-    assert [member.name for member in parsed.structs[0].members] == ["kept"]
-    assert len(parsed.diagnostics) == 1
-    assert parsed.diagnostics[0].code == "C_UNSUPPORTED_FIELD_DECLARATION"
-
-
-def test_unnamed_field_type_without_bit_width_reports_diagnostic():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """struct bad {
-    int *;
-    int kept;
-};
-""",
-        filename="unnamed_field.h",
-    )
-
-    assert [member.name for member in parsed.structs[0].members] == ["kept"]
-    assert len(parsed.diagnostics) == 1
-    diagnostic = parsed.diagnostics[0]
-    assert diagnostic.code == "C_UNSUPPORTED_FIELD_DECLARATION"
-    assert diagnostic.message == "Unnamed field type is not supported."
-    assert diagnostic.location is not None
-    assert diagnostic.location.line == 2
-    assert diagnostic.location.column == 5
-
-
-def test_unsupported_field_declarator_is_reported_at_member_location():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """struct bad {
-    int broken @@;
-    int kept;
-};
-""",
-        filename="bad_field.h",
-    )
-
-    assert [member.name for member in parsed.structs[0].members] == ["kept"]
+    assert [member.name for member in parsed.structs[0].members] == members
     assert len(parsed.diagnostics) == 1
     diagnostic = parsed.diagnostics[0]
     assert diagnostic.code == "C_UNSUPPORTED_FIELD_DECLARATION"
     assert diagnostic.severity == "warning"
     assert diagnostic.unit_kind == "struct_field"
-    assert diagnostic.unit_name is None
-    assert diagnostic.message == "Unsupported declarator syntax after parsed type layers: '@@'."
+    assert message in diagnostic.message
     assert diagnostic.location is not None
-    assert diagnostic.location.filename == "bad_field.h"
-    assert diagnostic.location.line == 2
-    assert diagnostic.location.column == 5
-    assert diagnostic.location.source_line == "    int broken @@;"
+    assert (diagnostic.location.filename, diagnostic.location.line, diagnostic.location.column) == (
+        "bad_field.h",
+        2,
+        5,
+    )
+    assert diagnostic.location.source_line == f"    {field}"

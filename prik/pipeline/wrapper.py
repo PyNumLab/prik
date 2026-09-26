@@ -132,6 +132,7 @@ from prik.planning.models import (
     WrapperPlanDiagnostic,
 )
 from prik.planning.entrypoints import build_generated_support_procedure_projection
+from prik.planning.planner import requires_cfi_header
 from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 __all__ = ("GeneratedSource", "GeneratedWrapper", "WrapperGenerator")
@@ -534,53 +535,12 @@ class WrapperGenerator:
             if handle is not None
         )
         expected_headers = list(self._native_array_required_headers(handles))
-        if (
-            any(
-                field.access
-                in {
-                    DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
-                    DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
-                }
-                for namespace in plan.namespaces
-                for derived in namespace.derived_types
-                for field in derived.fields
-            )
-            or self._accepts_array_handle_actual(plan)
-            or self._uses_array_descriptor_abi(plan)
-        ):
+        if requires_cfi_header(plan.namespaces):
             expected_headers.append(NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER)
         expected = tuple(dict.fromkeys(expected_headers))
         if plan.required_headers == expected:
             return ()
         return (self._diagnostic(plan.owner_path, "inconsistent-required-headers", plan.required_headers),)
-
-    @staticmethod
-    def _accepts_array_handle_actual(plan: ModulePlan) -> bool:
-        """Return whether an ordinary array argument accepts an array handle.
-
-        The storage such a handle names is reached through its descriptor, so
-        the module needs the interop header even when nothing else in it does.
-        Only a Fortran argument accepts a handle, so the accepted sources are
-        the whole test.
-        """
-        accepts = {NativeArraySourceKind.ALLOCATABLE_HANDLE, NativeArraySourceKind.POINTER_HANDLE}
-        return any(
-            argument.native_array_actual is not None
-            and accepts.intersection(argument.native_array_actual.accepted_sources)
-            for namespace in plan.namespaces
-            for function in namespace.functions
-            for argument in function.arguments
-        )
-
-    @staticmethod
-    def _uses_array_descriptor_abi(plan: ModulePlan) -> bool:
-        """Return whether an ordinary argument uses the standard descriptor ABI."""
-        return any(
-            argument.array is not None and argument.array.entrypoint_abi is ArrayEntrypointABI.C_DESCRIPTOR
-            for namespace in plan.namespaces
-            for function in namespace.functions
-            for argument in function.arguments
-        )
 
     def _namespace_native_array_handles(
         self,
@@ -1345,7 +1305,7 @@ class WrapperGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-getter-role", None))
         # The route to the array's base address is a policy decision. Bridge
         # lowering reads it; it must never fall back to one when it is absent.
-        if plan.array_address is None:
+        if plan.storage_address is None:
             diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-array-address-mechanism", None))
         if plan.bridge.native_assignment is not AssignmentMode.NONE:
             diagnostics.append(
@@ -1448,9 +1408,14 @@ class WrapperGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one scalar module write-through setter."""
         diagnostics = []
-        # A character write copies a byte buffer rather than a value, but it is
-        # the same write-through contract; every other mechanism is rejected.
-        if plan.bridge.native_assignment not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
+        # A character or descriptor write uses its own native mechanism, but it
+        # is the same write-through contract; an alias or no assignment is rejected.
+        if plan.bridge.native_assignment not in {
+            AssignmentMode.VALUE_COPY,
+            AssignmentMode.CHARACTER_COPY,
+            AssignmentMode.ALLOCATING_COPY,
+            AssignmentMode.TARGET_COPY,
+        }:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-module-native-assignment", plan.bridge.native_assignment)
             )

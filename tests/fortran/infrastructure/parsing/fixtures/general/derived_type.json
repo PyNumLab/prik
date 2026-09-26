@@ -2,7 +2,7 @@
   "filename": "derived_type.f90",
   "source": "module particle_mod\n  type :: particle\n    integer :: id\n    real(kind=8), dimension(3) :: x\n  contains\n    procedure :: move, reset\n  end type particle\ncontains\nsubroutine touch(p)\n  type(particle), intent(inout) :: p\nend subroutine touch\nend module particle_mod\n",
   "encoding": "utf-8",
-  "format": "modern",
+  "format": "free",
   "modules": [
     {
       "name": "particle_mod",
@@ -43,7 +43,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [
@@ -181,7 +182,8 @@
           "uses": [],
           "in_interface": false,
           "variables": {},
-          "common_variables": []
+          "common_variables": [],
+          "nested_uses": []
         }
       ],
       "derived_types": [

@@ -3,61 +3,60 @@
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file
-from prik.parsers.fortran.parser import FortranParser
-from tests.fortran._support.parser_regressions import _unit
 
 
-def test_enum_diagnostic_reports_first_invalid_line_after_valid_enumerator():
+@pytest.mark.parametrize(
+    ("invalid_line", "message"),
+    [
+        pytest.param(
+            "enumerator :: valid = 1, 2invalid",
+            "Invalid Fortran syntax in enum specification part: enumerator :: valid = 1, 2invalid",
+            id="malformed-enumerator",
+        ),
+        pytest.param(
+            "integer :: invalid",
+            "Invalid Fortran syntax in enum specification part: integer :: invalid",
+            id="declaration-statement",
+        ),
+        pytest.param(
+            "interface invalid",
+            "Invalid Fortran syntax in enum specification part: interface invalid",
+            id="nested-interface",
+        ),
+        pytest.param(
+            "type :: nested\n    end type nested",
+            "Invalid Fortran syntax in enum '<unnamed>' specification part: type :: nested",
+            id="nested-program-unit",
+        ),
+    ],
+)
+def test_enum_diagnostic_reports_the_first_invalid_line_after_a_valid_enumerator(invalid_line: str, message: str):
+    """The diagnostic names the offending line and its location, not the enum as a whole."""
     with pytest.raises(FortranParseError) as error:
         parse_fortran_file(
-            """
+            f"""
 module enum_contract
   enum, bind(c)
     enumerator :: valid = 1
-    integer :: invalid
+    {invalid_line}
   end enum
 end module enum_contract
 """,
             filename="enum_contract.f90",
         )
 
-    assert error.value.base_message == "Invalid Fortran syntax in enum specification part: integer :: invalid"
+    assert error.value.base_message == message
     assert error.value.filename == "enum_contract.f90"
     assert error.value.line_number == 5
-    assert error.value.source_line.strip() == "integer :: invalid"
+    assert error.value.source_line.strip() == invalid_line.splitlines()[0]
     assert error.value.code == "PARSE_INVALID_SYNTAX"
 
 
-def test_enum_diagnostic_rejects_nested_program_unit_with_source_metadata():
-    with pytest.raises(FortranParseError) as error:
-        parse_fortran_file(
-            """
-module enum_contract
-  enum, bind(c)
-    type :: nested
-    end type nested
-  end enum
-end module enum_contract
-""",
-            filename="nested_enum_contract.f90",
-        )
-
-    assert error.value.base_message == "Invalid Fortran syntax in enum '<unnamed>' specification part: type :: nested"
-    assert error.value.filename == "nested_enum_contract.f90"
-    assert error.value.line_number == 4
-    assert error.value.source_line.strip() == "type :: nested"
-    assert error.value.code == "PARSE_INVALID_SYNTAX"
-
-
-def test_enum_validator_skips_preprocessed_linemarkers_before_enumerators():
-    parser = FortranParser()
-    unit = _unit(
-        "enum",
-        None,
-        "enum, bind(c)",
-        '# 8 "generated.f90"',
-        "enumerator :: ready = 1",
-        "end enum",
+def test_enum_accepts_preprocessed_linemarkers_before_enumerators():
+    """A compiler preprocessor's line marker is provenance, not an enum statement."""
+    parsed = parse_fortran_file(
+        'module m\n  enum, bind(c)\n# 8 "generated.f90"\n    enumerator :: ready = 1\n  end enum\nend module m\n',
+        filename="generated.f90",
     )
 
-    parser._helper_validate_enum_unit(unit, filename="generated.f90")
+    assert [(item.name, item.value) for item in parsed.modules[0].enums[0].enumerators] == [("ready", "1")]

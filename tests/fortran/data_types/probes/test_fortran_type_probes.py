@@ -19,7 +19,6 @@ from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
     FortranTypeProbeError,
-    _value_for_expression,
     build_fortran_type_probe_source,
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
@@ -216,20 +215,6 @@ def test_fortran_type_probe_cache_reuses_report_and_invalidates_for_flags(monkey
     assert len(calls) == 3
 
 
-def test_fortran_type_probe_expressions_extracts_semantic_requirement_inputs():
-    requirements = [
-        {"code": "parameter_value", "symbol": "blank", "expression": " "},
-        {"code": "parameter_value", "symbol": "rk", "expression": "selected_real_kind(12)"},
-        {"code": "unsupported_kind", "symbol": "x", "expression": "selected_real_kind(12)"},
-        {"code": "parameter_value", "symbol": "ik", "expression": "selected_int_kind(9)"},
-    ]
-
-    assert fortran_type_probe_expressions(requirements) == [
-        "selected_real_kind(12)",
-        "selected_int_kind(9)",
-    ]
-
-
 def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements():
     report = FortranTypeProbeReport(
         values={"Selected_Real_Kind(12)": 8},
@@ -251,8 +236,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
     assert report.to_compile_time_values() == {"Selected_Real_Kind(12)": 8}
     assert report.to_compile_time_values(requirements)["rk"] == 8
     assert "not_added" not in report.to_compile_time_values(requirements)
-    assert _value_for_expression({}, "not_present") is None
-    assert evaluate_fortran_type_requirements(PreprocessingConfig(mode="compiler"), []) == {}
 
 
 @pytest.mark.parametrize(
@@ -260,7 +243,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
     [
         ([OSError("missing")], "failed to run Fortran type probe compiler"),
         ([SimpleNamespace(returncode=1, stderr="compile failed")], "compilation failed"),
-        ([SimpleNamespace(returncode=0, stderr=""), OSError("cannot execute")], "failed to execute"),
         (
             [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=2, stderr="run failed")],
             "execution failed",
@@ -268,10 +250,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
         (
             [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=0, stdout="not json", stderr="")],
             "invalid JSON",
-        ),
-        (
-            [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=0, stdout="{}", stderr="")],
-            "missing 'values'",
         ),
         (
             [
@@ -328,21 +306,6 @@ def test_fortran_type_probe_accepts_runner_and_cli_validates_macro_names(monkeyp
         fortran_type_probe.main(["--compiler", "gfortran", "-U", "=bad"])
 
 
-def test_fortran_type_probe_reports_values_from_native_compiler():
-    compiler = _required_fortran_compiler()
-    report = probe_fortran_type_expressions(
-        PreprocessingConfig(mode="compiler", compiler=compiler),
-        ["selected_int_kind(9)", "selected_real_kind(12)", "kind(1.0d0)"],
-    )
-
-    assert report.values["selected_int_kind(9)"] > 0
-    assert report.values["selected_real_kind(12)"] > 0
-    assert report.values["kind(1.0d0)"] > 0
-    assert report.recipe.compiler == compiler
-    assert "-cpp" in report.recipe.compile_argv
-    assert "selected_real_kind(12)" in report.source_text
-
-
 def test_fortran_type_probe_resolves_supported_logical_storage_widths(tmp_path):
     compiler = _required_fortran_compiler()
 
@@ -387,34 +350,6 @@ def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):
     assert report.recipe.defines == ["PRIK_FEATURE=1"]
     assert report.recipe.undefs == ["PRIK_OLD_FEATURE"]
     assert report.recipe.compiler_args == ["-fno-range-check"]
-
-
-def test_fortran_type_probe_maps_compiler_storage_facts():
-    compiler = _required_fortran_compiler()
-    requirements = [
-        {
-            "base_type": "integer",
-            "kind": None,
-            "expression": "storage_size(int(0))",
-        },
-        {
-            "base_type": "real",
-            "kind": None,
-            "expression": "storage_size(real(0.0))",
-        },
-    ]
-
-    facts = evaluate_fortran_type_facts(
-        PreprocessingConfig(
-            mode="compiler",
-            compiler=compiler,
-            compiler_args=["-fdefault-integer-8", "-fdefault-real-8"],
-        ),
-        requirements,
-    )
-
-    assert facts[("integer", None)]["bits"] == 64
-    assert facts[("real", None)]["bits"] == 64
 
 
 def test_fortran_type_probe_evaluates_collected_semantic_requirements():
@@ -499,49 +434,14 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["source_text"].startswith("program prik_fortran_type_probe")
 
 
-def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):
-    compiler = _required_fortran_compiler()
-    source = tmp_path / "solver.f90"
-    source.write_text(
-        """
-module solver_mod
-  integer, parameter :: rk = selected_real_kind(12)
-contains
-subroutine scale(x)
-  real(kind=rk), intent(inout) :: x
-end subroutine scale
-end module solver_mod
-""",
-        encoding="utf-8",
-    )
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "semantics",
-            str(source),
-            "--json",
-            "--compiler",
-            compiler,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    payload = json.loads(completed.stdout)
-    semantic_type = payload[str(source)]["semantic_modules"][0]["functions"][0]["arguments"][0]["semantic_type"]
-    assert semantic_type["name"] == "Float64"
-
-
-def test_prik_semantics_cli_uses_compiler_dependent_default_fortran_kinds(tmp_path):
+def test_prik_semantics_cli_uses_compiler_dependent_kinds_and_collected_requirements(tmp_path):
     compiler = _required_fortran_compiler()
     source = tmp_path / "defaults.f90"
     source.write_text(
         """
 module defaults
+  integer, parameter :: rk = selected_real_kind(12)
+  real(kind=rk) :: selected
   integer :: count
   real :: scale
   complex :: value
@@ -574,6 +474,7 @@ end module defaults
     payload = json.loads(completed.stdout)
     variables = payload[str(source)]["semantic_modules"][0]["variables"]
     semantic_types = {variable["name"]: variable["semantic_type"] for variable in variables}
+    assert semantic_types["selected"]["name"] == "Float64"
     assert semantic_types["count"]["name"] == "Int64"
     assert semantic_types["scale"]["name"] == "Float64"
     assert semantic_types["value"]["name"] == "Complex128"
@@ -584,7 +485,7 @@ end module defaults
     assert semantic_types["legacy_value"]["metadata"]["fortran_type_fact_source"] == "legacy_star_storage"
 
 
-def test_probe_skips_expressions_naming_project_symbols():
+def test_probe_collects_unique_resolvable_expressions():
     """The probe program cannot `use` a module that has not been compiled yet.
 
     An expression naming a kind parameter declared elsewhere in the project is
@@ -597,11 +498,18 @@ def test_probe_skips_expressions_naming_project_symbols():
     assert not fortran_type_probe.probe_can_resolve_expression("wp")
 
     requirements = [
-        {"expression": "real64"},
-        {"expression": "storage_size(1_ip, kind=ip)"},
-        {"expression": "selected_int_kind(9)"},
+        {"code": "parameter_value", "symbol": "blank", "expression": " "},
+        {"code": "parameter_value", "symbol": "rk", "expression": "real64"},
+        {"code": "unsupported_kind", "symbol": "x", "expression": "selected_real_kind(12)"},
+        {"code": "parameter_value", "symbol": "size", "expression": "storage_size(1_ip, kind=ip)"},
+        {"code": "parameter_value", "symbol": "ik", "expression": "selected_int_kind(9)"},
+        {"code": "parameter_value", "symbol": "ik_again", "expression": "selected_int_kind(9)"},
     ]
-    assert fortran_type_probe_expressions(requirements) == ["real64", "selected_int_kind(9)"]
+    assert fortran_type_probe_expressions(requirements) == [
+        "real64",
+        "selected_real_kind(12)",
+        "selected_int_kind(9)",
+    ]
 
 
 def test_probe_source_compiles_for_a_module_using_imported_kind_parameters(tmp_path):

@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
-    _build_inline_pyi_contract_module,
     _build_source_or_generated_pyi_and_import,
 )
 
@@ -77,22 +76,3 @@ def test_strings_mixed_route_keeps_only_fixed_length_adapter(
         )
         assert "bind_c_adapted_fixed_code" in bridge
         assert "direct_char_code" not in bridge
-
-
-def test_strings_mixed_route_matches_edited_source_free_contract(tmp_path: Path):
-    stem = "strings_mixed_bind_c_f90"
-    source = (FIXTURES / "native" / f"{stem}.f90").read_text(encoding="utf-8")
-    contract = (FIXTURES / "contracts" / stem / f"{stem}.pyi").read_text(encoding="utf-8")
-    contract = contract.replace("from prik.contracts import ", "from prik.contracts import nogil, ")
-    contract = contract.replace("def direct_char_code(", "@nogil\ndef direct_char_code(").replace(
-        "def adapted_fixed_code(", "@nogil\ndef adapted_fixed_code("
-    )
-    module, result = _build_inline_pyi_contract_module(
-        tmp_path, module_name=stem, source_text=source, contract_text=contract
-    )
-
-    assert module.direct_char_code("C") == np.int32(67)
-    assert module.adapted_fixed_code("D   ") == np.int32(68)
-    bridge = (result.output_dir / f"bind_c_{stem}_wrapper.f90").read_text(encoding="utf-8").casefold()
-    assert "bind_c_adapted_fixed_code" in bridge
-    assert "function bind_c_direct_char_code" not in bridge

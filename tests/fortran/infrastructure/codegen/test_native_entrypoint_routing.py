@@ -20,7 +20,7 @@ def _plan(source: str):
     return WrapperPlanner().build(module)
 
 
-def test_direct_plan_keeps_one_projected_sequence_and_no_adapter_facets():
+def test_direct_plan_keeps_one_projected_sequence_and_emits_no_fortran_source():
     plan = _plan(
         """
 module direct_projection
@@ -47,6 +47,13 @@ end module direct_projection
     assert slot.adapter is None
     assert slot.projection_action is EntrypointProjectionAction.ARGUMENT_DEFAULT
     assert slot.passing is EntrypointPassingConvention.C_VALUE
+
+    # An all-direct module assembles only the binding and its header; the user's
+    # own Fortran objects still need the Fortran runtime at link time.
+    generated = WrapperGenerator().generate(plan)
+    assert generated.bridge_sources == ()
+    assert generated.required_link_languages == ("fortran",)
+    assert [path.suffix for path in generated.source_paths] == [".c", ".h"]
 
 
 def test_bind_c_descriptor_arrays_call_the_user_symbol_without_an_adapter():
@@ -167,24 +174,3 @@ end module support_only_lowering
 
     assert "bind_c_get_counter" in bridge
     assert "direct_value" not in bridge.casefold()
-
-
-def test_all_direct_lowering_assembles_binding_and_header_without_fortran_source():
-    generated = WrapperGenerator().generate(
-        _plan(
-            """
-module all_direct_lowering
-  use iso_c_binding
-contains
-  integer(c_int) function value(input) bind(C) result(output)
-    integer(c_int), value, intent(in) :: input
-    output = input
-  end function value
-end module all_direct_lowering
-"""
-        )
-    )
-
-    assert generated.bridge_sources == ()
-    assert generated.required_link_languages == ("fortran",)
-    assert [path.suffix for path in generated.source_paths] == [".c", ".h"]

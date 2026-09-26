@@ -16,7 +16,7 @@ Guidelines:
 ## Active cJSON Regression
 
 `tests/c/fixtures/native/json/cJSON.h` and `cJSON.c` exercise the header, source and
-project paths in `test_c_corpus.py`; a separately pinned copy with license and
+project paths through the `json` project golden in `test_c_fixture_suite.py`; a separately pinned copy with license and
 source provenance remains documentation work rather than a disabled test.
 The exact compiler-preprocessed project snapshot is a Linux reference golden
 and is skipped on other platforms. Portable parser and preprocessing behavior
@@ -29,17 +29,8 @@ Checked-in compatibility snapshots cover grouped projects from `tests/c/fixtures
 `tests/c/fixtures/native/nanosvg/`, plus top-level C inputs from `tests/c/fixtures/native/stb/`.
 They preserve the compiler-preprocessed Linux reference payload and historical
 JSON shape. Do not refresh them from macOS or another compiler/libc reference
-environment.
-
-## Developer Walkthrough
-
-`test_c_parser_developer_tutorial.py` is an executable reading guide for
-`prik/parsers/c/parser.py`. It shows the shared declaration/declarator gateway, the
-`parse_file` routing of declaration roles, and the preprocessed linemarker
-path without replacing the feature-focused test modules.
-
-`test_c_fixture_suite.py` keeps fixture grouping coverage and verifies that
-representative macro-heavy fixtures fail clearly in raw mode.
+environment. `test_c_fixture_suite.py` compares every grouped project with its
+golden.
 
 ## Error Goldens
 

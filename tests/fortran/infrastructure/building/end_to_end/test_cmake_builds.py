@@ -6,10 +6,12 @@ import importlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import venv
 
 import numpy as np
@@ -88,15 +90,24 @@ def _configure_and_build(
         _run(["cmake", "--build", str(build), "-j2"], environment=environment)
 
 
+def _extension_artifact(module_name: str, build: Path) -> Path:
+    artifacts = tuple(
+        path
+        for path in build.rglob(f"{module_name}.*")
+        if path.suffix == ".so" and path.name.split(".")[0] == module_name
+    )
+    assert len(artifacts) == 1, f"expected one {module_name} extension artifact in {build}: {artifacts}"
+    return artifacts[0]
+
+
 def _import_extension(module_name: str, build: Path):
-    artifacts = tuple(build.rglob(f"{module_name}*.so"))
-    assert artifacts, f"no CMake extension artifact in {build}"
+    directory = str(_extension_artifact(module_name, build).parent)
     sys.modules.pop(module_name, None)
-    sys.path.insert(0, str(artifacts[0].parent))
+    sys.path.insert(0, directory)
     try:
         return importlib.import_module(module_name)
     finally:
-        sys.path.remove(str(artifacts[0].parent))
+        sys.path.remove(directory)
 
 
 def _call_extension(
@@ -108,10 +119,9 @@ def _call_extension(
     an extension module for the life of the interpreter, so a second import
     returns the shared library the first one loaded.
     """
-    artifacts = tuple(build.rglob(f"{module_name}*.so"))
-    assert artifacts, f"no CMake extension artifact in {build}"
     environment = dict(environment or _environment())
-    environment["PYTHONPATH"] = str(artifacts[0].parent) + os.pathsep + environment["PYTHONPATH"]
+    directory = str(_extension_artifact(module_name, build).parent)
+    environment["PYTHONPATH"] = directory + os.pathsep + environment["PYTHONPATH"]
     program = f"import numpy, {module_name}\nprint({expression})\n"
     return _run([sys.executable, "-c", program], environment=environment).stdout.strip()
 
@@ -166,119 +176,602 @@ def _cmake_finds_blas() -> bool:
     return result.returncode == 0
 
 
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
+REQUIRES_CMAKE_FORTRAN = pytest.mark.skipif(
+    shutil.which("cmake") is None
+    or shutil.which("gfortran") is None
+    or shutil.which("gcc") is None
+    or shutil.which("ar") is None,
+    reason="CMake, gfortran, gcc, and ar are required",
 )
-def test_use_prik_cmake_builds_source_first_fortran_module(tmp_path: Path):
-    project = tmp_path / "user project with spaces"
-    project.mkdir()
-    (project / "square.f90").write_text(
-        """real(8) function square(x) result(y)
-  real(8), intent(in) :: x
-  y = x * x
-end function square
-""",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  square
-  SOURCES square.f90
-  FORTRAN_FLAGS -O0
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran", build_project=False)
-    assert not tuple((build / "prik" / "square").glob("*_wrapper.*"))
-    _run(["cmake", "--build", str(build), "-j2"])
-    native_support_header = build / "prik" / "square" / "binding_support" / "prik_binding.h"
-    assert native_support_header.is_file()
-    native_support_header.unlink()
-    _run(["cmake", "--build", str(build), "-j2"])
-    assert native_support_header.is_file()
-    module = _import_extension("square", build)
-    assert module.square(np.float64(3.0)) == np.float64(9.0)
+GENERATION_COMMENT = re.compile(r"Generate PRIK wrapper sources for (\w+)")
 
 
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_preserves_per_source_compile_flags(tmp_path: Path):
-    project = tmp_path / "compile flag scopes"
-    project.mkdir()
-    (project / "native.f90").write_text(
-        "real(8) function native_value(x) result(y)\n  real(8), intent(in) :: x\n  y = x\nend function native_value\n",
-        encoding="utf-8",
-    )
-    (project / "support.c").write_text("int prik_native_support(void) { return 0; }\n", encoding="utf-8")
-    _write_project(
-        project,
-        """set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+def _regenerated(output: str) -> set[str]:
+    """Return the modules whose wrapper generation a build ran."""
+    return set(GENERATION_COMMENT.findall(output))
+
+
+def _compile_archive(source: Path, archive: Path) -> Path:
+    native_object = archive.with_suffix(".o")
+    _run([shutil.which("gfortran"), "-fPIC", "-c", str(source), "-o", str(native_object)])
+    _run([shutil.which("ar"), "rcs", str(archive), str(native_object)])
+    native_object.unlink()
+    return archive
+
+
+def _write_files(root: Path, files: dict[str, str]) -> None:
+    for relative, text in files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+SHARED_PROJECT_FILES = {
+    "square.f90": "real(8) function square(x) result(y)\n  real(8), intent(in) :: x\n  y = x * x\nend function square\n",
+    "math_mod.f90": (
+        "module math_mod\ncontains\n  real(8) function add(a, b) result(c)\n    real(8), intent(in) :: a, b\n"
+        "    c = a + b\n  end function add\nend module math_mod\n"
+    ),
+    "flag_native.f90": (
+        "real(8) function native_value(x) result(y)\n  real(8), intent(in) :: x\n  y = x\nend function native_value\n"
+    ),
+    "flag_support.c": "int prik_native_support(void) { return 0; }\n",
+    "common.f90": (
+        "real(8) function common_value(value) result(result)\n  real(8), intent(in) :: value\n"
+        "  result = value\nend function common_value\n"
+    ),
+    "include files/cmath_api.h": "double c_add(double, double);\n",
+    "cexample.c": (
+        '#include "cmath_api.h"\n#ifdef PRIK_CMAKE_TEST_FLAG\n'
+        "double c_add(double a, double b) { return a + b + 1.0; }\n#else\n"
+        "double c_add(double a, double b) { return a + b; }\n#endif\n"
+    ),
+    "dependency_interface.c": "double dependency_add(double value);\n",
+    "dependency_implementation.c": (
+        "#ifndef PRIK_REQUIRED_DEFINE\n#error missing dependency compile definition\n#endif\n"
+        "double dependency_add(double value) { return value + 1.0; }\n"
+    ),
+    "external_math.f90": (
+        "real(8) function native_add(x, y) result(z)\n  real(8), intent(in) :: x, y\n  z = x + y\n"
+        "end function native_add\n"
+    ),
+    "external_wrapper.f90": (
+        "real(8) function call_native(x, y) result(z)\n  real(8), intent(in) :: x, y\n  interface\n"
+        "    function native_add(a, b) result(c)\n      real(8), intent(in) :: a, b\n      real(8) :: c\n"
+        "    end function native_add\n  end interface\n  z = native_add(x, y)\nend function call_native\n"
+    ),
+    "target_interface.f90": (
+        "real(8) function target_square(value) result(result)\n  real(8), intent(in) :: value\n"
+        "  result = value * value\nend function target_square\n"
+    ),
+    "target_implementation.f90": (
+        "real(8) function target_square(value) result(result)\n  real(8), intent(in) :: value\n"
+        "  result = value * value\nend function target_square\n"
+    ),
+    "raw_interface.f90": (
+        "integer(c_int) function raw_add_two(value) bind(C, name='raw_add_two_symbol') result(output)\n"
+        "  use iso_c_binding, only: c_int\n  integer(c_int), value, intent(in) :: value\n"
+        "  character(len=16) :: buffer\n  write(buffer, '(I0)') value\n  read(buffer, *) output\n"
+        "  output = output + 2_c_int\nend function raw_add_two\n"
+    ),
+    "c_contract/api.pyi": "from prik.contracts import Float64\n\ndef add_one(value: Float64) -> Float64: ...\n",
+    "c_contract_implementation.f90": (
+        "real(c_double) function add_one(value) bind(C, name='add_one') result(result)\n"
+        "  use iso_c_binding, only: c_double\n  real(c_double), value, intent(in) :: value\n"
+        "  result = value + 1.0_c_double\nend function add_one\n"
+    ),
+    "c_contract_source/api.pyi": "from prik.contracts import Float64\n\ndef add_two(value: Float64) -> Float64: ...\n",
+    "c_contract_source_implementation.f90": (
+        "real(c_double) function add_two(value) bind(C, name='add_two') result(result)\n"
+        "  use iso_c_binding, only: c_double\n  real(c_double), value, intent(in) :: value\n"
+        "  result = value + 2.0_c_double\nend function add_two\n"
+    ),
+    "adapter_plain.c": "double capi_add(double value) { return value + 1.0; }\n",
+    "adapter_adapted.c": "double capi_add(double value) { return value + 1.0; }\n",
+}
+
+SHARED_PROJECT_MODULES = f"""set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+prik_add_module(square SOURCES square.f90 FORTRAN_FLAGS -O0)
+prik_add_module(math_mod SOURCES math_mod.f90)
 prik_add_module(
   compile_flag_scopes
-  SOURCES native.f90
-  C_SOURCES support.c
+  SOURCES flag_native.f90
+  C_SOURCES flag_support.c
   FORTRAN_FLAGS -DPRIK_NATIVE_FORTRAN
   C_FLAGS -DPRIK_NATIVE_C
   WRAPPER_FORTRAN_FLAGS -DPRIK_WRAPPER_FORTRAN
   WRAPPER_C_FLAGS -DPRIK_WRAPPER_C
 )
-""",
+prik_add_module(first SOURCES common.f90 FORTRAN_FLAGS -DFIRST_MODULE)
+prik_add_module(second SOURCES common.f90 FORTRAN_FLAGS -DSECOND_MODULE)
+prik_add_module(
+  free_external
+  CONTRACT "{BRIDGE_CONTRACT.as_posix()}"
+  FORTRAN_SOURCES "{BRIDGE_NATIVE.as_posix()}"
+)
+prik_add_module(
+  cexample
+  C_SOURCES cexample.c
+  INCLUDE_DIRS "${{CMAKE_CURRENT_SOURCE_DIR}}/include files"
+  C_FLAGS -DPRIK_CMAKE_TEST_FLAG
+  PRIK_ARGS --define PRIK_CMAKE_TEST_FLAG
+)
+add_library(native_dependency INTERFACE)
+target_compile_definitions(native_dependency INTERFACE PRIK_REQUIRED_DEFINE)
+prik_add_module(
+  dependency_usage
+  SOURCES dependency_interface.c
+  C_SOURCES dependency_implementation.c
+  LINK_LIBRARIES native_dependency
+)
+add_library(external_math STATIC external_math.f90)
+prik_add_module(external_target SOURCES external_wrapper.f90 LINK_LIBRARIES external_math)
+add_library(target_math STATIC target_implementation.f90)
+prik_add_module(
+  target_only
+  SOURCES target_interface.f90
+  NO_COMPILE_INPUT_SOURCES
+  LINK_LIBRARIES target_math
+)
+prik_add_module(
+  raw_archive
+  SOURCES raw_interface.f90
+  NO_COMPILE_INPUT_SOURCES
+  LINKER_LANGUAGE Fortran
+  LINK_LIBRARIES "${{CMAKE_CURRENT_SOURCE_DIR}}/libraw_math.a"
+)
+prik_add_module(
+  c_contract
+  CONTRACT c_contract/api.pyi
+  NATIVE_LANGUAGE C
+  LINKER_LANGUAGE Fortran
+  LINK_LIBRARIES "${{CMAKE_CURRENT_SOURCE_DIR}}/libimplementation.a"
+)
+prik_add_module(
+  c_contract_source
+  CONTRACT c_contract_source/api.pyi
+  NATIVE_LANGUAGE C
+  FORTRAN_SOURCES c_contract_source_implementation.f90
+)
+prik_add_module(adapter_plain C_SOURCES adapter_plain.c)
+prik_add_module(adapter_adapted C_SOURCES adapter_adapted.c PRIK_ARGS --collision-adapter-all)
+"""
+
+
+@pytest.fixture(scope="module")
+def shared_project(tmp_path_factory: pytest.TempPathFactory) -> SimpleNamespace:
+    """Configure and build one CMake project that finds PRIK and declares many independent modules.
+
+    Every module here is read-only evidence for the tests below, so one
+    configure and one parallel build serve all of them. Tests that edit a
+    project after it is built keep their own project.
+    """
+    if any(shutil.which(tool) is None for tool in ("cmake", "gfortran", "gcc", "ar")):
+        pytest.skip("CMake, gfortran, gcc, and ar are required")
+    project = tmp_path_factory.mktemp("use-prik") / "shared project with spaces"
+    _write_files(project, SHARED_PROJECT_FILES)
+    raw_source = project / "raw_implementation.f90"
+    raw_source.write_text(SHARED_PROJECT_FILES["raw_interface.f90"], encoding="utf-8")
+    _compile_archive(raw_source, project / "libraw_math.a")
+    _compile_archive(project / "c_contract_implementation.f90", project / "libimplementation.a")
+    (project / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.21)\n"
+        "project(cmake_test LANGUAGES C Fortran)\n"
+        "find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)\n"
+        "find_package(PRIK CONFIG REQUIRED)\n" + SHARED_PROJECT_MODULES,
+        encoding="utf-8",
     )
     build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    commands = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+    _configure_and_build(
+        project,
+        build,
+        language="fortran",
+        build_project=False,
+        defines=(f"PRIK_DIR={USE_PRIK_DIR.as_posix()}",),
+    )
+    configured_wrappers = tuple((build / "prik").rglob("*_wrapper.*")) if (build / "prik").exists() else ()
+    _run(["cmake", "--build", str(build), "-j2"])
+    return SimpleNamespace(project=project, build=build, configured_wrappers=configured_wrappers)
+
+
+@pytest.mark.fortran_end_to_end
+def test_find_package_prik_builds_source_contract_and_c_modules_at_build_time(shared_project: SimpleNamespace):
+    """``find_package(PRIK CONFIG)`` provides the helper, and configure plans without generating."""
+    build = shared_project.build
+    assert shared_project.configured_wrappers == ()
+
+    square = _import_extension("square", build)
+    assert square.square(np.float64(3.0)) == np.float64(9.0)
+    math_mod = _import_extension("math_mod", build)
+    assert math_mod.math_mod.add(np.float64(2.0), np.float64(3.0)) == np.float64(5.0)
+
+    generated = build / "prik" / "free_external"
+    assert tuple(generated.glob("*.f90")), "the generated Fortran bridge is missing"
+    assert tuple(generated.glob("*.c")), "the generated C binding is missing"
+    free_external = _import_extension("free_external", build)
+    assert free_external.free_square(np.int32(6)) == np.int32(36)
+
+    # The C flag reaches both native compilation and semantic preprocessing,
+    # and the include directory with a space in its path reaches both too.
+    cexample = _import_extension("cexample", build)
+    assert cexample.c_add(np.float64(2.0), np.float64(3.0)) == np.float64(6.0)
+
+    # A C contract may be implemented by native Fortran sources.
+    c_contract_source = _import_extension("c_contract_source", build)
+    assert c_contract_source.add_two(np.float64(5.0)) == np.float64(7.0)
+
+
+@pytest.mark.fortran_end_to_end
+def test_use_prik_cmake_scopes_native_and_wrapper_flags_per_source_and_target(shared_project: SimpleNamespace):
+    commands = json.loads((shared_project.build / "compile_commands.json").read_text(encoding="utf-8"))
     by_name = {Path(record["file"]).name: record["command"] for record in commands}
 
-    assert "-DPRIK_NATIVE_FORTRAN" in by_name["native.f90"]
-    assert "-DPRIK_WRAPPER_FORTRAN" not in by_name["native.f90"]
-    assert "-DPRIK_NATIVE_C" in by_name["support.c"]
-    assert "-DPRIK_WRAPPER_C" not in by_name["support.c"]
-    bridge_command = next(command for name, command in by_name.items() if name.endswith("_wrapper.f90"))
-    binding_command = next(command for name, command in by_name.items() if name.endswith("_wrapper.c"))
+    assert "-DPRIK_NATIVE_FORTRAN" in by_name["flag_native.f90"]
+    assert "-DPRIK_WRAPPER_FORTRAN" not in by_name["flag_native.f90"]
+    assert "-DPRIK_NATIVE_C" in by_name["flag_support.c"]
+    assert "-DPRIK_WRAPPER_C" not in by_name["flag_support.c"]
+    bridge_command = by_name["bind_c_compile_flag_scopes_wrapper.f90"]
+    binding_command = by_name["compile_flag_scopes_wrapper.c"]
     assert "-DPRIK_WRAPPER_FORTRAN" in bridge_command
     assert "-DPRIK_NATIVE_FORTRAN" not in bridge_command
     assert "-DPRIK_WRAPPER_C" in binding_command
     assert "-DPRIK_NATIVE_C" not in binding_command
 
+    # One native source shared by two modules compiles once per target, each
+    # with only its own module's flags.
+    common = (shared_project.project / "common.f90").resolve()
+    native_commands = [record["command"] for record in commands if Path(record["file"]).resolve() == common]
+    assert len(native_commands) == 2
+    assert any("-DFIRST_MODULE" in command and "-DSECOND_MODULE" not in command for command in native_commands)
+    assert any("-DSECOND_MODULE" in command and "-DFIRST_MODULE" not in command for command in native_commands)
+
 
 @pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_keeps_native_flags_target_local(tmp_path: Path):
-    project = tmp_path / "shared native source"
-    project.mkdir()
-    source = project / "common.f90"
-    source.write_text(
-        "real(8) function common_value(value) result(result)\n"
-        "  real(8), intent(in) :: value\n"
-        "  result = value\n"
-        "end function common_value\n",
+def test_use_prik_cmake_links_native_implementations_from_targets_and_archives(shared_project: SimpleNamespace):
+    build = shared_project.build
+
+    # An INTERFACE dependency's usage requirements reach the native C objects.
+    dependency_usage = _import_extension("dependency_usage", build)
+    assert dependency_usage.dependency_add(np.float64(2.0)) == np.float64(3.0)
+    # A normal CMake library target links beside compiled semantic sources.
+    external_target = _import_extension("external_target", build)
+    assert external_target.call_native(np.float64(2.0), np.float64(3.0)) == np.float64(5.0)
+    # With input compilation off, the target is the only native implementation.
+    target_only = _import_extension("target_only", build)
+    assert target_only.target_square(np.float64(4.0)) == np.float64(16.0)
+    # A raw Fortran archive that needs the Fortran runtime links with the Fortran driver.
+    raw_archive = _import_extension("raw_archive", build)
+    assert raw_archive.raw_add_two(np.int32(5)) == np.int32(7)
+    # A C contract keeps its contract language while Fortran links its archive.
+    c_contract = _import_extension("c_contract", build)
+    assert c_contract.add_one(np.float64(5.0)) == np.float64(6.0)
+
+
+@pytest.mark.fortran_end_to_end
+def test_use_prik_cmake_keeps_the_adapter_filename_fixed(shared_project: SimpleNamespace):
+    """The adapter unit is declared either way: a stub without adapters, real content with them."""
+    results = {}
+    for label in ("plain", "adapted"):
+        module_name = f"adapter_{label}"
+        adapters = shared_project.build / "prik" / module_name / f"{module_name}_adapters.c"
+        assert adapters.is_file(), f"the deterministic adapter source is missing for {label}"
+        results[label] = adapters.read_text(encoding="utf-8")
+        module = _import_extension(module_name, shared_project.build)
+        assert module.capi_add(np.float64(2.0)) == np.float64(3.0)
+
+    assert "prik_unused_adapter_stub" in results["plain"]
+    assert "prik_unused_adapter_stub" not in results["adapted"]
+    assert "capi_add" in results["adapted"]
+
+
+ROUTING_DIRECT = """integer(c_int) function standalone_direct(value) bind(C, name="standalone_direct_symbol") result(output)
+  use iso_c_binding
+  integer(c_int), value, intent(in) :: value
+
+  output = value + 2_c_int
+end function standalone_direct
+"""
+ROUTING_MIXED = """integer(c_int) function standalone_direct(value) bind(C, name="standalone_mixed_direct") result(output)
+  use iso_c_binding
+  integer(c_int), value, intent(in) :: value
+
+  output = value + 2_c_int
+end function standalone_direct
+
+integer(c_int) function standalone_adapted(value) result(output)
+  use iso_c_binding
+  integer(c_int), intent(in) :: value
+
+  output = value + 3_c_int
+end function standalone_adapted
+"""
+
+
+@pytest.mark.fortran_end_to_end
+@REQUIRES_CMAKE_FORTRAN
+def test_use_prik_cmake_rebuilds_regenerate_only_the_changed_module(tmp_path: Path):
+    """Each generation input is a build dependency of its own module, and nothing else is."""
+    project = tmp_path / "incremental project"
+    native = project / "contract native.f90"
+    _write_files(
+        project,
+        {
+            "contract native.f90": (
+                "real(8) function square(x) result(y)\n  real(8), intent(in) :: x\n  y = x * x\nend function square\n"
+            ),
+            "include/inner.h": "double c_square(double value);\n",
+            "include/api.h": '#include "inner.h"\n',
+            "c_header_module.c": '#include "api.h"\ndouble c_square(double value) { return value * value; }\n',
+            "declarations.inc": "implicit none\n  real(8), intent(in) :: x\n",
+            "included.f90": (
+                "real(8) function included_square(x) result(y)\n  include 'declarations.inc'\n  y = x * x\n"
+                "end function included_square\n"
+            ),
+            "routing.f90": ROUTING_DIRECT,
+        },
+    )
+    contracts = tmp_path / "contracts"
+    _run([sys.executable, "-m", "prik", "generate", "--pyi", str(native), "--out", str(contracts)])
+    contract_dir = tmp_path / "contract_example"
+    contract_dir.mkdir()
+    contract_leaf = contract_dir / "marker.pyi"
+    (contract_dir / "__init__.pyi").write_text(
+        (contracts / "__init__.pyi").read_text(encoding="utf-8") + "\nfrom . import marker\n",
         encoding="utf-8",
     )
+    contract_leaf.write_text("# included contract dependency\n", encoding="utf-8")
     _write_project(
         project,
-        """set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-prik_add_module(first SOURCES common.f90 FORTRAN_FLAGS -DFIRST_MODULE)
-prik_add_module(second SOURCES common.f90 FORTRAN_FLAGS -DSECOND_MODULE)
+        f"""prik_add_module(
+  contract_example
+  CONTRACT "{(contract_dir / "__init__.pyi").as_posix()}"
+  FORTRAN_SOURCES "{native.as_posix()}"
+)
+prik_add_module(
+  c_header_dependency
+  C_SOURCES c_header_module.c
+  INCLUDE_DIRS "{(project / "include").as_posix()}"
+)
+prik_add_module(fortran_include_dependency FORTRAN_SOURCES included.f90)
+prik_add_module(routing SOURCES routing.f90)
 """,
     )
     build = project / "build"
     _configure_and_build(project, build, language="fortran")
 
-    commands = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
-    native_commands = [record["command"] for record in commands if Path(record["file"]).resolve() == source.resolve()]
-    assert len(native_commands) == 2
-    assert any("-DFIRST_MODULE" in command and "-DSECOND_MODULE" not in command for command in native_commands)
-    assert any("-DSECOND_MODULE" in command and "-DFIRST_MODULE" not in command for command in native_commands)
+    def rebuild(*arguments: str) -> str:
+        result = _run(["cmake", "--build", str(build), *arguments, "-j2"])
+        return result.stdout + result.stderr
+
+    assert _regenerated(rebuild()) == set(), "an unchanged build reran PRIK generation"
+
+    native_support_header = build / "prik" / "routing" / "binding_support" / "prik_binding.h"
+    assert native_support_header.is_file()
+    native_support_header.unlink()
+    rebuild()
+    assert native_support_header.is_file()
+
+    contract_example = _import_extension("contract_example", build)
+    assert contract_example.square(np.float64(3.0)) == np.float64(9.0)
+    native.write_text(native.read_text(encoding="utf-8").replace("y = x * x", "y = x * x + 1.0"), encoding="utf-8")
+    native_output = rebuild("--verbose")
+    assert "contract_native.f90" in native_output
+    assert _regenerated(native_output) == set(), "a native-only edit reran contract generation"
+
+    contract_leaf.write_text(contract_leaf.read_text(encoding="utf-8") + "\n# contract changed\n", encoding="utf-8")
+    assert _regenerated(rebuild()) == {"contract_example"}
+
+    (project / "include" / "inner.h").write_text("double c_square(double input);\n", encoding="utf-8")
+    assert _regenerated(rebuild()) == {"c_header_dependency"}
+
+    (project / "declarations.inc").write_text("implicit none\n  double precision, intent(in) :: x\n", encoding="utf-8")
+    assert _regenerated(rebuild()) == {"fortran_include_dependency"}
+
+    # A semantic edit changes the bridge file's contents, never the build graph.
+    # This module needs no bridge, but the declared source still exists so
+    # CMake's source list does not depend on semantic analysis.
+    bridge = build / "prik" / "routing" / "bind_c_routing_wrapper.f90"
+    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
+    assert _call_extension("routing", build, "routing.standalone_direct(numpy.int32(4))") == "6"
+    # Adding a procedure that needs a bridge must not require a reconfigure.
+    (project / "routing.f90").write_text(ROUTING_MIXED, encoding="utf-8")
+    assert _regenerated(rebuild()) == {"routing"}
+    bridge_text = bridge.read_text(encoding="utf-8")
+    assert "prik_unused_bridge_stub" not in bridge_text, "the bridge stub was not replaced by real content"
+    assert "bind_c_routing_wrapper" in bridge_text
+    assert _call_extension("routing", build, "routing.standalone_adapted(numpy.int32(4))") == "7"
+    # ... and reverting is symmetric: real content becomes a stub again.
+    (project / "routing.f90").write_text(ROUTING_DIRECT, encoding="utf-8")
+    rebuild()
+    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
+    assert _call_extension("routing", build, "routing.standalone_direct(numpy.int32(4))") == "6"
+
+
+@pytest.mark.fortran_end_to_end
+@REQUIRES_CMAKE_FORTRAN
+def test_generate_cmake_builds_a_standalone_project_from_every_native_input_kind(tmp_path: Path):
+    """A generated project links a native source, object, archive, and directory-found library.
+
+    The semantic sources are not compiled, so every value below comes from the
+    separate native implementation, and the named library resolves at import
+    through the build's own runtime search path.
+    """
+    sources = tmp_path / "sources"
+    library_dir = tmp_path / "native runtime lib"
+    library_dir.mkdir()
+
+    def function(name: str, expression: str) -> str:
+        return f"real(8) function {name}(x) result(y)\n  real(8), intent(in) :: x\n  y = {expression}\nend function {name}\n"
+
+    _write_files(
+        sources,
+        {
+            "scaled.f90": function("scaled", "x * 3.0d0"),
+            "shifted.f90": function("shifted", "x + 7.0d0"),
+            "runtime_value.f90": function("runtime_value", "x * 5.0d0"),
+            "implementation.f90": function("square", "x * x + 1.0d0"),
+            "interface.f90": "".join(function(name, "x") for name in ("scaled", "shifted", "runtime_value", "square")),
+        },
+    )
+    archive = _compile_archive(sources / "scaled.f90", sources / "libscaled.a")
+    linked_object = sources / "shifted.o"
+    _run(["gfortran", "-c", "-fPIC", "-o", str(linked_object), str(sources / "shifted.f90")])
+    native_library = library_dir / "libprikruntime.so"
+    _run(["gfortran", "-shared", "-fPIC", "-o", str(native_library), str(sources / "runtime_value.f90")])
+
+    project = tmp_path / "generated project with spaces"
+    generated = _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            str(sources / "interface.f90"),
+            "--module-name",
+            "generated_inputs",
+            "--no-compile-input-sources",
+            "--native-fortran-sources",
+            str(sources / "implementation.f90"),
+            "--native-objects",
+            str(linked_object),
+            "--native-link-item",
+            f"archive:{archive}",
+            "--native-library",
+            "prikruntime",
+            "--native-library-dir",
+            str(library_dir),
+            "--native-linker-language",
+            "fortran",
+            "--out-dir",
+            str(project),
+            "--json",
+        ]
+    )
+
+    assert Path(json.loads(generated.stdout)["cmake_project"]) == project / "CMakeLists.txt"
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "include(UsePRIK)" in cmake_lists
+    assert "prik_add_module(\n    generated_inputs" in cmake_lists
+    assert "NO_COMPILE_INPUT_SOURCES" in cmake_lists
+    for prebuilt_path in (linked_object, archive):
+        relative = Path(os.path.relpath(prebuilt_path, project)).as_posix()
+        assert f'"${{CMAKE_CURRENT_LIST_DIR}}/{relative}"' in cmake_lists
+    relative_library_dir = Path(os.path.relpath(library_dir, project)).as_posix()
+    assert f'LIBRARY_DIRS\n        "{relative_library_dir}"' in cmake_lists
+    # The directory carries CMake link and runtime meaning, so it is not also
+    # repeated as a bare -L linker flag.
+    assert "LINK_OPTIONS" not in cmake_lists
+
+    build = project / "cmake-build"
+    _configure_and_build(project, build, language="fortran", use_ninja=False)
+    called = _call_with_unassisted_loader(
+        "generated_inputs",
+        build,
+        "[float(generated_inputs.scaled(numpy.float64(4.0))), float(generated_inputs.shifted(numpy.float64(4.0))), "
+        "float(generated_inputs.runtime_value(numpy.float64(3.0))), float(generated_inputs.square(numpy.float64(3.0)))]",
+        native_library=native_library,
+    )
+    assert called == "[12.0, 11.0, 15.0, 10.0]"
+
+
+@pytest.mark.fortran_end_to_end
+def test_generate_cmake_emits_contract_source_and_linker_languages_separately(tmp_path: Path):
+    contract = tmp_path / "api.pyi"
+    contract.write_text(
+        "from prik.contracts import Float64\ndef add(value: Float64) -> Float64: ...\n", encoding="utf-8"
+    )
+    archive = tmp_path / "libimplementation.a"
+    archive.touch()
+    implementation = tmp_path / "implementation.f90"
+    implementation.write_text("subroutine implementation()\nend subroutine implementation\n", encoding="utf-8")
+    project = tmp_path / "contract project"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            "--language",
+            "c",
+            str(contract),
+            "--native-fortran-sources",
+            str(implementation),
+            "--native-objects",
+            str(archive),
+            "--native-linker-language",
+            "fortran",
+            "--out-dir",
+            str(project),
+        ]
+    )
+    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "CONTRACT" in cmake_lists
+    assert "NATIVE_LANGUAGE C" in cmake_lists
+    assert "FORTRAN_SOURCES" in cmake_lists
+    assert "LINKER_LANGUAGE Fortran" in cmake_lists
+
+
+@pytest.mark.fortran_end_to_end
+@REQUIRES_CMAKE_FORTRAN
+def test_generate_cmake_lto_reaches_native_and_generated_compilation(tmp_path: Path):
+    """--lto must reach both target kinds, and a supplemental C source stays out of the Python API."""
+    source = tmp_path / "mixed.f90"
+    source.write_text(
+        """real(8) function add_one(value) result(result)
+  use iso_c_binding, only: c_double
+  real(8), intent(in) :: value
+  interface
+    function native_add_one(input) bind(C, name="native_add_one") result(output)
+      import c_double
+      real(c_double), value :: input
+      real(c_double) :: output
+    end function native_add_one
+  end interface
+  result = native_add_one(value)
+end function add_one
+""",
+        encoding="utf-8",
+    )
+    native_c = tmp_path / "native.c"
+    native_c.write_text("double native_add_one(double value) { return value + 1.0; }\n", encoding="utf-8")
+    project = tmp_path / "lto project"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--cmake",
+            str(source),
+            "--native-c-sources",
+            str(native_c),
+            "--module-name",
+            "lto_module",
+            "--lto",
+            "--out-dir",
+            str(project),
+        ]
+    )
+    assert "C_SOURCES" in (project / "CMakeLists.txt").read_text(encoding="utf-8")
+
+    build = project / "build"
+    _configure_and_build(project, build, language="fortran", defines=("CMAKE_EXPORT_COMPILE_COMMANDS=ON",))
+
+    entries = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+    compiled = {Path(entry["file"]).name: entry["command"] for entry in entries}
+    # The caller's native sources and every generated unit must all carry it.
+    for name in ("mixed.f90", "native.c", "lto_module_wrapper.c", "bind_c_lto_module_wrapper.f90"):
+        assert name in compiled, f"{name} was not compiled"
+        assert "flto" in compiled[name], f"link-time optimization missing from {name}"
+
+    called = _call_extension(
+        "lto_module",
+        build,
+        "float(lto_module.add_one(numpy.float64(4.0))), hasattr(lto_module, 'native_add_one')",
+    )
+    assert called == "5.0 False"
 
 
 @pytest.mark.fortran_end_to_end
@@ -334,80 +827,6 @@ prik_add_module(abi_disabled SOURCES logical_disabled.f90 NO_STANDARD_LOGICALS)
 
 
 @pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_builds_a_fortran_module(tmp_path: Path):
-    project = tmp_path / "fortran module"
-    project.mkdir()
-    (project / "math_mod.f90").write_text(
-        """module math_mod
-contains
-  real(8) function add(a, b) result(c)
-    real(8), intent(in) :: a, b
-    c = a + b
-  end function add
-end module math_mod
-""",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  math_mod
-  SOURCES math_mod.f90
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("math_mod", build)
-    assert module.math_mod.add(np.float64(2.0), np.float64(3.0)) == np.float64(5.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_builds_standalone_project_in_a_path_with_spaces(tmp_path: Path):
-    source = tmp_path / "standalone.f90"
-    source.write_text(
-        """real(8) function square(x) result(y)
-  real(8), intent(in) :: x
-  y = x * x
-end function square
-""",
-        encoding="utf-8",
-    )
-    project = tmp_path / "generated project with spaces"
-    generated = _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            str(source),
-            "--module-name",
-            "generated_square",
-            "--out-dir",
-            str(project),
-            "--json",
-        ]
-    )
-    assert Path(json.loads(generated.stdout)["cmake_project"]) == project / "CMakeLists.txt"
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    assert "include(UsePRIK)" in cmake_lists
-    assert "prik_add_module(\n    generated_square" in cmake_lists
-    build = project / "cmake-build"
-    _configure_and_build(project, build, language="fortran", use_ninja=False)
-    module = _import_extension("generated_square", build)
-    assert module.square(np.float64(4.0)) == np.float64(16.0)
-
-
-@pytest.mark.fortran_end_to_end
 def test_generate_cmake_preserves_ordered_native_link_items(tmp_path: Path):
     source = tmp_path / "ordered.f90"
     source.write_text("subroutine ordered()\nend subroutine ordered\n", encoding="utf-8")
@@ -440,219 +859,6 @@ def test_generate_cmake_preserves_ordered_native_link_items(tmp_path: Path):
     )
     positions = tuple(cmake_lists.index(item) for item in ordered_items)
     assert positions == tuple(sorted(positions))
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_links_prebuilt_object_and_archive_paths(tmp_path: Path):
-    prebuilt = tmp_path / "prebuilt native inputs"
-    prebuilt.mkdir()
-    (tmp_path / "scaled.f90").write_text(
-        """real(8) function scaled(x) result(y)
-  real(8), intent(in) :: x
-  y = x * 3.0d0
-end function scaled
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "shifted.f90").write_text(
-        """real(8) function shifted(x) result(y)
-  real(8), intent(in) :: x
-  y = x + 7.0d0
-end function shifted
-""",
-        encoding="utf-8",
-    )
-    archive_object = prebuilt / "scaled.o"
-    archive = prebuilt / "libscaled.a"
-    linked_object = prebuilt / "shifted.o"
-    _run(["gfortran", "-c", "-fPIC", "-o", str(archive_object), str(tmp_path / "scaled.f90")])
-    _run(["ar", "rcs", str(archive), str(archive_object)])
-    _run(["gfortran", "-c", "-fPIC", "-o", str(linked_object), str(tmp_path / "shifted.f90")])
-    archive_object.unlink()
-
-    project = tmp_path / "prebuilt inputs project"
-    project.mkdir()
-    (project / "interface.f90").write_text(
-        """real(8) function scaled(x) result(y)
-  real(8), intent(in) :: x
-  y = x
-end function scaled
-
-real(8) function shifted(x) result(y)
-  real(8), intent(in) :: x
-  y = x
-end function shifted
-""",
-        encoding="utf-8",
-    )
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            str(project / "interface.f90"),
-            "--module-name",
-            "prebuilt_inputs",
-            "--no-compile-input-sources",
-            "--native-objects",
-            str(linked_object),
-            "--native-link-item",
-            f"archive:{archive}",
-            "--native-linker-language",
-            "fortran",
-            "--out-dir",
-            str(project),
-        ]
-    )
-
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    for prebuilt_path in (linked_object, archive):
-        relative = Path(os.path.relpath(prebuilt_path, project)).as_posix()
-        assert f'"${{CMAKE_CURRENT_LIST_DIR}}/{relative}"' in cmake_lists
-
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("prebuilt_inputs", build)
-    assert module.scaled(np.float64(4.0)) == np.float64(12.0)
-    assert module.shifted(np.float64(4.0)) == np.float64(11.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_native_library_dir_reaches_the_runtime_search_path(tmp_path: Path):
-    library_dir = tmp_path / "native runtime lib"
-    library_dir.mkdir()
-    (tmp_path / "runtime_value.f90").write_text(
-        """real(8) function runtime_value(x) result(y)
-  real(8), intent(in) :: x
-  y = x * 5.0d0
-end function runtime_value
-""",
-        encoding="utf-8",
-    )
-    native_library = library_dir / "libprikruntime.so"
-    _run(["gfortran", "-shared", "-fPIC", "-o", str(native_library), str(tmp_path / "runtime_value.f90")])
-
-    project = tmp_path / "runtime rpath project"
-    project.mkdir()
-    (project / "interface.f90").write_text(
-        """real(8) function runtime_value(x) result(y)
-  real(8), intent(in) :: x
-  y = x
-end function runtime_value
-""",
-        encoding="utf-8",
-    )
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            str(project / "interface.f90"),
-            "--module-name",
-            "runtime_rpath",
-            "--no-compile-input-sources",
-            "--native-library",
-            "prikruntime",
-            "--native-library-dir",
-            str(library_dir),
-            "--native-linker-language",
-            "fortran",
-            "--out-dir",
-            str(project),
-        ]
-    )
-
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    relative_library_dir = Path(os.path.relpath(library_dir, project)).as_posix()
-    assert f'LIBRARY_DIRS\n        "{relative_library_dir}"' in cmake_lists
-    # The directory carries CMake link and runtime meaning, so it is not also
-    # repeated as a bare -L linker flag.
-    assert "LINK_OPTIONS" not in cmake_lists
-
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    called = _call_with_unassisted_loader(
-        "runtime_rpath",
-        build,
-        "runtime_rpath.runtime_value(numpy.float64(3.0))",
-        native_library=native_library,
-    )
-    assert called == "15.0"
-
-
-@pytest.mark.fortran_end_to_end
-def test_generate_cmake_emits_contract_and_linker_languages_separately(tmp_path: Path):
-    contract = tmp_path / "api.pyi"
-    contract.write_text(
-        "from prik.contracts import Float64\ndef add(value: Float64) -> Float64: ...\n", encoding="utf-8"
-    )
-    archive = tmp_path / "libimplementation.a"
-    archive.touch()
-    project = tmp_path / "contract project"
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            "--language",
-            "c",
-            str(contract),
-            "--native-objects",
-            str(archive),
-            "--native-linker-language",
-            "fortran",
-            "--out-dir",
-            str(project),
-        ]
-    )
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    assert "CONTRACT" in cmake_lists
-    assert "NATIVE_LANGUAGE C" in cmake_lists
-    assert "LINKER_LANGUAGE Fortran" in cmake_lists
-
-
-@pytest.mark.fortran_end_to_end
-def test_generate_cmake_preserves_contract_language_with_different_source_language(tmp_path: Path):
-    contract = tmp_path / "api.pyi"
-    contract.write_text(
-        "from prik.contracts import Float64\ndef add(value: Float64) -> Float64: ...\n", encoding="utf-8"
-    )
-    implementation = tmp_path / "implementation.f90"
-    implementation.write_text("subroutine implementation()\nend subroutine implementation\n", encoding="utf-8")
-    project = tmp_path / "mixed language contract project"
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            "--language",
-            "c",
-            str(contract),
-            "--native-fortran-sources",
-            str(implementation),
-            "--out-dir",
-            str(project),
-        ]
-    )
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    assert "NATIVE_LANGUAGE C" in cmake_lists
-    assert "FORTRAN_SOURCES" in cmake_lists
 
 
 @pytest.mark.fortran_end_to_end
@@ -713,308 +919,6 @@ def test_generate_cmake_rejects_ambiguous_direct_compiler_options(tmp_path: Path
 
     assert result.returncode == 2
     assert "generate --cmake" in result.stderr
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_keeps_supplemental_c_sources_out_of_the_python_api(tmp_path: Path):
-    source = tmp_path / "mixed.f90"
-    source.write_text(
-        """real(8) function add_one(value) result(result)
-  use iso_c_binding, only: c_double
-  real(8), intent(in) :: value
-  interface
-    function native_add_one(input) bind(C, name="native_add_one") result(output)
-      import c_double
-      real(c_double), value :: input
-      real(c_double) :: output
-    end function native_add_one
-  end interface
-  result = native_add_one(value)
-end function add_one
-""",
-        encoding="utf-8",
-    )
-    native_c = tmp_path / "native.c"
-    native_c.write_text("double native_add_one(double value) { return value + 1.0; }\n", encoding="utf-8")
-    project = tmp_path / "generated mixed project"
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            str(source),
-            "--module-name",
-            "mixed_extension",
-            "--native-c-sources",
-            str(native_c),
-            "--out-dir",
-            str(project),
-        ]
-    )
-    cmake_lists = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    assert "SOURCES" in cmake_lists
-    assert "C_SOURCES" in cmake_lists
-    build = project / "cmake-build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("mixed_extension", build)
-    assert module.add_one(np.float64(4.0)) == np.float64(5.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_contract_dependency_regenerates_wrapper(tmp_path: Path):
-    native = tmp_path / "contract native.f90"
-    native.write_text(
-        """real(8) function square(x) result(y)
-  real(8), intent(in) :: x
-  y = x * x
-end function square
-""",
-        encoding="utf-8",
-    )
-    contracts = tmp_path / "contracts"
-    _run([sys.executable, "-m", "prik", "generate", "--pyi", str(native), "--out", str(contracts)])
-    contract_dir = tmp_path / "contract_example"
-    contract_dir.mkdir()
-    contract = contract_dir / "__init__.pyi"
-    contract_leaf = contract_dir / "marker.pyi"
-    contract.write_text(
-        (contracts / "__init__.pyi").read_text(encoding="utf-8") + "\nfrom . import marker\n",
-        encoding="utf-8",
-    )
-    contract_leaf.write_text("# included contract dependency\n", encoding="utf-8")
-    project = tmp_path / "contract project"
-    _write_project(
-        project,
-        f"""prik_add_module(
-  contract_example
-  CONTRACT "{contract.as_posix()}"
-  FORTRAN_SOURCES "{native.as_posix()}"
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("contract_example", build)
-    assert module.square(np.float64(3.0)) == np.float64(9.0)
-    native.write_text(native.read_text(encoding="utf-8").replace("y = x * x", "y = x * x + 1.0"), encoding="utf-8")
-    native_rebuild = _run(["cmake", "--build", str(build), "--verbose", "-j2"])
-    native_output = native_rebuild.stdout + native_rebuild.stderr
-    assert "contract_native.f90" in native_output
-    assert "Generate PRIK wrapper sources for contract_example" not in native_output
-    contract_leaf.write_text(contract_leaf.read_text(encoding="utf-8") + "\n# contract changed\n", encoding="utf-8")
-    contract_rebuild = _run(["cmake", "--build", str(build), "-j2"])
-    contract_output = contract_rebuild.stdout + contract_rebuild.stderr
-    assert "Generate PRIK wrapper sources for contract_example" in contract_output
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
-def test_use_prik_cmake_regenerates_after_nested_c_header_changes(tmp_path: Path):
-    project = tmp_path / "nested c dependency"
-    include_dir = project / "include"
-    include_dir.mkdir(parents=True)
-    inner_header = include_dir / "inner.h"
-    inner_header.write_text("double c_square(double value);\n", encoding="utf-8")
-    (include_dir / "api.h").write_text('#include "inner.h"\n', encoding="utf-8")
-    (project / "module.c").write_text(
-        '#include "api.h"\ndouble c_square(double value) { return value * value; }\n',
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        f"""prik_add_module(
-  c_header_dependency
-  C_SOURCES module.c
-  INCLUDE_DIRS "{include_dir.as_posix()}"
-)
-""",
-        languages="C",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="c")
-
-    inner_header.write_text("double c_square(double input);\n", encoding="utf-8")
-    rebuilt = _run(["cmake", "--build", str(build), "-j2"])
-
-    assert "Generate PRIK wrapper sources for c_header_dependency" in rebuilt.stdout + rebuilt.stderr
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_regenerates_after_fortran_include_changes(tmp_path: Path):
-    project = tmp_path / "fortran include dependency"
-    project.mkdir()
-    include = project / "declarations.inc"
-    include.write_text("implicit none\n  real(8), intent(in) :: x\n", encoding="utf-8")
-    (project / "included.f90").write_text(
-        "real(8) function included_square(x) result(y)\n"
-        "  include 'declarations.inc'\n"
-        "  y = x * x\n"
-        "end function included_square\n",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  fortran_include_dependency
-  FORTRAN_SOURCES included.f90
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-
-    include.write_text("implicit none\n  double precision, intent(in) :: x\n", encoding="utf-8")
-    rebuilt = _run(["cmake", "--build", str(build), "-j2"])
-
-    assert "Generate PRIK wrapper sources for fortran_include_dependency" in rebuilt.stdout + rebuilt.stderr
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_compiles_generated_fortran_bridge_and_binding(tmp_path: Path):
-    project = tmp_path / "bridge project"
-    _write_project(
-        project,
-        f"""prik_add_module(
-  free_external
-  CONTRACT "{BRIDGE_CONTRACT.as_posix()}"
-  FORTRAN_SOURCES "{BRIDGE_NATIVE.as_posix()}"
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    generated = build / "prik" / "free_external"
-    assert tuple(generated.glob("*.f90")), "the generated Fortran bridge is missing"
-    assert tuple(generated.glob("*.c")), "the generated C binding is missing"
-    module = _import_extension("free_external", build)
-    assert module.free_square(np.int32(6)) == np.int32(36)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_keeps_the_bridge_filename_fixed_across_semantic_edits(tmp_path: Path):
-    """A semantic edit changes the bridge file's contents, never the build graph."""
-    project = tmp_path / "routing project"
-    project.mkdir()
-    source = project / "routing.f90"
-    source.write_text(
-        """integer(c_int) function standalone_direct(value) bind(C, name="standalone_direct_symbol") result(output)
-  use iso_c_binding
-  integer(c_int), value, intent(in) :: value
-
-  output = value + 2_c_int
-end function standalone_direct
-""",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  routing
-  SOURCES routing.f90
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    bridge = build / "prik" / "routing" / "bind_c_routing_wrapper.f90"
-
-    # This module needs no bridge, but the declared source still exists so
-    # CMake's source list does not depend on semantic analysis.
-    assert bridge.is_file(), "the deterministic bridge source is missing"
-    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
-    module = _import_extension("routing", build)
-    assert module.standalone_direct(np.int32(4)) == np.int32(6)
-
-    # Adding a procedure that needs a bridge must not require a reconfigure.
-    source.write_text(
-        """integer(c_int) function standalone_direct(value) bind(C, name="standalone_mixed_direct") result(output)
-  use iso_c_binding
-  integer(c_int), value, intent(in) :: value
-
-  output = value + 2_c_int
-end function standalone_direct
-
-integer(c_int) function standalone_adapted(value) result(output)
-  use iso_c_binding
-  integer(c_int), intent(in) :: value
-
-  output = value + 3_c_int
-end function standalone_adapted
-""",
-        encoding="utf-8",
-    )
-    _run(["cmake", "--build", str(build), "-j2"])
-
-    bridge_text = bridge.read_text(encoding="utf-8")
-    assert "prik_unused_bridge_stub" not in bridge_text, "the bridge stub was not replaced by real content"
-    assert "bind_c_routing_wrapper" in bridge_text
-    assert _call_extension("routing", build, "routing.standalone_adapted(numpy.int32(4))") == "7"
-
-    # ... and reverting is symmetric: real content becomes a stub again.
-    source.write_text(
-        """integer(c_int) function standalone_direct(value) bind(C, name="standalone_direct_symbol") result(output)
-  use iso_c_binding
-  integer(c_int), value, intent(in) :: value
-
-  output = value + 2_c_int
-end function standalone_direct
-""",
-        encoding="utf-8",
-    )
-    _run(["cmake", "--build", str(build), "-j2"])
-    assert "prik_unused_bridge_stub" in bridge.read_text(encoding="utf-8")
-    assert _call_extension("routing", build, "routing.standalone_direct(numpy.int32(4))") == "6"
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
-def test_use_prik_cmake_builds_c_source_with_include_directory_and_flag(tmp_path: Path):
-    project = tmp_path / "c project with spaces"
-    include_dir = project / "include files"
-    include_dir.mkdir(parents=True)
-    (include_dir / "cmath_api.h").write_text("double c_add(double, double);\n", encoding="utf-8")
-    (project / "cexample.c").write_text(
-        '#include "cmath_api.h"\n#ifdef PRIK_CMAKE_TEST_FLAG\ndouble c_add(double a, double b) { return a + b + 1.0; }\n#else\ndouble c_add(double a, double b) { return a + b; }\n#endif\n',
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        f"""prik_add_module(
-  cexample
-  C_SOURCES cexample.c
-  INCLUDE_DIRS "{include_dir.as_posix()}"
-  C_FLAGS -DPRIK_CMAKE_TEST_FLAG
-  PRIK_ARGS --define PRIK_CMAKE_TEST_FLAG
-)
-""",
-        languages="C",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="c")
-    module = _import_extension("cexample", build)
-    assert module.c_add(np.float64(2.0), np.float64(3.0)) == np.float64(6.0)
 
 
 @pytest.mark.fortran_end_to_end
@@ -1218,64 +1122,6 @@ def test_use_prik_cmake_configure_does_not_run_the_semantic_pipeline(tmp_path: P
 
 
 @pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
-def test_use_prik_cmake_keeps_the_adapter_filename_fixed(tmp_path: Path):
-    """The adapter unit is declared either way: a stub without adapters, real content with them."""
-    results = {}
-    for label, prik_args in (("plain", ""), ("adapted", "  PRIK_ARGS --collision-adapter-all\n")):
-        project = tmp_path / f"adapter {label}"
-        project.mkdir()
-        (project / "capi.c").write_text("double capi_add(double value) { return value + 1.0; }\n", encoding="utf-8")
-        _write_project(
-            project,
-            f"""prik_add_module(
-  adapter_{label}
-  C_SOURCES capi.c
-{prik_args})
-""",
-            languages="C",
-        )
-        build = project / "build"
-        _configure_and_build(project, build, language="c")
-        adapters = build / "prik" / f"adapter_{label}" / f"adapter_{label}_adapters.c"
-        assert adapters.is_file(), f"the deterministic adapter source is missing for {label}"
-        results[label] = adapters.read_text(encoding="utf-8")
-        assert _call_extension(f"adapter_{label}", build, f"adapter_{label}.capi_add(numpy.float64(2.0))") == "3.0"
-
-    assert "prik_unused_adapter_stub" in results["plain"]
-    assert "prik_unused_adapter_stub" not in results["adapted"]
-    assert "capi_add" in results["adapted"]
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_does_not_regenerate_an_unchanged_build(tmp_path: Path):
-    project = tmp_path / "idempotent project"
-    project.mkdir()
-    (project / "steady.f90").write_text(
-        "real(8) function steady(x) result(y)\n  real(8), intent(in) :: x\n  y = x\nend function steady\n",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  steady
-  SOURCES steady.f90
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    generation_comment = "Generate PRIK wrapper sources for steady"
-
-    rebuilt = _run(["cmake", "--build", str(build), "-j2"])
-    assert generation_comment not in rebuilt.stdout + rebuilt.stderr, "an unchanged build reran PRIK generation"
-
-
-@pytest.mark.fortran_end_to_end
 @pytest.mark.skipif(
     shutil.which("gfortran") is None or shutil.which("gcc") is None, reason="gfortran and gcc are required"
 )
@@ -1342,89 +1188,6 @@ def test_generated_placeholder_units_compile_under_strict_flags(tmp_path: Path):
         ],
         cwd=tmp_path,
     )
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_lto_reaches_native_and_generated_compilation(tmp_path: Path):
-    """--lto must reach both target kinds, not only the CMakeLists initializer."""
-    (tmp_path / "solver.f90").write_text(
-        "real(8) function solve(x) result(y)\n  real(8), intent(in) :: x\n  y = x * 2.0d0\nend function solve\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "helper.c").write_text("double helper_value(void) { return 1.0; }\n", encoding="utf-8")
-    project = tmp_path / "lto project"
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            str(tmp_path / "solver.f90"),
-            "--native-c-sources",
-            str(tmp_path / "helper.c"),
-            "--module-name",
-            "lto_module",
-            "--lto",
-            "--out-dir",
-            str(project),
-        ]
-    )
-
-    build = project / "build"
-    command = ["cmake", "-S", str(project), "-B", str(build), "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"]
-    if shutil.which("ninja"):
-        command.extend(("-G", "Ninja"))
-    command.append(f"-DCMAKE_C_COMPILER={shutil.which('gcc')}")
-    command.append(f"-DCMAKE_Fortran_COMPILER={shutil.which('gfortran')}")
-    _run(command)
-    _run(["cmake", "--build", str(build), "-j2"])
-
-    entries = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
-    compiled = {Path(entry["file"]).name: entry["command"] for entry in entries}
-    # The caller's native sources and every generated unit must all carry it.
-    for source in ("solver.f90", "helper.c", "lto_module_wrapper.c", "bind_c_lto_module_wrapper.f90"):
-        assert source in compiled, f"{source} was not compiled"
-        assert "flto" in compiled[source], f"link-time optimization missing from {source}"
-
-    assert _call_extension("lto_module", build, "lto_module.solve(numpy.float64(4.0))") == "8.0"
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(shutil.which("cmake") is None or shutil.which("gcc") is None, reason="CMake and gcc are required")
-def test_use_prik_cmake_propagates_dependency_usage_to_native_objects(tmp_path: Path):
-    project = tmp_path / "native dependency usage"
-    project.mkdir()
-    (project / "interface.c").write_text("double dependency_add(double value);\n", encoding="utf-8")
-    (project / "implementation.c").write_text(
-        "#ifndef PRIK_REQUIRED_DEFINE\n"
-        "#error missing dependency compile definition\n"
-        "#endif\n"
-        "double dependency_add(double value) { return value + 1.0; }\n",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """add_library(native_dependency INTERFACE)
-target_compile_definitions(native_dependency INTERFACE PRIK_REQUIRED_DEFINE)
-prik_add_module(
-  dependency_usage
-  SOURCES interface.c
-  C_SOURCES implementation.c
-  LINK_LIBRARIES native_dependency
-)
-""",
-        languages="C",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="c")
-
-    module = _import_extension("dependency_usage", build)
-    assert module.dependency_add(np.float64(2.0)) == np.float64(3.0)
 
 
 @pytest.mark.fortran_end_to_end
@@ -1514,262 +1277,6 @@ def test_use_prik_cmake_requires_the_c_language(tmp_path: Path):
 
 
 @pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_links_a_normal_fortran_library_target(tmp_path: Path):
-    project = tmp_path / "external target"
-    project.mkdir()
-    (project / "native_math.f90").write_text(
-        "real(8) function native_add(x, y) result(z)\n"
-        "  real(8), intent(in) :: x, y\n"
-        "  z = x + y\n"
-        "end function native_add\n",
-        encoding="utf-8",
-    )
-    (project / "wrapper.f90").write_text(
-        "real(8) function call_native(x, y) result(z)\n"
-        "  real(8), intent(in) :: x, y\n"
-        "  interface\n"
-        "    function native_add(a, b) result(c)\n"
-        "      real(8), intent(in) :: a, b\n"
-        "      real(8) :: c\n"
-        "    end function native_add\n"
-        "  end interface\n"
-        "  z = native_add(x, y)\n"
-        "end function call_native\n",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """add_library(native_math STATIC native_math.f90)
-prik_add_module(
-  external_target
-  SOURCES wrapper.f90
-  LINK_LIBRARIES native_math
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("external_target", build)
-    assert module.call_native(np.float64(2.0), np.float64(3.0)) == np.float64(5.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_uses_target_as_the_only_native_implementation(tmp_path: Path):
-    project = tmp_path / "target only implementation"
-    project.mkdir()
-    interface = (
-        "real(8) function target_square(value) result(result)\n"
-        "  real(8), intent(in) :: value\n"
-        "  result = value * value\n"
-        "end function target_square\n"
-    )
-    (project / "interface.f90").write_text(interface, encoding="utf-8")
-    (project / "implementation.f90").write_text(interface, encoding="utf-8")
-    _write_project(
-        project,
-        """add_library(native_math STATIC implementation.f90)
-prik_add_module(
-  target_only
-  SOURCES interface.f90
-  NO_COMPILE_INPUT_SOURCES
-  LINK_LIBRARIES native_math
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-
-    module = _import_extension("target_only", build)
-    assert module.target_square(np.float64(4.0)) == np.float64(16.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None
-    or shutil.which("gfortran") is None
-    or shutil.which("gcc") is None
-    or shutil.which("ar") is None,
-    reason="CMake, gfortran, gcc, and ar are required",
-)
-def test_use_prik_cmake_selects_fortran_linker_for_raw_archive(tmp_path: Path):
-    project = tmp_path / "raw fortran archive"
-    project.mkdir()
-    source_text = (
-        "integer(c_int) function raw_add_two(value) bind(C, name='raw_add_two_symbol') result(output)\n"
-        "  use iso_c_binding, only: c_int\n"
-        "  integer(c_int), value, intent(in) :: value\n"
-        "  character(len=16) :: buffer\n"
-        "  write(buffer, '(I0)') value\n"
-        "  read(buffer, *) output\n"
-        "  output = output + 2_c_int\n"
-        "end function raw_add_two\n"
-    )
-    interface = project / "interface.f90"
-    implementation = project / "implementation.f90"
-    interface.write_text(source_text, encoding="utf-8")
-    implementation.write_text(source_text, encoding="utf-8")
-    native_object = project / "implementation.o"
-    archive = project / "libraw_math.a"
-    _run([shutil.which("gfortran"), "-fPIC", "-c", str(implementation), "-o", str(native_object)])
-    _run([shutil.which("ar"), "rcs", str(archive), str(native_object)])
-    _write_project(
-        project,
-        f"""prik_add_module(
-  raw_archive
-  SOURCES interface.f90
-  NO_COMPILE_INPUT_SOURCES
-  LINKER_LANGUAGE Fortran
-  LINK_LIBRARIES "{archive.as_posix()}"
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-
-    module = _import_extension("raw_archive", build)
-    assert module.raw_add_two(np.int32(5)) == np.int32(7)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None
-    or shutil.which("gfortran") is None
-    or shutil.which("gcc") is None
-    or shutil.which("ar") is None,
-    reason="CMake, gfortran, gcc, and ar are required",
-)
-def test_use_prik_cmake_separates_c_contract_and_fortran_linker_languages(tmp_path: Path):
-    project = tmp_path / "c contract with fortran implementation"
-    project.mkdir()
-    (project / "api.pyi").write_text(
-        "from prik.contracts import Float64\n\ndef add_one(value: Float64) -> Float64: ...\n",
-        encoding="utf-8",
-    )
-    implementation = project / "implementation.f90"
-    implementation.write_text(
-        "real(c_double) function add_one(value) bind(C, name='add_one') result(result)\n"
-        "  use iso_c_binding, only: c_double\n"
-        "  real(c_double), value, intent(in) :: value\n"
-        "  result = value + 1.0_c_double\n"
-        "end function add_one\n",
-        encoding="utf-8",
-    )
-    native_object = project / "implementation.o"
-    archive = project / "libimplementation.a"
-    _run([shutil.which("gfortran"), "-fPIC", "-c", str(implementation), "-o", str(native_object)])
-    _run([shutil.which("ar"), "rcs", str(archive), str(native_object)])
-    _write_project(
-        project,
-        """prik_add_module(
-  c_contract
-  CONTRACT api.pyi
-  NATIVE_LANGUAGE C
-  LINKER_LANGUAGE Fortran
-  LINK_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/libimplementation.a"
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-
-    module = _import_extension("c_contract", build)
-    assert module.add_one(np.float64(5.0)) == np.float64(6.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_use_prik_cmake_allows_contract_language_to_differ_from_source_language(tmp_path: Path):
-    project = tmp_path / "c contract with fortran source"
-    project.mkdir()
-    (project / "api.pyi").write_text(
-        "from prik.contracts import Float64\n\ndef add_two(value: Float64) -> Float64: ...\n",
-        encoding="utf-8",
-    )
-    (project / "implementation.f90").write_text(
-        "real(c_double) function add_two(value) bind(C, name='add_two') result(result)\n"
-        "  use iso_c_binding, only: c_double\n"
-        "  real(c_double), value, intent(in) :: value\n"
-        "  result = value + 2.0_c_double\n"
-        "end function add_two\n",
-        encoding="utf-8",
-    )
-    _write_project(
-        project,
-        """prik_add_module(
-  c_contract_source
-  CONTRACT api.pyi
-  NATIVE_LANGUAGE C
-  FORTRAN_SOURCES implementation.f90
-)
-""",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-
-    module = _import_extension("c_contract_source", build)
-    assert module.add_two(np.float64(5.0)) == np.float64(7.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_generate_cmake_can_keep_semantic_sources_out_of_native_compilation(tmp_path: Path):
-    project = tmp_path / "separate implementation"
-    project.mkdir()
-    (project / "interface.f90").write_text(
-        """real(8) function square(value) result(result)
-  real(8), intent(in) :: value
-  result = value * value
-end function square
-""",
-        encoding="utf-8",
-    )
-    (project / "implementation.f90").write_text(
-        """real(8) function square(value) result(result)
-  real(8), intent(in) :: value
-  result = value * value + 1.0
-end function square
-""",
-        encoding="utf-8",
-    )
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--cmake",
-            "--module-name",
-            "separate_implementation",
-            "--no-compile-input-sources",
-            str(project / "interface.f90"),
-            "--native-fortran-sources",
-            str(project / "implementation.f90"),
-            "--out-dir",
-            str(project),
-        ]
-    )
-    assert "NO_COMPILE_INPUT_SOURCES" in (project / "CMakeLists.txt").read_text(encoding="utf-8")
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran")
-    module = _import_extension("separate_implementation", build)
-    assert module.square(np.float64(3.0)) == np.float64(10.0)
-
-
-@pytest.mark.fortran_end_to_end
 @pytest.mark.skipif(not _cmake_finds_blas(), reason="CMake cannot discover a Fortran BLAS implementation")
 def test_use_prik_cmake_links_a_cmake_discovered_blas_target(tmp_path: Path):
     project = tmp_path / "blas target"
@@ -1802,40 +1309,6 @@ prik_add_module(
     _configure_and_build(project, build, language="fortran")
     module = _import_extension("blas_example", build)
     assert module.blas_dot(np.array([1.0, 2.0]), np.array([3.0, 4.0])) == np.float64(11.0)
-
-
-@pytest.mark.fortran_end_to_end
-@pytest.mark.skipif(
-    shutil.which("cmake") is None or shutil.which("gfortran") is None or shutil.which("gcc") is None,
-    reason="CMake, gfortran, and gcc are required",
-)
-def test_find_package_prik_config_provides_the_module_helper(tmp_path: Path):
-    project = tmp_path / "found package"
-    project.mkdir()
-    (project / "square.f90").write_text(
-        """real(8) function config_square(x) result(y)
-  real(8), intent(in) :: x
-  y = x * x
-end function config_square
-""",
-        encoding="utf-8",
-    )
-    (project / "CMakeLists.txt").write_text(
-        """cmake_minimum_required(VERSION 3.21)
-project(cmake_test LANGUAGES C Fortran)
-find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(PRIK CONFIG REQUIRED)
-prik_add_module(
-  config_square
-  SOURCES square.f90
-)
-""",
-        encoding="utf-8",
-    )
-    build = project / "build"
-    _configure_and_build(project, build, language="fortran", defines=(f"PRIK_DIR={USE_PRIK_DIR.as_posix()}",))
-    module = _import_extension("config_square", build)
-    assert module.config_square(np.float64(3.0)) == np.float64(9.0)
 
 
 @pytest.mark.fortran_end_to_end

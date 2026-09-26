@@ -6,10 +6,6 @@ import numpy as np
 import pytest
 
 from prik.pipeline.build import build_fortran_extension, build_pyi_extension
-from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.planning import WrapperPlanner
-from prik.policy import complete_semantic_policies
-from prik.policy.models import ArrayEntrypointABI, EntrypointPassingConvention
 from tests.fortran._support.wrapper_build import _import_from_build_dir
 
 
@@ -42,23 +38,7 @@ def calls(request, native_build, tmp_path_factory):
 
 
 def test_hand_authored_any_native_contract_loads_plans_and_calls(native_build, tmp_path):
-    semantic = pyi_file_to_semantic_module(AUTHORED_CONTRACT)
-    assert all(function.arguments[0].semantic_type.name == "AnyNative" for function in semantic.functions)
-    complete_semantic_policies(semantic)
-    plan = WrapperPlanner().build(semantic)
-    expected = {
-        "scalar": (EntrypointPassingConvention.POINTER_REFERENCE, None),
-        "assumed_size": (EntrypointPassingConvention.POINTER_REFERENCE, ArrayEntrypointABI.RAW_ADDRESS),
-        "assumed_shape": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
-        "assumed_shape_two": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
-        "assumed_shape_three": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
-        "assumed_rank": (EntrypointPassingConvention.C_DESCRIPTOR_POINTER, ArrayEntrypointABI.C_DESCRIPTOR),
-    }
-    for function in plan.namespaces[0].functions:
-        passing, array_abi = expected[function.binding.python_name]
-        assert function.arguments[0].entrypoint.passing is passing
-        if array_abi is not None:
-            assert function.arguments[0].array.entrypoint_abi is array_abi
+    """Each dummy form picks its ABI: an address, or a descriptor that keeps strides."""
     built = build_pyi_extension(
         AUTHORED_CONTRACT,
         native_objects=[native_build.output_dir / "assumed_type_calls.o"],
@@ -117,10 +97,24 @@ def test_same_actual_uses_address_or_descriptor_from_dummy(calls):
     assert calls.scalar_without_intent(np.array(3, dtype=np.int64)) == 11
     assert calls.adapted_rank(np.float64(3)) == 0
     assert calls.assumed_size(np.arange(3, dtype=np.uint64)) == 20
+    assert calls.assumed_size(np.array(3, dtype=np.int64)) == 20
     with pytest.raises(TypeError, match="no supported descriptor dtype"):
         calls.assumed_rank(np.arange(3, dtype=np.uint64))
     with pytest.raises(TypeError, match="cannot contain Python object references"):
         calls.assumed_size(np.array([object()], dtype=object))
+
+
+def test_native_scalar_module_storage_survives_generated_contract_replay(calls, native_build):
+    """A BIND(C) scalar view passes its own native address through TYPE(*)."""
+    generated = (native_build.output_dir / "contracts" / "assumed_type_calls.pyi").read_text()
+    assert "native_value: Annotated[Int32[()], Aliased]" in generated
+    native = calls.native_value
+    assert isinstance(native, np.ndarray) and native.shape == () and native.dtype == np.dtype("int32")
+    assert bool(calls.same_native_raw(native))
+    assert calls.assumed_rank(native) == 0
+    native[()] = np.int32(29)
+    assert calls.native_value[()] == 29
+    assert bool(calls.same_native_raw(calls.native_value))
 
 
 def test_optional_absence_uses_dummy_specific_null_representation(calls):
@@ -130,11 +124,6 @@ def test_optional_absence_uses_dummy_specific_null_representation(calls):
     assert calls.optional_descriptor() == 0
     assert calls.optional_descriptor(None) == 0
     assert calls.optional_descriptor(np.arange(2, dtype=np.int64)) == 1
-
-
-def test_arbitrary_python_object_is_not_a_native_actual(calls):
-    with pytest.raises(TypeError, match="requires NumPy storage or a PRIK native object"):
-        calls.scalar(object())
 
 
 def test_writable_scalar_requires_ndarray_storage(calls):

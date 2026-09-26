@@ -191,6 +191,62 @@ static inline const char *prik_derived_type_info_capsule_name(void)
 #define PRIK_NO_INLINE
 #endif
 
+/* A shared helper a given binding may never call; it compiles without warning. */
+#if defined(__GNUC__) || defined(__clang__)
+#define PRIK_MAYBE_UNUSED __attribute__((unused))
+#else
+#define PRIK_MAYBE_UNUSED
+#endif
+
+/* The fixed names a generated binding reads from its wrapper objects on every
+ * call. Each is interned once into its slot here, because building and hashing
+ * a new string per lookup, as PyObject_GetAttrString does, costs more than the
+ * rest of passing a wrapped object. */
+static PyObject *prik_name_prik_origin PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_prik_ops PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_prik_capsule PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_native_ops PRIK_MAYBE_UNUSED = NULL;
+
+static inline PyObject *prik_interned_name(PyObject **slot, const char *text)
+{
+    if (*slot == NULL)
+        *slot = PyUnicode_InternFromString(text);
+    return *slot;
+}
+
+/* PyObject_GetAttrString through an interned name. */
+static inline PyObject *prik_getattr_interned(PyObject *object, PyObject **slot, const char *text)
+{
+    PyObject *name = prik_interned_name(slot, text);
+    return name == NULL ? NULL : PyObject_GetAttr(object, name);
+}
+
+/* PyDict_GetItemString through an interned name: a borrowed item, or NULL
+ * without an exception when it is absent. */
+static inline PyObject *prik_dict_getitem_interned(PyObject *dict, PyObject **slot, const char *text)
+{
+    PyObject *name = prik_interned_name(slot, text);
+    if (name == NULL) {
+        PyErr_Clear();
+        return NULL;
+    }
+    return PyDict_GetItem(dict, name);
+}
+
+/* PRIK's own wrapper tests make a generated binding fail on purpose by naming
+ * the failure in the environment. Only a binding compiled with
+ * PRIK_WRAPPER_FAULT_INJECTION reads it; any other answers "no failure" without
+ * scanning the environment on every call. */
+static inline const char *prik_wrapper_fault_selector(const char *variable)
+{
+#ifdef PRIK_WRAPPER_FAULT_INJECTION
+    return getenv(variable);
+#else
+    (void)variable;
+    return NULL;
+#endif
+}
+
 #ifdef PRIK_BINDING_CAPTURE_ADDRESS
 /*
  * Report the address a caller already passed by reference.
@@ -208,6 +264,11 @@ static inline const char *prik_derived_type_info_capsule_name(void)
  * defined only in the translation unit that opts in with this macro.
  */
 void *prik_capture_address(void *base)
+{
+    return base;
+}
+
+void *prik_capture_scalar_address(void *base)
 {
     return base;
 }
@@ -1047,6 +1108,136 @@ static inline int prik_array_validate(
         argument_name);
 }
 
+/*
+ * Borrow the exact rank-zero NumPy storage an ndarray passes for one numeric
+ * scalar argument.
+ *
+ * value must be an ndarray. Returns 0 with *data set to its element, or -1
+ * with a TypeError set when it is not rank-zero storage of numpy_type in
+ * native order. A scalar argument may appear in every routine a module wraps,
+ * so the checks live here once rather than in each generated conversion.
+ */
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_rank_zero_storage(
+    PyObject *value,
+    int numpy_type,
+    int require_writeable,
+    const char *python_type,
+    const char *argument_name,
+    void **data)
+{
+    PyArrayObject *array = (PyArrayObject *)value;
+    if (PyArray_TYPE(array) != numpy_type || PyArray_NDIM(array) != 0) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires exact rank-zero %s storage", argument_name, python_type);
+        return -1;
+    }
+    if (!PyArray_ISNOTSWAPPED(array) || !PyArray_ISALIGNED(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires native byte order and aligned storage", argument_name);
+        return -1;
+    }
+    if (require_writeable && !PyArray_ISWRITEABLE(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires writeable storage", argument_name);
+        return -1;
+    }
+    *data = PyArray_DATA(array);
+    return 0;
+}
+
+/*
+ * Borrow the rank-zero fixed-width bytes an ndarray passes for one character
+ * argument.
+ *
+ * value must be an ndarray. Returns 0 with *data set to its bytes, or -1 with
+ * a TypeError set when it is not rank-zero S<width> storage.
+ */
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_rank_zero_bytes(
+    PyObject *value,
+    Py_ssize_t width,
+    int require_writeable,
+    const char *argument_name,
+    const char **data)
+{
+    PyArrayObject *array = (PyArrayObject *)value;
+    if (PyArray_TYPE(array) != NPY_STRING || PyArray_NDIM(array) != 0 || PyArray_ITEMSIZE(array) != width) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires rank-zero S%zd storage", argument_name, width);
+        return -1;
+    }
+    if (!PyArray_ISALIGNED(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires aligned storage", argument_name);
+        return -1;
+    }
+    if (require_writeable && !PyArray_ISWRITEABLE(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s requires writeable storage", argument_name);
+        return -1;
+    }
+    *data = (const char *)PyArray_DATA(array);
+    return 0;
+}
+
+/*
+ * Take one fixed-width character argument that also accepts rank-zero bytes.
+ *
+ * An ndarray must be rank-zero S<width> storage, and *source then points at
+ * its bytes. Any other value must be a str whose UTF-8 encoding is exactly
+ * width bytes, without embedded NUL unless allow_embedded_nul is set.
+ * *length receives the byte count. Returns 0, or -1 with an exception set.
+ */
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_input(
+    PyObject *value,
+    Py_ssize_t width,
+    int allow_embedded_nul,
+    int require_writeable,
+    const char *argument_name,
+    const char **source,
+    Py_ssize_t *length)
+{
+    if (PyArray_Check(value)) {
+        if (prik_rank_zero_bytes(value, width, require_writeable, argument_name, source) < 0) {
+            return -1;
+        }
+        *length = width;
+        return 0;
+    }
+    if (!PyUnicode_Check(value)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Expected an argument of type str for argument %s. Received <class '%s'>",
+            argument_name,
+            Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    *source = PyUnicode_AsUTF8AndSize(value, length);
+    if (*source == NULL) {
+        return -1;
+    }
+    if (!allow_embedded_nul && (Py_ssize_t)strlen(*source) != *length) {
+        PyErr_Format(PyExc_TypeError, "Argument %s cannot contain embedded NUL", argument_name);
+        return -1;
+    }
+    if (*length != width) {
+        PyErr_Format(PyExc_TypeError, "Argument %s must encode to exactly %zd bytes", argument_name, width);
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Return the Python value of one fixed-width character argument after the call.
+ *
+ * Rank-zero bytes storage was updated in place, so its bytes are decoded. A
+ * str was copied into *buffer, which is converted and then released.
+ */
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static PyObject *prik_character_result(PyObject *value, char **buffer, Py_ssize_t length)
+{
+    PyObject *result;
+    if (PyArray_Check(value)) {
+        return PyUnicode_DecodeUTF8((const char *)*buffer, length, "strict");
+    }
+    result = Py_BuildValue("s", (const char *)*buffer);
+    free(*buffer);
+    *buffer = NULL;
+    return result;
+}
+
 #ifdef PRIK_BINDING_ASSUMED_TYPE
 /* One call-local native actual.  Its CFI metadata describes the payload; the
  * type tag also distinguishes PRIK derived types with identical storage sizes. */
@@ -1502,6 +1693,68 @@ static inline int prik_complex128_unpack_exact(PyObject *value, double complex *
     *destination = (double complex)PyArrayScalar_VAL(value, CDouble);
     return 0;
 }
+
+/*
+ * Take one numeric scalar argument that also accepts rank-zero storage.
+ *
+ * An ndarray must be exact rank-zero storage of numpy_type; storage, when not
+ * NULL, then receives its element's address, and otherwise the element is
+ * copied into local. Any other value must be an exact NumPy scalar, unpacked
+ * into local, which storage then points at. Returns 0, or -1 with a TypeError
+ * set. One out-of-line helper per type keeps every scalar argument of every
+ * wrapped routine a single call in the generated binding.
+ */
+#define PRIK_DEFINE_SCALAR_OR_STORAGE(suffix, ctype)                                               \
+    PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_##suffix##_or_storage(                                   \
+        PyObject *value,                                                                            \
+        int numpy_type,                                                                             \
+        int require_writeable,                                                                      \
+        const char *scalar_type,                                                                    \
+        const char *array_type,                                                                     \
+        const char *argument_name,                                                                  \
+        ctype *local,                                                                               \
+        ctype **storage)                                                                            \
+    {                                                                                               \
+        void *data = NULL;                                                                          \
+        if (PyArray_Check(value)) {                                                                 \
+            if (prik_rank_zero_storage(                                                             \
+                    value, numpy_type, require_writeable, array_type, argument_name, &data) < 0) {  \
+                return -1;                                                                          \
+            }                                                                                       \
+            if (storage != NULL) {                                                                  \
+                *storage = (ctype *)data;                                                           \
+            } else {                                                                                \
+                memcpy(local, data, sizeof(ctype));                                                 \
+            }                                                                                       \
+            return 0;                                                                               \
+        }                                                                                           \
+        if (prik_##suffix##_unpack_exact(value, local) < 0) {                                       \
+            if (!PyErr_Occurred()) {                                                                \
+                PyErr_Format(                                                                       \
+                    PyExc_TypeError,                                                                \
+                    "Expected an argument of type %s or rank-zero array for argument %s. "          \
+                    "Received <class '%s'>",                                                        \
+                    scalar_type,                                                                    \
+                    argument_name,                                                                  \
+                    Py_TYPE(value)->tp_name);                                                       \
+            }                                                                                       \
+            return -1;                                                                              \
+        }                                                                                           \
+        if (storage != NULL) {                                                                      \
+            *storage = local;                                                                       \
+        }                                                                                           \
+        return 0;                                                                                   \
+    }
+
+PRIK_DEFINE_SCALAR_OR_STORAGE(bool, bool)
+PRIK_DEFINE_SCALAR_OR_STORAGE(int8, int8_t)
+PRIK_DEFINE_SCALAR_OR_STORAGE(int16, int16_t)
+PRIK_DEFINE_SCALAR_OR_STORAGE(int32, int32_t)
+PRIK_DEFINE_SCALAR_OR_STORAGE(int64, int64_t)
+PRIK_DEFINE_SCALAR_OR_STORAGE(float32, float)
+PRIK_DEFINE_SCALAR_OR_STORAGE(float64, double)
+PRIK_DEFINE_SCALAR_OR_STORAGE(complex64, float complex)
+PRIK_DEFINE_SCALAR_OR_STORAGE(complex128, double complex)
 
 /* Convert Python truth value into native bool storage, propagating conversion errors. */
 static inline int prik_bool_unpack(PyObject *value, bool *destination)

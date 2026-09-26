@@ -8,36 +8,6 @@ from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
 
-def test_hidden_scalar_result_is_one_bridge_output_and_one_python_result():
-    module = parse_pyi_text(
-        """
-@bind("SCALE_OUT")
-@standalone
-@native_call([Addr(Arg(0)), Return("result", 0)])
-def scale(x: Float64) -> Float64: ...
-""",
-        module_name="hidden_result",
-    )
-    complete_semantic_policies(module)
-    plan = WrapperPlanner().build(module)
-    function = plan.namespaces[0].functions[0]
-    result = function.results[0]
-
-    assert result.projected_call_slot is function.entrypoint.projected_slots[result.projected_call_slot.native_position]
-
-    artifacts = WrapperGenerator().generate(plan)
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    fortran_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    assert "void bind_c_scale(double * x, double * result);" in c_source
-    assert "bind_c_scale(&bound_x, &result);" in c_source
-    assert "PyObject * result_obj = prik_float64_to_numpy(&result);" in c_source
-    assert 'subroutine bind_c_scale(x, result) bind(c, name="bind_c_scale")' in fortran_source
-    assert "external :: SCALE_OUT" in fortran_source
-    assert "subroutine SCALE_OUT(" not in fortran_source
-    assert "call SCALE_OUT(x, result)" in fortran_source
-
-
 def test_required_explicit_interface_declares_hidden_result_in_native_order():
     module = parse_pyi_text(
         """

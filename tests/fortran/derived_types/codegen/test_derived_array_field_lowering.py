@@ -40,32 +40,6 @@ def _bridge_source():
     return _bridge_source_for(ARRAY_FIELD_SOURCE, "field_state")
 
 
-def test_owned_array_field_takes_its_address_through_the_owner_pointer():
-    """An owner reached as a pointer makes its components addressable.
-
-    The owner arrives as an address and is associated with a Fortran pointer, so
-    its components are subobjects of a pointer target. `c_loc` may name them
-    whatever the field's own declaration said, and no capture is needed.
-    """
-    source = _bridge_source()
-
-    assert "result = c_loc(owner%grid)" in source
-    assert "extent_0 = int(size(owner%grid, 1), c_int64_t)" in source
-
-
-def test_plain_module_object_field_captures_its_address_in_c():
-    """A plain module object is named directly, so nothing about it is a target.
-
-    `c_loc` cannot name a member of a module object that was declared without
-    `target`, so the address is taken on the C side, exactly as a non-addressable
-    module array's is.
-    """
-    source = _bridge_source()
-
-    assert "result = prik_capture_address(native_plain_box%grid)" in source
-    assert "c_loc(native_plain_box%grid)" not in source
-
-
 def _procedure(source: str, name: str) -> str:
     """Return the text of one generated procedure, by name."""
     start = source.index(f"function {name}(")

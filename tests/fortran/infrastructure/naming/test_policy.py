@@ -36,28 +36,26 @@ def test_two_spellings_collide_only_where_the_source_folds_them():
     assert preserving.reserve_public_name((), "foo", category="function") == "foo"
 
 
-def test_a_wrapped_type_is_named_as_a_python_class():
-    """A derived type reaches Python as a class, so PRIK spells it like one."""
-    assert normalize_public_name("point_t", category="class").name == "Point_T"
-    assert normalize_public_name("my_particle_type", category="class").name == "My_Particle_Type"
-    assert normalize_public_name("accumulator", category="class").name == "Accumulator"
-    # Fortran writes one type under many spellings, so the style does not
-    # depend on which one the source happened to use.
-    assert normalize_public_name("POINT_T", category="class").name == "Point_T"
+def test_class_names_take_python_class_style_only_where_the_source_folds_case():
+    cases = {
+        # A derived type reaches Python as a class, so PRIK spells it like one.
+        ("point_t", False): "Point_T",
+        ("my_particle_type", False): "My_Particle_Type",
+        ("accumulator", False): "Accumulator",
+        # Fortran writes one type under many spellings; the style ignores which.
+        ("POINT_T", False): "Point_T",
+        # C names each declaration exactly, so PRIK has no spelling to choose.
+        ("point", True): "point",
+        ("Point", True): "Point",
+    }
+    for (name, preserve_case), expected in cases.items():
+        normalized = normalize_public_name(name, preserve_case=preserve_case, category="class")
+        assert (normalized.name, normalized.needs_fix) == (expected, False), name
+
+    # Strict naming rejects what Python cannot spell, not how PRIK cases it.
+    assert normalize_public_name("point t", category="class").needs_fix is True
     # Every other declaration keeps the lower-case form.
     assert normalize_public_name("point_t").name == "point_t"
-
-
-def test_a_source_that_spells_its_own_types_keeps_that_spelling():
-    """C names each declaration exactly, so PRIK has no spelling to choose."""
-    assert normalize_public_name("point", preserve_case=True, category="class").name == "point"
-    assert normalize_public_name("Point", preserve_case=True, category="class").name == "Point"
-
-
-def test_a_chosen_class_style_is_not_a_name_python_forced():
-    """Strict naming rejects what Python cannot spell, not how PRIK cases it."""
-    assert normalize_public_name("point_t", category="class").needs_fix is False
-    assert normalize_public_name("point t", category="class").needs_fix is True
 
 
 def test_public_python_names_escape_keywords_and_collisions():
@@ -157,17 +155,17 @@ def test_generated_symbols_reserve_c_entry_point_and_rewrite_special_methods():
     )
 
 
-def test_generated_symbols_number_after_an_escaped_native_name():
+def test_generated_symbols_number_after_an_escaped_native_name_past_every_taken_spelling():
     policy = NamingPolicy()
 
     assert (
         policy.generated_symbol(
             "module",
-            {"MODULE_PRIK"},
+            {"MODULE_PRIK", "module_prik_2"},
             language="fortran",
             prefix="owner__",
             context="function",
             parent_context="module",
         )
-        == "module_prik_2"
+        == "module_prik_3"
     )

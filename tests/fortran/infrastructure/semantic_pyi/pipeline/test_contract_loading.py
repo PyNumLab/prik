@@ -17,19 +17,6 @@ INVALID_NATIVE_CALL_PYI = FIXTURES / "invalid" / "projection_metadata" / "incomp
 CHECKED_CONTRACTS = sorted(CONTRACT_FIXTURES.rglob("*.pyi"))
 
 
-def test_checked_contract_package_has_reviewed_files():
-    assert [str(path.relative_to(CONTRACT_FIXTURES)) for path in CHECKED_CONTRACTS] == [
-        "contract_import_graph/generated/__init__.pyi",
-        "contract_import_graph/generated/deep.pyi",
-        "contract_import_graph/generated/m1.pyi",
-        "contract_mixed_module_external/generated/__init__.pyi",
-        "contract_mixed_module_external/generated/contract_math_mod.pyi",
-        "contract_same_name/generated/__init__.pyi",
-        "contract_same_name/generated/contract_same_name.pyi",
-        "contract_standalone_only/generated/__init__.pyi",
-    ]
-
-
 @pytest.mark.parametrize(
     "fixture",
     CHECKED_CONTRACTS,

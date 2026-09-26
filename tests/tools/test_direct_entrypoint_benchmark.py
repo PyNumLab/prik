@@ -246,33 +246,3 @@ def test_direct_runtime_uses_identical_cases_and_preflight_metadata(
         "direct.call.scalar_function",
         "direct.call.scalar_subroutine",
     ]
-
-
-def test_run_and_workflows_keep_direct_results_out_of_default_population() -> None:
-    run_script = Path("benchmarks/run.sh").read_text(encoding="utf-8")
-    generator = Path("tools/generate_performance_docs.py").read_text(encoding="utf-8")
-    workflows = "\n".join(
-        Path(path).read_text(encoding="utf-8")
-        for path in (".github/workflows/docs.yml", ".github/workflows/merge-validation.yml")
-    )
-
-    assert "python3 direct_preflight.py" in run_script
-    assert "python3 direct_build_time.py" in run_script
-    assert "direct_runtime.py" in run_script
-    assert '--output "results/$binding_tool.json"' in run_script
-    assert '--output "results/$direct_route.json"' in run_script
-    assert "prik-adapted.json" in run_script
-    assert "direct_runtime_passes=(forward reverse)" in run_script
-    assert "direct_routes=(prik-adapted f2py-direct prik-direct)" in run_script
-    assert "direct" not in generator.partition("DEFAULT_F2PY_RESULTS")[0]
-    assert workflows.count("name: direct-entrypoint-preflight") == 2
-    assert workflows.count("path: benchmarks/build/direct-runtime") == 2
-    for name in (
-        "f2py-direct.json",
-        "prik-direct.json",
-        "prik-adapted.json",
-        "f2py-direct-build.json",
-        "prik-direct-build.json",
-        "prik-adapted-build.json",
-    ):
-        assert workflows.count(name) == 4

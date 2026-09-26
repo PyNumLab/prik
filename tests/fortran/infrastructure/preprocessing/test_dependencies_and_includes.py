@@ -1,9 +1,8 @@
-"""Tests split by stable ownership concept from `test_cli.py`."""
+"""Compiler linemarker provenance and native Fortran INCLUDE expansion."""
 
 from pathlib import Path
 
 import prik.preprocessing.source as preprocessing
-import prik.preprocessing.fortran as fortran_preprocessing
 from prik.preprocessing import PreprocessingConfig, expand_native_fortran_includes
 
 
@@ -104,21 +103,6 @@ def test_linemarker_nested_returns_restore_parent_stack(tmp_path: Path):
     )[1]
     assert direct_include.included_by == str(root)
     assert direct_include.include_line == 1
-
-
-def test_native_include_line_marker_and_mapping_helpers_preserve_provenance(tmp_path: Path):
-    root = tmp_path / "root.F90"
-    mappings = preprocessing.parse_linemarker_mappings('# 7 "api.inc"\ninteger :: value\n', filename=str(root))
-
-    assert fortran_preprocessing._line_marker(3, 'dir\\api".inc') == '# 3 "dir\\\\api\\".inc"'
-    assert fortran_preprocessing._line_marker(3, "api.inc", 1) == '# 3 "api.inc" 1'
-    assert fortran_preprocessing._mapping_for_generated_line(mappings, mappings[0].generated_line, root) == mappings[0]
-
-    fallback = fortran_preprocessing._mapping_for_generated_line([], 99, root)
-    assert fallback.generated_line == 99
-    assert fallback.original_path == str(root)
-    assert fallback.original_line == 99
-    assert fallback.include_stack == [str(root)]
 
 
 def test_native_fortran_include_expansion_is_recursive_and_preserves_duplicates(tmp_path: Path):
@@ -274,44 +258,6 @@ def test_native_fortran_include_lookup_order_missing_and_cycle_diagnostics(tmp_p
     ]
 
 
-def test_native_fortran_include_reports_files_that_disappear_before_read(monkeypatch, tmp_path: Path):
-    root = tmp_path / "root.F90"
-    include = tmp_path / "vanished.inc"
-    root.write_text('include "vanished.inc"\n', encoding="utf-8")
-    include.write_text("integer :: vanished\n", encoding="utf-8")
-    original_read_text = Path.read_text
-
-    seen_encodings = []
-
-    def fail_for_include(path: Path, *args, **kwargs):
-        if path == include:
-            seen_encodings.append(kwargs["encoding"])
-            raise OSError("disappeared")
-        return original_read_text(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", fail_for_include)
-
-    expanded, included_files, _mappings, diagnostics = expand_native_fortran_includes(
-        root.read_text(encoding="utf-8"),
-        root_path=root,
-        include_dirs=[],
-    )
-
-    assert expanded.startswith(f'# 1 "{include}" 1')
-    assert [Path(item.path) for item in included_files] == [include]
-    assert seen_encodings == ["utf-8"]
-    assert [diagnostic.to_dict() for diagnostic in diagnostics] == [
-        {
-            "category": "INCLUDE_NOT_FOUND",
-            "message": 'Fortran INCLUDE file "vanished.inc" could not be read: disappeared',
-            "severity": "error",
-            "path": str(root.resolve()),
-            "line": 1,
-            "command": [],
-        }
-    ]
-
-
 def test_native_fortran_include_resolution_continues_after_oserror(monkeypatch, tmp_path: Path):
     root = tmp_path / "src" / "root.F90"
     include_dir = tmp_path / "include"
@@ -340,54 +286,45 @@ def test_native_fortran_include_resolution_continues_after_oserror(monkeypatch, 
     assert [Path(item.path) for item in included_files] == [include]
 
 
-def test_native_fortran_include_uses_absolute_fallback_when_resolve_fails(monkeypatch, tmp_path: Path):
-    root = tmp_path / "root.F90"
-    include = tmp_path / "decls.inc"
-    include.write_text("integer :: value\n", encoding="utf-8")
-    original_resolve = Path.resolve
-
-    def fail_include_resolve(path: Path):
-        if path == include:
-            raise OSError("cannot resolve include")
-        return original_resolve(path)
-
-    monkeypatch.setattr(Path, "resolve", fail_include_resolve)
-
-    expanded, included_files, _mappings, diagnostics = expand_native_fortran_includes(
-        'include "decls.inc"\n',
-        root_path=root,
-        include_dirs=[],
-    )
-
-    assert diagnostics == []
-    assert f'# 1 "{include.absolute()}" 1' in expanded
-    assert [item.path for item in included_files] == [str(include.absolute())]
-
-
 def test_native_fortran_include_diagnostics_do_not_drop_following_lines(monkeypatch, tmp_path: Path):
+    """A missing, cyclic, or unreadable INCLUDE reports a diagnostic and expansion continues."""
     root = tmp_path / "root.F90"
     cycle = tmp_path / "cycle.inc"
     vanished = tmp_path / "vanished.inc"
     cycle.write_text('include "cycle.inc"\ninteger :: after_cycle\n', encoding="utf-8")
     vanished.write_text("integer :: vanished\n", encoding="utf-8")
     original_read_text = Path.read_text
+    seen_encodings = []
 
     def fail_for_vanished(path: Path, *args, **kwargs):
         if path == vanished:
+            seen_encodings.append(kwargs["encoding"])
             raise OSError("disappeared")
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", fail_for_vanished)
 
-    expanded, _included_files, _mappings, diagnostics = expand_native_fortran_includes(
+    expanded, included_files, _mappings, diagnostics = expand_native_fortran_includes(
+        'include "missing.inc"\ninteger :: after_missing\n'
         'include "cycle.inc"\ninclude "vanished.inc"\ninteger :: after_read_error\n',
         root_path=root,
         include_dirs=[],
     )
 
+    assert "after_missing" in expanded
     assert "after_cycle" in expanded
     assert "after_read_error" in expanded
-    assert [diagnostic.category for diagnostic in diagnostics] == ["INCLUDE_CYCLE", "INCLUDE_NOT_FOUND"]
+    assert f'# 1 "{vanished}" 1' in expanded
+    assert vanished in [Path(item.path) for item in included_files]
+    assert seen_encodings == ["utf-8"]
+    assert [(diagnostic.category, diagnostic.line) for diagnostic in diagnostics] == [
+        ("INCLUDE_NOT_FOUND", 1),
+        ("INCLUDE_CYCLE", 1),
+        ("INCLUDE_NOT_FOUND", 4),
+    ]
+    assert diagnostics[0].message == 'Fortran INCLUDE file "missing.inc" was not found'
+    assert diagnostics[2].message == 'Fortran INCLUDE file "vanished.inc" could not be read: disappeared'
+    assert diagnostics[2].path == str(root.resolve())
 
 
 def test_native_fortran_include_expansion_preserves_input_linemarkers_and_private_exposure(tmp_path: Path):

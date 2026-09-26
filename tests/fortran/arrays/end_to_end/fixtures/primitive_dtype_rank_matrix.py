@@ -1,4 +1,4 @@
-"""Generate one Fortran module covering every supported primitive array matrix cell."""
+"""Generate one Fortran module crossing every primitive dtype with representative ranks."""
 
 from __future__ import annotations
 
@@ -58,11 +58,20 @@ PRIMITIVE_ARRAY_CASES = (
 )
 
 
+# The element-type mapping does not depend on rank, and descriptor rank handling
+# does not depend on the element type. Every dtype therefore meets a vector, a
+# matrix, and the first rank with an interior axis. The highest ranks are
+# exercised for float64 by the contract-validation, array-result, and
+# assumed-rank tests; optimizing whole-array expressions at every high rank for
+# every dtype dominated this build without adding a failure mode.
+PRIMITIVE_ARRAY_RANKS = (1, 2, 3)
+
+
 def primitive_dtype_rank_source() -> str:
-    """Return deterministic source for nine dtypes at concrete ranks 1 through 15."""
+    """Return deterministic source for nine dtypes at the representative ranks."""
     procedures: list[str] = []
     for case in PRIMITIVE_ARRAY_CASES:
-        for rank in range(1, 16):
+        for rank in PRIMITIVE_ARRAY_RANKS:
             dimensions = ", ".join(":" for _ in range(rank))
             procedures.append(
                 "\n".join(

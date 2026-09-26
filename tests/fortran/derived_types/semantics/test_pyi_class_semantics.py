@@ -1,29 +1,9 @@
 """Core `.pyi` class semantics retained by Derived Types."""
 
-from prik.printers import emit_module
 from prik.semantics.metadata import (
     PROJECTED_OUTPUT_METADATA,
-    SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
 )
 from tests.fortran._support.pyi_conversion import parse_pyi_text
-
-
-def test_convert_pyi_to_ir_self_only_generated_constructor_keeps_default_initializer():
-    module = parse_pyi_text(
-        """
-class state:
-    def __init__(self) -> None: ...
-
-    values: Allocatable[Float64[:]]
-""",
-        module_name="edited",
-    )
-
-    cls = module.classes[0]
-    assert cls.origin.source_language == "fortran"
-    assert SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA not in cls.origin.metadata
-    assert cls.methods == []
-    assert "    def __init__(self) -> None: ..." in emit_module(module)
 
 
 def test_compact_assignment_overload_projects_visible_destination_without_direction_label():

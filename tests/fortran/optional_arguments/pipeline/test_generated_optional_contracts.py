@@ -1,4 +1,8 @@
-"""Reviewed generated contracts for optional Fortran arguments."""
+"""Reviewed generated contract for fixed-form optional arguments.
+
+The free-form ``foptional_f90`` contract is compared against its fixture by the
+generated-pyi lane of ``end_to_end/test_optional_runtime.py``.
+"""
 
 from __future__ import annotations
 
@@ -19,11 +23,6 @@ CASES = (
         "foptional_fixed",
         (FIXTURES / "native" / "foptional_fixed.f",),
         CONTRACT_ROOT / "foptional_fixed",
-    ),
-    GeneratedContractCase(
-        "foptional_f90",
-        (FIXTURES / "native" / "foptional_f90.f90",),
-        CONTRACT_ROOT / "foptional_f90",
     ),
 )
 

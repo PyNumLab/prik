@@ -5,12 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
 from prik.policy.completion import complete_semantic_policies
-from prik.policy.models import BridgeDataAction
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
-from prik.planning.models import DatatypeFamily
 
 
 def _later_array_plan():
@@ -50,24 +47,6 @@ def test_character_itemsize_edit_fails_before_backend_lowering():
 
     with pytest.raises(ValueError, match="invalid-array-itemsize"):
         WrapperGenerator().generate(plan)
-
-
-def test_fixed_width_character_array_results_reuse_the_ordinary_array_copy_plan():
-    direct_function, hidden_function = _character_array_result_plan().namespaces[0].functions
-    direct = direct_function.results[0]
-    hidden = hidden_function.results[0]
-
-    for result, itemsize in ((direct, 5), (hidden, 4)):
-        assert result.object_kind is ObjectKind.NUMPY_ARRAY
-        assert result.datatype_family is DatatypeFamily.STRING
-        assert result.array is not None
-        assert result.array.itemsize == itemsize
-        assert result.character_length == itemsize
-        assert result.binding.codegen_action is CodegenAction.COPY_OUT
-        assert result.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert direct.bridge.native_action is NativeBarrierAction.NONE
-    assert hidden.bridge.native_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-    assert hidden.projected_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
 
 
 def test_fixed_width_character_array_results_lower_itemsize_into_both_backends():

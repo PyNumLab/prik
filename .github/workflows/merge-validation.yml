@@ -465,6 +465,11 @@ jobs:
             python tools/print_pytest_failures.py "$report"
           done
 
+  openmpi-integration:
+    name: Open MPI Integration
+    needs: [unit-tests]
+    uses: ./.github/workflows/openmpi-integration.yml
+
   real-libraries-portability:
     name: Real Libraries Portability
     needs: [unit-tests, unit-tests-macos]
@@ -621,6 +626,7 @@ jobs:
       - compiler-smoke-macos
       - unit-tests
       - unit-tests-macos
+      - openmpi-integration
       - real-libraries-portability
       - documentation-benchmark
       - documentation-build
@@ -632,6 +638,7 @@ jobs:
       COMPILER_SMOKE_MACOS_RESULT: ${{ needs.compiler-smoke-macos.result }}
       UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
       UNIT_TESTS_MACOS_RESULT: ${{ needs.unit-tests-macos.result }}
+      OPENMPI_INTEGRATION_RESULT: ${{ needs.openmpi-integration.result }}
       REAL_LIBRARIES_PORTABILITY_RESULT: ${{ needs.real-libraries-portability.result }}
       DOCUMENTATION_BENCHMARK_RESULT: ${{ needs.documentation-benchmark.result }}
       DOCUMENTATION_BUILD_RESULT: ${{ needs.documentation-build.result }}
@@ -647,6 +654,7 @@ jobs:
             "compiler-smoke-macos=$COMPILER_SMOKE_MACOS_RESULT" \
             "unit-tests=$UNIT_TESTS_RESULT" \
             "unit-tests-macos=$UNIT_TESTS_MACOS_RESULT" \
+            "openmpi-integration=$OPENMPI_INTEGRATION_RESULT" \
             "real-libraries-portability=$REAL_LIBRARIES_PORTABILITY_RESULT" \
             "documentation-benchmark=$DOCUMENTATION_BENCHMARK_RESULT" \
             "documentation-build=$DOCUMENTATION_BUILD_RESULT"

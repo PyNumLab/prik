@@ -3,6 +3,7 @@
 from .source import (
     CommandTemplateAdapter,
     CompilerAdapter,
+    FortranSourceText,
     GCCCompatibleCAdapter,
     GNUFortranAdapter,
     IncludedFile,
@@ -21,6 +22,7 @@ from .source import (
     build_template_preprocess_invocation,
     parse_linemarker_mappings,
     preprocess_source,
+    read_fortran_source,
     run_compiler_preprocessor,
     run_compiler_preprocessor_with_recipe,
     validate_macro_name,
@@ -30,6 +32,7 @@ from .fortran import expand_native_fortran_includes
 __all__ = (
     "CommandTemplateAdapter",
     "CompilerAdapter",
+    "FortranSourceText",
     "GCCCompatibleCAdapter",
     "GNUFortranAdapter",
     "IncludedFile",
@@ -49,6 +52,7 @@ __all__ = (
     "expand_native_fortran_includes",
     "parse_linemarker_mappings",
     "preprocess_source",
+    "read_fortran_source",
     "run_compiler_preprocessor",
     "run_compiler_preprocessor_with_recipe",
     "validate_macro_name",

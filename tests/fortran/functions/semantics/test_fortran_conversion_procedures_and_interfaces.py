@@ -1,8 +1,6 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from prik.parsers.fortran.models import FortranProcedureSignature
 from prik.semantics.fortran2ir import (
-    FortranToIRConverter,
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
 )
@@ -10,12 +8,10 @@ from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticFunction,
-    SemanticMethod,
     SemanticType,
 )
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.semantics import models as semantic_models
 
 
 def test_bind_c_name_and_value_calling_convention_reach_semantic_ir():
@@ -59,39 +55,6 @@ end module abstract_mod
 
     assert module.classes[0].metadata["fortran_type_attributes"] == ["abstract"]
     assert module.classes[0].metadata["fortran_deferred_bindings"] == ["area"]
-
-
-def test_semantic_model_helpers_cover_projection_and_canonical_edge_cases():
-    converter = FortranToIRConverter()
-    assert (
-        converter.first_module([FortranProcedureSignature(name="hidden", kind="subroutine", in_interface=True)]).name
-        == ""
-    )
-    assert FortranToIRConverter._literal_kind_key("kind(1.0q0)") == "16"
-    assert FortranToIRConverter._literal_kind_key("kind(1)") is None
-    assert SemanticFunction("f") != SemanticMethod("f")
-    assert semantic_models._semantic_type_key(None, {}) is None
-    assert semantic_models._canonical_expression(
-        ["n", ("m",), {"extent": "n + m"}],
-        {"n": "$0", "m": "$1"},
-    ) == ["$0", ("$1",), {"extent": "$0 + $1"}]
-
-    projection = [
-        ProjectionMapping(native_position=0, python_position=1),
-        ProjectionMapping(native_position=1, python_position=None),
-        ProjectionMapping(native_position=2, result_position=0),
-        ProjectionMapping(native_position=3, python_position=None),
-        ProjectionMapping(
-            native_position=4,
-            value_kind="shape",
-            value={"value": ["n", ("m",)], "dim": {"extent": "n + m"}},
-        ),
-    ]
-
-    key = semantic_models._projection_key(projection, {"n": "$0", "m": "$1"})
-
-    assert len(key) == len(projection)
-    assert key[-1][4] == (("dim", (("extent", "$0 + $1"),)), ("value", ("$0", ("$1",))))
 
 
 def test_scalar_descriptors_record_native_projection_kind():

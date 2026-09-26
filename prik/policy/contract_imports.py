@@ -99,7 +99,18 @@ class _ContractImports:
                 )
         for origin, source, local, written, kind in sorted(set(self._references())):
             self._bind(origin, source, local, written=written, verbatim=kind in {"prototype", "namespace"})
+        self._complete_qualified_type_names()
         return self._statements
+
+    def _complete_qualified_type_names(self) -> None:
+        """Write procedure-local type names using the declaring contract's spelling."""
+        for semantic_type in models._module_semantic_types(self._module):
+            reference = imported_type_reference(semantic_type)
+            if reference is None or not reference.procedure_local:
+                continue
+            name = contract_name_for_source(self._completed.get(reference.module.casefold()), reference.name)
+            if name is not None:
+                semantic_type.metadata[models.CONTRACT_NAME_METADATA] = f"{reference.module}.{name}"
 
     def _stated(self, statement: str | models.SemanticImport) -> None:
         """Carry one import the module states itself."""

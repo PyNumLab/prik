@@ -114,7 +114,12 @@ def test_scalar_accessor_policies_are_complete_before_ir_lowering():
         assert setter.setter_action is SetterAction.WRITE_THROUGH
 
 
-def test_scalar_descriptor_accessor_policies_are_nullable_snapshots():
+def test_scalar_descriptor_fields_snapshot_while_module_variables_lend_current_storage():
+    """A descriptor field copies its value; a module descriptor lends its current storage.
+
+    A module variable's setter assigns through the descriptor instead: an
+    allocatable is allocated when needed and a pointer writes its target.
+    """
     module = parse_pyi_text(
         """
 alloc_value: Allocatable[Float64]
@@ -129,29 +134,33 @@ class point:
 
     complete_semantic_policies(module)
 
-    variables = [
-        module.variables[0],
-        module.variables[1],
-        module.classes[0].fields[0],
-        module.classes[0].fields[1],
-    ]
-    for variable in variables:
-        storage = variable.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA]
-        getter = variable.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
-        setter = variable.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA]
+    alloc_module, ptr_module = module.variables
+    alloc_field, ptr_field = module.classes[0].fields
+    for field in (alloc_field, ptr_field):
+        storage = field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA]
+        getter = field.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
         assert storage.transfer is TransferMode.SNAPSHOT_COPY
         assert storage.nullable is True
         assert storage.codegen_action is CodegenAction.SNAPSHOT_COPY
         assert getter.transfer is TransferMode.SNAPSHOT_COPY
         assert getter.nullable is True
-        assert getter.codegen_action is CodegenAction.SNAPSHOT_COPY
-        assert setter.setter_action is SetterAction.REJECT_REPLACEMENT
-
-    alloc_module, ptr_module, alloc_field, ptr_field = variables
-    assert alloc_module.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.HEAP
+        assert (
+            field.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA].setter_action is SetterAction.REJECT_REPLACEMENT
+        )
     assert alloc_field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.HEAP
-    assert ptr_module.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.ALIAS
     assert ptr_field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.ALIAS
+
+    for variable, assignment in (
+        (alloc_module, AssignmentMode.ALLOCATING_COPY),
+        (ptr_module, AssignmentMode.TARGET_COPY),
+    ):
+        getter = variable.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
+        setter = variable.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA]
+        assert getter.transfer is TransferMode.BORROWED_VIEW
+        assert getter.nullable is True
+        assert getter.storage_mode is StorageMode.ALIAS
+        assert setter.setter_action is SetterAction.WRITE_THROUGH
+        assert setter.assignment_mode is assignment
 
 
 def test_scalar_descriptor_function_boundaries_use_normal_scalar_values():

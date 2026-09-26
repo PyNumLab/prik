@@ -31,7 +31,8 @@ def test_direct_bind_c_callbacks_receive_writable_rank_zero_storage(tmp_path: Pa
     """The projection must work where no Fortran bridge exists at all.
 
     A direct entry point calls the trampoline as a plain C function pointer, so
-    writable storage has to be the binding's doing rather than an adapter's.
+    writable storage has to be the binding's doing rather than an adapter's,
+    and scalar callback storage must not drag a bridge onto the direct route.
     """
     module = _direct_module(tmp_path)
     observed = {}
@@ -48,11 +49,4 @@ def test_direct_bind_c_callbacks_receive_writable_rank_zero_storage(tmp_path: Pa
     assert module.drive_update(update, np.float64(5.0)) == np.float64(10.0)
     assert module.drive_emit(emit) == np.float64(42.0)
     assert observed == {"writeable": True, "incoming": 5.0, "emit_writeable": True}
-
-
-def test_direct_bind_c_callback_storage_adds_no_fortran_bridge(tmp_path: Path):
-    """Scalar callback storage must not drag a bridge onto the direct route."""
-    _direct_module(tmp_path)
-    generated = {path.name for path in (tmp_path / "build").glob("*_wrapper.f90")}
-
-    assert generated == set()
+    assert not list((tmp_path / "build").glob("*_wrapper.f90"))

@@ -4,15 +4,15 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
 
-from prik.parsers.c.models import CFile, CMacro, CParseError, CSourceLocation, c_model_to_dict
+from prik.preprocessing.languages import C_SOURCE_SUFFIXES, expand_source_paths
+from prik.parsers.c.models import CFile, CParseError, c_model_to_dict
 from prik.parsers.c.parser import CParser
+from prik.parsers.c.sources import parse_c_source
+from prik.preprocessing import PreprocessingConfig
 
 
-_C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -24,89 +24,21 @@ def _diagnostic_color_enabled(*, disabled: bool) -> bool:
     return not disabled and "NO_COLOR" not in os.environ
 
 
-def _collect_c_extensions(path: Path) -> list[Path]:
-    return sorted(p for p in path.rglob("*") if p.is_file() and p.suffix.lower() in _C_SOURCE_SUFFIXES)
-
-
 def expand_c_paths(paths: list[str]) -> list[Path]:
-    expanded: list[Path] = []
-    for raw in paths:
-        p = Path(raw)
-        if p.is_dir():
-            expanded.extend(_collect_c_extensions(p))
-        else:
-            expanded.append(p)
-    return sorted(set(expanded))
-
-
-def attach_preprocessing_recipe(parsed: CFile, preprocessing_recipe: dict[str, Any] | None) -> None:
-    """Attach compiler recipe side-channel facts to a parsed C file."""
-
-    parsed.preprocessing_recipe = preprocessing_recipe
-    if not preprocessing_recipe:
-        return
-    existing = {
-        (
-            macro.name,
-            macro.source_location.filename if macro.source_location else None,
-            macro.source_location.line if macro.source_location else None,
-        )
-        for macro in parsed.macros
-    }
-    for item in preprocessing_recipe.get("macros") or []:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name")
-        if not isinstance(name, str) or not name:
-            continue
-        location = CSourceLocation(
-            filename=item.get("path") if isinstance(item.get("path"), str) else None,
-            line=item.get("line") if isinstance(item.get("line"), int) else None,
-            column=1,
-        )
-        key = (name, location.filename, location.line)
-        if key in existing:
-            continue
-        parsed.macros.append(
-            CMacro(
-                name=name,
-                value=item.get("value") if isinstance(item.get("value"), str) else None,
-                function_like=bool(item.get("function_like")),
-                source_location=location,
-            )
-        )
-        existing.add(key)
+    """Return the C inputs the named files and directories hold, in the caller's order."""
+    return list(expand_source_paths(paths, C_SOURCE_SUFFIXES))
 
 
 def parse_c_report(
     paths: list[str],
-    *,
-    include_dirs: Sequence[str | Path] | None = None,
-    preprocessing: str = "raw",
-    source_loader: Callable[[Path], str | tuple[str, dict[str, Any] | None]] | None = None,
+    preprocessing: PreprocessingConfig | None = None,
 ) -> dict[str, dict]:
-    out: dict[str, dict] = {}
+    """Parse each named C input and return its report, keyed by path."""
+    preprocessing = preprocessing or PreprocessingConfig()
     parser = CParser()
-    for p in expand_c_paths(paths):
-        if source_loader is None:
-            parsed = parser.parse_file(
-                p,
-                filename=str(p),
-                include_dirs=include_dirs,
-                preprocessing=preprocessing,
-            )
-        else:
-            loaded = source_loader(p)
-            source, preprocessing_recipe = loaded if isinstance(loaded, tuple) else (loaded, None)
-            parsed = parser.parse_file(
-                source,
-                filename=str(p),
-                include_dirs=include_dirs,
-                preprocessing=preprocessing,
-            )
-            attach_preprocessing_recipe(parsed, preprocessing_recipe)
-        out[str(p)] = c_model_to_dict(parsed)
-    return out
+    return {
+        str(path): c_model_to_dict(parse_c_source(path, preprocessing, parser=parser)) for path in expand_c_paths(paths)
+    }
 
 
 def _label_items(items: list[object], *, keys: tuple[str, ...], fallback: str) -> list[str]:

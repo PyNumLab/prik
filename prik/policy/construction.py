@@ -74,6 +74,7 @@ from prik.policy.models import (
     EntrypointProjectionAction,
     OptionalMode,
     ArgumentHandoffMode,
+    ScalarActualMode,
     ArgumentConversionPhase,
     BridgeDataAction,
     DirectResultABI,
@@ -92,7 +93,7 @@ from prik.policy.models import (
     CallbackThreadAction,
     CallbackGILAction,
     CallbackFatalAction,
-    ModuleArrayAddressMechanism,
+    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
     DerivedFieldAccessMechanism,
@@ -1153,13 +1154,13 @@ def _ordinary_array_module_variable_policy(
         supported=not blockers,
         blockers=tuple(blockers),
         array=array,
-        array_address=address,
+        storage_address=address,
     )
 
 
 def _ordinary_array_module_address_mechanism(
     variable: models.SemanticVariable,
-) -> ModuleArrayAddressMechanism:
+) -> ModuleStorageAddressMechanism:
     """Select how the bridge obtains one fixed module array's base address.
 
     Addressable storage names itself directly.  An ordinary declaration cannot,
@@ -1168,8 +1169,8 @@ def _ordinary_array_module_address_mechanism(
     storage; only the route to its address differs.
     """
     if variable.semantic_type.metadata.get("aliased"):
-        return ModuleArrayAddressMechanism.TARGET_ADDRESS
-    return ModuleArrayAddressMechanism.CAPTURED_ADDRESS
+        return ModuleStorageAddressMechanism.TARGET_ADDRESS
+    return ModuleStorageAddressMechanism.CAPTURED_ADDRESS
 
 
 def _constant_array_module_variable_policy(
@@ -1271,6 +1272,16 @@ def _scalar_module_variable_policy(
         ),
         supported=not blockers,
         blockers=tuple(blockers),
+        storage_address=(
+            ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            if getter_action
+            in {
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
+            }
+            else None
+        ),
     )
 
 
@@ -2822,7 +2833,7 @@ def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
         reasons.append(f"argument {argument.name!r} requires a specialized native handoff")
     if argument.transformations:
         reasons.append(f"argument {argument.name!r} requires representation transformation")
-    if argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+    if argument.scalar_logical_abi in {ScalarLogicalABI.NATIVE_KIND_COPY, ScalarLogicalABI.NATIVE_KIND_STORAGE}:
         reasons.append(f"argument {argument.name!r} uses non-C Boolean storage")
     if argument.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
         reasons.append(f"argument {argument.name!r} has no completed C passing convention")
@@ -3188,6 +3199,7 @@ def _argument_policy(
             rank=int(argument.semantic_type.rank or 0),
             scalar_logical_abi=scalar_logical_abi,
             scalar_native_type=scalar_native_type,
+            native_storage_c_type=_logical_storage_c_type(scalar_logical_abi, argument),
             array_logical_abi=array_logical_abi,
             array_native_type=array_native_type,
             optional=argument.optional,
@@ -3199,6 +3211,14 @@ def _argument_policy(
             nullable=boundary.nullable,
             writable=boundary.writable,
             descriptor_boundary=boundary.descriptor_boundary,
+            scalar_actual_mode=_scalar_actual_mode(
+                argument,
+                boundary,
+                entrypoint_passing,
+                native_slot,
+                scalar_logical_abi,
+            ),
+            scalar_storage_writable=decision.mutates_native,
             ownership=decision,
             codegen_action=boundary.codegen_action,
             python_barrier_action=boundary.python_barrier_action,
@@ -3242,6 +3262,7 @@ def _argument_policy(
                         if argument.semantic_type.storage is not None
                         and argument.semantic_type.storage.array is not None
                         and argument.semantic_type.storage.array.contiguous
+                        and argument.semantic_type.storage.array.category != "assumed_size"
                         else None,
                     )
                     if attr is not None
@@ -3252,6 +3273,41 @@ def _argument_policy(
         ),
         blockers,
     )
+
+
+def _scalar_actual_mode(
+    argument: models.SemanticArgument,
+    boundary: _ArgumentBoundaryPolicy,
+    passing: EntrypointPassingConvention,
+    slot: NativeCallSlotPolicy | None,
+    logical_abi: ScalarLogicalABI,
+) -> ScalarActualMode | None:
+    """Complete dual scalar/value-or-storage input acceptance before planning.
+
+    The dummy's declared ``VALUE`` attribute selects the transport, as it does
+    for a ``bind(C)`` procedure called directly: a bridge that receives the
+    value by reference still hands the native procedure a copy, so the caller's
+    storage is never borrowed for it. An ``Immutable`` value is copied the same
+    way, so the native update reaches Python only as the replacement result. A
+    logical copied through ``c_bool`` has no storage of its native width to
+    lend, so it accepts values only.
+    """
+    if int(argument.semantic_type.rank or 0) != 0 or boundary.descriptor_boundary:
+        return None
+    by_value = _argument_passes_by_value(argument, slot) or (
+        argument.semantic_type.metadata.get(models.PYTHON_VALUE_MUTABILITY_METADATA) == models.PYTHON_VALUE_IMMUTABLE
+    )
+    if boundary.python_barrier_action is PythonBarrierAction.SCALAR_VALUE:
+        if logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            return None
+        if by_value or passing is EntrypointPassingConvention.C_VALUE:
+            return ScalarActualMode.NUMERIC_VALUE
+        if passing in {EntrypointPassingConvention.POINTER_REFERENCE, EntrypointPassingConvention.NULLABLE_POINTER}:
+            return ScalarActualMode.NUMERIC_REFERENCE
+        return None
+    if boundary.python_barrier_action is PythonBarrierAction.STRING_VALUE and _character_length(argument.semantic_type):
+        return ScalarActualMode.CHARACTER_VALUE if by_value else ScalarActualMode.CHARACTER_REFERENCE
+    return None
 
 
 def _callback_handoff_policy(argument: models.SemanticArgument) -> CallbackHandoffPolicy | None:
@@ -3718,6 +3774,7 @@ def _hidden_result_candidate(
         argument,
         bridge_data_action,
         bridge_copy_reason,
+        hidden_result=True,
     )
     if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
         blockers = (*blockers, f"{label} has no completed bridge data action")
@@ -4187,8 +4244,9 @@ def _hidden_result_native_call_slot_policy(
         argument,
         bridge_data_action,
         bridge_copy_reason,
+        hidden_result=True,
     )
-    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument, hidden_result=True)
     array_logical_abi, array_native_type = _array_logical_argument_abi(argument)
     blockers = (
         (f"native-call result slot {native_position} has no completed bridge data action",)
@@ -6966,20 +7024,29 @@ def _scalar_module_getter_blockers(
     """Validate one completed scalar or literal-string getter."""
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
-    character_value = getter_action is ModuleGetterAction.CHARACTER_VALUE
-    # A descriptor character module variable reaches Python through the same
-    # nullable snapshot a descriptor scalar uses, carrying a runtime width.
-    character_snapshot = (
-        getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT and variable.semantic_type.name == "String"
+    character_value = getter_action in {ModuleGetterAction.CHARACTER_VALUE, ModuleGetterAction.NATIVE_CHARACTER_VIEW}
+    # A descriptor character getter reports its current width with the address.
+    character_descriptor = (
+        getter_action in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
+        and variable.semantic_type.name == "String"
     )
-    string_getter = literal_string or character_value
-    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter or character_snapshot):
+    string_getter = literal_string or character_value or character_descriptor
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter):
         blockers.append("module variable is not a primitive rank-zero scalar")
     if character_value and _character_length(variable.semantic_type) is None:
         blockers.append("character module variable requires one declared length")
     expected_getter_kind = ObjectKind.STRING if string_getter else ObjectKind.SCALAR
     supported_getter_actions = (
-        {CodegenAction.COPY_OUT} if string_getter else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
+        {CodegenAction.BORROWED_VIEW}
+        if getter_action
+        in {
+            ModuleGetterAction.NATIVE_SCALAR_VIEW,
+            ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+            ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
+        }
+        else {CodegenAction.COPY_OUT}
+        if string_getter
+        else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY, CodegenAction.BORROWED_VIEW}
     )
     if getter is None:
         blockers.append("module variable is missing completed getter policy")
@@ -6987,6 +7054,8 @@ def _scalar_module_getter_blockers(
         blockers.append("module variable getter is not a supported scalar policy")
     elif getter.codegen_action not in supported_getter_actions:
         blockers.append(f"module variable getter action {getter.codegen_action.value!r} is unsupported")
+    if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW and variable.semantic_type.name == "String":
+        blockers.append("native scalar storage view requires a primitive numeric type")
     return tuple(blockers)
 
 
@@ -7043,6 +7112,12 @@ def _scalar_module_initializer_blockers(
     return tuple(blockers)
 
 
+_SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS = {
+    "allocatable": {AssignmentMode.ALLOCATING_COPY},
+    "pointer": {AssignmentMode.TARGET_COPY},
+}
+
+
 def _scalar_module_setter_blockers(
     setter: OwnershipDecision,
     descriptor_kind: str | None,
@@ -7054,8 +7129,12 @@ def _scalar_module_setter_blockers(
             return ("scalar constant must omit native setter assignment",)
         return ()
     if setter.setter_action is SetterAction.WRITE_THROUGH:
-        if setter.assignment_mode not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
-            return ("write-through scalar setter requires value-copy native assignment",)
+        expected_assignments = _SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS.get(
+            descriptor_kind,
+            {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY},
+        )
+        if setter.assignment_mode not in expected_assignments:
+            return (f"write-through scalar setter cannot use {setter.assignment_mode.value!r} native assignment",)
         expected_python_action = (
             PythonBarrierAction.STRING_VALUE if setter.kind is ObjectKind.STRING else PythonBarrierAction.SCALAR_VALUE
         )
@@ -7079,12 +7158,18 @@ def _scalar_module_getter_action(
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
+    if _scalar_module_descriptor_kind(variable) is not None:
+        return ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
+    if variable.semantic_type.metadata.get("native_storage") and _is_fixed_length_character_scalar(variable):
+        return ModuleGetterAction.NATIVE_CHARACTER_VIEW
     if _is_fixed_length_character_scalar(variable):
         # A character value cannot cross the C ABI by value, so it copies
         # through a fixed-width byte buffer the way a character field does.
         return ModuleGetterAction.CHARACTER_VALUE
+    if variable.semantic_type.metadata.get("native_storage"):
+        return ModuleGetterAction.NATIVE_SCALAR_VIEW
     return ModuleGetterAction.DIRECT_VALUE
 
 
@@ -7367,10 +7452,21 @@ def _fortran_logical_native_type(argument: models.SemanticArgument) -> str | Non
     return source_type
 
 
+# Integer storage of each wider logical's own width, as its NumPy arrays use.
+_LOGICAL_STORAGE_C_TYPES = {"Bool16": "int16_t", "Bool32": "int32_t", "Bool64": "int64_t"}
+
+
 def _scalar_logical_argument_abi(
     argument: models.SemanticArgument,
+    *,
+    hidden_result: bool = False,
 ) -> tuple[ScalarLogicalABI, str | None]:
-    """Complete exact native-kind storage for one Fortran logical scalar."""
+    """Complete exact native-kind storage for one Fortran logical scalar.
+
+    A visible dummy wider than ``c_bool`` receives integer storage of its own
+    width, like a logical array element, so nothing is copied. A hidden
+    result converts through ``c_bool`` instead.
+    """
     semantic_type = argument.semantic_type
     if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) != 0:
         return ScalarLogicalABI.NOT_APPLICABLE, None
@@ -7379,15 +7475,21 @@ def _scalar_logical_argument_abi(
         if semantic_type.name in {"Bool", "Bool8"}:
             return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
         native_kind = {"Bool16": 2, "Bool32": 4, "Bool64": 8}.get(semantic_type.name)
-        return (
-            (ScalarLogicalABI.NATIVE_KIND_COPY, f"logical(kind={native_kind})")
-            if native_kind is not None
-            else (ScalarLogicalABI.NATIVE_KIND_COPY, None)
-        )
-    compact = "".join(source_type.casefold().split())
-    if compact == "logical(kind=c_bool)":
+        source_type = f"logical(kind={native_kind})" if native_kind is not None else None
+    elif "".join(source_type.casefold().split()) == "logical(kind=c_bool)":
         return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
-    return ScalarLogicalABI.NATIVE_KIND_COPY, source_type
+    borrows_storage = source_type is not None and semantic_type.name in _LOGICAL_STORAGE_C_TYPES and not hidden_result
+    return (
+        ScalarLogicalABI.NATIVE_KIND_STORAGE if borrows_storage else ScalarLogicalABI.NATIVE_KIND_COPY,
+        source_type,
+    )
+
+
+def _logical_storage_c_type(abi: ScalarLogicalABI, argument: models.SemanticArgument) -> str | None:
+    """Return the integer storage a native-kind logical dummy borrows, if any."""
+    if abi is not ScalarLogicalABI.NATIVE_KIND_STORAGE:
+        return None
+    return _LOGICAL_STORAGE_C_TYPES[argument.semantic_type.name]
 
 
 def _array_logical_argument_abi(
@@ -7410,9 +7512,11 @@ def _logical_argument_bridge_action(
     argument: models.SemanticArgument,
     action: BridgeDataAction,
     reason: str | None,
+    *,
+    hidden_result: bool = False,
 ) -> tuple[BridgeDataAction, str | None]:
     """Select explicit representation copying for a non-C logical argument."""
-    abi, _native_type = _scalar_logical_argument_abi(argument)
+    abi, _native_type = _scalar_logical_argument_abi(argument, hidden_result=hidden_result)
     if abi is ScalarLogicalABI.NATIVE_KIND_COPY:
         return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_SCALAR_KIND_COPY_REASON
     return action, reason
@@ -7588,7 +7692,7 @@ def _array_handoff_policy(
     axes = tuple(str(item) for item in array.axes)
     flatten_python_storage = _array_handoff_flattens_python_storage(array)
     minimum_rank, maximum_rank = _array_handoff_rank_bounds(rank, array.category, flatten_python_storage)
-    if semantic_type.name == "AnyNative" and array.category == "assumed_rank":
+    if semantic_type.name == "AnyNative" and array.category in {"assumed_rank", "assumed_size"}:
         minimum_rank = 0
     order = _array_handoff_order(array.order, array.category)
     entrypoint_abi = _array_entrypoint_abi(

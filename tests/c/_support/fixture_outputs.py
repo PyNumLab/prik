@@ -7,9 +7,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from prik.parsers.c import CParser
-from prik.parsers.c.cli import attach_preprocessing_recipe
+from prik.parsers.c.sources import attach_preprocessing_recipe
 from prik.preprocessing import PreprocessingConfig, preprocess_source
-from prik.semantics.c2ir import c_project_to_semantic_module
+from prik.semantics.c2ir import c_project_to_semantic_modules
 from prik.printers import emit_module
 from tests.c._support.paths import C_DATA_DIR, C_ROOT
 
@@ -70,10 +70,16 @@ def parse_c_fixture_project(paths: list[Path]):
 
 
 def c_semantic_module_for_fixture_project(project_key: Path, paths: list[Path]):
-    return c_project_to_semantic_module(
-        parse_c_fixture_project(paths),
-        name=project_key.as_posix().replace("/", "_"),
-    )
+    """Return the module PRIK converts from the project's primary input.
+
+    Each file is converted with the project as context, exactly as a C route
+    converts it. A build wraps the implementation file, which includes its
+    header, so a project's contract is the ``.c`` file's module when it has
+    one and its header's otherwise.
+    """
+    primary = min(paths, key=_c_fixture_sort_key).relative_to(C_DATA_DIR).as_posix()
+    modules = c_project_to_semantic_modules(parse_c_fixture_project(paths))
+    return next(module for module in modules if module.origin.native_name == primary)
 
 
 def c_pyi_text_for_fixture_project(project_key: Path, paths: list[Path]) -> str:

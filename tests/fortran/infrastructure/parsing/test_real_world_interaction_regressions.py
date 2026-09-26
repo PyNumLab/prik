@@ -3,21 +3,8 @@
 from pathlib import Path
 
 from prik.parsers.fortran import parse_fortran_file
-from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
-from prik.parsers.fortran.models import FortranProcedureSignature
-from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner
-from prik.parsers.fortran.utils import split_csv
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "support"
-
-
-def test_free_form_lexing_preserves_mixed_quotes_and_folds_leading_ampersands():
-    assert strip_comment('print *, "don\'t remove ! here" ! remove me', "free") == ('print *, "don\'t remove ! here" ')
-    assert preprocess_lines(
-        "value = first &\n  & + second &\n  & + third\n",
-        filename="continuation.f90",
-    ) == [("value = first+ second+ third", 1, "value = first &")]
-    assert split_csv("left,") == ["left"]
 
 
 def test_legacy_and_extended_types_keep_initializers_and_declaration_attributes():
@@ -99,15 +86,3 @@ end function evaluate
     assert signature.result is not None
     assert signature.result.kind == "selected_real_kind(12)"
     assert signature.common_variables == ["cache"]
-    assert _SourceUnitScanner.is_executable_statement_start("square(value) = value * value") is False
-
-
-def test_procedure_include_is_recorded_before_signature_finalization():
-    parser = FortranParser()
-    state = parser._new_procedure_scope_state(
-        FortranProcedureSignature("include_contract", "subroutine"),
-        symbols={},
-    )
-
-    assert parser._handle_proc_include_or_import_line("include 'constants.inc'", state) is True
-    assert state.includes == ["'constants.inc'"]

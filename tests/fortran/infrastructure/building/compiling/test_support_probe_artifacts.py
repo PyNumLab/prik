@@ -1,4 +1,4 @@
-"""Artifact-isolation checks for native capability probes used by tests."""
+"""Keep compiler capability probes isolated from the invoking test session."""
 
 from pathlib import Path
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
+from tests.fortran._support.wrapper_build import FAULT_INJECTION_C_FLAGS, _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DESCRIPTOR_SOURCE = FIXTURES / "native" / "fstring_descriptors_f90.f90"
@@ -14,24 +14,27 @@ CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
 
-@pytest.fixture
-def compiled_descriptor_module(pyi_parity_build_mode: str, tmp_path: Path):
+@pytest.fixture(scope="module", params=("source", "generated-pyi"), ids=("source", "generated-pyi"))
+def compiled_descriptor_module(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory):
     """Build the same module from Fortran source and from its generated contract.
 
     Every descriptor form here has a contract spelling, so both routes must
     reach the same runtime behavior; building only from source would hide a
     contract that no longer describes the procedure it was generated from.
+    Each route is built once for the module: the calls below leave no native
+    state behind, so the tests share one extension per route.
     """
     return _build_source_or_generated_pyi_and_import(
         DESCRIPTOR_SOURCE,
-        tmp_path,
+        tmp_path_factory.mktemp(f"string_descriptors_{request.param}"),
         {
             "bind_c_fstring_descriptors_f90_wrapper.f90",
             "fstring_descriptors_f90_wrapper.c",
             "fstring_descriptors_f90_wrapper.h",
         },
         CONTRACT_FIXTURES / "fstring_descriptors_f90",
-        pyi_parity_build_mode,
+        request.param,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
 
 

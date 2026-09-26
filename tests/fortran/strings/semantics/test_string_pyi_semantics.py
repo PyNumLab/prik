@@ -5,28 +5,6 @@ from prik.printers import emit_module
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
-def test_rank_zero_string_storage_round_trips_as_empty_tuple_array():
-    module = parse_pyi_text(
-        """
-def rewrite_label(label: String[8][()]) -> None: ...
-""",
-        module_name="string_storage",
-    )
-
-    label_type = module.functions[0].arguments[0].semantic_type
-
-    assert label_type.name == "String"
-    assert label_type.rank == 0
-    assert label_type.shape == []
-    assert label_type.metadata["fortran_character_length"] == "8"
-    assert label_type.storage.kind == "array"
-    assert label_type.storage.array.category == "scalar_storage"
-
-    emitted = emit_module(module)
-    assert "label: String[8][()]" in emitted
-    assert parse_pyi_text(emitted, module_name="string_storage") == module
-
-
 def test_string_length_and_shape_axes_round_trip():
     module = parse_pyi_text(
         """

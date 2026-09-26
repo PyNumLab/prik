@@ -1563,11 +1563,14 @@ class _PyiAstParser:
         if generic_name is None:
             return identity
         compact = re.sub(r"\s+", "", generic_name).casefold()
-        allowed_overrides = {
-            "__eq__": {"operator(==)", "operator(.eq.)", "operator(.eqv.)"},
-            "__ne__": {"operator(/=)", "operator(.ne.)", "operator(.neqv.)"},
-        }
-        if compact not in allowed_overrides.get(method_name, {identity[1].casefold()}):
+        canonical = identity[1].casefold()
+        # A comparison may be spelled with its dotted keyword; the logical
+        # equivalence operators also back equality on Boolean operands.
+        dotted = {"==": ".eq.", "/=": ".ne.", "<": ".lt.", "<=": ".le.", ">": ".gt.", ">=": ".ge."}
+        token = canonical.removeprefix("operator(").removesuffix(")")
+        allowed = {canonical, *((f"operator({dotted[token]})",) if token in dotted else ())}
+        allowed |= {"__eq__": {"operator(.eqv.)"}, "__ne__": {"operator(.neqv.)"}}.get(method_name, set())
+        if compact not in allowed:
             raise ValueError(f"overload generic {generic_name!r} is incompatible with method {method_name!r}")
         return identity[0], generic_name
 
@@ -2525,18 +2528,7 @@ class _PyiAstParser:
         ordinary constraints while contradictions raise immediately.
         """
         if name in {"ORDER_C", "ORDER_F", "ORDER_ANY"}:
-            array = self._require_array_storage(semantic_type)
-            if array.rank is None or array.rank <= 1:
-                raise ValueError(f"{name} requires a multidimensional array")
-            expected_order = self._flat_array_order(array.source_shape, array.rank)
-            if expected_order is not None and name != expected_order:
-                raise ValueError(f"{name} conflicts with {expected_order} implied by Flat placement")
-            default_order = self._array_order_for_dimensions(array.category, array.rank, array.source_shape)
-            if expected_order is None and name == default_order:
-                raise ValueError(
-                    f"{name} is implicit for {self.native_language} semantic .pyi contracts; remove the annotation"
-                )
-            array.order = name
+            self._apply_array_order_metadata(semantic_type, name)
             return True
         if name == "COPY_F":
             self._require_array_storage(semantic_type).copy_order = "ORDER_F"
@@ -2575,6 +2567,21 @@ class _PyiAstParser:
             semantic_type.metadata["fortran_polymorphic"] = True
             return True
         return False
+
+    def _apply_array_order_metadata(self, semantic_type: SemanticType, name: str) -> None:
+        """Validate one explicit order against the declaration's shape and default."""
+        array = self._require_array_storage(semantic_type)
+        if array.rank is None or array.rank <= 1:
+            raise ValueError(f"{name} requires a multidimensional array")
+        expected_order = self._flat_array_order(array.source_shape, array.rank)
+        if expected_order is not None and name != expected_order:
+            raise ValueError(f"{name} conflicts with {expected_order} implied by Flat placement")
+        default_order = self._array_order_for_dimensions(array.category, array.rank, array.source_shape)
+        if expected_order is None and name == default_order:
+            raise ValueError(
+                f"{name} is implicit for {self.native_language} semantic .pyi contracts; remove the annotation"
+            )
+        array.order = name
 
     @staticmethod
     def _validate_array_copy_metadata(semantic_type: SemanticType) -> None:
@@ -3799,7 +3806,14 @@ class _ModuleVisitor(ClassVisitor):
 
     def _visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Convert a module variable declaration."""
-        self.parser.module.variables.append(self.parser.ann_assign(node))
+        variable = self.parser.ann_assign(node)
+        storage = variable.semantic_type.storage
+        if storage is not None and storage.array is not None and storage.array.category == SCALAR_STORAGE_CATEGORY:
+            if self.parser.native_language != "fortran":
+                raise ValueError("rank-zero module storage is only supported for Fortran")
+            variable.semantic_type.storage = None
+            variable.semantic_type.metadata["native_storage"] = True
+        self.parser.module.variables.append(variable)
 
     def _visit_Assign(self, node: ast.Assign) -> None:
         """Record the list of names this contract states that it publishes."""
@@ -4046,14 +4060,26 @@ def _external_module_candidates(module_name: str) -> tuple[str, ...]:
 
 
 def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str, str], SemanticPrototype]:
-    """Index every prototype name a contract module binds, declared or re-exported.
+    """Index every prototype name a contract module binds, declared or re-exported."""
+    declared = {
+        (module.name, prototype.name): (module.name, prototype) for module in modules for prototype in module.prototypes
+    }
+    return {key: declaration for key, (_module, declaration) in _bound_with_reexports(modules, declared).items()}
 
-    A module that imports a prototype and publishes it binds that name without
-    declaring it, so a consumer importing it from there must still resolve to
-    the declaring module.  Repeating to a fixed point follows a chain of any
-    length.
+
+def _bound_with_reexports(
+    modules: list[SemanticModule],
+    declared: dict[tuple[str, str], tuple[str, object]],
+) -> dict[tuple[str, str], tuple[str, object]]:
+    """Index every name a contract module binds to a declaration, declared or re-exported.
+
+    ``declared`` maps ``(module, name)`` to ``(declaring module, declaration)``.
+    A module that imports a declaration and publishes it binds that name
+    without declaring it, so a consumer importing it from there must still
+    resolve to the declaring module. Repeating to a fixed point follows a
+    chain of any length.
     """
-    resolved = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    resolved = dict(declared)
     changed = True
     while changed:
         changed = False
@@ -4065,16 +4091,16 @@ def _prototypes_with_reexports(modules: list[SemanticModule]) -> dict[tuple[str,
                     local_name = item.target or item.source
                     if (module.name, local_name) in resolved:
                         continue
-                    prototype = next(
+                    found = next(
                         (
-                            found
+                            match
                             for candidate in _external_module_candidates(imported.module)
-                            if (found := resolved.get((candidate, item.source))) is not None
+                            if (match := resolved.get((candidate, item.source))) is not None
                         ),
                         None,
                     )
-                    if prototype is not None:
-                        resolved[(module.name, local_name)] = prototype
+                    if found is not None:
+                        resolved[(module.name, local_name)] = found
                         changed = True
     return resolved
 
@@ -4119,7 +4145,16 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     classes are marked ``wrapped`` or ``opaque``.  The same list is returned for
     pipeline chaining; absent external definitions remain opaque references.
     """
-    definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
+    # A class imported through a module that re-exports it is the class its
+    # declaring module defines, so the reference names that module.
+    definitions = _bound_with_reexports(
+        modules,
+        {
+            (module.name, declaration.name): (module.name, declaration)
+            for module in modules
+            for declaration in module.classes
+        },
+    )
     declared_class_names = {
         module.name: frozenset(declaration.name for declaration in module.classes) for module in modules
     }
@@ -4132,7 +4167,20 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
                 continue
             if _bind_referenced_prototype(semantic_type, ref, prototypes, declared_class_names):
                 continue
-            declaration = definitions.get((ref.get("origin_module"), ref.get("name")))
+            candidates = _external_module_candidates(str(ref.get("origin_module") or ""))
+            found = next(
+                (
+                    match
+                    for candidate in candidates
+                    if (match := definitions.get((candidate, ref.get("name")))) is not None
+                ),
+                None,
+            )
+            declaration = None
+            if found is not None:
+                declaring_module, declaration = found
+                if declaring_module not in candidates:
+                    ref["origin_module"] = declaring_module
             wrapped = declaration is not None and (
                 not isinstance(declaration, SemanticClass) or "Opaque" not in declaration.base_classes
             )

@@ -12,14 +12,27 @@ from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from pathlib import Path
 
 from prik import __version__
-from prik.parsers.c.cli import attach_preprocessing_recipe, expand_c_paths, format_c_report, parse_c_report
+from prik.parsers.c.cli import expand_c_paths, format_c_report, parse_c_report
+from prik.parsers.c.sources import parse_c_source
 from prik.parsers.c.models import CParseError
 from prik.parsers.c.parser import CParser
-from prik.parsers.fortran.cli import _format_report, _limit_items
+from prik.parsers.fortran.cli import _format_report, _limit_items, parsed_file_report
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.c2ir import c_project_to_semantic_modules, select_c_export_functions
-from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.pipeline.sources import FortranTypeProbe, discover_fortran_sources, fortran_sources_to_semantic_modules
+from prik.preprocessing import read_fortran_source
+from prik.preprocessing.languages import (
+    C_IMPLEMENTATION_SUFFIXES,
+    C_SOURCE_SUFFIXES,
+    FORTRAN_SOURCE_SUFFIXES,
+    MissingSourceError,
+    SourceInputError,
+    expand_source_paths,
+    is_c_source,
+    is_fortran_source,
+    validated_source_paths,
+)
 from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
     probe_c_standard_types_cached,
@@ -37,16 +50,13 @@ from prik.pipeline.type_mapping_report import (
 from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
-    run_compiler_preprocessor_with_recipe,
     validate_macro_name,
 )
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
-_FORTRAN_SOURCE_SUFFIXES = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
-_C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
 _SOURCE_SUFFIXES_BY_LANGUAGE = {
-    "fortran": _FORTRAN_SOURCE_SUFFIXES,
-    "c": _C_SOURCE_SUFFIXES,
+    "fortran": FORTRAN_SOURCE_SUFFIXES,
+    "c": C_SOURCE_SUFFIXES,
 }
 _HELP_DIVIDER = "------------------------------ EXAMPLES ------------------------------"
 _TOP_LEVEL_USAGE = (
@@ -236,34 +246,13 @@ def _to_dict_no_parent(obj):
     return obj
 
 
-def _collect_extensions(path: Path) -> list[Path]:
-    return sorted(p for p in path.rglob("*") if p.suffix.lower() in _FORTRAN_SOURCE_SUFFIXES)
-
-
-def _collect_pyi_extensions(path: Path) -> list[Path]:
-    return sorted(p for p in path.rglob("*.pyi") if p.is_file())
-
-
 def _expand_paths(paths: list[str]) -> list[Path]:
-    expanded: list[Path] = []
-    for raw in paths:
-        p = Path(raw)
-        if p.is_dir():
-            expanded.extend(_collect_extensions(p))
-        else:
-            expanded.append(p)
-    return list(dict.fromkeys(expanded))
+    return list(expand_source_paths(paths, FORTRAN_SOURCE_SUFFIXES))
 
 
 def _expand_pyi_paths(paths: list[str]) -> list[Path]:
-    expanded: list[Path] = []
-    for raw in paths:
-        p = Path(raw)
-        if p.is_dir():
-            expanded.extend(_collect_pyi_extensions(p))
-        elif p.suffix.lower() == ".pyi":
-            expanded.append(p)
-    return sorted(set(expanded))
+    """Return the semantic contracts the named files and directories hold."""
+    return [path for path in expand_source_paths(paths, (".pyi",)) if path.suffix.casefold() == ".pyi"]
 
 
 def _resolve_language(
@@ -299,10 +288,9 @@ def _resolve_language(
                 "pass --language fortran or --language c. Use --help for examples."
             )
 
-        suffix = path.suffix.lower()
-        if suffix in _C_SOURCE_SUFFIXES:
+        if is_c_source(path):
             parser.error(f"C input {path} requires explicit --language c. Use --help for examples.")
-        if suffix not in _FORTRAN_SOURCE_SUFFIXES and suffix != ".pyi":
+        if not is_fortran_source(path) and path.suffix.casefold() != ".pyi":
             parser.error(
                 f"Cannot determine the input language for {path}; "
                 "pass --language fortran or --language c. Use --help for examples."
@@ -310,94 +298,35 @@ def _resolve_language(
     return "fortran"
 
 
-def _fortran_source_for_path(
-    path: Path,
-    preprocessing: PreprocessingConfig,
-) -> tuple[str, dict[str, object] | None]:
-    if preprocessing.uses_compiler:
-        source, recipe = run_compiler_preprocessor_with_recipe(
-            path,
-            language="fortran",
-            config=preprocessing,
-        )
-        return source, recipe.to_dict()
-    return (
-        path.read_text(encoding="utf-8"),
-        preprocessing.fortran_internal_recipe(path),
-    )
-
-
-def _c_source_loader(preprocessing: PreprocessingConfig):
-    if not preprocessing.uses_compiler:
-        return None
-
-    def load(path: Path) -> tuple[str, dict[str, object]]:
-        source, recipe = run_compiler_preprocessor_with_recipe(
-            path,
-            language="c",
-            config=preprocessing,
-        )
-        return source, recipe.to_dict()
-
-    return load
-
-
-def _c_parser_preprocessing_mode(preprocessing: PreprocessingConfig) -> str:
-    return "compiler" if preprocessing.uses_compiler else "raw"
-
-
-def _parse_c_path(
-    parser: CParser,
-    path: Path,
-    preprocessing: PreprocessingConfig,
-):
-    source_loader = _c_source_loader(preprocessing)
-    if source_loader is None:
-        return parser.parse_file(
-            path,
-            filename=str(path),
-            include_dirs=preprocessing.include_dirs,
-            preprocessing=_c_parser_preprocessing_mode(preprocessing),
-        )
-
-    source, preprocessing_recipe = source_loader(path)
-    parsed = parser.parse_file(
-        source,
-        filename=str(path),
-        include_dirs=preprocessing.include_dirs,
-        preprocessing=_c_parser_preprocessing_mode(preprocessing),
-    )
-    attach_preprocessing_recipe(parsed, preprocessing_recipe)
-    return parsed
-
-
 def _parse_c_project(
     paths: list[str],
     preprocessing: PreprocessingConfig,
 ):
     parser = CParser()
-    parsed_files = {str(path): _parse_c_path(parser, path, preprocessing) for path in expand_c_paths(paths)}
+    parsed_files = {str(path): parse_c_source(path, preprocessing, parser=parser) for path in expand_c_paths(paths)}
     return parser._assemble_project(parsed_files)
 
 
 def _parse_report(paths: list[str], preprocessing: PreprocessingConfig | None = None) -> dict[str, dict]:
+    """Parse the named sources as one project and report each file.
+
+    The sources are assembled together, as a build assembles them, so a kind
+    one file declares for another is resolved in the report too.
+    """
     preprocessing = preprocessing or PreprocessingConfig()
-    out: dict[str, dict] = {}
     parser = FortranParser()
+    parsed_files = []
+    recipes = {}
     for p in _expand_paths(paths):
-        code, preprocessing_recipe = _fortran_source_for_path(p, preprocessing)
-        parsed = parser.parse_file(code, filename=str(p))
-        payload = {
-            "signatures": [_to_dict_no_parent(s) for s in parsed.procedures],
-            "types": [_to_dict_no_parent(t) for t in parsed.derived_types],
-            "modules": [_to_dict_no_parent(m) for m in parsed.modules],
-            "submodules": [_to_dict_no_parent(m) for m in parsed.submodules],
-            "programs": [_to_dict_no_parent(m) for m in parsed.programs],
-            "block_data": [_to_dict_no_parent(m) for m in parsed.block_data_units],
-        }
-        if preprocessing_recipe is not None:
-            payload["preprocessing_recipe"] = preprocessing_recipe
-        out[str(p)] = payload
+        text = read_fortran_source(p, preprocessing)
+        recipes[str(p)] = text.recipe
+        parsed_files.append(parser.parse_file(text.source, filename=str(p)))
+    out: dict[str, dict] = {}
+    for parsed in parser._assemble_project(parsed_files).files:
+        payload = parsed_file_report(parsed)
+        if recipes[str(parsed.filename)] is not None:
+            payload["preprocessing_recipe"] = recipes[str(parsed.filename)]
+        out[str(parsed.filename)] = payload
     return out
 
 
@@ -429,25 +358,6 @@ def _c_standard_type_report(
     return probe_c_standard_types_cached(preprocessing).to_dict()
 
 
-def _fortran_probe_options(
-    *,
-    report: FortranTypeProbeReport | None,
-    runner: list[str] | None,
-    cache_dir: str | None,
-    refresh: bool,
-) -> dict[str, object]:
-    options: dict[str, object] = {}
-    if report is not None:
-        options["report"] = report
-    if runner is not None:
-        options["runner"] = runner
-    if cache_dir is not None:
-        options["cache_dir"] = cache_dir
-    if refresh:
-        options["refresh"] = True
-    return options
-
-
 @dataclass(frozen=True)
 class _SemanticPipelineContext:
     paths: list[str]
@@ -460,6 +370,7 @@ class _SemanticPipelineContext:
     refresh_fortran_type_probe: bool = False
     assume_intent_in_scalars: bool = False
     export_symbols: tuple[str, ...] | None = None
+    module_source_dirs: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -472,12 +383,6 @@ class _ParsedSemanticSources:
 class _ConvertedSemanticSources:
     files: tuple[tuple[Path, list[object]], ...]
     available_modules: tuple[object, ...]
-
-
-@dataclass(frozen=True)
-class _SourceSemanticPipeline:
-    parser: Callable[[_SemanticPipelineContext], _ParsedSemanticSources]
-    converter_to_ir: Callable[[_ParsedSemanticSources, _SemanticPipelineContext], list[tuple[Path, list[object]]]]
 
 
 def _source_paths_for_semantic_pipeline(
@@ -501,6 +406,7 @@ def _converted_semantic_files(
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: tuple[str, ...] | None = None,
+    module_source_dirs: tuple[Path, ...] = (),
 ) -> _ConvertedSemanticSources:
     context = _SemanticPipelineContext(
         paths=paths,
@@ -516,27 +422,34 @@ def _converted_semantic_files(
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
         export_symbols=export_symbols,
+        module_source_dirs=module_source_dirs,
     )
-    pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
-    parsed = pipeline.parser(context)
-    converted_files = pipeline.converter_to_ir(parsed, context)
-    available_modules = tuple(module for _path, modules in converted_files for module in modules)
-    if language != "fortran" or export_symbols is None:
-        return _ConvertedSemanticSources(tuple(converted_files), available_modules)
-
-    from prik.semantics.fortran_exports import select_fortran_export_functions
-
-    selection = select_fortran_export_functions(available_modules, export_symbols)
-    selected_by_source = {
-        id(source): selected
-        for source, selected in zip(selection.primary_sources, selection.primary_modules, strict=True)
-    }
-    selected_files = []
-    for path, modules in converted_files:
-        selected_modules = [selected_by_source[id(module)] for module in modules if id(module) in selected_by_source]
-        if selected_modules:
-            selected_files.append((path, selected_modules))
-    return _ConvertedSemanticSources(tuple(selected_files), selection.available_modules)
+    if language == "fortran":
+        source_paths = context.source_paths
+        if module_source_dirs:
+            source_paths = discover_fortran_sources(source_paths, module_source_dirs, preprocessing)
+        sources = fortran_sources_to_semantic_modules(
+            source_paths,
+            preprocessing,
+            probe=FortranTypeProbe(
+                preprocessing,
+                report=fortran_type_report,
+                runner=fortran_type_probe_runner,
+                cache_dir=fortran_type_probe_cache_dir,
+                refresh=refresh_fortran_type_probe,
+            ),
+            assume_intent_in_scalars=assume_intent_in_scalars,
+            export_symbols=export_symbols,
+        )
+        return _ConvertedSemanticSources(
+            tuple((path, list(modules)) for path, modules in sources.files),
+            sources.modules,
+        )
+    converted_files = _convert_c_semantic_sources(_parse_c_semantic_sources(context), context)
+    return _ConvertedSemanticSources(
+        tuple(converted_files),
+        tuple(module for _path, modules in converted_files for module in modules),
+    )
 
 
 def _semantic_report(
@@ -551,6 +464,7 @@ def _semantic_report(
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
     export_symbols: tuple[str, ...] | None = None,
+    module_source_dirs: tuple[Path, ...] = (),
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
     converted = _converted_semantic_files(
@@ -564,34 +478,12 @@ def _semantic_report(
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
         export_symbols=export_symbols,
+        module_source_dirs=module_source_dirs,
     )
     return _semantic_payload_for_converted_files(
         converted.files,
         available_modules=converted.available_modules,
     )
-
-
-def _parse_fortran_source_files(
-    paths: list[Path],
-    preprocessing: PreprocessingConfig,
-):
-    """Parse Fortran sources and apply the parser's shared project resolution.
-
-    Each path is preprocessed and parsed once while retaining its path/model
-    pair. The completed models are then passed together to the parser's project
-    compile-time coordinator. For example, a kind parameter from the first file
-    can resolve a procedure or derived field in the second file without the CLI
-    owning a second resolution algorithm. The ordered ``(path, file)`` pairs
-    are returned for stage reporting.
-    """
-    parser = FortranParser()
-    parsed_files = []
-    for path in paths:
-        code, _preprocessing_recipe = _fortran_source_for_path(path, preprocessing)
-        parsed_files.append((path, parser.parse_file(code, filename=str(path))))
-
-    parser._resolve_project_compile_time_facts([parsed for _path, parsed in parsed_files])
-    return parsed_files
 
 
 def _parse_c_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
@@ -618,69 +510,6 @@ def _convert_c_semantic_sources(
         )
     }
     return [(path, modules_by_source[str(path)]) for path in parsed_sources.source_paths]
-
-
-def _parse_fortran_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
-    if not context.source_paths:
-        return _ParsedSemanticSources(context.source_paths, [])
-    return _ParsedSemanticSources(
-        context.source_paths,
-        _parse_fortran_source_files(list(context.source_paths), context.preprocessing),
-    )
-
-
-def _convert_fortran_semantic_sources(
-    parsed_sources: _ParsedSemanticSources,
-    context: _SemanticPipelineContext,
-) -> list[tuple[Path, list[object]]]:
-    parsed_files = list(parsed_sources.parsed)
-    if not parsed_files:
-        return []
-    wrapped_derived_types = _fortran_wrapped_derived_types(fobj for _p, fobj in parsed_files)
-    probe_options = _fortran_probe_options(
-        report=context.fortran_type_report,
-        runner=context.fortran_type_probe_runner,
-        cache_dir=context.fortran_type_probe_cache_dir,
-        refresh=context.refresh_fortran_type_probe,
-    )
-    project = FortranParser()._assemble_project([fobj for _path, fobj in parsed_files])
-    compile_time_values = _fortran_compile_time_values(project, context.preprocessing, **probe_options)
-    type_facts = _fortran_type_facts(
-        project,
-        context.preprocessing,
-        compile_time_values=compile_time_values,
-        **probe_options,
-    )
-    converted_files = []
-    # A module that imports an abstract interface from another supplied file
-    # must resolve it here, exactly as a multi-file wrapper build does.
-    modules_by_file = {id(fobj): list(fobj.modules) for _p, fobj in parsed_files}
-    for p, fobj in parsed_files:
-        modules = fortran_file_to_semantic_modules(
-            fobj,
-            standalone_module_name=p.stem,
-            compile_time_values=compile_time_values,
-            wrapped_derived_types=wrapped_derived_types,
-            assume_intent_in_scalars=context.assume_intent_in_scalars,
-            sibling_modules=[
-                module for key, modules in modules_by_file.items() if key != id(fobj) for module in modules
-            ],
-            **({"type_facts": type_facts} if type_facts is not None else {}),
-        )
-        converted_files.append((p, modules))
-    return converted_files
-
-
-_SOURCE_SEMANTIC_PIPELINES = {
-    "c": _SourceSemanticPipeline(
-        parser=_parse_c_semantic_sources,
-        converter_to_ir=_convert_c_semantic_sources,
-    ),
-    "fortran": _SourceSemanticPipeline(
-        parser=_parse_fortran_semantic_sources,
-        converter_to_ir=_convert_fortran_semantic_sources,
-    ),
-}
 
 
 def _semantic_payload_for_converted_files(
@@ -889,71 +718,6 @@ def _write_pyi_dependencies(
         path.write_text(text + "\n", encoding="utf-8")
 
 
-def _fortran_wrapped_derived_types(parsed_files) -> set[tuple[str, str]]:
-    return {
-        (dtype.module.lower(), dtype.name.lower())
-        for parsed in parsed_files
-        for module in parsed.modules
-        for dtype in module.derived_types
-        if dtype.module
-    }
-
-
-def _fortran_compile_time_values(
-    parsed,
-    preprocessing: PreprocessingConfig,
-    *,
-    report: FortranTypeProbeReport | None = None,
-    runner: list[str] | None = None,
-    cache_dir: str | None = None,
-    refresh: bool = False,
-) -> dict[str, int] | None:
-    """Evaluate compiler-dependent Fortran values when a compiler is configured."""
-    if report is None and (
-        not isinstance(preprocessing, PreprocessingConfig)
-        or not preprocessing.uses_compiler
-        or not preprocessing.compiler
-    ):
-        return None
-
-    from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
-    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_requirements
-
-    requirements = collect_semantic_compile_time_requirements(parsed)
-    if not requirements:
-        return None
-    probe_options = _fortran_probe_options(report=report, runner=runner, cache_dir=cache_dir, refresh=refresh)
-    return evaluate_fortran_type_requirements(preprocessing, requirements, **probe_options)
-
-
-def _fortran_type_facts(
-    parsed,
-    preprocessing: PreprocessingConfig,
-    *,
-    compile_time_values: dict[str, int] | None = None,
-    report: FortranTypeProbeReport | None = None,
-    runner: list[str] | None = None,
-    cache_dir: str | None = None,
-    refresh: bool = False,
-) -> dict[tuple[str, str | None], dict[str, object]] | None:
-    """Measure compiler-dependent storage for intrinsic types used by one source."""
-    if report is None and (
-        not isinstance(preprocessing, PreprocessingConfig)
-        or not preprocessing.uses_compiler
-        or not preprocessing.compiler
-    ):
-        return None
-
-    from prik.semantics.fortran2ir import collect_fortran_type_storage_requirements
-    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_facts
-
-    requirements = collect_fortran_type_storage_requirements(parsed, compile_time_values=compile_time_values)
-    if not requirements:
-        return None
-    probe_options = _fortran_probe_options(report=report, runner=runner, cache_dir=cache_dir, refresh=refresh)
-    return evaluate_fortran_type_facts(preprocessing, requirements, **probe_options)
-
-
 def _build_preprocessing_config(args: argparse.Namespace, parser: argparse.ArgumentParser) -> PreprocessingConfig:
     """Build and validate the shared preprocessing CLI configuration."""
     defines = list(args.defines or [])
@@ -991,14 +755,6 @@ def _build_preprocessing_config(args: argparse.Namespace, parser: argparse.Argum
     if config.uses_compiler and config.command_template and config.adapter != "command-template":
         parser.error("--preprocess-template requires --preprocessor-adapter command-template")
     return config
-
-
-def _path_is_fortran_source(path: str) -> bool:
-    return Path(path).suffix.lower() in _FORTRAN_SOURCE_SUFFIXES
-
-
-def _path_is_c_source(path: str) -> bool:
-    return Path(path).suffix.lower() == ".c"
 
 
 def _path_is_pyi_contract(path: str) -> bool:
@@ -1078,6 +834,11 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
             "--export-symbols selects the public surface while reading native source; a semantic .pyi "
             "contract already states its public surface in __all__"
         )
+    if getattr(args, "module_source_dirs", None):
+        parser.error(
+            "--module-source-dir finds Fortran module sources while reading native source; a semantic .pyi "
+            "contract already states the modules it declares"
+        )
     if not getattr(args, "external_native_implementation", False) and not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_c_sources", None)
@@ -1116,29 +877,34 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
         getattr(args, "strict_wrapper_names", False)
         or getattr(args, "assume_intent_in_scalars", False)
         or getattr(args, "export_symbols", None)
+        or getattr(args, "module_source_dirs", None)
         or _wrapper_compile_options_used(args)
     ):
         parser.error("--build-manifest replays saved wrapper behavior and compiler flags")
 
 
 def _validate_source_wrapper_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    language = args.language
-    label = "C" if language == "c" else "Fortran"
-    source_check = _path_is_c_source if language == "c" else _path_is_fortran_source
-    if not args.paths:
-        parser.error(
-            f"A wrapper build expects at least one {label} source, source directory, or semantic .pyi contract"
-        )
-    unsupported = [path for path in args.paths if not Path(path).is_dir() and not source_check(path)]
-    if unsupported:
-        parser.error(
-            f"A wrapper build expects recognized {label} source suffixes or one semantic .pyi contract; "
-            f"unsupported input: {unsupported[0]}"
-        )
-    collect = (lambda path: sorted(path.rglob("*.c"))) if language == "c" else _collect_extensions
-    empty_directories = [path for path in args.paths if Path(path).is_dir() and not collect(Path(path))]
-    if empty_directories:
-        parser.error(f"A wrapper build found no recognized {label} sources under: {empty_directories[0]}")
+    label = "C" if args.language == "c" else "Fortran"
+    suffixes = C_IMPLEMENTATION_SUFFIXES if args.language == "c" else FORTRAN_SOURCE_SUFFIXES
+    # The build validates its inputs the same way; this reports misuse early.
+    # A missing file is left to the build, which reports it with its path.
+    try:
+        validated_source_paths(args.paths, suffixes, label=label)
+    except MissingSourceError:
+        pass
+    except SourceInputError as error:
+        if error.reason == "empty":
+            parser.error(
+                f"A wrapper build expects at least one {label} source, source directory, or semantic .pyi contract"
+            )
+        if error.reason == "no_sources":
+            parser.error(f"A wrapper build found no recognized {label} sources under: {error.path}")
+        if error.reason == "unsupported":
+            parser.error(
+                f"A wrapper build expects recognized {label} source suffixes or one semantic .pyi contract; "
+                f"unsupported input: {error.path}"
+            )
+        parser.error(str(error))
     if not getattr(args, "no_compile_input_sources", False):
         return
     if not getattr(args, "external_native_implementation", False) and not (
@@ -1202,7 +968,7 @@ def _validate_c_main_options(args: argparse.Namespace, parser: argparse.Argument
 
 
 def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
-    """Read one fail-closed source-function allowlist from a UTF-8 file."""
+    """Read one fail-closed source-symbol allowlist from a UTF-8 file."""
     source = Path(path)
     try:
         lines = source.read_text(encoding="utf-8").splitlines()
@@ -1232,8 +998,8 @@ def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
                 valid = False
             else:
                 valid = True
-            label = "Fortran module procedure identity"
-            duplicate_label = "Fortran module procedure identity"
+            label = "Fortran module symbol identity"
+            duplicate_label = "Fortran module symbol identity"
         if not valid:
             raise ValueError(f"Invalid {label} in --export-symbols file {source}:{line_number}: {symbol!r}")
         identity = symbol if language == "c" else symbol.casefold()
@@ -1246,7 +1012,7 @@ def _read_export_symbols(path: str | Path, *, language: str) -> tuple[str, ...]:
         locations[identity] = line_number
         symbols.append(symbol)
     if not symbols:
-        label = "C function names" if language == "c" else "Fortran module procedure identities"
+        label = "C function names" if language == "c" else "Fortran module symbol identities"
         raise ValueError(f"--export-symbols file contains no {label}: {source}")
     return tuple(symbols)
 
@@ -1322,7 +1088,18 @@ def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentPa
 
     _validate_output_options(args, parser)
     _complete_export_symbol_options(args, parser)
+    _validate_module_source_dirs(args, parser)
     return args.print_limit
+
+
+def _validate_module_source_dirs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Require existing directories and a Fortran source language for module discovery."""
+    directories = getattr(args, "module_source_dirs", None) or ()
+    if directories and args.language != "fortran":
+        parser.error("--module-source-dir finds Fortran module sources; it does not apply to C")
+    missing = [directory for directory in directories if not Path(directory).is_dir()]
+    if missing:
+        parser.error(f"--module-source-dir is not a directory: {', '.join(missing)}")
 
 
 def _c_type_facts_for_stages(args: argparse.Namespace, preprocessing: PreprocessingConfig):
@@ -1343,6 +1120,8 @@ def _semantic_stage_options(
         options["assume_intent_in_scalars"] = True
     if getattr(args, "_resolved_export_symbols", None) is not None:
         options["export_symbols"] = args._resolved_export_symbols
+    if getattr(args, "module_source_dirs", None):
+        options["module_source_dirs"] = tuple(Path(path) for path in args.module_source_dirs)
     return options
 
 
@@ -1520,12 +1299,7 @@ def _parse_stage_report(args: argparse.Namespace, preprocessing: PreprocessingCo
     if not args.parse:
         return None
     if args.language == "c":
-        return parse_c_report(
-            args.paths,
-            include_dirs=preprocessing.include_dirs,
-            preprocessing=_c_parser_preprocessing_mode(preprocessing),
-            source_loader=_c_source_loader(preprocessing),
-        )
+        return parse_c_report(args.paths, preprocessing)
     return _parse_report(args.paths, preprocessing)
 
 
@@ -1729,6 +1503,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         positional_only=getattr(args, "positional_only", False),
         assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         export_symbols=getattr(args, "_resolved_export_symbols", None),
+        module_source_dirs=getattr(args, "module_source_dirs", None),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         standard_logicals=getattr(args, "standard_logicals", True),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
@@ -2380,12 +2155,22 @@ def _add_semantic_interpretation_options(
         ),
     )
     group.add_argument(
+        "--module-source-dir",
+        dest="module_source_dirs",
+        metavar="DIR",
+        action="append",
+        help=(
+            "Search DIR recursively for the Fortran sources of modules the given sources use, and read "
+            "them too, transitively; repeat to add directories"
+        ),
+    )
+    group.add_argument(
         "--export-symbols",
         metavar="FILE",
         help=(
-            "Select exact reachable C functions or module-qualified Fortran procedures from a UTF-8 "
-            "name file as the source-side public surface; generate --pyi records the corresponding "
-            "Python names in __all__"
+            "Select exact reachable C functions, or module-qualified public Fortran symbols "
+            "(procedures, generics, and module variables), from a UTF-8 name file as the "
+            "source-side public surface; generate --pyi records the corresponding Python names in __all__"
         ),
     )
 
@@ -2630,6 +2415,7 @@ _PIPELINE_DEFAULTS = {
     "public_includes": None,
     "private_includes": None,
     "export_symbols": None,
+    "module_source_dirs": None,
 }
 
 

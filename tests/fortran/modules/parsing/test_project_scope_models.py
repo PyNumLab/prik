@@ -1,10 +1,12 @@
 """Project-level registries, dependencies, and scope model behavior."""
 
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.scope import ScopeUses
-from prik.parsers.fortran.parser import FortranParser
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 
 def test_module_visibility_public_and_private_spec_lines_are_applied():
@@ -53,6 +55,78 @@ end module constants
     assert module.private_symbols == ["epsilon"]
 
 
+def test_separate_parameter_statement_and_bind_c_module_storage_are_preserved():
+    module = parse_fortran_file(
+        """
+module native_constants
+  integer :: limit
+  parameter (limit = 4)
+  integer, bind(c) :: addressable
+end module native_constants
+"""
+    ).modules[0]
+
+    variables = {variable.name: variable for variable in module.variables}
+    assert variables["limit"].is_parameter
+    assert variables["limit"].value == "4"
+    assert not variables["addressable"].is_parameter
+    assert variables["addressable"]._fortran_bind_c
+
+
+@pytest.mark.parametrize(
+    ("implicit", "expected"),
+    [
+        pytest.param("", {"pi": "Float32", "n": "Int32"}, id="default-letter-rules"),
+        pytest.param(
+            "implicit double precision (a-h,o-z), integer(kind=8) (n)",
+            {"pi": "Float64", "n": "Int64"},
+            id="implicit-statement-mapping",
+        ),
+    ],
+)
+def test_separate_parameter_statement_types_an_undeclared_name_by_module_implicit_rules(implicit, expected):
+    module = parse_fortran_file(
+        f"""
+module legacy_constants
+  {implicit}
+  parameter (pi = 3.14159265358979d0, n = 4)
+end module legacy_constants
+"""
+    ).modules[0]
+
+    semantic = fortran_module_to_semantic_module(module)
+    assert {variable.name: variable.semantic_type.name for variable in semantic.variables} == expected
+    assert all(variable.is_parameter for variable in module.variables)
+
+
+@pytest.mark.parametrize("statement", ["implicit none", "implicit none (type)", "implicit none (type, external)"])
+def test_separate_parameter_statement_under_implicit_none_requires_a_declaration(statement: str):
+    with pytest.raises(FortranParseError, match="implicit none is active") as error:
+        parse_fortran_file(
+            f"""
+module strict_constants
+  {statement}
+  parameter (undeclared = 3)
+end module strict_constants
+"""
+        )
+
+    assert error.value.code == "PARSE_UNKNOWN_PARAMETER_TYPE"
+
+
+def test_implicit_none_external_keeps_implicit_typing_for_a_separate_parameter():
+    module = parse_fortran_file(
+        """
+module external_only
+  implicit none (external)
+  parameter (n = 4)
+end module external_only
+"""
+    ).modules[0]
+
+    assert fortran_module_to_semantic_module(module).variables[0].semantic_type.name == "Int32"
+
+
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():
     code = """
 submodule (ancestor_mod:parent_mod) child_mod
@@ -80,9 +154,10 @@ end submodule child_mod
     assert [iface.name for iface in submodule.interfaces] == ["callbacks"]
     assert [proc.name for proc in submodule.procedures] == ["reset"]
 
+    # A nested submodule depends on its direct parent, identified through its ancestor.
     project = parse_fortran_project({"child.f90": code})
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod"}
-    assert "child_mod.reset" in project.procedures
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod"}
+    assert "ancestor_mod:child_mod.reset" in project.procedures
 
 
 def test_project_registry_includes_module_types_interfaces_and_program_dependencies():
@@ -141,9 +216,8 @@ end module ancestor_mod
     )
     (tmp_path / "parent.f90").write_text(
         """
-module parent_mod
-  use ancestor_mod
-end module parent_mod
+submodule (ancestor_mod) parent_mod
+end submodule parent_mod
 """,
         encoding="utf-8",
     )
@@ -169,9 +243,10 @@ end module helper_mod
     project = parse_fortran_project(tmp_path)
 
     assert "ancestor_mod" in project.modules
-    assert "parent_mod" in project.modules
-    assert "child_mod" in project.submodules
-    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
+    assert {"ancestor_mod:parent_mod", "ancestor_mod:child_mod"} <= set(project.submodules)
+    assert project.dependencies["ancestor_mod:child_mod"] == {"ancestor_mod:parent_mod", "helper_mod"}
+    ordered = [Path(parsed.filename).name for parsed in project.files]
+    assert ordered.index("ancestor.f90") < ordered.index("parent.f90") < ordered.index("child.f90")
 
 
 def test_program_contains_and_unnamed_block_data_public_models():
@@ -232,44 +307,37 @@ end program worker
     assert "worker" in project.programs
 
 
-def test_duplicate_program_and_block_data_variables_report_scope_labels():
-    with pytest.raises(FortranParseError, match="Duplicate variable 'status' in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-  integer :: status
-  real :: status
-end program driver
-""",
-            filename="dup_program_var.f90",
-        )
+def test_directory_project_resolves_imported_kinds_from_other_files(tmp_path):
+    """Renamed, chained, and plain imports resolve kinds; declared shapes stay symbolic.
 
-    with pytest.raises(FortranParseError, match="Duplicate variable 'seed' in block data 'init_data'"):
-        parse_fortran_file(
-            """
-block data init_data
-  integer seed
-  real seed
-end block data init_data
-""",
-            filename="dup_block_var.f90",
-        )
-
-
-def test_directory_project_resolves_module_kinds_and_orders_dependencies(tmp_path):
-    (tmp_path / "kinds.f90").write_text(
+    A derived-type component folds its extent, while a dummy keeps the name the
+    source spells; dependency order follows the `use`.
+    """
+    (tmp_path / "precision.f90").write_text(
         """
-module kinds_mod
+module precision_mod
+  integer, parameter :: word = 4
+  integer, parameter :: stride = 2
+  integer, parameter :: wp = word * stride
+  integer, parameter :: wide = wp * stride
   integer, parameter :: rk = 8
-end module kinds_mod
+  integer, parameter :: n = 3
+end module precision_mod
 """,
         encoding="utf-8",
     )
     (tmp_path / "solver.f90").write_text(
         """
 module solver_mod
-  use kinds_mod, only: rk
+  use precision_mod, only: local_wp => wp, stride, local_wide => wide, rk, n
+  type :: sample
+    real(kind=local_wp) :: values(0:n)
+  end type sample
 contains
+  subroutine consume(x, y)
+    real(kind=local_wp), intent(in) :: x(1:stride)
+    complex(kind=local_wide), intent(out) :: y
+  end subroutine consume
   function make_value(x) result(value)
     real(kind=rk), intent(in) :: x(1:rk)
     real(kind=rk) :: value
@@ -280,114 +348,25 @@ end module solver_mod
     )
 
     project = parse_fortran_project(tmp_path)
-    proc = project.procedures["solver_mod.make_value"]
+    consume = project.procedures["solver_mod.consume"]
+    args = {arg.name: arg for arg in consume.arguments}
+    make_value = project.procedures["solver_mod.make_value"]
+    field = project.modules["solver_mod"].derived_types[0].fields[0]
 
-    assert proc.arguments[0].kind == "8"
-    assert proc.arguments[0].shape == ["1:rk"]
-    assert proc.result.kind == "8"
-    assert project.dependencies["solver_mod"] == {"kinds_mod"}
-
-
-def test_directory_project_tracks_renamed_kind_imports_from_other_files(tmp_path):
-    (tmp_path / "precision.f90").write_text(
-        """
-module precision_mod
-  integer, parameter :: word = 4
-  integer, parameter :: stride = 2
-  integer, parameter :: wp = word * stride
-  integer, parameter :: wide = wp * stride
-end module precision_mod
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "solver.f90").write_text(
-        """
-module solver_mod
-  use precision_mod, only: local_wp => wp, stride, local_wide => wide
-contains
-  subroutine consume(x, y)
-    real(kind=local_wp), intent(in) :: x(1:stride)
-    complex(kind=local_wide), intent(out) :: y
-  end subroutine consume
-end module solver_mod
-""",
-        encoding="utf-8",
-    )
-
-    project = parse_fortran_project(tmp_path)
-    proc = project.procedures["solver_mod.consume"]
-    args = {arg.name: arg for arg in proc.arguments}
-
-    assert args["x"].kind == "8"
-    assert args["x"].shape == ["1:stride"]
+    assert (args["x"].kind, args["x"].shape) == ("8", ["1:stride"])
     assert args["y"].kind == "16"
-    assert [(mapping.source, mapping.target) for mapping in ScopeUses(proc.uses).mappings("precision_mod")] == [
+    assert (make_value.arguments[0].kind, make_value.arguments[0].shape, make_value.result.kind) == ("8", ["1:rk"], "8")
+    assert (field.kind, field.shape) == ("8", ["0:3"])
+    assert [(mapping.source, mapping.target) for mapping in ScopeUses(consume.uses).mappings("precision_mod")] == [
         ("wp", "local_wp"),
         ("stride", None),
         ("wide", "local_wide"),
+        ("rk", None),
+        ("n", None),
     ]
     assert project.dependencies["solver_mod"] == {"precision_mod"}
-
-
-def test_project_compile_time_resolution_uses_models_is_idempotent_and_preserves_symbolic_shapes():
-    parser = FortranParser()
-    kinds_file = parser.parse_file(
-        """
-module kinds
-  integer, parameter :: word = 4
-  integer, parameter :: rk = word * 2
-  integer, parameter :: n = 3
-end module kinds
-""",
-        filename="kinds.f90",
-    )
-    consumer_file = parser.parse_file(
-        """
-module records
-  use kinds, only: wp => rk, n
-  type :: sample
-    real(kind=wp) :: values(0:n)
-  end type sample
-contains
-  subroutine consume(values)
-    real(kind=wp), intent(in) :: values(1:n)
-  end subroutine consume
-end module records
-""",
-        filename="records.f90",
-    )
-    kinds_file.source = None
-    consumer_file.source = None
-
-    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
-    field = consumer_file.modules[0].derived_types[0].fields[0]
-    argument = consumer_file.modules[0].procedures[0].arguments[0]
-    first_result = (field.kind, list(field.shape), argument.kind, list(argument.shape))
-
-    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
-
-    assert first_result == ("8", ["0:3"], "8", ["1:n"])
-    assert (field.kind, field.shape, argument.kind, argument.shape) == first_result
-
-
-def test_project_resolves_reexported_intrinsic_kind_renames():
-    project = parse_fortran_project(
-        {
-            "consumer.f90": """
-subroutine consume(x)
-  use fftpack_kind, only: dp => rk
-  real(dp), intent(inout) :: x
-end subroutine consume
-""",
-            "kind.f90": """
-module fftpack_kind
-  use, intrinsic :: iso_fortran_env, only: rk => real64
-end module fftpack_kind
-""",
-        }
-    )
-
-    assert project.procedures["consume"].arguments[0].kind == "real64"
+    ordered = [Path(parsed.filename).name for parsed in project.files]
+    assert ordered.index("precision.f90") < ordered.index("solver.f90")
 
 
 def test_single_file_project_resolves_intrinsic_kind_rename_for_module_variables():
@@ -413,9 +392,16 @@ end module minpack_module
     assert module.procedures[0].result.kind == "real64"
 
 
-def test_project_resolves_submodule_host_associated_kind():
+def test_project_resolves_intrinsic_kind_renames_through_reexports_and_hosts():
+    """A kind renamed from an intrinsic module reaches a `use` of the re-exporting module and a submodule host."""
     project = parse_fortran_project(
         {
+            "consumer.f90": """
+subroutine consume(x)
+  use precision, only: dp => rk
+  real(dp), intent(inout) :: x
+end subroutine consume
+""",
             "implementation.f90": """
 submodule(transform_api) transform_impl
 contains
@@ -444,7 +430,8 @@ end module precision
         }
     )
 
-    procedure = project.submodules["transform_impl"].procedures[0]
+    assert project.procedures["consume"].arguments[0].kind == "real64"
+    procedure = project.submodules["transform_api:transform_impl"].procedures[0]
     assert procedure.arguments[0].kind == "real64"
     assert procedure.result.kind == "real64"
     prototype = project.modules["transform_api"].interfaces[0].procedures[0]
@@ -474,51 +461,38 @@ end submodule child_mod
 
     project = parse_fortran_project(tmp_path)
 
-    assert project.dependencies["child_mod"] == {"parent_mod", "missing_mod"}
+    assert project.dependencies["parent_mod:child_mod"] == {"parent_mod", "missing_mod"}
 
 
-def test_program_and_block_data_scope_errors_use_public_parse_paths():
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-!$omp threadprivate(counter)
-end program driver
-""",
-            filename="program_omp_decl.f90",
-        )
-
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive in block data 'init_data'"):
-        parse_fortran_file(
-            """
-block data init_data
-!$omp threadprivate(seed)
-end block data init_data
-""",
-            filename="block_omp_decl.f90",
-        )
-
-    with pytest.raises(FortranParseError, match="Unknown or unsupported datatype declaration in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-  weirdtype state
-end program driver
-""",
-            filename="program_unknown_decl.f90",
-        )
-
-    with pytest.raises(
-        FortranParseError, match="Unknown or unsupported datatype declaration in block data 'init_data'"
-    ):
-        parse_fortran_file(
-            """
-block data init_data
-  weirdtype seed
-end block data init_data
-""",
-            filename="block_unknown_decl.f90",
-        )
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        pytest.param(
+            "program driver\n  integer :: status\n  real :: status\nend program driver\n",
+            "Duplicate variable 'status' in program 'driver'",
+            id="duplicate-variable-in-program",
+        ),
+        pytest.param(
+            "block data init_data\n  integer seed\n  real seed\nend block data init_data\n",
+            "Duplicate variable 'seed' in block data 'init_data'",
+            id="duplicate-variable-in-block-data",
+        ),
+        pytest.param(
+            "program driver\n!$omp threadprivate(counter)\nend program driver\n",
+            "Unsupported OpenMP declarative directive in program 'driver'",
+            id="openmp-declarative-in-program",
+        ),
+        pytest.param(
+            "block data init_data\n  weirdtype seed\nend block data init_data\n",
+            "Unknown or unsupported datatype declaration in block data 'init_data'",
+            id="unknown-declaration-in-block-data",
+        ),
+    ],
+)
+def test_program_and_block_data_diagnostics_name_their_scope(source: str, message: str):
+    """Each scope-level diagnostic names the program unit kind and name it arose in."""
+    with pytest.raises(FortranParseError, match=message):
+        parse_fortran_file(source, filename="units.f90")
 
 
 def test_project_resolution_folds_fortran_real_literal_integer_parameters():
@@ -572,3 +546,69 @@ end subroutine file_level_worker
         "rk",
         "n",
     ]
+
+
+@pytest.mark.parametrize(
+    ("nature", "kind"),
+    [
+        pytest.param("non_intrinsic", "3", id="user-module-value"),
+        pytest.param("intrinsic", "real64", id="processor-spelling"),
+    ],
+)
+def test_an_imported_kind_constant_follows_the_use_nature(nature: str, kind: str):
+    """A kind named through ``use, intrinsic`` is the processor's, even beside a same-named user module."""
+    project = parse_fortran_project(
+        {
+            "user.f90": "module iso_fortran_env\n  integer, parameter :: real64 = 3\nend module iso_fortran_env\n",
+            "consumer.f90": (
+                f"module consumer\n  use, {nature} :: iso_fortran_env, only: wp => real64\n"
+                "  real(kind=wp) :: v\nend module consumer\n"
+            ),
+        }
+    )
+
+    assert project.modules["consumer"].variables[0].kind == kind
+
+
+def test_same_named_submodules_of_different_ancestors_are_separate_project_scopes():
+    """A submodule name is local to its ancestor, so ``a:impl`` and ``b:impl`` coexist.
+
+    Each is keyed by its identity, depends on its own parent, and resolves
+    kinds through its own ancestor's parameters. A nested child of each does
+    the same through its direct parent.
+    """
+    sources = {}
+    for ancestor, kind in (("a", 4), ("b", 8)):
+        sources[f"{ancestor}.f90"] = f"""
+module {ancestor}
+  integer, parameter :: wp = {kind}
+  interface
+    module subroutine run(x)
+      real(wp), intent(inout) :: x
+    end subroutine run
+  end interface
+end module {ancestor}
+"""
+        sources[f"{ancestor}_impl.f90"] = f"""
+submodule ({ancestor}) impl
+contains
+  module subroutine run(x)
+    real(wp), intent(inout) :: x
+  end subroutine run
+end submodule impl
+"""
+        sources[f"{ancestor}_leaf.f90"] = f"""
+submodule ({ancestor}:impl) leaf
+  real(wp) :: scale
+end submodule leaf
+"""
+
+    project = parse_fortran_project(sources)
+
+    assert set(project.submodules) == {"a:impl", "b:impl", "a:leaf", "b:leaf"}
+    assert project.dependencies["a:leaf"] == {"a:impl"}
+    assert project.dependencies["b:impl"] == {"b"}
+    assert project.submodules["a:impl"].procedures[0].arguments[0].kind == "4"
+    assert project.submodules["b:impl"].procedures[0].arguments[0].kind == "8"
+    assert project.submodules["a:leaf"].variables[0].kind == "4"
+    assert project.submodules["b:leaf"].variables[0].kind == "8"

@@ -117,11 +117,14 @@ def test_example_notebooks_are_served_from_the_site(tmp_path: Path) -> None:
     """A download button needs the notebook same-origin, not on GitHub.
 
     The browser honours ``download`` only for a same-origin file, so the site
-    serves a copy while the repository keeps the single source of truth.
+    serves a copy while the repository keeps the single source of truth. A
+    checkout without the notebook directory publishes none.
     """
     docs_dir = tmp_path / "docs"
     notebook_dir = tmp_path / mkdocs_publication._EXAMPLE_NOTEBOOK_DIR
     docs_dir.mkdir()
+    assert mkdocs_publication._example_notebook_paths({"docs_dir": str(docs_dir)}) == []
+
     notebook_dir.mkdir(parents=True)
     (notebook_dir / "quickstart.ipynb").write_text("{}", encoding="utf-8")
     (notebook_dir / "notes.txt").write_text("not a notebook", encoding="utf-8")
@@ -129,10 +132,3 @@ def test_example_notebooks_are_served_from_the_site(tmp_path: Path) -> None:
     published = mkdocs_publication._example_notebook_paths({"docs_dir": str(docs_dir)})
 
     assert [path.name for path in published] == ["quickstart.ipynb"]
-
-
-def test_publishing_example_notebooks_tolerates_a_missing_directory(tmp_path: Path) -> None:
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-
-    assert mkdocs_publication._example_notebook_paths({"docs_dir": str(docs_dir)}) == []

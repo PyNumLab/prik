@@ -136,6 +136,13 @@ Assign elements or slices, rather than rebinding the module variable.
 Fixed-shape module arrays and derived-type array fields expose live views
 whether or not their declarations include `target`. Logical array dtypes follow
 the [data-type mapping](data-types.md#scalar-type-mapping).
+Mutable fixed-storage scalar module variables expose live rank-zero NumPy
+views. Numeric and logical scalars use `T[()]`; fixed-length character scalars
+use `String[n][()]` with raw bytes storage. Pass the view itself when a native
+dummy needs its original storage. `PARAMETER` declarations remain constants.
+- Scalar allocatable and pointer module variables return a live read-only
+  rank-zero view or `None` on each read. Assign to the attribute to change the
+  value, and read it again after storage changes.
 - Allocatable module arrays use the `Allocatable[T[...]]` API.
 - Allocation, lifetime, NumPy views, and mutation rules are covered in
   the storage and objects section.

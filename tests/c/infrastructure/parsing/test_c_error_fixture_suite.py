@@ -41,19 +41,6 @@ def _update_mode_enabled() -> bool:
     return os.getenv("C_PARSER_UPDATE_GOLDENS", "0") == "1"
 
 
-def test_c_error_fixture_suite_has_fixtures():
-    fixtures = [path for path in _ERRORS_DIR.glob("*") if path.suffix.lower() in _SOURCE_SUFFIXES]
-    assert fixtures, "No C parser error fixtures found in tests/c/fixtures/native/errors/parser"
-
-
-def test_c_error_fixtures_have_matching_expected_json():
-    fixture_outputs = {f"{path.name}.json" for path in _ERRORS_DIR.glob("*") if path.suffix.lower() in _SOURCE_SUFFIXES}
-    expected_outputs = {path.name for path in _EXPECTED_ERRORS_DIR.glob("*.json")}
-
-    assert not sorted(fixture_outputs - expected_outputs)
-    assert not sorted(expected_outputs - fixture_outputs)
-
-
 def test_c_error_fixture_suite_reports_expected_diagnostics():
     from prik.parsers.c import CParseError, parse_c_file
 

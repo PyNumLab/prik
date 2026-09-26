@@ -142,7 +142,10 @@ POINTER_POLICY = """Annotated[
 ]"""
 
 
-def _build_pointer_owner_module(tmp_path: Path):
+@pytest.fixture(scope="module")
+def pointer_owner_module(tmp_path_factory: pytest.TempPathFactory):
+    """Build the pointer-owner contract once; each test uses its own handles."""
+    tmp_path = tmp_path_factory.mktemp("character-owner-pointer")
     source = tmp_path / "fcharacter_owner_pointer.f90"
     source.write_text(POINTER_SOURCE, encoding="utf-8")
     native_object = _compile_native_object(source, tmp_path / "native")
@@ -192,8 +195,8 @@ def _gnu_fortran_version() -> tuple[int, int, int] | None:
     return tuple(int(parts[index]) if index < len(parts) else 0 for index in range(3))
 
 
-def test_fixed_character_pointer_owner_supports_association_and_target_mutation(tmp_path: Path):
-    module = _build_pointer_owner_module(tmp_path)
+def test_fixed_character_pointer_owner_supports_association_and_target_mutation(pointer_owner_module):
+    module = pointer_owner_module
     source = Pointer[String[4][:]]()
     alias = Pointer[String[4][:]]()
 
@@ -224,10 +227,10 @@ def test_fixed_character_pointer_owner_supports_association_and_target_mutation(
     managed.close()
 
 
-def test_deferred_character_pointer_owner_supports_zero_copy_view(tmp_path: Path):
+def test_deferred_character_pointer_owner_supports_zero_copy_view(pointer_owner_module):
     if (gnu_version := _gnu_fortran_version()) is not None and gnu_version < (13, 3, 0):
         pytest.skip("deferred-length character pointer reassociation requires GNU Fortran 13.3 or newer")
-    module = _build_pointer_owner_module(tmp_path)
+    module = pointer_owner_module
     values = Pointer[String[:][:]]()
     assert module.deferred_state(values) == np.int32(0)
     assert module.repoint_deferred(values) is values

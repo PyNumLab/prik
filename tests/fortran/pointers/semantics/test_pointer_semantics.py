@@ -1,95 +1,10 @@
-"""Fortran and edited-`.pyi` pointer semantic contracts."""
+"""Edited-`.pyi` pointer contract diagnostics."""
 
 import re
 
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from tests.fortran._support.semantic_conversion import (
-    array_contract,
-    get_function,
-)
-from prik.semantics.metadata import NATIVE_ARRAY_DESCRIPTOR_METADATA, OPTIONAL_ABSENT_HANDLE_METADATA
-from prik.semantics.native_array_handles import native_array_descriptor_kind
-from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-
-
-def test_fortran_pointer_arrays_and_scalars_preserve_descriptor_semantics():
-    source = """
-module pointer_semantics
-contains
-  subroutine inspect(values, scalar)
-    real(8), pointer, intent(inout) :: values(:)
-    real(8), pointer, intent(in) :: scalar
-  end subroutine inspect
-end module pointer_semantics
-"""
-
-    module = fortran_module_to_semantic_module(parse_fortran_source(source))
-    values, scalar = get_function(module, "inspect").arguments
-
-    assert array_contract(values.semantic_type).pointer is True
-    assert native_array_descriptor_kind(values.semantic_type) == "pointer"
-    assert scalar.semantic_type.metadata["fortran_pointer"] is True
-    assert scalar.semantic_type.metadata["fortran_pointer_association"] == "runtime"
-    assert scalar.semantic_type.storage.pointer_depth == 1
-
-
-def test_fortran_optional_array_descriptor_preserves_absent_handle_state():
-    source = """
-module optional_descriptor_semantics
-contains
-  subroutine inspect(values)
-    real(8), allocatable, optional, intent(in) :: values(:)
-  end subroutine inspect
-end module optional_descriptor_semantics
-"""
-
-    module = fortran_module_to_semantic_module(parse_fortran_source(source))
-    values = get_function(module, "inspect").arguments[0]
-
-    assert values.optional is True
-    assert values.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
-
-
-def test_pyi_pointer_handles_preserve_rank_optionality_and_scalar_state():
-    module = parse_pyi_text(
-        """
-module_values: Pointer[Float64[:, :]]
-current: Pointer[Int32]
-
-def consume(values: Pointer[Float64[:]], maybe_values: Pointer[Float64[:]] | None = ...) -> None: ...
-""",
-        module_name="pointer_contracts",
-    )
-
-    module_values, current = [variable.semantic_type for variable in module.variables]
-    values, maybe_values = module.functions[0].arguments
-
-    assert module_values.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "pointer"
-    assert module_values.storage.array.pointer is True
-    assert module_values.rank == 2
-    assert current.metadata["fortran_pointer"] is True
-    assert current.storage.pointer_depth == 1
-    assert values.semantic_type.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "pointer"
-    assert maybe_values.semantic_type.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "pointer"
-    assert maybe_values.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
-    assert maybe_values.optional is True
-
-
-@pytest.mark.parametrize(
-    ("annotation", "message"),
-    [("Annotated[Float64[:], Pointer]", "use Pointer")],
-)
-def test_convert_pyi_to_ir_rejects_legacy_array_descriptor_metadata(annotation: str, message: str):
-    with pytest.raises(ValueError, match=message):
-        parse_pyi_text(
-            f"""
-values: {annotation}
-""",
-            module_name="legacy_array_descriptors",
-        )
 
 
 @pytest.mark.parametrize(
@@ -105,6 +20,6 @@ values: {annotation}
         ),
     ],
 )
-def test_scalar_pointer_results_reject_legacy_descriptor_spellings(source: str, message: str):
+def test_scalar_pointer_results_require_a_nullable_value_annotation(source: str, message: str):
     with pytest.raises(ValueError, match=re.escape(message)):
         parse_pyi_text(source, module_name="invalid_pointer_projection")

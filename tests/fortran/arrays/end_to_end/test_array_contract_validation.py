@@ -13,7 +13,9 @@ from tests.fortran._support.wrapper_build import (
 FIXTURES = Path(__file__).parent / "fixtures"
 ARRAY_CONTRACTS_F90_SOURCE = FIXTURES / "native" / "farray_contracts_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
-_MAX_WRAPPER_TEST_RANK = 15
+# The lowest rank, the rank the empty and zero-stride cases use, and the
+# highest supported rank; every rank in between is a result-rank case.
+_SHIFT_RANKS = (1, 4, 15)
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -102,7 +104,7 @@ def test_remaining_array_contracts_are_validated_before_fortran_calls(
     assert zero_stride_empty_out.flags.f_contiguous
     assert module.shift4(zero_stride_empty, zero_stride_empty_out) is None
 
-    for rank in range(1, _MAX_WRAPPER_TEST_RANK + 1):
+    for rank in _SHIFT_RANKS:
         shape = (2, *([1] * (rank - 1)))
         source = np.asfortranarray(np.arange(np.prod(shape), dtype=np.float64).reshape(shape, order="F"))
         out = np.empty(shape, dtype=np.float64, order="F")

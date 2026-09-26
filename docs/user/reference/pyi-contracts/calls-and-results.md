@@ -196,7 +196,9 @@ def scale(
 ```
 
 PRIK calls the native procedure with separate writable storage and returns the
-replacement. The original array remains unchanged.
+replacement. The original array remains unchanged. The same holds for a scalar:
+a rank-zero array passed to `Annotated[Int32, Immutable]` is copied in, and only
+the returned replacement carries the native update.
 
 Do not combine replacement-only mutation with a writable borrowed view. Those
 requests contradict each other and are rejected.

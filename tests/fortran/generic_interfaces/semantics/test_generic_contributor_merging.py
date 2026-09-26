@@ -133,8 +133,12 @@ module facade_mod
     ]
 
 
-def test_two_imported_generics_remain_one_accessible_name(tmp_path: Path):
-    """Generic routes are contributors, so they do not cancel each other out."""
+def test_a_facade_merging_two_imported_generics_owns_the_merged_generic(tmp_path: Path):
+    """Neither contributor declares the whole generic, so the module where they meet owns it.
+
+    Re-exporting the first contributor published a generic that dispatched
+    over only that contributor's specifics.
+    """
     modules = _modules(
         tmp_path,
         CONTRIBUTORS,
@@ -147,8 +151,31 @@ end module facade_mod
 """,
     )
 
-    reexports = {item.local_name: item for item in modules["facade_mod"].reexports}
-    assert reexports["convert"].entity_kind == "generic"
+    assert _specifics(modules["facade_mod"], "convert") == ["convert_i", "convert_r"]
+    assert [item.local_name for item in modules["facade_mod"].reexports] == []
+
+
+def test_a_module_reached_through_a_merging_facade_reexports_the_facade(tmp_path: Path):
+    """The merged generic is the facade's own, so a later ``use`` reaches it there."""
+    modules = _modules(
+        tmp_path,
+        CONTRIBUTORS,
+        """\
+module facade_mod
+  use ints_mod,  only : convert
+  use reals_mod, only : convert
+  implicit none
+end module facade_mod
+
+module client_mod
+  use facade_mod
+  implicit none
+end module client_mod
+""",
+    )
+
+    reexports = {item.local_name: item for item in modules["client_mod"].reexports}
+    assert (reexports["convert"].entity_kind, reexports["convert"].origin_module) == ("generic", "facade_mod")
 
 
 def test_a_generic_and_a_variable_of_one_name_are_not_merged(tmp_path: Path):

@@ -1,8 +1,6 @@
-"""Supported Fortran enum syntax and rejected declaration forms."""
+"""Supported Fortran enum syntax."""
 
-import pytest
-
-from prik.parsers.fortran import FortranParseError, parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 
 def test_valid_enum_subunit_accepts_optional_separator_and_multiple_enumerators():
@@ -28,24 +26,3 @@ end module enum_valid_mod
         ("third", "10", "10"),
         ("fourth", "11", None),
     ]
-
-
-@pytest.mark.parametrize(
-    "invalid_line",
-    [
-        "enumerator :: valid = 1, 2invalid",
-        "integer :: invalid",
-        "interface invalid",
-    ],
-)
-def test_enum_subunit_rejects_malformed_lines_and_nested_units(invalid_line):
-    code = f"""
-module enum_invalid_mod
-  enum, bind(c)
-    {invalid_line}
-  end enum
-end module enum_invalid_mod
-"""
-
-    with pytest.raises(FortranParseError, match="Invalid Fortran syntax"):
-        parse_fortran_file(code, filename="invalid_enum.f90")

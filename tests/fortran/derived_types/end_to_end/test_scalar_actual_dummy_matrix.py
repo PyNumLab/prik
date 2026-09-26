@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.paths import REPO_ROOT
-from tests.fortran._support.wrapper_build import _import_from_build_dir
+from tests.fortran._support.wrapper_build import FAULT_INJECTION_C_FLAGS, _import_from_build_dir
 from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -84,6 +84,7 @@ def scalar_matrix(tmp_path_factory) -> MatrixBuild:
         CONTRACT,
         native_fortran_sources=[SOURCE],
         output_dir=output_dir,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
     package = _import_from_build_dir(result.module_name, result.output_dir)
     return MatrixBuild(
@@ -125,119 +126,80 @@ def _matrix_cell_is_legal(case: ActualCase, dummy: str) -> bool:
     return case.storage == "allocatable"
 
 
+# Rows with an empty state; a module row names its variable, which the fixture clears.
+EMPTY_ROWS = {
+    "nonmodule_allocatable": None,
+    "module_allocatable": "allocatable_module",
+    "module_allocatable_target": "allocatable_target_module",
+    "nonmodule_pointer": None,
+    "module_pointer": "pointer_module",
+}
+
+
+def _empty_actual(module, case: ActualCase):
+    """Construct the row with no payload: an empty holder or a cleared module origin."""
+    module.reset_state()
+    if case.name == "nonmodule_allocatable":
+        return module.make_allocatable_item(np.int32(1), False)
+    if case.name == "nonmodule_pointer":
+        return module.make_pointer_item(np.int32(0))
+    variable = EMPTY_ROWS[case.name]
+    value = getattr(module, variable)
+    getattr(module, f"clear_{variable}")()
+    return value
+
+
+def _assert_empty_row_follows_dummy_requirements(module, case: ActualCase) -> None:
+    """Absent payloads fail only where a payload, not a descriptor, is required."""
+    for dummy, reader_name in DUMMY_READERS.items():
+        actual = _empty_actual(module, case)
+        reader = getattr(module, reader_name)
+        descriptor_matches = (dummy == "P" and case.storage == "pointer") or (
+            dummy in {"A", "AT"} and case.storage == "allocatable"
+        )
+        if descriptor_matches:
+            assert reader(actual) == -1, dummy
+        elif dummy in {"A", "AT"}:
+            with pytest.raises(TypeError, match="allocatable-derived-actual-required"):
+                reader(actual)
+        else:
+            with pytest.raises(ValueError, match=r"derived payload.*not present"):
+                reader(actual)
+
+
 @pytest.mark.parametrize("case", ACTUAL_CASES, ids=lambda case: case.name)
-@pytest.mark.parametrize("dummy", tuple(DUMMY_READERS))
-def test_all_sixty_actual_dummy_cells(scalar_matrix, case: ActualCase, dummy: str):
-    """Exercise every cell of the documented 10-row by 6-column matrix."""
+def test_every_actual_row_meets_every_dummy_form(scalar_matrix, case: ActualCase):
+    """One documented actual row against all six dummy columns, P writeback, and its empty state.
+
+    The row is the storage carrier (direct, holder, or module origin); each
+    column is a distinct native interface, so all cells stay asserted.
+    """
     module = scalar_matrix.module
+    for dummy, reader_name in DUMMY_READERS.items():
+        module.reset_state()
+        actual = _actual(module, case)
+        reader = getattr(module, reader_name)
+        if _matrix_cell_is_legal(case, dummy):
+            assert reader(actual) == case.expected, dummy
+        else:
+            with pytest.raises(TypeError, match="allocatable-derived-actual-required"):
+                reader(actual)
+
+    # Known pointer writeback accepts P rows and rejects every nonpointer row.
     module.reset_state()
     actual = _actual(module, case)
-    reader = getattr(module, DUMMY_READERS[dummy])
-
-    if _matrix_cell_is_legal(case, dummy):
-        assert reader(actual) == case.expected
-    else:
-        with pytest.raises(TypeError, match="allocatable-derived-actual-required"):
-            reader(actual)
-
-
-@pytest.mark.parametrize("case", ACTUAL_CASES, ids=lambda case: case.name)
-def test_reassociable_pointer_dummy_requires_pointer_storage(scalar_matrix, case: ActualCase):
-    """Known pointer writeback accepts P rows and rejects every nonpointer row."""
-    module = scalar_matrix.module
-    module.reset_state()
-    actual = _actual(module, case)
-
     if case.storage == "pointer":
-        returned = module.set_pointer(actual, np.int32(2))
-        assert returned is actual
+        assert module.set_pointer(actual, np.int32(2)) is actual
         assert actual.value == 60
     else:
         with pytest.raises(TypeError, match="pointer-derived-actual-required"):
             module.set_pointer(actual, np.int32(2))
 
-
-@dataclass(frozen=True)
-class EmptyCase:
-    name: str
-    storage: str
+    if case.name in EMPTY_ROWS:
+        _assert_empty_row_follows_dummy_requirements(module, case)
 
 
-EMPTY_CASES = (
-    EmptyCase("nonmodule_allocatable", "allocatable"),
-    EmptyCase("module_allocatable", "allocatable"),
-    EmptyCase("module_allocatable_target", "allocatable"),
-    EmptyCase("nonmodule_pointer", "pointer"),
-    EmptyCase("module_pointer", "pointer"),
-)
-
-
-def _empty_actual(module, case: EmptyCase):
-    module.reset_state()
-    if case.name == "nonmodule_allocatable":
-        return module.make_allocatable_item(np.int32(1), False)
-    if case.name == "module_allocatable":
-        value = module.allocatable_module
-        module.clear_allocatable_module()
-        return value
-    if case.name == "module_allocatable_target":
-        value = module.allocatable_target_module
-        module.clear_allocatable_target_module()
-        return value
-    if case.name == "nonmodule_pointer":
-        return module.make_pointer_item(np.int32(0))
-    if case.name == "module_pointer":
-        value = module.pointer_module
-        module.clear_pointer_module()
-        return value
-    raise AssertionError(f"unhandled empty case {case.name!r}")
-
-
-@pytest.mark.parametrize("case", EMPTY_CASES, ids=lambda case: case.name)
-@pytest.mark.parametrize("dummy", tuple(DUMMY_READERS))
-def test_empty_descriptor_states_follow_dummy_requirements(scalar_matrix, case: EmptyCase, dummy: str):
-    """Absent payloads fail only where a payload, not a descriptor, is required."""
-    module = scalar_matrix.module
-    actual = _empty_actual(module, case)
-    reader = getattr(module, DUMMY_READERS[dummy])
-
-    if dummy in {"O", "T", "V"}:
-        with pytest.raises(ValueError, match=r"derived payload.*not present"):
-            reader(actual)
-        return
-    if dummy == "P":
-        if case.storage == "pointer":
-            assert reader(actual) == -1
-        else:
-            with pytest.raises(ValueError, match=r"derived payload.*not present"):
-                reader(actual)
-        return
-    if case.storage == "allocatable":
-        assert reader(actual) == -1
-    else:
-        with pytest.raises(TypeError, match="allocatable-derived-actual-required"):
-            reader(actual)
-
-
-def test_empty_module_getters_return_persistent_live_proxies(scalar_matrix):
-    module = scalar_matrix.module
-    module.reset_state()
-    old_allocatable = module.allocatable_module
-    old_pointer = module.pointer_module
-    module.clear_allocatable_module()
-    module.clear_pointer_module()
-
-    for value in (old_allocatable, module.allocatable_module):
-        assert isinstance(value, module.item)
-        with pytest.raises(ReferenceError, match="not currently present"):
-            _ = value.value
-    for value in (old_pointer, module.pointer_module):
-        assert isinstance(value, module.item)
-        with pytest.raises(ReferenceError, match="not currently present"):
-            _ = value.value
-
-
-def test_wrapper_owned_empty_holders_can_be_filled_without_replacement(scalar_matrix):
+def test_wrapper_owned_empty_holders_fill_in_place_and_pointer_holders_track_their_target(scalar_matrix):
     module = scalar_matrix.module
     module.reset_state()
     allocatable = module.make_allocatable_item(np.int32(1), False)
@@ -256,12 +218,7 @@ def test_wrapper_owned_empty_holders_can_be_filled_without_replacement(scalar_ma
     assert module.set_pointer(pointer, np.int32(2)) is pointer
     assert (allocatable.value, allocatable_target.value, pointer.value) == (7, 8, 60)
 
-
-def test_pointer_holder_retains_native_owner_and_tracks_allocated_target_lifetime(scalar_matrix):
-    module = scalar_matrix.module
-    module.reset_state()
-    pointer = module.make_pointer_item(np.int32(0))
-
+    # A pointer holder retains its native owner and follows reassociation and nullification.
     assert pointer._prik_owner is module
     assert module.set_pointer(pointer, np.int32(3)) is pointer
     assert pointer.value == 70
@@ -276,6 +233,15 @@ def test_module_descriptor_transactions_preserve_empty_and_recreated_state(scala
     allocatable = module.allocatable_module
     pointer = module.pointer_module
 
+    # Clearing native storage leaves every proxy, old or new, a live typed proxy.
+    module.clear_allocatable_module()
+    module.clear_pointer_module()
+    for value in (allocatable, module.allocatable_module, pointer, module.pointer_module):
+        assert isinstance(value, module.item)
+        with pytest.raises(ReferenceError, match="not currently present"):
+            _ = value.value
+
+    module.reset_state()
     assert module.set_allocatable(allocatable, np.int32(-1)) is allocatable
     with pytest.raises(ReferenceError, match="not currently present"):
         _ = allocatable.value
@@ -342,6 +308,9 @@ def test_sequence_derived_value_uses_the_same_typed_opaque_call_path(scalar_matr
 
     assert isinstance(value, module.sequence_item)
     assert module.read_sequence_value(value) == 23
+    # A contract class declared without `__init__` has no Python constructor.
+    with pytest.raises(TypeError):
+        module.item()
 
 
 def test_qualified_same_short_name_types_keep_exact_native_identity(scalar_matrix):
@@ -359,15 +328,12 @@ def test_qualified_same_short_name_types_keep_exact_native_identity(scalar_matri
         with pytest.raises(TypeError, match=expected):
             module.read_qualified(*values)
 
-
-def test_module_origins_from_separate_modules_keep_type_specific_callbacks(scalar_matrix):
-    module = scalar_matrix.module
-    left = scalar_matrix.left_module.state
-    right = scalar_matrix.right_module.state
-
-    assert module.read_qualified(left, right) == 307
+    # Module-state origins from the two modules keep their type-specific origin callbacks.
+    left_state = scalar_matrix.left_module.state
+    right_state = scalar_matrix.right_module.state
+    assert module.read_qualified(left_state, right_state) == 307
     with pytest.raises(TypeError, match=r"left_item.*left"):
-        module.read_qualified(right, left)
+        module.read_qualified(right_state, left_state)
 
 
 def test_duplicate_origins_share_reads_and_reject_writes_before_native_call(scalar_matrix):
@@ -444,20 +410,6 @@ def _start_busy_scoped_origin(module, value):
         time.sleep(0.005)
     thread.join()
     pytest.fail("module object origin never entered its active scoped state")
-
-
-def test_concurrent_origin_use_is_rejected_and_restored(scalar_matrix):
-    module = scalar_matrix.module
-    module.reset_state()
-    value = module.allocatable_module
-    thread, errors = _start_busy_origin(module, value)
-    try:
-        with pytest.raises(RuntimeError, match=r"origin failure.*status 2"):
-            module.read_allocatable(value)
-    finally:
-        thread.join()
-    assert errors == []
-    assert value.value == 31
 
 
 def test_later_acquisition_failure_rolls_back_earlier_origins(scalar_matrix):

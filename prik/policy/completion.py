@@ -903,7 +903,17 @@ def _complete_overload_policy(
     builtin_signatures = tuple(_overload_candidate_builtin_signature(candidate.arguments) for candidate in candidates)
     if len(set(builtin_signatures)) != len(builtin_signatures):
         blockers.append(f"overload {overload.owner_path!r} has overlapping reflected scalar signatures")
-    return replace(overload, candidates=tuple(candidates), blockers=tuple(dict.fromkeys(blockers)))
+    has_open_native_actual = any(
+        argument.semantic_type_name == "AnyNative" for candidate in candidates for argument in candidate.arguments
+    )
+    if has_open_native_actual and len(candidates) > 1:
+        blockers.append(f"overload {overload.owner_path!r} cannot select among open native actuals")
+    return replace(
+        overload,
+        candidates=tuple(candidates),
+        blockers=tuple(dict.fromkeys(blockers)),
+        direct_single_candidate=has_open_native_actual and len(candidates) == 1,
+    )
 
 
 def _overload_candidate_signature(arguments: tuple[OverloadArgumentPolicy, ...]) -> tuple:
@@ -973,15 +983,21 @@ def _overload_argument_match(
     elif kind is ObjectKind.DERIVED_TYPE and argument.derived is not None:
         match_kind = OverloadMatchKind.DERIVED
         derived_identity = argument.derived.type_identity
+    elif argument.callback is not None:
+        match_kind = OverloadMatchKind.CALLBACK
     if match_kind is None:
         return None
     return OverloadArgumentPolicy(
         python_name=argument.python_name,
         kind=match_kind,
         optional=argument.optional_mode not in {OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR},
-        semantic_type_name=argument.semantic_type_name,
+        # Every callable passes the same runtime test, so callbacks compare
+        # alike whatever prototype each names.
+        semantic_type_name="Callable" if match_kind is OverloadMatchKind.CALLBACK else argument.semantic_type_name,
         rank=argument.rank,
         derived_type_identity=derived_identity,
+        scalar_actual_mode=argument.scalar_actual_mode,
+        character_length=argument.character_length,
         builtin_scalar_family=_accepted_builtin_scalar_family(
             argument.semantic_type_name,
             match_kind=match_kind,

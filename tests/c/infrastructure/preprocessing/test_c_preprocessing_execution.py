@@ -1,224 +1,155 @@
-"""Tests split by stable ownership concept from `test_cli.py`."""
+"""C compiler-preprocessor execution: failure categories, provenance, and recipe macros."""
 
-import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
 import prik.preprocessing.source as preprocessing
-from prik.preprocessing import (
-    PreprocessingConfig,
-    PreprocessingError,
-    run_compiler_preprocessor,
-    run_compiler_preprocessor_with_recipe,
+from prik.parsers.c import sources as c_sources
+from prik.preprocessing import PreprocessingConfig, PreprocessingError
+
+
+def _completed(returncode: int, stdout: str = "", stderr: str = ""):
+    return lambda *_args, **_kwargs: subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
+
+
+def _raise(error: Exception):
+    def run(*_args, **_kwargs):
+        raise error
+
+    return run
+
+
+@pytest.mark.parametrize(
+    ("compiler", "run", "category", "message", "diagnostic"),
+    [
+        pytest.param(
+            None,
+            None,
+            "INVALID_COMPILER_ARGUMENTS",
+            "Compiler preprocessing not configured",
+            None,
+            id="not-configured",
+        ),
+        pytest.param(
+            "prik-definitely-missing-preprocessor",
+            None,
+            "PREPROCESSOR_NOT_FOUND",
+            "preprocessor not found: prik-definitely-missing-preprocessor",
+            "preprocessor not found: prik-definitely-missing-preprocessor",
+            id="executable-not-on-path",
+        ),
+        pytest.param(
+            "missing-cc",
+            _raise(FileNotFoundError("missing")),
+            "PREPROCESSOR_NOT_FOUND",
+            "preprocessor not found: {compiler}",
+            "preprocessor not found: {compiler}",
+            id="executable-vanished",
+        ),
+        pytest.param(
+            "cannot-start-cc",
+            _raise(OSError("cannot start")),
+            "PREPROCESSOR_FAILED",
+            "failed to run compiler preprocessor: cannot start",
+            "failed to run compiler preprocessor: cannot start",
+            id="executable-cannot-start",
+        ),
+        pytest.param(
+            "slow-cc",
+            _raise(subprocess.TimeoutExpired(cmd="cc", timeout=60)),
+            "PREPROCESSOR_FAILED",
+            "compiler preprocessing failed: timed out after 60 seconds",
+            "compiler preprocessing timed out after 60 seconds",
+            id="timeout",
+        ),
+        pytest.param(
+            "failing-cc",
+            _completed(1, stderr="bad option"),
+            "PREPROCESSOR_FAILED",
+            "compiler preprocessing failed with exit code 1\nbad option",
+            "bad option",
+            id="nonzero-exit-with-stderr",
+        ),
+        pytest.param(
+            "bad-cc",
+            _completed(2),
+            "PREPROCESSOR_FAILED",
+            "compiler preprocessing failed with exit code 2",
+            "compiler preprocessing failed with exit code 2",
+            id="silent-nonzero-exit",
+        ),
+    ],
 )
-
-
-def test_run_compiler_preprocessor_success_and_failures(monkeypatch, tmp_path: Path):
-    config = PreprocessingConfig(mode="compiler", compiler="cc")
+def test_preprocess_source_reports_each_failure_with_its_category(
+    monkeypatch, tmp_path: Path, compiler, run, category, message, diagnostic
+):
     source = tmp_path / "api.c"
     source.write_text("int api(void);\n", encoding="utf-8")
-    calls = []
+    if run is not None:
+        # A path-like executable skips the PATH lookup, so the stubbed launch decides the outcome.
+        compiler = str(tmp_path / compiler)
+        monkeypatch.setattr(preprocessing.subprocess, "run", run)
+        message = message.format(compiler=compiler)
+        diagnostic = diagnostic.format(compiler=compiler)
+    config = PreprocessingConfig() if compiler is None else PreprocessingConfig(mode="compiler", compiler=compiler)
 
-    def succeed(*args, **kwargs):
-        calls.append((args, kwargs))
-        return type("Done", (), {"returncode": 0, "stdout": "expanded", "stderr": ""})()
-
-    monkeypatch.setattr(preprocessing.subprocess, "run", succeed)
-    expanded, recipe = run_compiler_preprocessor_with_recipe(source, language="c", config=config)
-    assert expanded == "expanded"
-    assert recipe.compiler == "cc"
-    assert run_compiler_preprocessor(source, language="c", config=config) == "expanded"
-    assert calls == [
-        (
-            (["cc", "-E", "-x", "c", str(source)],),
-            {"cwd": None, "capture_output": True, "text": True, "timeout": 60, "check": False},
-        ),
-        (
-            (["cc", "-E", "-x", "c", str(source)],),
-            {"cwd": None, "capture_output": True, "text": True, "timeout": 60, "check": False},
-        ),
-    ]
-
-    def raise_oserror(*_args, **_kwargs):
-        raise OSError("cannot start")
-
-    monkeypatch.setattr(preprocessing.subprocess, "run", raise_oserror)
     with pytest.raises(PreprocessingError) as exc_info:
-        run_compiler_preprocessor(source, language="c", config=config)
-    assert str(exc_info.value) == "failed to run compiler preprocessor: cannot start"
-    assert exc_info.value.category == "PREPROCESSOR_FAILED"
-    assert [diagnostic.to_dict() for diagnostic in exc_info.value.diagnostics] == [
-        {
-            "category": "PREPROCESSOR_FAILED",
-            "message": "failed to run compiler preprocessor: cannot start",
-            "severity": "error",
-            "path": None,
-            "line": None,
-            "command": ["cc", "-E", "-x", "c", str(source)],
-        }
-    ]
+        preprocessing.preprocess_source(source, language="c", config=config)
 
-    monkeypatch.setattr(
-        preprocessing.subprocess,
-        "run",
-        lambda *_args, **_kwargs: type("Done", (), {"returncode": 1, "stdout": "", "stderr": "bad option"})(),
-    )
-    with pytest.raises(PreprocessingError) as exc_info:
-        run_compiler_preprocessor(source, language="c", config=config)
-    assert str(exc_info.value) == "compiler preprocessing failed with exit code 1\nbad option"
-    assert exc_info.value.category == "PREPROCESSOR_FAILED"
-    assert [diagnostic.to_dict() for diagnostic in exc_info.value.diagnostics] == [
-        {
-            "category": "PREPROCESSOR_FAILED",
-            "message": "bad option",
-            "severity": "error",
-            "path": None,
-            "line": None,
-            "command": ["cc", "-E", "-x", "c", str(source)],
-        }
-    ]
+    assert str(exc_info.value) == message
+    assert exc_info.value.category == category
+    expected = []
+    if diagnostic is not None:
+        expected = [
+            {
+                "category": category,
+                "message": diagnostic,
+                "severity": "error",
+                "path": None,
+                "line": None,
+                "command": [compiler, "-E", "-x", "c", str(source)],
+            }
+        ]
+    assert [item.to_dict() for item in exc_info.value.diagnostics] == expected
 
 
-def test_preprocess_source_preserves_exact_success_metadata(monkeypatch, tmp_path: Path):
+def test_preprocess_source_warns_when_the_adapter_output_has_no_source_mapping(monkeypatch, tmp_path: Path):
     source = tmp_path / "api.c"
     source.write_text("int api(void);\n", encoding="utf-8")
-    expanded = f'# 1 "{source}"\n#define API 1\nint value;\n'
-    monkeypatch.setattr(
-        preprocessing.subprocess,
-        "run",
-        lambda *_args, **_kwargs: type("Done", (), {"returncode": 0, "stdout": expanded, "stderr": ""})(),
-    )
-    config = PreprocessingConfig(
-        mode="compiler",
-        compiler=str(tmp_path / "cc"),
-        include_dirs=["include"],
-        defines=["CLI=1"],
-        undefs=["DEBUG"],
-        std="c11",
-        compiler_args=["-dD"],
-    )
+    monkeypatch.setattr(preprocessing.subprocess, "run", _completed(0))
 
-    result = preprocessing.preprocess_source(source, language="c", config=config)
-
-    argv = [
-        str(tmp_path / "cc"),
-        "-E",
-        "-x",
-        "c",
-        "-Iinclude",
-        "-DCLI=1",
-        "-UDEBUG",
-        "-std=c11",
-        "-dD",
-        str(source),
-    ]
-    included_files = [
-        {
-            "path": str(source),
-            "included_by": None,
-            "include_line": None,
-            "mechanism": "c_include",
-            "dependency_kind": "root",
-            "exposure": "public",
-        }
-    ]
-    mappings = [
-        {
-            "generated_line": 2,
-            "original_path": str(source),
-            "original_line": 1,
-            "include_stack": [str(source)],
-        },
-        {
-            "generated_line": 3,
-            "original_path": str(source),
-            "original_line": 2,
-            "include_stack": [str(source)],
-        },
-    ]
-    macros = [
-        {
-            "name": "API",
-            "value": "1",
-            "function_like": False,
-            "parameters": None,
-            "path": str(source),
-            "line": 1,
-            "builtin": False,
-        }
-    ]
-    recipe = {
-        "language": "c",
-        "compiler": str(tmp_path / "cc"),
-        "mode": "compiler",
-        "adapter": "gcc-compatible-c",
-        "argv": argv,
-        "cwd": None,
-        "include_dirs": ["include"],
-        "defines": ["CLI=1"],
-        "undefs": ["DEBUG"],
-        "standard": "c11",
-        "std": "c11",
-        "compiler_args": ["-dD"],
-        "source_path": str(source),
-        "source_file": str(source),
-        "compile_commands": None,
-        "compile_commands_entry": None,
-        "command_template": None,
-        "included_files": included_files,
-        "source_mappings": mappings,
-        "macros": macros,
-        "diagnostics": [],
-        "capabilities": {"dependency_output": True, "macro_dump": True, "linemarkers": True},
-    }
-    assert result.to_dict() == {
-        "source": expanded,
-        "recipe": recipe,
-        "included_files": included_files,
-        "source_mappings": mappings,
-        "macros": macros,
-        "diagnostics": [],
-    }
-
-
-def test_run_compiler_preprocessor_with_recipe_restores_sparse_recipe_defaults(monkeypatch, tmp_path: Path):
-    source = tmp_path / "api.c"
-    result = preprocessing.PreprocessResult(source="expanded\n", recipe={"language": "c"})
-    monkeypatch.setattr(preprocessing, "preprocess_source", lambda *_args, **_kwargs: result)
-
-    expanded, recipe = run_compiler_preprocessor_with_recipe(source, language="c", config=PreprocessingConfig())
-
-    assert expanded == "expanded\n"
-    assert recipe.mode == "compiler"
-    assert recipe.adapter == "direct"
-
-
-def test_preprocess_source_uses_compile_database_working_directory(monkeypatch, tmp_path: Path):
-    source = tmp_path / "api.c"
-    source.write_text("int api(void);\n", encoding="utf-8")
-    compiler = tmp_path / "cc"
-    database = tmp_path / "compile_commands.json"
-    database.write_text(
-        json.dumps([{"directory": str(tmp_path), "file": str(source), "arguments": [str(compiler), str(source)]}]),
-        encoding="utf-8",
-    )
-    calls = []
-
-    def succeed(*args, **kwargs):
-        calls.append((args, kwargs))
-        return type("Done", (), {"returncode": 0, "stdout": "int api(void);\n", "stderr": ""})()
-
-    monkeypatch.setattr(preprocessing.subprocess, "run", succeed)
-
-    result = preprocessing.preprocess_source(
+    template = preprocessing.preprocess_source(
         source,
         language="c",
-        config=PreprocessingConfig(mode="compiler", compile_commands=str(database)),
+        config=PreprocessingConfig(
+            mode="compiler",
+            adapter="command-template",
+            command_template=f"{sys.executable} {{source}}",
+        ),
     )
+    direct_config = PreprocessingConfig(mode="compiler", compiler=str(tmp_path / "cc"))
+    empty_direct = preprocessing.preprocess_source(source, language="c", config=direct_config)
+    monkeypatch.setattr(preprocessing.subprocess, "run", _completed(0, stdout="int api(void);\n"))
+    direct = preprocessing.preprocess_source(source, language="c", config=direct_config)
 
-    assert result.source == "int api(void);\n"
-    assert result.source_mappings == [
+    assert [item.to_dict() for item in template.diagnostics] == [
+        {
+            "category": "PROVENANCE_UNAVAILABLE",
+            "message": "selected compiler adapter did not provide source linemarkers",
+            "severity": "warning",
+            "path": None,
+            "line": None,
+            "command": [sys.executable, str(source)],
+        }
+    ]
+    # A linemarker-capable adapter is trusted even when its output is empty.
+    assert empty_direct.diagnostics == []
+    assert direct.diagnostics == []
+    # Output without linemarkers maps line for line onto the root source.
+    assert direct.source_mappings == [
         preprocessing.SourceMapping(
             generated_line=1,
             original_path=str(source),
@@ -226,9 +157,36 @@ def test_preprocess_source_uses_compile_database_working_directory(monkeypatch, 
             include_stack=[str(source)],
         )
     ]
-    assert calls == [
-        (
-            ([str(compiler), "-E", str(source)],),
-            {"cwd": str(tmp_path), "capture_output": True, "text": True, "timeout": 60, "check": False},
-        )
-    ]
+
+
+def test_attach_preprocessing_recipe_filters_invalid_and_duplicate_macros():
+    empty = c_sources.CFile()
+    c_sources.attach_preprocessing_recipe(empty, None)
+    assert empty.preprocessing_recipe is None
+
+    parsed = c_sources.CFile(
+        macros=[
+            c_sources.CMacro(
+                name="EXISTING",
+                source_location=c_sources.CSourceLocation(filename="api.h", line=2),
+            )
+        ]
+    )
+    recipe = {
+        "macros": [
+            None,
+            {"name": ""},
+            {"name": "EXISTING", "path": "api.h", "line": 2},
+            {"name": "NEW", "value": 123, "function_like": 1, "path": 42, "line": "bad"},
+            {"name": "WITH_LOC", "value": "1", "path": "api.h", "line": 4},
+        ]
+    }
+
+    c_sources.attach_preprocessing_recipe(parsed, recipe)
+
+    assert parsed.preprocessing_recipe == recipe
+    assert [macro.name for macro in parsed.macros] == ["EXISTING", "NEW", "WITH_LOC"]
+    assert parsed.macros[1].value is None
+    assert parsed.macros[1].function_like is True
+    assert parsed.macros[1].source_location.filename is None
+    assert parsed.macros[2].source_location.line == 4

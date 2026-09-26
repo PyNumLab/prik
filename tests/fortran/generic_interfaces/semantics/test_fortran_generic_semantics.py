@@ -58,6 +58,34 @@ end module generic_mod
     assert [candidate.metadata[BIND_TARGET_METADATA] for candidate in candidates] == ["shift", "shift"]
 
 
+def test_public_interface_body_specifics_are_called_by_their_own_names():
+    source = """
+module generic_mod
+  implicit none
+  interface shift
+    subroutine shift_integer(value)
+      integer, intent(inout) :: value
+    end subroutine shift_integer
+    subroutine shift_real(value)
+      real, intent(inout) :: value
+    end subroutine shift_real
+  end interface shift
+  private :: shift_real
+end module generic_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+    candidates = module.overload_sets[0].procedures
+
+    # An interface body declares a module entity like any other, so only the
+    # specific the module keeps private must be reached through the generic.
+    assert [(candidate.name, candidate.native_name) for candidate in candidates] == [
+        ("shift_integer", "shift_integer"),
+        ("shift_real", "shift"),
+    ]
+    assert [candidate.metadata.get(BIND_TARGET_METADATA) for candidate in candidates] == [None, "shift"]
+
+
 def test_converter_projects_a_generic_constructor_onto_its_class():
     """An interface named for a derived type is that type's constructor.
 

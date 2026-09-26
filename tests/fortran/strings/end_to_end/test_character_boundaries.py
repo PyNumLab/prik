@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    FAULT_INJECTION_C_FLAGS,
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
     _import_from_build_dir,
@@ -66,6 +67,7 @@ def test_modern_fortran_character_arguments_and_results(
         },
         CONTRACT_FIXTURES / "fstrings_f90",
         pyi_parity_build_mode,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
 
     _assert_modern_string_examples(module)

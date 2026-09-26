@@ -43,6 +43,8 @@ def test_scalar_derived_types_cross_procedure_boundaries(
     assert id(point) == identity
     assert point.x == np.float64(5.0)
     assert point.y == np.float64(7.0)
+    with pytest.raises(TypeError, match="Expected"):
+        point.x = 12.0
 
     out_point = module.Point()
     assert module.make_point_out(out_point, np.float64(8.0), np.float64(9.0)) is None

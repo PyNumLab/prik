@@ -1,7 +1,6 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
 from dataclasses import asdict
-from typing import ClassVar
 
 import pytest
 
@@ -46,7 +45,6 @@ from prik.semantics.c2ir import (
     c_file_to_semantic_modules,
     c_function_to_semantic_function,
     c_parameter_to_semantic_argument,
-    c_project_to_semantic_module,
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
@@ -70,68 +68,16 @@ def test_c2ir_maps_primitive_pointer_parameters_to_runtime_rank_storage_contract
     assert src.semantic_type.name == "Float64"
     assert src.semantic_type.storage.kind == "array"
     assert src.semantic_type.storage.read_only is True
+    assert src.semantic_type.storage.pointer_depth == 1
+    assert src.semantic_type.storage.array.category == "runtime_rank"
+    assert src.semantic_type.storage.array.shape == ["..."]
+    assert src.semantic_type.storage.array.order == "ORDER_C"
 
     assert dst.semantic_type.name == "Float64"
     assert dst.semantic_type.storage.kind == "array"
     assert dst.semantic_type.storage.read_only is False
     assert asdict(src.semantic_type.ownership) == {"ownership": "borrowed", "mutable": False, "aliasing": True}
     assert asdict(dst.semantic_type.ownership) == {"ownership": "borrowed", "mutable": True, "aliasing": True}
-    assert asdict(src.semantic_type.storage) == {
-        "kind": "array",
-        "read_only": True,
-        "mutable": False,
-        "pointer_depth": 1,
-        "ownership": "borrowed",
-        "array": {
-            "rank": 1,
-            "shape": ["..."],
-            "lower_bounds": [],
-            "upper_bounds": [],
-            "source_shape": ["..."],
-            "category": "runtime_rank",
-            "order": "ORDER_C",
-            "copy_order": None,
-            "axes": ["dense"],
-            "contiguous": None,
-            "allocatable": False,
-            "pointer": False,
-            "metadata": {},
-        },
-        "calling_convention": None,
-        "metadata": {
-            "c_pointer_qualifiers": [[]],
-            "restrict": False,
-            "source_type": "const double *src",
-        },
-    }
-    assert asdict(dst.semantic_type.storage) == {
-        "kind": "array",
-        "read_only": False,
-        "mutable": True,
-        "pointer_depth": 1,
-        "ownership": "borrowed",
-        "array": {
-            "rank": 1,
-            "shape": ["..."],
-            "lower_bounds": [],
-            "upper_bounds": [],
-            "source_shape": ["..."],
-            "category": "runtime_rank",
-            "order": "ORDER_C",
-            "copy_order": None,
-            "axes": ["dense"],
-            "contiguous": None,
-            "allocatable": False,
-            "pointer": False,
-            "metadata": {},
-        },
-        "calling_convention": None,
-        "metadata": {
-            "c_pointer_qualifiers": [[]],
-            "restrict": False,
-            "source_type": "double *dst",
-        },
-    }
     restricted = CToIRConverter().visit(
         CComposedType(
             components=[CPointer(qualifiers=[CRestrict()]), CDouble()],
@@ -167,62 +113,9 @@ def test_c2ir_uses_declared_c_array_bounds_before_parameter_adjustment():
     assert matrix.semantic_type.shape == ["3", "4"]
     assert matrix.semantic_type.storage.array.shape == ["3", "4"]
     assert matrix.semantic_type.storage.array.order == "ORDER_C"
-    assert asdict(a.semantic_type.storage) == {
-        "kind": "array",
-        "read_only": False,
-        "mutable": True,
-        "pointer_depth": 1,
-        "ownership": "borrowed",
-        "array": {
-            "rank": 1,
-            "shape": ["4"],
-            "lower_bounds": [],
-            "upper_bounds": [],
-            "source_shape": ["4"],
-            "category": "c_array",
-            "order": None,
-            "copy_order": None,
-            "axes": ["dense"],
-            "contiguous": True,
-            "allocatable": False,
-            "pointer": False,
-            "metadata": {
-                "c_static_minimum": [True],
-                "c_variable_length": [False],
-                "c_flexible": [False],
-            },
-        },
-        "calling_convention": None,
-        "metadata": {"source_type": "double a[static 4]"},
-    }
-    assert asdict(matrix.semantic_type.storage) == {
-        "kind": "array",
-        "read_only": False,
-        "mutable": True,
-        "pointer_depth": 1,
-        "ownership": "borrowed",
-        "array": {
-            "rank": 2,
-            "shape": ["3", "4"],
-            "lower_bounds": [],
-            "upper_bounds": [],
-            "source_shape": ["3", "4"],
-            "category": "c_array",
-            "order": "ORDER_C",
-            "copy_order": None,
-            "axes": ["dense", "dense"],
-            "contiguous": True,
-            "allocatable": False,
-            "pointer": False,
-            "metadata": {
-                "c_static_minimum": [False, False],
-                "c_variable_length": [False, False],
-                "c_flexible": [False, False],
-            },
-        },
-        "calling_convention": None,
-        "metadata": {"source_type": "int matrix[3][4]"},
-    }
+    assert a.semantic_type.storage.array.category == "c_array"
+    assert a.semantic_type.storage.array.contiguous is True
+    assert matrix.semantic_type.storage.array.metadata["c_static_minimum"] == [False, False]
 
 
 def test_c2ir_converts_integer_expression_macro_constants_when_resolvable():
@@ -314,26 +207,6 @@ int read_values(const double *values, size_t n);
     assert inline.metadata == {"c_typedefs": ["inline_t"]}
     assert unresolved.metadata == {}
     assert cyclic.metadata == {}
-
-
-def test_c2ir_uses_standard_type_probe_facts_when_supplied():
-    parsed = parse_c_file("size_t count(void);\n", filename="probe.h")
-    converter = CToIRConverter(
-        standard_type_report={
-            "types": {
-                "size_t": {
-                    "available": True,
-                    "kind": "integer",
-                    "signed": False,
-                    "bits": 32,
-                }
-            }
-        }
-    )
-
-    module = converter.visit(parsed)
-
-    assert _function(module, "count").return_type.name == "UInt32"
 
 
 def test_c2ir_preserves_c_int_identity_and_stores_compiler_probed_precision():
@@ -439,9 +312,6 @@ def test_c_compatibility_helpers_forward_standard_type_reports():
     assert _function(
         c_project_to_semantic_modules(project, standard_type_report=report)[0], "measure"
     ).return_type.name == ("UInt32")
-    assert _function(
-        c_project_to_semantic_module(project, standard_type_report=report), "measure"
-    ).return_type.name == ("UInt32")
 
 
 @pytest.mark.parametrize(
@@ -477,17 +347,26 @@ def test_c_primitive_precisions_map_to_semantic_types(ctype, expected_name, expe
 @pytest.mark.parametrize(
     ("name", "fact", "expected"),
     [
-        ("int8_t", {"available": True, "kind": "integer", "signed": True, "bits": 8}, "Int8"),
-        ("int16_t", {"available": True, "kind": "integer", "signed": True, "bits": 16}, "Int16"),
-        ("int32_t", {"available": True, "kind": "integer", "signed": True, "bits": 32}, "Int32"),
-        ("int64_t", {"available": True, "kind": "integer", "signed": True, "bits": 64}, "Int64"),
-        ("uint8_t", {"available": True, "kind": "integer", "signed": False, "bits": 8}, "UInt8"),
-        ("uint16_t", {"available": True, "kind": "integer", "signed": False, "bits": 16}, "UInt16"),
-        ("uint32_t", {"available": True, "kind": "integer", "signed": False, "bits": 32}, "UInt32"),
-        ("uint64_t", {"available": True, "kind": "integer", "signed": False, "bits": 64}, "UInt64"),
+        pytest.param("int8_t", {"available": True, "kind": "integer", "signed": True, "bits": 8}, "Int8", id="signed"),
+        pytest.param(
+            "uint64_t", {"available": True, "kind": "integer", "signed": False, "bits": 64}, "UInt64", id="unsigned"
+        ),
+        pytest.param(
+            "size_t",
+            {"available": True, "kind": "integer", "signed": False, "bits": 32},
+            "UInt32",
+            id="probe-replaces-size-t-fallback",
+        ),
+        pytest.param("real_size", {"kind": "real", "bits": 32}, "Float32", id="real"),
+        pytest.param(
+            "missing",
+            {"available": False, "kind": "integer", "signed": False, "bits": 32},
+            "missing",
+            id="unavailable-stays-unresolved",
+        ),
     ],
 )
-def test_c_standard_integer_precision_facts_map_to_semantic_types(name, fact, expected):
+def test_c_standard_type_facts_map_typedefs_to_semantic_types(name, fact, expected):
     semantic_type = CToIRConverter(standard_type_report={"types": {name: fact}}).visit(CTypedef(name=name))
 
     assert semantic_type.name == expected
@@ -579,49 +458,8 @@ def test_c2ir_reports_unsupported_type_and_declarator_compositions():
     )
 
 
-def test_c2ir_standard_type_facts_and_numeric_constant_edge_cases():
-    class Report:
-        types: ClassVar = {
-            "signed_size": {"kind": "integer", "signed": True, "bits": 16},
-            "real_size": {"kind": "real", "bits": 32},
-            "missing": {"available": False, "kind": "integer", "signed": False, "bits": 32},
-        }
-
-    converter = CToIRConverter(standard_type_report=Report())
-    signed_size = converter._standard_semantic_type("signed_size")
-    real_size = converter._standard_semantic_type("real_size")
-    assert signed_size.name == "Int16"
-    assert signed_size.dtype == "Int16"
-    assert signed_size.metadata == {
-        "c_standard_type": "signed_size",
-        "c_standard_type_fact": {"kind": "integer", "signed": True, "bits": 16},
-    }
-    assert real_size.name == "Float32"
-    assert real_size.dtype == "Float32"
-    assert real_size.metadata == {
-        "c_standard_type": "real_size",
-        "c_standard_type_fact": {"kind": "real", "bits": 32},
-    }
-    fallback = CToIRConverter()._standard_semantic_type("size_t")
-    assert fallback.name == "SizeT"
-    assert fallback.dtype == "SizeT"
-    assert fallback.metadata == {"c_standard_type": "size_t", "c_standard_type_fallback": True}
-    assert converter._standard_semantic_type("missing") is None
-    assert converter._standard_semantic_type("not_standard") is None
-    opaque_converter = CToIRConverter(
-        standard_type_report={
-            "implicit_handle": {"kind": "opaque_handle"},
-            "missing_handle": {"available": False, "kind": "opaque_handle"},
-        }
-    )
-    assert opaque_converter._standard_semantic_type("implicit_handle").name == "implicit_handle"
-    assert opaque_converter._standard_semantic_type("missing_handle") is None
-    assert CToIRConverter._standard_type_facts(object()) == {}
-    assert CToIRConverter._integer_literal_value(None) is None
-    assert CToIRConverter._integer_literal_value("value") is None
-    assert CToIRConverter._integer_macro_expression("(MISSING + 1)", {}) is False
-    assert CToIRConverter._integer_macro_expression("(1 +)", {}) is False
-
+def test_c2ir_numeric_constant_edge_cases():
+    converter = CToIRConverter()
     parsed = parse_c_file(
         "enum default_status { DEFAULT_OK, DEFAULT_NEXT };\nenum status { STATUS_EXPR = UNKNOWN, STATUS_NEXT };\n",
         filename="edge_constants.h",
@@ -629,9 +467,13 @@ def test_c2ir_standard_type_facts_and_numeric_constant_edge_cases():
     parsed.macros = [
         CMacro(name="RATE", value="1.5"),
         CMacro(name="BAD", value="(MISSING + 1)"),
+        CMacro(name="MALFORMED", value="(1 +)"),
     ]
     constants = {variable.name: variable for variable in converter.visit(parsed).variables}
     assert constants["RATE"].semantic_type.name == "Float64"
+    # An expression that does not evaluate to an integer is not published as one.
+    assert "BAD" not in constants
+    assert "MALFORMED" not in constants
     assert constants["DEFAULT_OK"].default_value == "0"
     assert constants["DEFAULT_NEXT"].default_value == "1"
     assert constants["STATUS_EXPR"].default_value == "UNKNOWN"

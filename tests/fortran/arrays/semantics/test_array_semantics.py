@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_compile_time_values.py`."""
+"""Array declaration semantics and declaration-expression provenance."""
 
 from pathlib import Path
 
@@ -20,126 +20,43 @@ from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
-def test_array_constraints():
+def test_fortran_array_declarations_complete_category_shape_and_order():
+    """Each declaration form becomes one array contract; bounds collapse to extents."""
     source = """
-module array_mod
-
+module array_forms
 contains
-
-subroutine scale(x)
-
-    real(8), intent(inout) :: x(:)
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    func = get_function(smod, "scale")
-
-    x = func.arguments[0]
-
-    assert x.semantic_type.name == "Float64"
-
-    assert x.semantic_type.rank == 1
-
-    contract = array_contract(x.semantic_type)
-    assert contract.category == "assumed_shape"
-    assert contract.shape == ["::"]
-    assert contract.source_shape == [":"]
-    assert contract.order is None
-
-
-def test_matrix_semantics():
-    source = """
-module linalg_mod
-
-contains
-
-subroutine matvec(A, x, y)
-
-    real(8), intent(in) :: A(:, :)
-    real(8), intent(in) :: x(:)
-    real(8), intent(out) :: y(:)
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    func = get_function(smod, "matvec")
-
-    A = func.arguments[0]
-
-    assert A.semantic_type.rank == 2
-
-    contract = array_contract(A.semantic_type)
-    assert A.semantic_type.shape == ["::", "::"]
-    assert contract.source_shape == [":", ":"]
-    assert contract.category == "assumed_shape"
-    assert contract.order == "ORDER_F"
-
-
-def test_explicit_bound_ranges_remain_shaped_storage_contracts():
-    source = """
-module bound_mod
-contains
-subroutine bounded(n, default_bound, zero_bound, shifted_bound)
+subroutine forms(n, vector, matrix, fixed, default_bound, zero_bound, shifted_bound)
   integer, intent(in) :: n
+  real(8), intent(inout) :: vector(:)
+  real(8), intent(in) :: matrix(:, :)
+  real(8), intent(in) :: fixed(10, 20)
   real(8), intent(inout) :: default_bound(1:n)
   real(8), intent(inout) :: zero_bound(0:n-1)
   real(8), intent(inout) :: shifted_bound(2:n+1)
-end subroutine bounded
-end module bound_mod
+end subroutine forms
+end module array_forms
 """
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
-    args = {arg.name: arg for arg in get_function(module, "bounded").arguments}
+    arguments = {argument.name: argument.semantic_type for argument in get_function(module, "forms").arguments}
+    expected = {
+        "vector": ("assumed_shape", ["::"], [":"], None),
+        "matrix": ("assumed_shape", ["::", "::"], [":", ":"], "ORDER_F"),
+        "fixed": ("explicit_shape", ["10", "20"], None, "ORDER_F"),
+        "default_bound": ("explicit_shape", ["n"], None, None),
+        "zero_bound": ("explicit_shape", ["n"], None, None),
+        "shifted_bound": ("explicit_shape", ["n"], None, None),
+    }
 
-    default_bound = array_contract(args["default_bound"].semantic_type)
-    assert default_bound.category == "explicit_shape"
-    assert default_bound.shape == ["n"]
-
-    zero_bound = array_contract(args["zero_bound"].semantic_type)
-    assert zero_bound.category == "explicit_shape"
-    assert zero_bound.shape == ["n"]
-
-    shifted_bound = array_contract(args["shifted_bound"].semantic_type)
-    assert shifted_bound.category == "explicit_shape"
-    assert shifted_bound.shape == ["n"]
-
-
-def test_explicit_shape():
-    source = """
-module shape_mod
-
-contains
-
-subroutine foo(A)
-
-    real(8), intent(in) :: A(10, 20)
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    func = get_function(smod, "foo")
-
-    A = func.arguments[0]
-
-    assert A.semantic_type.shape == ["10", "20"]
+    assert arguments["vector"].name == "Float64"
+    for name, (category, shape, source_shape, order) in expected.items():
+        contract = array_contract(arguments[name])
+        assert arguments[name].rank == len(shape), name
+        assert contract.category == category, name
+        assert contract.shape == shape, name
+        if source_shape is not None:
+            assert contract.source_shape == source_shape, name
+        if order is not None or len(shape) == 1:
+            assert contract.order == order, name
 
 
 def test_fortran_inquiries_become_python_array_expressions_and_keep_source_bounds():

@@ -32,29 +32,6 @@ def _required_c_compiler() -> str:
     return _CC
 
 
-def test_c_standard_type_probe_source_queries_standard_headers_without_layout_claims():
-    source = build_c_standard_type_probe_source()
-
-    assert "#include <complex.h>" in source
-    assert "#include <float.h>" in source
-    assert "#include <stddef.h>" in source
-    assert "#include <stdint.h>" in source
-    assert "#include <time.h>" in source
-    assert "#include <stdio.h>" in source
-    assert 'PRIK_PRINT_ARITHMETIC("_Bool"' in source
-    assert "PRIK_PRINT_CHAR()" in source
-    assert 'PRIK_PRINT_ARITHMETIC("unsigned long"' in source
-    assert 'PRIK_PRINT_REAL("long double"' in source
-    assert 'PRIK_PRINT_COMPLEX("long double _Complex"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("int"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("size_t"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("int64_t"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("uint32_t"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("time_t"' in source
-    assert "sizeof(FILE *)" in source
-    assert "sizeof(FILE)" not in source
-
-
 def test_c_standard_type_probe_requires_an_explicit_compiler():
     with pytest.raises(CStandardTypeProbeError, match="exact compiler"):
         probe_c_standard_types(PreprocessingConfig(mode="compiler"))

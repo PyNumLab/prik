@@ -113,6 +113,7 @@ def test_optional_arguments_drive_fortran_present_behavior(
 
     assert module.summarize(np.int32(5)) == np.int32(5)
     assert module.summarize(np.int32(5), np.int32(4)) == np.int32(9)
+    assert module.summarize(np.array(5, dtype=np.int32), np.array(4, dtype=np.int32)) == np.int32(9)
     assert module.summarize(np.int32(5), None) == np.int32(5)
     assert module.summarize(np.int32(5), scale=None) == np.int32(5)
     assert module.summarize(np.int32(5), values=values) == np.int32(11)

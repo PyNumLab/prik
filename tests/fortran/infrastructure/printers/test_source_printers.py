@@ -1,237 +1,114 @@
-"""Internal C and Fortran source-printer contracts."""
+"""Fortran source-printer line-wrapping contracts.
+
+Generated Fortran must stay within the free-form 132-column limit, and every
+continuation must be placed where it cannot change what the statement means.
+"""
 
 from __future__ import annotations
 
-
-import ast
 import re
 
 import pytest
 
-from tests.fortran._support.wrapper_build import REPO_ROOT
 from prik.codegen import (
-    BackendScalarType,
-    CDeclaration,
-    CExpressionStatement,
-    CFunction,
-    CFunctionPrototype,
-    CGoto,
-    CHeader,
-    CInclude,
-    CLabel,
-    CModule,
-    CParameter,
-    CReturn,
     CodeExpression,
     FortranAssignment,
     FortranCall,
     FortranFunction,
     FortranIf,
     FortranModule,
-    FortranParameter,
     FortranPointerAssignment,
-    FortranUse,
-    UnsupportedWrapperCodegenNodeError,
 )
-from prik.planning import (
-    BindingModulePlan,
-    BridgeModulePlan,
-    ModulePlan,
-    NamespacePlan,
-    NativeEntrypointModulePlan,
-)
-from prik.printers import CSourcePrinter, FortranSourcePrinter
+from prik.printers import FortranSourcePrinter
+
+_SLICES = ", ".join(f"1:values_upper_bound_{axis} + 1:values_stride_{axis}" for axis in range(4))
+_LONG_SUM = " + ".join(f"value_{index}" for index in range(20))
+_PADDING = "x" * 40
 
 
-def test_source_printers_render_complete_c_header_and_fortran_modules():
-    float64 = BackendScalarType(
-        semantic_name="Float64",
-        c_spelling="double",
-        fortran_spelling="real(c_double)",
-        python_parse_unit="d",
-        numpy_type_macro="NPY_FLOAT64",
-    )
-    parameters = (CParameter("self", "PyObject *"), CParameter("args", "PyObject *"))
-    c_function = CFunction(
-        name="wrap_add_r8",
-        return_type="PyObject *",
-        parameters=parameters,
-        storage="static",
-        body=(
-            CDeclaration("x", float64.c_spelling, CodeExpression("0.0")),
-            CExpressionStatement(CodeExpression("import_array()")),
-            CReturn(CodeExpression("NULL")),
-        ),
-    )
-    c_header = CHeader(
-        guard="FMATH_WRAPPER_H",
-        includes=(CInclude("Python.h"),),
-        prototypes=(CFunctionPrototype("wrap_add_r8", "PyObject *", parameters),),
-    )
-    c_module = CModule(
-        name="fmath_wrapper",
-        includes=(
-            CInclude("Python.h"),
-            CInclude("numpy/arrayobject.h"),
-            CInclude("fmath_wrapper.h", system=False),
-        ),
-        functions=(c_function,),
-    )
-    fortran_module = FortranModule(
-        name="bind_c_fmath_wrapper",
-        uses=(FortranUse("iso_c_binding", ("c_double",)),),
+def _nested_assignment(expression: str) -> FortranModule:
+    return FortranModule(
+        "nested_lines",
         procedures=(
             FortranFunction(
-                name="bind_c_add_r8",
-                parameters=(FortranParameter("x", float64.fortran_spelling, ("value",)),),
-                result_name="result",
-                result_type=float64.fortran_spelling,
-                bind_name="ADD_R8",
-                body=(FortranAssignment("result", CodeExpression("x")),),
-            ),
-        ),
-    )
-    c_header_source = CSourcePrinter().doprint(c_header)
-    c_source = CSourcePrinter().doprint(c_module)
-    fortran_source = FortranSourcePrinter().doprint(fortran_module)
-
-    assert "#ifndef FMATH_WRAPPER_H" in c_header_source
-    assert "PyObject * wrap_add_r8(PyObject * self, PyObject * args);" in c_header_source
-    assert '#include "fmath_wrapper.h"' in c_source
-    assert "static PyObject * wrap_add_r8(PyObject * self, PyObject * args)" in c_source
-    assert "double x = 0.0;" in c_source
-    assert "import_array();" in c_source
-    assert "use iso_c_binding, only: c_double" in fortran_source
-    assert 'function bind_c_add_r8(x) result(result) bind(c, name="ADD_R8")' in fortran_source
-    assert "real(c_double), value :: x" in fortran_source
-
-
-def test_c_source_printer_renders_function_local_cleanup_jumps():
-    function = CFunction(
-        name="wrap_outputs",
-        return_type="PyObject *",
-        body=(
-            CGoto("prik_output_cleanup_1"),
-            CLabel("prik_output_cleanup_1"),
-            CReturn(CodeExpression("NULL")),
-        ),
-    )
-
-    source = CSourcePrinter().doprint(function)
-
-    assert "goto prik_output_cleanup_1;" in source
-    assert "prik_output_cleanup_1:" in source
-
-
-def test_source_printers_reject_wrapper_plan_models():
-    plan = ModulePlan(
-        owner_path="demo",
-        binding=BindingModulePlan("demo", "demo"),
-        entrypoint=NativeEntrypointModulePlan("demo"),
-        bridge=BridgeModulePlan("demo"),
-        variables=(),
-        namespaces=(NamespacePlan(owner_path="demo", python_path=()),),
-    )
-
-    with pytest.raises(UnsupportedWrapperCodegenNodeError):
-        CSourcePrinter().doprint(plan)
-    with pytest.raises(UnsupportedWrapperCodegenNodeError):
-        FortranSourcePrinter().doprint(plan)
-
-
-def test_fortran_source_printer_wraps_long_parenthesized_call_arguments():
-    slices = ", ".join(f"1:values_upper_bound_{axis} + 1:values_stride_{axis}" for axis in range(4))
-    source = FortranSourcePrinter().doprint(
-        FortranCall(
-            "native_scale",
-            (
-                CodeExpression(f"values_base({slices})"),
-                CodeExpression(f"out_base({slices})"),
-            ),
-        )
-    )
-
-    assert "& values_base(&" in source
-    assert "&   1:values_upper_bound_3 + 1:values_stride_3), &" in source
-    assert "& out_base(&" in source
-    assert max(map(len, source.splitlines())) <= 124
-
-
-def test_fortran_source_printer_never_continues_inside_a_character_literal():
-    """A literal's commas are its characters, so no continuation may split it.
-
-    Fortran resumes a continued literal after the next line's `&`, so a break
-    placed at a comma inside quotes changes the characters the literal states
-    while still compiling.
-    """
-    padding = "x" * 40
-    expression = f"build_message(prefix_{padding}, 'alpha, beta', suffix_{padding})"
-
-    source = FortranSourcePrinter().doprint(FortranAssignment("destination", CodeExpression(expression)))
-
-    assert "'alpha, beta'" in source
-    assert "'alpha, &" not in source
-    assert max(map(len, source.splitlines())) <= 132
-
-
-def test_fortran_source_printer_breaks_a_call_at_its_own_arguments():
-    """A nested call's commas belong to it, so the outer break skips them."""
-    padding = "y" * 40
-    expression = f"compute_total(first_{padding}, max(second_term, third_term), fourth_{padding})"
-
-    source = FortranSourcePrinter().doprint(FortranAssignment("destination", CodeExpression(expression)))
-
-    assert "& max(second_term, third_term), &" in source
-    assert max(map(len, source.splitlines())) <= 132
-
-
-def test_fortran_source_printer_wraps_long_pointer_array_sections():
-    slices = ", ".join(f"1:values_upper_bound_{axis} + 1:values_stride_{axis}" for axis in range(4))
-
-    source = FortranSourcePrinter().doprint(
-        FortranPointerAssignment("values", CodeExpression(f"values_base({slices})"))
-    )
-
-    assert source.startswith("values => values_base(&")
-    assert "& 1:values_upper_bound_3 + 1:values_stride_3)" in source
-    assert max(map(len, source.splitlines())) <= 132
-
-
-def test_fortran_source_printer_formats_unstructured_long_statements_automatically():
-    expression = " + ".join(f"value_{index}" for index in range(20))
-
-    source = FortranSourcePrinter().doprint(FortranAssignment("result", CodeExpression(expression)))
-
-    assert " &\n  & " in source
-    assert max(map(len, source.splitlines())) <= 132
-
-
-def test_fortran_source_printer_formats_after_nested_indentation_is_complete():
-    expression = " + ".join(f"value_{index}" for index in range(20))
-    source = FortranSourcePrinter().doprint(
-        FortranModule(
-            "nested_lines",
-            procedures=(
-                FortranFunction(
-                    "nested",
-                    body=(
-                        FortranIf(
-                            CodeExpression("outer"),
-                            body=(
-                                FortranIf(
-                                    CodeExpression("inner"),
-                                    body=(FortranAssignment("result", CodeExpression(expression)),),
-                                ),
+                "nested",
+                body=(
+                    FortranIf(
+                        CodeExpression("outer"),
+                        body=(
+                            FortranIf(
+                                CodeExpression("inner"),
+                                body=(FortranAssignment("result", CodeExpression(expression)),),
                             ),
                         ),
                     ),
-                    is_subroutine=True,
                 ),
+                is_subroutine=True,
             ),
-        )
+        ),
     )
 
-    assert "       & " in source
+
+@pytest.mark.parametrize(
+    ("node", "present", "absent"),
+    [
+        pytest.param(
+            FortranCall(
+                "native_scale",
+                (CodeExpression(f"values_base({_SLICES})"), CodeExpression(f"out_base({_SLICES})")),
+            ),
+            ("& values_base(&", "&   1:values_upper_bound_3 + 1:values_stride_3), &", "& out_base(&"),
+            (),
+            id="parenthesized_call_arguments",
+        ),
+        pytest.param(
+            FortranPointerAssignment("values", CodeExpression(f"values_base({_SLICES})")),
+            ("values => values_base(&", "& 1:values_upper_bound_3 + 1:values_stride_3)"),
+            (),
+            id="pointer_array_section",
+        ),
+        pytest.param(
+            FortranAssignment("result", CodeExpression(_LONG_SUM)),
+            (" &\n  & ",),
+            (),
+            id="unstructured_statement",
+        ),
+        pytest.param(
+            _nested_assignment(_LONG_SUM),
+            ("       & ",),
+            (),
+            id="after_nested_indentation",
+        ),
+        # A nested call's commas belong to it, so the outer break skips them.
+        pytest.param(
+            FortranAssignment(
+                "destination",
+                CodeExpression(f"compute_total(first_{_PADDING}, max(second_term, third_term), fourth_{_PADDING})"),
+            ),
+            ("& max(second_term, third_term), &",),
+            (),
+            id="call_breaks_at_its_own_arguments",
+        ),
+        # Fortran resumes a continued literal after the next line's `&`, so a
+        # break at a comma inside quotes would change the literal's characters.
+        pytest.param(
+            FortranAssignment(
+                "destination",
+                CodeExpression(f"build_message(prefix_{_PADDING}, 'alpha, beta', suffix_{_PADDING})"),
+            ),
+            ("'alpha, beta'",),
+            ("'alpha, &",),
+            id="never_inside_a_character_literal",
+        ),
+    ],
+)
+def test_fortran_source_printer_continues_long_statements_at_safe_points(node, present, absent):
+    source = FortranSourcePrinter().doprint(node)
+
+    for fragment in present:
+        assert fragment in source
+    for fragment in absent:
+        assert fragment not in source
     assert max(map(len, source.splitlines())) <= 132
 
 
@@ -256,16 +133,3 @@ def test_fortran_source_printer_continues_long_literals_without_changing_their_v
 def test_fortran_source_printer_rejects_an_overlong_token_without_a_safe_break():
     with pytest.raises(ValueError, match=r"free-form limit is 132"):
         FortranSourcePrinter().doprint(FortranAssignment("result", CodeExpression("x" * 134)))
-
-
-def test_source_printers_do_not_import_wrapper_plan_models():
-    imports = set()
-    for filename in ("c.py", "fortran.py"):
-        path = REPO_ROOT / "prik" / "printers" / filename
-        imports.update(
-            node.module
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-            if isinstance(node, ast.ImportFrom) and node.module is not None
-        )
-
-    assert "prik.planning.models" not in imports

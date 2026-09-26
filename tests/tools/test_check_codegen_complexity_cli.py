@@ -15,16 +15,12 @@ def _recommendation() -> WrapperCodegenViolation:
     )
 
 
-def test_codegen_review_is_advisory_by_default(monkeypatch, capsys) -> None:
+def test_codegen_review_is_advisory_unless_strict(monkeypatch, capsys) -> None:
     monkeypatch.setattr(check_codegen_complexity, "check_codegen_package", lambda: (_recommendation(),))
 
     assert check_codegen_complexity.main([]) == 0
     output = capsys.readouterr().out
     assert "example recommendation" in output
     assert "advisory codegen recommendation" in output
-
-
-def test_codegen_review_can_be_requested_as_strict(monkeypatch) -> None:
-    monkeypatch.setattr(check_codegen_complexity, "check_codegen_package", lambda: (_recommendation(),))
 
     assert check_codegen_complexity.main(["--strict"]) == 1

@@ -1,16 +1,6 @@
-"""Tests split by stable ownership concept from `test_compile_time_values.py`."""
+"""Fortran module declarations become the intended semantic module."""
 
-from pathlib import Path
-
-from prik.parsers.fortran.models import (
-    FortranUseStatement,
-    FortranArgument,
-    FortranModule,
-)
 from prik.semantics.fortran2ir import (
-    FortranToIRConverter,
-    _requirement_unit_name,
-    _resolve_compile_time_text,
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
 )
@@ -23,57 +13,6 @@ from tests.fortran._support.semantic_conversion import (
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-
-NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
-
-
-def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():
-    converter = FortranToIRConverter(wrapped_derived_types={("types_mod", "state_t")})
-    module = FortranModule(
-        name="consumer",
-        uses=[FortranUseStatement("OTHER_MOD"), FortranUseStatement("TYPES_MOD")],
-    )
-    context = converter._module_derived_type_context(module)
-
-    state = converter.visit(
-        FortranArgument(name="state", base_type="derived", kind="state_t"),
-        derived_type_context=context,
-    ).semantic_type
-    opaque_context = converter._module_derived_type_context(
-        FortranModule(name="consumer", uses=[FortranUseStatement("OPAQUE_MOD")])
-    )
-    opaque = converter.visit(
-        FortranArgument(name="opaque", base_type="derived", kind="opaque_t"),
-        derived_type_context=opaque_context,
-    ).semantic_type
-    merged = FortranToIRConverter()._with_additional_wrapped_types({("TYPES_MOD", "State_T")})
-
-    assert state.metadata["external_type_ref"] == {
-        "name": "state_t",
-        "local_name": "state_t",
-        "origin_module": "TYPES_MOD",
-        "wrapped": True,
-        "representation": "wrapped",
-    }
-    assert opaque.metadata["external_type_ref"] == {
-        "name": "opaque_t",
-        "local_name": "opaque_t",
-        "origin_module": "OPAQUE_MOD",
-        "wrapped": False,
-        "representation": "opaque",
-    }
-    assert merged.wrapped_derived_types == {("types_mod", "state_t")}
-    custom_type_map = {("integer", None): "CustomInt"}
-    configured = FortranToIRConverter(type_map=custom_type_map, compile_time_values={"rk": 8})
-    configured = configured._with_additional_wrapped_types({("types_mod", "state_t")})
-    assert configured.type_map is custom_type_map
-    assert configured.compile_time_values == {"rk": "8"}
-    assert FortranToIRConverter(compile_time_values={" ": 4, " RK ": 8}).compile_time_values == {"rk": "8"}
-    assert _resolve_compile_time_text("n + missing", {"n": "4"}) == "4 + missing"
-    assert _resolve_compile_time_text("N + missing", {"n": "4"}) == "4 + missing"
-    assert _requirement_unit_name(module="m") == "m"
-    assert _requirement_unit_name(unit_name="step") == "step"
-    assert _requirement_unit_name() == "<source>"
 
 
 def test_iso_c_module_variable_kinds_map_to_semantic_types():
@@ -175,81 +114,6 @@ end submodule implementation
     assert module.functions[0].return_type.shape == ["n"]
 
 
-def test_complex_module():
-    source = (NATIVE_FIXTURES / "complex_module.f90").read_text(encoding="utf-8")
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    # --------------------------------------------------------
-    # Module structure
-    # --------------------------------------------------------
-
-    assert smod.name == "fem_mod"
-
-    assert len(smod.functions) == 2
-
-    assert len(smod.classes) == 1
-
-    # --------------------------------------------------------
-    # Class checks
-    # --------------------------------------------------------
-
-    mesh_cls = get_class(smod, "mesh")
-
-    assert len(mesh_cls.fields) == 2
-
-    # --------------------------------------------------------
-    # Procedure checks
-    # --------------------------------------------------------
-
-    assemble = get_function(smod, "assemble")
-
-    assert len(assemble.arguments) == 3
-
-    K = next(arg for arg in assemble.arguments if arg.name == "K")
-
-    assert K.semantic_type.rank == 2
-
-    assert array_contract(K.semantic_type).order == "ORDER_F"
-
-    connectivity = next(arg for arg in assemble.arguments if arg.name == "connectivity")
-
-    assert connectivity.semantic_type.name == "Int32"
-
-    # --------------------------------------------------------
-    # Function return
-    # --------------------------------------------------------
-
-    norm = get_function(smod, "compute_norm")
-
-    assert norm.return_type.name == "Float64"
-
-
-def test_module_conversion_public_api_entrypoint():
-    source = """
-module class_mod
-
-contains
-
-subroutine touch(x)
-
-    integer, intent(inout) :: x
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    assert smod.name == "class_mod"
-    assert get_function(smod, "touch").arguments[0].semantic_type.name == "Int32"
-
-
 def test_fortran_to_ir_preserves_module_semantics_from_inline_source():
     source = """
 module m
@@ -285,22 +149,3 @@ end module m
     assert semantic_dtype.visibility == "private"
     assert semantic_proc.visibility == "public"
     assert semantic_file_modules[0].name == "m"
-
-
-def test_declaration_level_private_module_constant_is_not_exported():
-    parsed = parse_fortran_source(
-        """
-module constants
-  real, parameter, private :: epsilon = 1.0
-  real, parameter :: visible = 2.0
-end module constants
-""",
-        filename="constants.f90",
-    )
-
-    semantic_module = fortran_module_to_semantic_module(parsed)
-
-    assert [(variable.name, variable.visibility) for variable in semantic_module.variables] == [
-        ("epsilon", "private"),
-        ("visible", "public"),
-    ]

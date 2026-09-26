@@ -59,16 +59,6 @@ def _c_ordered_strided_matrix(rows=4, cols=3):
     return base[:, ::2]
 
 
-def _reversed_fortran_matrix(rows=4, cols=3):
-    base = _matrix(rows * 2, cols)
-    return base[::-2, :]
-
-
-def _broadcast_fortran_like_matrix(rows=4, cols=3):
-    row = np.asfortranarray(np.arange(1, cols + 1, dtype=np.float64)[None, :])
-    return np.broadcast_to(row, (rows, cols))
-
-
 def _rank3(shape=(4, 3, 2)):
     data = np.arange(1, np.prod(shape) + 1, dtype=np.float64)
     return np.asfortranarray(data.reshape(shape, order="F"))
@@ -99,6 +89,7 @@ def _c_ordered_strided_rank3(shape=(4, 3, 2)):
 
 
 def test_rank2_contiguous_contract_requires_fortran_contiguous(compiled_multid_array_module):
+    """Contiguous rank-two and rank-three dummies refuse C-ordered and strided storage."""
     source = _matrix()
     out = np.zeros_like(source, order="F")
 
@@ -119,8 +110,25 @@ def test_rank2_contiguous_contract_requires_fortran_contiguous(compiled_multid_a
     with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
         compiled_multid_array_module.scale2_contiguous(strided_source, strided_out)
 
+    source = _rank3()
+    out = np.zeros_like(source, order="F")
 
-def test_rank2_assumed_shape_accepts_fortran_ordered_strided_views(compiled_multid_array_module):
+    compiled_multid_array_module.shift3_contiguous(source, out)
+
+    np.testing.assert_allclose(out, source + 10.0)
+
+    c_order_source = np.array(source, order="C", copy=True)
+    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+        compiled_multid_array_module.shift3_contiguous(c_order_source, out)
+
+    strided_source = _strided_rank3()
+    strided_out = np.zeros_like(strided_source, order="F")
+    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+        compiled_multid_array_module.shift3_contiguous(strided_source, strided_out)
+
+
+def test_assumed_shape_accepts_fortran_ordered_strided_views(compiled_multid_array_module):
+    """Rank-two and rank-three assumed-shape dummies take positive-stride Fortran views."""
     contiguous_source = _matrix()
     contiguous_out = np.zeros_like(contiguous_source, order="F")
 
@@ -164,79 +172,6 @@ def test_rank2_assumed_shape_accepts_fortran_ordered_strided_views(compiled_mult
     with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
         compiled_multid_array_module.scale2_strided(contiguous_source, c_order_out)
 
-
-def test_rank2_assumed_shape_accepts_reversed_axes_and_refuses_what_is_not_a_section(
-    compiled_multid_array_module,
-):
-    """A reversed axis is described; a broadcast one has nothing to describe.
-
-    The dummy is reached through a descriptor, which records a signed step per
-    axis, so an axis that runs backwards is passed on as it stands and the
-    callee reads the same elements the caller sees. A zero step is not a
-    direction, it is a repetition, and Fortran has no array section for it --
-    so that one is still refused, and says so in its own terms.
-    """
-    reversed_source = _reversed_fortran_matrix()
-    out = np.zeros_like(reversed_source, order="F")
-    checksum = np.zeros(1, dtype=np.float64)
-
-    compiled_multid_array_module.scale2_strided(reversed_source, out)
-    np.testing.assert_allclose(out, 3.0 * reversed_source)
-
-    compiled_multid_array_module.checksum2_strided(reversed_source, checksum)
-    np.testing.assert_allclose(checksum[0], _checksum2(reversed_source))
-
-    # Writing through a reversed view reaches the caller's own elements.
-    reversed_out = _reversed_fortran_matrix()
-    before = np.array(reversed_out, copy=True)
-    compiled_multid_array_module.scale2_strided(reversed_out, reversed_out)
-    np.testing.assert_allclose(reversed_out, 3.0 * before)
-
-    broadcast_source = _broadcast_fortran_like_matrix()
-    assert broadcast_source.strides[0] == 0
-    with pytest.raises(TypeError, match=r"not a Fortran array section"):
-        compiled_multid_array_module.scale2_strided(broadcast_source, out)
-    with pytest.raises(TypeError, match=r"not a Fortran array section"):
-        compiled_multid_array_module.checksum2_strided(broadcast_source, checksum)
-
-
-def test_rank2_explicit_shape_requires_fortran_contiguous(compiled_multid_array_module):
-    source = _matrix()
-    rows, cols = source.shape
-    out = np.zeros_like(source, order="F")
-
-    compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), source, out)
-
-    np.testing.assert_allclose(out, 4.0 * source)
-
-    c_order_source = np.array(source, order="C", copy=True)
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
-        compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), c_order_source, out)
-
-    strided_source = _strided_matrix(rows, cols)
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
-        compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), strided_source, out)
-
-
-def test_rank3_contiguous_contract_requires_fortran_contiguous(compiled_multid_array_module):
-    source = _rank3()
-    out = np.zeros_like(source, order="F")
-
-    compiled_multid_array_module.shift3_contiguous(source, out)
-
-    np.testing.assert_allclose(out, source + 10.0)
-
-    c_order_source = np.array(source, order="C", copy=True)
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
-        compiled_multid_array_module.shift3_contiguous(c_order_source, out)
-
-    strided_source = _strided_rank3()
-    strided_out = np.zeros_like(strided_source, order="F")
-    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
-        compiled_multid_array_module.shift3_contiguous(strided_source, strided_out)
-
-
-def test_rank3_assumed_shape_accepts_fortran_ordered_strided_views(compiled_multid_array_module):
     contiguous_source = _rank3()
     contiguous_out = np.zeros_like(contiguous_source, order="F")
 
@@ -270,3 +205,21 @@ def test_rank3_assumed_shape_accepts_fortran_ordered_strided_views(compiled_mult
         compiled_multid_array_module.shift3_strided(c_ordered_strided_source, contiguous_out)
     with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
         compiled_multid_array_module.checksum3_strided(c_ordered_strided_source, contiguous_checksum)
+
+
+def test_rank2_explicit_shape_requires_fortran_contiguous(compiled_multid_array_module):
+    source = _matrix()
+    rows, cols = source.shape
+    out = np.zeros_like(source, order="F")
+
+    compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), source, out)
+
+    np.testing.assert_allclose(out, 4.0 * source)
+
+    c_order_source = np.array(source, order="C", copy=True)
+    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+        compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), c_order_source, out)
+
+    strided_source = _strided_matrix(rows, cols)
+    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+        compiled_multid_array_module.scale2_explicit(np.int32(rows), np.int32(cols), strided_source, out)

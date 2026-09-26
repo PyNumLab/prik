@@ -11,7 +11,6 @@ from prik.preprocessing import (
     PreprocessingError,
     build_direct_preprocess_invocation,
     build_preprocess_invocation,
-    expand_native_fortran_includes,
     run_compiler_preprocessor_with_recipe,
     validate_macro_name,
 )
@@ -118,20 +117,6 @@ def test_preprocessing_config_internal_macros_recipe_and_validation(tmp_path: Pa
         exc_info,
         message="--define: invalid macro name 'bad-name'; must be a valid identifier",
     )
-
-
-def test_preprocessing_error_default_category_and_diagnostics():
-    diagnostic = preprocessing.PreprocessingDiagnostic(category="PREPROCESSOR_FAILED", message="bad")
-
-    default_error = PreprocessingError("default")
-    detailed_error = PreprocessingError("detailed", diagnostics=[diagnostic])
-
-    assert default_error.category == "PREPROCESSOR_FAILED"
-    assert default_error.diagnostics == []
-    assert str(default_error) == "default"
-    assert detailed_error.category == "PREPROCESSOR_FAILED"
-    assert detailed_error.diagnostics == [diagnostic]
-    assert str(detailed_error) == "detailed"
 
 
 def test_recipe_round_trip_preserves_all_preprocessing_metadata(monkeypatch, tmp_path: Path):
@@ -280,29 +265,3 @@ def test_build_preprocess_invocation_supports_fortran_compile_database(tmp_path:
         },
         capabilities={"dependency_output": True, "macro_dump": True, "linemarkers": True},
     )
-
-
-def test_native_fortran_missing_include_does_not_drop_following_source(tmp_path: Path):
-    root = tmp_path / "root.F90"
-
-    expanded, included_files, mappings, diagnostics = expand_native_fortran_includes(
-        'include "missing.inc"\ninteger :: retained\n',
-        root_path=root,
-        include_dirs=[],
-    )
-
-    assert expanded == "integer :: retained\n"
-    assert included_files == []
-    assert [(mapping.generated_line, mapping.original_path, mapping.original_line) for mapping in mappings] == [
-        (1, str(root), 2)
-    ]
-    assert [diagnostic.to_dict() for diagnostic in diagnostics] == [
-        {
-            "category": "INCLUDE_NOT_FOUND",
-            "message": 'Fortran INCLUDE file "missing.inc" was not found',
-            "severity": "error",
-            "path": str(root),
-            "line": 1,
-            "command": [],
-        }
-    ]

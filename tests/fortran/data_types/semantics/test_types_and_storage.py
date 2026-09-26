@@ -1,16 +1,8 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-import json
 from dataclasses import asdict
 from prik.parsers.fortran.models import (
     FortranArgument,
-    FortranDerivedType,
-    FortranFile,
-    FortranModule,
-    FortranProcedureSignature,
-    FortranProject,
-    FortranUseMapping,
-    FortranUseStatement,
     FortranVariable,
 )
 from prik.semantics.fortran2ir import (
@@ -20,106 +12,8 @@ from prik.semantics.fortran2ir import (
 from tests.fortran._support.semantic_conversion import (
     array_contract,
     get_function,
-    has_constraint,
 )
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-
-
-def test_converter_visitor_and_compatibility_methods_cover_public_paths():
-    converter = FortranToIRConverter()
-    scale = FortranVariable(name="scale", base_type="real", kind="8", is_parameter=True)
-    arg = FortranArgument(
-        name="x",
-        base_type="real",
-        kind="8",
-        allocatable=True,
-        pointer=True,
-    )
-    proc = FortranProcedureSignature(name="work", kind="subroutine", arguments=[arg])
-    base = FortranDerivedType(name="base_t")
-    dtype = FortranDerivedType(
-        name="child_t",
-        fields=[FortranArgument(name="payload", base_type="derived", kind="base_t")],
-        extends=base,
-    )
-    module = FortranModule(
-        name="m",
-        uses=[
-            FortranUseStatement("iso_c_binding", True, (FortranUseMapping(source="c_int", target="i32"),)),
-            FortranUseStatement("plain_import"),
-        ],
-        variables=[scale],
-        procedures=[proc],
-        derived_types=[dtype],
-        private_symbols=["work"],
-    )
-    parsed = FortranFile(filename="/tmp/standalone_source.f90", modules=[module], procedures=[proc])
-
-    assert converter.visit(parsed)[0].name == "m"
-    assert converter.visit(module).functions[0].visibility == "private"
-    assert converter.visit(proc, visibility="private").visibility == "private"
-    assert converter.visit(proc).visibility == "public"
-
-    semantic_arg = converter.visit(arg)
-    assert semantic_arg.semantic_type.storage.kind == "reference"
-    assert semantic_arg.semantic_type.storage.mutable is True
-    assert semantic_arg.visibility == "public"
-    assert semantic_arg.origin.source_language == "fortran"
-    assert semantic_arg.origin.native_name == "x"
-    assert semantic_arg.origin.source_kind == "argument"
-
-    semantic_var = converter.visit(scale)
-    assert semantic_var.name == "Float64"
-    assert has_constraint(semantic_var, "Constant")
-    assert converter.visit(arg).name == "x"
-    assert converter.visit(proc).name == "work"
-    assert converter.visit(proc).visibility == "public"
-    assert converter.visit(dtype, procedure_lookup={}).base_classes == ["base_t"]
-    # No declaration is written with `i32`, and the compiler supplies
-    # `iso_c_binding`, so the module states no import for its contract.
-    assert converter.visit(module).imports == []
-
-    modules = converter.visit(parsed)
-    assert [module.name for module in modules] == ["m", "standalone_source"]
-    assert converter.visit(FortranProject(files=[parsed]))[0].name == "m"
-
-
-def test_basic_scalar_arguments():
-    source = """
-module math_mod
-
-contains
-
-subroutine add(a, b, c)
-
-    real(8), intent(in) :: a
-    real(8), intent(in) :: b
-    real(8), intent(out) :: c
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    assert smod.name == "math_mod"
-
-    func = get_function(smod, "add")
-
-    assert len(func.arguments) == 3
-
-    a = func.arguments[0]
-    c = func.arguments[2]
-
-    assert a.name == "a"
-
-    assert a.semantic_type.name == "Float64"
-    assert a.semantic_type.rank == 0
-
-    assert c.semantic_type.ownership.mutable is True
 
 
 def test_fortran_native_storage_contracts_cover_array_categories_and_scalars():
@@ -279,31 +173,3 @@ def test_fortran_native_storage_contracts_preserve_exact_bounds_and_member_flags
     assert plain_member.origin.source_kind == "variable"
     assert mixed_bounds.storage.array.lower_bounds == [None, None, "0"]
     assert mixed_bounds.storage.array.upper_bounds == [None, "4", "4"]
-
-
-def test_semantic_ir_serialization():
-    source = """
-module simple_mod
-
-contains
-
-subroutine hello(x)
-
-    integer, intent(in) :: x
-
-end subroutine
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    data = asdict(smod)
-
-    json_text = json.dumps(data, indent=2)
-
-    assert "hello" in json_text
-
-    assert "Int32" in json_text

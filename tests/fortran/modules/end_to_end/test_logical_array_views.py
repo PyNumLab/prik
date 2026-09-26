@@ -37,28 +37,26 @@ def logical_view(tmp_path_factory):
     return module
 
 
-def test_a_one_byte_logical_is_a_numpy_boolean(logical_view):
-    """`logical(c_bool)` holds zero or one in one byte, which is `numpy.bool_`."""
+def test_a_logical_array_reports_the_width_its_elements_occupy(logical_view):
+    """`logical(c_bool)` holds zero or one in one byte, which is `numpy.bool_`.
+
+    NumPy has no Boolean larger than a byte, so a wider kind states its width
+    as the integer of matching size instead.
+    """
     assert logical_view.narrow.dtype == np.dtype(np.bool_)
     assert logical_view.narrow_alloc.to_numpy().dtype == np.dtype(np.bool_)
     assert logical_view.narrow.tolist() == [True, False, True, False]
 
-
-def test_a_wider_logical_reports_the_width_its_elements_occupy(logical_view):
-    """NumPy has no Boolean larger than a byte, so the width is stated instead."""
     wide = logical_view.wide
-
     assert wide.dtype == np.dtype(np.int32)
     assert wide.astype(bool).tolist() == [True, False, True, False]
     assert logical_view.wide_alloc.to_numpy().dtype == np.dtype(np.int32)
 
 
-def test_logical_allocatable_handles_reach_matching_ordinary_dummies(logical_view):
+def test_logical_handles_reach_matching_ordinary_dummies(logical_view):
+    """Allocatable and pointer handles are ordinary array actuals at either width."""
     assert logical_view.count_narrow_actual(logical_view.narrow_alloc) == np.int32(2)
     assert logical_view.count_wide_actual(logical_view.wide_alloc) == np.int32(2)
-
-
-def test_wide_logical_pointer_handles_reach_matching_ordinary_dummies(logical_view):
     assert logical_view.wide_pointer.dtype == np.dtype(np.int32)
     assert logical_view.wide_pointer.shape == (4,)
     assert logical_view.count_wide_actual(logical_view.wide_pointer) == np.int32(2)

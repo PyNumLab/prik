@@ -68,11 +68,11 @@ def test_direct_projection_reorders_value_and_address_actuals_and_materializes_l
     }
     binding = (result.output_dir / "direct_projection_runtime_wrapper.c").read_text(encoding="utf-8")
     assert "int32_t projected_native(int32_t right, int32_t * left, int32_t literal_2);" in binding
-    assert "result = projected_native(bound_right, &bound_left, 5);" in binding
+    assert "result = projected_native(bound_right, bound_left_storage, 5);" in binding
     assert (
         "void projected_output_native(int32_t right, int32_t * left, int32_t literal_2, int32_t * output);" in binding
     )
-    assert "projected_output_native(bound_right, &bound_left, 5, &output);" in binding
+    assert "projected_output_native(bound_right, bound_left_storage, 5, &output);" in binding
 
 
 def test_adapted_projection_uses_the_same_binding_owned_actual_sequence(tmp_path: Path):
@@ -92,8 +92,8 @@ def test_adapted_projection_uses_the_same_binding_owned_actual_sequence(tmp_path
     }
     binding = (result.output_dir / "adapted_projection_runtime_wrapper.c").read_text(encoding="utf-8")
     bridge = (result.output_dir / "bind_c_adapted_projection_runtime_wrapper.f90").read_text(encoding="utf-8")
-    assert "bind_c_projected(bound_right, &bound_left, 5)" in binding
-    assert "bind_c_projected_output(bound_right, &bound_left, 5, &output)" in binding
+    assert "bind_c_projected(bound_right, bound_left_storage, 5)" in binding
+    assert "bind_c_projected_output(bound_right, bound_left_storage, 5, &output)" in binding
     assert "function bind_c_projected(right, left, literal_2)" in bridge
     assert "native_projected(right, left, literal_2)" in bridge
     assert "subroutine bind_c_projected_output(right, left, literal_2, output)" in bridge

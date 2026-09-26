@@ -53,6 +53,8 @@ def test_status_projection_consumes_outputs_raises_message_and_recovers(tmp_path
         with pytest.raises(RuntimeError, match="negative input"):
             module.solve(np.int32(-1))
     assert module.solve(np.int32(2)) is None
+    assert "Raises\n------" in module.solve.__doc__
+    assert "If native status differs from the success value 0." in module.solve.__doc__
 
     binding = (result.output_dir / "fruntime_policy_f90_wrapper.c").read_text(encoding="utf-8")
     held = binding[

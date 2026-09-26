@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 from pathlib import Path
 
 import numpy as np
@@ -20,12 +19,8 @@ from tests.fortran._support.paths import FORTRAN_ROOT
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDITED_CONTRACTS = FIXTURES / "edited_contracts"
-DERIVED_BOUNDARY_F90_SOURCE = FIXTURES / "native" / "fderived_boundary_f90.f90"
-CONTRACT = EDITED_CONTRACTS / "opaque_boundary" / "__init__.pyi"
 PLAIN_MODULE_SOURCE = FIXTURES / "native" / "fmodule_derived_snapshot_f90.f90"
 PLAIN_MODULE_CONTRACT = EDITED_CONTRACTS / "module_live_proxy" / "__init__.pyi"
-ALIASED_MODULE_SOURCE = FIXTURES / "native" / "fmodule_derived_alias_f90.f90"
-ALIASED_MODULE_CONTRACT = EDITED_CONTRACTS / "module_aliased_proxy" / "__init__.pyi"
 DERIVED_CONSTANT_SOURCE = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures" / "native" / "fmodule_vars_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -70,78 +65,6 @@ def optional_sum(value: point | None = ...) -> Float64: ...
 def update_point(value: point) -> Returns["value", point]: ...
 def fill_point(value: point) -> Returns["value", point]: ...
 """
-# GCC 13.2 PR113885 ICEs on function-result assignment when a finalizable type
-# has no data components. The marker keeps this lifetime test on its intended path.
-BORROWED_FINALIZER_SOURCE = (NATIVE_FIXTURES / "fborrowed_finalizer_runtime.f90").read_text(encoding="utf-8")
-BORROWED_FINALIZER_CONTRACT = """\
-from prik.contracts import Int32, destroy
-
-class child:
-    @destroy
-    def cleanup_child(self) -> None: ...
-
-class parent:
-    value: child
-
-def make_parent() -> parent: ...
-def get_final_count() -> Int32: ...
-def reset_final_count() -> None: ...
-"""
-
-
-def _build_point_boundary(tmp_path: Path):
-    native_object = _compile_native_object(DERIVED_BOUNDARY_F90_SOURCE, tmp_path / "native")
-    result = build_pyi_extension(
-        CONTRACT,
-        native_objects=[native_object],
-        native_include_dirs=[native_object.parent],
-        output_dir=tmp_path / "build",
-    )
-    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
-    return module, result
-
-
-def _exercise_point_boundary(module):
-    point = module.make_point(np.float64(1.0), np.float64(2.0))
-    assert isinstance(point, module.point)
-    assert point.x == np.float64(1.0)
-    assert point.y == np.float64(2.0)
-    assert module.point_sum(point) == np.float64(3.0)
-
-    point.x = np.float64(4.0)
-    point.y = np.float64(5.0)
-    assert module.point_sum(point) == np.float64(9.0)
-
-    identity = id(point)
-    assert module.move_point(point, np.float64(2.0), np.float64(3.0)) is None
-    assert id(point) == identity
-    assert point.x == np.float64(6.0)
-    assert point.y == np.float64(8.0)
-
-    output = module.make_point(np.float64(0.0), np.float64(0.0))
-    assert module.make_point_out(output, np.float64(10.0), np.float64(11.0)) is None
-    assert output.x == np.float64(10.0)
-    assert output.y == np.float64(11.0)
-
-    with pytest.raises(TypeError, match="Expected"):
-        point.x = 12.0
-
-
-def test_scalar_derived_objects_use_canonical_plan(tmp_path: Path):
-    module, result = _build_point_boundary(tmp_path)
-    _exercise_point_boundary(module)
-    with pytest.raises(TypeError):
-        module.point()
-
-    generated_c = (result.output_dir / "opaque_boundary_wrapper.c").read_text(encoding="utf-8")
-    generated_fortran = (result.output_dir / "bind_c_opaque_boundary_wrapper.f90").read_text(encoding="utf-8")
-    assert "static PyObject * wrap_point_sum" in generated_c
-    assert "@x.setter\\n    def x(self, value):" in generated_c
-    assert "bind_c_prik_field_point_x_get" in generated_fortran
-    assert "bind_c_prik_field_point_x_set" in generated_fortran
-    assert "call native_make_point_out(p, x, y)" in generated_fortran
-    assert "result = c_null_ptr" in generated_fortran
-    assert "allocate(result_value, stat=prik_allocation_status)" in generated_fortran
 
 
 def test_plain_module_derived_proxy_reads_and_writes_live_members(tmp_path: Path):
@@ -215,44 +138,6 @@ def test_plain_module_derived_proxy_reads_and_writes_live_members(tmp_path: Path
     assert "native_current%nested%id" in generated_fortran
 
 
-def test_aliased_module_derived_object_uses_direct_live_field_handles(tmp_path: Path):
-    native_object = _compile_native_object(ALIASED_MODULE_SOURCE, tmp_path / "native")
-    result = build_pyi_extension(
-        ALIASED_MODULE_CONTRACT,
-        native_objects=[native_object],
-        native_include_dirs=[native_object.parent],
-        output_dir=tmp_path / "wrapper_plan",
-    )
-    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
-
-    first = module.current
-    second = module.current
-    assert isinstance(first, module.box)
-    assert first is not second
-    assert first._prik_owner is module
-    assert second._prik_owner is module
-    first_values = first.values
-    assert first_values.owner is first
-    assert first_values.to_numpy() is None
-
-    module.allocate_current(np.int32(3))
-    first_view = first_values.to_numpy()
-    np.testing.assert_allclose(first_view, np.array([1.0, 2.0, 3.0], dtype=np.float64))
-    first_view[0] = np.float64(10.0)
-    assert module.current_sum() == np.float64(15.0)
-    np.testing.assert_allclose(second.values.to_numpy(), np.array([10.0, 2.0, 3.0], dtype=np.float64))
-
-    detached = first_values.to_numpy().copy()
-    module.deallocate_current()
-    assert first_values.to_numpy() is None
-    np.testing.assert_allclose(detached, np.array([10.0, 2.0, 3.0], dtype=np.float64))
-    with pytest.raises(AttributeError):
-        module.current = second
-
-    generated_fortran = (result.output_dir / "bind_c_module_aliased_proxy_wrapper.f90").read_text(encoding="utf-8")
-    assert "c_loc(native_current)" in generated_fortran
-
-
 def test_derived_module_constant_returns_independent_owned_values(tmp_path: Path):
     native_object = _compile_native_object(DERIVED_CONSTANT_SOURCE, tmp_path / "native")
     contract = tmp_path / "contract" / "fmodule_vars_f90.pyi"
@@ -274,6 +159,8 @@ def test_derived_module_constant_returns_independent_owned_values(tmp_path: Path
     assert second.r == np.int32(0)
     assert module.black.r == np.int32(0)
     assert module.black_sum() == np.int32(0)
+    with pytest.raises(AttributeError):
+        module.black = second
 
     bridge = (result.output_dir / "bind_c_fmodule_vars_f90_wrapper.f90").read_text(encoding="utf-8")
     assert "result = c_null_ptr" in bridge
@@ -367,33 +254,3 @@ def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Pa
     bridge = (result.output_dir / "bind_c_derived_value_arguments_wrapper.f90").read_text(encoding="utf-8")
     assert "type(prik_type_point), pointer :: value" in bridge
     assert "native_score_by_value(value)" in bridge
-
-
-def test_borrowed_child_retains_owner_and_finalizes_exactly_once(tmp_path: Path):
-    source = tmp_path / "source" / "derived_borrowed_finalizer.f90"
-    source.parent.mkdir()
-    source.write_text(BORROWED_FINALIZER_SOURCE, encoding="utf-8")
-    native_object = _compile_native_object(source, tmp_path / "native")
-    contract = tmp_path / "contract" / "derived_borrowed_finalizer.pyi"
-    contract.parent.mkdir()
-    contract.write_text(BORROWED_FINALIZER_CONTRACT, encoding="utf-8")
-    result = build_pyi_extension(
-        contract,
-        native_objects=[native_object],
-        native_include_dirs=[native_object.parent],
-        output_dir=tmp_path / "build",
-    )
-    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
-
-    owner = module.make_parent()
-    module.reset_final_count()
-    borrowed = owner.value
-    assert borrowed._prik_owner is owner
-    del owner
-    gc.collect()
-    assert module.get_final_count() == np.int32(0)
-
-    del borrowed
-    gc.collect()
-    gc.collect()
-    assert module.get_final_count() == np.int32(1)

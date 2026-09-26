@@ -43,6 +43,8 @@ def test_aliased_derived_module_object_borrows_native_state(
 
     current = module.current
     assert isinstance(current, module.Box)
+    assert current is not module.current
+    assert current._prik_owner is module
     values = current.values
     assert isinstance(values, AllocatableArray)
     assert values.owner is current
@@ -76,7 +78,10 @@ def test_aliased_derived_module_object_borrows_native_state(
     assert "c_loc(native_current)" in bridge_source
     assert "bind_c_set_current" not in bridge_source
 
+    detached = values.to_numpy().copy()
     module.deallocate_current()
+    assert values.to_numpy() is None
+    np.testing.assert_allclose(detached, np.array([10.0, 2.0, 3.0], dtype=np.float64))
     current_values = module.current.values
     assert isinstance(current_values, AllocatableArray)
     assert current_values.allocated is False

@@ -47,6 +47,14 @@ def edit_labels(count: Int32, labels: String[8][count]) -> None: ...
     original = "alpha   "
     assert module.edit_text(original) == "Xlpha   "
     assert original == "alpha   "
+    borrowed_text = np.array("alpha   ", dtype="S8")
+    assert module.edit_text(borrowed_text) == "Xlpha   "
+    assert borrowed_text[()] == np.bytes_(b"Xlpha   ")
+    with pytest.raises(TypeError):
+        module.edit_text(np.array("alpha  ", dtype="S7"))
+    borrowed_text.flags.writeable = False
+    with pytest.raises(TypeError, match="writeable"):
+        module.edit_text(borrowed_text)
     assert module.make_text() == "ready   "
     made_labels = module.make_labels()
     assert made_labels.dtype == np.dtype("S8")

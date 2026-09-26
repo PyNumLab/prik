@@ -1,162 +1,80 @@
-"""Runtime ownership, factory, close, and finalizer behavior for native handles."""
+"""Runtime release, finalizer, and fail-closed construction of native handles.
+
+These paths cannot be reached through a correct generated extension, or only
+show up as a leak or a double free there, so they are driven with test doubles.
+Observable handle behaviour is proved by the allocatable and pointer
+end-to-end suites.
+"""
 
 import gc
+
 import numpy as np
 import pytest
 from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
-    _native_array_backend_for_binding,
     _native_array_handle_from_generated_dispatch,
 )
 from tests.fortran._support.native_array_handles import (
-    _ArrayState,
-    _common_ops,
     _generated_handle_dispatch,
     _handle_dispatch,
 )
 
 
-def test_generated_handle_factory_adapts_one_dispatcher_to_runtime_protocol():
-    owner = object()
-    value = np.arange(3, dtype=np.float64)
-    calls = []
-
-    def shape():
-        calls.append(("shape", ()))
-        return (3,)
-
-    def allocated():
-        calls.append(("allocated", ()))
-        return True
-
-    def to_numpy():
-        calls.append(("to_numpy", ()))
-        return value
-
-    operations = {
-        "shape": shape,
-        "allocated": allocated,
-        "to_numpy": to_numpy,
-    }
-    handle = _native_array_handle_from_generated_dispatch(
-        "allocatable",
-        "float64",
-        1,
-        _generated_handle_dispatch(operations),
-        operations,
-        owner=owner,
-        descriptor_ownership="borrowed",
-        to_numpy_policy="borrowed_view",
-        generation=9,
-    )
-
-    assert isinstance(handle, AllocatableArray)
-    assert isinstance(handle.dtype, np.dtype)
-    assert handle.dtype == np.dtype("float64")
-    assert handle.owner is owner
-    assert handle.generation == 9
-    assert handle.shape == (3,)
-    assert handle.allocated is True
-    assert handle.to_numpy() is value
-    assert {name for name, _args in calls} == {"allocated", "shape", "to_numpy"}
-    assert all(args == () for _name, args in calls)
-
-
-def test_generated_handle_factory_splats_shape_operations_to_scalar_extents():
-    calls = []
-    operations = {
-        "shape": lambda: (2, 3),
-        "allocated": lambda: True,
-        "resize": lambda *extents: calls.append(("resize", extents)),
-    }
-    handle = _native_array_handle_from_generated_dispatch(
-        "allocatable",
-        "float64",
-        2,
-        _generated_handle_dispatch(operations),
-        operations,
+def _owned_allocatable(destroy):
+    return AllocatableArray(
+        dtype="float64",
+        rank=1,
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: (1,),
+                "allocated": lambda _handle: True,
+                "destroy": destroy,
+            }
+        ),
+        descriptor_ownership="owned",
         to_numpy_policy="unsupported",
     )
 
-    handle.resize((4, 5))
 
-    assert calls == [("resize", (4, 5))]
-
-
-def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operation():
+@pytest.mark.parametrize("release", ["close_twice_then_collect", "finalizer_only"])
+def test_owned_handle_destroys_its_descriptor_exactly_once(release: str):
     calls = []
-    owner = object()
-    value = np.arange(3, dtype=np.float64)
+    handle = _owned_allocatable(lambda _handle: calls.append("destroy"))
 
-    def operation(name, result=None):
-        def call(received_owner, *args):
-            calls.append((name, received_owner, args))
-            return result
+    if release == "close_twice_then_collect":
+        assert handle.closed is False
+        assert handle.close() is None
+        assert handle.close() is None
+        assert handle.closed is True
+        with pytest.raises(ReferenceError, match="allocatable handle is closed"):
+            _ = handle.shape
+        with pytest.raises(ReferenceError, match="allocatable handle is closed"):
+            handle.to_numpy()
+    del handle
+    gc.collect()
 
-        return call
-
-    operations = {
-        "shape": operation("shape", (3,)),
-        "allocated": operation("allocated", True),
-        "to_numpy": operation("to_numpy", value),
-        "resize": operation("resize"),
-        "destroy": operation("destroy"),
-    }
-    handle = _native_array_handle_from_generated_dispatch(
-        "allocatable",
-        "float64",
-        1,
-        _generated_handle_dispatch(operations),
-        operations,
-        owner=owner,
-        descriptor_ownership="owned",
-        native_backend=owner,
-    )
-
-    assert handle.shape == (3,)
-    assert handle.allocated is True
-    assert handle.to_numpy() is value
-    assert _native_array_backend_for_binding(
-        handle,
-        descriptor_kind="allocatable",
-        expected_dtype=np.float64,
-        expected_rank=1,
-    ) == (owner,)
-    handle.resize((5,))
-    handle.close()
-
-    assert {name for name, _owner, _args in calls} == {
-        "allocated",
-        "shape",
-        "to_numpy",
-        "resize",
-        "destroy",
-    }
-    assert all(received_owner is owner for _name, received_owner, _args in calls)
-    assert ("resize", owner, (np.int64(5),)) in calls
-    assert calls.count(("destroy", owner, ())) == 1
+    assert calls == ["destroy"]
 
 
-def test_generated_handle_resolves_deferred_character_dtype_from_runtime_element_length():
-    state = {"itemsize": 3}
-    operations = {
-        "shape": lambda: (2,),
-        "element_length": lambda: state["itemsize"],
-        "allocated": lambda: True,
-        "to_numpy": lambda: np.array([b"red", b"sky"], dtype=f"S{state['itemsize']}"),
-    }
-    handle = _native_array_handle_from_generated_dispatch(
-        "allocatable",
-        None,
-        1,
-        _generated_handle_dispatch(operations),
-        operations,
-    )
+def test_owned_handle_close_marks_closed_when_destroy_raises():
+    calls = []
 
-    assert handle.dtype == np.dtype("S3")
-    state["itemsize"] = 5
-    assert handle.dtype == np.dtype("S5")
+    def destroy(_handle):
+        calls.append("destroy")
+        raise RuntimeError("boom")
+
+    handle = _owned_allocatable(destroy)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        handle.close()
+    assert handle.closed is True
+    assert handle.close() is None
+
+    del handle
+    gc.collect()
+
+    assert calls == ["destroy"]
 
 
 def test_generated_owned_handle_factory_releases_owner_once_when_construction_fails():
@@ -186,141 +104,219 @@ def test_generated_owned_handle_factory_releases_owner_once_when_construction_fa
     assert calls == [("destroy", owner)]
 
 
-def test_generated_handle_factory_rejects_an_invalid_descriptor_kind():
-    ops = {
-        "shape": lambda: (1,),
-        "allocated": lambda: True,
-        "to_numpy": lambda: np.zeros(1, dtype=np.float64),
-    }
-
-    with pytest.raises(ValueError, match="generated native array handle kind"):
-        _native_array_handle_from_generated_dispatch(
-            "target",
-            "float64",
-            1,
-            _generated_handle_dispatch(ops),
-            ops,
-        )
-
-
-def test_owned_handle_close_calls_destroy_once_and_blocks_later_use():
+@pytest.mark.parametrize("kind", ["allocatable", "pointer"])
+def test_borrowed_handle_close_and_finalizer_do_not_destroy_native_storage(kind: str):
     calls = []
-    state = _ArrayState(shape=(2,), value=np.zeros(2, dtype=np.float64))
-    handle = AllocatableArray(
-        dtype="float64",
-        rank=1,
-        **_handle_dispatch(
-            {
-                **_common_ops(state),
-                "allocated": lambda _handle: True,
-                "destroy": lambda _handle: calls.append(("destroy", state.shape, state.value)),
-            }
-        ),
-        descriptor_ownership="owned",
-    )
-
-    assert handle.closed is False
-    assert handle.close() is None
-    assert handle.closed is True
-    assert handle.close() is None
-    assert calls == [("destroy", (2,), state.value)]
-    with pytest.raises(ReferenceError, match="allocatable handle is closed"):
-        _ = handle.shape
-    with pytest.raises(ReferenceError, match="allocatable handle is closed"):
-        handle.to_numpy()
-
-
-def test_owned_handle_close_marks_closed_when_destroy_raises():
-    calls = []
-
-    def destroy(_handle):
-        calls.append("destroy")
-        raise RuntimeError("boom")
-
-    handle = AllocatableArray(
+    owner = object()
+    state_operation = {"allocatable": "allocated", "pointer": "associated"}[kind]
+    handle_type = {"allocatable": AllocatableArray, "pointer": PointerArray}[kind]
+    handle = handle_type(
         dtype="float64",
         rank=1,
         **_handle_dispatch(
             {
                 "shape": lambda _handle: (1,),
-                "allocated": lambda _handle: True,
-                "destroy": destroy,
-            }
-        ),
-        descriptor_ownership="owned",
-        to_numpy_policy="unsupported",
-    )
-
-    with pytest.raises(RuntimeError, match="boom"):
-        handle.close()
-    assert handle.closed is True
-    assert handle.close() is None
-
-    del handle
-    gc.collect()
-
-    assert calls == ["destroy"]
-
-
-def test_owned_handle_finalizer_calls_destroy_once():
-    calls = []
-
-    handle = AllocatableArray(
-        dtype="float64",
-        rank=1,
-        **_handle_dispatch(
-            {
-                "shape": lambda _handle: (1,),
-                "allocated": lambda _handle: True,
+                state_operation: lambda _handle: True,
+                "nullify": lambda _handle: None,
                 "destroy": lambda _handle: calls.append("destroy"),
             }
         ),
-        descriptor_ownership="owned",
+        owner=owner,
         to_numpy_policy="unsupported",
     )
 
+    assert handle.close() is None
+    assert handle.closed is False
+    assert handle.owner is owner
     del handle
     gc.collect()
 
-    assert calls == ["destroy"]
+    assert calls == []
 
 
-def test_owned_handle_construction_requires_generated_destroy_operation():
-    with pytest.raises(ValueError, match="owned native array handle requires generated operation 'destroy'"):
-        AllocatableArray(
+def _operations(*names):
+    return {name: (lambda *_args: None) for name in names}
+
+
+@pytest.mark.parametrize(
+    ("construct", "message"),
+    [
+        pytest.param(
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                **_handle_dispatch(_operations("shape", "allocated")),
+                descriptor_ownership="owned",
+                to_numpy_policy="unsupported",
+            ),
+            "owned native array handle requires generated operation 'destroy'",
+            id="owned-without-destroy",
+        ),
+        pytest.param(
+            lambda: AllocatableArray(dtype="float64", rank=1, **_handle_dispatch({})),
+            "requires generated operation 'shape'",
+            id="missing-shape",
+        ),
+        pytest.param(
+            lambda: AllocatableArray(dtype="float64", rank=1, **_handle_dispatch(_operations("shape", "to_numpy"))),
+            "requires generated operation 'allocated'",
+            id="allocatable-without-allocated",
+        ),
+        pytest.param(
+            lambda: PointerArray(dtype="float64", rank=1, **_handle_dispatch(_operations("shape", "associated"))),
+            "requires generated operation 'nullify'",
+            id="pointer-without-nullify",
+        ),
+        pytest.param(
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                **_handle_dispatch(_operations("shape", "allocated")),
+                to_numpy_policy="borrowed_view",
+            ),
+            "requires generated operation 'to_numpy'",
+            id="view-policy-without-extraction",
+        ),
+        pytest.param(
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                **_handle_dispatch(_operations("shape", "allocated")),
+                descriptor_ownership="temporary",
+            ),
+            "descriptor_ownership must be 'borrowed' or 'owned'",
+            id="unknown-ownership",
+        ),
+        pytest.param(
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                **_handle_dispatch(_operations("shape", "allocated")),
+                to_numpy_policy="maybe_copy",
+            ),
+            "to_numpy_policy must be one of",
+            id="unknown-extraction-policy",
+        ),
+        pytest.param(
+            lambda: _native_array_handle_from_generated_dispatch(
+                "target",
+                "float64",
+                1,
+                _generated_handle_dispatch({}),
+                _operations("shape", "allocated", "to_numpy"),
+            ),
+            "generated native array handle kind",
+            id="unknown-descriptor-kind",
+        ),
+    ],
+)
+def test_handle_construction_rejects_an_incomplete_generated_contract(construct, message: str):
+    with pytest.raises(ValueError, match=message):
+        construct()
+
+
+@pytest.mark.parametrize(
+    ("kind", "call", "operation"),
+    [
+        ("allocatable", lambda handle: handle.deallocate(), "deallocate"),
+        ("allocatable", lambda handle: handle.resize(2), "resize"),
+        ("pointer", lambda handle: handle.allocate((3,)), "allocate"),
+        ("pointer", lambda handle: handle.deallocate(), "deallocate"),
+        ("pointer", lambda handle: handle.resize((4,)), "resize"),
+    ],
+)
+def test_operations_outside_the_completed_capabilities_are_refused(kind: str, call, operation: str):
+    """A handle offers only what completed policy granted, e.g. no target release by default."""
+    if kind == "allocatable":
+        handle = AllocatableArray(
+            dtype="float64",
+            rank=1,
+            **_handle_dispatch({"shape": lambda _handle: (1,), "allocated": lambda _handle: True}),
+            to_numpy_policy="unsupported",
+        )
+    else:
+        handle = PointerArray(
             dtype="float64",
             rank=1,
             **_handle_dispatch(
                 {
                     "shape": lambda _handle: (1,),
-                    "allocated": lambda _handle: True,
+                    "associated": lambda _handle: True,
+                    "nullify": lambda _handle: None,
                 }
             ),
-            descriptor_ownership="owned",
             to_numpy_policy="unsupported",
         )
 
+    with pytest.raises(NotImplementedError, match=f"{kind} handle operation '{operation}' is not available"):
+        call(handle)
 
-def test_borrowed_handle_close_and_finalizer_do_not_destroy_native_storage():
-    calls = []
 
-    handle = PointerArray(
-        dtype="float64",
+@pytest.mark.parametrize(
+    ("shape", "result", "policy", "error", "message"),
+    [
+        pytest.param(
+            (2,), [1.0, 2.0], "descriptor_view", TypeError, "must return a NumPy array or None", id="not-numpy"
+        ),
+        pytest.param(
+            (2,),
+            np.zeros((1, 2), dtype=np.float64),
+            "descriptor_view",
+            ValueError,
+            "to_numpy result rank 2 does not match declared rank 1",
+            id="wrong-rank",
+        ),
+        pytest.param(
+            (2,), np.zeros(2, dtype=np.int32), "descriptor_view", TypeError, "to_numpy result dtype", id="wrong-dtype"
+        ),
+        pytest.param(
+            (4,),
+            np.arange(8, dtype=np.float64)[::2],
+            "contiguous_view",
+            ValueError,
+            "must be contiguous",
+            id="strided-under-contiguous-policy",
+        ),
+    ],
+)
+def test_generated_views_that_disagree_with_the_declared_handle_are_refused(shape, result, policy, error, message):
+    """A view over native memory is only exposed when it matches what the handle declares."""
+    handle = AllocatableArray(
+        dtype=np.dtype(np.float64),
         rank=1,
         **_handle_dispatch(
             {
-                "shape": lambda _handle: (1,),
-                "associated": lambda _handle: True,
-                "nullify": lambda _handle: None,
-                "destroy": lambda _handle: calls.append("destroy"),
+                "shape": lambda _handle: shape,
+                "to_numpy": lambda _handle: result,
+                "allocated": lambda _handle: True,
+            }
+        ),
+        to_numpy_policy=policy,
+    )
+
+    with pytest.raises(error, match=message):
+        handle.to_numpy()
+
+
+def test_generated_shapes_are_validated_against_rank_and_sign():
+    reported = {"shape": (-1,)}
+    handle = AllocatableArray(
+        dtype=np.dtype(np.float64),
+        rank=1,
+        **_handle_dispatch(
+            {
+                "shape": lambda _handle: reported["shape"],
+                "allocated": lambda _handle: True,
+                "resize": lambda _handle, _shape: None,
             }
         ),
         to_numpy_policy="unsupported",
     )
 
-    assert handle.close() is None
-    assert handle.closed is False
-    del handle
-    gc.collect()
-
-    assert calls == []
+    with pytest.raises(ValueError, match="non-negative"):
+        _ = handle.shape
+    with pytest.raises(ValueError, match="non-negative"):
+        handle.resize(-1)
+    reported["shape"] = (4, 2)
+    with pytest.raises(ValueError, match="shape rank 2 does not match declared rank 1"):
+        _ = handle.shape

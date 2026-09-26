@@ -22,6 +22,10 @@ PRIVATE_INLINE_GENERIC_MODULE = (NATIVE_FIXTURES / "private_inline_generic.f90")
 
 PRIVATE_INLINE_GENERIC_SUBMODULE = (NATIVE_FIXTURES / "private_inline_generic_impl.f90").read_text(encoding="utf-8")
 
+INTERFACE_BODY_GENERIC_MODULE = (NATIVE_FIXTURES / "interface_body_generic.f90").read_text(encoding="utf-8")
+
+INTERFACE_BODY_GENERIC_IMPL = (NATIVE_FIXTURES / "interface_body_generic_impl.f90").read_text(encoding="utf-8")
+
 
 @pytest.fixture
 def compiled_generic_module(
@@ -58,7 +62,9 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
     assert "convert_complex" not in module.convert.__doc__
 
     assert module.convert(np.int32(4)) == np.int32(14)
+    assert module.convert(np.array(4, dtype=np.int32)) == np.int32(14)
     assert module.convert(np.float64(4.0)) == np.float64(4.5)
+    assert module.convert(np.array(4.0, dtype=np.float64)) == np.float64(4.5)
     assert module.convert(value=np.int32(5)) == np.int32(15)
     assert module.convert(np.complex128(2.0 + 3.0j)) == np.complex128(3.0 + 2.0j)
     assert module.summarize(np.float64(2.5)) == np.float64(2.5)
@@ -82,22 +88,34 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
         value.add(np.complex128(1.0 + 0.0j))
 
 
-def test_public_generic_dispatches_to_private_inline_submodule_specifics(tmp_path: Path):
+def test_a_public_generic_reaches_each_specific_by_the_route_its_accessibility_allows(tmp_path: Path):
+    """Private inline specifics go through the generic; public interface-body specifics are called by name.
+
+    Both modules are built into one extension: a specific the module keeps
+    private is only reachable through the public generic's name, while a
+    public specific an interface body declares needs no route through it.
+    """
     module, _payload = _build_sources_and_import(
         [
             ("private_inline_generic.f90", PRIVATE_INLINE_GENERIC_MODULE),
             ("private_inline_generic_impl.f90", PRIVATE_INLINE_GENERIC_SUBMODULE),
+            ("interface_body_generic.f90", INTERFACE_BODY_GENERIC_MODULE),
+            ("interface_body_generic_impl.f90", INTERFACE_BODY_GENERIC_IMPL),
         ],
         tmp_path,
     )
 
     assert module.private_inline_generic.shift(np.int32(4)) == np.int32(5)
     assert module.private_inline_generic.shift(np.float64(4.0)) == np.float64(4.5)
-    bridge = (tmp_path / "bind_c_private_inline_generic_wrapper.f90").read_text(encoding="utf-8").lower()
+    assert module.interface_body_generic.scale(np.int32(4)) == np.int32(8)
+    assert module.interface_body_generic.scale(np.float64(4.0)) == np.float64(10.0)
+    bridge = next(tmp_path.glob("bind_c_*_wrapper.f90")).read_text(encoding="utf-8").lower()
     assert "native__prik_overload_shift_0 => shift" in bridge
     assert "native__prik_overload_shift_1 => shift" in bridge
     assert "=> shift_integer" not in bridge
     assert "=> shift_real" not in bridge
+    assert "native__prik_overload_scale_0 => scale_integer" in bridge
+    assert "native__prik_overload_scale_1 => scale_real" in bridge
 
 
 EXTENDED_GENERIC_SOURCE = (NATIVE_FIXTURES / "extended_generic.f90").read_text(encoding="utf-8")

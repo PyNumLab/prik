@@ -53,9 +53,10 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert module_docstring.index("Module Attributes") < module_docstring.index("Functions")
     assert module_docstring.index("Functions") < module_docstring.index("Classes")
     assert "nmax : int32\n    Read-only constant." in module_docstring
-    assert "counter : int32" in module_docstring
-    assert "scale : float64" in module_docstring
-    assert "saved_counter : int32" in module_docstring
+    # A mutable module scalar is a live rank-zero view, and the docstring says so.
+    assert "counter : ndarray[int32]\n    Rank: 0\n    Live view" in module_docstring
+    assert "scale : ndarray[float64]\n    Rank: 0\n    Live view" in module_docstring
+    assert "saved_counter : ndarray[int32]" in module_docstring
     assert "Assignment writes through to native storage." not in module_docstring
 
     assert module.nmax == np.int32(12)
@@ -226,149 +227,122 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
     assert module.read_grid(np.int32(2), np.int32(1)) == "ZZ  "
 
 
-CHARACTER_MODULE_SCALAR_SOURCE = (NATIVE_FIXTURES / "fchar_module_scalars_f90.f90").read_text(encoding="utf-8")
-
-
-def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
-    """A character module variable is a `str` property, as a numeric one is a value.
-
-    A character value has no by-value C ABI, so the accessors copy through a
-    fixed-width buffer; what has to hold is that the copy runs in both
-    directions and that a wrong width is refused rather than truncated.
-    """
-    module = _build_text_and_import(
-        CHARACTER_MODULE_SCALAR_SOURCE,
-        "fchar_module_scalars_f90.f90",
+def test_scalar_character_module_variables_read_and_write_through(pyi_parity_build_mode: str, tmp_path: Path):
+    """Fixed character storage keeps one native address across reads and writes."""
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_scalars_f90.f90",
         tmp_path,
         {
             "bind_c_fchar_module_scalars_f90_wrapper.f90",
             "fchar_module_scalars_f90_wrapper.c",
             "fchar_module_scalars_f90_wrapper.h",
         },
+        CONTRACT_FIXTURES / "fchar_module_scalars_f90",
+        pyi_parity_build_mode,
     )
 
-    assert module.label == "alpha   "
-    assert module.code == "abc"
+    label = module.label
+    assert label.shape == () and label.dtype == np.dtype("S8")
+    assert label[()] == b"alpha   "
+    assert module.code[()] == b"abc"
     assert module.tag == "fixed"
 
     # A native write is observed by the next read, not cached from import.
     module.relabel()
-    assert module.label == "ALPHA!!!"
+    assert label[()] == b"ALPHA!!!"
 
     # A Python write reaches the storage Fortran reads.
     module.label = "PYTHON!!"
+    assert label[()] == b"PYTHON!!"
     assert module.read_label() == "PYTHON!!"
+    label[()] = b"VIEW!!!!"
+    assert module.read_label() == "VIEW!!!!"
 
     # The declared length is a byte width, so a multi-byte encoding still fits exactly.
     module.label = "café!!!"
-    assert module.label == "café!!!"
+    assert label[()] == "café!!!".encode()
     assert module.read_label() == "café!!!"
 
-
-@pytest.mark.parametrize("value", ["ab", "abcd"])
-def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: str, tmp_path: Path):
-    """Truncating or padding silently would corrupt native state, so the width is exact."""
-    module = _build_text_and_import(
-        CHARACTER_MODULE_SCALAR_SOURCE,
-        "fchar_module_scalars_f90.f90",
-        tmp_path,
-        {
-            "bind_c_fchar_module_scalars_f90_wrapper.f90",
-            "fchar_module_scalars_f90_wrapper.c",
-            "fchar_module_scalars_f90_wrapper.h",
-        },
-    )
-
-    with pytest.raises(TypeError, match="exactly 3 bytes"):
-        module.code = value
-    assert module.code == "abc"
+    # Truncating or padding silently would corrupt native state, so the width is exact.
+    for value in ("ab", "abcd"):
+        with pytest.raises(TypeError, match="exactly 3 bytes"):
+            module.code = value
+    assert module.code[()] == b"abc"
 
 
-CHARACTER_MODULE_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90").read_text(encoding="utf-8")
+def test_descriptor_character_module_variables_follow_current_storage(pyi_parity_build_mode: str, tmp_path: Path):
+    """Each read lends the current storage read-only; assignment writes through the descriptor.
 
-
-def _character_descriptor_module(tmp_path: Path):
-    return _build_text_and_import(
-        CHARACTER_MODULE_DESCRIPTOR_SOURCE,
-        "fchar_module_descriptors_f90.f90",
+    Deallocation and nullification are values Python observes, not stale reads.
+    A character parameter array has no addressable storage, so it is a
+    read-only Python-owned copy taken at import with the declared element width
+    as its dtype; a `len=*` parameter reports the width the Fortran side infers
+    from its initializer.
+    """
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "fchar_module_descriptors_f90.f90",
         tmp_path,
         {
             "bind_c_fchar_module_descriptors_f90_wrapper.f90",
             "fchar_module_descriptors_f90_wrapper.c",
             "fchar_module_descriptors_f90_wrapper.h",
         },
+        CONTRACT_FIXTURES / "fchar_module_descriptors_f90",
+        pyi_parity_build_mode,
     )
-
-
-def test_descriptor_character_module_variables_snapshot_their_runtime_value(tmp_path: Path):
-    """An allocatable or pointer character module variable reads as a detached `str`.
-
-    Its width is established at runtime, so the snapshot has to report the
-    length the descriptor currently holds rather than a width fixed at build
-    time, and re-reading after native code changes it must observe the change.
-    """
-    module = _character_descriptor_module(tmp_path)
-
-    assert module.deferred is None
-    assert module.fixed is None
-    assert module.link is None
-
-    module.setup()
-    assert module.deferred == "alpha"
-    assert module.fixed == "FIXEDV"
-    assert module.link == "STORED"
-
-    # A reallocation to a different width is observed by the next read.
-    module.grow()
-    assert module.deferred == "alpha-more"
-
-
-def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):
-    """Deallocation and nullification are values Python observes, not stale reads."""
-    module = _character_descriptor_module(tmp_path)
-
-    module.setup()
-    module.clear()
-    assert module.deferred is None
-    assert module.fixed is None
-    assert module.link is None
-
-
-def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):
-    """A character parameter array is copied once, like a numeric one.
-
-    A Fortran parameter has no addressable storage, so the value is a
-    Python-owned copy taken at import; it must therefore be read-only and keep
-    the declared element width as its dtype.
-    """
-    module = _character_descriptor_module(tmp_path)
-
     assert module.pair.dtype == np.dtype("S2")
     assert module.grid.dtype == np.dtype("S3")
     assert module.grid.shape == (2, 2)
     assert module.pair.flags["WRITEABLE"] is False
     assert module.grid.flags["WRITEABLE"] is False
     np.testing.assert_array_equal(module.pair, np.array([b"ab", b"cd"], dtype="S2"))
-    np.testing.assert_array_equal(
-        module.grid,
-        np.array([[b"aaa", b"ccc"], [b"bbb", b"ddd"]], dtype="S3"),
-    )
-
-
-def test_assumed_length_character_parameter_array_reports_its_inferred_width(tmp_path: Path):
-    """A `len=*` parameter takes its width from its initializer, which prik never reads.
-
-    The width is still a constant the Fortran side knows, so the accessor
-    reports it beside the extents rather than the binding restating a length
-    it would have to evaluate the initializer to learn.
-    """
-    module = _character_descriptor_module(tmp_path)
-
+    np.testing.assert_array_equal(module.grid, np.array([[b"aaa", b"ccc"], [b"bbb", b"ddd"]], dtype="S3"))
     assert module.inferred.dtype == np.dtype("S5")
-    np.testing.assert_array_equal(
-        module.inferred,
-        np.array([b"alpha", b"beta ", b"gamma"], dtype="S5"),
-    )
+    np.testing.assert_array_equal(module.inferred, np.array([b"alpha", b"beta ", b"gamma"], dtype="S5"))
+
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
+
+    module.setup()
+    deferred = module.deferred
+    fixed = module.fixed
+    view = module.link
+    assert deferred is not None and deferred.shape == () and deferred.dtype == np.dtype("S5")
+    assert deferred[()] == b"alpha"
+    assert fixed is not None and fixed[()] == b"FIXEDV"
+    assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
+    assert view[()] == b"STORED"
+    with pytest.raises(ValueError, match="read-only"):
+        view[()] = b"PYTHON"
+    module.link = "PYTHON"
+    assert view[()] == b"PYTHON"
+    assert module.store[()] == b"PYTHON"
+    with pytest.raises(TypeError, match="pointer target's width"):
+        module.link = "SHORT"
+
+    module.grow()
+    grown = module.deferred
+    assert grown is not None and grown.shape == () and grown.dtype == np.dtype("S10")
+    assert grown[()] == b"alpha-more"
+
+    # A deferred-length assignment reallocates to the encoded width, including zero.
+    module.deferred = "omega"
+    assert module.deferred[()] == b"omega"
+    module.deferred = ""
+    assert module.deferred is not None and module.deferred[()] == b""
+    with pytest.raises(TypeError, match="exactly 6 bytes"):
+        module.fixed = "WIDE!!!"
+    module.fixed = "NARROW"
+    assert module.fixed[()] == b"NARROW"
+
+    module.clear()
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
+    # The documented type admits the ``None`` those reads return.
+    for name in ("deferred", "fixed", "link"):
+        assert f"{name} : ndarray[bytes] or None" in module.__doc__
 
 
 DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = (NATIVE_FIXTURES / "fchar_declared_arrays_f90.f90").read_text(encoding="utf-8")
@@ -426,7 +400,7 @@ def test_declared_length_character_module_arrays_compile_and_expose_their_width(
     assert module.deferred_ptr.shape is None
 
 
-REEXPORT_SOURCE = (NATIVE_FIXTURES / "reexport.f90").read_text(encoding="utf-8")
+REEXPORT_SOURCE = NATIVE_FIXTURES / "reexport.f90"
 
 
 def test_module_variable_reexports_share_one_native_entity_from_source_and_contract(
@@ -523,179 +497,68 @@ def test_module_variable_reexports_share_one_native_entity_from_source_and_contr
         assert bridge.count(signature) == 1
 
 
-def test_explicitly_published_import_is_reachable_without_a_second_wrapper(tmp_path: Path):
-    """Naming an imported procedure in a `public` statement publishes it here.
+def test_published_imports_bind_the_declaring_modules_callable(pyi_parity_build_mode: str, tmp_path: Path):
+    """A published name is an alias, so every route binds the one wrapped callable.
 
-    The declaration is not repeated: the published name binds to the one
-    wrapper its own module exposes, so both namespaces share a single callable.
-    A default-public module also republishes an accessible imported name.
+    The declaration is never repeated, whichever way the build was described:
+    an explicit `public` of an import, a default-public or plain-`use`
+    republication, a rename, and a further hop all bind the object the
+    declaring module exposes. A re-export binds a Python attribute, so it
+    reaches the name the declaring module settled on -- the Python spelling of
+    a name written in capitals, or `lambda__2` when `lambda` and `lambda_`
+    collide -- rather than the source spelling.
     """
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
+    module = _build_source_or_generated_pyi_and_import(
+        REEXPORT_SOURCE,
+        tmp_path,
         {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+        None,
+        pyi_parity_build_mode,
     )
+    scale_value = module.reexport_home_mod.scale_value
 
-    assert module.reexport_facade_mod.scale_value is module.reexport_home_mod.scale_value
+    assert module.reexport_facade_mod.scale_value is scale_value
     assert module.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
-
-    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
-
-    # One wrapper defines the procedure; the facade only names it again.
-    generated = (tmp_path / "build" / "reexport_wrapper.c").read_text(encoding="utf-8")
-    assert generated.count("static PyObject * wrap_scale_value") == 1
-
-
-def test_published_import_resolves_the_python_name_its_declaring_module_bound(tmp_path: Path):
-    """A re-export binds a Python attribute, which is not a Fortran spelling.
-
-    A Fortran entity written in capitals is exported under its Python name, so
-    the module publishing it has to reach for that name rather than the source
-    spelling, which names no attribute at all.
-    """
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
-    )
+    assert module.reexport_default_mod.scale_value is scale_value
+    assert module.reexport_wildcard_mod.scale_value is scale_value
+    assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
+    assert module.reexport_renamed_mod.public_scale is scale_value
+    assert module.reexport_renamed_mod.public_scale(np.int32(6)) == np.int32(12)
+    assert module.reexport_hop_mod.scale_value is scale_value
+    assert module.reexport_hop_mod.scale_value(np.int32(7)) == np.int32(14)
 
     assert module.reexport_case_mod.scale_loud is module.reexport_shout_mod.scale_loud
     assert module.reexport_case_mod.scale_loud(np.int32(4)) == np.int32(12)
     assert not hasattr(module.reexport_case_mod, "SCALE_LOUD")
-
-
-def test_renamed_published_import_shares_the_wrapper_it_renames(tmp_path: Path):
-    """A renamed re-export states a new name for one existing callable."""
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
-    )
-
-    assert module.reexport_renamed_mod.public_scale is module.reexport_home_mod.scale_value
-    assert module.reexport_renamed_mod.public_scale(np.int32(6)) == np.int32(12)
-
-
-def test_publishing_a_name_a_plain_use_brought_in_republishes_that_name(tmp_path: Path):
-    """A plain `use` carries public names that remain accessible by default.
-
-    An explicit `public` statement also publishes the named import; both routes
-    bind the one wrapper owned by the declaring module.
-    """
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
-    )
-
-    assert module.reexport_wildcard_mod.scale_value is module.reexport_home_mod.scale_value
-    assert module.reexport_wildcard_mod.scale_value(np.int32(5)) == np.int32(10)
-    assert module.reexport_default_mod.scale_value is module.reexport_home_mod.scale_value
-
-
-def test_publishing_an_already_published_import_follows_it_to_its_declaration(tmp_path: Path):
-    """A published name may come from a module that published it in turn.
-
-    The module a `use` reads is not always the one declaring the entity, so
-    each hop is followed until the declaration itself is reached; stopping at
-    the first module leaves the name looking like nothing at all.
-    """
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
-    )
-
-    assert module.reexport_hop_mod.scale_value is module.reexport_home_mod.scale_value
-    assert module.reexport_hop_mod.scale_value(np.int32(7)) == np.int32(14)
-
-
-def test_published_import_binds_the_declaration_a_collision_moved_aside(tmp_path: Path):
-    """Two source names may want one Python name, and only one may have it.
-
-    A module holding both `lambda` and `lambda_` publishes them as `lambda_`
-    and `lambda__2`, so a module publishing the second reaches the name the
-    declaring module settled on rather than the one its source resembles.
-    """
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-    module = _build_source_and_import(
-        source,
-        tmp_path / "build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
-    )
 
     assert module.reexport_collide_mod.lambda_(np.int32(0)) == np.int32(1)
     assert module.reexport_collide_mod.lambda__2(np.int32(0)) == np.int32(100)
     assert module.reexport_collide_user_mod.lambda_ is module.reexport_collide_mod.lambda__2
     assert module.reexport_collide_user_mod.lambda_(np.int32(0)) == np.int32(100)
 
+    # One wrapper defines the procedure on either route; the facades only name it again.
+    generated = next(_module_variables_build_dir(tmp_path, pyi_parity_build_mode).glob("*_wrapper.c"))
+    assert generated.read_text(encoding="utf-8").count("static PyObject * wrap_scale_value") == 1
 
-def test_a_reexport_binds_one_callable_from_source_and_from_its_contract(tmp_path: Path):
-    """A published name is an alias, so both routes bind the same object.
 
-    A re-export names a procedure that is already wrapped, whichever way the
-    build was described. Wrapping it a second time would give one native
-    procedure two Python objects, and a renamed re-export is no different: the
-    name it binds changes, not the callable behind it.
+def test_a_derived_module_variable_argument_is_the_variable_itself(pyi_parity_build_mode: str, tmp_path: Path):
+    """A procedure given a module variable receives that variable's storage, not a copy.
+
+    Libraries recognize predefined objects by address -- Open MPI's
+    ``MPI_STATUS_IGNORE`` is one -- so passing one must pass the object itself.
     """
-    import subprocess
-    import sys
-
-    from tests.fortran._support.wrapper_build import _compiler, _import_from_build_dir
-    from prik import build_pyi_extension
-
-    source = tmp_path / "reexport.f90"
-    source.write_text(REEXPORT_SOURCE, encoding="utf-8")
-
-    from_source = _build_source_and_import(
-        source,
-        tmp_path / "source_build",
-        {"bind_c_reexport_wrapper.f90", "reexport_wrapper.c", "reexport_wrapper.h"},
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "module_variable_arguments.f90",
+        tmp_path,
+        {
+            "bind_c_module_variable_arguments_wrapper.f90",
+            "module_variable_arguments_wrapper.c",
+            "module_variable_arguments_wrapper.h",
+        },
+        None,
+        pyi_parity_build_mode,
     )
-    assert from_source.reexport_facade_mod.scale_value is from_source.reexport_home_mod.scale_value
-    assert from_source.reexport_renamed_mod.public_scale is from_source.reexport_home_mod.scale_value
 
-    contracts = tmp_path / "contracts"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--pyi",
-            str(source),
-            "--out",
-            str(contracts),
-            "--compiler",
-            _compiler(),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    result = build_pyi_extension(
-        contracts / "__init__.pyi",
-        input_compiler=_compiler(),
-        native_fortran_sources=[str(source)],
-        output_dir=tmp_path / "contract_build",
-        output_name="reexport_contract",
-    )
-    from_contract = _import_from_build_dir(result.module_name, result.output_dir)
-
-    assert from_contract.reexport_facade_mod.scale_value is from_contract.reexport_home_mod.scale_value
-    assert from_contract.reexport_renamed_mod.public_scale is from_contract.reexport_home_mod.scale_value
-    assert from_contract.reexport_facade_mod.scale_value(np.int32(4)) == np.int32(8)
-
-    # One wrapper defines the procedure on either route.
-    generated = (result.output_dir / "reexport_contract_wrapper.c").read_text(encoding="utf-8")
-    assert generated.count("static PyObject * wrap_scale_value") == 1
+    assert module.is_shared(module.shared)
+    assert module.is_shared_c(module.shared_c)
+    assert not module.is_shared(module.Box())

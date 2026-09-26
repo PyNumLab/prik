@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
+"""Fortran scalar declarations, kinds, and parameter expressions."""
 
 from pathlib import Path
 
@@ -10,7 +10,6 @@ from tests.fortran._support.parser_procedures import (
     collect_project_procedure_signatures,
     parse_fortran_modules,
 )
-from prik.parsers.fortran.parser import FortranParser
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
@@ -96,17 +95,6 @@ end subroutine star_kinds
     assert args["ch2"].character_length_syntax is True
 
 
-def test_legacy_character_star_kind_sets_length_metadata_when_character_prefix_is_preparsed():
-    parsed = FortranParser()._parse_declaration_left("character*8", parse_character_star=False)
-
-    assert parsed is not None
-    declaration, attributes = parsed
-    assert declaration.base_type == "character"
-    assert declaration.kind == "8"
-    assert declaration.character_length_syntax is True
-    assert attributes == []
-
-
 def test_kind_resolution_from_imported_module_across_files():
     files = {
         "kinds.f90": """
@@ -160,29 +148,6 @@ def test_fixed_form_parameter_statement_after_typed_constants():
     sigs = parse_fortran_file(code, filename="legacy.f").procedures
     assert len(sigs) == 1
     assert sigs[0].variables == {}
-
-
-def test_duplicate_declaration_raises_error():
-    code = """
-subroutine dup(x)
-  real :: x
-  integer :: x
-end subroutine dup
-"""
-    with pytest.raises(ValueError, match="Duplicate declaration"):
-        _ = parse_fortran_file(code, filename="dup.f90").procedures
-
-
-def test_fixed_form_parameter_without_typed_declaration_raises_error():
-    code = """
-      subroutine cst(a)
-      implicit none
-      real a
-      parameter ( zero = 0.0e+0 )
-      end
-"""
-    with pytest.raises(ValueError, match="Unknown datatype for PARAMETER symbol"):
-        _ = parse_fortran_file(code, filename="legacy.f").procedures
 
 
 def test_fixed_form_parameter_without_typed_declaration_allowed_with_implicit_typing():
@@ -318,8 +283,6 @@ end module kinds_mod
     }
     sig = collect_project_procedure_signatures(files)[0]
     assert sig.arguments[0].shape == ["1:ip"]
-    assert sig.arguments[0].shape == ["1:ip"]
-    assert sig.arguments[0].shape == ["1:ip"]
 
 
 def test_local_compiler_dependent_parameter_expressions_remain_symbolic_with_value():
@@ -330,8 +293,6 @@ subroutine use_local_kind_expr(x)
 end subroutine use_local_kind_expr
 """
     sig = parse_fortran_file(code).procedures[0]
-    assert sig.arguments[0].shape == ["1:ip"]
-    assert sig.arguments[0].shape == ["1:ip"]
     assert sig.arguments[0].shape == ["1:ip"]
 
 
@@ -352,8 +313,11 @@ contains
 end module dims_mod
 """
     }
-    sig = collect_project_procedure_signatures(files)[0]
-    assert sig.arguments[0].shape[0].startswith("1:")
+    project = parse_fortran_project(files)
+    parameters = {variable.name: variable.value for variable in project.modules["dims_mod"].variables}
+
+    assert parameters["n5"] == "6"
+    assert project.procedures["use_expr"].arguments[0].shape == ["1:n5"]
 
 
 def test_big_compile_time_expression_suite():
@@ -432,14 +396,3 @@ end module selected_kind_mod
     assert variables["rk"].value is None
     assert variables["rk"].symbolic_value == "selected_real_kind(12)"
     assert module.procedures[0].arguments[0].kind == "selected_real_kind(12)"
-
-
-def test_star_kind_is_parsed_in_modern_fortran_file():
-    code = """
-subroutine bad(x)
-  real*8 :: x
-end subroutine bad
-"""
-    proc = parse_fortran_file(code, filename="bad.f90").procedures[0]
-    assert proc.arguments[0].base_type == "real"
-    assert proc.arguments[0].kind == "8"

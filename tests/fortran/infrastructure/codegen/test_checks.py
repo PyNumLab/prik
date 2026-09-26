@@ -4,44 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from prik.codegen.checks import (
     WrapperCodegenCheckConfig,
     check_codegen_paths,
 )
 
-
-def _write_module(root: Path, relative_path: str, source: str) -> Path:
-    path = root / relative_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(source, encoding="utf-8")
-    return path
-
-
-def _check_source(tmp_path: Path, source: str, *, filename: str = "bad.py") -> set[str]:
-    path = _write_module(tmp_path, filename, source)
-    violations = check_codegen_paths(
-        [path],
-        config=WrapperCodegenCheckConfig(max_complexity=3, max_statements=4, max_nesting=2),
-    )
-    return {violation.code for violation in violations}
-
-
-def test_reviewer_reports_module_level_production_functions(tmp_path: Path):
-    codes = _check_source(tmp_path, "def build_plan():\n    return None\n")
-
-    assert "module-function" in codes
-
-
-def test_reviewer_recommends_visitor_based_production_classes(tmp_path: Path):
-    codes = _check_source(tmp_path, "class WrapperPlanner:\n    pass\n")
-
-    assert "visitor-class" in codes
-
-
-def test_reviewer_reports_complexity_statement_and_nesting_limits(tmp_path: Path):
-    codes = _check_source(
-        tmp_path,
-        """
+_OVERSIZED_FUNCTION = """
 def oversized(value):
     first = value + 1
     second = first + 1
@@ -58,17 +28,29 @@ def oversized(value):
     if value == 3:
         return third
     return fourth
-""",
-    )
+"""
 
-    assert {"complexity", "statement-count", "nesting-depth"} <= codes
+_EMITTER_WITH_MISSING_HANDLERS = """
+from prik.codegen import ClassVisitor
 
+class DemoEmitter(ClassVisitor):
+    PRIMARY_REGISTRY = {"item": "_emit_item"}
+    SECONDARY_DISPATCHER = {"item": {"value": "_emit_item_value"}}
+"""
 
-def test_reviewer_uses_stricter_recommendations_for_emitter_handlers(tmp_path: Path):
-    path = _write_module(
-        tmp_path,
-        "strict.py",
-        """
+_EMITTER_CALLING_THE_PRINTER = """
+from prik.codegen import ClassVisitor
+
+class DemoEmitter(ClassVisitor):
+    HANDLER_REGISTRY = {"item": "_emit_item"}
+
+    def _emit_item(self, node):
+        return self.printer.doprint(node)
+"""
+
+# Within the default limits for an ordinary function, but over the stricter
+# recommendation for an emitter's `_convert_*` handler.
+_BRANCHY_EMITTER_HANDLER = """
 from prik.codegen import ClassVisitor
 
 class DemoEmitter(ClassVisitor):
@@ -84,41 +66,40 @@ class DemoEmitter(ClassVisitor):
         if value == 5:
             return 5
         return 6
-""",
-    )
+"""
 
-    violations = check_codegen_paths([path])
-
-    assert "complexity" in {violation.code for violation in violations}
+_SMALL_LIMITS = WrapperCodegenCheckConfig(max_complexity=3, max_statements=4, max_nesting=2)
 
 
-def test_reviewer_reports_missing_primary_and_secondary_registry_handlers(tmp_path: Path):
-    codes = _check_source(
-        tmp_path,
-        """
-from prik.codegen import ClassVisitor
+@pytest.mark.parametrize(
+    ("source", "config", "expected_codes"),
+    [
+        pytest.param("def build_plan():\n    return None\n", _SMALL_LIMITS, {"module-function"}, id="module_function"),
+        pytest.param("class WrapperPlanner:\n    pass\n", _SMALL_LIMITS, {"visitor-class"}, id="non_visitor_class"),
+        pytest.param(
+            _OVERSIZED_FUNCTION,
+            _SMALL_LIMITS,
+            {"complexity", "statement-count", "nesting-depth"},
+            id="complexity_statement_and_nesting_limits",
+        ),
+        pytest.param(
+            _EMITTER_WITH_MISSING_HANDLERS,
+            _SMALL_LIMITS,
+            {"registry-missing-handler"},
+            id="missing_primary_and_secondary_registry_handlers",
+        ),
+        pytest.param(
+            _EMITTER_CALLING_THE_PRINTER, _SMALL_LIMITS, {"handler-printer-call"}, id="printer_call_from_handler"
+        ),
+        pytest.param(_BRANCHY_EMITTER_HANDLER, None, {"complexity"}, id="stricter_default_for_emitter_handlers"),
+    ],
+)
+def test_reviewer_reports_advisory_violations(
+    tmp_path: Path, source: str, config: WrapperCodegenCheckConfig | None, expected_codes: set[str]
+):
+    path = tmp_path / "reviewed.py"
+    path.write_text(source, encoding="utf-8")
 
-class DemoEmitter(ClassVisitor):
-    PRIMARY_REGISTRY = {"item": "_emit_item"}
-    SECONDARY_DISPATCHER = {"item": {"value": "_emit_item_value"}}
-""",
-    )
+    violations = check_codegen_paths([path]) if config is None else check_codegen_paths([path], config=config)
 
-    assert "registry-missing-handler" in codes
-
-
-def test_reviewer_reports_printer_calls_from_handlers(tmp_path: Path):
-    codes = _check_source(
-        tmp_path,
-        """
-from prik.codegen import ClassVisitor
-
-class DemoEmitter(ClassVisitor):
-    HANDLER_REGISTRY = {"item": "_emit_item"}
-
-    def _emit_item(self, node):
-        return self.printer.doprint(node)
-""",
-    )
-
-    assert "handler-printer-call" in codes
+    assert expected_codes <= {violation.code for violation in violations}

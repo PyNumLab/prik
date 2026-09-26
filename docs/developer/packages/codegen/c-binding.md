@@ -264,7 +264,7 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
     double bound_value;
     double result;
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &bound_value_obj)) return NULL;
-    if (prik_float64_unpack_exact(bound_value_obj, &bound_value) < 0) { if (!PyErr_Occurred()) { PyErr_Format(PyExc_TypeError, "Expected an argument of type numpy.float64 for argument value. Received <class '%s'>", Py_TYPE(bound_value_obj)->tp_name); } return NULL; };
+    if (prik_float64_or_storage(bound_value_obj, NPY_FLOAT64, 0, "numpy.float64", "numpy.float64", "value", &bound_value, NULL) < 0) { return NULL; };
     result = bind_c_double_value(bound_value);
     PyObject * result_obj = prik_float64_to_numpy(&result);
     if (result_obj == NULL) {
@@ -294,9 +294,9 @@ reverse-call entrypoints used by adapter-local callback procedures.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Binding infrastructure](../../../../tests/fortran/infrastructure/codegen/test_binding.py) | Invalid NumPy scalar macros fail at the C binding helper boundary. |
+| [Binding facet ownership](../../../../tests/fortran/infrastructure/codegen/test_consumer_facet_boundaries.py) | The binding reads only its own plan facet and consumes planned support inventories instead of re-deriving them. |
 | [Wrapper-generator handoff](../../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Frozen-plan validation and generated C binding, header, and wrapper assembly. |
-| [Array lowering](../../../../tests/fortran/arrays/codegen/test_specialized_array_roles.py) | Plan-selected specialized array roles lower through the binding boundary. |
+| [Array lowering](../../../../tests/fortran/arrays/end_to_end/test_signed_stride_handoff.py) | Plan-selected specialized array roles lower through the binding boundary. |
 
 ## Failure Boundary
 

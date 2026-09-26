@@ -269,12 +269,19 @@ class AssignmentMode(str, Enum):
         incoming fixed-width byte buffer into existing native character
         storage, which has no by-value C ABI. ``ALIAS`` associates the
         destination with existing storage rather than copying it.
+        ``ALLOCATING_COPY`` assigns into a scalar allocatable, allocating it
+        when unallocated and giving a deferred-length character the incoming
+        width. ``TARGET_COPY`` copies into a scalar pointer's current target
+        and fails when the pointer is disassociated or, for a character, when
+        the incoming width differs from the target's.
     """
 
     NONE = "none"
     VALUE_COPY = "value_copy"
     CHARACTER_COPY = "character_copy"
     ALIAS = "alias"
+    ALLOCATING_COPY = "allocating_copy"
+    TARGET_COPY = "target_copy"
 
 
 class SetterAction(str, Enum):
@@ -968,6 +975,13 @@ class OwnershipPolicyResolver:
         storage = self.decide_semantic_variable(variable, context)
         if storage.is_blocked or storage.kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return storage
+        if context.is_module_variable and variable.semantic_type.metadata.get("native_storage"):
+            return storage
+        if context.is_module_variable and (
+            variable.semantic_type.metadata.get("fortran_allocatable")
+            or variable.semantic_type.metadata.get("fortran_pointer")
+        ):
+            return storage
         if storage.kind is ObjectKind.SCALAR and storage.transfer is TransferMode.SNAPSHOT_COPY:
             return storage
         return self.decide_semantic_type(variable.semantic_type, OwnershipContext.result())
@@ -997,13 +1011,45 @@ class OwnershipPolicyResolver:
                 setter_action=SetterAction.OMIT,
             )
         incoming = self.decide_semantic_type(variable.semantic_type, OwnershipContext.argument())
+        descriptor_assignment = self._module_scalar_descriptor_assignment(storage, context, variable)
+        if descriptor_assignment is not None:
+            return replace(
+                incoming,
+                assignment_mode=descriptor_assignment,
+                setter_action=SetterAction.WRITE_THROUGH,
+            )
         return replace(
             incoming,
             assignment_mode=(
-                AssignmentMode.ALIAS if storage.storage_mode is StorageMode.ALIAS else AssignmentMode.VALUE_COPY
+                AssignmentMode.VALUE_COPY
+                if context.is_module_variable and variable.semantic_type.metadata.get("native_storage")
+                else AssignmentMode.ALIAS
+                if storage.storage_mode is StorageMode.ALIAS
+                else AssignmentMode.VALUE_COPY
             ),
             setter_action=self._setter_action(storage, incoming, context, variable),
         )
+
+    @staticmethod
+    def _module_scalar_descriptor_assignment(
+        storage: OwnershipDecision,
+        context: OwnershipContext,
+        variable: Any,
+    ) -> AssignmentMode | None:
+        """Select how a scalar allocatable or pointer module variable is assigned.
+
+        Its getter lends a read-only view of the current storage, so Python
+        writes only through the setter: an allocatable takes intrinsic
+        assignment, while a pointer's current target receives the value.
+        """
+        if not context.is_module_variable or storage.kind not in {ObjectKind.SCALAR, ObjectKind.STRING}:
+            return None
+        metadata = variable.semantic_type.metadata
+        if metadata.get("fortran_allocatable"):
+            return AssignmentMode.ALLOCATING_COPY
+        if metadata.get("fortran_pointer"):
+            return AssignmentMode.TARGET_COPY
+        return None
 
     @staticmethod
     def _setter_action(
@@ -1857,10 +1903,18 @@ class OwnershipPolicyResolver:
                     else "plain derived module storage uses live typed module access"
                 ),
             )
-        if facts.allocatable and facts.rank == 0:
-            return self._allocatable_scalar_decision(facts, context)
-        if facts.pointer and facts.rank == 0:
-            return self._pointer_scalar_decision(facts, context)
+        if (facts.allocatable or facts.pointer) and facts.rank == 0:
+            return OwnershipDecision(
+                self._kind(facts, OwnershipContext()),
+                OwnershipOwner.NATIVE,
+                TransferMode.BORROWED_VIEW,
+                DestructionPolicy.NATIVE_OWNER,
+                storage_mode=StorageMode.ALIAS,
+                boundary_storage_mode=StorageMode.ALIAS,
+                nullable=True,
+                borrowed=True,
+                reason="scalar module descriptor lends a read-only view of its current storage on each read",
+            )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:
                 return self._pointer_array_decision(facts, context)
@@ -1871,7 +1925,11 @@ class OwnershipPolicyResolver:
             OwnershipOwner.NATIVE,
             TransferMode.BORROWED_VIEW,
             DestructionPolicy.NATIVE_OWNER,
-            storage_mode=StorageMode.ALIAS if facts.rank > 0 else StorageMode.STACK,
+            storage_mode=(
+                StorageMode.ALIAS
+                if facts.rank > 0 or (facts.metadata or {}).get("native_storage")
+                else StorageMode.STACK
+            ),
             borrowed=True,
             reason="module variable storage is owned by native module state",
         )
@@ -2223,8 +2281,9 @@ class OwnershipPolicyResolver:
                     "use PointerPolicy for extraction and descriptor operations"
                 )
             return None
-        if decision.transfer is not TransferMode.SNAPSHOT_COPY:
-            return "scalar pointer field and module accessors require snapshot_copy detached values"
+        required_transfer = TransferMode.BORROWED_VIEW if context.is_module_variable else TransferMode.SNAPSHOT_COPY
+        if decision.transfer is not required_transfer:
+            return f"scalar pointer {context.location} accessor requires {required_transfer.value} transfer"
         return None
 
     @staticmethod

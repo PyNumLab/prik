@@ -111,8 +111,7 @@ def test_generated_contract_uses_public_any_native_forms():
     assert arguments["shape_one"].semantic_type.metadata["fortran_target"] is True
     assert all(argument.semantic_type.name == "AnyNative" for argument in arguments.values())
 
-
-def test_generated_contract_uses_bare_shape_forms_without_extra_metadata():
+    # Without attributes, each shape is written bare, with no Annotated metadata.
     forms = (
         ("scalar", "", "AnyNative"),
         ("raw", ", dimension(*)", "AnyNative[Flat]"),
@@ -127,30 +126,23 @@ def test_generated_contract_uses_bare_shape_forms_without_extra_metadata():
         + "\nend module"
     )
     semantic = fortran_module_to_semantic_module(parse_fortran_file(source).modules[0])
-    contract = PyiPrinter().emit(semantic)
+    bare_contract = PyiPrinter().emit(semantic)
     for _name, _shape, annotation in forms:
-        assert f"x: {annotation}\n" in contract
-    assert "Annotated" not in contract
-
-
-def test_edited_contract_rejects_higher_rank_assumed_size():
-    source = """from prik.contracts import AnyNative, Flat
-def f(x: AnyNative[:, Flat]) -> None: ...
-"""
-    with pytest.raises(ValueError, match="rank-one assumed-size"):
-        pyi_text_to_semantic_module(source, module_name="m")
+        assert f"x: {annotation}\n" in bare_contract
+    assert "Annotated" not in bare_contract
 
 
 @pytest.mark.parametrize(
-    "annotation",
+    ("annotation", "message"),
     [
-        pytest.param("AnyNative[4]", id="explicit-shape"),
-        pytest.param("AnyNative[::]", id="strided-spelling"),
+        pytest.param("AnyNative[:, Flat]", "rank-one assumed-size", id="higher-rank-assumed-size"),
+        pytest.param("AnyNative[4]", "AnyNative", id="explicit-shape"),
+        pytest.param("AnyNative[::]", "AnyNative", id="strided-spelling"),
     ],
 )
-def test_any_native_shape_is_the_single_array_category_authority(annotation):
-    source = f"from prik.contracts import AnyNative\ndef f(x: {annotation}) -> None: ..."
-    with pytest.raises(ValueError, match="AnyNative"):
+def test_edited_contract_rejects_any_native_shapes_a_dummy_cannot_declare(annotation, message):
+    source = f"from prik.contracts import AnyNative, Flat\ndef f(x: {annotation}) -> None: ..."
+    with pytest.raises(ValueError, match=message):
         pyi_text_to_semantic_module(source, module_name="m")
 
 

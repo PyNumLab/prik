@@ -17,8 +17,9 @@ import sys
 from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 
-from prik.parsers.fortran.models import FortranParseError
+from prik.parsers.fortran.models import FortranFile, FortranParseError, FortranProject
 from prik.parsers.fortran.parser import FortranParser
+from prik.preprocessing.languages import FORTRAN_SOURCE_SUFFIXES, expand_source_paths
 
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -56,36 +57,36 @@ def _to_dict_no_parent(obj):
     return obj
 
 
-def _collect_extensions(path: Path) -> list[Path]:
-    """Recursively collect Fortran source files under a directory."""
-    exts = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
-    return sorted(p for p in path.rglob("*") if p.suffix.lower() in exts)
+def _parsed_project(paths: list[str]) -> FortranProject:
+    """Parse every named source once and assemble them as one project.
+
+    Assembly resolves what one file declares for the others, so a report
+    shows the kinds and values a build of these files would use.
+    """
+    parser = FortranParser()
+    return parser._assemble_project(
+        [
+            parser.parse_file(p.read_text(encoding="utf-8"), filename=str(p))
+            for p in expand_source_paths(paths, FORTRAN_SOURCE_SUFFIXES)
+        ]
+    )
+
+
+def parsed_file_report(parsed: FortranFile) -> dict[str, list[dict]]:
+    """Return the per-file parse report every parse command prints."""
+    return {
+        "signatures": [_to_dict_no_parent(s) for s in parsed.procedures],
+        "types": [_to_dict_no_parent(t) for t in parsed.derived_types],
+        "modules": [_to_dict_no_parent(m) for m in parsed.modules],
+        "submodules": [_to_dict_no_parent(m) for m in parsed.submodules],
+        "programs": [_to_dict_no_parent(m) for m in parsed.programs],
+        "block_data": [_to_dict_no_parent(m) for m in parsed.block_data_units],
+    }
 
 
 def _parse_paths(paths: list[str]) -> dict[str, dict]:
     """Parse one or more files/directories into a per-file report structure."""
-    out: dict[str, dict] = {}
-    parser = FortranParser()
-    expanded: list[Path] = []
-    for raw in paths:
-        p = Path(raw)
-        if p.is_dir():
-            expanded.extend(_collect_extensions(p))
-        else:
-            expanded.append(p)
-
-    for p in sorted(set(expanded)):
-        code = p.read_text(encoding="utf-8")
-        parsed = parser.parse_file(code, filename=str(p))
-        out[str(p)] = {
-            "signatures": [_to_dict_no_parent(s) for s in parsed.procedures],
-            "types": [_to_dict_no_parent(t) for t in parsed.derived_types],
-            "modules": [_to_dict_no_parent(m) for m in parsed.modules],
-            "submodules": [_to_dict_no_parent(m) for m in parsed.submodules],
-            "programs": [_to_dict_no_parent(m) for m in parsed.programs],
-            "block_data": [_to_dict_no_parent(m) for m in parsed.block_data_units],
-        }
-    return out
+    return {str(parsed.filename): parsed_file_report(parsed) for parsed in _parsed_project(paths).files}
 
 
 def _semantic_report(paths: list[str]) -> dict[str, dict]:
@@ -95,22 +96,12 @@ def _semantic_report(paths: list[str]) -> dict[str, dict]:
     ``prik generate --pyi`` emits it, so an import names what the module it
     reads from declares and the report shows the contract a build would use.
     """
-    from prik.parsers.fortran.models import FortranProject
     from prik.pipeline.pyi import emit_module_stubs
-    from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+    from prik.semantics.fortran2ir import fortran_project_to_semantic_files
 
-    parser = FortranParser()
-    files = {
-        fname: parser.parse_file(Path(fname).read_text(encoding="utf-8"), filename=fname)
-        for fname in _parse_paths(paths)
-    }
-    converted = {
-        module.name.casefold(): module
-        for module in fortran_project_to_semantic_modules(FortranProject(files=list(files.values())))
-    }
     modules_by_file = {
-        fname: [converted[module.name.casefold()] for module in parsed.modules if module.name.casefold() in converted]
-        for fname, parsed in files.items()
+        str(parsed.filename): file_modules
+        for parsed, file_modules in fortran_project_to_semantic_files(_parsed_project(paths))
     }
     modules = [module for file_modules in modules_by_file.values() for module in file_modules]
     stubs = emit_module_stubs(modules, normalize_public_names=True) if modules else {}

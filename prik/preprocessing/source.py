@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal, Protocol
 
+from prik.preprocessing.languages import is_fortran_source
 from prik.compiler.compiler_profiles import fortran_compiler_family
 
 
@@ -50,8 +51,6 @@ Exposure = Literal["public", "private"]
 
 # Compiler output syntax and supported source forms.
 _VALID_LANGUAGES = {"c", "fortran"}
-_C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
-_FORTRAN_SOURCE_SUFFIXES = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
 _DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\(([^)]*)\))?(?:\s+(.*))?$")
 _LINEMARKER_RE = re.compile(
     r'^\s*#\s+(?P<line>\d+)\s+(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<bare>\S+))(?P<flags>(?:\s+\d+)*)\s*$'
@@ -375,6 +374,23 @@ class PreprocessingConfig:
         """Whether this configuration authorizes compiler-backed preprocessing."""
         return self.mode == "compiler"
 
+    @property
+    def defines_command_line_macros(self) -> bool:
+        """Whether compiler preprocessing may define macros that no source states.
+
+        ``-D`` flags, a compile database, or a command template can each
+        define a macro, and then any name in any source may expand, so a
+        source without directives is not known to read as it is written.
+        """
+        if not self.uses_compiler:
+            return False
+        return bool(
+            self.defines
+            or self.compile_commands
+            or self.command_template
+            or any(str(arg).startswith(("-D", "-include", "-imacros")) for arg in self.compiler_args)
+        )
+
     def fortran_internal_recipe(self, path: Path) -> dict[str, object] | None:
         """Return parser-test macro metadata when compiler invocation is absent.
 
@@ -559,7 +575,7 @@ def _preprocessor_options(
 
 def _fortran_source_language_hint(source: Path) -> list[str]:
     """Return a source-form hint only for Fortran paths with unknown suffixes."""
-    if source.suffix.lower() in _FORTRAN_SOURCE_SUFFIXES:
+    if is_fortran_source(source):
         return []
     return ["-x", "f95-cpp-input"]
 
@@ -1467,6 +1483,36 @@ def preprocess_source(
     return result
 
 
+@dataclass(frozen=True)
+class FortranSourceText:
+    """One Fortran source read the way the parser must see it.
+
+    ``recipe`` records how the text was produced, or is ``None`` when it was
+    read as written with nothing to record; ``included_files`` lists what
+    compiler preprocessing pulled in.
+    """
+
+    source: str
+    recipe: dict[str, object] | None
+    included_files: tuple[IncludedFile, ...] = ()
+
+
+def read_fortran_source(source_path: Path | str, config: PreprocessingConfig) -> FortranSourceText:
+    """Return one Fortran source as the parser reads it, under ``config``.
+
+    Compiler preprocessing expands the source and reports its recipe and
+    included files; otherwise the file is read as UTF-8 text with the
+    internal recipe its macros call for. Every route that parses a Fortran
+    path -- a build, ``prik generate``, a parse report, module discovery --
+    reads it here.
+    """
+    path = Path(source_path)
+    if config.uses_compiler:
+        result = preprocess_source(path, language="fortran", config=config)
+        return FortranSourceText(result.source, _recipe_from_result(result).to_dict(), tuple(result.included_files))
+    return FortranSourceText(path.read_text(encoding="utf-8"), config.fortran_internal_recipe(path))
+
+
 def run_compiler_preprocessor_with_recipe(
     source_path: Path | str,
     language: str,
@@ -1501,6 +1547,7 @@ def run_compiler_preprocessor(
 __all__ = (
     "CommandTemplateAdapter",
     "CompilerAdapter",
+    "FortranSourceText",
     "GCCCompatibleCAdapter",
     "GNUFortranAdapter",
     "IncludedFile",
@@ -1519,6 +1566,7 @@ __all__ = (
     "build_template_preprocess_invocation",
     "parse_linemarker_mappings",
     "preprocess_source",
+    "read_fortran_source",
     "run_compiler_preprocessor",
     "run_compiler_preprocessor_with_recipe",
     "validate_macro_name",

@@ -48,6 +48,7 @@ datatype facts without creating a wrapper.
 ```text
 prik/pipeline/
 ├── pyi.py
+├── sources.py
 ├── type_mapping_report.py
 ├── wrapper.py
 └── build.py
@@ -58,6 +59,7 @@ prik/pipeline/
 | Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
 | [`prik/pipeline/pyi.py`](../../../prik/pipeline/pyi.py) | `pyi_*_to_semantic_module()` loads text, files, or path sets into semantic modules. `emit_module_stubs()` completes copied modules and renders `.pyi` stubs. | Contract loading, external-type reconciliation, per-operation cache behavior, or stub output. |
+| [`prik/pipeline/sources.py`](../../../prik/pipeline/sources.py) | `fortran_sources_to_semantic_modules()` reads, parses, measures, converts, and selects Fortran sources for both a build and `prik generate`; `discover_fortran_sources()` runs module source discovery. | How Fortran sources become semantic modules, for every route at once. |
 | [`prik/pipeline/type_mapping_report.py`](../../../prik/pipeline/type_mapping_report.py) | Converts compiler probe facts through semantic conversion and backend dtype projection into a measured report record, then renders it as Markdown. | Datatype-report content or its cross-stage evidence. |
 | [`prik/pipeline/wrapper.py`](../../../prik/pipeline/wrapper.py) | `WrapperGenerator.generate()` freezes and validates a `ModulePlan`, delegates backend generation and printing, and returns an in-memory `GeneratedWrapper`. | Plan-to-rendered-wrapper orchestration. |
 | [`prik/pipeline/build.py`](../../../prik/pipeline/build.py) | `build_fortran_extension()`, `build_c_extension()`, `build_pyi_extension()`, and `build_pyi_extension_from_manifest()` write artifacts, prepare native inputs, compile/link, and return `WrapperBuildResult`. `NativeBuildPlan` records those native inputs. | Public build behavior, artifact layout, build modes, manifests, scheduling, linking, or extension import. |

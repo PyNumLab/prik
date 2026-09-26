@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_cli.py`."""
+"""The ``prik parse`` CLI runs Fortran compiler preprocessing and reports its recipe."""
 
 import json
 from pathlib import Path
@@ -6,22 +6,6 @@ import subprocess
 import sys
 
 from tests.fortran.infrastructure.preprocessing._support import _fake_compiler
-
-
-def test_cli_help_documents_exact_compiler_and_preprocessing_examples():
-    res = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", "--help"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert "--compiler COMPILER" in res.stdout
-    assert "Compiler used for preprocessing" in res.stdout
-    assert "default: gfortran; cc with --language c" in " ".join(res.stdout.split())
-    assert "--compile-commands PATH" in res.stdout
-    assert "-D" in res.stdout
-    assert "--define NAME[=VALUE]" in res.stdout
 
 
 def test_cli_accepts_compile_database_for_fortran_compiler_mode(tmp_path: Path):
@@ -67,34 +51,20 @@ def test_cli_accepts_compile_database_for_fortran_compiler_mode(tmp_path: Path):
     assert payload["preprocessing_recipe"]["compile_commands"] == str(database)
 
 
-def test_cli_fortran_default_compiler_json_records_preprocessing_recipe(tmp_path: Path):
-    source = tmp_path / "branch.F90"
-    source.write_text(
-        "subroutine selected()\nend subroutine selected\n",
-        encoding="utf-8",
-    )
+def test_cli_fortran_default_compiler_mode_accepts_include_dirs_and_records_recipe(tmp_path: Path):
+    source = tmp_path / "mini.F90"
+    source.write_text("subroutine work()\nend subroutine work\n", encoding="utf-8")
 
     res = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(source), "--json"],
+        [sys.executable, "-m", "prik", "parse", str(source), "--json", "-I", "include"],
         capture_output=True,
         text=True,
         check=True,
     )
 
-    assert json.loads(res.stdout)[str(source)]["preprocessing_recipe"]["compiler"] == "gfortran"
-
-
-def test_cli_fortran_default_compiler_mode_accepts_include_dirs(tmp_path: Path):
-    source = tmp_path / "mini.F90"
-    source.write_text("subroutine work()\nend subroutine work\n", encoding="utf-8")
-
-    res = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(source), "-I", "include"],
-        capture_output=True,
-        text=True,
-    )
-
-    assert res.returncode == 0
+    recipe = json.loads(res.stdout)[str(source)]["preprocessing_recipe"]
+    assert recipe["compiler"] == "gfortran"
+    assert recipe["include_dirs"] == ["include"]
 
 
 def test_cli_fortran_compiler_mode_runs_exact_compiler_and_parses_stdout(tmp_path: Path):

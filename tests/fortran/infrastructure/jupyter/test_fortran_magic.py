@@ -378,59 +378,6 @@ def test_handwritten_module_contract_builds_existing_sources_and_tracks_their_co
     assert shell.user_ns["maths"] is not first_namespace
 
 
-def test_generated_standalone_contract_publishes_direct_declarations(tmp_path: Path, monkeypatch):
-    modules: dict[str, ModuleType] = {}
-    calls: list[Path] = []
-
-    def generate(path: Path, *, source_digest: str, options) -> contract_cells.GeneratedContracts:
-        return contract_cells.GeneratedContracts(
-            language="fortran",
-            source_digest=source_digest,
-            module_contracts={},
-            direct_contract="@standalone\ndef square() -> None: ...",
-            dependency_contracts={},
-        )
-
-    def build(contract: Path, **kwargs) -> WrapperBuildResult:
-        calls.append(contract)
-        output_dir = Path(kwargs["output_dir"])
-        output_dir.mkdir(parents=True, exist_ok=True)
-        module_name = str(kwargs["output_name"])
-        shared_library = output_dir / f"{module_name}.so"
-        shared_library.write_bytes(b"mock extension")
-        extension = ModuleType(module_name)
-        extension.square = lambda: 4
-        modules[module_name] = extension
-        return WrapperBuildResult(
-            sources=(contract,),
-            module_name=module_name,
-            output_dir=output_dir,
-            shared_library=shared_library,
-            build_makefile=None,
-            compiled=True,
-            generated_sources=(),
-            generated_files=(),
-        )
-
-    monkeypatch.setattr(contract_cells, "generate_contracts_from_source", generate)
-    monkeypatch.setattr(magic_module, "build_pyi_extension", build)
-    monkeypatch.setattr(WrapperBuildResult, "import_module", lambda self: modules[self.module_name])
-    shell = _Shell()
-    magic = PrikMagics(shell, cache_dir=tmp_path / "cache")
-
-    magic.fortran("--pyi", "subroutine square()\nend subroutine\n")
-    inserted = shell.next_inputs[0][0]
-    magic_line, editable_cell = inserted.split("\n", 1)
-    assert magic_line == "%%pyi"
-    assert " file=" not in editable_cell
-
-    magic.pyi(magic_line.removeprefix("%%pyi").strip(), editable_cell)
-
-    assert calls[0].read_text(encoding="utf-8").endswith("@standalone\ndef square() -> None: ...\n")
-    assert shell.user_ns["square"]() == 4
-    assert "cell" not in shell.user_ns
-
-
 def test_multiple_generated_contracts_use_distinct_jupyter_payloads():
     writes: list[tuple[dict[str, object], bool]] = []
 
@@ -454,103 +401,110 @@ def test_multiple_generated_contracts_use_distinct_jupyter_payloads():
     ]
 
 
-def test_editable_contract_requires_its_exact_cached_source(tmp_path: Path):
-    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
-    digest = "a" * 64
-    cell = f"# prik: file=maths.pyi source-sha256={digest}\n\ndef square(): ...\n"
-
-    with pytest.raises(UsageError, match="execute its %%fortran --pyi or %%c --pyi source cell again"):
-        magic.pyi("", cell)
-
-
-def test_magic_reports_usage_without_terminating_ipython(tmp_path: Path, capsys):
-    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
-
-    magic.fortran("--help", "")
-    assert "usage: %%fortran" in capsys.readouterr().out
-
-    with pytest.raises(UsageError, match="non-empty"):
-        magic.fortran("", "\n")
-    with pytest.raises(UsageError, match="only generates editable cells"):
-        magic.fortran("--pyi --force", "source")
-    with pytest.raises(UsageError, match="generated source metadata or explicit"):
-        magic.pyi("", "def square(): ...\n")
-    with pytest.raises(UsageError, match="cannot mix"):
-        magic.pyi(
-            "--native-fortran-sources one.f90 --native-c-sources one.c",
-            "def square(): ...\n",
-        )
-    source = tmp_path / "native.f90"
-    source.write_text("subroutine native()\nend subroutine\n", encoding="utf-8")
-    with pytest.raises(UsageError, match="cannot combine generated source-sha256 metadata"):
-        magic.pyi(
-            f"--native-fortran-sources {source}",
-            f"# prik: source-sha256={'a' * 64}\n\ndef native(): ...\n",
-        )
-    with pytest.raises(UsageError, match="full lowercase source-sha256"):
-        magic.pyi(
-            "",
-            "# prik: file=maths.pyi source-sha256=short\ndef square(): ...\n",
-        )
-
-
-def test_editable_contract_metadata_errors_name_what_the_cell_got_wrong(tmp_path: Path):
-    """An edited contract cell must say which metadata a user broke.
-
-    These are the guards an ordinary edit reaches: duplicating the reserved
-    line, or renaming the contract to something that is not a module path.
-    """
-    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
-    digest = "a" * 64
-
-    with pytest.raises(UsageError, match="exactly one PRIK metadata line"):
-        magic.pyi("", f"# prik: source-sha256={digest}\n# prik: file=maths.pyi\n\ndef square(): ...\n")
-    for filename in ("../escape.pyi", "maths.txt", "not-an-identifier.pyi", "__init__.pyi"):
-        with pytest.raises(UsageError, match=r"Invalid editable \.pyi filename"):
-            magic.pyi("", f"# prik: file={filename} source-sha256={digest}\n\ndef square(): ...\n")
-
-
-def test_dash_prefixed_flag_value_usage_names_the_equals_form(tmp_path: Path):
-    """A flag value argparse read as an option must say how to write it."""
-    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
-
-    with pytest.raises(UsageError, match=r'--native-compile-flags="-O3 -march=native"'):
-        magic.fortran("--native-compile-flags -O3", "source")
-    # ``--compiler-arg`` carries exactly one argument, so it must not be told
-    # to pass a quoted group of several flags.
-    with pytest.raises(UsageError, match=r"--compiler-arg=-fopenmp"):
-        magic.fortran("--compiler-arg -fopenmp", "source")
-    assert "quoted group" not in _compiler_arg_usage_message(magic)
-    # An option whose value is never dash-prefixed keeps the plain message.
-    with pytest.raises(UsageError, match=r"^argument --compiler: expected one argument$"):
-        magic.fortran("--compiler", "source")
-
-
-def _compiler_arg_usage_message(magic: PrikMagics) -> str:
-    with pytest.raises(UsageError) as raised:
-        magic.fortran("--compiler-arg -fopenmp", "source")
-    return str(raised.value)
-
-
-def test_ipython_extension_hook_registers_the_magic_class():
-    registered = []
-
-    class _RegistrationShell:
-        def register_magics(self, magic_class) -> None:
-            registered.append(magic_class)
-
-    load_ipython_extension(_RegistrationShell())
-
-    assert registered == [PrikMagics]
-
-
 def test_ipython_extension_refuses_to_replace_an_existing_cell_magic():
     class _ConflictingShell:
         def find_cell_magic(self, name: str):
             return (lambda: None) if name == "c" else None
 
-        def register_magics(self, magic_class) -> None:
+        def register_magics(self, _magic_class) -> None:
             raise AssertionError("conflicting magics must be reported before registration")
 
     with pytest.raises(UsageError, match=r"already registered: %%c"):
         load_ipython_extension(_ConflictingShell())
+
+
+_DIGEST = "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("magic_name", "line", "cell", "message"),
+    [
+        pytest.param("fortran", "", "\n", "non-empty", id="empty-cell"),
+        pytest.param("fortran", "--pyi --force", "source", "only generates editable cells", id="pyi-with-force"),
+        pytest.param(
+            "fortran",
+            "--native-compile-flags -O3",
+            "source",
+            r'--native-compile-flags="-O3 -march=native"',
+            id="dash-prefixed-flag-group",
+        ),
+        # --compiler-arg carries exactly one argument, so it is not told to pass a quoted group.
+        pytest.param(
+            "fortran",
+            "--compiler-arg -fopenmp",
+            "source",
+            r"--compiler-arg=-fopenmp(?![\s\S]*quoted group)",
+            id="dash-prefixed-single-flag",
+        ),
+        pytest.param(
+            "fortran", "--compiler", "source", r"^argument --compiler: expected one argument$", id="missing-plain-value"
+        ),
+        pytest.param(
+            "pyi", "", "def square(): ...\n", "generated source metadata or explicit", id="contract-without-source"
+        ),
+        pytest.param(
+            "pyi",
+            "--native-fortran-sources one.f90 --native-c-sources one.c",
+            "def square(): ...\n",
+            "cannot mix",
+            id="mixed-native-languages",
+        ),
+        pytest.param(
+            "pyi",
+            "--native-fortran-sources {native}",
+            f"# prik: source-sha256={_DIGEST}\n\ndef native(): ...\n",
+            "cannot combine generated source-sha256 metadata",
+            id="generated-metadata-with-explicit-sources",
+        ),
+        pytest.param(
+            "pyi",
+            "",
+            "# prik: file=maths.pyi source-sha256=short\ndef square(): ...\n",
+            "full lowercase source-sha256",
+            id="short-digest",
+        ),
+        pytest.param(
+            "pyi",
+            "",
+            f"# prik: file=maths.pyi source-sha256={_DIGEST}\n\ndef square(): ...\n",
+            "execute its %%fortran --pyi or %%c --pyi source cell again",
+            id="uncached-generated-source",
+        ),
+        pytest.param(
+            "pyi",
+            "",
+            f"# prik: source-sha256={_DIGEST}\n# prik: file=maths.pyi\n\ndef square(): ...\n",
+            "exactly one PRIK metadata line",
+            id="duplicated-metadata-line",
+        ),
+        *(
+            pytest.param(
+                "pyi",
+                "",
+                f"# prik: file={filename} source-sha256={_DIGEST}\n\ndef square(): ...\n",
+                r"Invalid editable \.pyi filename",
+                id=f"invalid-filename-{label}",
+            )
+            for label, filename in (
+                ("escape", "../escape.pyi"),
+                ("suffix", "maths.txt"),
+                ("identifier", "not-an-identifier.pyi"),
+                ("package-root", "__init__.pyi"),
+            )
+        ),
+    ],
+)
+def test_magic_usage_errors_name_what_the_cell_got_wrong(tmp_path: Path, magic_name, line, cell, message):
+    """Invalid cells raise IPython usage errors, never SystemExit, and say what to change."""
+    native = tmp_path / "native.f90"
+    native.write_text("subroutine native()\nend subroutine\n", encoding="utf-8")
+    magic = PrikMagics(_Shell(), cache_dir=tmp_path / "cache")
+
+    with pytest.raises(UsageError, match=message):
+        getattr(magic, magic_name)(line.format(native=native), cell)
+
+
+def test_magic_help_prints_usage_without_terminating_ipython(tmp_path: Path, capsys):
+    PrikMagics(_Shell(), cache_dir=tmp_path / "cache").fortran("--help", "")
+
+    assert "usage: %%fortran" in capsys.readouterr().out

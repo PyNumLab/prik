@@ -34,11 +34,21 @@ def test_type_mapping_markdown_covers_target_native_semantic_and_numpy_types(
     compiler,
     native_header,
     representative,
+    tmp_path,
+    monkeypatch,
+    capsys,
 ):
     if shutil.which(compiler) is None:
         pytest.skip(f"{compiler} is required for the target-specific mapping report")
 
-    report = _mapping_markdown(language, compiler=compiler)
+    monkeypatch.chdir(tmp_path)
+    assert (
+        type_mapping_report.main(
+            ["--language", language, "--compiler", compiler, "--cache-dir", str(tmp_path / "cache"), "--refresh"]
+        )
+        == 0
+    )
+    report = capsys.readouterr().out
 
     assert report.startswith(f"Target profile: `{type_mapping_report.target_profile()}`")
     assert native_header in report
@@ -84,26 +94,6 @@ def test_type_mapping_report_records_structured_measurements(language, compiler)
     assert str(entry["target_fact"]["bits"]) in entry["native_fact"]
 
 
-def test_type_mapping_report_main_selects_language(monkeypatch, capsys):
-    monkeypatch.setattr(
-        type_mapping_report,
-        "c_type_mapping_report",
-        lambda *, compiler, compiler_args, **options: f"C:{compiler}:{','.join(compiler_args)}:{options['refresh']}",
-    )
-    monkeypatch.setattr(
-        type_mapping_report,
-        "fortran_type_mapping_report",
-        lambda *, compiler, compiler_args, **options: f"F:{compiler}:{','.join(compiler_args)}:{options['refresh']}",
-    )
-    monkeypatch.setattr(type_mapping_report, "type_mapping_markdown", lambda report: report)
-
-    assert type_mapping_report.main(["--language", "c", "--compiler", "clang", "--compiler-arg=-m32", "--refresh"]) == 0
-    assert capsys.readouterr().out == "C:clang:-m32:True\n"
-
-    assert type_mapping_report.main(["--language", "fortran"]) == 0
-    assert capsys.readouterr().out == "F:gfortran::False\n"
-
-
 def test_fortran_type_mapping_uses_compiler_dependent_defaults():
     if shutil.which("gfortran") is None:
         pytest.skip("gfortran is required for the target-specific mapping report")
@@ -128,6 +118,7 @@ def test_fortran_type_mapping_includes_legacy_and_modern_spellings():
     assert "| `complex*8` | 64-bit storage | `Complex64` | `numpy.complex64` |" in report
     assert "| `double precision` | 64-bit storage | `Float64` | `numpy.float64` |" in report
     assert "| `double complex` | 128-bit storage | `Complex128` | `numpy.complex128` |" in report
+    assert "| `character(kind=c_char)` | 8-bit storage | `String` | `numpy.str_ / ABI bytes` |" in report
     assert "| `character*8` | 8-bit storage | `String` | `numpy.str_ / ABI bytes` |" in report
 
 
@@ -136,15 +127,6 @@ def test_target_profile_normalizes_common_machine_names(monkeypatch):
     monkeypatch.setattr(type_mapping_report.platform, "machine", lambda: "AMD64")
 
     assert type_mapping_report.target_profile() == "linux-x86_64"
-
-
-def test_character_mapping_fact_is_modeled_without_compiler_probe_metadata():
-    semantic_type = type("SemanticType", (), {"metadata": {}})()
-
-    fact = type_mapping_report._fortran_target_fact(semantic_type, ("character", "c_char"))
-
-    assert fact == {"bits": 8}
-    assert type_mapping_report._fortran_fact_text(fact) == "8-bit storage"
 
 
 def test_expression_probe_markdown_renders_measured_values():

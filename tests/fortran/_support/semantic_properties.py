@@ -28,14 +28,6 @@ _FORTRAN_SCALAR_TYPES = st.sampled_from(
     ]
 )
 
-_FORTRAN_VALUE_TYPES = st.sampled_from(
-    [
-        ("logical", "Bool"),
-        ("real(8)", "Float64"),
-        ("real", "Float32"),
-    ]
-)
-
 _SEMANTIC_SCALAR_TYPES = st.sampled_from(["Bool", "Float32", "Float64", "Int32"])
 
 _PYI_IDENTIFIER_STEMS = st.from_regex(r"[a-z][a-z0-9_]{0,8}", fullmatch=True)

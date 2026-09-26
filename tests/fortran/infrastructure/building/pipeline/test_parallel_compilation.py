@@ -62,6 +62,38 @@ def test_project_compile_batches_respect_module_dependencies_and_group_ready_sou
     ]
 
 
+def test_project_compile_batches_follow_use_natures_and_submodule_identities(tmp_path: Path) -> None:
+    """An intrinsic use waits on no project source, and a submodule waits on its own parent.
+
+    ``a:impl`` and ``b:impl`` share a name; each nested ``leaf`` compiles after
+    its own ``impl``, and a scope using the processor's ``ieee_arithmetic``
+    does not wait on a user source of that name.
+    """
+    paths = {
+        name: tmp_path / f"{name}.f90"
+        for name in ("ieee", "processor", "a", "b", "a_impl", "b_impl", "a_leaf", "b_leaf")
+    }
+    sources = {
+        str(paths["ieee"]): "module ieee_arithmetic\nend module ieee_arithmetic\n",
+        str(paths["processor"]): "module processor\nuse, intrinsic :: ieee_arithmetic\nend module processor\n",
+        str(paths["a"]): "module a\nend module a\n",
+        str(paths["b"]): "module b\nend module b\n",
+        str(paths["a_impl"]): "submodule (a) impl\nend submodule impl\n",
+        str(paths["b_impl"]): "submodule (b) impl\nend submodule impl\n",
+        str(paths["a_leaf"]): "submodule (a:impl) leaf\nend submodule leaf\n",
+        str(paths["b_leaf"]): "submodule (b:impl) leaf\nend submodule leaf\n",
+    }
+    project = parse_fortran_project(sources)
+    objects = tuple(_object(Path(source), tmp_path / "build") for source in sources)
+
+    batches = _project_compile_batches(project, objects)
+
+    batch_of = {item.source: index for index, batch in enumerate(batches) for item in batch}
+    assert batch_of[paths["processor"]] == batch_of[paths["ieee"]] == 0
+    for ancestor in ("a", "b"):
+        assert batch_of[paths[ancestor]] < batch_of[paths[f"{ancestor}_impl"]] < batch_of[paths[f"{ancestor}_leaf"]]
+
+
 def test_project_compile_batches_fall_back_to_input_order_for_unparsed_native_sources(tmp_path: Path) -> None:
     wrapped = tmp_path / "wrapped.f90"
     supplemental = tmp_path / "supplemental.f90"

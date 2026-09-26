@@ -275,8 +275,8 @@ def test_a_bound_handle_reaches_a_native_call_without_running_python(descriptor_
     assert descriptor.shape == (2,)
 
 
-def test_two_descriptor_dummies_reach_borrowed_and_owned_storage_alike(descriptor_matrix):
-    """Two descriptors are live at once, so both callees' writes reach their entities.
+def test_several_descriptor_dummies_reach_borrowed_and_owned_storage_alike(descriptor_matrix):
+    """Several descriptors are live at once, so every callee write reaches its entity.
 
     Each argument is entered in turn and the call is made inside the last
     consumer, where every descriptor the Fortran runtime built is still valid.
@@ -303,17 +303,13 @@ def test_two_descriptor_dummies_reach_borrowed_and_owned_storage_alike(descripto
     finally:
         owned_first.close()
 
-
-def test_three_descriptor_dummies_keep_every_borrowed_descriptor_live(descriptor_matrix):
-    first = descriptor_matrix.pair_left
-    second = descriptor_matrix.pair_right
+    # Three borrowed descriptors in one call are all live when it is made.
     third = descriptor_matrix.pair_third
+    descriptor_matrix.grow_three(left, right, third, np.int32(4))
 
-    descriptor_matrix.grow_three(first, second, third, np.int32(4))
-
-    assert first.shape == second.shape == third.shape == (4,)
-    np.testing.assert_allclose(first.to_numpy(), np.full(4, 8.0))
-    np.testing.assert_allclose(second.to_numpy(), np.full(4, 9.0))
+    assert left.shape == right.shape == third.shape == (4,)
+    np.testing.assert_allclose(left.to_numpy(), np.full(4, 8.0))
+    np.testing.assert_allclose(right.to_numpy(), np.full(4, 9.0))
     np.testing.assert_allclose(third.to_numpy(), np.full(4, 10.0))
 
 

@@ -1,6 +1,7 @@
 """An unedited semantic contract is authoritative runtime build input."""
 
 import importlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -102,8 +103,8 @@ def test_generated_contract_rebuilds_without_native_source_fallback(compiled_con
 WILDCARD_SOURCE = (NATIVE_FIXTURES / "wildcard_home.f90").read_text(encoding="utf-8")
 
 
-def _wildcard_contracts(tmp_path: Path, consumer: str) -> Path:
-    """Generate contracts, withhold `two` from the home surface, add a consumer."""
+def _wildcard_contracts(tmp_path: Path, readers: dict[str, str]) -> Path:
+    """Generate contracts, withhold `two` from the home surface, add consumer contracts."""
     source = tmp_path / "wild.f90"
     source.write_text(WILDCARD_SOURCE, encoding="utf-8")
     package = tmp_path / "contracts"
@@ -115,48 +116,40 @@ def _wildcard_contracts(tmp_path: Path, consumer: str) -> Path:
     )
     home = package / "wild_home.pyi"
     home.write_text(home.read_text(encoding="utf-8").replace('["one", "two"]', '["one"]'), encoding="utf-8")
-    package.joinpath("wild_reader.pyi").write_text(consumer, encoding="utf-8")
-    package.joinpath("__init__.pyi").write_text(
-        'from . import wild_home\nfrom . import wild_reader\n\n__all__ = ["wild_home", "wild_reader"]\n',
-        encoding="utf-8",
-    )
+    for name, text in readers.items():
+        package.joinpath(f"{name}.pyi").write_text(text, encoding="utf-8")
+    names = ["wild_home", *readers]
+    imports = "".join(f"from . import {name}\n" for name in names)
+    package.joinpath("__init__.pyi").write_text(f"{imports}\n__all__ = {json.dumps(names)}\n", encoding="utf-8")
     return package / "__init__.pyi"
 
 
-def _build_wildcard(entry: Path, tmp_path: Path, name: str):
+def test_withheld_name_is_skipped_by_a_wildcard_but_reachable_by_name(tmp_path: Path):
+    """A wildcard takes what a contract publishes; naming a withheld name still reaches it.
+
+    The dependency stated its surface, and a name left off it is not part of
+    what writing `*` asks for. A contract may still need the withheld name, to
+    express a declaration or to publish it again, and naming it in an import
+    asks for exactly that.
+    """
+    entry = _wildcard_contracts(
+        tmp_path,
+        {
+            "wild_star": "from .wild_home import *\n",
+            "wild_named": 'from .wild_home import two\n\n__all__ = ["two"]\n',
+        },
+    )
     result = build_pyi_extension(
         entry,
         input_compiler=_compiler(),
         native_fortran_sources=[str(tmp_path / "wild.f90")],
-        output_dir=tmp_path / name,
-        output_name=name,
+        output_dir=tmp_path / "wildcard",
+        output_name="wildcard",
     )
-    return _import_from_build_dir(result.module_name, result.output_dir)
-
-
-def test_wildcard_import_reads_only_the_surface_its_dependency_publishes(tmp_path: Path):
-    """A wildcard takes what a contract publishes, not everything it holds.
-
-    The dependency stated its surface, and a name left off it is not part of
-    what writing `*` asks for.
-    """
-    entry = _wildcard_contracts(tmp_path, "from .wild_home import *\n")
-    module = _build_wildcard(entry, tmp_path, "wildcard_star")
+    module = _import_from_build_dir(result.module_name, result.output_dir)
 
     assert hasattr(module.wild_home, "one")
     assert not hasattr(module.wild_home, "two")
-    assert hasattr(module.wild_reader, "one")
-    assert not hasattr(module.wild_reader, "two")
-
-
-def test_explicit_import_reaches_and_can_republish_a_withheld_name(tmp_path: Path):
-    """A withheld name stays reachable, because a contract may still need it.
-
-    Expressing a declaration or publishing the name again both require asking
-    for it, which is exactly what naming it in an import does.
-    """
-    entry = _wildcard_contracts(tmp_path, 'from .wild_home import two\n\n__all__ = ["two"]\n')
-    module = _build_wildcard(entry, tmp_path, "wildcard_named")
-
-    assert not hasattr(module.wild_home, "two")
-    assert module.wild_reader.two(np.int32(5)) == np.int32(7)
+    assert hasattr(module.wild_star, "one")
+    assert not hasattr(module.wild_star, "two")
+    assert module.wild_named.two(np.int32(5)) == np.int32(7)

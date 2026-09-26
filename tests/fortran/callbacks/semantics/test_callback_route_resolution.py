@@ -8,6 +8,8 @@ name meaning nothing here.
 
 from pathlib import Path
 
+import pytest
+
 from prik.parsers.fortran import parse_fortran_project
 from prik.semantics.fortran2ir import FortranToIRConverter
 
@@ -158,3 +160,37 @@ def test_each_procedure_resolves_the_callback_it_declares(tmp_path: Path):
         seen[procedure.name] = [argument.base_type for argument in scope["cb"].signature.arguments]
 
     assert seen == {"first": ["integer"], "second": ["real"]}
+
+
+@pytest.mark.parametrize(
+    ("module_use", "body_use"),
+    [
+        pytest.param("  use, intrinsic :: iso_c_binding, only : c_ptr\n", "      import :: c_ptr\n", id="module-use"),
+        pytest.param("", "      use, intrinsic :: iso_c_binding, only : c_ptr\n", id="body-use"),
+    ],
+)
+def test_a_prototype_writes_a_processor_type_as_itself_however_it_is_imported(module_use: str, body_use: str):
+    """``c_ptr`` comes from the processor, so no contract module qualifies it."""
+    from prik.parsers.fortran import parse_fortran_file
+    from prik.pipeline.pyi import emit_module_stubs
+    from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+
+    source = (
+        "module prototypes\n"
+        f"{module_use}"
+        "  implicit none\n"
+        "  abstract interface\n"
+        "    subroutine user_fn(p, n)\n"
+        f"{body_use}"
+        "      implicit none\n"
+        "      type(c_ptr), value :: p\n"
+        "      integer :: n\n"
+        "    end subroutine\n"
+        "  end interface\n"
+        "end module prototypes\n"
+    )
+    modules = fortran_file_to_semantic_modules(parse_fortran_file(source, filename="prototypes.f90"))
+
+    contract = emit_module_stubs(modules, normalize_public_names=True)["prototypes"]
+
+    assert "    p: Value(c_ptr)," in contract

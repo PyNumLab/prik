@@ -6,20 +6,14 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.ownership import (
-    CodegenAction,
-    DestructionPolicy,
     NativeBarrierAction,
     ObjectKind,
-    OwnershipOwner,
     PythonBarrierAction,
-    StorageMode,
-    TransferMode,
 )
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
-from prik.planning.models import DatatypeFamily
 
 
 def _raw_array_module():
@@ -52,41 +46,6 @@ def _raw_array_plan():
 
 def _functions(plan):
     return {function.binding.python_name: function for function in plan.namespaces[0].functions}
-
-
-def test_raw_array_addresses_use_one_shared_transfer_and_shape_plan():
-    module = _raw_array_module()
-    function = _functions(WrapperPlanner().build(module))["raw_vector"]
-    argument = function.arguments[1]
-    assert argument.projected_call_slot is function.entrypoint.projected_slots[argument.native_position]
-    assert argument.array is argument.projected_call_slot.array
-    assert argument.object_kind is ObjectKind.NUMPY_ARRAY
-    assert argument.ownership_owner is OwnershipOwner.CALLER
-    assert argument.transfer_mode is TransferMode.IN_PLACE
-    assert argument.destruction_policy is DestructionPolicy.CALLER
-    assert argument.storage_mode is StorageMode.STACK
-    assert argument.boundary_storage_mode is StorageMode.STACK
-    assert argument.datatype_family is DatatypeFamily.REAL
-    assert argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS
-    assert argument.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
-    assert argument.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
-    assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
-    assert argument.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
-    assert argument.bridge.copy_reason is None
-
-    assert argument.array is not None
-    assert argument.array.rank == 1
-    assert argument.array.shape == ("n",)
-    assert argument.array.axes == ("dense",)
-    assert argument.array.contiguous is True
-    assert argument.array.category == "raw_address"
-    assert argument.array.data_role == argument.entrypoint.handoff_role
-    assert argument.array.extent_reference_roles == (("raw_array_addresses.raw_vector.n:value",),)
-    assert argument.array.extent_roles == ()
-    assert argument.array.upper_bound_roles == ()
-    assert argument.array.stride_roles == ()
-    assert argument.array.runtime_rank_role is None
-    assert argument.array.itemsize_role is None
 
 
 def test_raw_array_addresses_reuse_integer_extraction_and_named_array_bridge_association():

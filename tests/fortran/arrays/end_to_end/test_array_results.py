@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    FAULT_INJECTION_C_FLAGS,
     _build_source_or_generated_pyi_and_import,
 )
 
@@ -33,6 +34,7 @@ def test_array_results_follow_data_buffer_and_descriptor_handle_contracts(
         },
         CONTRACT_FIXTURES / "farray_results_f90",
         pyi_parity_build_mode,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
 
     fixed = module.fixed_vector()

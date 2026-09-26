@@ -4,6 +4,12 @@ Accessibility is settled by precedence: an access statement naming the entity
 decides it, otherwise the module's bare `public`/`private` default does, and
 that default is itself `public`. Those rules cover a use-associated entity, so
 an ordinary module publishes what it imports without naming it anywhere.
+
+Every route to a name is read the same way whichever form of `use` it entered
+by (bare, `only`, renamed, repeated), and each hop of a transitive chain applies
+the rule again. Routes that agree on one declaration name one entity; routes
+that disagree, or that pass through a module this project cannot read, leave
+the name unresolved rather than guessing.
 """
 
 from pathlib import Path
@@ -17,263 +23,11 @@ NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 DECLARING = (NATIVE_FIXTURES / "declaring_module.f90").read_text(encoding="utf-8")
 
+NAMED_GENERIC = (NATIVE_FIXTURES / "a_plain_use_carries_a_named_generic_interface.f90").read_text(encoding="utf-8")
 
-def _reexports(
-    tmp_path: Path,
-    importer: str,
-    *,
-    module_name: str = "b_mod",
-) -> list[tuple[str, str, str]]:
-    """Return one module's public use associations as (local, source, origin)."""
-    source = tmp_path / "project.f90"
-    source.write_text(f"{DECLARING}\n{importer}", encoding="utf-8")
-    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
-    importing = next(module for module in modules if module.name == module_name)
-    return [(item.local_name, item.source_name, item.origin_module) for item in importing.reexports]
+TRANSITIVE_DECLARING = (NATIVE_FIXTURES / "transitive_declaring.f90").read_text(encoding="utf-8")
 
-
-def test_a_default_public_module_publishes_what_it_imports(tmp_path: Path):
-    """No access statement is needed: the module default is public."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod, only : x
-  implicit none
-end module b_mod
-""",
-    ) == [("x", "x", "a_mod")]
-
-
-def test_a_declaration_dependency_remains_a_public_use_association(tmp_path: Path):
-    """Using an import in a declaration does not change its accessibility."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod, only : crate => box
-  implicit none
-contains
-  integer function crate_value(item) result(out)
-    type(crate), intent(in) :: item
-    out = item%value
-  end function crate_value
-end module b_mod
-""",
-    ) == [("crate", "box", "a_mod")]
-
-
-def test_a_third_module_resolves_a_declaration_dependency_through_its_importer(tmp_path: Path):
-    """A public use association remains available to another Fortran module."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod, only : box
-  implicit none
-  type(box) :: stored
-end module b_mod
-
-module c_mod
-  use b_mod, only : box
-  implicit none
-  type(box) :: another
-end module c_mod
-""",
-        module_name="c_mod",
-    ) == [("box", "box", "a_mod")]
-
-
-def test_explicit_public_still_publishes_a_declaration_dependency(tmp_path: Path):
-    """A named public statement is an explicit publication request."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod, only : crate => box
-  implicit none
-  public :: crate
-contains
-  integer function crate_value(item) result(out)
-    type(crate), intent(in) :: item
-    out = item%value
-  end function crate_value
-end module b_mod
-""",
-    ) == [("crate", "box", "a_mod")]
-
-
-@pytest.mark.parametrize(
-    ("importer", "expected"),
-    [
-        pytest.param(
-            """\
-module b_mod
-  use a_mod, only : x
-  implicit none
-  private
-end module b_mod
-""",
-            [],
-            id="private-default",
-        ),
-        pytest.param(
-            """\
-module b_mod
-  use a_mod, only : x
-  implicit none
-  private
-  public :: x
-end module b_mod
-""",
-            [("x", "x", "a_mod")],
-            id="public-name-over-private-default",
-        ),
-        pytest.param(
-            """\
-module b_mod
-  use a_mod, only : x
-  implicit none
-  private :: x
-end module b_mod
-""",
-            [],
-            id="private-name-over-public-default",
-        ),
-        pytest.param(
-            """\
-module b_mod
-  use a_mod
-  implicit none
-  private :: a_mod
-end module b_mod
-""",
-            [],
-            id="private-module-route",
-        ),
-        pytest.param(
-            """\
-module b_mod
-  use a_mod
-  implicit none
-  private
-  public :: a_mod
-end module b_mod
-""",
-            [
-                ("box", "box", "a_mod"),
-                ("scale_value", "scale_value", "a_mod"),
-                ("x", "x", "a_mod"),
-                ("y", "y", "a_mod"),
-            ],
-            id="public-module-route-over-private-default",
-        ),
-    ],
-)
-def test_accessibility_precedence_for_use_associations(
-    importer: str,
-    expected: list[tuple[str, str, str]],
-    tmp_path: Path,
-):
-    """A named access decision outranks the module's public or private default."""
-    assert sorted(_reexports(tmp_path, importer)) == sorted(expected)
-
-
-def test_any_public_route_keeps_a_multiply_accessible_entity_public(tmp_path: Path):
-    """One public route wins when another route to the same entity is private."""
-    assert _reexports(
-        tmp_path,
-        """\
-module left_mod
-  use a_mod, only : x
-end module left_mod
-
-module right_mod
-  use a_mod, only : x
-end module right_mod
-
-module b_mod
-  use left_mod
-  use right_mod
-  implicit none
-  private :: left_mod
-  public :: right_mod
-end module b_mod
-""",
-    ) == [("x", "x", "a_mod")]
-
-
-def test_a_renamed_default_public_import_publishes_the_local_name(tmp_path: Path):
-    """A rename changes the name this module publishes, never the declaration."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod, only : renamed => y
-  implicit none
-end module b_mod
-""",
-    ) == [("renamed", "y", "a_mod")]
-
-
-def test_a_plain_use_carries_the_public_names_of_what_it_reads(tmp_path: Path):
-    """A `use` naming no list carries every public name, default rules applying."""
-    carried = _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use a_mod
-  implicit none
-end module b_mod
-""",
-    )
-
-    assert sorted(local for local, _source, _origin in carried) == ["box", "scale_value", "x", "y"]
-
-
-def test_a_plain_use_carries_a_named_generic_interface(tmp_path: Path):
-    """The offered-name inventory includes named interface declarations."""
-    carried = _reexports(
-        tmp_path,
-        (NATIVE_FIXTURES / "a_plain_use_carries_a_named_generic_interface.f90").read_text(encoding="utf-8"),
-    )
-
-    assert ("convert", "convert", "generic_home") in carried
-
-
-def test_a_plain_use_under_a_private_default_carries_nothing(tmp_path: Path):
-    """The importing module's default decides what it publishes in turn."""
-    assert (
-        _reexports(
-            tmp_path,
-            """\
-module b_mod
-  use a_mod
-  implicit none
-  private
-end module b_mod
-""",
-        )
-        == []
-    )
-
-
-@pytest.mark.parametrize("kind", ["variable", "procedure"])
-def test_accessibility_decides_every_re_exportable_kind(kind: str, tmp_path: Path):
-    """The rule is about accessibility, so it does not single out one kind."""
-    name = "x" if kind == "variable" else "scale_value"
-    published = _reexports(
-        tmp_path,
-        f"""\
-module b_mod
-  use a_mod, only : {name}
-  implicit none
-end module b_mod
-""",
-    )
-
-    assert published == [(name, name, "a_mod")]
-
+TRANSITIVE_OTHER = (NATIVE_FIXTURES / "transitive_other.f90").read_text(encoding="utf-8")
 
 CALLBACK_HOME = """\
 module callback_types
@@ -286,157 +40,12 @@ module callback_types
 end module callback_types
 """
 
-
-def _callback_reexports(tmp_path: Path, importer: str, *, module_name: str) -> list[tuple[str, str, str]]:
-    """Return one module's public use associations over an abstract-interface home."""
-    source = tmp_path / "callbacks.f90"
-    source.write_text(f"{CALLBACK_HOME}\n{importer}", encoding="utf-8")
-    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
-    importing = next(module for module in modules if module.name == module_name)
-    return [(item.local_name, item.source_name, item.origin_module) for item in importing.reexports]
-
-
-def test_a_plain_use_carries_an_abstract_interface_procedure(tmp_path: Path):
-    """An abstract block names no generic; what it declares are its procedures."""
-    assert _callback_reexports(
-        tmp_path,
-        """\
-module middle_mod
-  use callback_types
-  implicit none
-end module middle_mod
-""",
-        module_name="middle_mod",
-    ) == [("unary", "unary", "callback_types")]
-
-
-def test_an_abstract_interface_procedure_survives_a_further_hop(tmp_path: Path):
-    """Carrying it once makes it importable by name from the carrying module."""
-    assert _callback_reexports(
-        tmp_path,
-        """\
-module middle_mod
-  use callback_types
-  implicit none
-end module middle_mod
-
-module user_mod
-  use middle_mod, only : unary
-  implicit none
-end module user_mod
-""",
-        module_name="user_mod",
-    ) == [("unary", "unary", "callback_types")]
-
-
-def test_a_callback_reached_through_a_public_route_stays_public(tmp_path: Path):
-    """Callback accessibility is the module's accessibility, routes included.
-
-    A bare `private` would hide the name were the used module not named public,
-    so judging it by the symbol statements alone reaches the wrong answer.
-    """
-    assert _callback_reexports(
-        tmp_path,
-        """\
-module facade_mod
-  use callback_types
-  implicit none
-  private
-  public :: callback_types
-end module facade_mod
-""",
-        module_name="facade_mod",
-    ) == [("unary", "unary", "callback_types")]
-
-
-def test_a_callback_reached_through_a_private_route_is_withheld(tmp_path: Path):
-    """Naming the used module private withholds what it carried, default aside."""
-    assert (
-        _callback_reexports(
-            tmp_path,
-            """\
-module facade_mod
-  use callback_types
-  implicit none
-  private :: callback_types
-end module facade_mod
-""",
-            module_name="facade_mod",
-        )
-        == []
-    )
-
-
-def test_routes_that_agree_on_one_entity_publish_it(tmp_path: Path):
-    """Two `use` statements naming the same declaration name one entity."""
-    assert _reexports(
-        tmp_path,
-        """\
-module middle_mod
-  use a_mod, only : x
-  implicit none
-end module middle_mod
-
-module b_mod
-  use a_mod, only : x
-  use middle_mod, only : x
-  implicit none
-end module b_mod
-""",
-    ) == [("x", "x", "a_mod")]
-
-
-def test_a_readable_route_beside_an_unreadable_one_is_not_guessed(tmp_path: Path):
-    """An unparsed module may carry the same entity or another one.
-
-    Choosing the readable route would be a guess about the one this project
-    cannot read, so the name is left out rather than resolved to either.
-    """
-    assert (
-        _reexports(
-            tmp_path,
-            """\
-module b_mod
-  use a_mod, only : x
-  use external_mod, only : x
-  implicit none
-end module b_mod
-""",
-        )
-        == []
-    )
-
-
-def test_a_single_unreadable_route_still_names_what_it_reached(tmp_path: Path):
-    """One route names one entity, whether or not this project can read it."""
-    assert _reexports(
-        tmp_path,
-        """\
-module b_mod
-  use external_mod, only : y
-  implicit none
-end module b_mod
-""",
-    ) == [("y", "y", "external_mod")]
-
-
-def test_a_procedure_local_abstract_interface_stays_inside_its_procedure(tmp_path: Path):
-    """A block written inside a contained procedure declares a name only there.
-
-    Those blocks are stored beside the module's own, so nothing but the
-    declaring scope distinguishes them.
-    """
-    assert _reexports(
-        tmp_path,
-        """\
+LOCAL_HOME = """\
 module local_home
   implicit none
 contains
   subroutine work()
-    abstract interface
-      subroutine local_callback()
-      end subroutine local_callback
-    end interface
+{local}
   end subroutine work
 end module local_home
 
@@ -444,121 +53,435 @@ module b_mod
   use local_home
   implicit none
 end module b_mod
-""",
-    ) == [("work", "work", "local_home")]
+"""
 
-
-def test_a_procedure_local_generic_stays_inside_its_procedure(tmp_path: Path):
-    """A named generic declared inside a procedure is that procedure's, too."""
-    carried = _reexports(
-        tmp_path,
-        """\
-module local_home
+ENUM_HOME = """\
+module colors_mod
   implicit none
+  enum, bind(c)
+    enumerator :: red = 1
+    enumerator :: green = 2
+  end enum
+end module colors_mod
+"""
+
+Q_HOME = """\
+module a_mod
+  implicit none
+  integer :: q = 1
+  integer :: other = 2
+end module a_mod
+"""
+
+USER_ISO_FORTRAN_ENV = """\
+module iso_fortran_env
+  implicit none
+  integer :: my_value = 7
+end module iso_fortran_env
+"""
+
+CRATE_IMPORTER = """\
+module b_mod
+  use a_mod, only : crate => box
+  implicit none
+{access}
 contains
-  subroutine work()
-    interface local_generic
-      module procedure work
-    end interface local_generic
-  end subroutine work
-end module local_home
-
-module b_mod
-  use local_home
-  implicit none
+  integer function crate_value(item) result(out)
+    type(crate), intent(in) :: item
+    out = item%value
+  end function crate_value
 end module b_mod
-""",
-    )
-
-    assert [local for local, _source, _origin in carried] == ["work"]
+"""
 
 
-def test_a_wildcard_route_beside_an_unreadable_one_is_not_guessed(tmp_path: Path):
-    """A plain `use` compares routes the way a named import does.
-
-    Discarding the unreadable route would leave the readable one standing
-    alone and answer for a module this project never read.
-    """
-    assert (
-        _reexports(
-            tmp_path,
-            """\
-module left_mod
-  use a_mod, only : x
-  implicit none
-end module left_mod
-
-module right_mod
-  use external_mod, only : x
-  implicit none
-end module right_mod
-
-module b_mod
-  use left_mod
-  use right_mod
-  implicit none
-end module b_mod
-""",
-        )
-        == []
-    )
+def _modules(tmp_path: Path, *sources: str):
+    """Parse one throwaway project and return its semantic modules by name."""
+    (tmp_path / "project.f90").write_text("\n".join(sources), encoding="utf-8")
+    modules = fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
+    return {module.name: module for module in modules}
 
 
-def test_wildcard_routes_that_agree_on_one_entity_publish_it(tmp_path: Path):
-    """Repeating a route to the same declaration names one entity."""
-    assert _reexports(
-        tmp_path,
-        """\
-module left_mod
-  use a_mod, only : x
-  implicit none
-end module left_mod
-
-module b_mod
-  use left_mod
-  use a_mod, only : x
-  implicit none
-end module b_mod
-""",
-    ) == [("x", "x", "a_mod")]
+def _row(id_: str, sources: tuple[str, ...], expected: list[tuple[str, str, str, str]], module: str = "b_mod"):
+    return pytest.param(sources, module, expected, id=id_)
 
 
-def test_a_name_spelled_inside_a_character_literal_is_not_a_dependency(tmp_path: Path):
+A_MOD_PUBLIC = [
+    ("box", "box", "a_mod", "derived_type"),
+    ("scale_value", "scale_value", "a_mod", "procedure"),
+    ("x", "x", "a_mod", "variable"),
+    ("y", "y", "a_mod", "variable"),
+]
+X_FROM_A = [("x", "x", "a_mod", "variable")]
+X_UNRESOLVED_AT_MIDDLE = [("x", "x", "middle_mod", "unknown")]
+UNARY = [("unary", "unary", "callback_types", "prototype")]
+
+PUBLICATION_CASES = [
+    # Accessibility precedence over the module default.
+    _row("default-public-only-list", (DECLARING, "module b_mod\n  use a_mod, only : x\nend module b_mod\n"), X_FROM_A),
+    _row(
+        "default-public-procedure",
+        (DECLARING, "module b_mod\n  use a_mod, only : scale_value\nend module b_mod\n"),
+        [("scale_value", "scale_value", "a_mod", "procedure")],
+    ),
+    _row(
+        "declaration-dependency-stays-public",
+        (DECLARING, CRATE_IMPORTER.format(access="")),
+        [("crate", "box", "a_mod", "derived_type")],
+    ),
+    _row(
+        "explicit-public-declaration-dependency",
+        (DECLARING, CRATE_IMPORTER.format(access="  public :: crate")),
+        [("crate", "box", "a_mod", "derived_type")],
+    ),
+    _row(
+        "third-module-resolves-through-importer",
+        (
+            DECLARING,
+            "module b_mod\n  use a_mod, only : box\n  type(box) :: stored\nend module b_mod\n",
+            "module c_mod\n  use b_mod, only : box\n  type(box) :: another\nend module c_mod\n",
+        ),
+        [("box", "box", "a_mod", "derived_type")],
+        module="c_mod",
+    ),
+    _row("private-default", (DECLARING, "module b_mod\n  use a_mod, only : x\n  private\nend module b_mod\n"), []),
+    _row(
+        "public-name-over-private-default",
+        (DECLARING, "module b_mod\n  use a_mod, only : x\n  private\n  public :: x\nend module b_mod\n"),
+        X_FROM_A,
+    ),
+    _row(
+        "private-name-over-public-default",
+        (DECLARING, "module b_mod\n  use a_mod, only : x\n  private :: x\nend module b_mod\n"),
+        [],
+    ),
+    _row("private-module-route", (DECLARING, "module b_mod\n  use a_mod\n  private :: a_mod\nend module b_mod\n"), []),
+    _row(
+        "public-module-route-over-private-default",
+        (DECLARING, "module b_mod\n  use a_mod\n  private\n  public :: a_mod\nend module b_mod\n"),
+        A_MOD_PUBLIC,
+    ),
+    _row(
+        "any-public-route-keeps-an-entity-public",
+        (
+            DECLARING,
+            "module left_mod\n  use a_mod, only : x\nend module left_mod\n",
+            "module right_mod\n  use a_mod, only : x\nend module right_mod\n",
+            "module b_mod\n  use left_mod\n  use right_mod\n  private :: left_mod\n  public :: right_mod\nend module b_mod\n",
+        ),
+        X_FROM_A,
+    ),
+    _row(
+        "rename-publishes-the-local-name",
+        (DECLARING, "module b_mod\n  use a_mod, only : renamed => y\nend module b_mod\n"),
+        [("renamed", "y", "a_mod", "variable")],
+    ),
+    _row(
+        "plain-use-carries-every-public-name",
+        (DECLARING, "module b_mod\n  use a_mod\nend module b_mod\n"),
+        A_MOD_PUBLIC,
+    ),
+    _row(
+        "plain-use-carries-a-named-generic-interface",
+        (NAMED_GENERIC,),
+        [
+            ("convert", "convert", "generic_home", "generic"),
+            ("convert_i", "convert_i", "generic_home", "procedure"),
+            ("convert_r", "convert_r", "generic_home", "procedure"),
+        ],
+    ),
+    _row(
+        "plain-use-under-private-default-carries-nothing",
+        (DECLARING, "module b_mod\n  use a_mod\n  private\nend module b_mod\n"),
+        [],
+    ),
+    # An abstract block names no generic; what it declares are its procedures.
+    _row(
+        "plain-use-carries-an-abstract-interface-procedure",
+        (CALLBACK_HOME, "module middle_mod\n  use callback_types\nend module middle_mod\n"),
+        UNARY,
+        module="middle_mod",
+    ),
+    _row(
+        "abstract-interface-procedure-survives-a-further-hop",
+        (
+            CALLBACK_HOME,
+            "module middle_mod\n  use callback_types\nend module middle_mod\n",
+            "module user_mod\n  use middle_mod, only : unary\nend module user_mod\n",
+        ),
+        UNARY,
+        module="user_mod",
+    ),
+    # Callback accessibility is the module's accessibility, routes included: a
+    # bare `private` would hide the name were the used module not named public.
+    _row(
+        "callback-through-a-public-route-stays-public",
+        (
+            CALLBACK_HOME,
+            "module facade_mod\n  use callback_types\n  private\n  public :: callback_types\nend module facade_mod\n",
+        ),
+        UNARY,
+        module="facade_mod",
+    ),
+    _row(
+        "callback-through-a-private-route-is-withheld",
+        (
+            CALLBACK_HOME,
+            "module facade_mod\n  use callback_types\n  private :: callback_types\nend module facade_mod\n",
+        ),
+        [],
+        module="facade_mod",
+    ),
+    # Agreeing and disagreeing routes.
+    _row(
+        "routes-agreeing-on-one-entity-publish-it",
+        (
+            DECLARING,
+            "module middle_mod\n  use a_mod, only : x\nend module middle_mod\n",
+            "module b_mod\n  use a_mod, only : x\n  use middle_mod, only : x\nend module b_mod\n",
+        ),
+        X_FROM_A,
+    ),
+    # An unparsed module may carry the same entity or another one, so choosing
+    # the readable route would be a guess about the one this project cannot read.
+    _row(
+        "readable-route-beside-an-unreadable-one-is-not-guessed",
+        (DECLARING, "module b_mod\n  use a_mod, only : x\n  use external_mod, only : x\nend module b_mod\n"),
+        [],
+    ),
+    _row(
+        "single-unreadable-route-names-what-it-reached",
+        (DECLARING, "module b_mod\n  use external_mod, only : y\nend module b_mod\n"),
+        [("y", "y", "external_mod", "unknown")],
+    ),
+    _row(
+        "wildcard-route-beside-an-unreadable-one-is-not-guessed",
+        (
+            DECLARING,
+            "module left_mod\n  use a_mod, only : x\nend module left_mod\n",
+            "module right_mod\n  use external_mod, only : x\nend module right_mod\n",
+            "module b_mod\n  use left_mod\n  use right_mod\nend module b_mod\n",
+        ),
+        [],
+    ),
+    _row(
+        "wildcard-routes-agreeing-on-one-entity-publish-it",
+        (
+            DECLARING,
+            "module left_mod\n  use a_mod, only : x\nend module left_mod\n",
+            "module b_mod\n  use left_mod\n  use a_mod, only : x\nend module b_mod\n",
+        ),
+        X_FROM_A,
+    ),
+    # How a route entered says nothing about what it carries: examining the
+    # named route first would publish `a_mod::x`, and a re-exported module
+    # variable generates native access to that owner directly.
+    _row(
+        "named-and-wildcard-routes-to-different-entities-stay-unresolved",
+        (
+            TRANSITIVE_DECLARING,
+            TRANSITIVE_OTHER,
+            "module b_mod\n  use a_mod, only : x\n  use c_mod\nend module b_mod\n",
+        ),
+        [],
+    ),
+    _row(
+        "named-and-wildcard-routes-to-one-entity-resolve-together",
+        (
+            TRANSITIVE_DECLARING,
+            "module pass_mod\n  use a_mod\nend module pass_mod\n",
+            "module b_mod\n  use a_mod, only : x\n  use pass_mod\nend module b_mod\n",
+        ),
+        X_FROM_A,
+    ),
+    # PRIK cannot enumerate an unread module, so it is not a route for a name.
+    _row(
+        "unparsed-plain-use-carries-no-assumed-name",
+        (TRANSITIVE_DECLARING, "module b_mod\n  use a_mod, only : x\n  use external_mod\nend module b_mod\n"),
+        X_FROM_A,
+    ),
+    # A block written inside a contained procedure declares a name only there.
+    _row(
+        "procedure-local-abstract-interface-stays-in-its-procedure",
+        (
+            LOCAL_HOME.format(
+                local="    abstract interface\n      subroutine local_callback()\n      end subroutine local_callback\n"
+                "    end interface"
+            ),
+        ),
+        [("work", "work", "local_home", "procedure")],
+    ),
+    _row(
+        "procedure-local-generic-stays-in-its-procedure",
+        (
+            LOCAL_HOME.format(
+                local="    interface local_generic\n      module procedure work\n    end interface local_generic"
+            ),
+        ),
+        [("work", "work", "local_home", "procedure")],
+    ),
+    # Each hop of a transitive chain applies the same rule.
+    _row(
+        "private-name-in-an-intermediate-module-ends-the-chain",
+        (
+            TRANSITIVE_DECLARING,
+            "module middle_mod\n  use a_mod, only : x\n  private :: x\nend module middle_mod\n",
+            "module outer_mod\n  use middle_mod, only : x\nend module outer_mod\n",
+        ),
+        X_UNRESOLVED_AT_MIDDLE,
+        module="outer_mod",
+    ),
+    _row(
+        "routes-disagreeing-inside-an-intermediate-module-stay-unresolved",
+        (
+            TRANSITIVE_DECLARING,
+            TRANSITIVE_OTHER,
+            "module middle_mod\n  use a_mod, only : x\n  use c_mod, only : x\nend module middle_mod\n",
+            "module outer_mod\n  use middle_mod, only : x\nend module outer_mod\n",
+        ),
+        X_UNRESOLVED_AT_MIDDLE,
+        module="outer_mod",
+    ),
+    _row(
+        "mixed-routes-through-an-intermediate-module-stay-unresolved",
+        (
+            TRANSITIVE_DECLARING,
+            TRANSITIVE_OTHER,
+            "module middle_mod\n  use a_mod, only : x\n  use c_mod\nend module middle_mod\n",
+            "module outer_mod\n  use middle_mod, only : x\nend module outer_mod\n",
+        ),
+        X_UNRESOLVED_AT_MIDDLE,
+        module="outer_mod",
+    ),
+    _row(
+        "ordinary-chain-reaches-the-declaring-module",
+        (
+            TRANSITIVE_DECLARING,
+            "module middle_mod\n  use a_mod, only : x\n  public :: x\nend module middle_mod\n",
+            "module outer_mod\n  use middle_mod, only : x\nend module outer_mod\n",
+        ),
+        X_FROM_A,
+        module="outer_mod",
+    ),
+    # An enum names constants, which is how every later stage models them.
+    _row(
+        "plain-use-carries-enumerators-as-constants",
+        (ENUM_HOME, "module facade_mod\n  use colors_mod\nend module facade_mod\n"),
+        [("green", "green", "colors_mod", "variable"), ("red", "red", "colors_mod", "variable")],
+        module="facade_mod",
+    ),
+    _row(
+        "only-list-names-an-enumerator",
+        (ENUM_HOME, "module facade_mod\n  use colors_mod, only : red\nend module facade_mod\n"),
+        [("red", "red", "colors_mod", "variable")],
+        module="facade_mod",
+    ),
+    # ONLY, renaming, and repeated USE statements share one route interpretation.
+    # A rename hides the source spelling; `only` narrows to what it lists (see
+    # the default-public rows above).
+    _row(
+        "rename-without-only-hides-the-source-name",
+        (Q_HOME, "module b_mod\n  use a_mod, p => q\nend module b_mod\n"),
+        [("other", "other", "a_mod", "variable"), ("p", "q", "a_mod", "variable")],
+    ),
+    _row("empty-only-list", (TRANSITIVE_DECLARING, "module b_mod\n  use a_mod, only :\nend module b_mod\n"), []),
+    _row(
+        "repeated-statements",
+        (Q_HOME, "module b_mod\n  use a_mod, only : p => q\n  use a_mod\nend module b_mod\n"),
+        [("other", "other", "a_mod", "variable"), ("p", "q", "a_mod", "variable")],
+    ),
+    # A user module may share an intrinsic module's name; the `use` nature decides which is meant.
+    _row(
+        "non-intrinsic-names-the-user-module",
+        (
+            USER_ISO_FORTRAN_ENV,
+            "module facade\n  use, non_intrinsic :: iso_fortran_env, only: my_value\nend module facade\n",
+        ),
+        [("my_value", "my_value", "iso_fortran_env", "variable")],
+        module="facade",
+    ),
+    _row(
+        "unstated-nature-prefers-the-parsed-module",
+        (USER_ISO_FORTRAN_ENV, "module facade\n  use iso_fortran_env, only: my_value\nend module facade\n"),
+        [("my_value", "my_value", "iso_fortran_env", "variable")],
+        module="facade",
+    ),
+    _row(
+        "intrinsic-names-the-processor-module",
+        (USER_ISO_FORTRAN_ENV, "module facade\n  use, intrinsic :: iso_fortran_env, only: int32\nend module facade\n"),
+        [("int32", "int32", "iso_fortran_env", "intrinsic")],
+        module="facade",
+    ),
+    # Semantic resolution and source discovery share one inventory of processor modules.
+    _row(
+        "plain-use-of-an-ieee-module-names-the-processor-module",
+        ("module facade\n  use ieee_arithmetic, only: ieee_is_nan\nend module facade\n",),
+        [("ieee_is_nan", "ieee_is_nan", "ieee_arithmetic", "intrinsic")],
+        module="facade",
+    ),
+]
+
+
+@pytest.mark.parametrize(("sources", "module", "expected"), PUBLICATION_CASES)
+def test_a_module_publishes_exactly_its_accessible_use_associations(
+    sources: tuple[str, ...],
+    module: str,
+    expected: list[tuple[str, str, str, str]],
+    tmp_path: Path,
+):
+    """Each published name records its local spelling, declaration, owner, and kind."""
+    reexports = _modules(tmp_path, *sources)[module].reexports
+
+    published = [(item.local_name, item.source_name, item.origin_module, item.entity_kind) for item in reexports]
+    assert sorted(published) == sorted(expected)
+
+
+@pytest.mark.parametrize(
+    ("sources", "module", "name", "dependency"),
+    [
+        pytest.param(
+            (DECLARING, CRATE_IMPORTER.format(access="")),
+            "b_mod",
+            "crate",
+            True,
+            id="a-dummy-type-is-a-dependency",
+        ),
+        pytest.param(
+            (DECLARING, "module b_mod\n  use a_mod, only : box\n  type(box) :: item\nend module b_mod\n"),
+            "b_mod",
+            "box",
+            True,
+            id="a-declared-type-is-a-dependency",
+        ),
+        pytest.param(
+            (
+                DECLARING,
+                'module b_mod\n  use a_mod, only : box\n  character(len=3), parameter :: label = "box"\nend module b_mod\n',
+            ),
+            "b_mod",
+            "box",
+            False,
+            id="a-name-spelled-in-a-character-literal-is-not",
+        ),
+        pytest.param(
+            (
+                "module constants_mod\n  integer, parameter :: base = 10\nend module constants_mod\n",
+                "module colors_mod\n  use constants_mod, only : base\n  enum, bind(c)\n"
+                "    enumerator :: red = base\n  end enum\nend module colors_mod\n",
+            ),
+            "colors_mod",
+            "base",
+            True,
+            id="an-enumerator-initializer-is-a-dependency",
+        ),
+    ],
+)
+def test_a_name_a_declaration_reads_is_a_declaration_dependency(
+    sources: tuple[str, ...], module: str, name: str, dependency: bool, tmp_path: Path
+):
     """A literal's contents are its value, not a reference to what they spell."""
-    source = tmp_path / "project.f90"
-    source.write_text(
-        f"""{DECLARING}
-module b_mod
-  use a_mod, only : box
-  implicit none
-  character(len=3), parameter :: label = "box"
-end module b_mod
-""",
-        encoding="utf-8",
-    )
-    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
-    importing = next(module for module in modules if module.name == "b_mod")
+    reexports = {item.local_name: item for item in _modules(tmp_path, *sources)[module].reexports}
 
-    assert [(item.local_name, item.declaration_dependency) for item in importing.reexports] == [("box", False)]
-
-
-def test_a_type_a_declaration_names_is_a_dependency(tmp_path: Path):
-    """Declaring with an imported type is what makes it a dependency."""
-    source = tmp_path / "project.f90"
-    source.write_text(
-        f"""{DECLARING}
-module b_mod
-  use a_mod, only : box
-  implicit none
-  type(box) :: item
-end module b_mod
-""",
-        encoding="utf-8",
-    )
-    modules = fortran_project_to_semantic_modules(parse_fortran_project([source]))
-    importing = next(module for module in modules if module.name == "b_mod")
-
-    assert [(item.local_name, item.declaration_dependency) for item in importing.reexports] == [("box", True)]
+    assert reexports[name].declaration_dependency is dependency
 
 
 def test_a_compile_time_symbol_is_not_substituted_inside_a_character_literal():
@@ -568,351 +491,11 @@ def test_a_compile_time_symbol_is_not_substituted_inside_a_character_literal():
     values = {"runtime": "4"}
 
     assert _resolve_compile_time_text('len("runtime")', values) == 'len("runtime")'
-    # A reference outside the literal is still resolved.
+    # A reference outside the literal is still resolved, whatever its case, and
+    # an unknown name is left as written.
     assert _resolve_compile_time_text("runtime + 1", values) == "4 + 1"
+    assert _resolve_compile_time_text("RUNTIME + missing", values) == "4 + missing"
     assert _resolve_compile_time_text('len("runtime") + runtime', values) == 'len("runtime") + 4'
-
-
-TRANSITIVE_DECLARING = (NATIVE_FIXTURES / "transitive_declaring.f90").read_text(encoding="utf-8")
-
-TRANSITIVE_OTHER = (NATIVE_FIXTURES / "transitive_other.f90").read_text(encoding="utf-8")
-
-
-def _project_modules(tmp_path: Path, *sources: str):
-    """Parse one throwaway project and return its semantic modules by name."""
-    (tmp_path / "project.f90").write_text("\n".join(sources), encoding="utf-8")
-    modules = fortran_project_to_semantic_modules(parse_fortran_project(str(tmp_path)))
-    return {module.name: module for module in modules}
-
-
-def test_a_private_name_in_an_intermediate_module_ends_the_chain(tmp_path: Path):
-    """Each hop applies the accessibility rule, so a `private` stops the walk.
-
-    `middle` imports `x` and makes it private, so `outer` cannot reach the
-    declaration behind it however `middle` got there.
-    """
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        """\
-module middle_mod
-  use a_mod, only : x
-  implicit none
-  private :: x
-end module middle_mod
-
-module outer_mod
-  use middle_mod, only : x
-  implicit none
-end module outer_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
-    assert reexports["x"].entity_kind == "unknown"
-    assert reexports["x"].origin_module == "middle_mod"
-
-
-def test_routes_disagreeing_inside_an_intermediate_module_stay_unresolved(tmp_path: Path):
-    """`middle` reaches two different `x`, so no hop through it names one."""
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        TRANSITIVE_OTHER,
-        """\
-module middle_mod
-  use a_mod, only : x
-  use c_mod, only : x
-  implicit none
-end module middle_mod
-
-module outer_mod
-  use middle_mod, only : x
-  implicit none
-end module outer_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
-    assert reexports["x"].entity_kind == "unknown"
-    assert reexports["x"].origin_module == "middle_mod"
-
-
-def test_an_ordinary_chain_still_reaches_the_declaring_module(tmp_path: Path):
-    """One accessible, unambiguous route per hop resolves to the declaration."""
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        """\
-module middle_mod
-  use a_mod, only : x
-  implicit none
-  public :: x
-end module middle_mod
-
-module outer_mod
-  use middle_mod, only : x
-  implicit none
-end module outer_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
-    assert (reexports["x"].entity_kind, reexports["x"].origin_module, reexports["x"].source_name) == (
-        "variable",
-        "a_mod",
-        "x",
-    )
-
-
-def test_an_enumerator_is_carried_and_classified_as_the_constant_it_is(tmp_path: Path):
-    """An enum names constants, which is how every later stage models them."""
-    modules = _project_modules(
-        tmp_path,
-        """\
-module colors_mod
-  implicit none
-  enum, bind(c)
-    enumerator :: red = 1
-    enumerator :: green = 2
-  end enum
-end module colors_mod
-
-module facade_mod
-  use colors_mod
-  implicit none
-end module facade_mod
-
-module named_facade_mod
-  use colors_mod, only : red
-  implicit none
-end module named_facade_mod
-""",
-    )
-
-    # A plain `use` carries every public name, enumerators included.
-    carried = {item.local_name: item.entity_kind for item in modules["facade_mod"].reexports}
-    assert carried == {"red": "variable", "green": "variable"}
-
-    named = {item.local_name: item for item in modules["named_facade_mod"].reexports}
-    assert named["red"].entity_kind == "variable"
-    assert (named["red"].origin_module, named["red"].source_name) == ("colors_mod", "red")
-
-
-def test_an_enumerator_initializer_is_a_declaration_dependency(tmp_path: Path):
-    """A name an enum's value reads expresses a declaration, so it is a dependency."""
-    modules = _project_modules(
-        tmp_path,
-        """\
-module constants_mod
-  implicit none
-  integer, parameter :: base = 10
-end module constants_mod
-
-module colors_mod
-  use constants_mod, only : base
-  implicit none
-  enum, bind(c)
-    enumerator :: red = base
-  end enum
-end module colors_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["colors_mod"].reexports}
-    assert reexports["base"].declaration_dependency is True
-
-
-def test_a_named_and_a_wildcard_route_to_different_entities_stay_unresolved(tmp_path: Path):
-    """How a route entered says nothing about what it carries.
-
-    `b_mod` reaches two different `x`, one through an `only` list and one
-    through a plain `use`. Examining the named route first would publish
-    `a_mod::x` as the canonical one, and a re-exported module variable
-    generates native access to that owner directly, so the Fortran compiler
-    never gets to diagnose the ambiguity.
-    """
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        TRANSITIVE_OTHER,
-        """\
-module b_mod
-  use a_mod, only : x
-  use c_mod
-  implicit none
-end module b_mod
-""",
-    )
-
-    assert [item.local_name for item in modules["b_mod"].reexports] == []
-
-
-def test_a_named_and_a_wildcard_route_to_one_entity_resolve_together(tmp_path: Path):
-    """Two routes naming one declaration are not a disagreement."""
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        """\
-module pass_mod
-  use a_mod
-  implicit none
-end module pass_mod
-
-module b_mod
-  use a_mod, only : x
-  use pass_mod
-  implicit none
-end module b_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["b_mod"].reexports}
-    assert (reexports["x"].entity_kind, reexports["x"].origin_module) == ("variable", "a_mod")
-
-
-def test_an_unparsed_plain_use_carries_no_assumed_name(tmp_path: Path):
-    """PRIK cannot enumerate an unread module, so it is not a route for a name."""
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        """\
-module b_mod
-  use a_mod, only : x
-  use external_mod
-  implicit none
-end module b_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["b_mod"].reexports}
-    assert (reexports["x"].entity_kind, reexports["x"].origin_module) == ("variable", "a_mod")
-
-
-def test_mixed_routes_through_an_intermediate_module_stay_unresolved(tmp_path: Path):
-    """The rule is the same at every hop, whichever way each route entered."""
-    modules = _project_modules(
-        tmp_path,
-        TRANSITIVE_DECLARING,
-        TRANSITIVE_OTHER,
-        """\
-module middle_mod
-  use a_mod, only : x
-  use c_mod
-  implicit none
-end module middle_mod
-
-module outer_mod
-  use middle_mod, only : x
-  implicit none
-end module outer_mod
-""",
-    )
-
-    reexports = {item.local_name: item for item in modules["outer_mod"].reexports}
-    assert reexports["x"].entity_kind == "unknown"
-    assert reexports["x"].origin_module == "middle_mod"
-
-
-@pytest.mark.parametrize(
-    ("sources", "expected"),
-    [
-        pytest.param(
-            (
-                """\
-module a_mod
-  implicit none
-  integer :: q = 1
-  integer :: other = 2
-end module a_mod
-
-module b_mod
-  use a_mod, p => q
-  implicit none
-end module b_mod
-""",
-            ),
-            {"p": ("a_mod", "q"), "other": ("a_mod", "other")},
-            id="rename-without-only",
-        ),
-        pytest.param(
-            (
-                """\
-module a_mod
-  implicit none
-  integer :: q = 1
-  integer :: other = 2
-end module a_mod
-
-module b_mod
-  use a_mod, only : q
-  implicit none
-end module b_mod
-""",
-            ),
-            {"q": ("a_mod", "q")},
-            id="only-list",
-        ),
-        pytest.param(
-            (
-                """\
-module a_mod
-  implicit none
-  integer :: q = 1
-end module a_mod
-
-module b_mod
-  use a_mod, p => q
-  implicit none
-end module b_mod
-""",
-            ),
-            {"p": ("a_mod", "q")},
-            id="renamed-source-name-hidden",
-        ),
-        pytest.param(
-            (
-                TRANSITIVE_DECLARING,
-                """\
-module b_mod
-  use a_mod, only :
-  implicit none
-end module b_mod
-""",
-            ),
-            {},
-            id="empty-only-list",
-        ),
-        pytest.param(
-            (
-                """\
-module a_mod
-  implicit none
-  integer :: q = 1
-  integer :: other = 2
-end module a_mod
-
-module b_mod
-  use a_mod, only : p => q
-  use a_mod
-  implicit none
-end module b_mod
-""",
-            ),
-            {"p": ("a_mod", "q"), "other": ("a_mod", "other")},
-            id="repeated-statements",
-        ),
-    ],
-)
-def test_use_statement_forms_define_the_accessible_local_names(
-    sources: tuple[str, ...],
-    expected: dict[str, tuple[str, str]],
-    tmp_path: Path,
-):
-    """ONLY, renaming, and repeated USE statements share one route interpretation."""
-    modules = _project_modules(tmp_path, *sources)
-    reexports = {item.local_name: (item.origin_module, item.source_name) for item in modules["b_mod"].reexports}
-    assert reexports == expected
 
 
 def test_a_non_only_rename_still_carries_imported_compile_time_symbols(tmp_path: Path):
@@ -947,3 +530,85 @@ end module use_mod
     )
 
     assert (declared.kind, declared.shape) == ("8", ["4"])
+
+
+USER_IEEE_ARITHMETIC = """\
+module ieee_arithmetic
+  implicit none
+  abstract interface
+    subroutine ieee_cb(x)
+      real, intent(inout) :: x
+    end subroutine ieee_cb
+  end interface
+  interface ieee_scale
+    module procedure scale_real
+  end interface ieee_scale
+contains
+  subroutine scale_real(x)
+    real, intent(inout) :: x
+  end subroutine scale_real
+  pure integer function ieee_size(n)
+    integer, intent(in) :: n
+    ieee_size = n
+  end function ieee_size
+end module ieee_arithmetic
+"""
+
+
+@pytest.mark.parametrize(
+    ("nature", "callback_storage", "bound_scope", "specifics"),
+    [
+        pytest.param("non_intrinsic", "callback", "ieee_arithmetic", ["scale_real", "scale_int"], id="user-module"),
+        pytest.param("intrinsic", "reference", None, ["scale_int"], id="processor-module"),
+    ],
+)
+def test_an_intrinsic_use_reads_nothing_from_a_same_named_user_module(
+    tmp_path: Path, nature, callback_storage, bound_scope, specifics
+):
+    """Callbacks, specification-expression calls, and generics all follow the ``use`` nature."""
+    consumer = f"""\
+module consumer
+  use, {nature} :: ieee_arithmetic, only: ieee_cb, ieee_scale, ieee_size
+  implicit none
+  interface ieee_scale
+    module procedure scale_int
+  end interface ieee_scale
+contains
+  subroutine scale_int(i)
+    integer, intent(inout) :: i
+  end subroutine scale_int
+  subroutine apply(cb, n, values)
+    procedure(ieee_cb) :: cb
+    integer, intent(in) :: n
+    real, intent(inout) :: values(ieee_size(n))
+  end subroutine apply
+end module consumer
+"""
+    module = _modules(tmp_path, USER_IEEE_ARITHMETIC, consumer)["consumer"]
+    callback, _count, values = next(function for function in module.functions if function.name == "apply").arguments
+    (bound_call,) = values.semantic_type.storage.array.expression_callables[0]
+
+    assert callback.semantic_type.storage.kind == callback_storage
+    assert (bound_call.name, bound_call.native_scope) == ("ieee_size", bound_scope)
+    assert [procedure.name for procedure in module.overload_sets[0].procedures] == specifics
+
+
+@pytest.mark.parametrize(
+    ("nature", "processor", "wrapped"),
+    [
+        pytest.param("intrinsic", True, False, id="processor-type"),
+        pytest.param("non_intrinsic", False, True, id="user-type"),
+    ],
+)
+def test_a_wildcard_use_resolves_a_derived_type_by_its_nature(tmp_path: Path, nature, processor, wrapped):
+    """A type reached through ``use, intrinsic`` is the processor's even beside a same-named user module."""
+    user = "module ieee_arithmetic\n  type :: ieee_class_type\n    integer :: v\n  end type ieee_class_type\nend module ieee_arithmetic\n"
+    consumer = (
+        f"module consumer\n  use, {nature} :: ieee_arithmetic\ncontains\n  subroutine inspect(value)\n"
+        "    type(ieee_class_type), intent(in) :: value\n  end subroutine inspect\nend module consumer\n"
+    )
+    argument = _modules(tmp_path, user, consumer)["consumer"].functions[0].arguments[0]
+    reference = argument.semantic_type.metadata["external_type_ref"]
+
+    assert reference["origin_module"] == "ieee_arithmetic"
+    assert (bool(reference.get("processor")), reference["wrapped"]) == (processor, wrapped)

@@ -15,42 +15,23 @@ class ChildNode(BaseNode):
     """Child node that should use the most specific available handler."""
 
 
-class UnsupportedNode:
-    """Node with no matching handler."""
+class GrandchildNode(ChildNode):
+    """Node whose nearest handler is its parent's."""
 
 
-def test_class_visitor_uses_mro_specific_handler():
-    class Visitor(ClassVisitor):
-        def _visit_BaseNode(self, node):
-            return ("base", type(node).__name__)
-
-        def _visit_ChildNode(self, node):
-            return ("child", type(node).__name__)
-
-    assert Visitor().visit(ChildNode()) == ("child", "ChildNode")
-
-
-def test_class_visitor_falls_back_to_base_handler():
-    class Visitor(ClassVisitor):
-        def _visit_BaseNode(self, node):
-            return ("base", type(node).__name__)
-
-    assert Visitor().visit(ChildNode()) == ("base", "ChildNode")
-
-
-def test_class_visitor_supports_configurable_prefix():
+def test_class_visitor_dispatches_by_mro_and_rejects_unhandled_nodes():
     class Visitor(ClassVisitor):
         def _render_BaseNode(self, node):
-            return ("rendered", type(node).__name__)
+            return ("base", type(node).__name__)
 
-    assert Visitor(method_prefix="_render").visit(BaseNode()) == ("rendered", "BaseNode")
+        def _render_ChildNode(self, node):
+            return ("child", type(node).__name__)
 
+    visitor = Visitor(method_prefix="_render")
 
-def test_class_visitor_reports_unsupported_nodes():
-    visitor = ClassVisitor()
-
-    with pytest.raises(UnsupportedWrapperCodegenNodeError) as exc_info:
-        visitor.visit(UnsupportedNode())
-
-    assert "UnsupportedNode" in str(exc_info.value)
-    assert "_visit" in str(exc_info.value)
+    assert visitor.visit(BaseNode()) == ("base", "BaseNode")
+    assert visitor.visit(ChildNode()) == ("child", "ChildNode")
+    assert visitor.visit(GrandchildNode()) == ("child", "GrandchildNode")
+    with pytest.raises(UnsupportedWrapperCodegenNodeError, match="_render") as exc_info:
+        visitor.visit(object())
+    assert "object" in str(exc_info.value)

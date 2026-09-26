@@ -90,7 +90,7 @@ representation is supporting evidence, not the ownership rule.
 | `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
 | `infrastructure/pipeline/` | Generated-wrapper orchestration and transport owned by `prik/pipeline/` |
 | `infrastructure/printers/` | Internal C and Fortran source serialization owned by `prik/printers/` |
-| `infrastructure/utilities/` | Internal string and class-visitor helpers owned by `prik/utilities/` |
+| `infrastructure/utilities/` | Internal class-visitor helper owned by `prik/utilities/` |
 
 Each infrastructure test module has an explicit production owner. New internal
 coverage goes in the matching `prik/` package directory; it must not recreate a

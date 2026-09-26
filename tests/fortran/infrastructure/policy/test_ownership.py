@@ -11,7 +11,6 @@ from prik.policy.ownership import (
     OwnershipContext,
     OwnershipDecision,
     OwnershipOwner,
-    OwnershipPolicyResolver,
     PolicyActionDispatcher,
     PythonBarrierAction,
     PythonBarrierDispatcher,
@@ -210,27 +209,6 @@ def test_default_policy_completes_non_raw_python_and_native_barrier_actions():
         assert decision.native_barrier_action is native_action, label
 
 
-def test_policy_handler_dictionary_changes_one_object_kind():
-    def native_scalar_handler(_facts, _context):
-        return OwnershipDecision(
-            ObjectKind.SCALAR,
-            OwnershipOwner.NATIVE,
-            TransferMode.BORROWED_VIEW,
-            DestructionPolicy.NATIVE_OWNER,
-            borrowed=True,
-        )
-
-    resolver = OwnershipPolicyResolver({ObjectKind.SCALAR: native_scalar_handler})
-
-    scalar = resolver.decide_semantic_type(_scalar_type(), OwnershipContext.result())
-    array = resolver.decide_semantic_type(_array_type(allocatable=True), OwnershipContext.result())
-
-    assert scalar.owner is OwnershipOwner.NATIVE
-    assert scalar.transfer is TransferMode.BORROWED_VIEW
-    assert array.owner is OwnershipOwner.WRAPPER
-    assert array.transfer is TransferMode.WRAPPER_INSTANCE
-
-
 def test_explicit_ownership_override_preserves_normalized_fields_and_storage_invariants():
     metadata: dict[str, object] = {}
     set_ownership_metadata(
@@ -282,85 +260,20 @@ def test_borrowed_pointer_override_blocks_before_unrelated_destruction_validatio
     assert decision.blocker == ("borrowed pointer views need native-owner retention and stale-view invalidation")
 
 
-def test_codegen_action_dispatcher_routes_policy_actions_to_named_methods():
+def test_policy_dispatchers_reject_a_missing_completed_action_instead_of_falling_back():
+    """Lowering dispatches completed actions; an unhandled one is a policy bug, not a default."""
+    string_input = OwnershipDecision(
+        ObjectKind.STRING,
+        OwnershipOwner.TEMPORARY,
+        TransferMode.CALL_LOCAL,
+        DestructionPolicy.CALL_LOCAL,
+        codegen_action=CodegenAction.CALL_LOCAL_INPUT,
+    )
+
     class FakeVar:
-        rank = 1
-        ownership_decision = OwnershipDecision(
-            ObjectKind.NUMPY_ARRAY,
-            OwnershipOwner.PYTHON,
-            TransferMode.SNAPSHOT_COPY,
-            DestructionPolicy.PYTHON_REFCOUNT,
-            storage_mode=StorageMode.ALIAS,
-            codegen_action=CodegenAction.SNAPSHOT_COPY,
-        )
+        ownership_decision = string_input
 
-    class Target:
-        def snapshot(self, var, decision, marker):
-            return marker, var.rank, decision.codegen_action
-
-    dispatcher = PolicyActionDispatcher(
-        {(ObjectKind.NUMPY_ARRAY, CodegenAction.SNAPSHOT_COPY): "snapshot"},
-    )
-
-    assert dispatcher.dispatch(Target(), FakeVar(), "seen") == (
-        "seen",
-        1,
-        CodegenAction.SNAPSHOT_COPY,
-    )
-
-
-def test_codegen_action_dispatcher_rejects_missing_policy_pairs():
-    class FakeVar:
-        ownership_decision = OwnershipDecision(
-            ObjectKind.STRING,
-            OwnershipOwner.TEMPORARY,
-            TransferMode.CALL_LOCAL,
-            DestructionPolicy.CALL_LOCAL,
-            codegen_action=CodegenAction.CALL_LOCAL_INPUT,
-        )
-
-    dispatcher = PolicyActionDispatcher({})
-
-    with pytest.raises(ValueError, match="string/call_local_input"):
-        dispatcher.handler_name(FakeVar())
-
-
-def test_barrier_dispatchers_route_completed_actions_to_named_methods():
-    class FakeVar:
-        ownership_decision = OwnershipDecision(
-            ObjectKind.SCALAR,
-            OwnershipOwner.CALLER,
-            TransferMode.CALL_LOCAL,
-            DestructionPolicy.NONE,
-            codegen_action=CodegenAction.CALL_LOCAL_INPUT,
-            python_barrier_action=PythonBarrierAction.SCALAR_VALUE,
-            native_barrier_action=NativeBarrierAction.PASS_VALUE,
-        )
-
-    class Target:
-        def python_scalar(self, var, decision, marker):
-            return marker, var.ownership_decision.python_barrier_action, decision.python_barrier_action
-
-        def native_value(self, var, decision, marker):
-            return marker, var.ownership_decision.native_barrier_action, decision.native_barrier_action
-
-    python_dispatcher = PythonBarrierDispatcher({PythonBarrierAction.SCALAR_VALUE: "python_scalar"})
-    native_dispatcher = NativeBarrierDispatcher({NativeBarrierAction.PASS_VALUE: "native_value"})
-
-    assert python_dispatcher.dispatch(Target(), FakeVar(), "py") == (
-        "py",
-        PythonBarrierAction.SCALAR_VALUE,
-        PythonBarrierAction.SCALAR_VALUE,
-    )
-    assert native_dispatcher.dispatch(Target(), FakeVar(), "native") == (
-        "native",
-        NativeBarrierAction.PASS_VALUE,
-        NativeBarrierAction.PASS_VALUE,
-    )
-
-
-def test_barrier_dispatchers_reject_missing_completed_actions():
-    decision = OwnershipDecision(
+    raw_address = OwnershipDecision(
         ObjectKind.SCALAR,
         OwnershipOwner.CALLER,
         TransferMode.CALL_LOCAL,
@@ -370,7 +283,9 @@ def test_barrier_dispatchers_reject_missing_completed_actions():
         native_barrier_action=NativeBarrierAction.PASS_RAW_ADDRESS,
     )
 
+    with pytest.raises(ValueError, match="string/call_local_input"):
+        PolicyActionDispatcher({}).handler_name(FakeVar())
     with pytest.raises(ValueError, match="Python-barrier handler"):
-        PythonBarrierDispatcher({}).handler_name_for_decision(decision, "x")
+        PythonBarrierDispatcher({}).handler_name_for_decision(raw_address, "x")
     with pytest.raises(ValueError, match="native-barrier handler"):
-        NativeBarrierDispatcher({}).handler_name_for_decision(decision, "x")
+        NativeBarrierDispatcher({}).handler_name_for_decision(raw_address, "x")

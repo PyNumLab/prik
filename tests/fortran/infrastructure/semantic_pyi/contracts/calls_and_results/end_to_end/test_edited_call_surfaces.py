@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    FAULT_INJECTION_C_FLAGS,
     _compile_native_object,
     _import_from_build_dir,
     _sole_native_module,
@@ -42,12 +43,13 @@ def character_literal_native_object(tmp_path_factory) -> Path:
     )
 
 
-def _build(case: str, native_object: Path, output_dir: Path):
+def _build(case: str, native_object: Path, output_dir: Path, wrapper_c_flags: tuple[str, ...] = ()):
     result = build_pyi_extension(
         CONTRACTS / case / "__init__.pyi",
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=output_dir,
+        wrapper_c_flags=wrapper_c_flags,
     )
     return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
 
@@ -224,7 +226,7 @@ def test_hidden_fixed_shape_array_output_is_allocated_and_returned(
     tmp_path: Path,
     monkeypatch,
 ):
-    module = _build("hidden_array_output", output_native_object, tmp_path / "build")
+    module = _build("hidden_array_output", output_native_object, tmp_path / "build", FAULT_INJECTION_C_FLAGS)
 
     np.testing.assert_array_equal(module.fill_vector(np.int32(4)), np.array([2.0, 4.0, 6.0, 8.0]))
     assert module.fill_vector(np.int32(0)).shape == (0,)
@@ -232,3 +234,15 @@ def test_hidden_fixed_shape_array_output_is_allocated_and_returned(
     monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError, match="Unable to allocate copy-return output array"):
         module.fill_vector(np.int32(2))
+
+
+def test_a_wrapper_built_without_fault_injection_ignores_failure_requests(
+    output_native_object: Path,
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Only a build that compiles the failure hooks in reads them from the environment."""
+    module = _build("hidden_array_output", output_native_object, tmp_path / "build")
+
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
+    np.testing.assert_array_equal(module.fill_vector(np.int32(2)), np.array([2.0, 4.0]))

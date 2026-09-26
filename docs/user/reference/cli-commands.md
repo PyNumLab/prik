@@ -64,6 +64,7 @@ The default build accepts either one or more Fortran or supported C source
 | `--version` | Prints the installed PRIK version and exits. |
 | `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C source and C-native contracts require `c`. |
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
+| `--module-source-dir DIR` | Fortran only. Finds the sources of modules the inputs `use` under DIR, recursively, and reads them too. Repeat to search several directories. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
 Compiled wrapper builds support Fortran and the documented C subset —
@@ -78,6 +79,17 @@ source files can usually be inferred from their suffix;
 [Fortran Support](../language-support/fortran-support.md#source-files-and-public-entry-points)
 lists the accepted ones. C files, directories, and unknown suffixes require
 `--language c`.
+
+A Fortran `use` names a module, not a file. Give only the entry source and
+point `--module-source-dir` at the tree that holds the rest: PRIK follows each
+`use`, after preprocessing, to the one source under those directories that
+defines the module, transitively, and reads those sources as if they were
+listed, dependencies first. Intrinsic modules need no source. A used module
+that no source defines, or that several sources define, fails the command.
+
+```bash
+python3 -m prik generate --pyi src/api/api.f90 --module-source-dir src --out contract
+```
 
 ## Wrapper builds
 
@@ -380,7 +392,7 @@ locations come from the template's own output.
 
 ## Source export selection
 
-`--export-symbols FILE` selects the exact function surface to convert from
+`--export-symbols FILE` selects the exact symbol surface to convert from
 native source. It is available for C and Fortran source commands, including
 source builds, `semantics`, and `generate --pyi`. A generated contract records
 the corresponding Python names in `__all__`; when building that contract,
@@ -394,23 +406,27 @@ vendor_open
 vendor_close
 ```
 
-Fortran module procedures use a case-insensitive, module-qualified identity:
+Module-qualified public Fortran symbols -- procedures, generics, and module
+variables -- use a case-insensitive, module-qualified identity:
 
 ```text
 bobyqa_mod::bobyqa
 cobyla_mod::cobyla
+state_mod::counter
+facade_mod::convert
 ```
 
-Qualification keeps procedures with the same spelling in different modules
+Qualification keeps symbols with the same spelling in different modules
 distinct. The module side must name a declared Fortran `module`, not a
 file-level external-procedure group. Every listed identity must resolve to
-exactly one reachable function. Empty files, invalid or repeated identities,
-unknown declarations, and names that do not denote functions fail the command.
+one public procedure, generic, or variable. A generic a module merges from
+several imported generics of one name is that module's own, so selecting it
+selects every specific it dispatches over. Empty files, invalid or repeated identities,
+and unknown or private declarations fail the command.
 
-Fortran extraction retains declarations needed to express the selected
-signatures, such as callback prototypes and derived types, without publishing
-them as additional callable functions. Unselected procedures and unrelated
-modules are omitted from the generated contract. The positional inputs remain
+Fortran extraction retains declarations needed to express selected signatures
+and variable types, such as callback prototypes and derived types, without
+publishing unrelated declarations. The positional inputs remain
 the native source universe used to resolve those dependencies and, for a
 source build, the implementation sources compiled unless
 `--no-compile-input-sources` is selected.

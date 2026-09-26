@@ -28,7 +28,7 @@ from prik.policy.models import (
     NativeArrayOperation,
     NativeDescriptorHandoffABI,
 )
-from prik.policy.ownership import ObjectKind, SetterAction
+from prik.policy.ownership import AssignmentMode, ObjectKind, SetterAction
 
 from .models import (
     ArgumentTransferPlan,
@@ -1125,7 +1125,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
                 result = self._opaque_result()
             elif (
-                variable.bridge.native_getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+                variable.bridge.native_getter_action
+                in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
                 and variable.datatype_family is DatatypeFamily.STRING
             ):
                 parameters = (self._int64_parameter("length", reference=True, intent="out"),)
@@ -1133,6 +1134,9 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             elif variable.bridge.native_getter_action in {
                 ModuleGetterAction.NULLABLE_SNAPSHOT,
                 ModuleGetterAction.DERIVED_OBJECT,
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
             }:
                 parameters = ()
                 result = self._opaque_result()
@@ -1162,26 +1166,39 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
             )
         if variable.entrypoint.setter_role is not None:
-            if variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
-                value = self._value(
-                    "value",
-                    NativeEntrypointABIValueKind.CHARACTER,
-                    pointer_depth=1,
-                    const=True,
-                    character_length=variable.character_length,
-                    intent="in",
-                )
-            else:
-                value = self._scalar_parameter(variable.semantic_type_name)
             operations.append(
                 self._operation(
                     variable.owner_path,
                     "module:set",
                     f"bind_c_set_{variable.symbol_name}",
-                    (value,),
+                    *self._module_setter_signature(variable),
                 )
             )
         return tuple(operations)
+
+    def _module_setter_signature(self, variable):
+        """Return the setter parameters and result its native assignment requires.
+
+        A descriptor assignment can fail at run time, so it reports a status,
+        and a descriptor character carries its incoming width beside the bytes.
+        """
+        assignment = variable.binding.native_assignment
+        if assignment is AssignmentMode.CHARACTER_COPY:
+            value = self._value(
+                "value",
+                NativeEntrypointABIValueKind.CHARACTER,
+                pointer_depth=1,
+                const=True,
+                character_length=variable.character_length,
+                intent="in",
+            )
+            return (value,), None
+        if assignment not in {AssignmentMode.ALLOCATING_COPY, AssignmentMode.TARGET_COPY}:
+            return (self._scalar_parameter(variable.semantic_type_name),), None
+        if variable.datatype_family is not DatatypeFamily.STRING:
+            return (self._scalar_parameter(variable.semantic_type_name),), self._int_result()
+        value = self._value("value", NativeEntrypointABIValueKind.OPAQUE, pointer_depth=1, const=True)
+        return (value, self._int64_parameter("length")), self._int_result()
 
     def _module_native_array_operations(self, variable):
         handle = variable.native_array_handle

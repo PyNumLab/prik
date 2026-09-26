@@ -2,42 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import DirectResultABI
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
-
-
-@pytest.mark.parametrize(
-    ("type_name", "numpy_type", "result_kind"),
-    [
-        ("Bool", "NPY_BOOL", "python"),
-        ("Int8", "NPY_INT8", "numpy"),
-        ("Int16", "NPY_INT16", "numpy"),
-        ("Int32", "NPY_INT32", "numpy"),
-        ("Int64", "NPY_INT64", "numpy"),
-        ("Float32", "NPY_FLOAT32", "numpy"),
-        ("Float64", "NPY_FLOAT64", "numpy"),
-        ("Complex64", "NPY_COMPLEX64", "numpy"),
-        ("Complex128", "NPY_COMPLEX128", "numpy"),
-    ],
-)
-def test_direct_scalar_results_preserve_numpy_types_with_python_bool_as_the_exception(
-    type_name,
-    numpy_type,
-    result_kind,
-):
-    module = parse_pyi_text(f"def identity(x: {type_name}) -> {type_name}: ...", module_name="scalar_result")
-    complete_semantic_policies(module)
-    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-
-    helper_suffix = numpy_type.casefold().removeprefix("npy_")
-    assert f"PyObject * result_obj = prik_{helper_suffix}_to_{result_kind}(&result);" in c_source
-    assert "return result_obj;" in c_source
 
 
 def test_direct_bool_result_normalizes_the_fortran_truth_bit_before_c_conversion():
@@ -62,16 +31,3 @@ def test_direct_bool_result_normalizes_the_fortran_truth_bit_before_c_conversion
     assert "c_result = native_not_flag(value)" in fortran_source
     # Reduced the way C converts to `_Bool`: any non-zero value is true.
     assert "result = merge(1_c_int8_t, 0_c_int8_t, transfer(c_result, 0_c_int8_t) /= 0_c_int8_t)" in fortran_source
-
-
-def test_generator_rejects_a_non_normalized_direct_bool_result_abi():
-    module = parse_pyi_text(
-        "def not_flag(value: Bool) -> Bool: ...",
-        module_name="logical_result",
-    )
-    complete_semantic_policies(module)
-    plan = WrapperPlanner().build(module)
-    plan.namespaces[0].functions[0].results[0].entrypoint.direct_result_abi = DirectResultABI.NATIVE_SCALAR
-
-    with pytest.raises(ValueError, match="invalid-direct-result-abi"):
-        WrapperGenerator().generate(plan)

@@ -1,7 +1,5 @@
 """C enum conversion into the semantic IR."""
 
-from dataclasses import asdict
-
 from prik.printers import emit_module
 from prik.parsers.c import parse_c_file, parse_c_project
 from prik.parsers.c.models import (
@@ -12,11 +10,7 @@ from prik.semantics.c2ir import (
     CToIRConverter,
     c_file_to_semantic_module,
     c_file_to_semantic_modules,
-    c_project_to_semantic_module,
     c_project_to_semantic_modules,
-)
-from prik.semantics.models import (
-    SemanticVariable,
 )
 from tests.c._support.semantic_conversion import (
     _assert_c_origin,
@@ -40,12 +34,8 @@ enum status { STATUS_OK = 0, STATUS_WARN, STATUS_ERROR = 10 };
     assert constants["STATUS_WARN"].default_value == "1"
     assert constants["STATUS_ERROR"].default_value == "10"
     api_version = constants["API_VERSION"]
-    assert isinstance(api_version, SemanticVariable)
     assert api_version.semantic_type.name == "Int32"
     assert api_version.semantic_type.dtype == "Int32"
-    assert [asdict(constraint) for constraint in api_version.semantic_type.constraints] == [
-        {"name": "Constant", "arguments": []}
-    ]
     _assert_c_origin(
         api_version.origin,
         native_name="API_VERSION",
@@ -79,7 +69,7 @@ def test_c2ir_names_anonymous_typedef_enums_and_keeps_enumerators_unscoped():
     parsed = parse_c_file(source, filename="flags.h")
 
     module = c_file_to_semantic_module(parsed)
-    project_module = c_project_to_semantic_module(parse_c_project({"flags.h": source}), name="flags")
+    project_module = c_project_to_semantic_modules(parse_c_project({"flags.h": source}))[0]
 
     assert module.classes == []
     assert project_module.classes == []

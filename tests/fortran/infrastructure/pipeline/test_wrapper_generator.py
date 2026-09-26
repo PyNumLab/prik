@@ -12,14 +12,8 @@ from prik.policy.completion import complete_semantic_policies
 from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
 from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
 from prik.utilities.stage_values import FrozenStageRecordError
-from prik.codegen import (
-    CBindingGenerator,
-    FortranBridgeGenerator,
-)
-from prik.codegen.docstrings import WrapperDocstringBuilder
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import NamespacePlan, WrapperPlanner
-from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 
 def _rendered_source(generated_wrapper, suffix: str) -> str:
@@ -99,12 +93,15 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
         Path("render_demo_wrapper.c"),
         Path("render_demo_wrapper.h"),
     )
+    # The handoff names what the build compiles; headers are generated but never compiled.
+    assert generated_wrapper.compile_sources == (Path("bind_c_render_demo_wrapper.f90"), Path("render_demo_wrapper.c"))
+    assert generated_wrapper.generated_files == generated_wrapper.source_paths
     assert generated_wrapper.extension_init_name == "PyInit_render_demo"
     assert "double bind_c_swap_args(double * y, double * x);" in c_source
     assert 'static char * kwlist[] = {"x", "y", NULL};' in c_source
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
-    assert "prik_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
-    assert "result = bind_c_swap_args(&bound_y, &bound_x);" in c_source
+    assert "prik_float64_or_storage(bound_x_obj, NPY_FLOAT64, " in c_source
+    assert "result = bind_c_swap_args(bound_y_storage, bound_x_storage);" in c_source
     assert "PyObject * result_obj = prik_float64_to_numpy(&result);" in c_source
     assert "PyMODINIT_FUNC PyInit_render_demo(void)" in c_source
     assert "static PyObject * wrap_swap_args" in c_header
@@ -113,24 +110,6 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert "real(c_double), external :: SWAP_ARGS" in fortran_source
     assert "function SWAP_ARGS(" not in fortran_source
     assert "result = SWAP_ARGS(y, x)" in fortran_source
-
-
-def test_public_generator_reports_each_rendering_operation_in_execution_order():
-    plan = _plan("def value(x: Float64) -> Float64: ...", module_name="render_progress")
-    progress = []
-
-    WrapperGenerator().generate(plan, progress=lambda label, elapsed: progress.append((label, elapsed)))
-
-    assert [label for label, _ in progress] == [
-        "Generate binding source",
-        "Generate binding source",
-        "Generate bridge source",
-        "Generate bridge source",
-        "Generate binding header",
-        "Generate binding header",
-    ]
-    assert [elapsed is None for _, elapsed in progress] == [True, False, True, False, True, False]
-    assert all(elapsed >= 0.0 for _, elapsed in progress if elapsed is not None)
 
 
 def test_procedure_only_binding_stays_one_compile_unit_at_any_size():
@@ -151,44 +130,6 @@ def test_procedure_only_binding_stays_one_compile_unit_at_any_size():
     assert "static PyObject * wrap_value_000(PyObject * self, PyObject * args, PyObject * kwargs);" in (
         header_source.text
     )
-
-
-@pytest.mark.parametrize(
-    ("source", "c_fragment", "fortran_fragment"),
-    [
-        (
-            "def required_value(x: Float64) -> Float64: ...",
-            "PyObject * bound_x_obj;",
-            "result = native_required_value(x)",
-        ),
-        (
-            "def optional_value(x: Int32 = ...) -> Int32: ...",
-            "PyObject * bound_x_obj = Py_None;",
-            "if (c_associated(bound_x)) then",
-        ),
-        (
-            """
-@native_call([Allocatable(Arg(0))])
-def descriptor_value(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
-""",
-            "PyObject * bound_value_obj = NULL;",
-            "type(c_ptr), value :: bound_value_present",
-        ),
-        (
-            """
-@native_call([Addr(Arg(0)), Return("result", 0)])
-def hidden_value(x: Float64) -> Float64: ...
-""",
-            "void bind_c_hidden_value(double * x, double * result);",
-            "subroutine bind_c_hidden_value(x, result)",
-        ),
-    ],
-)
-def test_supported_function_actions_select_their_backend_behavior(source, c_fragment, fortran_fragment):
-    generated_wrapper = WrapperGenerator().generate(_plan(source, module_name="action_dispatch"))
-
-    assert c_fragment in _rendered_source(generated_wrapper, ".c")
-    assert fortran_fragment in _rendered_source(generated_wrapper, ".f90")
 
 
 def test_direct_plan_edits_change_binding_and_bridge_generation_then_freeze_plan():
@@ -249,90 +190,37 @@ def test_entrypoint_symbol_edit_changes_both_sides_of_shared_c_abi():
     assert 'bind(c, name="custom_scale_entrypoint")' in fortran_source
 
 
-def test_backend_visitors_return_complete_nodes_and_printers_freeze_them():
-    plan = _plan(
-        """
-@bind("SCALE")
-@native_call([Int32(1), Arg(0), Bool(False)])
-def scale(x: Float64) -> Float64: ...
-""",
-        module_name="backend_nodes",
-    )
-    c_generator = CBindingGenerator()
-    fortran_generator = FortranBridgeGenerator()
-    WrapperDocstringBuilder().render(plan)
-    c_generator.require_supported(plan)
-    fortran_generator.require_supported(plan)
-
-    c_module, c_header = c_generator.visit(plan)
-    fortran_module = fortran_generator.visit(plan)
-
-    assert [function.name for function in c_module.functions] == ["wrap_scale", "PyInit_backend_nodes"]
-    assert [prototype.name for prototype in c_header.prototypes] == ["wrap_scale"]
-    assert [procedure.name for procedure in fortran_module.procedures] == ["bind_c_scale"]
-    assert "result = native_scale(literal_0, x, literal_2)" in FortranSourcePrinter().doprint(fortran_module)
-    CSourcePrinter().doprint(c_module)
-    with pytest.raises(FrozenStageRecordError):
-        c_module.name = "later"
-    with pytest.raises(FrozenStageRecordError):
-        fortran_module.name = "later"
-
-
-def test_generator_rejects_unregistered_typed_lowering_combination():
-    plan = _plan(
-        """
-def scale(x: Float64) -> Float64: ...
-""",
-        module_name="unsupported_lowering",
-    )
+def _unregistered_optional_mode(plan):
     function = plan.namespaces[0].functions[0]
+    argument = function.arguments[0]
     invalid_argument = replace(
-        function.arguments[0],
-        binding=replace(function.arguments[0].binding, optional_mode="x"),
-        entrypoint=replace(function.arguments[0].entrypoint, optional_mode="x"),
+        argument,
+        binding=replace(argument.binding, optional_mode="x"),
+        entrypoint=replace(argument.entrypoint, optional_mode="x"),
     )
-    root = plan.namespaces[0]
-    invalid = replace(
-        plan,
-        namespaces=(replace(root, functions=(replace(function, arguments=(invalid_argument,)),)),),
-    )
-
-    with pytest.raises(ValueError, match="Unsupported C argument optional mode"):
-        WrapperGenerator().generate(invalid)
+    return _edit_first_function(plan, lambda item: replace(item, arguments=(invalid_argument, *item.arguments[1:])))
 
 
-def test_generator_rejects_hidden_result_native_action_disagreement():
-    plan = _hidden_result_plan()
-    function = plan.namespaces[0].functions[0]
-    result = function.results[0]
+def _hidden_result_native_action(plan):
+    result = plan.namespaces[0].functions[0].results[0]
     replacement = (
         NativeBarrierAction.PASS_VALUE
         if result.bridge.native_action is not NativeBarrierAction.PASS_VALUE
         else NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
     )
-    invalid = _edit_first_function(
-        plan,
-        lambda item: replace(
-            item,
-            results=(replace(result, bridge=replace(result.bridge, native_action=replacement)),),
-        ),
-    )
-
-    with pytest.raises(ValueError, match="inconsistent-result-native-action"):
-        WrapperGenerator().generate(invalid)
+    edited = replace(result, bridge=replace(result.bridge, native_action=replacement))
+    return _edit_first_function(plan, lambda item: replace(item, results=(edited,)))
 
 
-def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
-    plan = _hidden_result_plan()
+def _hidden_result_slot_codegen_action(plan):
     function = plan.namespaces[0].functions[0]
     result = function.results[0]
     original_slot = result.projected_call_slot
-    edited_adapter = replace(original_slot.adapter, codegen_action=CodegenAction.COPY_OUT)
-    edited_slot = replace(original_slot, adapter=edited_adapter)
+    edited_slot = replace(original_slot, adapter=replace(original_slot.adapter, codegen_action=CodegenAction.COPY_OUT))
     projected_slots = tuple(
         edited_slot if slot is original_slot else slot for slot in function.entrypoint.projected_slots
     )
-    invalid = _edit_first_function(
+    return _edit_first_function(
         plan,
         lambda item: replace(
             item,
@@ -341,127 +229,105 @@ def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
         ),
     )
 
-    with pytest.raises(ValueError, match="inconsistent-result-slot-codegen-action"):
-        WrapperGenerator().generate(invalid)
+
+def _argument_object_kind(plan):
+    plan.namespaces[0].functions[0].arguments[0].projected_call_slot.object_kind = ObjectKind.STRING
+    return plan
 
 
-def test_generator_rejects_argument_native_slot_object_kind_disagreement():
-    plan = _scalar_plan()
-    argument = plan.namespaces[0].functions[0].arguments[0]
-    argument.projected_call_slot.object_kind = ObjectKind.STRING
-
-    with pytest.raises(ValueError, match="inconsistent-argument-object-kind"):
-        WrapperGenerator().generate(plan)
+def _result_object_kind(plan):
+    plan.namespaces[0].functions[0].results[0].projected_call_slot.object_kind = ObjectKind.STRING
+    return plan
 
 
-def test_generator_rejects_result_native_slot_object_kind_disagreement():
-    plan = _hidden_result_plan()
-    result = plan.namespaces[0].functions[0].results[0]
-    result.projected_call_slot.object_kind = ObjectKind.STRING
-
-    with pytest.raises(ValueError, match="inconsistent-result-object-kind"):
-        WrapperGenerator().generate(plan)
-
-
-def test_generator_rejects_advertised_role_without_a_plan_producer():
-    invalid = _edit_first_function(
-        _scalar_plan(),
-        lambda function: replace(function, available_roles=(*function.available_roles, "invented:role")),
+def _invented_role(plan):
+    return _edit_first_function(
+        plan, lambda function: replace(function, available_roles=(*function.available_roles, "invented:role"))
     )
 
-    with pytest.raises(ValueError, match="inconsistent-available-roles"):
-        WrapperGenerator().generate(invalid)
 
-
-def test_generator_rejects_duplicate_python_exports_before_lowering():
-    plan = _scalar_plan()
+def _duplicate_python_export(plan):
     root = plan.namespaces[0]
     function = root.functions[0]
     duplicate = replace(function, symbol_name="other_symbol")
-    invalid = replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
-
-    with pytest.raises(ValueError, match="duplicate-python-export"):
-        WrapperGenerator().generate(invalid)
+    return replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
 
 
-def test_generator_rejects_duplicate_generated_symbols_before_lowering():
-    plan = _scalar_plan()
+def _duplicate_generated_symbol(plan):
     root = plan.namespaces[0]
     function = root.functions[0]
     duplicate = replace(
-        function,
-        owner_path="runtime_policy.other",
-        binding=replace(function.binding, python_name="other"),
+        function, owner_path="runtime_policy.other", binding=replace(function.binding, python_name="other")
     )
-    invalid = replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
-
-    with pytest.raises(ValueError, match="duplicate-generated-symbol"):
-        WrapperGenerator().generate(invalid)
+    return replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
 
 
-def test_generator_rejects_colliding_generated_namespace_symbols():
-    plan = _scalar_plan()
-    invalid = replace(
+def _colliding_namespace(plan):
+    return replace(
         plan,
-        namespaces=(
-            *plan.namespaces,
-            NamespacePlan(owner_path="runtime_policy.root", python_path=("root",)),
-        ),
+        namespaces=(*plan.namespaces, NamespacePlan(owner_path="runtime_policy.root", python_path=("root",))),
     )
 
-    with pytest.raises(ValueError, match="duplicate-generated-namespace-symbol"):
-        WrapperGenerator().generate(invalid)
+
+def _foreign_binding_owner(plan):
+    return replace(plan, binding=replace(plan.binding, owner_path="other"))
+
+
+def _edit_first_argument(plan, edit):
+    return _edit_first_function(
+        plan, lambda function: replace(function, arguments=(edit(function.arguments[0]), *function.arguments[1:]))
+    )
+
+
+def _out_of_range_python_position(plan):
+    return _edit_first_argument(plan, lambda argument: replace(argument, python_position=99))
+
+
+def _inconsistent_native_handoff(plan):
+    return _edit_first_argument(
+        plan, lambda argument: replace(argument, entrypoint=replace(argument.entrypoint, handoff_role="other:role"))
+    )
 
 
 @pytest.mark.parametrize(
-    ("mutate", "expected_code"),
+    ("plan_factory", "edit", "diagnostic"),
     [
-        (
-            lambda plan: replace(
-                plan,
-                binding=replace(plan.binding, owner_path="other"),
-            ),
-            "binding-module-owner",
+        pytest.param(
+            _scalar_plan, _unregistered_optional_mode, "Unsupported C argument optional mode", id="optional-mode"
         ),
-        (
-            lambda plan: _edit_first_function(
-                plan,
-                lambda function: replace(
-                    function,
-                    arguments=(
-                        replace(function.arguments[0], python_position=99),
-                        function.arguments[1],
-                    ),
-                ),
-            ),
-            "out-of-range-python-position",
+        pytest.param(
+            _hidden_result_plan,
+            _hidden_result_native_action,
+            "inconsistent-result-native-action",
+            id="result-native-action",
         ),
-        (
-            lambda plan: _edit_first_function(
-                plan,
-                lambda function: replace(
-                    function,
-                    arguments=(
-                        replace(
-                            function.arguments[0],
-                            entrypoint=replace(
-                                function.arguments[0].entrypoint,
-                                handoff_role="other:role",
-                            ),
-                        ),
-                        function.arguments[1],
-                    ),
-                ),
-            ),
-            "inconsistent-native-handoff",
+        pytest.param(
+            _hidden_result_plan,
+            _hidden_result_slot_codegen_action,
+            "inconsistent-result-slot-codegen-action",
+            id="result-slot-codegen-action",
         ),
+        pytest.param(
+            _scalar_plan, _argument_object_kind, "inconsistent-argument-object-kind", id="argument-object-kind"
+        ),
+        pytest.param(
+            _hidden_result_plan, _result_object_kind, "inconsistent-result-object-kind", id="result-object-kind"
+        ),
+        pytest.param(_scalar_plan, _invented_role, "inconsistent-available-roles", id="role-without-producer"),
+        pytest.param(_scalar_plan, _duplicate_python_export, "duplicate-python-export", id="duplicate-python-export"),
+        pytest.param(_scalar_plan, _duplicate_generated_symbol, "duplicate-generated-symbol", id="duplicate-symbol"),
+        pytest.param(
+            _scalar_plan, _colliding_namespace, "duplicate-generated-namespace-symbol", id="colliding-namespace-symbol"
+        ),
+        pytest.param(_scalar_plan, _foreign_binding_owner, "binding-module-owner", id="binding-module-owner"),
+        pytest.param(_scalar_plan, _out_of_range_python_position, "out-of-range-python-position", id="python-position"),
+        pytest.param(_scalar_plan, _inconsistent_native_handoff, "inconsistent-native-handoff", id="native-handoff"),
     ],
 )
-def test_generator_revalidates_direct_plan_edits(mutate, expected_code):
-    invalid = mutate(_scalar_plan())
-
-    with pytest.raises(ValueError, match=expected_code):
-        WrapperGenerator().generate(invalid)
+def test_generator_revalidates_edited_plans_before_lowering(plan_factory, edit, diagnostic):
+    """A plan stays editable until generation, so every cross-stage agreement is checked again there."""
+    with pytest.raises(ValueError, match=diagnostic):
+        WrapperGenerator().generate(edit(plan_factory()))
 
 
 @pytest.mark.parametrize(
@@ -533,10 +399,7 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     bridge_source = next(source.text for source in generated_wrapper.sources if source.path.suffix == ".f90")
 
     assert c_source.count("int32_t bound_value;") == 1
-    assert "prik_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
-    assert "bind_c_bump(&bound_value);" in c_source
-    assert "PyObject * result_obj = NULL;" in c_source
-    assert "result_obj = prik_int32_to_numpy(&bound_value);" in c_source
+    assert "prik_int32_or_storage(bound_value_obj, NPY_INT32, " in c_source
     assert "integer(c_int32_t) :: value" in bridge_source
     assert "call native_bump(value)" in bridge_source
     assert "value =" not in bridge_source

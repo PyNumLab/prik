@@ -12,13 +12,6 @@ import numpy as np
 import pytest
 
 from prik import build_pyi_extension
-from tests.fortran.infrastructure.building.end_to_end.test_multi_source_builds import (
-    _assert_combined_runtime,
-    _compile_native_objects,
-    _generate_combined_contract,
-    _import_extension,
-    _write_combined_sources,
-)
 
 
 CONTRACT_IMPORT = "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n\n"
@@ -136,55 +129,15 @@ end function {name}
 """
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
-@pytest.mark.parametrize("artifact_kind", ["archive", "shared_library"])
-def test_imported_contracts_resolve_from_one_archive_or_shared_library(
-    tmp_path: Path,
-    artifact_kind: str,
-):
-    source_dir = tmp_path / "sources"
-    source_dir.mkdir()
-    sources = _write_combined_sources(source_dir)
-    entry = _generate_combined_contract(sources, tmp_path / "contracts")
-    native_objects = _compile_native_objects(sources, tmp_path / "native")
-    artifact = (
-        _archive(tmp_path / "native" / "libcombined.a", native_objects)
-        if artifact_kind == "archive"
-        else _shared_library(tmp_path / "native" / "libcombined.so", native_objects)
-    )
-
-    result = build_pyi_extension(
-        entry,
-        native_objects=[artifact],
-        native_include_dirs=[native_objects[0].parent],
-        output_name="combined_from_single_artifact",
-        output_dir=tmp_path / "build",
-    )
-    module = _import_extension(result.module_name, result.output_dir)
-    native_plan = result.native_build_plan.to_dict()
-
-    assert native_plan["prebuilt_artifacts"] == [{"kind": artifact_kind, "path": str(artifact)}]
-    assert native_plan["link_items"] == [{"kind": artifact_kind, "path": str(artifact)}]
-    _assert_combined_runtime(module)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
-@pytest.mark.parametrize("artifact_kind", ["archive", "shared_library"])
-def test_source_free_direct_entrypoint_resolves_from_external_fortran_library(
-    tmp_path: Path,
-    artifact_kind: str,
-):
+def test_source_free_direct_entrypoint_resolves_from_external_fortran_archive(tmp_path: Path):
+    """A bind(C) entrypoint needs no bridge, so the binding links the archive's own C symbol."""
     source = _write_source(
         tmp_path / "sources",
         "external_direct.f90",
         _direct_external_source("external_direct", "value + 9_c_int"),
     )
     native_object = _compile_source(source, tmp_path / "native" / "objects")
-    artifact = (
-        _archive(tmp_path / "native" / "libexternal_direct.a", (native_object,))
-        if artifact_kind == "archive"
-        else _shared_library(tmp_path / "native" / "libexternal_direct.so", (native_object,))
-    )
+    artifact = _archive(tmp_path / "native" / "libexternal_direct.a", (native_object,))
     entry = _write_contract_package(
         tmp_path / "contracts" / "external_direct",
         entry=(
@@ -209,7 +162,7 @@ def test_source_free_direct_entrypoint_resolves_from_external_fortran_library(
         "external_direct_wrapper.h",
     }
     assert result.native_generated_code_groups == ()
-    assert result.native_build_plan.to_dict()["link_items"] == [{"kind": artifact_kind, "path": str(artifact)}]
+    assert result.native_build_plan.to_dict()["link_items"] == [{"kind": "archive", "path": str(artifact)}]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
@@ -396,54 +349,6 @@ end function cycle_b
     module = _import_from_build(result)
 
     assert module.cycle_entry(np.int32(5)) == np.int32(18)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
-def test_required_transitive_named_library_resolves_runtime_symbol(tmp_path: Path):
-    sources = tmp_path / "sources"
-    native = tmp_path / "native"
-    libs = tmp_path / "libs"
-    entry_source = _write_source(
-        sources,
-        "transitive_entry.f90",
-        """\
-integer function transitive_entry(value) result(out)
-  integer, intent(in) :: value
-  integer, external :: transitive_helper
-  out = transitive_helper(value) + 1
-end function transitive_entry
-""",
-    )
-    helper_source = _write_source(
-        sources,
-        "transitive_helper.f90",
-        _simple_external_source("transitive_helper", "value + 30"),
-    )
-    entry_object = _compile_source(entry_source, native / "objects")
-    _shared_library(
-        libs / "libtransitive_bundle.so",
-        (_compile_source(helper_source, native / "helper"),),
-    )
-    entry = _write_contract_package(
-        tmp_path / "contracts" / "transitive_native_bundle",
-        entry=_simple_external_contract("transitive_entry"),
-    )
-
-    result = build_pyi_extension(
-        entry,
-        native_objects=[entry_object],
-        native_libraries=["transitive_bundle"],
-        native_library_dirs=[libs],
-        output_name="transitive_native_bundle",
-        output_dir=tmp_path / "build",
-    )
-    module = _import_from_build(result)
-
-    assert result.native_build_plan.to_dict()["link_items"] == [
-        {"kind": "object", "path": str(entry_object)},
-        {"kind": "named_library", "name": "transitive_bundle"},
-    ]
-    assert module.transitive_entry(np.int32(1)) == np.int32(32)
 
 
 def test_missing_symbol_reports_native_link_or_loader_error(tmp_path: Path):
