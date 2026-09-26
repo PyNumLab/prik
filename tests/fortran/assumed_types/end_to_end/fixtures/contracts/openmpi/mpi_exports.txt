@@ -5,15 +5,11 @@ mpi_f08::MPI_Comm_size
 mpi_f08::MPI_Barrier
 mpi_f08::MPI_Send
 mpi_f08::MPI_Recv
-mpi_f08::MPI_Probe
-mpi_f08::MPI_Get_count
 mpi_f08::MPI_Bcast
 mpi_f08::MPI_Reduce
 mpi_f08::MPI_Allreduce
 mpi_f08::MPI_COMM_WORLD
-mpi_f08::MPI_BYTE
 mpi_f08::MPI_INT
-mpi_f08::MPI_DOUBLE
 mpi_f08::MPI_SUM
 mpi_f08::MPI_MAX
 mpi_f08::MPI_IN_PLACE

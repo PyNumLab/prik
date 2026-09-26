@@ -272,9 +272,8 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
 
     assert run("mpi_example.py") == [
         "rank 0 max [2, 3]",
-        "rank 0 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
-        "rank 1 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
+        "rank 0 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]",
+        "rank 1 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]",
         "rank 1 received [0, 1, 2, 3]",
-        "rank 1 received {'a': 7, 'b': 3.14} from rank 0",
     ]
     assert run(STATUS_IGNORE_CHECK.name) == ["Mpi_Status: status tag 21, ignored status unchanged True"]

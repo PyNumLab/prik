@@ -6,35 +6,26 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# Ranks and tags are np.int32 from the start: Get_rank returns one, these
-# constants are, and rank + 1 stays one.
+# Buffers are np.int32 arrays, and ranks and tags are np.int32 too:
+# Get_rank returns one, and rank + 1 stays one.
 ROOT = np.int32(0)
-OBJECT_TAG = np.int32(11)
-ARRAY_TAG = np.int32(77)
+TAG = np.int32(77)
 
-# Python objects travel pickled.
+# Point to point: rank 0 sends four integers to rank 1.
 if rank == 0:
-    comm.send({"a": 7, "b": 3.14}, dest=rank + 1, tag=OBJECT_TAG)
+    data = np.arange(4, dtype=np.int32)
+    comm.Send(data, dest=rank + 1, tag=TAG)
 elif rank == 1:
-    status = MPI.Status()
-    data = comm.recv(source=MPI.ANY_SOURCE, tag=OBJECT_TAG, status=status)
-    print(f"rank 1 received {data} from rank {status.Get_source()}")
-
-# NumPy arrays travel as buffers, with an explicit MPI datatype ...
-if rank == 0:
-    data = np.arange(4, dtype="i")
-    comm.Send([data, MPI.INT], dest=rank + 1, tag=ARRAY_TAG)
-elif rank == 1:
-    data = np.empty(4, dtype="i")
-    comm.Recv([data, MPI.INT], source=rank - 1, tag=ARRAY_TAG)
+    data = np.empty(4, dtype=np.int32)
+    comm.Recv(data, source=rank - 1, tag=TAG)
     print(f"rank 1 received {data.tolist()}")
 
-# ... or with the datatype taken from the array.
-data = np.arange(3, dtype=np.float64) if rank == 0 else np.empty(3, dtype=np.float64)
+# Broadcast: rank 0's values reach every rank.
+data = np.arange(3, dtype=np.int32) if rank == 0 else np.empty(3, dtype=np.int32)
 comm.Bcast(data, root=ROOT)
 
-# Collectives: every rank contributes.
-values = np.array([rank + 1, rank + 2], dtype="i")
+# Reductions: every rank contributes.
+values = np.array([rank + 1, rank + 2], dtype=np.int32)
 total = np.empty_like(values)
 comm.Allreduce(values, total, op=MPI.SUM)
 largest = np.empty_like(values)

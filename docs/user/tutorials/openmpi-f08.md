@@ -25,35 +25,26 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# Ranks and tags are np.int32 from the start: Get_rank returns one, these
-# constants are, and rank + 1 stays one.
+# Buffers are np.int32 arrays, and ranks and tags are np.int32 too:
+# Get_rank returns one, and rank + 1 stays one.
 ROOT = np.int32(0)
-OBJECT_TAG = np.int32(11)
-ARRAY_TAG = np.int32(77)
+TAG = np.int32(77)
 
-# Python objects travel pickled.
+# Point to point: rank 0 sends four integers to rank 1.
 if rank == 0:
-    comm.send({"a": 7, "b": 3.14}, dest=rank + 1, tag=OBJECT_TAG)
+    data = np.arange(4, dtype=np.int32)
+    comm.Send(data, dest=rank + 1, tag=TAG)
 elif rank == 1:
-    status = MPI.Status()
-    data = comm.recv(source=MPI.ANY_SOURCE, tag=OBJECT_TAG, status=status)
-    print(f"rank 1 received {data} from rank {status.Get_source()}")
-
-# NumPy arrays travel as buffers, with an explicit MPI datatype ...
-if rank == 0:
-    data = np.arange(4, dtype="i")
-    comm.Send([data, MPI.INT], dest=rank + 1, tag=ARRAY_TAG)
-elif rank == 1:
-    data = np.empty(4, dtype="i")
-    comm.Recv([data, MPI.INT], source=rank - 1, tag=ARRAY_TAG)
+    data = np.empty(4, dtype=np.int32)
+    comm.Recv(data, source=rank - 1, tag=TAG)
     print(f"rank 1 received {data.tolist()}")
 
-# ... or with the datatype taken from the array.
-data = np.arange(3, dtype=np.float64) if rank == 0 else np.empty(3, dtype=np.float64)
+# Broadcast: rank 0's values reach every rank.
+data = np.arange(3, dtype=np.int32) if rank == 0 else np.empty(3, dtype=np.int32)
 comm.Bcast(data, root=ROOT)
 
-# Collectives: every rank contributes.
-values = np.array([rank + 1, rank + 2], dtype="i")
+# Reductions: every rank contributes.
+values = np.array([rank + 1, rank + 2], dtype=np.int32)
 total = np.empty_like(values)
 comm.Allreduce(values, total, op=MPI.SUM)
 largest = np.empty_like(values)
@@ -67,11 +58,10 @@ if rank == 0:
 ```
 
 If you know mpi4py, you know this program: `COMM_WORLD`, `Get_rank`,
-lowercase `send`/`recv` for Python objects, uppercase `Send`/`Recv`/`Bcast`/
-`Reduce`/`Allreduce` for buffers, `[data, MPI.INT]` buffer specifications,
-`MPI.IN_PLACE`, and `Status` are all spelled as mpi4py spells them. Replace
-`import prik_mpi as MPI` with `from mpi4py import MPI` and the same program
-runs under mpi4py and prints the same lines.
+`Send`/`Recv`, `Bcast`, `Reduce`, `Allreduce`, `MPI.SUM`, and `MPI.IN_PLACE`
+are all spelled as mpi4py spells them. Replace `import prik_mpi as MPI` with
+`from mpi4py import MPI` and the same program runs under mpi4py and prints
+the same lines.
 
 Two layers make this work:
 
@@ -82,9 +72,10 @@ Two layers make this work:
   contract: hiding counts that follow from the buffers, turning error codes
   into exceptions, returning results instead of filling output arguments.
 - **A short Python module, `prik_mpi.py`.** It gives the native API mpi4py's
-  object model: a `Comm` class with methods, keyword defaults, datatypes
-  chosen from NumPy arrays, and pickled Python objects. It is ordinary Python
-  over the generated functions, with no C and no `ctypes`.
+  shape: a `Comm` class with methods and keyword defaults. It is ordinary
+  Python over the generated functions, with no C and no `ctypes`, and it is
+  kept small on purpose: an illustration of the approach, not a complete MPI
+  binding.
 
 ## 1. See what PRIK reads
 
@@ -155,15 +146,11 @@ mpi_f08::MPI_Comm_size
 mpi_f08::MPI_Barrier
 mpi_f08::MPI_Send
 mpi_f08::MPI_Recv
-mpi_f08::MPI_Probe
-mpi_f08::MPI_Get_count
 mpi_f08::MPI_Bcast
 mpi_f08::MPI_Reduce
 mpi_f08::MPI_Allreduce
 mpi_f08::MPI_COMM_WORLD
-mpi_f08::MPI_BYTE
 mpi_f08::MPI_INT
-mpi_f08::MPI_DOUBLE
 mpi_f08::MPI_SUM
 mpi_f08::MPI_MAX
 mpi_f08::MPI_IN_PLACE
@@ -173,10 +160,8 @@ mpi_f08::MPI_ANY_TAG
 ```
 
 These are the routines and objects behind the mpi4py names the program uses.
-`MPI_Probe` and `MPI_Get_count` are not called by the program directly; they
-let lowercase `recv` size its buffer before receiving a pickled object, as
-mpi4py does. Nor is `MPI_STATUS_IGNORE`: like mpi4py, `Recv` passes it when it
-is given no `Status`.
+The program does not name `MPI_STATUS_IGNORE`; `Recv` passes it, since this
+small API reports no status.
 
 Selecting symbols this way is not an MPI feature. `--export-symbols` accepts
 module-qualified public symbols from any Fortran project -- procedures,
@@ -230,8 +215,8 @@ The `contract/` directory holds one editable `.pyi` file per Fortran module the
 selection needs. `contract/mpi_f08.pyi` publishes the selected names:
 
 ```python
-from .mpi_f08_types import mpi_any_source, mpi_any_tag, mpi_byte, mpi_comm_world, mpi_double, mpi_in_place, mpi_int, mpi_max, mpi_status_ignore, mpi_sum
-from .mpi_f08_interfaces import mpi_allreduce, mpi_barrier, mpi_bcast, mpi_comm_rank, mpi_comm_size, mpi_finalize, mpi_get_count, mpi_init, mpi_probe, mpi_recv, mpi_reduce, mpi_send
+from .mpi_f08_types import mpi_any_source, mpi_any_tag, mpi_comm_world, mpi_in_place, mpi_int, mpi_max, mpi_status_ignore, mpi_sum
+from .mpi_f08_interfaces import mpi_allreduce, mpi_barrier, mpi_bcast, mpi_comm_rank, mpi_comm_size, mpi_finalize, mpi_init, mpi_recv, mpi_reduce, mpi_send
 from .mpi_types import Mpi_Comm, Mpi_Datatype, Mpi_Op, Mpi_Status
 ```
 
@@ -339,9 +324,7 @@ from .mpi_f08_types import (
     Mpi_Status,
     mpi_any_source,
     mpi_any_tag,
-    mpi_byte,
     mpi_comm_world,
-    mpi_double,
     mpi_in_place,
     mpi_int,
     mpi_max,
@@ -398,16 +381,6 @@ def recv(
 ) -> None: ...
 
 @raises(status="ierror", success=0)
-@bind("MPI_Probe")
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Hidden("ierror", Int32)])
-def probe(source: Int32, tag: Int32, comm: Mpi_Comm, status: Mpi_Status) -> None: ...
-
-@raises(status="ierror", success=0)
-@bind("MPI_Get_count")
-@native_call([Arg(0), Arg(1), Return("count", 0), Hidden("ierror", Int32)])
-def get_count(status: Mpi_Status, datatype: Mpi_Datatype) -> Int32: ...
-
-@raises(status="ierror", success=0)
 @bind("MPI_Bcast")
 @native_call([Arg(0), Int32(Arg(0).size), Arg(1), Arg(2), Arg(3), Hidden("ierror", Int32)])
 def bcast(buffer: AnyNative[Flat], datatype: Mpi_Datatype, root: Int32, comm: Mpi_Comm) -> None: ...
@@ -443,8 +416,6 @@ __all__ = [
     "barrier",
     "send",
     "recv",
-    "probe",
-    "get_count",
     "bcast",
     "reduce",
     "allreduce",
@@ -454,9 +425,7 @@ __all__ = [
     "Mpi_Status",
     "mpi_any_source",
     "mpi_any_tag",
-    "mpi_byte",
     "mpi_comm_world",
-    "mpi_double",
     "mpi_in_place",
     "mpi_int",
     "mpi_max",
@@ -473,11 +442,11 @@ where each one comes from:
 | --- | --- | --- |
 | `@bind("MPI_Send")` on `def send` | every function | The Python name differs from the Fortran name it calls. |
 | `Int32(Arg(0).size)` | `count` of `MPI_Send` | The count is computed from the buffer, so the caller does not pass it. |
-| `Return("rank", 0)` | `rank` of `MPI_Comm_rank` | The output argument becomes the return value: `comm_rank` returns the rank, `get_count` the count. |
+| `Return("rank", 0)` | `rank` of `MPI_Comm_rank` | The output argument becomes the return value: `comm_rank` returns the rank. |
 | `Hidden("ierror", Int32)` with `@raises(status="ierror", success=0)` | every function | The error code is not an argument; a nonzero code raises an exception. |
 
-`recv` and `probe` keep their `status` as an argument instead of returning
-it. The caller passes either an `Mpi_Status`, which Open MPI fills in, or
+`recv` keeps its `status` as an argument. A caller that wants the status
+passes an `Mpi_Status` for Open MPI to fill in; one that does not passes
 `mpi_status_ignore`, which tells Open MPI not to.
 
 The facade imports its handle types and constants from
@@ -542,73 +511,33 @@ mpi_f08.finalize()
 
 A contract describes native calls. What mpi4py adds on top of MPI is a Python
 object model, and that belongs in Python. Save this module as `prik_mpi.py`
-in the same directory as `prik_openmpi_f08.so`:
+in the same directory as `prik_openmpi_f08.so`. It is deliberately small: one
+datatype and no status, enough to show the shape.
 
 <!-- prik-doc-source: tests/fortran/assumed_types/end_to_end/fixtures/runtime/prik_mpi.py -->
 ```python
-"""An mpi4py-style Python API over the PRIK-generated Open MPI extension."""
+"""An mpi4py-style Python API over the PRIK-generated Open MPI extension.
+
+It illustrates the shape of mpi4py rather than all of it: every buffer is an
+np.int32 array sent as MPI_INT, and no receive reports a status.
+"""
 
 import atexit
-import pickle
 
 import numpy as np
 
 from prik_openmpi_f08 import mpi_f08 as _mpi
 
-# Ranks, tags, and counts are np.int32, the type the contract takes, from the
-# start: the extension returns them as np.int32, the constants and defaults
-# here are np.int32, and arithmetic with Python integers keeps the type. So
-# they pass straight to the contract, never converted.
+# Ranks and tags are np.int32, the type the contract takes: the extension
+# returns them as np.int32, and so are these constants and defaults.
 ANY_SOURCE = _mpi.mpi_any_source
 ANY_TAG = _mpi.mpi_any_tag
-_ZERO = np.int32(0)
 IN_PLACE = _mpi.mpi_in_place
-STATUS_IGNORE = _mpi.mpi_status_ignore
-BYTE = _mpi.mpi_byte
-INT = _mpi.mpi_int
-DOUBLE = _mpi.mpi_double
 SUM = _mpi.mpi_sum
 MAX = _mpi.mpi_max
-
-# The MPI datatype of each NumPy element type, for buffers given without one.
-_DATATYPES = {np.dtype(np.uint8): BYTE, np.dtype(np.int32): INT, np.dtype(np.float64): DOUBLE}
-
-
-def _message(buf):
-    """Return a buffer's array and MPI datatype; ``buf`` is an array or ``[array, datatype]``."""
-    if isinstance(buf, np.ndarray):
-        return buf, _DATATYPES[buf.dtype]
-    array, datatype = buf
-    return array, datatype
-
-
-class Status:
-    """What MPI reports about a received message, filled in by the call given it."""
-
-    def __init__(self):
-        self._native = _mpi.Mpi_Status()
-
-    @property
-    def source(self):
-        return self._native.mpi_source
-
-    @property
-    def tag(self):
-        return self._native.mpi_tag
-
-    def Get_source(self):
-        return self.source
-
-    def Get_tag(self):
-        return self.tag
-
-    def Get_count(self, datatype=BYTE):
-        return _mpi.get_count(self._native, datatype)
-
-
-def _native_status(status):
-    """Return the status MPI fills in; without one, MPI_STATUS_IGNORE, as in mpi4py."""
-    return STATUS_IGNORE if status is None else status._native
+_ZERO = np.int32(0)
+_INT = _mpi.mpi_int
+_STATUS_IGNORE = _mpi.mpi_status_ignore
 
 
 class Comm:
@@ -623,46 +552,23 @@ class Comm:
     def Get_size(self):
         return _mpi.comm_size(self.handle)
 
-    rank = property(Get_rank)
-    size = property(Get_size)
-
     def Barrier(self):
         _mpi.barrier(self.handle)
 
     def Send(self, buf, dest, tag=_ZERO):
-        array, datatype = _message(buf)
-        _mpi.send(array, datatype, dest, tag, self.handle)
+        _mpi.send(buf, _INT, dest, tag, self.handle)
 
-    def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        array, datatype = _message(buf)
-        _mpi.recv(array, datatype, source, tag, self.handle, _native_status(status))
-
-    def Probe(self, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        _mpi.probe(source, tag, self.handle, _native_status(status))
-        return True
+    def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG):
+        _mpi.recv(buf, _INT, source, tag, self.handle, _STATUS_IGNORE)
 
     def Bcast(self, buf, root=_ZERO):
-        array, datatype = _message(buf)
-        _mpi.bcast(array, datatype, root, self.handle)
+        _mpi.bcast(buf, _INT, root, self.handle)
 
     def Reduce(self, sendbuf, recvbuf, op=SUM, root=_ZERO):
-        array, datatype = _message(recvbuf)
-        _mpi.reduce(sendbuf, array, datatype, op, root, self.handle)
+        _mpi.reduce(sendbuf, recvbuf, _INT, op, root, self.handle)
 
     def Allreduce(self, sendbuf, recvbuf, op=SUM):
-        array, datatype = _message(recvbuf)
-        _mpi.allreduce(sendbuf, array, datatype, op, self.handle)
-
-    # Python objects travel pickled, as with mpi4py's lowercase methods.
-    def send(self, obj, dest, tag=_ZERO):
-        self.Send(np.frombuffer(pickle.dumps(obj), dtype=np.uint8), dest, tag)
-
-    def recv(self, buf=None, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        status = status if status is not None else Status()
-        self.Probe(source, tag, status)
-        data = np.empty(status.Get_count(BYTE), dtype=np.uint8)
-        self.Recv(data, status.source, status.tag, status)
-        return pickle.loads(data.tobytes())
+        _mpi.allreduce(sendbuf, recvbuf, _INT, op, self.handle)
 
 
 COMM_WORLD = Comm(_mpi.mpi_comm_world)
@@ -675,22 +581,18 @@ atexit.register(_mpi.finalize)
 Everything in it calls the generated functions of step 5:
 
 - **Objects and methods.** `Comm` wraps an `Mpi_Comm` handle and spells
-  mpi4py's methods; `COMM_WORLD` wraps `mpi_comm_world`. `Status` owns an
-  `Mpi_Status` that `Recv` and `Probe` have Open MPI fill in, and answers
-  `Get_source`, `Get_tag`, and `Get_count` from it. Given no `Status`, they
-  pass `MPI_STATUS_IGNORE`, as mpi4py does.
-- **Buffers.** A buffer is a NumPy array, whose MPI datatype is chosen from
-  its element type, or an `[array, datatype]` pair naming the datatype
-  explicitly, as in mpi4py.
+  mpi4py's methods; `COMM_WORLD` wraps `mpi_comm_world`. Each method is one
+  call to a generated function.
+- **One datatype.** Every buffer is an `np.int32` array, so every call passes
+  `MPI_INT`.
+- **No status.** `Recv` always passes `MPI_STATUS_IGNORE`, as mpi4py does when
+  it is given no status.
 - **Defaults and `np.int32` values.** `tag`, `source=ANY_SOURCE`, `root`,
   and `op=SUM` are keyword defaults. Ranks and tags are the `np.int32` values
   the contract's `Int32` arguments take from the start -- `Get_rank` returns
   one, `ANY_SOURCE` and the defaults are, and `rank + 1` stays one -- so they
   pass straight through. Converting a plain integer on every call would cost
   more than a small MPI call.
-- **Python objects.** Lowercase `send` pickles an object into a byte array and
-  sends it; `recv` probes the incoming message, sizes a byte array with
-  `Get_count`, receives it, and unpickles it.
 - **Lifetime.** As with mpi4py, importing the module initializes MPI, and MPI
   is finalized when the interpreter exits.
 
@@ -708,11 +610,10 @@ The two ranks print these lines, each rank's lines in order but the ranks in
 whichever order they finish:
 
 ```text
-rank 1 received {'a': 7, 'b': 3.14} from rank 0
 rank 1 received [0, 1, 2, 3]
-rank 0 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]
+rank 0 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]
 rank 0 max [2, 3]
-rank 1 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]
+rank 1 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]
 ```
 
 Here is what happened. `mpirun` started two Python processes as MPI ranks.
@@ -770,7 +671,7 @@ exercised in CI, not the only ones that can work.
 
 ## Limitations
 
-This tutorial selected twenty-two names; the rest of `mpi_f08` works the same
+This tutorial selected eighteen names; the rest of `mpi_f08` works the same
 way when you select it, within these limits of what PRIK supports today:
 
 - **Arrays of handles.** Routines taking an array of derived-type values, such
@@ -789,12 +690,13 @@ way when you select it, within these limits of what PRIK supports today:
   `Isend` or `Irecv`: mpi4py's request objects keep their buffers alive, and
   a faithful imitation would need arrays of requests, the first limitation.
 
-`prik_mpi.py` imitates the part of mpi4py this program uses, not all of it.
-Ranks and tags must be `np.int32`, as in the program above; a plain Python
-`int` is refused with a `TypeError`, where mpi4py accepts one. It passes
-contiguous NumPy arrays only -- a strided view is refused with a
-`TypeError` -- and picks a datatype for `int32`, `float64`, and `uint8`
-arrays. It has none of mpi4py's other communicators, lowercase collectives,
-or `MPI.Exception`: under Open MPI's default error handler an MPI error aborts
-the job, and otherwise a nonzero `ierror` raises the exception the contract's
-`@raises` produces.
+`prik_mpi.py` is an illustration, not a complete binding. Its buffers are
+contiguous `np.int32` arrays only -- a strided view is refused with a
+`TypeError` -- and it reports no status. Ranks and tags must be `np.int32`,
+as in the program above; a plain Python `int` is refused with a `TypeError`,
+where mpi4py accepts one. It has none of mpi4py's other datatypes,
+communicators, pickled-object methods, or `MPI.Exception`: under Open MPI's
+default error handler an MPI error aborts the job, and otherwise a nonzero
+`ierror` raises the exception the contract's `@raises` produces. Each of these
+is more Python over the same kind of generated calls, or more names in the
+export list.

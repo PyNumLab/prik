@@ -6,9 +6,7 @@ from .mpi_f08_types import (
     Mpi_Status,
     mpi_any_source,
     mpi_any_tag,
-    mpi_byte,
     mpi_comm_world,
-    mpi_double,
     mpi_in_place,
     mpi_int,
     mpi_max,
@@ -65,16 +63,6 @@ def recv(
 ) -> None: ...
 
 @raises(status="ierror", success=0)
-@bind("MPI_Probe")
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Hidden("ierror", Int32)])
-def probe(source: Int32, tag: Int32, comm: Mpi_Comm, status: Mpi_Status) -> None: ...
-
-@raises(status="ierror", success=0)
-@bind("MPI_Get_count")
-@native_call([Arg(0), Arg(1), Return("count", 0), Hidden("ierror", Int32)])
-def get_count(status: Mpi_Status, datatype: Mpi_Datatype) -> Int32: ...
-
-@raises(status="ierror", success=0)
 @bind("MPI_Bcast")
 @native_call([Arg(0), Int32(Arg(0).size), Arg(1), Arg(2), Arg(3), Hidden("ierror", Int32)])
 def bcast(buffer: AnyNative[Flat], datatype: Mpi_Datatype, root: Int32, comm: Mpi_Comm) -> None: ...
@@ -110,8 +98,6 @@ __all__ = [
     "barrier",
     "send",
     "recv",
-    "probe",
-    "get_count",
     "bcast",
     "reduce",
     "allreduce",
@@ -121,9 +107,7 @@ __all__ = [
     "Mpi_Status",
     "mpi_any_source",
     "mpi_any_tag",
-    "mpi_byte",
     "mpi_comm_world",
-    "mpi_double",
     "mpi_in_place",
     "mpi_int",
     "mpi_max",
