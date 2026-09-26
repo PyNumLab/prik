@@ -26,99 +26,20 @@ BUILD_MODULE = REPO_ROOT / "prik" / "pipeline" / "build.py"
 pytestmark = pytest.mark.fortran_end_to_end
 
 
-def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
-    source = tmp_path / "verbose_api.f90"
-    shutil.copyfile(VERBOSE_SOURCE, source)
+def test_verbose_mode_prints_each_build_step_and_routes_custom_flags(tmp_path: Path):
+    """Verbose output names every step and the exact commands, with each flag on its own stage.
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            str(source),
-            "--verbose",
-            "--out-dir",
-            str(tmp_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=tmp_path,
-    )
-    command_lines = result.stdout.splitlines()
-
-    assert any(str(source) in line and "-c" in line for line in command_lines)
-    assert any("bind_c_verbose_api_wrapper.f90" in line and "-c" in line for line in command_lines)
-    assert any("verbose_api_wrapper.c" in line and "-c" in line for line in command_lines)
-    c_wrapper_command = next(line for line in command_lines if "verbose_api_wrapper.c" in line and "-c" in line)
-    c_wrapper_parts = shlex.split(c_wrapper_command)
-    assert "-O3" in c_wrapper_parts
-    assert "-DNDEBUG" in c_wrapper_parts
-    assert "-g" not in c_wrapper_parts
-    link_command = next(line for line in command_lines if "-shared" in line and "verbose_api" in line)
-    link_parts = shlex.split(link_command)
-    link_output = link_parts[link_parts.index("-o") + 1]
-    step_lines = [
-        line.removeprefix(">> ")
-        for line in command_lines
-        if line.startswith(">> ") and not line.startswith((">> Timing", ">> Total build time"))
-    ]
-    bridge_source = tmp_path / "bind_c_verbose_api_wrapper.f90"
-    binding_source = tmp_path / "verbose_api_wrapper.c"
-    header = tmp_path / "verbose_api_wrapper.h"
-    native_object = tmp_path / "verbose_api.o"
-    bridge_object = tmp_path / "bind_c_verbose_api_wrapper.o"
-    binding_object = tmp_path / "verbose_api_wrapper.o"
-    assert "Complete wrapper policies" in step_lines
-    assert "Generate binding source" in step_lines
-    assert "Generate bridge source" in step_lines
-    assert "Generate binding header" in step_lines
-    assert f"Compile native source: {source} -> {native_object}" in step_lines
-    assert f"Write bridge source: {bridge_source}" in step_lines
-    assert f"Write binding source: {binding_source}" in step_lines
-    assert f"Write binding header: {header}" in step_lines
-    assert f"Compile bridge source: {bridge_source} -> {bridge_object}" in step_lines
-    assert f"Compile binding source: {binding_source} -> {binding_object}" in step_lines
-    assert f"Create shared library: {link_output}" in step_lines
-    assert any(line.startswith(">> Timing: ") for line in command_lines)
-    assert command_lines[-1].startswith(">> Total build time: ")
-    assert "Built extension:" in result.stdout
-
-
-def test_verbose_mode_prints_failing_compiler_command_before_execution(tmp_path: Path):
-    source = tmp_path / "verbose_api.f90"
-    shutil.copyfile(VERBOSE_SOURCE, source)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            str(source),
-            "--verbose",
-            "--out-dir",
-            str(tmp_path),
-            "--wrapper-c-flags=-fprik-invalid-option",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=tmp_path,
-    )
-
-    assert result.returncode == 1
-    command = next(line for line in result.stdout.splitlines() if "verbose_api_wrapper.c" in line and "-c" in line)
-    assert "-fprik-invalid-option" in shlex.split(command)
-    assert "Native compiler command failed:" in result.stderr
-
-
-def test_verbose_mode_prints_custom_wrapper_flags(tmp_path: Path):
+    Default release flags are pinned by the compile-command tests in
+    ``compiling/test_compiler_verbose.py``; this build checks what verbose mode
+    reports and where selected flags, includes, and the compiler reach.
+    """
     source = tmp_path / SCALE_SOURCE.name
     shutil.copyfile(SCALE_SOURCE, source)
     include_dir = tmp_path / "include"
     include_dir.mkdir()
     selected_compiler = tmp_path / "selected-gfortran"
     selected_compiler.symlink_to(shutil.which("gfortran"))
+    build_dir = tmp_path / "build" / "SCALE_debug"
 
     result = subprocess.run(
         [
@@ -129,7 +50,7 @@ def test_verbose_mode_prints_custom_wrapper_flags(tmp_path: Path):
             "--out",
             "SCALE_debug",
             "--out-dir",
-            str(tmp_path / "build" / "SCALE_debug"),
+            str(build_dir),
             "--verbose",
             "--compiler",
             str(selected_compiler),
@@ -165,31 +86,70 @@ def test_verbose_mode_prints_custom_wrapper_flags(tmp_path: Path):
         include_values = tuple(tokens[index + 1] for index, token in enumerate(tokens) if token == "-I")
         assert str(include_dir) in include_values
 
+    link_parts = shlex.split(link_command)
+    link_output = link_parts[link_parts.index("-o") + 1]
+    step_lines = [
+        line.removeprefix(">> ")
+        for line in command_lines
+        if line.startswith(">> ") and not line.startswith((">> Timing", ">> Total build time"))
+    ]
+    bridge_source = build_dir / "bind_c_SCALE_debug_wrapper.f90"
+    binding_source = build_dir / "SCALE_debug_wrapper.c"
+    header = build_dir / "SCALE_debug_wrapper.h"
+    assert "Complete wrapper policies" in step_lines
+    assert "Generate binding source" in step_lines
+    assert "Generate bridge source" in step_lines
+    assert "Generate binding header" in step_lines
+    assert f"Compile native source: {source} -> {build_dir / 'scale.o'}" in step_lines
+    assert f"Write bridge source: {bridge_source}" in step_lines
+    assert f"Write binding source: {binding_source}" in step_lines
+    assert f"Write binding header: {header}" in step_lines
+    assert f"Compile bridge source: {bridge_source} -> {build_dir / 'bind_c_SCALE_debug_wrapper.o'}" in step_lines
+    assert f"Compile binding source: {binding_source} -> {build_dir / 'SCALE_debug_wrapper.o'}" in step_lines
+    assert f"Create shared library: {link_output}" in step_lines
+    assert any(line.startswith(">> Timing: ") for line in command_lines)
+    assert command_lines[-1].startswith(">> Total build time: ")
+    assert "Built extension:" in result.stdout
 
-def test_fortran_wrapper_default_places_artifacts_in_invocation_directory(tmp_path: Path):
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    source = source_dir / DEFAULT_OUTPUT_SOURCE.name
-    shutil.copyfile(DEFAULT_OUTPUT_SOURCE, source)
 
-    cmd = [sys.executable, "-m", "prik", str(source), "--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=run_dir)
-    payload = json.loads(result.stdout)
+def test_verbose_mode_prints_failing_compiler_command_before_execution(tmp_path: Path):
+    source = tmp_path / "verbose_api.f90"
+    shutil.copyfile(VERBOSE_SOURCE, source)
 
-    build_dir = run_dir / "__prik__"
-    shared_library = Path(payload["shared_library"])
-    assert shared_library.parent == run_dir
-    assert shared_library.name == "fdefault_output.so"
-    assert shared_library.exists()
-    assert Path(payload["output_dir"]) == build_dir
-    assert (build_dir / "bind_c_fdefault_output_wrapper.f90").exists()
-    assert len(tuple(build_dir.glob("fdefault_output.*.so"))) == 1
-    assert not list(source_dir.glob("*_wrapper.c"))
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            str(source),
+            "--verbose",
+            "--out-dir",
+            str(tmp_path),
+            "--wrapper-c-flags=-fprik-invalid-option",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 1
+    command = next(line for line in result.stdout.splitlines() if "verbose_api_wrapper.c" in line and "-c" in line)
+    assert "-fprik-invalid-option" in shlex.split(command)
+    assert "Native compiler command failed:" in result.stderr
 
 
-def test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("location_args", "build_dir_name"),
+    [
+        pytest.param((), "__prik__", id="default-build-directory"),
+        pytest.param(("--out-dir", "build"), "build", id="explicit-out-dir"),
+    ],
+)
+def test_fortran_wrapper_keeps_its_import_alias_beside_the_invocation(
+    tmp_path: Path, location_args: tuple[str, ...], build_dir_name: str
+):
+    """The importable alias lands where the command ran; ABI artifacts stay in the build directory."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     run_dir = tmp_path / "run"
@@ -198,7 +158,7 @@ def test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias(tmp_path:
     shutil.copyfile(DEFAULT_OUTPUT_SOURCE, source)
 
     result = subprocess.run(
-        [sys.executable, "-m", "prik", str(source), "--out-dir", "build", "--json"],
+        [sys.executable, "-m", "prik", str(source), *location_args, "--json"],
         capture_output=True,
         text=True,
         check=True,
@@ -206,11 +166,14 @@ def test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias(tmp_path:
     )
     payload = json.loads(result.stdout)
 
-    build_dir = run_dir / "build"
+    build_dir = run_dir / build_dir_name
     assert Path(payload["shared_library"]) == run_dir / "fdefault_output.so"
     assert (run_dir / "fdefault_output.so").is_file()
+    assert run_dir / payload["output_dir"] == build_dir
+    assert (build_dir / "bind_c_fdefault_output_wrapper.f90").exists()
     assert len(tuple(build_dir.glob("fdefault_output.*.so"))) == 1
     assert not (build_dir / "fdefault_output.so").exists()
+    assert not list(source_dir.glob("*_wrapper.c"))
 
 
 def test_fortran_wrapper_default_module_name_does_not_collide_with_root_function(tmp_path: Path):
@@ -530,16 +493,19 @@ def test_native_link_plan_serializes_interleaved_item_kinds():
     ]
 
 
-def test_wrapper_build_rejects_empty_source_list(tmp_path: Path):
-    with pytest.raises(ValueError, match="at least one Fortran source"):
-        build_fortran_extension([], output_dir=tmp_path)
+@pytest.mark.parametrize(
+    ("sources", "error", "message"),
+    [
+        pytest.param([], ValueError, "at least one Fortran source", id="empty-source-list"),
+        pytest.param("missing.f90", FileNotFoundError, "Fortran source not found", id="missing-source"),
+    ],
+)
+def test_wrapper_build_rejects_unusable_sources(tmp_path: Path, sources, error, message):
+    if isinstance(sources, str):
+        sources = tmp_path / sources
 
-
-def test_wrapper_build_rejects_missing_source(tmp_path: Path):
-    missing = tmp_path / "missing.f90"
-
-    with pytest.raises(FileNotFoundError, match="Fortran source not found"):
-        build_fortran_extension(missing, output_dir=tmp_path)
+    with pytest.raises(error, match=message):
+        build_fortran_extension(sources, output_dir=tmp_path)
 
 
 @pytest.mark.parametrize("mode", ["makefile", "sources"])

@@ -20,7 +20,13 @@ def test_project_include_graph_tracks_local_system_missing_and_cycles(tmp_path: 
     assert any(diag.code == "C_UNRESOLVED_INCLUDE" for diag in project.files["a.h"].diagnostics)
 
 
-def test_project_resolves_quoted_includes_through_include_dirs(tmp_path: Path):
+def test_project_resolves_quoted_includes_through_include_dirs_without_parsing_them(tmp_path: Path):
+    """A quoted include resolves through ``include_dirs``; a system include is only recorded.
+
+    Neither header is parsed into the project: the resolved local header is an
+    edge in the include graph, and a local file shadowing a system header is
+    neither searched for nor read.
+    """
     from prik.parsers.c import parse_c_project
 
     include_dir = tmp_path / "include"
@@ -30,47 +36,19 @@ def test_project_resolves_quoted_includes_through_include_dirs(tmp_path: Path):
     types = include_dir / "types.h"
     api = src_dir / "api.h"
     types.write_text("typedef int api_int;\n", encoding="utf-8")
-    api.write_text('#include "types.h"\napi_int answer(void);\n', encoding="utf-8")
+    (include_dir / "stddef.h").write_text("typedef unsigned long size_t;\n", encoding="utf-8")
+    api.write_text('#include "types.h"\n#include <stddef.h>\napi_int answer(void);\n', encoding="utf-8")
 
     project = parse_c_project([api], include_dirs=[include_dir])
 
-    include = project.files[str(api)].includes[0]
-    assert include.target == "types.h"
-    assert include.resolved_path == str(types)
-    assert project.unresolved_includes[str(api)] == set()
-
-
-def test_project_records_local_include_without_recursively_parsing_resolved_header(tmp_path: Path):
-    from prik.parsers.c import parse_c_project
-
-    include_dir = tmp_path / "generated"
-    include_dir.mkdir()
-    generated = include_dir / "generated_types.h"
-    api = tmp_path / "api.h"
-    generated.write_text("typedef int generated_int;\n", encoding="utf-8")
-    api.write_text('#include "generated_types.h"\nint run(void);\n', encoding="utf-8")
-
-    project = parse_c_project([api], include_dirs=[include_dir])
-
+    quoted, system = project.files[str(api)].includes
+    assert (quoted.target, quoted.resolved_path) == ("types.h", str(types))
+    assert (system.target, system.resolved_path) == ("stddef.h", None)
     assert set(project.files) == {str(api)}
-    assert project.files[str(api)].includes[0].resolved_path == str(generated)
-    assert project.include_graph[str(api)] == {str(generated)}
-    assert "generated_int" not in project.typedefs
-
-
-def test_project_records_system_include_without_searching_or_parsing_local_copy(tmp_path: Path):
-    from prik.parsers.c import parse_c_project
-
-    local_system_header = tmp_path / "stddef.h"
-    api = tmp_path / "api.h"
-    local_system_header.write_text("typedef unsigned long size_t;\n", encoding="utf-8")
-    api.write_text("#include <stddef.h>\nint run(void);\n", encoding="utf-8")
-
-    project = parse_c_project([api], include_dirs=[tmp_path])
-
-    assert set(project.files) == {str(api)}
-    assert project.files[str(api)].includes[0].resolved_path is None
+    assert project.include_graph[str(api)] == {str(types)}
     assert project.system_includes[str(api)] == {"stddef.h"}
+    assert project.unresolved_includes[str(api)] == set()
+    assert "api_int" not in project.typedefs
     assert "size_t" not in project.typedefs
 
 
