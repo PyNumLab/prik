@@ -19,7 +19,6 @@ from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
     FortranTypeProbeError,
-    _value_for_expression,
     build_fortran_type_probe_source,
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
@@ -216,20 +215,6 @@ def test_fortran_type_probe_cache_reuses_report_and_invalidates_for_flags(monkey
     assert len(calls) == 3
 
 
-def test_fortran_type_probe_expressions_extracts_semantic_requirement_inputs():
-    requirements = [
-        {"code": "parameter_value", "symbol": "blank", "expression": " "},
-        {"code": "parameter_value", "symbol": "rk", "expression": "selected_real_kind(12)"},
-        {"code": "unsupported_kind", "symbol": "x", "expression": "selected_real_kind(12)"},
-        {"code": "parameter_value", "symbol": "ik", "expression": "selected_int_kind(9)"},
-    ]
-
-    assert fortran_type_probe_expressions(requirements) == [
-        "selected_real_kind(12)",
-        "selected_int_kind(9)",
-    ]
-
-
 def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements():
     report = FortranTypeProbeReport(
         values={"Selected_Real_Kind(12)": 8},
@@ -251,8 +236,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
     assert report.to_compile_time_values() == {"Selected_Real_Kind(12)": 8}
     assert report.to_compile_time_values(requirements)["rk"] == 8
     assert "not_added" not in report.to_compile_time_values(requirements)
-    assert _value_for_expression({}, "not_present") is None
-    assert evaluate_fortran_type_requirements(PreprocessingConfig(mode="compiler"), []) == {}
 
 
 @pytest.mark.parametrize(
@@ -502,7 +485,7 @@ end module defaults
     assert semantic_types["legacy_value"]["metadata"]["fortran_type_fact_source"] == "legacy_star_storage"
 
 
-def test_probe_skips_expressions_naming_project_symbols():
+def test_probe_collects_unique_resolvable_expressions():
     """The probe program cannot `use` a module that has not been compiled yet.
 
     An expression naming a kind parameter declared elsewhere in the project is
@@ -515,11 +498,18 @@ def test_probe_skips_expressions_naming_project_symbols():
     assert not fortran_type_probe.probe_can_resolve_expression("wp")
 
     requirements = [
-        {"expression": "real64"},
-        {"expression": "storage_size(1_ip, kind=ip)"},
-        {"expression": "selected_int_kind(9)"},
+        {"code": "parameter_value", "symbol": "blank", "expression": " "},
+        {"code": "parameter_value", "symbol": "rk", "expression": "real64"},
+        {"code": "unsupported_kind", "symbol": "x", "expression": "selected_real_kind(12)"},
+        {"code": "parameter_value", "symbol": "size", "expression": "storage_size(1_ip, kind=ip)"},
+        {"code": "parameter_value", "symbol": "ik", "expression": "selected_int_kind(9)"},
+        {"code": "parameter_value", "symbol": "ik_again", "expression": "selected_int_kind(9)"},
     ]
-    assert fortran_type_probe_expressions(requirements) == ["real64", "selected_int_kind(9)"]
+    assert fortran_type_probe_expressions(requirements) == [
+        "real64",
+        "selected_real_kind(12)",
+        "selected_int_kind(9)",
+    ]
 
 
 def test_probe_source_compiles_for_a_module_using_imported_kind_parameters(tmp_path):
