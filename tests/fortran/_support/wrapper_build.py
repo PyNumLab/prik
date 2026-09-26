@@ -38,6 +38,10 @@ from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
+#: Compiles a wrapper's test-only failure hooks in, so a test can make it fail
+#: by naming a ``PRIK_WRAPPER_FAIL_*`` failure in the environment.
+FAULT_INJECTION_C_FLAGS = ("-DPRIK_WRAPPER_FAULT_INJECTION",)
+
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
 WRAPPER_SOURCE_PATHS = {
     "c_order_flat_buffer.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/c_order_flat_buffer.f90",
@@ -115,7 +119,12 @@ def _run_captured_command(
     return result
 
 
-def _build_and_import(source_template: Path, workdir: Path, expected_generated_sources: set[str]):
+def _build_and_import(
+    source_template: Path,
+    workdir: Path,
+    expected_generated_sources: set[str],
+    wrapper_c_flags: tuple[str, ...] = (),
+):
     source = workdir / source_template.name
     module_name = source_template.stem
     shutil.copyfile(source_template, source)
@@ -129,6 +138,7 @@ def _build_and_import(source_template: Path, workdir: Path, expected_generated_s
         str(workdir),
         "--compiler",
         _compiler(),
+        *(f"--wrapper-c-flags={flag}" for flag in wrapper_c_flags),
         "--json",
     ]
     result = _run_captured_command(cmd, cwd=workdir)
@@ -267,6 +277,7 @@ def _build_generated_pyi_and_import(
     source_template: Path,
     workdir: Path,
     expected_contract_package: Path | None = None,
+    wrapper_c_flags: tuple[str, ...] = (),
 ):
     """Generate a contract from source, then build and import through that contract."""
     source_dir = workdir / "source"
@@ -282,6 +293,7 @@ def _build_generated_pyi_and_import(
         native_objects=[native_object],
         native_include_dirs=[native_object.parent],
         output_dir=workdir / "pyi_build",
+        wrapper_c_flags=wrapper_c_flags,
     )
 
     assert result.sources[0] == entry
@@ -298,12 +310,15 @@ def _build_source_or_generated_pyi_and_import(
     expected_generated_sources: set[str],
     expected_contract_package: Path,
     build_mode: str,
+    wrapper_c_flags: tuple[str, ...] = (),
 ):
     if build_mode == "source":
         source_build_dir = workdir / "source_build"
         source_build_dir.mkdir(parents=True)
-        return _build_and_import(source_template, source_build_dir, expected_generated_sources)
-    return _build_generated_pyi_and_import(source_template, workdir / "generated_pyi_build", expected_contract_package)
+        return _build_and_import(source_template, source_build_dir, expected_generated_sources, wrapper_c_flags)
+    return _build_generated_pyi_and_import(
+        source_template, workdir / "generated_pyi_build", expected_contract_package, wrapper_c_flags
+    )
 
 
 def _build_source_and_import(

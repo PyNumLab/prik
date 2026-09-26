@@ -1418,7 +1418,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "callback_capsule",
                 "PyObject *",
-                CodeExpression('PyObject_GetAttrString(callback_result, "_prik_capsule")'),
+                CodeExpression('prik_getattr_interned(callback_result, &prik_name_prik_capsule, "_prik_capsule")'),
             ),
             self._callback_abort_if_null(
                 callback,
@@ -1622,7 +1622,7 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(
                     "origin_object",
                     "PyObject *",
-                    CodeExpression('PyObject_GetAttrString(object, "_prik_origin")'),
+                    CodeExpression('prik_getattr_interned(object, &prik_name_prik_origin, "_prik_origin")'),
                 ),
                 CIf(
                     CodeExpression("origin_object == NULL"),
@@ -1756,7 +1756,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "operation_map",
                 "PyObject *",
-                CodeExpression('PyObject_GetAttrString(object, "_prik_ops")'),
+                CodeExpression('prik_getattr_interned(object, &prik_name_prik_ops, "_prik_ops")'),
             ),
             CIf(
                 CodeExpression("operation_map == NULL"),
@@ -1768,7 +1768,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "ops_capsule",
                 "PyObject *",
-                CodeExpression('PyDict_GetItemString(operation_map, "_native_ops")'),
+                CodeExpression('prik_dict_getitem_interned(operation_map, &prik_name_native_ops, "_native_ops")'),
             ),
             CIf(
                 CodeExpression("ops_capsule == NULL"),
@@ -1830,7 +1830,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "carrier_capsule",
                 "PyObject *",
-                CodeExpression('PyObject_GetAttrString(object, "_prik_capsule")'),
+                CodeExpression('prik_getattr_interned(object, &prik_name_prik_capsule, "_prik_capsule")'),
             ),
             CIf(
                 CodeExpression("carrier_capsule == NULL"),
@@ -2088,7 +2088,7 @@ class CBindingGenerator(ClassVisitor):
         return CDeclaration(
             name,
             "const char *",
-            CodeExpression('getenv("PRIK_WRAPPER_FAIL_DERIVED_ORIGIN")'),
+            CodeExpression('prik_wrapper_fault_selector("PRIK_WRAPPER_FAIL_DERIVED_ORIGIN")'),
         )
 
     def _derived_origin_fault_return(
@@ -2745,7 +2745,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "owner_capsule",
                 "PyObject *",
-                CodeExpression('PyObject_GetAttrString(owner_obj, "_prik_capsule")'),
+                CodeExpression('prik_getattr_interned(owner_obj, &prik_name_prik_capsule, "_prik_capsule")'),
             ),
             CIf(CodeExpression("owner_capsule == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CDeclaration(
@@ -2835,7 +2835,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "owner_capsule",
                 "PyObject *",
-                CodeExpression('PyObject_GetAttrString(owner_obj, "_prik_capsule")'),
+                CodeExpression('prik_getattr_interned(owner_obj, &prik_name_prik_capsule, "_prik_capsule")'),
             ),
             CIf(CodeExpression("owner_capsule == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CDeclaration(
@@ -3766,7 +3766,9 @@ class CBindingGenerator(ClassVisitor):
         address = f"{prefix}_address"
         return (
             CDeclaration(
-                capsule, "PyObject *", CodeExpression(f'PyObject_GetAttrString({object_name}, "_prik_capsule")')
+                capsule,
+                "PyObject *",
+                CodeExpression(f'prik_getattr_interned({object_name}, &prik_name_prik_capsule, "_prik_capsule")'),
             ),
             CIf(CodeExpression(f"{capsule} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CIf(
@@ -4277,7 +4279,7 @@ class CBindingGenerator(ClassVisitor):
                     CDeclaration(
                         "fail_alloc",
                         "const char *",
-                        CodeExpression('getenv("PRIK_WRAPPER_FAIL_ALLOC")'),
+                        CodeExpression('prik_wrapper_fault_selector("PRIK_WRAPPER_FAIL_ALLOC")'),
                     ),
                     CIf(
                         CodeExpression("fail_alloc != NULL && fail_alloc[0] != '\\0' && fail_alloc[0] != '0'"),
@@ -13252,7 +13254,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 fault,
                 "const char *",
-                CodeExpression('getenv("PRIK_WRAPPER_FAIL_DERIVED_AFTER_NATIVE")'),
+                CodeExpression('prik_wrapper_fault_selector("PRIK_WRAPPER_FAIL_DERIVED_AFTER_NATIVE")'),
             ),
             CIf(
                 CodeExpression(f"{fault} != NULL && {fault}[0] != '\\0' && {fault}[0] != '0'"),

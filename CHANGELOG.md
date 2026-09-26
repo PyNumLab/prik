@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated bindings pass a wrapped derived-type object about twice as fast:
+  they read its native storage through attribute names interned once instead
+  of building a new name string on every call, and no longer scan the
+  environment for PRIK's own test failure hooks, which a binding now compiles
+  only when built with `-DPRIK_WRAPPER_FAULT_INJECTION`. An Open MPI 8-byte
+  round trip through the generated `mpi_f08` extension drops from 2.1 to
+  1.1 µs.
 - Fortran source commands accept `--module-source-dir DIR`, and
   `build_fortran_extension` accepts `module_source_dirs`: from the given entry
   sources, PRIK follows each `use` to the source under those directories that

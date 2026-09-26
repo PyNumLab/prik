@@ -198,6 +198,55 @@ static inline const char *prik_derived_type_info_capsule_name(void)
 #define PRIK_MAYBE_UNUSED
 #endif
 
+/* The fixed names a generated binding reads from its wrapper objects on every
+ * call. Each is interned once into its slot here, because building and hashing
+ * a new string per lookup, as PyObject_GetAttrString does, costs more than the
+ * rest of passing a wrapped object. */
+static PyObject *prik_name_prik_origin PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_prik_ops PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_prik_capsule PRIK_MAYBE_UNUSED = NULL;
+static PyObject *prik_name_native_ops PRIK_MAYBE_UNUSED = NULL;
+
+static inline PyObject *prik_interned_name(PyObject **slot, const char *text)
+{
+    if (*slot == NULL)
+        *slot = PyUnicode_InternFromString(text);
+    return *slot;
+}
+
+/* PyObject_GetAttrString through an interned name. */
+static inline PyObject *prik_getattr_interned(PyObject *object, PyObject **slot, const char *text)
+{
+    PyObject *name = prik_interned_name(slot, text);
+    return name == NULL ? NULL : PyObject_GetAttr(object, name);
+}
+
+/* PyDict_GetItemString through an interned name: a borrowed item, or NULL
+ * without an exception when it is absent. */
+static inline PyObject *prik_dict_getitem_interned(PyObject *dict, PyObject **slot, const char *text)
+{
+    PyObject *name = prik_interned_name(slot, text);
+    if (name == NULL) {
+        PyErr_Clear();
+        return NULL;
+    }
+    return PyDict_GetItem(dict, name);
+}
+
+/* PRIK's own wrapper tests make a generated binding fail on purpose by naming
+ * the failure in the environment. Only a binding compiled with
+ * PRIK_WRAPPER_FAULT_INJECTION reads it; any other answers "no failure" without
+ * scanning the environment on every call. */
+static inline const char *prik_wrapper_fault_selector(const char *variable)
+{
+#ifdef PRIK_WRAPPER_FAULT_INJECTION
+    return getenv(variable);
+#else
+    (void)variable;
+    return NULL;
+#endif
+}
+
 #ifdef PRIK_BINDING_CAPTURE_ADDRESS
 /*
  * Report the address a caller already passed by reference.

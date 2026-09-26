@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.paths import REPO_ROOT
-from tests.fortran._support.wrapper_build import _import_from_build_dir
+from tests.fortran._support.wrapper_build import FAULT_INJECTION_C_FLAGS, _import_from_build_dir
 from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -84,6 +84,7 @@ def scalar_matrix(tmp_path_factory) -> MatrixBuild:
         CONTRACT,
         native_fortran_sources=[SOURCE],
         output_dir=output_dir,
+        wrapper_c_flags=FAULT_INJECTION_C_FLAGS,
     )
     package = _import_from_build_dir(result.module_name, result.output_dir)
     return MatrixBuild(
