@@ -3,24 +3,10 @@
 import pytest
 
 from hypothesis import given, strategies as st
-from prik.parsers.c import CParseError, parse_c_file
+from prik.parsers.c import parse_c_file
 from tests.c._support.parser_properties import (
     _C_IDENTIFIERS,
 )
-
-
-@pytest.mark.property
-@given(
-    feature=_C_IDENTIFIERS,
-    function_names=st.lists(_C_IDENTIFIERS, min_size=2, max_size=2, unique=True),
-)
-def test_generated_c_raw_conditionals_require_preprocessing(feature, function_names):
-    source = f"#ifdef {feature}\nint {function_names[0]}(void);\n#else\nint {function_names[1]}(void);\n#endif\n"
-
-    with pytest.raises(CParseError, match="require compiler preprocessing") as exc_info:
-        parse_c_file(source, filename="conditional.h", preprocessing="raw")
-
-    assert exc_info.value.code == "CPARSE_PREPROCESSING_REQUIRED"
 
 
 @pytest.mark.property

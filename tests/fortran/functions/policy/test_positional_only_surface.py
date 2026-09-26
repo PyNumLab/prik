@@ -21,27 +21,26 @@ def _policies(source: str, **options):
     return {function.name: completed_function_wrapper_policy(function) for function in module.functions}
 
 
-def test_an_all_required_function_becomes_positional_and_is_renamed_by_position():
-    policy = _policies(_SOURCE, positional_only=True)["required_only"]
+def test_positional_only_surface_drops_keywords_only_where_policy_does_not_owe_them():
+    """All-required functions become positional and are renamed by position.
 
-    assert policy.accepts_keyword_arguments is False
-    assert [argument.python_name for argument in policy.arguments] == ["arg0", "arg1"]
-    # The native declaration keeps its own names; only the Python surface changes.
-    assert [argument.name for argument in policy.arguments] == ["alpha", "beta"]
+    An optional argument keeps keywords, because skipping one requires naming
+    the rest, and the default surface is unchanged. The native declaration
+    keeps its own names; only the Python surface changes.
+    """
+    positional = _policies(_SOURCE, positional_only=True)
+    required = positional["required_only"]
+    assert required.accepts_keyword_arguments is False
+    assert [argument.python_name for argument in required.arguments] == ["arg0", "arg1"]
+    assert [argument.name for argument in required.arguments] == ["alpha", "beta"]
 
+    optional = positional["has_optional"]
+    assert optional.accepts_keyword_arguments is True
+    assert [argument.python_name for argument in optional.arguments] == ["value", "scale"]
 
-def test_an_optional_argument_keeps_keywords_because_skipping_one_requires_naming_the_rest():
-    policy = _policies(_SOURCE, positional_only=True)["has_optional"]
-
-    assert policy.accepts_keyword_arguments is True
-    assert [argument.python_name for argument in policy.arguments] == ["value", "scale"]
-
-
-def test_the_default_surface_is_unchanged():
-    policies = _policies(_SOURCE)
-
-    assert policies["required_only"].accepts_keyword_arguments is True
-    assert [argument.python_name for argument in policies["required_only"].arguments] == ["alpha", "beta"]
+    default = _policies(_SOURCE)["required_only"]
+    assert default.accepts_keyword_arguments is True
+    assert [argument.python_name for argument in default.arguments] == ["alpha", "beta"]
 
 
 def test_an_overload_set_cannot_become_positional_only_because_it_dispatches_on_keywords():

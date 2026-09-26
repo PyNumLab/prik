@@ -1,6 +1,5 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-import ast
 import pytest
 from prik.parsers.fortran import parse_fortran_file
 from prik.printers import emit_module
@@ -9,7 +8,6 @@ from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
-    NATIVE_ARRAY_DESCRIPTOR_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     USER_PRIVATE_METADATA,
 )
@@ -17,8 +15,6 @@ from prik.semantics.models import (
     PYTHON_VALUE_IMMUTABLE,
     PYTHON_VALUE_MUTABILITY_METADATA,
     SemanticConstraint,
-    SemanticField,
-    SemanticVariable,
 )
 from prik.semantics.native_array_handles import (
     is_native_array_handle,
@@ -27,98 +23,60 @@ from prik.semantics.native_array_handles import (
     native_array_handle_facts,
 )
 from prik.semantics.native_contract import native_contract_issues
-from prik.semantics.pyi2ir import _node_text
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_dispatches_nested_and_qualified_semantic_types():
+    """A declared `Addr(T)` is raw native address storage, unlike an `Addr(Arg)` projection."""
     module = parse_pyi_text(
         """
 public_value: Int32
 bounded: Final[Annotated[Int32, Bounded(1, 8)]]
 pointer: Addr(Float64)
-raw_pointer: Addr(Float64)
 """,
         module_name="dispatch",
     )
 
-    public_value, bounded, pointer, raw_pointer = module.variables
-    assert isinstance(public_value, SemanticVariable)
+    public_value, bounded, pointer = module.variables
     assert public_value.visibility == "public"
+    assert public_value.semantic_type.storage is None
     assert bounded.semantic_type.constraints == [
         SemanticConstraint("Bounded", [1, 8]),
         SemanticConstraint("Constant"),
     ]
     assert pointer.semantic_type.storage.kind == "address"
     assert pointer.semantic_type.storage.metadata[ADDRESS_ROLE_METADATA] == ADDRESS_ROLE_RAW
-    assert raw_pointer.semantic_type.storage.read_only is False
-
-
-def test_boolean_storage_widths_round_trip_as_one_semantic_type_family():
-    module = pyi_text_to_semantic_module(
-        """
-from prik.contracts import Bool, Bool8, Bool16, Bool32, Bool64
-
-def inspect(
-    default: Bool,
-    byte: Bool8[:],
-    short: Bool16[:],
-    word: Bool32[:],
-    wide: Bool64[:],
-) -> None: ...
-""",
-        module_name="boolean_widths",
-    )
-
-    assert [argument.semantic_type.name for argument in module.functions[0].arguments] == [
-        "Bool",
-        "Bool8",
-        "Bool16",
-        "Bool32",
-        "Bool64",
-    ]
-    emitted = emit_module(module)
-    assert "from prik.contracts import Bool, Bool16, Bool32, Bool64, Bool8" in emitted
-
-
-def test_value_projection_round_trips_as_argument_specific_native_transport():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Arg, Float64, Value, native_abi, native_call
-
-@native_abi("c")
-class point:
-    x: Float64
-
-@native_call([Value(Arg(0))])
-def score(value: point) -> Float64: ...
-""",
-        module_name="value_contract",
-    )
-
-    value = module.functions[0].arguments[0]
-    assert value.metadata["native_by_value"] is True
-    assert "@native_call([Value(Arg(0))])" in emit_module(module)
-    assert "value: point" in emit_module(module)
+    assert pointer.semantic_type.storage.read_only is False
 
 
 def test_convert_pyi_to_ir_follows_arbitrary_contract_aliases():
+    """Every contract helper, wrapper, and projection name resolves through its import alias."""
     module = pyi_text_to_semantic_module(
         """
 from prik.contracts import Addr as AddressOf, Arg as PythonArg, Final as Frozen
 from prik.contracts import Flat as Layout, Float64 as F64, Int32 as I32, native_call as call
+from prik.contracts import Annotated as Metadata, SourceName as NativeName, Returns as Gives
 
 Flat: Frozen[I32] = 10
+alias: Metadata[F64[1:n], NativeName("native_alias")]
 
 @call([AddressOf(PythonArg(0))])
 def inspect(values: F64[Layout], dense: F64[Flat]) -> None: ...
+
+def f() -> tuple[F64, Gives["y", F64]]: ...
 """,
         module_name="aliases",
     )
 
-    assert module.variables[0].name == "Flat"
-    assert module.functions[0].arguments[0].semantic_type.storage.array.category == "assumed_size"
-    assert module.functions[0].arguments[1].semantic_type.shape == ["Flat"]
+    assert [variable.name for variable in module.variables] == ["Flat", "alias"]
+    assert module.variables[1].origin.native_name == "native_alias"
+    assert module.variables[1].semantic_type.shape == ["1:n"]
+    inspect, returns = module.functions
+    assert inspect.projection[0].value_kind == "addr"
+    assert inspect.arguments[0].semantic_type.storage.array.category == "assumed_size"
+    assert inspect.arguments[1].semantic_type.shape == ["Flat"]
+    assert returns.return_type.name == "Float64"
+    assert returns.arguments[0].name == "y"
 
 
 def test_convert_pyi_to_ir_preserves_immutable_python_value_metadata():
@@ -141,100 +99,30 @@ def scale(
     assert reparsed_values.metadata[PYTHON_VALUE_MUTABILITY_METADATA] == PYTHON_VALUE_IMMUTABLE
 
 
-def test_convert_pyi_to_ir_allows_user_modified_stub():
-    pyi = """
-import iso_c_binding
-
-class particle:
-    id: Int32
-
-scale: private[Float64]
-answer: Final[Int32]
-hidden_answer: private[Final[Int32]]
-literal_answer: Final[Int32] = 42
-
-def touch(
-    p: particle
-) -> Returns["p", particle]: ...
-"""
-
-    module = parse_pyi_text(pyi, module_name="edited")
-
-    assert module.name == "edited"
-    assert module.imports == ["iso_c_binding"]
-    assert module.classes[0].name == "particle"
-    assert isinstance(module.classes[0].fields[0], SemanticField)
-    assert module.variables[0].name == "scale"
-    assert module.variables[0].visibility == "private"
-    assert module.variables[1].name == "answer"
-    assert [c.name for c in module.variables[1].semantic_type.constraints] == ["Constant"]
-    assert module.variables[2].name == "hidden_answer"
-    assert module.variables[2].visibility == "private"
-    assert [c.name for c in module.variables[2].semantic_type.constraints] == ["Constant"]
-    assert module.variables[3].name == "literal_answer"
-    assert module.variables[3].default_value == "42"
-
-
-def test_convert_pyi_to_ir_forwards_filename_to_syntax_errors():
-    with pytest.raises(SyntaxError) as error:
-        parse_pyi_text("from broken import\n", filename="custom.pyi")
-    assert error.value.filename == "custom.pyi"
-
-
-def test_convert_pyi_to_ir_accepts_aliased_contract_wrapper_names():
-    module = pyi_text_to_semantic_module(
-        """
-from prik.contracts import Annotated as Metadata, Float64 as F64, SourceName as NativeName
-from prik.contracts import Returns as Gives
-
-alias: Metadata[F64[1:n], NativeName("native_alias")]
-
-def f() -> tuple[F64, Gives["y", F64]]: ...
-""",
-        module_name="edited",
-    )
-
-    # The declared name stays the Python name; SourceName states the native
-    # entity it reaches, as bind does for a callable.
-    assert module.variables[0].name == "alias"
-    assert module.variables[0].origin.native_name == "native_alias"
-    assert module.variables[0].semantic_type.shape == ["1:n"]
-    assert module.functions[0].return_type is not None
-    assert module.functions[0].return_type.name == "Float64"
-    assert module.functions[0].arguments[0].name == "y"
-
-
-def test_rank_zero_scalar_storage_round_trips_as_empty_tuple_array():
+def test_rank_zero_scalar_storage_is_writable_scalar_array_storage():
     module = parse_pyi_text(
         """
 def update_storage(value: Float64[()]) -> None: ...
-def inspect_storage(value: Int32[()]) -> None: ...
 """,
         module_name="scalar_storage",
     )
 
-    update, inspect = module.functions
-    update_type = update.arguments[0].semantic_type
-    inspect_type = inspect.arguments[0].semantic_type
-
+    update_type = module.functions[0].arguments[0].semantic_type
     assert update_type.rank == 0
     assert update_type.storage.kind == "array"
     assert update_type.storage.array.category == "scalar_storage"
-    assert inspect_type.storage.read_only is False
-    assert inspect_type.storage.mutable is True
-
-    emitted = emit_module(module)
-    assert "value: Float64[()]" in emitted
-    assert "value: Int32[()]" in emitted
-    assert parse_pyi_text(emitted, module_name="scalar_storage") == module
+    assert update_type.storage.read_only is False
+    assert update_type.storage.mutable is True
 
 
 def test_convert_pyi_to_ir_preserves_explicit_array_source_dimensions():
+    """Explicit extents keep their source dimensions; an empty step marks a strided axis."""
     module = parse_pyi_text(
         """
 def apply(
     A: Float64[LDA, N],
     work: Float64[::],
+    bounded: Float64[0:n:],
     scratch: Float64[:]
 ) -> None: ...
 """,
@@ -245,41 +133,18 @@ def apply(
     assert args["A"].source_shape == ["LDA", "N"]
     assert args["A"].lower_bounds == [None, None]
     assert args["A"].upper_bounds == [None, None]
-    assert args["work"].shape == ["::"]
-    assert args["work"].axes == ["strided"]
-    assert args["work"].contiguous is False
-    assert args["work"].source_shape == []
-    assert args["scratch"].shape == [":"]
-    assert args["scratch"].axes == ["dense"]
-    assert args["scratch"].contiguous is True
-    assert args["scratch"].source_shape == []
+    assert [(args[name].axes, args[name].contiguous, args[name].source_shape) for name in ("work", "bounded")] == [
+        (["strided"], False, []),
+        (["strided"], False, []),
+    ]
+    assert args["bounded"].shape == ["0:n:"]
+    assert (args["scratch"].axes, args["scratch"].contiguous) == (["dense"], True)
 
 
-def test_convert_pyi_to_ir_reads_a_strided_axis_from_its_empty_step():
-    """An empty step marks a strided axis; a bounded axis keeps its bounds."""
-    module = parse_pyi_text(
-        """
-unbounded: Float64[::]
-bounded: Float64[0:n:]
-""",
-        module_name="strided_axes",
-    )
-
-    arrays = [variable.semantic_type.storage.array for variable in module.variables]
-    assert [array.shape for array in arrays] == [["::"], ["0:n:"]]
-    assert [array.axes for array in arrays] == [["strided"], ["strided"]]
-    assert [array.contiguous for array in arrays] == [False, False]
-
-
-@pytest.mark.parametrize("dimension", ["Float64[::Strided]", "Float64[0:n:Strided]", "Float64[::2]"])
-def test_convert_pyi_to_ir_rejects_a_dimension_step(dimension: str):
-    """A dimension carries bounds only, so the step position spells nothing.
-
-    `T[::]` already says strided, so the longer explicit form it replaced is
-    refused rather than kept as a second way to write the same contract.
-    """
+def test_convert_pyi_to_ir_rejects_a_dimension_step():
+    """A dimension carries bounds only, so the step position spells nothing."""
     with pytest.raises(ValueError, match="not part of the contract grammar"):
-        parse_pyi_text(f"x: {dimension}\n", module_name="rejected_step")
+        parse_pyi_text("x: Float64[::2]\n", module_name="rejected_step")
 
 
 def test_convert_pyi_to_ir_uses_fortran_native_array_defaults():
@@ -306,22 +171,6 @@ def test_convert_pyi_to_ir_rejects_redundant_fortran_default_array_order():
             module_name="redundant_order",
             native_language="fortran",
         )
-
-
-def test_convert_pyi_to_ir_records_explicit_c_to_fortran_copy_order():
-    module = parse_pyi_text(
-        """
-def consume(values: Annotated[Float64[:, :], ORDER_C, COPY_F]) -> None: ...
-""",
-        module_name="copy_order",
-    )
-
-    array = module.functions[0].arguments[0].semantic_type.storage.array
-
-    assert array.order == "ORDER_C"
-    assert array.copy_order == "ORDER_F"
-    assert array.rank == 2
-    assert array.contiguous is True
 
 
 def test_convert_pyi_to_ir_accepts_flat_array_dimension():
@@ -368,31 +217,16 @@ c_tensor: Annotated[Float64[Flat, 3, 4], ORDER_C]
     assert [array.order for array in arrays] == [None, "ORDER_F", "ORDER_F", "ORDER_C", "ORDER_C"]
 
 
-def test_convert_pyi_to_ir_preserves_array_layout_and_nested_selector():
+def test_convert_pyi_to_ir_preserves_rank_selector_and_character_allocatable_marker():
     module = parse_pyi_text(
         """
-value: Float64[:, :]
 nested: Float64[:, :][rank, kind]
 name: Annotated[String[16], FortranAllocatable]
-
-def fill(x: Float64[:]) -> None: ...
 """,
         module_name="metadata",
     )
 
-    value_type = module.variables[0].semantic_type
-    value = value_type.storage.array
-    nested = module.variables[1].semantic_type
-    name = module.variables[2].semantic_type
-    assert value.order == "ORDER_F"
-    assert value.allocatable is False
-    assert value.pointer is False
-    assert value.contiguous is True
-    assert value.category is None
-    assert value.source_shape == []
-    assert value.lower_bounds == []
-    assert value.upper_bounds == []
-    assert value_type.constraints == []
+    nested, name = [variable.semantic_type for variable in module.variables]
     assert nested.metadata["rank_selector"] == "rank, kind"
     assert nested.storage.array.metadata["rank_selector"] == "rank, kind"
     assert name.metadata["fortran_character_length"] == "16"
@@ -400,6 +234,7 @@ def fill(x: Float64[:]) -> None: ...
 
 
 def test_convert_pyi_to_ir_accepts_array_descriptor_handle_wrappers():
+    """`Allocatable[...]`/`Pointer[...]` wrap a plain array as a native descriptor handle."""
     module = pyi_text_to_semantic_module(
         """
 from prik.contracts import Allocatable as A, Annotated, Float64 as F64, Pointer as P, SourceName, String as Str
@@ -409,87 +244,32 @@ target: Annotated[P[F64[:, :]], SourceName("target_values")]
 labels: P[Str[8][:]]
 plain_values: F64[:]
 
-def consume(values: A[F64[:]], target: P[F64[:]]) -> None: ...
 def maybe_consume(values: A[F64[:]] | None = ..., target: P[F64[:]] | None = ...) -> None: ...
 """,
         module_name="array_descriptors",
     )
 
     values, target, labels, plain_values = [variable.semantic_type for variable in module.variables]
-    assert is_native_array_handle(values) is True
-    assert native_array_descriptor_kind(values) == "allocatable"
-    assert values.storage.array.allocatable is True
-    assert values.storage.array.pointer is False
-    assert values.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "allocatable"
-    assert values.rank == 1
-    assert values.shape == [":"]
-    values_data = native_array_data_type(values)
-    assert values_data.storage.array.allocatable is False
-    assert values_data.storage.array.pointer is False
-    assert values_data.metadata.get(NATIVE_ARRAY_DESCRIPTOR_METADATA) is None
-    assert values_data == plain_values
+    assert [native_array_descriptor_kind(item) for item in (values, target, labels)] == [
+        "allocatable",
+        "pointer",
+        "pointer",
+    ]
     assert is_native_array_handle(plain_values) is False
-
-    assert target.storage.array.pointer is True
-    assert native_array_descriptor_kind(target) == "pointer"
-    assert target.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "pointer"
-    assert target.rank == 2
-    target_data = native_array_data_type(target)
-    assert target_data.storage.array.pointer is False
-    assert target_data.rank == target.rank
-
-    assert native_array_descriptor_kind(labels) == "pointer"
-    assert labels.name == "String"
-    assert labels.rank == 1
-    assert labels.shape == [":"]
-    assert labels.metadata["fortran_character_length"] == "8"
-    assert labels.storage.array.pointer is True
-    labels_data = native_array_data_type(labels)
-    assert labels_data.metadata["fortran_character_length"] == "8"
-
-    values_facts = native_array_handle_facts(values)
-    assert values_facts.descriptor_kind == "allocatable"
-    assert values_facts.data_type == plain_values
-    assert values_facts.element_type.name == "Float64"
-    assert values_facts.element_type.rank == 0
-    assert values_facts.element_type.shape == []
-    assert values_facts.dtype == "Float64"
-    assert values_facts.rank == 1
-    assert values_facts.shape == (":",)
-    assert values_facts.fortran_character_length is None
-
-    target_facts = native_array_handle_facts(target)
-    assert target_facts.descriptor_kind == "pointer"
-    assert target_facts.data_type.storage.array.pointer is False
-    assert target_facts.rank == 2
-    assert target_facts.shape == (":", ":")
+    assert native_array_data_type(values) == plain_values
+    assert native_array_data_type(target).storage.array.pointer is False
+    assert native_array_data_type(target).rank == 2
 
     labels_facts = native_array_handle_facts(labels)
-    assert labels_facts.descriptor_kind == "pointer"
-    assert labels_facts.element_type.name == "String"
-    assert labels_facts.element_type.rank == 0
-    assert labels_facts.element_type.metadata["fortran_character_length"] == "8"
-    assert labels_facts.data_type.storage.array.pointer is False
-    assert labels_facts.dtype == "String"
-    assert labels_facts.rank == 1
-    assert labels_facts.shape == (":",)
+    assert (labels_facts.dtype, labels_facts.rank, labels_facts.shape) == ("String", 1, (":",))
     assert labels_facts.fortran_character_length == "8"
-
+    assert labels_facts.element_type.rank == 0
     with pytest.raises(ValueError, match="is not a native array handle"):
         native_array_handle_facts(plain_values)
-    assert labels_data.storage.array.pointer is False
 
-    consume_values, consume_target = [arg.semantic_type for arg in module.functions[0].arguments]
-    assert consume_values.storage.array.allocatable is True
-    assert consume_target.storage.array.pointer is True
-
-    maybe_values, maybe_target = module.functions[1].arguments
-    assert maybe_values.semantic_type.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "allocatable"
-    assert maybe_values.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
-    assert maybe_values.optional is True
-    assert maybe_target.semantic_type.metadata[NATIVE_ARRAY_DESCRIPTOR_METADATA] == "pointer"
-    assert maybe_target.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
-    assert maybe_target.optional is True
+    for argument in module.functions[0].arguments:
+        assert argument.optional is True
+        assert argument.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
 
 
 def test_convert_pyi_to_ir_preserves_user_private_bound_function_contract():
@@ -505,13 +285,9 @@ def helper(value: Int32) -> None: ...
     helper = module.functions[0]
     assert native_contract_issues(module) == []
     assert helper.visibility == "private"
+    assert helper.native_name == "native_helper"
     assert helper.origin.source_language == "fortran"
     assert helper.origin.metadata[USER_PRIVATE_METADATA] is True
-
-    emitted = emit_module(module)
-    assert '@private\n@bind("native_helper")\ndef helper(' in emitted
-    assert "    value: Int32" in emitted
-    assert parse_pyi_text(emitted, module_name="edited") == module
 
 
 @pytest.mark.parametrize(
@@ -566,10 +342,6 @@ def test_convert_pyi_to_ir_rejects_additional_invalid_storage_forms(source: str,
     with pytest.raises(ValueError) as error:
         parse_pyi_text(source, module_name="invalid")
     assert str(error.value) == message
-
-
-def test_node_text_falls_back_to_node_type_for_empty_unparse():
-    assert _node_text(ast.Module(body=[], type_ignores=[])) == "Module"
 
 
 def test_native_contract_structurally_accepts_declared_type_and_constraint_edits():

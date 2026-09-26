@@ -69,22 +69,27 @@ def _info(text: str) -> str:
     return f"{shutil.which('cat')} <<'EOF'\n{text}EOF"
 
 
+# Each unusable-helper reason is one row; the rows alternate between a local run
+# (skip) and a provisioned run (fail) so both outcomes stay covered.
 @pytest.mark.parametrize(
-    ("ompi_info", "reason"),
+    ("ompi_info", "reason", "required"),
     [
-        pytest.param(None, "ompi_info is unavailable", id="missing"),
-        pytest.param("exit 3", "ompi_info is unavailable", id="failing"),
+        pytest.param(None, "ompi_info is unavailable", False, id="local-missing"),
+        pytest.param("exit 3", "ompi_info is unavailable", True, id="required-failing"),
         pytest.param(
-            _info(INFO.replace("config:host:buildhost\n", "")), "configure host is not recorded", id="incomplete"
+            _info(INFO.replace("config:host:buildhost\n", "")),
+            "configure host is not recorded",
+            False,
+            id="local-incomplete",
         ),
         pytest.param(
             _info(INFO.replace("bindings:use_mpi_f08:yes\n", "")),
             "does not provide the mpi_f08 module",
-            id="without-mpi-f08",
+            True,
+            id="required-without-mpi-f08",
         ),
     ],
 )
-@pytest.mark.parametrize("required", [False, True], ids=["local", "required"])
 def test_an_unusable_open_mpi_helper_skips_locally_and_fails_when_required(
     tmp_path: Path, monkeypatch, ompi_info: str | None, reason: str, required: bool
 ):

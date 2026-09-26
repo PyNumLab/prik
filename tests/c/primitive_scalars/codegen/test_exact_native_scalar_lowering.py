@@ -1,4 +1,9 @@
-"""Binding lowering consumes exact scalar types completed before planning."""
+"""Binding lowering consumes exact array element types completed before planning.
+
+The rows are identities whose NumPy storage is not implied by width alone:
+plain ``char``, ``int`` versus ``long`` versus ``long long``, and the
+extended-precision real and complex types.
+"""
 
 import pytest
 
@@ -7,14 +12,6 @@ from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 from prik.policy.completion import complete_semantic_policies
 from prik.semantics.native_contract import validate_pyi_native_contract
-
-
-def _binding(text: str) -> str:
-    module = pyi_text_to_semantic_module(text, module_name="exact", native_language="c")
-    validate_pyi_native_contract([module])
-    complete_semantic_policies(module)
-    generated = WrapperGenerator().generate(WrapperPlanner().build(module))
-    return next(source.text for source in generated.sources if source.path.suffix == ".c")
 
 
 def _plan_and_binding(text: str):
@@ -27,61 +24,12 @@ def _plan_and_binding(text: str):
     return plan, binding
 
 
-def test_exact_value_argument_and_result_use_native_prototype_and_directional_casts():
-    binding = _binding(
-        """from prik.contracts import Arg, CLongLong, Int64, Return, native_call
-@native_call([CLongLong(Arg(0))], result=CLongLong(Return(0)))
-def convert(value: Int64) -> Int64: ...
-"""
-    )
-
-    assert "long long convert(long long value);" in binding
-    assert "result = (int64_t)convert((long long)bound_value);" in binding
-
-
-def test_exact_address_argument_materializes_native_storage_before_taking_its_address():
-    binding = _binding(
-        """from prik.contracts import Addr, Arg, CLongLong, Int64, Returns, native_call
-@native_call([Addr(CLongLong(Arg(0)))])
-def update(value: Int64) -> Returns["value", Int64]: ...
-"""
-    )
-
-    assert "void update(long long * value);" in binding
-    assert "long long bound_value;" in binding
-    assert "bound_value = (long long)bound_value_converted;" in binding
-    assert "bound_value_storage = &bound_value;" in binding
-    assert "update(bound_value_storage);" in binding
-    assert "int64_t bound_value_contract = (int64_t)*bound_value_storage;" in binding
-    assert "prik_int64_to_numpy(&bound_value_contract)" in binding
-
-
-def test_exact_output_parameter_uses_native_storage_then_converts_the_python_result():
-    binding = _binding(
-        """from prik.contracts import CLongLong, Int64, Return, native_call
-@native_call([CLongLong(Return("out", 0))])
-def read() -> Int64: ...
-"""
-    )
-
-    assert "void read(long long * out);" in binding
-    assert "long long out;" in binding
-    assert "read(&out);" in binding
-    assert "int64_t out_contract = (int64_t)out;" in binding
-
-
 @pytest.mark.parametrize(
     ("native_type", "annotation", "c_type", "numpy_macro", "numpy_name"),
     [
         ("CChar", "Int8", "char", "NPY_BYTE", "numpy.byte"),
-        ("CSignedChar", "Int8", "signed char", "NPY_BYTE", "numpy.byte"),
-        ("CUnsignedChar", "UInt8", "unsigned char", "NPY_UBYTE", "numpy.ubyte"),
-        ("CShort", "Int16", "short", "NPY_SHORT", "numpy.short"),
-        ("CUnsignedShort", "UInt16", "unsigned short", "NPY_USHORT", "numpy.ushort"),
         ("CInt", "Int32", "int", "NPY_INT", "numpy.intc"),
-        ("CUnsignedInt", "UInt32", "unsigned int", "NPY_UINT", "numpy.uintc"),
         ("CLong", "Int64", "long", "NPY_LONG", "numpy.long"),
-        ("CUnsignedLong", "UInt64", "unsigned long", "NPY_ULONG", "numpy.ulong"),
         ("CLongLong", "Int64", "long long", "NPY_LONGLONG", "numpy.longlong"),
         (
             "CUnsignedLongLong",
@@ -90,11 +38,7 @@ def read() -> Int64: ...
             "NPY_ULONGLONG",
             "numpy.ulonglong",
         ),
-        ("CFloat", "Float32", "float", "NPY_FLOAT", "numpy.single"),
-        ("CDouble", "Float64", "double", "NPY_DOUBLE", "numpy.double"),
         ("CLongDouble", "Float128", "long double", "NPY_LONGDOUBLE", "numpy.longdouble"),
-        ("CFloatComplex", "Complex64", "float _Complex", "NPY_CFLOAT", "numpy.csingle"),
-        ("CDoubleComplex", "Complex128", "double _Complex", "NPY_CDOUBLE", "numpy.cdouble"),
         (
             "CLongDoubleComplex",
             "Complex256",

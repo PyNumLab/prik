@@ -200,7 +200,7 @@ and conditional support installation.
 | [Compiler profile and command construction](../../../tests/fortran/infrastructure/building/compiling/test_compiler_verbose.py) | Coherent C/Fortran driver selection, explicit overrides, profile and user-flag order, optional-flag probing, record-only mode, and preserved link-input order. |
 | [Generated-wrapper build handoff](../../../tests/fortran/infrastructure/building/pipeline/test_generated_wrapper_build.py) | Generated sources, conditional support installation, explicit C and Fortran object requests, and the final ordered link request passed from the pipeline. |
 | [Source build modes](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py) | The selected source-build mode produces an importable native extension. |
-| [Native-support surface](../../../tests/fortran/infrastructure/runtime/test_native_support.py) | The bundled payload remains header-only and exposes the small native binding API expected by generated sources. |
+| [Native-support surface](../../../tests/fortran/infrastructure/runtime/test_native_support.py) | The bundled support header keeps the native-array backend record's layout tag, release lifetime, address-capture linkage, and owner-identity checks. |
 | [C build integration](../../../tests/c/infrastructure/building/pipeline/test_c_build_cli.py) | C-only builds use the selected C compiler; mixed-language inputs select the required Fortran link driver. |
 
 ## Change Routes

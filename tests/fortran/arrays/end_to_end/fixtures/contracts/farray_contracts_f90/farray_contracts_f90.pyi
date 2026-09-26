@@ -29,69 +29,9 @@ def shift1(
     out: Float64[::]
 ) -> None: ...
 
-def shift2(
-    values: Float64[::, ::],
-    out: Float64[::, ::]
-) -> None: ...
-
-def shift3(
-    values: Float64[::, ::, ::],
-    out: Float64[::, ::, ::]
-) -> None: ...
-
 def shift4(
     values: Float64[::, ::, ::, ::],
     out: Float64[::, ::, ::, ::]
-) -> None: ...
-
-def shift5(
-    values: Float64[::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift6(
-    values: Float64[::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift7(
-    values: Float64[::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift8(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift9(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift10(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift11(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift12(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift13(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
-) -> None: ...
-
-def shift14(
-    values: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::],
-    out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
 ) -> None: ...
 
 def shift15(
@@ -99,25 +39,4 @@ def shift15(
     out: Float64[::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::, ::]
 ) -> None: ...
 
-__all__ = [
-    "sum_assumed_size",
-    "scale_lower",
-    "sum_in",
-    "bump_inout",
-    "fill_out",
-    "shift1",
-    "shift2",
-    "shift3",
-    "shift4",
-    "shift5",
-    "shift6",
-    "shift7",
-    "shift8",
-    "shift9",
-    "shift10",
-    "shift11",
-    "shift12",
-    "shift13",
-    "shift14",
-    "shift15",
-]
+__all__ = ["sum_assumed_size", "scale_lower", "sum_in", "bump_inout", "fill_out", "shift1", "shift4", "shift15"]

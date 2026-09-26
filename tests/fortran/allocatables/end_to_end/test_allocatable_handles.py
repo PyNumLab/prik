@@ -187,6 +187,9 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
         built_matrix.to_numpy(),
         np.array([[11.0, 21.0], [12.0, 22.0]], dtype=np.float64),
     )
+    # A rank-two resize hands each extent to native code separately.
+    built_matrix.resize((3, 2))
+    assert built_matrix.shape == (3, 2)
     empty_matrix = module.build_matrix(np.int32(0), np.int32(2))
     assert isinstance(empty_matrix, AllocatableArray)
     assert empty_matrix.allocated is False
@@ -232,6 +235,7 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
 
     fresh = Allocatable[Float64[:]]()
     assert fresh.allocated is False
+    assert fresh.owned is True
     assert module.replace_values(fresh, np.int32(3)) is fresh
     np.testing.assert_allclose(fresh.to_numpy(), np.array([3.0, 6.0, 9.0], dtype=np.float64))
     with pytest.raises(TypeError):
@@ -301,6 +305,10 @@ def test_plain_allocatable_module_array_exposes_current_live_view(
 
     assert "void (*callback)(CFI_cdesc_t *, void *)" in wrapper_source_text
     assert "source->base_addr" in wrapper_source_text
+    # Inquiries read the descriptor in C; the capability tuple is the only
+    # Python value built, so no descriptor field is copied out to Python.
+    built = [line.strip() for line in wrapper_source_text.splitlines() if "Py_BuildValue" in line]
+    assert built and all("build_capabilities" in line for line in built)
 
     handle = module.values
     assert isinstance(handle, AllocatableArray)
@@ -353,52 +361,9 @@ def test_module_allocatable_reports_its_real_lower_bound_with_or_without_target(
     the bounds, strides and element length then have to come from somewhere else.
     Reconstructing them hardcoded a lower bound of zero, which is wrong for every
     Fortran array — the default is one — and further wrong for a declared `(5:8)`.
-    Both declarations read the descriptor, so both report 5.
+    Both declarations read the descriptor, so both report 5.  Fixed-width
+    character handles also report absence without an element width to guess.
     """
-    module = _build_text_and_import(
-        LOWER_BOUND_SOURCE,
-        "falloc_lower_bounds_f90.f90",
-        tmp_path,
-        {
-            "bind_c_falloc_lower_bounds_f90_wrapper.f90",
-            "falloc_lower_bounds_f90_wrapper.c",
-            "falloc_lower_bounds_f90_wrapper.h",
-        },
-    )
-    module.setup()
-
-    # The bound is not a reported fact but part of the value: an allocatable
-    # dummy adopts the bounds of the descriptor it is given, so a wrong one
-    # makes the callee index the wrong elements.
-    for name, bound in (("plain_a", 5), ("tgt_a", 5), ("defaulted", 1)):
-        handle = getattr(module, name)
-        assert module.lower_bound_of(handle) == np.int32(bound), name
-        assert module.element_at(handle, np.int32(bound)) == handle.to_numpy()[0], name
-        # The Python view is unaffected: NumPy indexing stays zero-based.
-        assert handle.to_numpy().shape == (4,)
-
-    # A character allocatable carries the same bounds, and its element length
-    # comes from the array rather than from a width the binding assumed.
-    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
-        assert getattr(module, name).dtype == np.dtype(f"S{width}"), name
-
-    fixed = module.fixed_words
-    fixed.resize(2)
-    assert fixed.dtype == np.dtype("S5")
-    with pytest.raises(TypeError, match="fixed element width"):
-        fixed.resize(2, element_length=4)
-
-    deferred = module.deferred_words
-    deferred.resize(3, element_length=4)
-    assert deferred.shape == (3,)
-    assert deferred.dtype == np.dtype("S4")
-    deferred.resize(4, element_length=6)
-    # A deferred-length actual reaches an allocatable dummy carrying both, so
-    # the bound and the width are read back out of the array itself.
-    assert module.deferred_word_bound_and_width(deferred) == np.int32(106)
-
-
-def test_fixed_character_projection_reports_absence(tmp_path: Path):
     module = _build_text_and_import(
         LOWER_BOUND_SOURCE,
         "falloc_lower_bounds_f90.f90",
@@ -423,17 +388,45 @@ def test_fixed_character_projection_reports_absence(tmp_path: Path):
     missing_pointer.associate(missing_pointer)
     assert missing_pointer.associated is False
 
+    # The bound is not a reported fact but part of the value: an allocatable
+    # dummy adopts the bounds of the descriptor it is given, so a wrong one
+    # makes the callee index the wrong elements.
+    for name, bound in (("plain_a", 5), ("tgt_a", 5), ("defaulted", 1)):
+        handle = getattr(module, name)
+        assert module.lower_bound_of(handle) == np.int32(bound), name
+        assert module.element_at(handle, np.int32(bound)) == handle.to_numpy()[0], name
+        # The Python view is unaffected: NumPy indexing stays zero-based.
+        assert handle.to_numpy().shape == (4,)
+
+    # A character allocatable carries the same bounds, and its element length
+    # comes from the array rather than from a width the binding assumed.
+    for name, width in (("fixed_words", 5), ("deferred_words", 6)):
+        assert getattr(module, name).dtype == np.dtype(f"S{width}"), name
+
     fixed = module.fixed_words
     assert fixed.allocated is True
     assert fixed.to_numpy().tolist() == [b"aaaaa"] * 4
     with pytest.raises(TypeError, match="descriptor attribute required by the dummy"):
         module.deferred_word_bound_and_width(fixed)
+    fixed.resize(2)
+    assert fixed.dtype == np.dtype("S5")
+    with pytest.raises(TypeError, match="fixed element width"):
+        fixed.resize(2, element_length=4)
+
+    deferred = module.deferred_words
+    deferred.resize(3, element_length=4)
+    assert deferred.shape == (3,)
+    assert deferred.dtype == np.dtype("S4")
+    deferred.resize(4, element_length=6)
+    # A deferred-length actual reaches an allocatable dummy carrying both, so
+    # the bound and the width are read back out of the array itself.
+    assert module.deferred_word_bound_and_width(deferred) == np.int32(106)
 
 
 BORROWED_DESCRIPTOR_SOURCE = (NATIVE_FIXTURES / "fallocatable_borrowed_f90.f90").read_text(encoding="utf-8")
 
 
-def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp_path: Path):
+def test_every_allocatable_handle_kind_reaches_read_only_and_writable_allocatable_dummies(tmp_path: Path):
     """An allocatable actual borrows the descriptor the Fortran runtime built.
 
     A read-only allocatable dummy requires an allocatable actual, and C may not
@@ -442,13 +435,18 @@ def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp
     rebuilding one from facts, so module, derived-field and result handles all
     reach the dummy on every compiler instead of only where an invalid
     descriptor happens to be tolerated.
+
+    A callee that reallocates an ``intent(inout)`` dummy must update the caller.
+    The descriptor a module array or field hands out exists only while the
+    consumer holding it runs, so a callee handed a copy would reallocate the
+    copy and leave the caller's entity naming released storage.  The call is
+    made inside that consumer instead.  A handle owning its descriptor hands
+    that over directly.
     """
-    workdir = tmp_path / "borrowed"
-    workdir.mkdir(parents=True)
     module = _build_text_and_import(
         BORROWED_DESCRIPTOR_SOURCE,
         "fallocatable_borrowed_f90.f90",
-        workdir,
+        tmp_path,
         {
             "bind_c_fallocatable_borrowed_f90_wrapper.f90",
             "fallocatable_borrowed_f90_wrapper.c",
@@ -471,31 +469,6 @@ def test_every_allocatable_handle_kind_reaches_a_read_only_allocatable_dummy(tmp
     namespace.modvar.resize(3)
     namespace.modvar.to_numpy()[:] = [100.0, 200.0, 300.0]
     assert namespace.total(namespace.modvar) == np.float64(600.0)
-
-
-def test_a_writable_allocatable_dummy_reaches_the_callers_entity(tmp_path: Path):
-    """A callee that reallocates an ``intent(inout)`` dummy updates the caller.
-
-    The descriptor a module array or field hands out exists only while the
-    consumer holding it runs, so a callee handed a copy would reallocate the
-    copy and leave the caller's entity naming released storage.  The call is
-    made inside that consumer instead, which is what lets the new allocation
-    reach the entity.  A handle owning its descriptor hands that over directly
-    and needs no such arrangement.
-    """
-    workdir = tmp_path / "writable"
-    workdir.mkdir(parents=True)
-    module = _build_text_and_import(
-        BORROWED_DESCRIPTOR_SOURCE,
-        "fallocatable_borrowed_f90.f90",
-        workdir,
-        {
-            "bind_c_fallocatable_borrowed_f90_wrapper.f90",
-            "fallocatable_borrowed_f90_wrapper.c",
-            "fallocatable_borrowed_f90_wrapper.h",
-        },
-    )
-    namespace = _sole_native_module(module)
 
     # A module array: the callee replaces the allocation, and the module
     # variable names the new one afterwards.

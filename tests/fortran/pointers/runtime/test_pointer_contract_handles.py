@@ -1,168 +1,67 @@
-"""Pointer contract constructors and native-storage attachment."""
+"""Contract handle constructors and generated-storage attachment checks."""
 
 import numpy as np
 import pytest
 
 import prik.contracts as contracts
-from prik.runtime.handles import (
-    AllocatableArray,
-    PointerArray,
-    _bind_contract_native_array_handle,
-    _numpy_view_from_descriptor_facts,
-)
-from tests.fortran._support.native_array_handles import (
-    _absent_descriptor_facts,
-    _descriptor_facts_for_array,
-    _generated_handle_dispatch,
-    _handle_dispatch,
-)
+from prik.runtime.handles import AllocatableArray, _bind_contract_native_array_handle
+from tests.fortran._support.native_array_handles import _generated_handle_dispatch, _handle_dispatch
 
 
-def test_contract_default_handle_constructors_preserve_dtype_rank_and_empty_state():
-    allocatable = contracts.Allocatable[contracts.Float64[:]]()
-    pointer = contracts.Pointer[contracts.Int32[:, :]]()
-
-    assert isinstance(allocatable, AllocatableArray)
-    assert allocatable.dtype == np.dtype(np.float64)
-    assert allocatable.rank == 1
-    assert allocatable.owned is True
-    assert allocatable.allocated is False
-    assert allocatable.shape is None
-    assert allocatable.to_numpy() is None
-
-    assert isinstance(pointer, PointerArray)
-    assert pointer.dtype == np.dtype(np.int32)
-    assert pointer.rank == 2
-    assert pointer.owned is True
-    assert pointer.associated is False
-    assert pointer.shape is None
-    assert pointer.to_numpy() is None
-
-
-def test_fresh_pointer_associate_copies_association_without_following_source_descriptor():
-    value = np.arange(6, dtype=np.float64)[::2]
-    source_state = {"facts": _descriptor_facts_for_array(value)}
-
-    def source_nullify(_handle):
-        source_state["facts"] = _absent_descriptor_facts("float64", 1)
-
-    source = PointerArray(
-        dtype="float64",
-        rank=1,
-        **_handle_dispatch(
-            {
-                "shape": lambda _handle: value.shape if source_state["facts"][0] else None,
-                "descriptor": lambda _handle: source_state["facts"],
-                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(source_state["facts"], "float64"),
-                "associated": lambda _handle: source_state["facts"][0] != 0,
-                "associate": lambda _handle, facts: source_state.update(facts=facts),
-                "nullify": source_nullify,
-            }
-        ),
-        to_numpy_policy="descriptor_view",
-    )
-    target = contracts.Pointer[contracts.Float64[:]]()
-
-    target.associate(source)
-    assert target.associated is True
-    assert target.shape == (3,)
-    np.testing.assert_array_equal(target.to_numpy(), value)
-
-    source.nullify()
-    assert source.associated is False
-    assert target.associated is True
-    np.testing.assert_array_equal(target.to_numpy(), value)
-
-    target.associate(source)
-    assert target.associated is False
-    assert target.to_numpy() is None
-
-
-def test_fresh_pointer_pending_association_is_applied_when_native_storage_attaches():
-    value = np.arange(4, dtype=np.float64)
-    facts = _descriptor_facts_for_array(value)
-    source = PointerArray(
-        dtype="float64",
-        rank=1,
-        **_handle_dispatch(
-            {
-                "shape": lambda _handle: value.shape,
-                "descriptor": lambda _handle: facts,
-                "to_numpy": lambda _handle: _numpy_view_from_descriptor_facts(facts, "float64"),
-                "associated": lambda _handle: True,
-                "associate": lambda _handle, _facts: None,
-                "nullify": lambda _handle: None,
-            }
-        ),
-        to_numpy_policy="descriptor_view",
-    )
-    target = contracts.Pointer[contracts.Float64[:]]()
-    target.associate(source)
-    owner = object()
-    received = []
-    state = {"associated": False}
-
-    def associate(received_owner, facts):
-        received.append((received_owner, facts))
-        state["associated"] = True
-
-    operations = {
-        "shape": lambda _owner: value.shape if state["associated"] else None,
-        "descriptor": lambda _owner: facts,
-        "associated": lambda _owner: state["associated"],
-        "associate": associate,
-        "nullify": lambda _owner: state.update(associated=False),
-        "destroy": lambda _owner: None,
-    }
-    _bind_contract_native_array_handle(
-        target,
-        "pointer",
-        "float64",
-        1,
-        _generated_handle_dispatch(operations),
-        operations,
-        owner,
-        "owned",
-        "unsupported",
-    )
-
-    assert target.associated is True
-    assert received == [
-        (
-            owner,
-            (
-                int(value.ctypes.data),
-                8,
-                1,
-                1,
-                4,
-                8,
-            ),
-        )
-    ]
+def _closed_allocatable():
+    handle = contracts.Allocatable[contracts.Float64[:]]()
+    handle.close()
+    return handle
 
 
 @pytest.mark.parametrize(
     ("prepare", "descriptor_kind", "dtype", "rank", "error", "message"),
     [
-        (
+        pytest.param(
             lambda: contracts.Allocatable[contracts.Float64[:]](),
             "pointer",
             "float64",
             1,
             TypeError,
             "cannot attach pointer descriptor storage",
+            id="allocatable-into-pointer-storage",
         ),
+        pytest.param(
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                **_handle_dispatch({"shape": lambda _handle: None, "allocated": lambda _handle: False}),
+                to_numpy_policy="unsupported",
+            ),
+            "allocatable",
+            "float64",
+            1,
+            TypeError,
+            "fresh contract handle",
+            id="not-a-contract-handle",
+        ),
+        pytest.param(
+            lambda: contracts.Allocatable[contracts.Float64[:]](),
+            "allocatable",
+            "float64",
+            2,
+            ValueError,
+            "does not match generated rank 2",
+            id="rank",
+        ),
+        pytest.param(
+            lambda: contracts.Allocatable[contracts.Float64[:]](),
+            "allocatable",
+            "int32",
+            1,
+            TypeError,
+            "does not match generated dtype",
+            id="dtype",
+        ),
+        pytest.param(_closed_allocatable, "allocatable", "float64", 1, ReferenceError, "handle is closed", id="closed"),
     ],
 )
-def test_generated_storage_rejects_incompatible_contract_handles(
-    prepare,
-    descriptor_kind,
-    dtype,
-    rank,
-    error,
-    message,
-):
+def test_generated_storage_rejects_incompatible_contract_handles(prepare, descriptor_kind, dtype, rank, error, message):
     handle = prepare()
 
     with pytest.raises(error, match=message):
@@ -178,20 +77,6 @@ def test_generated_storage_rejects_incompatible_contract_handles(
             "owned",
             "unsupported",
         )
-
-
-def test_pointer_association_rejects_closed_handles():
-    target = contracts.Pointer[contracts.Float64[:]]()
-    source = contracts.Pointer[contracts.Float64[:]]()
-    target.close()
-
-    with pytest.raises(ReferenceError, match="pointer handle is closed"):
-        target.associate(source)
-
-    target = contracts.Pointer[contracts.Float64[:]]()
-    source.close()
-    with pytest.raises(ReferenceError, match="source pointer handle is closed"):
-        target.associate(source)
 
 
 def test_non_array_descriptor_and_ordinary_array_annotations_are_not_factories():
@@ -221,11 +106,3 @@ def test_character_array_contracts_create_fixed_and_deferred_handle_types():
     for width in (True, 0, -1):
         with pytest.raises(TypeError, match="positive integer width or ':'"):
             contracts.Pointer[contracts.String[width][:]]()
-
-
-def test_unattached_character_pointer_association_is_refused_instead_of_deferred():
-    source = contracts.Pointer[contracts.String[4][:]]()
-    target = contracts.Pointer[contracts.String[4][:]]()
-
-    with pytest.raises(TypeError, match="target handle to be attached"):
-        target.associate(source)

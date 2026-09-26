@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import difflib
 import os
 import platform
 from pathlib import Path
@@ -415,47 +416,75 @@ def test_documentation_has_automatically_verified_examples():
     assert DOCUMENTED_SOURCES, "mark displayed fixture inputs with prik-doc-source"
 
 
-@pytest.mark.parametrize("source", DOCUMENTED_SOURCES, ids=lambda source: source.test_id)
-def test_documented_source_input(source: DocumentedSource):
-    assert source.source_path.is_file(), f"{source.test_id}: documented source does not exist: {source.source_path}"
+def _documented_source_mismatch(source: DocumentedSource) -> str | None:
+    if not source.source_path.is_file():
+        return f"{source.test_id}: documented source does not exist: {source.source_path}"
     file_text = source.source_path.read_text(encoding="utf-8")
     expected_text = file_text
     if source.selector is not None:
         tree = ast.parse(file_text, filename=str(source.source_path))
         selected = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == source.selector]
-        assert len(selected) == 1, f"{source.test_id}: source selector {source.selector!r} did not name one function"
+        if len(selected) != 1:
+            return f"{source.test_id}: source selector {source.selector!r} did not name one function"
         function = selected[0]
         first_line = min((function.lineno, *(decorator.lineno for decorator in function.decorator_list)))
         expected_text = "\n".join(file_text.splitlines()[first_line - 1 : function.end_lineno])
-    assert source.source_text.rstrip("\n") == expected_text.rstrip("\n")
+    if source.source_text.rstrip("\n") == expected_text.rstrip("\n"):
+        return None
+    diff = difflib.unified_diff(
+        expected_text.rstrip("\n").splitlines(),
+        source.source_text.rstrip("\n").splitlines(),
+        fromfile=str(source.source_path.relative_to(ROOT)),
+        tofile=source.test_id,
+        lineterm="",
+    )
+    return f"{source.test_id}: displayed source differs from its fixture\n" + "\n".join(diff)
 
 
-@pytest.mark.parametrize("block", DOCUMENTED_PYTHON_BLOCKS, ids=lambda block: block.test_id)
-def test_documented_python_block_is_valid(block: DocumentedPythonBlock):
-    """Keep Python examples parseable and semantic contract examples loadable."""
-    ast.parse(block.source, filename=block.test_id)
+def test_documented_source_inputs_match_their_fixtures():
+    mismatches = [message for source in DOCUMENTED_SOURCES if (message := _documented_source_mismatch(source))]
+    assert not mismatches, "\n\n".join(mismatches)
+
+
+def _python_block_problem(block: DocumentedPythonBlock) -> str | None:
+    try:
+        ast.parse(block.source, filename=block.test_id)
+    except SyntaxError as error:
+        return f"{block.test_id}: invalid Python: {error}"
     if "from prik.contracts import" not in block.source:
-        assert not block.expects_contract_error, (
-            f"{block.test_id}: prik-doc-contract: invalid marks a block that loads no contract"
-        )
-        return
+        if block.expects_contract_error:
+            return f"{block.test_id}: prik-doc-contract: invalid marks a block that loads no contract"
+        return None
+    try:
+        pyi_text_to_semantic_module(block.source, module_name="documentation_example")
+    except ValueError as error:
+        if block.expects_contract_error:
+            return None
+        return f"{block.test_id}: contract does not load: {error}"
     if block.expects_contract_error:
-        with pytest.raises(ValueError):
-            pyi_text_to_semantic_module(block.source, module_name="documentation_example")
-        return
-    pyi_text_to_semantic_module(block.source, module_name="documentation_example")
+        return f"{block.test_id}: contract marked prik-doc-contract: invalid loads without error"
+    return None
 
 
-@pytest.mark.parametrize("path", DOC_PATHS, ids=lambda path: str(path.relative_to(ROOT)))
-def test_documented_expected_output_labels_are_automatically_verified(path: Path):
-    lines = path.read_text(encoding="utf-8").splitlines()
-    for index, line in enumerate(lines):
-        if line.strip() not in {"Expected output:", "Output:"}:
-            continue
-        marker_index = _next_nonempty_line(lines, index + 1)
-        assert marker_index < len(lines) and OUTPUT_MARKER.match(lines[marker_index]), (
-            f"{path.relative_to(ROOT)}:{index + 1}: documented output must use prik-doc-test-output"
-        )
+def test_documented_python_blocks_are_valid():
+    """Keep Python examples parseable and semantic contract examples loadable."""
+    problems = [message for block in DOCUMENTED_PYTHON_BLOCKS if (message := _python_block_problem(block))]
+    assert not problems, "\n".join(problems)
+
+
+def test_documented_expected_output_is_automatically_verified():
+    problems = []
+    for path in DOC_PATHS:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.strip() not in {"Expected output:", "Output:"}:
+                continue
+            marker_index = _next_nonempty_line(lines, index + 1)
+            if marker_index >= len(lines) or not OUTPUT_MARKER.match(lines[marker_index]):
+                problems.append(
+                    f"{path.relative_to(ROOT)}:{index + 1}: documented output must use prik-doc-test-output"
+                )
+    assert not problems, "\n".join(problems)
 
 
 @pytest.mark.parametrize("example", DOCUMENTATION_EXAMPLES, ids=lambda example: example.test_id)

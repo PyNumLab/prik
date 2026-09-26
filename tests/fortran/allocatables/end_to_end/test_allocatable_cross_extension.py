@@ -77,12 +77,39 @@ def test_caller_created_allocatable_crosses_separately_built_extensions(tmp_path
     values.close()
     assert values.closed is True
 
+    # A reader refuses a capsule with another ABI name before reading it.
+    tampered = Allocatable[Float64[:]]()
+    first.select_a(tampered)
+    capsule_new = ctypes.pythonapi.PyCapsule_New
+    capsule_new.restype = ctypes.py_object
+    capsule_new.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
+    capsule_get = ctypes.pythonapi.PyCapsule_GetPointer
+    capsule_get.restype = ctypes.c_void_p
+    capsule_get.argtypes = (ctypes.py_object, ctypes.c_char_p)
+    capsule_name = ctypes.pythonapi.PyCapsule_GetName
+    capsule_name.restype = ctypes.c_char_p
+    capsule_name.argtypes = (ctypes.py_object,)
 
-def test_fortran_owned_character_handle_crosses_matching_extensions(tmp_path: Path):
+    published = capsule_name(tampered._native_backend)
+    assert published.startswith(b"prik.native_array_backend.v2.")
+    address = capsule_get(tampered._native_backend, published)
+    assert address
+    stranger = published[: published.rindex(b".")] + b".0000000000000000"
+    tampered._native_backend = capsule_new(address, stranger, None)
+
+    # Only the capsule name differs; the reader must reject it before using the
+    # live backend address.
+    with pytest.raises(ValueError, match="PyCapsule_GetPointer called with incorrect name"):
+        second.total_b(tampered)
+
+
+def test_fortran_owned_character_handle_crosses_matching_extensions_only(tmp_path: Path):
     first_dir = tmp_path / "first"
     second_dir = tmp_path / "second"
+    wrong_width_dir = tmp_path / "wrong_width"
     first_dir.mkdir()
     second_dir.mkdir()
+    wrong_width_dir.mkdir()
     first = _build_text_and_import(
         CHARACTER_CROSS_A_SOURCE,
         "fcharacter_cross_a.f90",
@@ -103,6 +130,16 @@ def test_fortran_owned_character_handle_crosses_matching_extensions(tmp_path: Pa
             "fcharacter_cross_b_wrapper.h",
         },
     )
+    wrong_width = _build_text_and_import(
+        CHARACTER_CROSS_WRONG_WIDTH_SOURCE,
+        "fcharacter_cross_wrong_width.f90",
+        wrong_width_dir,
+        {
+            "bind_c_fcharacter_cross_wrong_width_wrapper.f90",
+            "fcharacter_cross_wrong_width_wrapper.c",
+            "fcharacter_cross_wrong_width_wrapper.h",
+        },
+    )
     values = Allocatable[String[4][:]]()
 
     assert first.select_a(values) is values
@@ -110,6 +147,9 @@ def test_fortran_owned_character_handle_crosses_matching_extensions(tmp_path: Pa
     assert second.select_b(values) is values
     assert first.state_a(values) == np.int32(304)
     assert values.to_numpy().tolist() == [b"red ", b"blue", b"sky "]
+    # An extension whose Fortran owner has another layout refuses the handle.
+    with pytest.raises(TypeError, match="owner does not match"):
+        wrong_width.state(values)
 
     values.close()
 
@@ -146,40 +186,6 @@ def test_fortran_owned_character_handle_crosses_matching_extensions(tmp_path: Pa
     assert second.pointer_state_b(alias) == np.int32(304)
     selected.close()
     alias.close()
-
-
-def test_fortran_owned_character_handle_refuses_a_different_owner_layout(tmp_path: Path):
-    producer_dir = tmp_path / "producer"
-    consumer_dir = tmp_path / "consumer"
-    producer_dir.mkdir()
-    consumer_dir.mkdir()
-    producer = _build_text_and_import(
-        CHARACTER_CROSS_A_SOURCE,
-        "fcharacter_cross_a.f90",
-        producer_dir,
-        {
-            "bind_c_fcharacter_cross_a_wrapper.f90",
-            "fcharacter_cross_a_wrapper.c",
-            "fcharacter_cross_a_wrapper.h",
-        },
-    )
-    consumer = _build_text_and_import(
-        CHARACTER_CROSS_WRONG_WIDTH_SOURCE,
-        "fcharacter_cross_wrong_width.f90",
-        consumer_dir,
-        {
-            "bind_c_fcharacter_cross_wrong_width_wrapper.f90",
-            "fcharacter_cross_wrong_width_wrapper.c",
-            "fcharacter_cross_wrong_width_wrapper.h",
-        },
-    )
-    values = Allocatable[String[4][:]]()
-    producer.select_a(values)
-
-    with pytest.raises(TypeError, match="owner does not match"):
-        consumer.state(values)
-
-    values.close()
 
 
 def test_fortran_owned_character_handle_refuses_a_different_compiler_abi(
@@ -224,45 +230,6 @@ def test_fortran_owned_character_handle_refuses_a_different_compiler_abi(
         second.state_b(values)
 
     values.close()
-
-
-def test_a_backend_capsule_from_another_producer_is_refused_not_interpreted(tmp_path: Path):
-    """A reader refuses a capsule with another ABI name before reading it."""
-    module = _build_text_and_import(
-        ALLOCATABLE_CROSS_A_SOURCE,
-        "fallocatable_cross_a.f90",
-        tmp_path,
-        {
-            "bind_c_fallocatable_cross_a_wrapper.f90",
-            "fallocatable_cross_a_wrapper.c",
-            "fallocatable_cross_a_wrapper.h",
-        },
-    )
-    values = Allocatable[Float64[:]]()
-    module.select_a(values)
-    assert module.total_a(values) == np.float64(3.0)
-
-    capsule_new = ctypes.pythonapi.PyCapsule_New
-    capsule_new.restype = ctypes.py_object
-    capsule_new.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
-    capsule_get = ctypes.pythonapi.PyCapsule_GetPointer
-    capsule_get.restype = ctypes.c_void_p
-    capsule_get.argtypes = (ctypes.py_object, ctypes.c_char_p)
-    capsule_name = ctypes.pythonapi.PyCapsule_GetName
-    capsule_name.restype = ctypes.c_char_p
-    capsule_name.argtypes = (ctypes.py_object,)
-
-    published = capsule_name(values._native_backend)
-    assert published.startswith(b"prik.native_array_backend.v2.")
-    address = capsule_get(values._native_backend, published)
-    assert address
-    stranger = published[: published.rindex(b".")] + b".0000000000000000"
-    values._native_backend = capsule_new(address, stranger, None)
-
-    # Only the capsule name differs; the reader must reject it before using the
-    # live backend address.
-    with pytest.raises(ValueError, match="PyCapsule_GetPointer called with incorrect name"):
-        module.total_a(values)
 
 
 @pytest.mark.skipif(shutil.which("valgrind") is None, reason="Valgrind is required for native ownership checks")

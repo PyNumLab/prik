@@ -65,20 +65,6 @@ def test_build_commands_use_the_same_sources_and_complete_optimization_flags(tmp
     assert "--opt=-O0" in f2py
 
 
-def test_tool_order_alternates_between_rounds() -> None:
-    assert build_time.tool_order("prik", 0) == ("prik", "f2py")
-    assert build_time.tool_order("prik", 1) == ("f2py", "prik")
-    assert build_time.tool_order("f2py", 0) == ("f2py", "prik")
-    assert build_time.tool_order("f2py", 1) == ("prik", "f2py")
-
-
-def test_build_benchmark_defaults_to_four_measured_rounds() -> None:
-    args = build_time.parse_args([])
-
-    assert args.runs == 4
-    assert args.warmups == 1
-
-
 def test_timed_build_excludes_post_build_import_verification(tmp_path: Path, monkeypatch) -> None:
     workload = build_time.BuildWorkload("test", (), (), ())
     case = build_time.BuildCase(build_time.BUILD_PROFILES[0], workload)

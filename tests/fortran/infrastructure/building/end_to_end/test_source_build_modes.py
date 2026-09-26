@@ -334,43 +334,17 @@ def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
         sys.modules.pop("geometry", None)
 
 
-def test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper(tmp_path: Path):
-    source = tmp_path / SCALAR_SOURCE.name
-    build_dir = tmp_path / "build"
-    shutil.copyfile(SCALAR_SOURCE, source)
-
-    result = build_fortran_extension(
-        source,
-        output_dir=build_dir,
-        preprocessing=PreprocessingConfig(),
-    )
-
-    assert result.compiled is True
-    assert result.build_makefile is None
-    assert any(
-        path.name == "prik_binding.h" and path.parent.name == "binding_support" for path in result.generated_files
-    )
-    support_license = build_dir / "binding_support" / "LICENSE"
-    assert support_license in result.generated_files
-    assert "Copyright (c) 2026 Said Hadjout" in support_license.read_text(encoding="utf-8")
-
-    sys.modules.pop(result.module_name, None)
-    sys.path.insert(0, str(build_dir))
-    try:
-        module = _sole_native_module(importlib.import_module(result.module_name))
-    finally:
-        sys.path.remove(str(build_dir))
-    assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
-
-
 def test_source_build_result_records_structured_native_plan(tmp_path: Path):
+    """The internal preprocessor still builds an importable wrapper whose result records its native plan."""
     source = tmp_path / SCALAR_SOURCE.name
     shutil.copyfile(SCALAR_SOURCE, source)
 
-    result = build_fortran_extension(source, output_dir=tmp_path)
+    result = build_fortran_extension(source, output_dir=tmp_path, preprocessing=PreprocessingConfig())
 
     plan = result.native_build_plan
     object_path = tmp_path / "scale.o"
+    assert result.compiled is True
+    assert result.build_makefile is None
     assert isinstance(plan, NativeBuildPlan)
     assert result.to_dict()["native_build_plan"] == plan.to_dict()
     assert plan.compilation_units[0].source == source
@@ -382,6 +356,20 @@ def test_source_build_result_records_structured_native_plan(tmp_path: Path):
     assert plan.include_dirs == (tmp_path,)
     assert plan.link_items == (NativeLinkItem("object", object_path),)
     assert "native_inputs" not in result.to_dict()
+    assert any(
+        path.name == "prik_binding.h" and path.parent.name == "binding_support" for path in result.generated_files
+    )
+    support_license = tmp_path / "binding_support" / "LICENSE"
+    assert support_license in result.generated_files
+    assert "Copyright (c) 2026 Said Hadjout" in support_license.read_text(encoding="utf-8")
+
+    sys.modules.pop(result.module_name, None)
+    sys.path.insert(0, str(tmp_path))
+    try:
+        module = _sole_native_module(importlib.import_module(result.module_name))
+    finally:
+        sys.path.remove(str(tmp_path))
+    assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
 
 
 def test_source_build_reuses_native_plan_for_additional_compile_and_link_inputs(tmp_path: Path):
@@ -530,41 +518,25 @@ def test_cli_builds_from_a_source_directory_and_prebuilt_object_only(tmp_path: P
 
 
 def test_native_link_plan_serializes_interleaved_item_kinds():
-    plan = NativeBuildPlan(
-        link_items=(
-            NativeLinkItem("object", Path("objects/entry.o")),
-            NativeLinkItem("linker_argument", "-Wl,--start-group"),
-            NativeLinkItem("archive", Path("lib/libsolver.a")),
-            NativeLinkItem("shared_library", Path("lib/libsupport.so")),
-            NativeLinkItem("named_library", "lapack"),
-            NativeLinkItem("linker_argument", "-Wl,--end-group"),
-        )
-    )
-
-    assert plan.to_dict()["link_items"] == [
-        {"kind": "object", "path": "objects/entry.o"},
-        {"kind": "linker_argument", "argument": "-Wl,--start-group"},
-        {"kind": "archive", "path": "lib/libsolver.a"},
-        {"kind": "shared_library", "path": "lib/libsupport.so"},
-        {"kind": "named_library", "name": "lapack"},
-        {"kind": "linker_argument", "argument": "-Wl,--end-group"},
-    ]
-
-
-def test_native_link_plan_preserves_language_requirements_for_every_item_kind():
-    """A serialized link plan must retain every fact used to select its driver."""
+    """A serialized link plan keeps item order and every language fact used to select its driver."""
     plan = NativeBuildPlan(
         link_items=(
             NativeLinkItem("object", Path("objects/entry.o"), language="fortran"),
-            NativeLinkItem("named_library", "runtime", language="fortran"),
-            NativeLinkItem("linker_argument", "-pthread", language="c"),
+            NativeLinkItem("linker_argument", "-Wl,--start-group"),
+            NativeLinkItem("archive", Path("lib/libsolver.a")),
+            NativeLinkItem("shared_library", Path("lib/libsupport.so")),
+            NativeLinkItem("named_library", "lapack", language="fortran"),
+            NativeLinkItem("linker_argument", "-Wl,--end-group", language="c"),
         )
     )
 
     assert plan.to_dict()["link_items"] == [
         {"kind": "object", "path": "objects/entry.o", "language": "fortran"},
-        {"kind": "named_library", "name": "runtime", "language": "fortran"},
-        {"kind": "linker_argument", "argument": "-pthread", "language": "c"},
+        {"kind": "linker_argument", "argument": "-Wl,--start-group"},
+        {"kind": "archive", "path": "lib/libsolver.a"},
+        {"kind": "shared_library", "path": "lib/libsupport.so"},
+        {"kind": "named_library", "name": "lapack", "language": "fortran"},
+        {"kind": "linker_argument", "argument": "-Wl,--end-group", "language": "c"},
     ]
 
 

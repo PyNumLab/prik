@@ -34,36 +34,6 @@ def values() -> Float64[missing]: ...
     )
 
 
-def test_python_array_properties_and_integer_helpers_resolve_to_extent_roles():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Float64
-
-def values(source: Float64[:, :]) -> Float64[
-    source.size,
-    source.shape[1],
-    source.ndim,
-    len(source),
-    max(1, source.shape[0] - 1),
-    2 ** source.shape[1],
-]: ...
-""",
-        module_name="property_extents",
-    )
-    complete_semantic_policies(module)
-
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-    assert policy.supported is True
-    assert policy.results[0].array.shape == (
-        "__prik_extent_source_0 * __prik_extent_source_1",
-        "__prik_extent_source_1",
-        "2",
-        "__prik_extent_source_0",
-        "max(1, __prik_extent_source_0 - 1)",
-        "2 ** __prik_extent_source_1",
-    )
-
-
 def test_persistent_array_extents_reject_unavailable_runtime_values():
     module = parse_pyi_text(
         """

@@ -4,42 +4,11 @@ from pathlib import Path
 
 import pytest
 
-import prik.preprocessing.fortran as fortran_preprocessing
 import prik.preprocessing.source as preprocessing
 from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
 )
-
-
-def test_preprocess_source_reparses_fortran_mapping_when_native_expansion_returns_none(monkeypatch, tmp_path: Path):
-    source = tmp_path / "solver.F90"
-    source.write_text("integer :: value\n", encoding="utf-8")
-    monkeypatch.setattr(
-        preprocessing.subprocess,
-        "run",
-        lambda *_args, **_kwargs: type("Done", (), {"returncode": 0, "stdout": "ignored\n", "stderr": ""})(),
-    )
-    monkeypatch.setattr(
-        fortran_preprocessing,
-        "expand_native_fortran_includes",
-        lambda *_args, **_kwargs: ("integer :: value\n", [], [], []),
-    )
-
-    result = preprocessing.preprocess_source(
-        source,
-        language="fortran",
-        config=PreprocessingConfig(mode="compiler", compiler=str(tmp_path / "gfortran")),
-    )
-
-    assert result.source_mappings == [
-        preprocessing.SourceMapping(
-            generated_line=1,
-            original_path=str(source),
-            original_line=1,
-            include_stack=[str(source)],
-        )
-    ]
 
 
 def test_preprocess_source_preserves_fortran_native_metadata(monkeypatch, tmp_path: Path):

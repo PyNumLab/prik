@@ -243,7 +243,7 @@ than reconstructed by either backend.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Planner](../../../tests/fortran/infrastructure/codegen/test_planner.py) | Namespace grouping, exports, class lookup, array projection, and failure on missing, empty, or unsupported policy. |
+| [Planner](../../../tests/fortran/infrastructure/codegen/test_planner.py) | Namespace grouping, publication ownership, folded-name symbols, entrypoint call order, and failure on missing, empty, or unsupported policy. |
 | [Plan ownership and freezing](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | A plan is editable before generation; the generator validates and freezes it before backend and printer use. |
 | [Overload dispatch plans](../../../tests/fortran/generic_interfaces/codegen/test_overload_dispatch_plan.py) | Candidate order, matching, and pre-call dispatch for supported generic interfaces. |
 | [Native handle planning](../../../tests/fortran/memory_management/codegen/test_native_handle_planning.py) | Descriptor-handle state, operation sets, required headers, and central plan validation. |

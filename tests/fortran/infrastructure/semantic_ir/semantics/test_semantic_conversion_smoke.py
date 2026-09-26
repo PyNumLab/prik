@@ -7,22 +7,9 @@ from tests.fortran._support.fixture_outputs import parse_fixture
 from tests.fortran._support.paths import PARSER_FIXTURE_ROOT as TESTS_DIR
 from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES
 from tests.fortran._support.fixture_outputs import (
-    SEMANTICS_FIXTURE_DIR,
     semantic_payload_for_fixture,
     semantics_fixture_path,
 )
-
-
-def test_semantics_fixture_suite_has_fixtures():
-    assert FORTRAN_FIXTURES, "No final general Fortran parser fixtures found"
-
-
-def test_semantic_fixtures_match_fortran_data_one_to_one():
-    expected = {path.with_suffix(".json").name for path in FORTRAN_FIXTURES}
-    actual = {path.name for path in SEMANTICS_FIXTURE_DIR.glob("*.json")}
-
-    assert not sorted(expected - actual)
-    assert not sorted(actual - expected)
 
 
 def _iter_semantic_types(node):
@@ -48,15 +35,12 @@ def test_semantic_model_fixture_suite(fixture: Path):
     expected_path = semantics_fixture_path(fixture)
     expected = json.loads(expected_path.read_text(encoding="utf-8"))
 
-    assert semantic_payload_for_fixture(fixture) == expected
+    payload = semantic_payload_for_fixture(fixture)
 
-
-def test_semantic_fixtures_do_not_contain_unknown_types():
-    unknown_types = []
-    for path in SEMANTICS_FIXTURE_DIR.glob("*.json"):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        for semantic_type in _iter_semantic_types(payload):
-            if semantic_type.get("name") == "Unknown" or semantic_type.get("dtype") == "Unknown":
-                unknown_types.append(path.name)
-
-    assert not unknown_types, f"Unknown semantic types in fixtures: {unknown_types[:20]}"
+    assert payload == expected
+    unknown = [
+        semantic_type
+        for semantic_type in _iter_semantic_types(payload)
+        if semantic_type.get("name") == "Unknown" or semantic_type.get("dtype") == "Unknown"
+    ]
+    assert not unknown, f"Unknown semantic types: {unknown[:20]}"

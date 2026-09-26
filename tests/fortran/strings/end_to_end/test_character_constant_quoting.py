@@ -21,36 +21,29 @@ NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 SOURCE = (NATIVE_FIXTURES / "fcharacter_constant_quoting.f90").read_text(encoding="utf-8")
 
 
-@pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    """Build the quoting source once for the read-only checks."""
-    tmp_path = tmp_path_factory.mktemp("character_quoting")
+def test_character_constants_hold_their_declared_characters_in_extension_and_contract(tmp_path: Path):
+    """Each constant holds exactly the characters its declared length counts.
+
+    A doubled quote is one quote, a literal's kind is a type fact rather than
+    part of the value, and the generated contract publishes the same value the
+    built extension returns.
+    """
     source = tmp_path / "quoting.f90"
     source.write_text(SOURCE, encoding="utf-8")
     result = build_fortran_extension(source, output_dir=tmp_path / "build", output_name="quoting_api")
-    return _import_from_build_dir(result.module_name, result.output_dir)
+    built = _import_from_build_dir(result.module_name, result.output_dir)
 
+    expected = {
+        "word": "don't",
+        "pair": 'a"b',
+        "plain": "abcd",
+        "tagged": "abc",
+        "numbered": "xyz",
+        "tagged_quote": "don't",
+    }
+    assert {name: getattr(built.quoting_mod, name) for name in expected} == expected
 
-def test_a_doubled_quote_reaches_python_as_one_quote(built):
-    """Each constant holds exactly the characters its declared length counts."""
-    assert built.quoting_mod.word == "don't"
-    assert built.quoting_mod.pair == 'a"b'
-    assert built.quoting_mod.plain == "abcd"
-
-
-def test_a_literal_states_its_kind_without_the_kind_joining_the_value(built):
-    """A literal's kind is a type fact, so only its characters are the value."""
-    assert built.quoting_mod.tagged == "abc"
-    assert built.quoting_mod.numbered == "xyz"
-    assert built.quoting_mod.tagged_quote == "don't"
-
-
-def test_a_generated_contract_states_the_declared_characters(tmp_path: Path):
-    """The contract publishes the same value the extension returns."""
-    source = tmp_path / "quoting.f90"
-    source.write_text(SOURCE, encoding="utf-8")
     contracts = tmp_path / "contracts"
-
     _generate_checked_pyi_contract(source, contracts, None)
     contract = (contracts / "quoting_mod.pyi").read_text(encoding="utf-8")
 

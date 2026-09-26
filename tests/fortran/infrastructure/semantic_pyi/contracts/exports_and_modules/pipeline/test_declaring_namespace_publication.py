@@ -81,14 +81,15 @@ def _plan(entry: Path, tmp_path: Path, name: str):
 ALL_NAMES = ["counter", "area_i", "area_r", "scale_value", "area"]
 
 
-@pytest.mark.parametrize("name", ["counter", "area"])
-def test_the_declaring_namespace_may_publish_either_kind(name: str, tmp_path: Path):
-    """Publishing one where it is declared is what a source build already does."""
+def test_the_declaring_namespace_may_publish_every_kind(tmp_path: Path):
+    """Publishing a variable, procedure, and generic where declared is what a source build already does."""
     entry = _package(tmp_path, home_exports=ALL_NAMES, facade="__all__ = []\n")
 
-    result = _plan(entry, tmp_path, f"declaring_only_{name}")
+    result = _plan(entry, tmp_path, "declaring_only")
 
-    assert result.output_dir.is_dir()
+    generated = (result.output_dir / "declaring_only_wrapper.c").read_text(encoding="utf-8")
+    assert generated.count("static PyObject * module_get_counter(void) {") == 1
+    assert '"area"' in generated
 
 
 def test_a_facade_may_publish_the_declaring_namespaces_variable(tmp_path: Path):
@@ -146,4 +147,5 @@ def test_a_procedure_still_reaches_python_through_a_facade(tmp_path: Path):
 
     result = _plan(entry, tmp_path, "procedure_facade")
 
-    assert result.output_dir.is_dir()
+    generated = (result.output_dir / "procedure_facade_wrapper.c").read_text(encoding="utf-8")
+    assert '"scale_value"' in generated

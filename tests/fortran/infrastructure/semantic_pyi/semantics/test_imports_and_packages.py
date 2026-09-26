@@ -19,7 +19,6 @@ from tests.fortran._support.pyi_conversion import (
     CONTRACT_IMPORT,
     parse_pyi_text,
 )
-import prik.pipeline.pyi as pyi_pipeline
 
 
 def test_convert_pyi_to_ir_requires_imported_contract_types():
@@ -40,9 +39,12 @@ value: Float64
     assert module.variables[0].semantic_type.name == "Float64"
 
 
-def test_convert_pyi_to_ir_accepts_import_aliases():
+def test_convert_pyi_to_ir_records_absolute_relative_and_aliased_imports():
     module = parse_pyi_text(
-        "from list_input import delete_input_list as delete_input\n",
+        "from list_input import delete_input_list as delete_input\n"
+        "from m import a, b as c\n"
+        "from ..types_mod import particle\n"
+        "from . import local_particle\n",
         module_name="edited",
     )
 
@@ -50,22 +52,13 @@ def test_convert_pyi_to_ir_accepts_import_aliases():
         SemanticImport(
             module="list_input",
             items=[SemanticImportItem(source="delete_input_list", target="delete_input")],
-        )
-    ]
-
-
-def test_convert_pyi_to_ir_accepts_relative_imports():
-    module = parse_pyi_text("from ..types_mod import particle\nfrom . import local_particle\n", module_name="edited")
-
-    assert module.imports == [
-        SemanticImport(
-            module="..types_mod",
-            items=[SemanticImportItem(source="particle")],
         ),
         SemanticImport(
-            module=".",
-            items=[SemanticImportItem(source="local_particle")],
+            module="m",
+            items=[SemanticImportItem(source="a"), SemanticImportItem(source="b", target="c")],
         ),
+        SemanticImport(module="..types_mod", items=[SemanticImportItem(source="particle")]),
+        SemanticImport(module=".", items=[SemanticImportItem(source="local_particle")]),
     ]
 
 
@@ -165,70 +158,41 @@ class particle:
 
 
 def test_pyi_paths_to_semantic_modules_reconciles_relative_namespace_type_refs(tmp_path: Path):
-    physics = tmp_path / "physics.pyi"
-    a_types = tmp_path / "a_types.pyi"
-    physics.write_text(
+    """`from . import a_types [as at]` qualifies a wrapped type by its declaring module."""
+    (tmp_path / "physics.pyi").write_text(
         """
 from . import a_types
-
-def move(p: a_types.state) -> None: ...
-""",
-        encoding="utf-8",
-    )
-    a_types.write_text(
-        """
-class state:
-    pass
-""",
-        encoding="utf-8",
-    )
-
-    modules = {module.name: module for module in pyi_paths_to_semantic_modules(tmp_path)}
-    state_ref = modules["physics"].functions[0].arguments[0].semantic_type.metadata["external_type_ref"]
-
-    assert state_ref == {
-        "name": "state",
-        "local_name": "a_types.state",
-        "origin_module": "a_types",
-        "wrapped": True,
-        "representation": "wrapped",
-    }
-
-
-def test_convert_pyi_to_ir_accepts_relative_namespace_alias_type_refs(tmp_path: Path):
-    physics = tmp_path / "physics.pyi"
-    a_types = tmp_path / "a_types.pyi"
-    physics.write_text(
-        """
 from . import a_types as at
 
-def move(p: at.state) -> None: ...
+def move(p: a_types.state) -> None: ...
+
+def move_alias(p: at.state) -> None: ...
 """,
         encoding="utf-8",
     )
-    a_types.write_text(
-        """
-class state:
-    pass
-""",
-        encoding="utf-8",
-    )
+    (tmp_path / "a_types.pyi").write_text("class state:\n    pass\n", encoding="utf-8")
 
     modules = {module.name: module for module in pyi_paths_to_semantic_modules(tmp_path)}
-    state_ref = modules["physics"].functions[0].arguments[0].semantic_type.metadata["external_type_ref"]
+    refs = [
+        function.arguments[0].semantic_type.metadata["external_type_ref"] for function in modules["physics"].functions
+    ]
 
-    assert state_ref == {
-        "name": "state",
-        "local_name": "at.state",
-        "origin_module": "a_types",
-        "wrapped": True,
-        "representation": "wrapped",
-    }
+    assert refs == [
+        {
+            "name": "state",
+            "local_name": local_name,
+            "origin_module": "a_types",
+            "wrapped": True,
+            "representation": "wrapped",
+        }
+        for local_name in ("a_types.state", "at.state")
+    ]
 
 
 def test_pyi_paths_to_semantic_modules_preserves_dotted_module_names_from_directory(tmp_path: Path):
     package = tmp_path / "shared"
     package.mkdir()
+    (tmp_path / "ignored.pyi").mkdir()
     (tmp_path / "physics.pyi").write_text(
         """
 from shared.types_mod import particle
@@ -248,7 +212,8 @@ class particle(Opaque):
     modules = {module.name: module for module in pyi_paths_to_semantic_modules(tmp_path)}
     particle_ref = modules["physics"].functions[0].arguments[0].semantic_type.metadata["external_type_ref"]
 
-    assert "shared.types_mod" in modules
+    # A directory named like a contract is not one.
+    assert set(modules) == {"physics", "shared.types_mod"}
     assert particle_ref["origin_module"] == "shared.types_mod"
     assert particle_ref["representation"] == "opaque"
 
@@ -263,13 +228,6 @@ def test_pyi_paths_to_semantic_modules_handles_duplicate_roots_and_ambiguous_mod
     with pytest.raises(ValueError) as error:
         pyi_paths_to_semantic_modules([tmp_path, package])
     assert str(error.value) == f"Ambiguous module name for {pyi_path}: 'shared.types_mod' or 'types_mod'"
-
-
-def test_pyi_paths_to_semantic_modules_ignores_directories_with_pyi_suffix(tmp_path: Path):
-    (tmp_path / "ignored.pyi").mkdir()
-    (tmp_path / "types_mod.pyi").write_text("class particle:\n    pass\n", encoding="utf-8")
-
-    assert [module.name for module in pyi_paths_to_semantic_modules(tmp_path)] == ["types_mod"]
 
 
 def test_pyi_file_to_semantic_module_and_modules_forward_module_name_encoding_and_filename(tmp_path: Path):
@@ -296,49 +254,11 @@ def test_pyi_file_to_semantic_module_and_modules_forward_module_name_encoding_an
     assert "Expected typed argument: 'x'" in message
 
 
-def test_pyi_conversion_cache_reuses_file_parse_for_same_module_key(monkeypatch, tmp_path: Path):
-    pyi_path = tmp_path / "types_mod.pyi"
-    pyi_path.write_text(f"{CONTRACT_IMPORT}value: Int32\n", encoding="utf-8")
-
-    original_parse = pyi_pipeline.parse_pyi_text
-    parsed_filenames: list[str] = []
-
-    def parse_once(source: str, *, filename: str = "<pyi>"):
-        parsed_filenames.append(filename)
-        return original_parse(source, filename=filename)
-
-    monkeypatch.setattr(pyi_pipeline, "parse_pyi_text", parse_once)
-    cache = pyi_pipeline._PyiSemanticModuleCache()
-
-    first = cache.file_to_semantic_module(pyi_path)
-    second = cache.file_to_semantic_module(pyi_path, module_name="types_mod")
-    renamed = cache.file_to_semantic_module(pyi_path, module_name="renamed_types")
-
-    assert first is second
-    assert renamed is not first
-    assert [Path(filename) for filename in parsed_filenames] == [pyi_path, pyi_path]
-
-
-def test_convert_pyi_to_ir_and_import_parser_edge_cases():
-    module = pyi_text_to_semantic_module("from m import a, b as c\n", module_name="edited")
-    assert module.name == "edited"
-    assert module.imports == [
-        SemanticImport(
-            module="m",
-            items=[
-                SemanticImportItem(source="a"),
-                SemanticImportItem(source="b", target="c"),
-            ],
-        ),
-    ]
-
-    with pytest.raises(SyntaxError):
-        pyi_text_to_semantic_module("from m import\n", module_name="edited")
-
-
 def test_generated_native_scope_comes_from_contract_filename():
-    parsed = parse_fortran_file(
-        """
+    """A renamed module contract names its native module; a standalone contract names none."""
+    module_source = fortran_file_to_semantic_modules(
+        parse_fortran_file(
+            """
 module solver_mod
 contains
   subroutine solve(value)
@@ -346,30 +266,30 @@ contains
   end subroutine solve
 end module solver_mod
 """
-    )
-    module = fortran_file_to_semantic_modules(parsed)[0]
-    loaded = parse_pyi_text(emit_module(module), module_name="renamed_contract")
-
-    assert loaded.name == "renamed_contract"
-    assert native_contract_issues(loaded) == []
-    assert loaded.origin.native_name == "renamed_contract"
-    assert loaded.functions[0].origin.native_scope == "renamed_contract"
-
-
-def test_generated_standalone_contract_retains_standalone_native_placement():
-    parsed = parse_fortran_file(
-        """
+        )
+    )[0]
+    standalone_source = fortran_file_to_semantic_modules(
+        parse_fortran_file(
+            """
 subroutine solve(value)
   real(8), intent(in) :: value
 end subroutine solve
 """
-    )
-    module = fortran_file_to_semantic_modules(parsed, standalone_module_name="root_contract")[0]
-    generated = emit_module(module)
-    loaded = parse_pyi_text(generated, module_name="renamed_root_contract")
+        ),
+        standalone_module_name="root_contract",
+    )[0]
+    standalone_text = emit_module(standalone_source)
 
-    assert "@standalone" in generated
-    assert loaded.functions[0].origin.native_scope is None
-    assert native_contract_issues(loaded) == []
-    assert loaded.origin.native_name == "renamed_root_contract"
-    assert loaded.functions[0].origin.native_scope is None
+    loaded = parse_pyi_text(emit_module(module_source), module_name="renamed_contract")
+    standalone = parse_pyi_text(standalone_text, module_name="renamed_root_contract")
+
+    assert "@standalone" in standalone_text
+    assert native_contract_issues(loaded) == native_contract_issues(standalone) == []
+    assert (loaded.origin.native_name, loaded.functions[0].origin.native_scope) == (
+        "renamed_contract",
+        "renamed_contract",
+    )
+    assert (standalone.origin.native_name, standalone.functions[0].origin.native_scope) == (
+        "renamed_root_contract",
+        None,
+    )

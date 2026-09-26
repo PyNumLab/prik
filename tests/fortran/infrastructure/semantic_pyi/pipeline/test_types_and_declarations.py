@@ -1,529 +1,84 @@
-"""Tests split by stable ownership concept from `test_imports_and_packages.py`."""
+"""Fortran declarations emit their `.pyi` spelling, and that contract reloads unchanged."""
 
 from pathlib import Path
 
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import complete_python_export_policy
-from prik.printers import (
-    PyiPrinter,
-    emit_module,
-)
+from prik.printers import emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from prik.semantics.models import (
-    ProjectionMapping,
-    SemanticArgument,
-    SemanticArrayContract,
-    SemanticClass,
-    SemanticConstraint,
-    SemanticFunction,
-    SemanticMethod,
-    SemanticModule,
-    SemanticOrigin,
-    SemanticStorageContract,
-    SemanticType,
-)
-from tests.fortran._support.printer_models import (
-    generate_pyi,
-    parse_pyi_text,
-)
+from tests.fortran._support.printer_models import parse_pyi_text
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
-
-def test_emit_basic_scalar_function():
-    source = """
-module math_mod
-
+SCALAR_ARGUMENTS_AND_RESULTS = """
+module scalars
 contains
-
 subroutine add(a, b, c)
-
     real(8), intent(in) :: a
     real(8), intent(in) :: b
     real(8), intent(out) :: c
-
 end subroutine
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "def add(" in code
-
-    assert "@native_call([Addr(Arg(0)), Addr(Arg(1)), Return('c', 0)])" in code
-    assert "a: Float64" in code
-    assert "b: Float64" in code
-    assert "c: Addr(Float64)" not in code
-    assert 'Returns["c"' not in code
-    assert ") -> Float64: ..." in code
-
-
-def test_fortran_generated_contracts_emit_python_name_without_binding_the_same_name():
-    """A capitalized Fortran procedure is written lower case and binds nothing.
-
-    Fortran reaches a procedure without regard to case, so the lower-case
-    Python name already names it and no original spelling has to be recorded.
-    """
-    module = SemanticModule(
-        name="math_mod",
-        functions=[
-            SemanticFunction(
-                "SQUARE_R4",
-                native_name="SQUARE_R4",
-                arguments=[SemanticArgument("X", SemanticType("Float32"))],
-                return_type=SemanticType("Float32"),
-                origin=SemanticOrigin(source_language="fortran", native_name="SQUARE_R4", native_scope="math_mod"),
-            )
-        ],
-        origin=SemanticOrigin(source_language="fortran", source_kind="module"),
-    )
-    complete_python_export_policy(module)
-
-    code = emit_module(module, normalize_public_names=True)
-
-    assert "def square_r4(" in code
-    assert "@bind(" not in code
-
-
-def test_emit_rejects_unknown_semantic_type():
-    module = SemanticModule(
-        name="bad",
-        variables=[
-            SemanticArgument(
-                name="x",
-                semantic_type=SemanticType("Unknown", dtype="Unknown"),
-            )
-        ],
-    )
-
-    with pytest.raises(ValueError, match="unresolved semantic type 'Unknown'"):
-        emit_module(module)
-
-
-def test_emit_no_argument_subroutine_is_single_line_signature():
-    source = """
-module no_arg_mod
-
-contains
-
 subroutine ping()
 end subroutine
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "def ping() -> None: ..." in code
-    assert "def ping(\n    \n)" not in code
-
-
-def test_emit_array_constraints():
-    source = """
-module array_mod
-
-contains
-
-subroutine scale(x)
-
-    real(8), intent(inout) :: x(:)
-
+function norm2(x) result(r)
+    real(8), intent(in) :: x(:)
+    real(8) :: r
+end function
+subroutine solve(tol)
+    real(8), intent(in), optional :: tol
 end subroutine
-
+subroutine maybe_status(status)
+    integer(4), intent(out), optional :: status
+end subroutine maybe_status
+subroutine normalize(name)
+    character(len=8), intent(inout) :: name
+end subroutine
+subroutine scale_in_place(value, factor)
+    real(8), intent(inout) :: value
+    real(8), intent(in) :: factor
+end subroutine scale_in_place
 end module
 """
 
-    code = generate_pyi(source)
-
-    assert "def scale(" in code
-
-    assert "Float64[" in code
-
-    assert "Shape" not in code
-    assert "Float64[::]" in code
-
-
-def test_emit_matrix_shapes():
-    source = """
-module matrix_mod
-
+ARRAY_SHAPES = """
+module arrays
 contains
-
 subroutine matvec(A, x, y)
-
     real(8), intent(in) :: A(:, :)
     real(8), intent(in) :: x(:)
     real(8), intent(out) :: y(:)
-
 end subroutine
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "A: Float64[::, ::]" in code
-    assert "Shape" not in code
-    assert "x: Float64[::]" in code
-    assert "y: Float64[::]" in code
-    assert "Annotated[Float64[::]" not in code
-    assert "y: Float64[::]\n) -> None: ..." in code
-
-
-def test_emit_explicit_bound_ranges_as_extents_without_source_dimension_metadata():
-    source = """
-module bound_mod
-contains
-subroutine bounded(n, default_bound, zero_bound, shifted_bound)
+subroutine scale(x)
+    real(8), intent(inout) :: x(:)
+end subroutine
+subroutine explicit(n, fixed, default_bound, zero_bound, shifted_bound)
   integer, intent(in) :: n
+  real(8), intent(in) :: fixed(10, 20)
   real(8), intent(inout) :: default_bound(1:n)
   real(8), intent(inout) :: zero_bound(0:n-1)
   real(8), intent(inout) :: shifted_bound(2:n+1)
-end subroutine bounded
-end module bound_mod
-"""
-    code = generate_pyi(source)
-
-    assert "default_bound: Float64[n]" in code
-    assert "zero_bound: Float64[n]" in code
-    assert "shifted_bound: Float64[n]" in code
-
-
-def test_emit_optional_argument():
-    source = """
-module opt_mod
-
-contains
-
-subroutine solve(A, tol)
-
-    real(8), intent(in) :: A(:, :)
-    real(8), intent(in), optional :: tol
-
-end subroutine
-
+end subroutine explicit
+subroutine assumed_size(ldb, columns, flat, bounded)
+  integer, intent(in) :: ldb
+  real(8), intent(inout) :: columns(3, *)
+  real(8), intent(inout) :: flat(0:*)
+  real(8), intent(inout) :: bounded(0:ldb-1, 0:*)
+end subroutine assumed_size
+subroutine use_labels(labels)
+  character(len=4), intent(in) :: labels(:)
+end subroutine use_labels
+subroutine replace_names(names)
+  character(len=:), allocatable, intent(inout) :: names(:)
+end subroutine replace_names
 end module
 """
 
-    code = generate_pyi(source)
-
-    assert "tol:" in code
-
-    assert "= ..." in code
-
-
-def test_emit_function_result():
-    source = """
-module func_mod
-
-contains
-
-function norm2(x) result(r)
-
-    real(8), intent(in) :: x(:)
-
-    real(8) :: r
-
-end function
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "def norm2(" in code
-
-    assert "-> Float64" in code
-
-
-def test_emit_explicit_shape():
-    source = """
-module shape_mod
-
-contains
-
-subroutine foo(A)
-
-    real(8), intent(in) :: A(10, 20)
-
-end subroutine
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "A: Float64[10, 20]" in code
-
-
-def test_parameter_target_sanitizes_non_identifier_names():
-    assert PyiPrinter._parameter_target("has-dash") == "has_dash"
-    assert PyiPrinter._parameter_target("1value") == "arg_1value"
-    assert PyiPrinter._parameter_target("class!") == "class_"
-    assert PyiPrinter._parameter_target("!!!") == "arg"
-    assert PyiPrinter._requires_explicit_projection_mapping(ProjectionMapping(native_position=1, result_position=0))
-
-
-def test_emit_argument_escapes_original_name_metadata():
-    emitted = PyiPrinter().emit(SemanticArgument('quote"name', SemanticType("Int32")))
-    reparsed = parse_pyi_text(f"def consume({emitted}) -> None: ...\n", module_name="quoted")
-
-    assert emitted == 'quote_name: Annotated[Int32, SourceName("quote\\"name")]'
-    assert reparsed.functions[0].arguments[0].name == 'quote"name'
-
-
-def test_emit_multiple_functions():
-    source = """
-module multi_mod
-
-contains
-
-subroutine foo(x)
-
-    integer, intent(in) :: x
-
-end subroutine
-
-subroutine bar(y)
-
-    real(8), intent(in) :: y
-
-end subroutine
-
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert "def foo(" in code
-
-    assert "def bar(" in code
-
-
-def test_emit_complex_fem_module():
-    source = (NATIVE_FIXTURES / "emit_complex_fem_module.f90").read_text(encoding="utf-8")
-
-    code = generate_pyi(source)
-
-    # --------------------------------------------------------
-    # Class
-    # --------------------------------------------------------
-
-    assert "class mesh" in code
-
-    # --------------------------------------------------------
-    # Procedures
-    # --------------------------------------------------------
-
-    assert "def assemble(" in code
-
-    assert "def compute_norm(" in code
-
-    # --------------------------------------------------------
-    # Matrix annotations
-    # --------------------------------------------------------
-
-    assert "K: Float64[::, ::]" in code
-    assert "connectivity: Int32[::, ::]\n) -> None: ..." in code
-
-    assert "coords: Float64[::, ::]" in code
-
-    assert "connectivity: Int32[::, ::]" in code
-
-    # --------------------------------------------------------
-    # Return type
-    # --------------------------------------------------------
-
-    assert "def compute_norm(" in code
-    assert ") -> Float64: ..." in code
-
-
-def test_emit_empty_module():
-    source = """
-module empty_mod
-end module
-"""
-
-    code = generate_pyi(source)
-
-    assert isinstance(code, str)
-
-
-def test_emit_is_deterministic():
-    source = """
-module stable_mod
-
-contains
-
-subroutine foo(x)
-
-    integer, intent(in) :: x
-
-end subroutine
-
-end module
-"""
-
-    code1 = generate_pyi(source)
-
-    code2 = generate_pyi(source)
-
-    assert code1 == code2
-
-
-def test_printer_emit_visitor_dispatches_semantic_models():
-    printer = PyiPrinter()
-    constraint = SemanticConstraint("Finite")
-    semantic_type = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=1,
-        shape=[":"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(rank=1, shape=[":"], source_shape=[":"]),
-        ),
-    )
-    argument = SemanticArgument("class", semantic_type, optional=True)
-    method = SemanticMethod(name="reset")
-    cls = SemanticClass(
-        name="thing",
-        fields=[SemanticArgument("bad-name", semantic_type)],
-        methods=[method],
-        visibility="private",
-    )
-    func = SemanticFunction(name="wrap", arguments=[argument])
-    module = SemanticModule(name="visitor_mod", classes=[cls], functions=[func])
-
-    assert printer.emit(constraint) == "Finite"
-    assert printer.emit(semantic_type) == "Float64[:]"
-    assert printer.emit(argument) == 'class_: Annotated[Float64[:], SourceName("class")] = ...'
-    assert "def reset(self) -> None: ..." in printer.emit(method)
-    assert "@private\nclass thing:" in printer.emit(cls)
-    assert "var['bad-name']: Float64[:]" in printer.emit(cls)
-    assert "def wrap(" in printer.emit(func)
-    assert "class thing:" in printer.emit(module)
-
-    with pytest.raises(TypeError) as unsupported:
-        printer.emit(object())
-    assert str(unsupported.value) == "Unsupported semantic model for .pyi emission: <class 'object'>"
-
-
-def test_printer_emits_flat_dimension_for_assumed_size_arrays():
-    fortran_type = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=2,
-        shape=["3", ":"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(
-                rank=2,
-                shape=["3", ":"],
-                category="assumed_size",
-                source_shape=["3", "*"],
-                order="ORDER_F",
-                contiguous=True,
-            ),
-        ),
-    )
-    c_type = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=2,
-        shape=[":", "3"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(
-                rank=2,
-                shape=[":", "3"],
-                category="assumed_size",
-                source_shape=["*", "3"],
-                order="ORDER_C",
-                contiguous=True,
-            ),
-        ),
-    )
-
-    assert PyiPrinter().emit(fortran_type) == "Float64[3, Flat]"
-    assert PyiPrinter().emit(c_type) == "Annotated[Float64[Flat, 3], ORDER_C]"
-
-    nondefault_c_type = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=2,
-        shape=[":", ":"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(
-                rank=2,
-                shape=[":", ":"],
-                source_shape=[":", ":"],
-                order="ORDER_C",
-                contiguous=True,
-            ),
-        ),
-    )
-    assert PyiPrinter().emit(nondefault_c_type) == "Annotated[Float64[:, :], ORDER_C]"
-
-    lower_bound_assumed_size = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=1,
-        shape=[":"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(
-                rank=1,
-                shape=[":"],
-                category="assumed_size",
-                source_shape=["0:*"],
-                order="ORDER_F",
-                contiguous=True,
-            ),
-        ),
-    )
-    assert PyiPrinter().emit(lower_bound_assumed_size) == "Float64[Flat]"
-
-    bounded_assumed_size = SemanticType(
-        "Float64",
-        dtype="Float64",
-        rank=2,
-        shape=["LDB", ":"],
-        storage=SemanticStorageContract(
-            kind="array",
-            array=SemanticArrayContract(
-                rank=2,
-                shape=["LDB", ":"],
-                category="assumed_size",
-                source_shape=["0:LDB-1", "0:*"],
-                order="ORDER_F",
-                contiguous=True,
-            ),
-        ),
-    )
-    assert PyiPrinter().emit(bounded_assumed_size) == "Float64[LDB, Flat]"
-
-
-def test_emit_fortran_parameter_defaults_only_when_resolved_to_literals():
-    source = """
-module trig_constants
+PARAMETERS_AND_VALUE_DUMMIES = """
+module value_contract
   real, parameter :: c = cos(0.0)
   integer, parameter :: n = 3 + 4
-end module
-"""
-    code = generate_pyi(source)
-
-    assert "c: Final[Float32]\n" in code
-    assert "c: Final[Float32] = cos(0.0)" not in code
-    assert "n: Final[Int32] = 7" in code
-
-
-def test_fortran_derived_value_dummy_emits_value_native_projection():
-    source = """
-module value_contract
   type :: item
     real(8) :: x
   end type item
@@ -536,35 +91,154 @@ contains
 end module value_contract
 """
 
-    code = generate_pyi(source)
-
-    assert "@native_call([Value(Arg(0))])" in code
-    assert "value: item" in code
-
-
-def test_character_array_pyi_spelling_round_trips_fixed_and_deferred_lengths():
-    source = """
-module char_array_mod
+DERIVED_TYPES_AND_METHODS = """
+module shapes
+  type :: base_matrix
+  end type
+  type, extends(base_matrix) :: sparse_matrix
+    integer :: nrows
+  end type
+  type :: state
+    integer :: id = 7
+    real(8) :: scale = 2.5
+    logical :: enabled = .true.
+  end type state
+  type :: vector
+    real(8), allocatable :: values(:)
+  contains
+    procedure :: scale
+    procedure, pass(owner) :: shift => shift_vector
+    procedure, nopass :: make => make_vector
+  end type vector
+  type(vector), target :: current
+  type(state) :: snapshot
 contains
-  subroutine use_labels(labels)
-    character(len=4), intent(in) :: labels(:)
-  end subroutine use_labels
-  subroutine replace_names(names)
-    character(len=:), allocatable, intent(inout) :: names(:)
-  end subroutine replace_names
-end module char_array_mod
+  subroutine scale(self, alpha)
+    class(vector), intent(inout) :: self
+    real(8), intent(in) :: alpha
+  end subroutine scale
+  subroutine shift_vector(dx, owner, dy)
+    real(8), intent(in) :: dx
+    class(vector), intent(inout) :: owner
+    real(8), intent(in) :: dy
+  end subroutine shift_vector
+  function make_vector(value) result(created)
+    real(8), intent(in) :: value
+    type(vector) :: created
+  end function make_vector
+end module shapes
 """
-    semantic_module = fortran_module_to_semantic_module(parse_fortran_source(source))
-    emitted = emit_module(semantic_module)
 
-    assert "String[4][::]" in emitted
-    assert "Allocatable[String[:][:]]" in emitted
+DEFAULT_PRIVATE_MODULE = """
+module state_mod
+  implicit none
+  private
+  public :: counter
+  integer, parameter :: answer = 42
+  integer :: counter
+  real(8) :: hidden_scale
+contains
+  subroutine ping(x)
+    integer, intent(in) :: x
+  end subroutine
+end module
+"""
 
-    parsed = parse_pyi_text(emitted, module_name="char_array_mod")
-    use_labels = next(func for func in parsed.functions if func.name == "use_labels")
-    assert use_labels.arguments[0].semantic_type.metadata["fortran_character_length"] == "4"
 
-    replace_names = next(func for func in parsed.functions if func.name == "replace_names")
-    names_type = replace_names.arguments[0].semantic_type
-    assert names_type.metadata["fortran_character_length"] == ":"
-    assert names_type.storage.array.allocatable is True
+def _fixture(name: str) -> str:
+    return (NATIVE_FIXTURES / name).read_text(encoding="utf-8")
+
+
+DECLARATION_CASES = {
+    "scalar-arguments-and-results": (
+        SCALAR_ARGUMENTS_AND_RESULTS,
+        [
+            "@native_call([Addr(Arg(0)), Addr(Arg(1)), Return('c', 0)])\n"
+            "def add(\n    a: Float64,\n    b: Float64\n) -> Float64: ...",
+            "def ping() -> None: ...",
+            "def norm2(\n    x: Float64[::]\n) -> Float64: ...",
+            "tol: Float64 = ...",
+            'status: Int32[()] = ...\n) -> Returns["status", Int32[()]] | None: ...',
+            'def normalize(\n    name: String[8]\n) -> Returns["name", String[8]]: ...',
+            "@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale_in_place(\n"
+            '    value: Float64,\n    factor: Float64\n) -> Returns["value", Float64]: ...',
+        ],
+        ['Returns["c"', "c: Addr(Float64)", "Return('status'"],
+    ),
+    "array-shapes": (
+        ARRAY_SHAPES,
+        [
+            "def matvec(\n    A: Float64[::, ::],\n    x: Float64[::],\n    y: Float64[::]\n) -> None: ...",
+            "def scale(\n    x: Float64[::]\n) -> None: ...",
+            "fixed: Float64[10, 20]",
+            "default_bound: Float64[n]",
+            "zero_bound: Float64[n]",
+            "shifted_bound: Float64[n]",
+            "columns: Float64[3, Flat]",
+            "flat: Float64[Flat]",
+            "bounded: Float64[ldb, Flat]",
+            "labels: String[4][::]",
+            "names: Allocatable[String[:][:]]",
+        ],
+        ["Shape", "Annotated[Float64"],
+    ),
+    "parameters-and-value-dummies": (
+        PARAMETERS_AND_VALUE_DUMMIES,
+        [
+            "c: Final[Float32]\n",
+            "n: Final[Int32] = 7",
+            "@native_call([Value(Arg(0))])\ndef score(\n    value: item\n) -> Float64: ...",
+        ],
+        ["cos(0.0)"],
+    ),
+    "derived-types-and-methods": (
+        DERIVED_TYPES_AND_METHODS,
+        [
+            "class sparse_matrix(base_matrix):",
+            "class state:\n    def __init__(\n        self,\n        *,\n        id: Int32 = 7,\n"
+            "        scale: Float64 = 2.5,\n        enabled: Bool = True\n    ) -> None: ...\n\n"
+            "    id: Int32 = 7\n    scale: Float64 = 2.5\n    enabled: Bool = True\n",
+            "    values: Allocatable[Float64[:]]",
+            "    @native_call([Pass(), Addr(Arg(0))])\n    def scale(\n        self,\n        alpha: Float64\n"
+            "    ) -> None: ...",
+            '    @bind("shift_vector")\n    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])\n    def shift(\n'
+            "        self,\n        dx: Float64,\n        dy: Float64\n    ) -> None: ...",
+            '    @staticmethod\n    @bind("make_vector")',
+            "owner: Annotated[vector, Polymorphic]",
+            "current: Annotated[vector, Aliased]",
+            "snapshot: state\n",
+        ],
+        ["        self: vector", "owner: Addr(vector)"],
+    ),
+    "default-private-module": (
+        DEFAULT_PRIVATE_MODULE,
+        ["counter: Int32"],
+        ["answer", "hidden_scale", "ping"],
+    ),
+    "public-private-markers": (
+        _fixture("pyi_visibility_private_public_markers.f90"),
+        ["a: Int32", "b: Int32", "def pub_proc("],
+        ["class hidden_t:", "def hidden_proc("],
+    ),
+    "private-type-members": (
+        _fixture("emit_omits_fortran_source_private_methods_and_fields.f90"),
+        ["class box:", "    id: Int32", '@bind("visible_impl")', "    def visible(self) -> None: ..."],
+        ["secret", "hidden"],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("source", "expected", "absent"),
+    list(DECLARATION_CASES.values()),
+    ids=list(DECLARATION_CASES),
+)
+def test_fortran_declarations_emit_contract_spelling_that_reloads(source: str, expected: list, absent: list):
+    module = fortran_module_to_semantic_module(parse_fortran_source(source, filename="declarations.f90"))
+    complete_python_export_policy(module)
+    complete_contract_imports([module])
+    code = emit_module(module)
+
+    assert [fragment for fragment in expected if fragment not in code] == []
+    assert [fragment for fragment in absent if fragment in code] == []
+    assert emit_module(parse_pyi_text(code, module_name=module.name)) == code

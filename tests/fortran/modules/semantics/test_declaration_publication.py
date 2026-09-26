@@ -32,27 +32,29 @@ def _module(source: str, tmp_path: Path):
     return module
 
 
-def test_a_private_prototype_and_generic_state_their_accessibility(tmp_path: Path):
-    """Semantics records what the module's `private` default says about each."""
+def test_a_private_prototype_and_generic_are_written_but_not_published(tmp_path: Path):
+    """Semantics records the module's `private` default for both declarations.
+
+    The contract still names both for typing and dispatch, and publishes neither.
+    """
     module = _module(PRIVATE_SOURCE, tmp_path)
 
     assert [(item.name, item.visibility) for item in module.prototypes] == [("cb", "private")]
     assert [(item.name, item.visibility) for item in module.overload_sets] == [("hidden_generic", "private")]
 
-
-def test_a_private_prototype_and_generic_are_written_but_not_published(tmp_path: Path):
-    """The contract names both for typing and dispatch, and publishes neither."""
-    module = _module(PRIVATE_SOURCE, tmp_path)
     contract = PyiPrinter().emit(module)
-
     # `run` annotates its callback with the prototype, so the name must exist.
     assert "def cb() -> None: ..." in contract
     assert "def hidden_generic(" in contract
     assert '__all__ = ["run"]' in contract
 
 
-def test_two_procedures_may_name_different_interfaces_the_same_way(tmp_path: Path):
-    """A block inside a procedure is that procedure's, so each keeps its own."""
+def test_a_procedure_local_interface_is_never_a_module_publication(tmp_path: Path):
+    """A block inside a procedure is that procedure's, so each keeps its own.
+
+    Two procedures may name different interfaces the same way; a `use` of the
+    module cannot reach either, so the contract writes both and publishes neither.
+    """
     module = _module(LOCAL_INTERFACE_SOURCE, tmp_path)
 
     assert [(completed_contract_name(item), item.native_name, item.visibility) for item in module.prototypes] == [
@@ -66,12 +68,7 @@ def test_two_procedures_may_name_different_interfaces_the_same_way(tmp_path: Pat
     }
     assert signatures == {"first": ["Int32"], "second": ["Float32"]}
 
-
-def test_a_procedure_local_interface_is_never_a_module_publication(tmp_path: Path):
-    """A `use` of the module cannot reach it, so the contract does not publish it."""
-    module = _module(LOCAL_INTERFACE_SOURCE, tmp_path)
     contract = PyiPrinter(normalize_public_names=True).emit(module)
-
     assert "def first_cb(" in contract
     assert "def second_cb(" in contract
     assert "f: first_cb" in contract
@@ -118,6 +115,14 @@ def test_a_prototype_is_identified_by_its_scope_rather_than_its_spelling(tmp_pat
     assert annotations["uses_module_one.g"] == ("first_cb", "Int32")
     assert annotations["first.f"] == (names[1], "Float32")
 
+    # Both prototypes are written, and only the module's own is published.
+    contract = PyiPrinter(normalize_public_names=True).emit(module)
+    assert "def first_cb(\n    x: Int32[()]\n) -> None: ..." in contract
+    assert f"def {names[1]}(\n    x: Float32[()]\n) -> None: ..." in contract
+    assert f"f: {names[1]}" in contract
+    assert "g: first_cb" in contract
+    assert '__all__ = ["first_cb", "first", "uses_module_one"]' in contract
+
 
 def test_scopes_whose_joined_spellings_collide_keep_distinct_contract_names(tmp_path: Path):
     """`a_b` declaring `c` and `a` declaring `b_c` are different prototypes."""
@@ -129,19 +134,6 @@ def test_scopes_whose_joined_spellings_collide_keep_distinct_contract_names(tmp_
     annotations = _callback_annotations(module)
     assert annotations["a_b.f"] == (names[0], "Int32")
     assert annotations["a.f"] == (names[1], "Float32")
-
-
-def test_a_contract_writes_one_prototype_for_each_scope(tmp_path: Path):
-    """Both prototypes are written, and only the module's own is published."""
-    module = _module(MODULE_AND_LOCAL_SOURCE, tmp_path)
-    contract = PyiPrinter(normalize_public_names=True).emit(module)
-    local_name = completed_contract_name(module.prototypes[1])
-
-    assert "def first_cb(\n    x: Int32[()]\n) -> None: ..." in contract
-    assert f"def {local_name}(\n    x: Float32[()]\n) -> None: ..." in contract
-    assert f"f: {local_name}" in contract
-    assert "g: first_cb" in contract
-    assert '__all__ = ["first_cb", "first", "uses_module_one"]' in contract
 
 
 IMPORT_COLLISION_SOURCE = """\

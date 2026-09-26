@@ -42,7 +42,11 @@ def optional_callback_module(pyi_parity_build_mode: str, tmp_path: Path):
 
 
 def test_optional_callback_and_optional_dummies_preserve_each_presence_state(optional_callback_module):
-    module, _build_dir, _build_mode = optional_callback_module
+    """Each presence state crosses the bridge and the direct `bind(C)` route alike.
+
+    Exception propagation is unchanged for a supplied optional callback.
+    """
+    module, build_dir, build_mode = optional_callback_module
 
     assert module.run(np.int32(0)) == np.int32(-1)
     assert module.run(np.int32(0), None) == np.int32(-1)
@@ -70,10 +74,7 @@ def test_optional_callback_and_optional_dummies_preserve_each_presence_state(opt
     assert isinstance(observed[-1][3], np.ndarray)
     assert observed[-1][3].shape == ()
 
-
-def test_optional_bind_c_callback_remains_direct_and_preserves_inner_presence(optional_callback_module):
-    module, build_dir, build_mode = optional_callback_module
-
+    # A bind(C) optional callback stays on the direct route.
     assert module.direct_run(np.int32(0)) == np.int32(-1)
     assert module.direct_run(np.int32(0), None) == np.int32(-1)
     seen = []
@@ -88,9 +89,6 @@ def test_optional_bind_c_callback_remains_direct_and_preserves_inner_presence(op
         assert "direct_run(bound_mode, bound_callback_obj != Py_None ? prik_callback_trampoline_" in binding
         assert "function bind_c_direct_run" not in bridge.casefold()
 
-
-def test_exception_propagation_is_unchanged_for_a_supplied_optional_callback(optional_callback_module):
-    _module, build_dir, _build_mode = optional_callback_module
     result = subprocess.run(
         [
             sys.executable,

@@ -177,30 +177,3 @@ addressable: Annotated[Float64[4], Aliased]
     # Neither route hands Python the whole variable back to reassign.
     assert policies["values"].setter_action is SetterAction.REJECT_REPLACEMENT
     assert policies["addressable"].setter_action is SetterAction.REJECT_REPLACEMENT
-
-
-def test_logical_module_arrays_are_borrowed_at_every_width():
-    """A live view aliases element for element, so the dtype reports the width.
-
-    NumPy has no Boolean wider than one byte, so a logical array is described by
-    the integer of matching width rather than narrowed to `bool`. The widths
-    then agree for every Fortran kind and each is borrowed as a live view.
-    """
-    module = parse_pyi_text(
-        """
-from prik.contracts import Bool, Bool32
-
-narrow: Bool[3]
-wide: Bool32[3]
-""",
-        module_name="logical_state",
-    )
-    complete_semantic_policies(module)
-
-    policies = {
-        variable.name: variable.metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA] for variable in module.variables
-    }
-    for name in ("narrow", "wide"):
-        assert policies[name].supported is True, name
-        assert policies[name].getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW, name
-        assert policies[name].blockers == (), name

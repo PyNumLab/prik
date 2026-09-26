@@ -56,7 +56,3 @@ def rendered_source(artifacts, suffix: str) -> str:
     matches = [source.text for source in artifacts.sources if source.path.suffix == suffix]
     assert len(matches) == 1
     return matches[0]
-
-
-def normalize(text: str) -> str:
-    return "\n".join(line.rstrip() for line in text.strip().splitlines())

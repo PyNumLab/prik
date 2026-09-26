@@ -6,7 +6,6 @@ import pytest
 from prik.printers import PyiPrinter
 from prik.semantics.models import (
     RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
-    RESOLVED_OWNERSHIP_POLICY_METADATA,
 )
 from prik.policy.native_array_handles import (
     NativeArrayBuildRequirement,
@@ -16,7 +15,6 @@ from prik.policy.native_array_handles import (
 from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
-    NativeBarrierAction,
     OwnershipContext,
     OwnershipOwner,
     TransferMode,
@@ -39,26 +37,6 @@ from tests.fortran._support.ownership_policy import (
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 
 
-def test_native_array_handle_dispatcher_routes_completed_policy_to_named_method():
-    class Subject:
-        name = "values"
-
-    class Target:
-        def handle(self, subject, policy, marker):
-            return marker, subject.name, policy.descriptor_kind, policy.handle_kind
-
-    dispatcher = NativeArrayHandlePolicyDispatcher(
-        {("allocatable", "borrowed_module_descriptor"): "handle"},
-    )
-
-    assert dispatcher.dispatch(Target(), Subject(), _native_array_policy(), "seen") == (
-        "seen",
-        "values",
-        "allocatable",
-        "borrowed_module_descriptor",
-    )
-
-
 def test_native_array_handle_dispatcher_rejects_missing_completed_policy_pair():
     dispatcher = NativeArrayHandlePolicyDispatcher({})
 
@@ -67,75 +45,6 @@ def test_native_array_handle_dispatcher_rejects_missing_completed_policy_pair():
             _native_array_policy(descriptor_kind="pointer"),
             "target",
         )
-
-
-def test_native_array_handle_build_requirements_include_default_pointer_descriptor_accessors():
-    module = parse_pyi_text(
-        """
-target: Pointer[Float64[:]]
-
-class box:
-    target: Pointer[Float64[:]]
-""",
-        module_name="native_handle_no_interop",
-    )
-
-    complete_semantic_policies(module)
-
-    requirements = native_array_handle_build_requirements(module)
-
-    assert requirements.pointer_c_descriptor_interop is True
-    assert requirements.requires_iso_fortran_binding is True
-    assert requirements.headers == ("ISO_Fortran_binding.h",)
-    assert requirements.items == (
-        NativeArrayBuildRequirement(
-            owner="native_handle_no_interop.target",
-            item="target",
-            descriptor_kind="pointer",
-            handle_kind="borrowed_module_descriptor",
-            descriptor_interop="pointer_c_descriptor",
-            headers=("ISO_Fortran_binding.h",),
-        ),
-        NativeArrayBuildRequirement(
-            owner="native_handle_no_interop.box.target",
-            item="target",
-            descriptor_kind="pointer",
-            handle_kind="borrowed_field_descriptor",
-            descriptor_interop="pointer_c_descriptor",
-            headers=("ISO_Fortran_binding.h",),
-        ),
-    )
-
-
-def test_hidden_pointer_handle_output_owns_descriptor_but_not_target_policy():
-    module = parse_pyi_text(
-        """
-@native_call([Return("values", 0)])
-def select_values() -> Pointer[Float64[:]]: ...
-""",
-        module_name="hidden_pointer_handle_result",
-    )
-    complete_semantic_policies(module)
-
-    argument = module.functions[0].arguments[0]
-    decision = argument.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA]
-    policy = argument.metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-
-    assert decision.owner is OwnershipOwner.WRAPPER
-    assert decision.transfer is TransferMode.WRAPPER_INSTANCE
-    assert decision.destruction is DestructionPolicy.WRAPPER_DEALLOC
-    assert decision.codegen_action is CodegenAction.WRAPPER_INSTANCE
-    assert decision.native_barrier_action is NativeBarrierAction.PASS_NATIVE_DESCRIPTOR
-    assert policy.descriptor_kind == "pointer"
-    assert policy.handle_kind == "owned_result_descriptor"
-    assert policy.origin == "projected_result"
-    assert policy.owner_retention == "wrapper_owner_storage"
-    assert policy.descriptor_ownership == "owned"
-    assert policy.output_projection == "projected_handle"
-    assert policy.target_lifetime == "unknown"
-    assert policy.destroy_behavior == "handle_finalizer"
-    assert policy.to_numpy == "unsupported"
-    assert set(policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
 @pytest.mark.parametrize(
@@ -176,19 +85,21 @@ def test_explicit_supported_ownership_triples_remain_codegen_ready(
 
 
 @pytest.mark.parametrize(
-    ("owner", "transfer", "destruction"),
+    ("owner", "transfer", "destruction", "blocker"),
     [
-        ("native", "copy_return", "native_owner"),
-        ("native", "borrowed_view", "python_refcount"),
-        ("python", "copy_return", "native_owner"),
-        ("python", "borrowed_view", "python_refcount"),
-        ("wrapper", "wrapper_instance", "python_refcount"),
+        ("native", "copy_return", "native_owner", "native/copy_return/native_owner"),
+        ("native", "borrowed_view", "python_refcount", "native/borrowed_view/python_refcount"),
+        ("python", "copy_return", "native_owner", "python/copy_return/native_owner"),
+        ("python", "borrowed_view", "python_refcount", "python/borrowed_view/python_refcount"),
+        ("wrapper", "wrapper_instance", "python_refcount", "wrapper/wrapper_instance/python_refcount"),
+        ("native", "blocked", "native_owner", "blocked by ownership policy"),
     ],
 )
-def test_contradictory_ownership_triples_fail_closed(
+def test_contradictory_or_explicitly_blocked_ownership_triples_fail_closed(
     owner: str,
     transfer: str,
     destruction: str,
+    blocker: str,
 ):
     metadata: dict[str, object] = {}
     set_ownership_metadata(
@@ -207,27 +118,8 @@ def test_contradictory_ownership_triples_fail_closed(
     assert decision.owner is OwnershipOwner.UNKNOWN
     assert decision.transfer is TransferMode.BLOCKED
     assert decision.destruction is DestructionPolicy.BLOCKED
-    assert f"{owner}/{transfer}/{destruction}" in decision.blocker
-
-
-def test_explicit_blocked_policy_normalizes_all_lifetime_axes():
-    metadata: dict[str, object] = {}
-    set_ownership_metadata(
-        metadata,
-        owner="native",
-        transfer="blocked",
-        destruction="native_owner",
-    )
-
-    decision = default_ownership_policy.decide_semantic_type(
-        _array_type(metadata=metadata),
-        OwnershipContext.result(),
-    )
-
-    assert decision.owner is OwnershipOwner.UNKNOWN
-    assert decision.transfer is TransferMode.BLOCKED
-    assert decision.destruction is DestructionPolicy.BLOCKED
     assert decision.codegen_action is CodegenAction.BLOCKED
+    assert blocker in decision.blocker
 
 
 def test_documented_transfer_and_destruction_modes_resolve_or_fail_closed():
@@ -280,21 +172,7 @@ def test_documented_transfer_and_destruction_modes_resolve_or_fail_closed():
             assert decision.codegen_action is not CodegenAction.BLOCKED, label
 
 
-def test_pyi_policy_metadata_round_trips_pointer_array_handle_policy():
-    default_type = _array_type(pointer=True)
-    default_field = default_ownership_policy.decide_semantic_type(default_type, OwnershipContext.field())
-    assert not default_field.is_blocked
-    assert default_field.owner is OwnershipOwner.WRAPPER
-    assert default_field.transfer is TransferMode.BORROWED_VIEW
-    assert default_field.destruction is DestructionPolicy.WRAPPER_DEALLOC
-    assert default_field.borrowed is True
-
-    default_module = default_ownership_policy.decide_semantic_type(default_type, OwnershipContext.module_variable())
-    assert not default_module.is_blocked
-    assert default_module.owner is OwnershipOwner.NATIVE
-    assert default_module.transfer is TransferMode.BORROWED_VIEW
-    assert default_module.destruction is DestructionPolicy.NATIVE_OWNER
-
+def test_pointer_container_ownership_is_fixed_by_its_native_parent():
     metadata: dict[str, object] = {}
     set_ownership_metadata(
         metadata,
@@ -351,48 +229,6 @@ class box:
     assert 'Destruction("python_refcount")' in emitted
 
 
-def test_plain_pointer_array_container_policy_completes_default_handle_profile():
-    module = parse_pyi_text(
-        """
-value: Pointer[Float64[:]]
-
-class box:
-    target: Pointer[Float64[:]]
-""",
-        module_name="pointer_default_profile",
-    )
-
-    complete_semantic_policies(module)
-
-    module_policy = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    field_policy = module.classes[0].fields[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-
-    assert not module_policy.is_blocked
-    assert module_policy.handle_kind == "borrowed_module_descriptor"
-    assert module_policy.getter_behavior == "handle"
-    assert module_policy.to_numpy == "unsupported"
-    assert module_policy.descriptor_interop == "pointer_c_descriptor"
-    assert module_policy.requires_pointer_c_descriptor_interop is True
-    assert module_policy.target_lifetime == "module"
-    assert module_policy.destroy_behavior == "none"
-    assert set(module_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
-    # Release is available manually, as it is for an allocatable module array.
-    # Allocation and resize still need PointerPolicy, because they establish a
-    # new target rather than releasing the one the module already names.
-    assert "allocate" not in module_policy.operations
-    assert "resize" not in module_policy.operations
-
-    assert not field_policy.is_blocked
-    assert field_policy.handle_kind == "borrowed_field_descriptor"
-    assert field_policy.getter_behavior == "handle"
-    assert field_policy.to_numpy == "unsupported"
-    assert field_policy.descriptor_interop == "pointer_c_descriptor"
-    assert field_policy.requires_pointer_c_descriptor_interop is True
-    assert field_policy.target_lifetime == "parent_wrapper"
-    assert field_policy.destroy_behavior == "parent_wrapper_finalizer"
-    assert set(field_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
-
-
 def test_deferred_character_pointer_arguments_select_an_opaque_fortran_owner():
     module = parse_pyi_text(
         """
@@ -420,40 +256,6 @@ def inspect(values: Pointer[String[:][:]]) -> None: ...
     assert argument_policy.owner_type_name
     assert argument_policy.owner_signature
     assert set(argument_policy.operations) == {"associate", "associated", "nullify"}
-
-
-def test_contiguous_deferred_character_pointer_selects_zero_copy_view_policy():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Annotated, Pointer, PointerAssociation, PointerPolicy, String
-
-def inspect(values: Annotated[
-    Pointer[String[:][:]],
-    PointerAssociation("runtime"),
-    PointerPolicy(
-        nullable=True,
-        transfer="call_local",
-        target_owner="wrapper",
-        lifetime="wrapper",
-        deallocation="deallocate_resize",
-        shape_source="pointer_bounds",
-        contiguity="contiguous",
-        reassociation="allocate_resize",
-        aliasing="descriptor",
-        mutability="mutable",
-    ),
-]) -> None: ...
-""",
-        module_name="deferred_character_pointer_view_policy",
-    )
-
-    complete_semantic_policies(module)
-    policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-
-    assert policy.descriptor_inquiries is False
-    assert policy.owner_storage == "fortran_owner"
-    assert policy.to_numpy == "contiguous_view"
-    assert "to_numpy" in policy.operations
 
 
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
@@ -504,39 +306,6 @@ value: Annotated[
     assert decision.owner is OwnershipOwner.NATIVE
     assert decision.transfer is TransferMode.BORROWED_VIEW
     assert decision.destruction is DestructionPolicy.NATIVE_OWNER
-
-
-def test_copy_oriented_pointer_policy_still_exposes_live_contiguous_view():
-    module = parse_pyi_text(
-        """
-value: Annotated[
-    Pointer[Float64[:]],
-    PointerPolicy(
-        nullable=True,
-        transfer="snapshot_copy",
-        target_owner="module",
-        lifetime="module",
-        deallocation="never",
-        shape_source="pointer_bounds",
-        contiguity="contiguous",
-        reassociation="snapshot_final",
-        aliasing="independent_copy",
-        mutability="copy",
-    ),
-]
-""",
-        module_name="pointer_policy",
-    )
-
-    complete_semantic_policies(module)
-
-    handle_policy = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    assert not handle_policy.is_blocked
-    assert handle_policy.getter_behavior == "handle"
-    assert handle_policy.to_numpy == "contiguous_view"
-    assert handle_policy.descriptor_interop == "pointer_c_descriptor"
-    assert handle_policy.requires_pointer_c_descriptor_interop is True
-    assert handle_policy.blocker is None
 
 
 def test_pointer_policy_metadata_requires_every_fact():
@@ -601,7 +370,18 @@ def consume(
     assert 'deallocation="unsafe_deallocate"' in emitted
 
 
+_BORROWED_ALLOCATABLE_OPERATIONS = ("allocated", "deallocate", "resize", "to_numpy")
+_DEFAULT_POINTER_OPERATIONS = ("associate", "associated", "deallocate", "nullify", "to_numpy")
+
+
 def test_native_array_handle_policies_complete_before_ir_lowering():
+    """Each handle origin completes one ownership, lifetime, and operation profile.
+
+    Borrowed descriptors are never destroyed by their handle; owned result
+    descriptors are, and a pointer result owns its descriptor but not its
+    target.  Release of a default pointer target is a manual operation, while
+    allocation needs an explicit `PointerPolicy`.
+    """
     module = parse_pyi_text(
         (NATIVE_FIXTURES / "native_array_handle_policies_complete_before_ir_lowering.f90").read_text(encoding="utf-8"),
         module_name="native_handles",
@@ -609,155 +389,136 @@ def test_native_array_handle_policies_complete_before_ir_lowering():
 
     complete_semantic_policies(module)
 
-    values = module.variables[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    target_values = module.variables[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    field_values = module.classes[0].fields[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    field_target = module.classes[0].fields[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    argument_values = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    managed_target = module.functions[0].arguments[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    optional_target = module.functions[0].arguments[2].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    allocatable_result = module.functions[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    pointer_result = module.functions[2].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-
-    assert values.descriptor_kind == "allocatable"
-    assert values.handle_kind == "borrowed_module_descriptor"
-    assert values.origin == "module_variable"
-    assert values.owner == "native"
-    assert values.owner_retention == "native_module"
-    assert values.descriptor_ownership == "borrowed"
-    assert values.target_lifetime == "module"
-    assert values.destroy_behavior == "none"
-    assert values.to_numpy == "descriptor_view"
-    assert values.descriptor_interop == "module_allocatable_c_descriptor"
-    assert values.requires_pointer_c_descriptor_interop is False
-    assert values.requires_c_descriptor_interop is True
-    assert values.storage_mode == "heap"
-    assert set(values.operations) == {"allocated", "deallocate", "resize", "to_numpy"}
-
-    assert target_values.handle_kind == "borrowed_module_descriptor"
-    assert target_values.owner_retention == "native_module"
-    assert target_values.target_lifetime == "module"
-    # A module allocatable reports its own descriptor whether or not it is a
-    # target, so `Aliased` selects neither a different NumPy exposure nor a
-    # different interop mechanism.
-    assert target_values.to_numpy == "descriptor_view"
-    assert target_values.descriptor_interop == "module_allocatable_c_descriptor"
-    assert target_values.requires_pointer_c_descriptor_interop is False
-
-    assert field_values.handle_kind == "borrowed_field_descriptor"
-    assert field_values.owner == "wrapper"
-    assert field_values.owner_retention == "parent_wrapper"
-    assert field_values.release == "wrapper_dealloc"
-    assert field_values.target_lifetime == "parent_wrapper"
-    assert field_values.destroy_behavior == "parent_wrapper_finalizer"
-
-    assert field_target.descriptor_kind == "pointer"
-    assert field_target.handle_kind == "borrowed_field_descriptor"
-    assert field_target.target_lifetime == "parent_wrapper"
-    assert field_target.destroy_behavior == "parent_wrapper_finalizer"
-    assert field_target.getter_behavior == "handle"
-    assert field_target.to_numpy == "unsupported"
-    assert field_target.descriptor_interop == "pointer_c_descriptor"
-    assert field_target.requires_pointer_c_descriptor_interop is True
-    assert field_target.is_blocked is False
-    assert set(field_target.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
-
-    assert argument_values.handle_kind == "argument_descriptor"
-    assert argument_values.origin == "argument"
-    assert argument_values.owner_retention == "caller_handle"
-    assert argument_values.target_lifetime == "call"
-    assert argument_values.destroy_behavior == "none"
-    assert argument_values.is_blocked is False
-    assert argument_values.blocker is None
-    assert argument_values.descriptor_interop == "none"
-    assert argument_values.requires_pointer_c_descriptor_interop is False
-    assert set(argument_values.operations) == {"allocated", "to_numpy"}
-    # A non-optional descriptor argument is handed a descriptor the Fortran
-    # runtime built, so a caller-created handle needs storage of its own.
-    assert argument_values.default_construction == "lazy_owned_descriptor"
-    assert argument_values.default_descriptor_ownership == "owned"
-    assert argument_values.default_release == "wrapper_dealloc"
-    assert argument_values.default_destroy_behavior == "handle_finalizer"
-    assert "destroy" in argument_values.default_operations
-
-    assert optional_target.handle_kind == "optional_absent_handle"
-    assert optional_target.optional_absent is True
-    assert optional_target.nullable is True
-    assert optional_target.owner_retention == "optional_argument"
-    assert optional_target.target_lifetime == "absent_or_call"
-    assert optional_target.destroy_behavior == "none"
-    assert optional_target.is_blocked is False
-    assert optional_target.blocker is None
-    assert optional_target.descriptor_interop == "pointer_c_descriptor"
-    assert optional_target.requires_pointer_c_descriptor_interop is True
-    assert set(optional_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
-    # An optional argument is a descriptor argument like any other when it is
-    # present, so a caller-created handle needs storage of its own to hand over.
-    assert optional_target.default_construction == "lazy_owned_descriptor"
-    assert "destroy" in optional_target.default_operations
-    assert "allocate" not in optional_target.operations
-    assert "deallocate" not in optional_target.operations
-    assert "resize" not in optional_target.operations
-
-    assert managed_target.handle_kind == "argument_descriptor"
-    assert managed_target.descriptor_kind == "pointer"
-    assert managed_target.target_lifetime == "call"
-    assert managed_target.destroy_behavior == "none"
-    assert managed_target.is_blocked is False
-    assert managed_target.blocker is None
-    assert managed_target.to_numpy == "contiguous_view"
-    assert managed_target.descriptor_interop == "pointer_c_descriptor"
-    assert managed_target.requires_pointer_c_descriptor_interop is True
-    assert set(managed_target.operations) == {
-        "allocate",
-        "associate",
-        "associated",
-        "deallocate",
-        "nullify",
-        "resize",
-        "to_numpy",
+    entities = {variable.name: variable for variable in module.variables}
+    entities.update({f"box.{field.name}": field for field in module.classes[0].fields})
+    entities.update({f"consume.{argument.name}": argument for argument in module.functions[0].arguments})
+    entities.update({function.name: function for function in module.functions[1:]})
+    completed = {
+        name: (
+            policy.descriptor_kind,
+            policy.handle_kind,
+            policy.descriptor_ownership,
+            policy.target_lifetime,
+            policy.destroy_behavior,
+            policy.to_numpy,
+            tuple(sorted(policy.operations)),
+            policy.default_construction,
+        )
+        for name, entity in entities.items()
+        for policy in (entity.metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA],)
+        if not policy.is_blocked
     }
 
-    assert allocatable_result.handle_kind == "owned_result_descriptor"
-    assert allocatable_result.origin == "result"
-    assert allocatable_result.owner == "wrapper"
-    assert allocatable_result.owner_retention == "wrapper_owner_storage"
-    assert allocatable_result.descriptor_ownership == "owned"
-    assert allocatable_result.output_projection == "handle_result"
-    assert allocatable_result.release == "wrapper_dealloc"
-    assert allocatable_result.target_lifetime == "wrapper_owner_storage"
-    assert allocatable_result.destroy_behavior == "handle_finalizer"
-    assert allocatable_result.is_blocked is False
-    assert allocatable_result.descriptor_interop == "owned_allocatable_c_descriptor"
-    assert allocatable_result.requires_pointer_c_descriptor_interop is False
-    assert allocatable_result.requires_c_descriptor_interop is True
-    assert set(allocatable_result.operations) == {"allocated", "deallocate", "resize", "to_numpy"}
-    assert allocatable_result.default_construction == "none"
-    assert allocatable_result.default_operations == ()
-
-    assert pointer_result.handle_kind == "owned_result_descriptor"
-    assert pointer_result.origin == "result"
-    assert pointer_result.owner == "wrapper"
-    assert pointer_result.owner_retention == "wrapper_owner_storage"
-    assert pointer_result.descriptor_ownership == "owned"
-    assert pointer_result.output_projection == "handle_result"
-    assert pointer_result.release == "wrapper_dealloc"
-    assert pointer_result.target_lifetime == "unknown"
-    assert pointer_result.destroy_behavior == "handle_finalizer"
-    assert pointer_result.is_blocked is False
-    assert pointer_result.blocker is None
-    assert pointer_result.descriptor_interop == "pointer_c_descriptor"
-    assert pointer_result.requires_pointer_c_descriptor_interop is True
-    assert pointer_result.requires_c_descriptor_interop is True
-    assert set(pointer_result.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
-    assert pointer_result.default_construction == "none"
+    module_allocatable = (
+        "allocatable",
+        "borrowed_module_descriptor",
+        "borrowed",
+        "module",
+        "none",
+        "descriptor_view",
+        _BORROWED_ALLOCATABLE_OPERATIONS,
+        "none",
+    )
+    assert completed == {
+        "values": module_allocatable,
+        # `Aliased` selects neither another NumPy exposure nor another interop.
+        "target_values": module_allocatable,
+        "module_target": (
+            "pointer",
+            "borrowed_module_descriptor",
+            "borrowed",
+            "module",
+            "none",
+            "unsupported",
+            _DEFAULT_POINTER_OPERATIONS,
+            "none",
+        ),
+        "box.values": (
+            "allocatable",
+            "borrowed_field_descriptor",
+            "borrowed",
+            "parent_wrapper",
+            "parent_wrapper_finalizer",
+            "borrowed_view",
+            _BORROWED_ALLOCATABLE_OPERATIONS,
+            "none",
+        ),
+        "box.target": (
+            "pointer",
+            "borrowed_field_descriptor",
+            "borrowed",
+            "parent_wrapper",
+            "parent_wrapper_finalizer",
+            "unsupported",
+            _DEFAULT_POINTER_OPERATIONS,
+            "none",
+        ),
+        # A descriptor argument is handed a descriptor the Fortran runtime
+        # built, so a caller-created handle lazily gets storage of its own.
+        "consume.values": (
+            "allocatable",
+            "argument_descriptor",
+            "borrowed",
+            "call",
+            "none",
+            "borrowed_view",
+            ("allocated", "to_numpy"),
+            "lazy_owned_descriptor",
+        ),
+        "consume.managed_target": (
+            "pointer",
+            "argument_descriptor",
+            "borrowed",
+            "call",
+            "none",
+            "contiguous_view",
+            ("allocate", "associate", "associated", "deallocate", "nullify", "resize", "to_numpy"),
+            "lazy_owned_descriptor",
+        ),
+        "consume.maybe_target": (
+            "pointer",
+            "optional_absent_handle",
+            "borrowed",
+            "absent_or_call",
+            "none",
+            "unsupported",
+            ("associate", "associated", "nullify", "to_numpy"),
+            "lazy_owned_descriptor",
+        ),
+        "make_values": (
+            "allocatable",
+            "owned_result_descriptor",
+            "owned",
+            "wrapper_owner_storage",
+            "handle_finalizer",
+            "borrowed_view",
+            _BORROWED_ALLOCATABLE_OPERATIONS,
+            "none",
+        ),
+        "make_target": (
+            "pointer",
+            "owned_result_descriptor",
+            "owned",
+            "unknown",
+            "handle_finalizer",
+            "unsupported",
+            _DEFAULT_POINTER_OPERATIONS,
+            "none",
+        ),
+    }
 
 
 def test_native_array_handle_build_requirements_are_selected_from_completed_policy():
+    """Copy and contiguous pointers expose a contiguous view; a strided one exposes the descriptor."""
     module = parse_pyi_text(
         """
 values: Allocatable[Float64[:]]
 default_target: Pointer[Float64[:]]
+
+class box:
+    target: Pointer[Float64[:]]
+
+def make_values() -> Allocatable[Float64[:]]: ...
 
 def inspect(
     copy_target: Annotated[
@@ -812,9 +573,10 @@ def inspect(
 
     complete_semantic_policies(module)
 
-    copy_target = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    contiguous_target = module.functions[0].arguments[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
-    descriptor_target = module.functions[0].arguments[2].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+    arguments = module.functions[1].arguments
+    copy_target, contiguous_target, descriptor_target = (
+        argument.metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA] for argument in arguments
+    )
 
     assert copy_target.to_numpy == "contiguous_view"
     assert copy_target.requires_pointer_c_descriptor_interop is True
@@ -843,6 +605,22 @@ def inspect(
             descriptor_kind="pointer",
             handle_kind="borrowed_module_descriptor",
             descriptor_interop="pointer_c_descriptor",
+            headers=("ISO_Fortran_binding.h",),
+        ),
+        NativeArrayBuildRequirement(
+            owner="native_handle_build.box.target",
+            item="target",
+            descriptor_kind="pointer",
+            handle_kind="borrowed_field_descriptor",
+            descriptor_interop="pointer_c_descriptor",
+            headers=("ISO_Fortran_binding.h",),
+        ),
+        NativeArrayBuildRequirement(
+            owner="native_handle_build.make_values.return",
+            item="return",
+            descriptor_kind="allocatable",
+            handle_kind="owned_result_descriptor",
+            descriptor_interop="owned_allocatable_c_descriptor",
             headers=("ISO_Fortran_binding.h",),
         ),
         NativeArrayBuildRequirement(

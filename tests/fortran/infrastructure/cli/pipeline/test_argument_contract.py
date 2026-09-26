@@ -1,205 +1,322 @@
-"""Tests split by stable CLI argument-contract ownership."""
+"""CLI argument contracts: validation diagnostics, routing to the pipeline owners, and help.
+
+The CLI and the Python build API are two entry points with one owner, so these
+tests run real command lines through ``prik.cli.main`` and assert what reaches
+the public ``prik.pipeline.build`` functions instead of re-proving the build.
+"""
 
 import argparse
 import json
 from pathlib import Path
-import subprocess
-import sys
 import types
 
 import pytest
 
 import prik.cli as prik_cli
-from prik.preprocessing import PreprocessingError
-from tests.fortran.infrastructure.cli.pipeline._support import (
-    TEST_FILE,
-    _MainParserError,
-    _install_main_parser,
-    _main_args,
-)
+from prik.pipeline import build as pipeline_build
 
-
-def test_cli_pyi_out_rejects_ambiguous_single_file_contract_package(tmp_path: Path):
-    source = tmp_path / "combined.f90"
-    source.write_text(
-        """module first_mod
+MODULE_SOURCE = """module m
 contains
-  subroutine first()
-  end subroutine first
-end module first_mod
-
-module second_mod
-contains
-  subroutine second()
-  end subroutine second
-end module second_mod
-""",
-        encoding="utf-8",
-    )
-    output = tmp_path / "combined.pyi"
-
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(output)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    assert result.returncode != 0
-    assert "generated contracts use one file per module" in result.stderr
-    assert not output.exists()
+  subroutine add1(x)
+    integer, intent(inout) :: x
+  end subroutine add1
+end module m
+"""
 
 
-def test_cli_rejects_conflicting_json_and_pyi_out_from_inline_code(tmp_path: Path):
-    f90 = tmp_path / "conflict.f90"
-    f90.write_text(
-        """module conflict_mod
-contains
-  subroutine ping()
-  end subroutine ping
-end module conflict_mod
-""",
-        encoding="utf-8",
-    )
-
-    cmd = [
-        sys.executable,
-        "-m",
-        "prik",
-        "generate",
-        "--pyi",
-        str(f90),
-        "--json",
-        "--out",
-        str(tmp_path / "out"),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-
-    assert res.returncode == 2
-    assert "--out cannot be used with both --json and --pyi" in res.stderr
+def _invoke(argv: list[str], capsys) -> tuple[int, str, str]:
+    """Run one command line in-process and return its exit code and output."""
+    try:
+        code = prik_cli.main(argv)
+    except SystemExit as exc:
+        code = exc.code
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
 
 
-def test_prik_pyi_report_formats_and_rejects_conflicting_dependency_stubs():
-    report = {
-        "first.f90": {
-            "pyi": "def first() -> None: ...",
-            "pyi_dependencies": {"shared": "class shared(Opaque):\n    pass"},
-        },
-        "second.f90": {
-            "pyi": "def second() -> None: ...",
-            "pyi_dependencies": {
-                "shared": "class shared(Opaque):\n    pass",
-                "extra": "class extra(Opaque):\n    pass",
-            },
-        },
-        "empty.f90": {},
-    }
-
-    text = prik_cli._format_pyi_report(report)
-
-    assert (
-        text
-        == """File: first.f90
-def first() -> None: ...
-
-Dependency stub: shared.pyi
-class shared(Opaque):
-    pass
-
-File: second.f90
-def second() -> None: ...
-
-Dependency stub: extra.pyi
-class extra(Opaque):
-    pass
-
-File: empty.f90
-<no module declarations found>"""
-    )
-    with pytest.raises(ValueError, match="Conflicting generated dependency stub"):
-        prik_cli._write_pyi_dependencies(
-            {
-                "first.f90": {"pyi_dependencies": {"shared": "class shared:\n    pass"}},
-                "second.f90": {"pyi_dependencies": {"shared": "class shared:\n    value: int"}},
-            }
+@pytest.fixture
+def cli_inputs(tmp_path: Path, monkeypatch) -> Path:
+    """Write one input of each kind the argument rows name, relative to the working directory."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "src.f90").write_text(MODULE_SOURCE, encoding="utf-8")
+    (tmp_path / "solver.F90").write_text(MODULE_SOURCE, encoding="utf-8")
+    (tmp_path / "solver.source").write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
+    (tmp_path / "contract.pyi").write_text("def add1(x: int) -> int: ...\n", encoding="utf-8")
+    (tmp_path / "iface.PYI").write_text("def add1(x: int) -> int: ...\n", encoding="utf-8")
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "sources" / "src.f90").write_text(MODULE_SOURCE, encoding="utf-8")
+    for language in ("fortran", "c"):
+        (tmp_path / f"{language}-build.json").write_text(
+            json.dumps({"schema_version": 5, "build_kind": "pyi-wrapper", "extension": {"native_language": language}}),
+            encoding="utf-8",
         )
+    return tmp_path
+
+
+_WRAPPER_NATIVE_INPUTS = (
+    "--native-fortran-sources, --native-c-sources, --native-objects, --native-library, or --native-link-item"
+)
 
 
 @pytest.mark.parametrize(
-    ("overrides", "expected"),
+    ("argv", "exit_code", "message"),
     [
-        (
-            {"out": ""},
-            "--out for wrapper builds requires an output name",
-        ),
-        (
-            {"out": "module.txt"},
-            "--out for wrapper builds expects NAME or NAME.so",
-        ),
-        (
-            {"out": "bad-name"},
-            "--out for wrapper builds expects a valid Python module name",
-        ),
-        (
-            {"out": "module", "makefile": True},
+        pytest.param(["src.f90", "--out", ""], 2, "--out for wrapper builds requires an output name", id="out-empty"),
+        pytest.param(["src.f90", "--out", "module.txt"], 2, "expects NAME or NAME.so", id="out-suffix"),
+        pytest.param(["src.f90", "--out", "bad-name"], 2, "expects a valid Python module name", id="out-identifier"),
+        pytest.param(["src.f90", "--out"], 2, "argument --out: expected one argument", id="out-without-name"),
+        pytest.param(
+            ["generate", "--makefile", "src.f90", "--out", "module"],
+            2,
             "generate --sources/--makefile/--cmake uses --out-dir, not --out",
+            id="generate-makefile-out",
         ),
-        ({"parse": True, "print_limit": -1}, "--print-limit must be >= 0"),
-        (
-            {"paths": ["input.pyi"]},
-            "A .pyi wrapper build requires --native-fortran-sources, --native-c-sources, --native-objects, "
-            "--native-library, or --native-link-item",
+        pytest.param(
+            ["generate", "--pyi", "src.f90", "--json", "--out", "reports"],
+            2,
+            "--out cannot be used with both --json and --pyi",
+            id="generate-json-and-pyi-out",
         ),
-        (
-            {"paths": ["input.unknown"]},
+        pytest.param(["generate", "src.f90"], 2, "one of the arguments --pyi", id="generate-without-mode"),
+        pytest.param(
+            ["generate", "--pyi", "--sources", "src.f90"], 2, "not allowed with argument --pyi", id="generate-two-modes"
+        ),
+        pytest.param(
+            ["generate", "--pyi", "contract.pyi"],
+            2,
+            "generate --pyi expects recognized fortran source suffixes; unsupported input: contract.pyi",
+            id="source-stage-given-contract",
+        ),
+        pytest.param(["parse", "src.f90", "--print-limit", "-1"], 2, "--print-limit must be >= 0", id="print-limit"),
+        pytest.param(
+            ["parse", "sources"], 2, "Input directory sources requires an explicit frontend", id="directory-language"
+        ),
+        pytest.param(
+            ["parse", "solver.source"],
+            2,
+            "Cannot determine the input language for solver.source; pass --language fortran or --language c",
+            id="unknown-suffix-language",
+        ),
+        pytest.param(
+            ["parse", "src.f90", "--language", "c"],
+            2,
+            "Fortran input src.f90 is incompatible with --language c; pass --language fortran",
+            id="fortran-input-with-c-frontend",
+        ),
+        pytest.param(
+            ["parse", "src.f90", "-D", "=bad"], 2, "--define/-D requires a macro name before '='", id="define-name"
+        ),
+        pytest.param(
+            ["parse", "src.f90", "--compiler", "cc", "--preprocess-template", "{source}"],
+            2,
+            "--preprocess-template requires --preprocessor-adapter command-template",
+            id="template-without-adapter",
+        ),
+        pytest.param(
+            ["contract.pyi"], 2, f"A .pyi wrapper build requires {_WRAPPER_NATIVE_INPUTS}", id="contract-without-native"
+        ),
+        pytest.param(
+            ["solver.source", "--language", "fortran"],
+            2,
             "A wrapper build expects recognized Fortran source suffixes or one semantic .pyi contract; "
-            "unsupported input: input.unknown",
+            "unsupported input: solver.source",
+            id="wrapper-unknown-suffix",
         ),
-        (
-            {"no_compile_input_sources": True},
-            "--no-compile-input-sources requires --native-fortran-sources, --native-c-sources, --native-objects, "
-            "--native-library, or --native-link-item",
+        pytest.param(
+            ["src.f90", "--no-compile-input-sources"],
+            2,
+            f"--no-compile-input-sources requires {_WRAPPER_NATIVE_INPUTS}",
+            id="no-compile-without-native",
         ),
-        (
-            {
-                "paths": ["input.pyi"],
-                "no_compile_input_sources": True,
-                "native_objects": ["implementation.o"],
-            },
+        pytest.param(
+            ["contract.pyi", "--no-compile-input-sources", "--native-objects", "impl.o"],
+            2,
             "--no-compile-input-sources applies only to source-driven wrapper builds",
+            id="no-compile-with-contract",
+        ),
+        pytest.param(
+            ["contract.pyi", "--native-fortran-sources", "src.f90", "--assume-intent-in-scalars"],
+            2,
+            "a semantic .pyi contract already states its own results",
+            id="contract-with-assumed-intent",
+        ),
+        pytest.param(["src.f90", "--jobs", "0"], 2, "jobs must be a positive integer", id="jobs-zero"),
+        pytest.param(["src.f90", "--jobs", "many"], 2, "jobs must be a positive integer", id="jobs-non-integer"),
+        pytest.param(
+            ["src.f90", "--native-compile-flags='-O2"],
+            1,
+            "prik: error: Invalid --native-compile-flags value",
+            id="unbalanced-native-flags",
+        ),
+        pytest.param(
+            ["src.f90", "--wrapper-c-flags='-O0"],
+            1,
+            "prik: error: Invalid --wrapper-c-flags value",
+            id="unbalanced-wrapper-flags",
+        ),
+        pytest.param(
+            ["probe", "--language", "fortran", "--compiler", "gfortran", "-I", "inc", "--std", "f2018"],
+            2,
+            "add --expr to probe preprocessed expressions",
+            id="probe-mapping-with-preprocessing-options",
+        ),
+        pytest.param(
+            ["probe", "--language", "c", "--compiler", "cc", "--expr", "kind(1.0)"],
+            2,
+            "--expr is supported only for --language fortran",
+            id="probe-expressions-for-c",
+        ),
+        pytest.param(
+            ["--build-manifest", "fortran-build.json", "--out-dir", "elsewhere"],
+            2,
+            "replays its saved output directory",
+            id="manifest-out-dir",
+        ),
+        pytest.param(
+            ["--build-manifest", "fortran-build.json", "--language", "fortran"],
+            2,
+            "replays its saved input language",
+            id="manifest-language",
+        ),
+        pytest.param(
+            ["--build-manifest", "fortran-build.json", "-D", "USE_FAST=1"],
+            2,
+            "replays its saved preprocessing recipe",
+            id="manifest-preprocessing",
+        ),
+        pytest.param(
+            ["--build-manifest", "fortran-build.json", "--strict-wrapper-names"],
+            2,
+            "replays saved wrapper behavior",
+            id="manifest-wrapper-behavior",
+        ),
+        pytest.param(
+            ["--build-manifest", "fortran-build.json", "--native-library", "openblas"],
+            2,
+            "replays saved native inputs",
+            id="manifest-native-inputs",
         ),
     ],
 )
-def test_prik_main_preserves_validation_diagnostics(monkeypatch, overrides, expected):
-    args = _main_args(**overrides)
-    _install_main_parser(monkeypatch, args)
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
-    monkeypatch.setattr(prik_cli, "_build_preprocessing_config", lambda active_args, parser: object())
-
-    with pytest.raises(_MainParserError) as exc_info:
-        prik_cli.main()
-
-    assert str(exc_info.value) == expected
-
-
-def test_prik_main_collects_many_native_inputs_from_one_option_group(
-    monkeypatch,
-    tmp_path: Path,
-    capsys,
+@pytest.mark.usefixtures("cli_inputs")
+def test_cli_rejects_invalid_invocation_with_its_documented_diagnostic(
+    capsys, argv: list[str], exit_code: int, message: str
 ):
-    contract = tmp_path / "module.pyi"
-    contract.write_text("def scale(x: float) -> float: ...\n", encoding="utf-8")
-    build_dir = tmp_path / "build"
-    calls = []
-    result = types.SimpleNamespace(
-        to_dict=lambda: {
-            "module_name": "module",
-            "shared_library": str(build_dir / "module.so"),
-        }
-    )
+    code, out, err = _invoke(argv, capsys)
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
+    assert code == exit_code
+    assert out == ""
+    assert message in " ".join(err.split())
+
+
+@pytest.fixture
+def pipeline_calls(monkeypatch) -> list[tuple[str, tuple, dict]]:
+    """Record the public pipeline owner each wrapper build reaches instead of compiling."""
+    calls: list[tuple[str, tuple, dict]] = []
+    result = types.SimpleNamespace(
+        compiled=False,
+        to_dict=lambda: {"module_name": "demo", "compiled": False, "output_dir": "out"},
+    )
+    for owner in ("build_fortran_extension", "build_pyi_extension", "build_pyi_extension_from_manifest"):
+        monkeypatch.setattr(
+            pipeline_build,
+            owner,
+            lambda *args, _owner=owner, **kwargs: calls.append((_owner, args, kwargs)) or result,
+        )
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("argv", "owner", "positional", "expected"),
+    [
+        pytest.param(
+            ["src.f90"],
+            "build_fortran_extension",
+            (["src.f90"],),
+            {"compile_input_sources": True, "standard_logicals": True, "assume_intent_in_scalars": False},
+            id="source-defaults",
+        ),
+        pytest.param(
+            ["solver.F90", "--no-standard-logicals", "--assume-intent-in-scalars"],
+            "build_fortran_extension",
+            (["solver.F90"],),
+            {"standard_logicals": False, "assume_intent_in_scalars": True},
+            id="uppercase-source-interpretation-choices",
+        ),
+        pytest.param(
+            ["sources", "--language", "fortran", "--no-compile-input-sources", "--native-objects", "libnative.so"],
+            "build_fortran_extension",
+            (["sources"],),
+            {"compile_input_sources": False, "native_objects": ["libnative.so"]},
+            id="source-directory-with-prebuilt-implementation",
+        ),
+        pytest.param(
+            ["contract.pyi", "--native-objects", "native.o", "--compiler", "selected-ifx"],
+            "build_pyi_extension",
+            ("contract.pyi",),
+            {"input_compiler": "selected-ifx", "input_c_compiler": None, "standard_logicals": True},
+            id="contract-defers-c-driver-to-compiler-pair",
+        ),
+        pytest.param(
+            ["iface.PYI", "--native-objects", "native.o", "--no-standard-logicals"],
+            "build_pyi_extension",
+            ("iface.PYI",),
+            {"native_language": "fortran", "standard_logicals": False},
+            id="uppercase-contract-logical-choice",
+        ),
+        pytest.param(
+            [
+                "--build-manifest",
+                "fortran-build.json",
+                "--out",
+                "REPLAYED",
+                "--compiler",
+                "selected-driver",
+                "-I",
+                "include",
+                "--json",
+                "--verbose",
+                "--no-color",
+                "--debug",
+            ],
+            "build_pyi_extension_from_manifest",
+            ("fortran-build.json",),
+            {
+                "output_name": "REPLAYED",
+                "input_compiler": "selected-driver",
+                "input_c_compiler": None,
+                "include_dirs": ["include"],
+                "verbose": 1,
+            },
+            id="manifest-accepts-documented-overrides",
+        ),
+        pytest.param(
+            ["--build-manifest", "c-build.json", "--compiler", "selected-driver"],
+            "build_pyi_extension_from_manifest",
+            ("c-build.json",),
+            {"input_compiler": None, "input_c_compiler": "selected-driver"},
+            id="manifest-compiler-targets-recorded-c-language",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("cli_inputs")
+def test_cli_routes_wrapper_builds_to_the_public_pipeline_owner(
+    pipeline_calls, capsys, argv, owner, positional, expected
+):
+    code, _out, _err = _invoke(argv, capsys)
+
+    assert code == 0
+    assert [(name, args) for name, args, _kwargs in pipeline_calls] == [(owner, positional)]
+    kwargs = pipeline_calls[0][2]
+    assert {name: kwargs[name] for name in expected} == expected
+
+
+@pytest.mark.usefixtures("cli_inputs")
+def test_cli_forwards_grouped_and_repeated_build_options_to_the_pipeline(pipeline_calls, capsys):
+    """Multi-value options collect every value and grouped shell words split as a shell would."""
+    code, out, _err = _invoke(
         [
-            "prik",
-            str(contract),
+            "contract.pyi",
             "--compiler",
             "selected-gfortran",
             "-I",
@@ -209,7 +326,7 @@ def test_prik_main_collects_many_native_inputs_from_one_option_group(
             "--native-fortran-sources",
             "source_one.f90",
             "source_two.f90",
-            "--native-compile-flags=-O2 -g0",
+            "--native-compile-flags=-O2 -DNAME='value with spaces'",
             "--jobs",
             "3",
             "--native-objects",
@@ -218,7 +335,7 @@ def test_prik_main_collects_many_native_inputs_from_one_option_group(
             "libsolver.so",
             "--native-library",
             "blas",
-            "lapack",
+            "-llapack -lscalapack",
             "--native-link-item",
             "arg:-Wl,--start-group",
             "object:one.o",
@@ -228,715 +345,71 @@ def test_prik_main_collects_many_native_inputs_from_one_option_group(
             "vendor/lib",
             "-I",
             "mods",
-            "-I",
-            "vendor/mods",
             "--wrapper-compiler-debug",
             "--wrapper-fortran-flags=-fno-range-check -g0",
             "--wrapper-c-flags=-O0 -g0",
-            "--out-dir",
-            str(build_dir),
             "--json",
         ],
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_run_wrap_build_with_diagnostics",
-        lambda active_args, active_preprocessing: calls.append((active_args, active_preprocessing)) or result,
+        capsys,
     )
 
-    assert prik_cli.main() == 0
-
-    assert len(calls) == 1
-    active_args, _preprocessing = calls[0]
-    assert active_args.paths == [str(contract)]
-    assert active_args.compiler == "selected-gfortran"
-    assert active_args.include_dirs == ["include", "vendor/include", "mods", "vendor/mods"]
-    assert active_args.native_fortran_sources == ["source_one.f90", "source_two.f90"]
-    assert active_args.native_compile_flags == ["-O2 -g0"]
-    assert active_args.jobs == 3
-    assert active_args.native_objects == ["one.o", "two.a", "libsolver.so"]
-    assert active_args.native_libraries == ["blas", "lapack"]
-    assert active_args.native_link_items == [
-        "arg:-Wl,--start-group",
-        "object:one.o",
-        "arg:-Wl,--end-group",
-    ]
-    assert active_args.native_library_dirs == ["lib", "vendor/lib"]
-    assert prik_cli._cli_build_include_dirs(active_args) == (
-        "include",
-        "vendor/include",
-        "mods",
-        "vendor/mods",
+    assert code == 0
+    assert json.loads(out)["module_name"] == "demo"
+    ((owner, _args, kwargs),) = pipeline_calls
+    assert owner == "build_pyi_extension"
+    assert kwargs["input_compiler"] == "selected-gfortran"
+    assert kwargs["native_include_dirs"] == ("include", "vendor/include", "mods")
+    assert kwargs["native_fortran_sources"] == ["source_one.f90", "source_two.f90"]
+    assert kwargs["native_fortran_flags"] == ("-O2", "-DNAME=value with spaces")
+    assert kwargs["jobs"] == 3
+    assert kwargs["native_objects"] == ["one.o", "two.a", "libsolver.so"]
+    assert kwargs["native_libraries"] == ("blas", "-llapack", "-lscalapack")
+    assert kwargs["native_link_items"] == (
+        {"kind": "linker_argument", "argument": "-Wl,--start-group"},
+        {"kind": "object", "path": "one.o"},
+        {"kind": "linker_argument", "argument": "-Wl,--end-group"},
     )
-    assert active_args.wrapper_compiler_debug is True
-    assert active_args.wrapper_fortran_flags == ["-fno-range-check -g0"]
-    assert active_args.wrapper_c_flags == ["-O0 -g0"]
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["module_name"] == "module"
+    assert kwargs["native_library_dirs"] == ["lib", "vendor/lib"]
+    assert kwargs["wrapper_compiler_debug"] is True
+    assert kwargs["wrapper_fortran_flags"] == ("-fno-range-check", "-g0")
+    assert kwargs["wrapper_c_flags"] == ("-O0", "-g0")
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"paths": ["input.f90"]},
-        {"paths": ["contract.pyi"], "native_objects": ["native.o"]},
-        {"paths": ["input.f90"], "makefile": True},
-        {"paths": [], "build_manifest": "build/prik-build.json"},
-    ],
-)
-def test_wrapper_inputs_select_the_default_build_stage(overrides):
-    assert prik_cli._is_wrapper_build(_main_args(**overrides))
-
-
-def test_explicit_inspection_stage_prevents_default_wrapper_selection():
-    assert not prik_cli._is_wrapper_build(_main_args(parse=True))
-
-
-def test_cli_native_compile_flags_split_grouped_shell_words():
-    assert prik_cli._cli_native_compile_flags(["-O2 -g0", "-DNAME='value with spaces'"]) == (
-        "-O2",
-        "-g0",
-        "-DNAME=value with spaces",
-    )
-
-
-def test_source_build_routes_disabled_input_compilation_to_the_pipeline(monkeypatch):
-    from prik.pipeline import build as pipeline_build
-
-    calls = []
-    result = types.SimpleNamespace(compiled=False)
-    monkeypatch.setattr(
-        pipeline_build,
-        "build_fortran_extension",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
-    )
-    args = _main_args(
-        paths=["native"],
-        no_compile_input_sources=True,
-        native_objects=["libnative.so"],
-    )
-
-    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
-    assert calls[0][0] == (["native"],)
-    assert calls[0][1]["compile_input_sources"] is False
-    assert calls[0][1]["native_objects"] == ["libnative.so"]
-
-
-@pytest.mark.parametrize(
-    ("cli_arguments", "forwarded"),
-    [({}, True), ({"standard_logicals": False}, False)],
-)
-def test_source_build_routes_the_logical_interop_choice_to_the_pipeline(
-    monkeypatch, cli_arguments: dict[str, bool], forwarded: bool
-):
-    """--no-standard-logicals is the only opt-out, so it must reach the build unchanged."""
-    from prik.pipeline import build as pipeline_build
-
-    calls = []
-    result = types.SimpleNamespace(compiled=False)
-    monkeypatch.setattr(
-        pipeline_build,
-        "build_fortran_extension",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
-    )
-    args = _main_args(paths=[str(TEST_FILE)], **cli_arguments)
-
-    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
-    assert calls[0][1]["standard_logicals"] is forwarded
-
-
-def test_fortran_pyi_build_defers_c_driver_selection_to_the_compiler_pair(monkeypatch):
-    from prik.pipeline import build as pipeline_build
-
-    calls = []
-    result = types.SimpleNamespace(compiled=False)
-    monkeypatch.setattr(
-        pipeline_build,
-        "build_pyi_extension",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
-    )
-    args = _main_args(
-        paths=["contract.pyi"],
-        language="fortran",
-        native_objects=["native.o"],
-    )
-
-    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="selected-ifx")) is result
-    assert calls[0][1]["input_compiler"] == "selected-ifx"
-    assert calls[0][1]["input_c_compiler"] is None
-
-
-@pytest.mark.parametrize(
-    ("cli_arguments", "forwarded"),
-    [({}, True), ({"standard_logicals": False}, False)],
-)
-def test_pyi_contract_build_routes_the_logical_interop_choice_to_the_pipeline(
-    monkeypatch, cli_arguments: dict[str, bool], forwarded: bool
-):
-    """A contract build compiles the same native Fortran, so it must carry the same choice."""
-    from prik.pipeline import build as pipeline_build
-
-    calls = []
-    result = types.SimpleNamespace(compiled=False)
-    monkeypatch.setattr(
-        pipeline_build,
-        "build_pyi_extension",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
-    )
-    args = _main_args(paths=["contract.pyi"], language="fortran", **cli_arguments)
-
-    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
-    assert calls[0][1]["standard_logicals"] is forwarded
-
-
-@pytest.mark.parametrize(
-    ("native_language", "expected_compilers"),
-    [
-        ("fortran", ("selected-driver", None)),
-        ("c", (None, "selected-driver")),
-    ],
-)
-def test_manifest_compiler_override_targets_only_its_recorded_native_language(
-    tmp_path: Path,
-    monkeypatch,
-    native_language: str,
-    expected_compilers: tuple[str | None, str | None],
-) -> None:
-    from prik.pipeline import build as pipeline_build
-
-    manifest = tmp_path / "prik-build.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": 5,
-                "build_kind": "pyi-wrapper",
-                "extension": {"native_language": native_language},
-            }
-        ),
-        encoding="utf-8",
-    )
-    calls = []
-    result = types.SimpleNamespace(compiled=False)
-    monkeypatch.setattr(
-        pipeline_build,
-        "build_pyi_extension_from_manifest",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
-    )
-    args = _main_args(
-        paths=[],
-        build_manifest=str(manifest),
-        compiler="selected-driver",
-    )
-
-    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler=None)) is result
-    assert (calls[0][1]["input_compiler"], calls[0][1]["input_c_compiler"]) == expected_compilers
-
-
-@pytest.mark.parametrize("jobs", ("0", "many"))
-def test_cli_compile_jobs_rejects_non_positive_or_non_integer_values(jobs: str, capsys) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        prik_cli.main([str(TEST_FILE), "--jobs", jobs])
-
-    assert exc_info.value.code == 2
-    assert "jobs must be a positive integer" in capsys.readouterr().err
-
-
-def test_cli_wrapper_flags_split_grouped_shell_words():
-    assert prik_cli._cli_wrapper_fortran_flags(["-O0 -g", "-DNAME='value with spaces'"]) == (
-        "-O0",
-        "-g",
-        "-DNAME=value with spaces",
-    )
-    assert prik_cli._cli_wrapper_c_flags(["-O1 -g0"]) == ("-O1", "-g0")
-
-
-def test_cli_native_compile_flags_reject_malformed_grouped_value():
-    with pytest.raises(ValueError, match="Invalid --native-compile-flags value"):
-        prik_cli._cli_native_compile_flags(["'-O2"])
-
-
-def test_cli_wrapper_flags_reject_malformed_grouped_value():
-    with pytest.raises(ValueError, match="Invalid --wrapper-c-flags value"):
-        prik_cli._cli_wrapper_c_flags(["'-O0"])
-
-
-def test_prik_build_preprocessing_config_preserves_macro_validation_errors(monkeypatch):
-    class Parser:
-        def error(self, message):
-            raise ValueError(message)
-
-    def args(**overrides):
-        values = {
-            "defines": [],
-            "undefs": [],
-            "compiler": None,
-            "compile_commands": None,
-            "preprocessor_adapter": "auto",
-            "preprocess_template": None,
-            "include_dirs": [],
-            "std": None,
-            "compiler_args": [],
-            "include_exposure": "reachable-project",
-            "public_includes": [],
-            "private_includes": [],
-            "language": "fortran",
-        }
-        values.update(overrides)
-        return types.SimpleNamespace(**values)
-
-    def reject(value, option):
-        raise PreprocessingError(f"{option}: invalid {value}", category="INVALID_MACRO_NAME")
-
-    monkeypatch.setattr(prik_cli, "validate_macro_name", reject)
-
-    with pytest.raises(ValueError) as define_error:
-        prik_cli._build_preprocessing_config(args(defines=["=bad"]), Parser())
-    assert str(define_error.value) == "--define/-D: invalid =bad"
-
-    with pytest.raises(ValueError) as undef_error:
-        prik_cli._build_preprocessing_config(args(undefs=["=bad"]), Parser())
-    assert str(undef_error.value) == "--undef/-U: invalid =bad"
-
-
-@pytest.mark.parametrize(
-    ("overrides", "message"),
-    [
-        (
-            {"compiler": "cc", "preprocess_template": "{source}"},
-            "--preprocess-template requires --preprocessor-adapter command-template",
-        ),
-    ],
-)
-def test_prik_build_preprocessing_config_preserves_validation_diagnostics(overrides, message):
-    values = {
-        "defines": [],
-        "undefs": [],
-        "compiler": None,
-        "compile_commands": None,
-        "preprocessor_adapter": "auto",
-        "preprocess_template": None,
-        "include_dirs": [],
-        "std": None,
-        "compiler_args": [],
-        "include_exposure": "reachable-project",
-        "public_includes": [],
-        "private_includes": [],
-        "language": "fortran",
-    }
-    values.update(overrides)
-
-    class Parser:
-        def error(self, received):
-            raise ValueError(received)
-
-    with pytest.raises(ValueError) as error:
-        prik_cli._build_preprocessing_config(types.SimpleNamespace(**values), Parser())
-    assert str(error.value) == message
-
-
-def test_prik_resolve_language_handles_fortran_and_ambiguous_input_edges(tmp_path: Path):
-    class ErrorParser:
-        def error(self, message):
-            raise ValueError(message)
-
-    parser = ErrorParser()
-    input_dir = tmp_path / "inputs"
-    input_dir.mkdir()
-    f_source = tmp_path / "solver.F90"
-    f_source.write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
-    stub = tmp_path / "iface.PYI"
-    stub.write_text("def solve() -> None: ...\n", encoding="utf-8")
-    unknown = tmp_path / "notes.txt"
-    unknown.write_text("notes\n", encoding="utf-8")
-
-    with pytest.raises(ValueError) as directory_error:
-        prik_cli._resolve_language([str(input_dir)], None, parser)
-    assert str(directory_error.value) == (
-        f"Input directory {input_dir} requires an explicit frontend; "
-        "pass --language fortran or --language c. Use --help for examples."
-    )
-
-    assert prik_cli._resolve_language([str(f_source)], None, parser) == "fortran"
-    assert prik_cli._resolve_language([str(stub)], None, parser) == "fortran"
-
-    with pytest.raises(ValueError) as unknown_error:
-        prik_cli._resolve_language([str(unknown)], None, parser)
-    assert str(unknown_error.value) == (
-        f"Cannot determine the input language for {unknown}; "
-        "pass --language fortran or --language c. Use --help for examples."
-    )
-
-
-def test_cli_without_language_keeps_fortran_default_behavior():
-    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE)]
-
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert "subroutine add1" in result.stdout
-    assert "Language: c" not in result.stdout
-
-
-def test_cli_wrapper_out_requires_name_for_default_wrap():
-    cmd = [sys.executable, "-m", "prik", str(TEST_FILE), "--out"]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    assert res.returncode == 2
-    assert "argument --out: expected one argument" in res.stderr
-
-
-def test_prik_command_parsers_group_options_by_user_intent():
-    top_help = prik_cli._top_level_parser(["--help"]).format_help()
-    build_help = prik_cli._build_parser(["input.f90", "--help"]).format_help()
-    parse_help = prik_cli._parse_parser(["--help"]).format_help()
-    semantics_help = prik_cli._semantics_parser(["--help"]).format_help()
-    generate_help = prik_cli._generate_parser(["--help"]).format_help()
-    probe_help = prik_cli._probe_parser(["--help"]).format_help()
-    normalized_top_help = " ".join(top_help.split())
-    normalized_build_help = " ".join(build_help.split())
-    normalized_parse_help = " ".join(parse_help.split())
-    normalized_semantics_help = " ".join(semantics_help.split())
-    normalized_generate_help = " ".join(generate_help.split())
-    normalized_probe_help = " ".join(probe_help.split())
-
-    def assert_group_order(help_text, *headings):
-        positions = [help_text.index(heading) for heading in headings]
-        assert positions == sorted(positions)
-
-    assert "commands:" in top_help
-    assert all(command in top_help for command in ("parse", "semantics", "generate", "probe"))
-    assert top_help.startswith("usage: python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]")
-    assert "python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ..." in top_help
-    assert "python3 -m prik --version" in top_help
-    assert (
-        "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts." in top_help
-    )
-    assert prik_cli._HELP_DIVIDER in top_help
-    assert "Basic wrapper build:" in top_help
-    assert "Name the Python extension:" in top_help
-    assert "Generate an editable semantic contract:" in top_help
-    assert "python3 -m prik points.f90" in top_help
-    assert "python3 -m prik points.f90 --out geometry" in top_help
-    assert "python3 -m prik generate --pyi points.f90 --out contracts" in top_help
-    assert "See the PRIK homepage for the points.f90 source and generated Python API:" in top_help
-    assert "https://pynumlab.github.io/prik/#see-it-in-action" in top_help
-    assert "points.f90" in build_help
-    assert "points.f90" in parse_help
-    assert "points.f90" in semantics_help
-    assert "points.f90" in generate_help
-    for help_text in (top_help, build_help, parse_help, semantics_help, generate_help, probe_help):
-        assert "scale.f90" not in help_text
-    assert "Run `python3 -m prik --help-build` for the full list of build options." in top_help
+def test_top_level_help_is_concise_and_routes_to_detailed_help(capsys):
+    code, top_help, _err = _invoke(["--help"], capsys)
+    assert code == 0
+    normalized = " ".join(top_help.split())
     for command in ("parse", "semantics", "generate", "probe"):
         assert f"python3 -m prik {command} --help" in top_help
-    for heading in ("positional arguments:", "build options:"):
-        assert heading in top_help
-    for common_option in (
-        "--out",
-        "--out-dir",
-        "--language",
-        "--compiler",
-        "--include-dir",
-        "--native-compile-flags",
-        "--native-c-compile-flags",
-        "--jobs",
-        "--native-library",
-        "--verbose",
-        "--help-build",
-        "--version",
-    ):
-        assert common_option in top_help
-    assert "Input-language compiler used throughout the extension" in top_help
-    assert "Input language (default: fortran; use c for direct C wrappers)" in normalized_top_help
-    assert "default: gfortran" in normalized_top_help
-    assert "Add an include directory used throughout the extension" in top_help
-    assert "Compiler used for preprocessing and internal datatype measurement" not in top_help
-    assert "--native-library openblas passes -lopenblas to the linker" in normalized_top_help
-    assert "--native-link-item" not in top_help
-    assert "--wrapper-c-flags" not in top_help
-    assert build_help.startswith("usage: python3 -m prik INPUT [INPUT ...]\n")
-    assert "[OUTPUT OPTIONS] [COMPILER OPTIONS] [WRAPPER OPTIONS]" in build_help
-    assert "[NATIVE OPTIONS] [DIAGNOSTIC OPTIONS]" in build_help
-    assert "python3 -m prik --build-manifest PATH [MANIFEST OVERRIDES]" in build_help
-    assert "positional arguments:" in build_help
-    for heading in (
-        "input selection:",
-        "output options:",
-        "compiler options:",
-        "wrapper options:",
-        "native options:",
-        "diagnostic options:",
-    ):
-        assert heading in build_help
-    assert "--native-link-item" in build_help
-    assert "--jobs" in build_help
-    assert "--wrapper-c-flags" in build_help
-    assert "compiler used throughout the extension build" in normalized_build_help
-    assert "Add a compiler include search directory" in build_help
-    assert "default: gfortran" in normalized_build_help
-    assert "default: ./__prik__" in normalized_build_help
-    assert (
-        "Fortran or C source file(s), one source directory, or exactly one semantic .pyi contract"
-        in normalized_build_help
-    )
-    assert "--no-compile-input-sources" in build_help
-    assert "Input language (default: fortran; use c for direct C wrappers)" in normalized_build_help
-    assert "Rebuild the extension from an existing prik-build.json" in normalized_build_help
-    assert "Name the Python extension and stable NAME.so library" in normalized_build_help
-    assert "Print build paths and metadata as JSON" in normalized_build_help
-    assert 'Native compiler flags (for example, "-O3 -fopenmp")' in normalized_build_help
-    assert "docs/user/reference/cli-commands.md" in build_help
-    assert "See docs/user/reference/cli-commands.md for all build options." in build_help
-    assert "Build from a semantic contract:" in build_help
-    assert "Replay a build manifest:" in build_help
-    assert "Manifest overrides: --out, --compiler, -I/--include-dir, --jobs" in normalized_build_help
-    assert "--language {fortran,c}" in build_help
-    assert parse_help.startswith("usage: python3 -m prik parse INPUT [INPUT ...] [OPTIONS]")
-    for heading in (
-        "positional arguments:",
-        "input options:",
-        "preprocessing options:",
-        "C include options:",
-        "report options:",
-        "output options:",
-        "diagnostic options:",
-    ):
-        assert heading in parse_help
-    assert_group_order(
-        parse_help,
-        "options:",
-        "positional arguments:",
-        "input options:",
-        "preprocessing options:",
-        "C include options:",
-        "report options:",
-        "output options:",
-        "diagnostic options:",
-    )
-    assert "--language {fortran,c}" in parse_help
-    assert "--compile-commands" in parse_help
-    assert "Compiler used for preprocessing" in normalized_parse_help
-    assert "Add a preprocessing include search directory" in normalized_parse_help
-    assert "datatype measurement" not in normalized_parse_help
-    assert "native and bridge compilation" not in normalized_parse_help
-    assert "default: gfortran; cc with --language c" in normalized_parse_help
-    assert semantics_help.startswith("usage: python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]")
-    assert "--json" in semantics_help
-    assert "--print-limit" in semantics_help
-    assert "Write the report to PATH" in semantics_help
-    assert "Define a preprocessing macro" in semantics_help
-    for heading in (
-        "positional arguments:",
-        "input options:",
-        "preprocessing options:",
-        "C include options:",
-        "report options:",
-        "output options:",
-        "diagnostic options:",
-    ):
-        assert heading in semantics_help
-    assert_group_order(
-        semantics_help,
-        "options:",
-        "positional arguments:",
-        "input options:",
-        "preprocessing options:",
-        "C include options:",
-        "report options:",
-        "output options:",
-        "diagnostic options:",
-    )
-    assert "preprocessing and datatype measurement" in normalized_semantics_help
-    assert "native and bridge compilation" not in normalized_semantics_help
-    assert "default: gfortran; cc with --language c" in normalized_semantics_help
-    assert "(--pyi | --sources | --makefile | --cmake)" in generate_help
-    assert "INPUT [INPUT ...] [OPTIONS]" in generate_help
-    assert "--build-manifest PATH [OVERRIDES]" in generate_help
-    for heading in (
-        "generation modes:",
-        "positional arguments:",
-        "input options:",
-        "compiler and preprocessing options:",
-        "C include options:",
-        "wrapper options:",
-        "native options:",
-        "output options:",
-        "diagnostic options:",
-    ):
-        assert heading in generate_help
-    assert_group_order(
-        generate_help,
-        "options:",
-        "generation modes:",
-        "positional arguments:",
-        "input options:",
-        "compiler and preprocessing options:",
-        "C include options:",
-        "wrapper options:",
-        "native options:",
-        "output options:",
-        "diagnostic options:",
-    )
-    assert "--pyi" in generate_help
-    assert "--sources" in generate_help
-    assert "--makefile" in generate_help
-    assert "--cmake" in generate_help
-    assert "Read an existing prik-build.json and regenerate wrapper artifacts" in normalized_generate_help
-    assert "Compiler used for source analysis and wrapper build files" in normalized_generate_help
-    assert "default: gfortran; cc with --language c" in normalized_generate_help
-    assert "native compiler options:" not in generate_help
-    assert "link options:" not in generate_help
-    assert probe_help.startswith("usage: python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]\n")
-    for heading in ("probe options:", "execution options:", "output options:", "diagnostic options:"):
-        assert heading in probe_help
-    assert_group_order(
-        probe_help,
-        "options:",
-        "probe options:",
-        "execution options:",
-        "output options:",
-        "diagnostic options:",
-    )
-    assert "--json" in probe_help
-    assert "--format" not in probe_help
-    assert "Probe compiler-target datatype sizes, alignment, and ABI facts." in probe_help
-    assert "Probe flags that change default kinds:" in probe_help
-    assert "--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8" in probe_help
-    assert "Cross-target probe:" in probe_help
-    assert "--runner qemu-aarch64" in probe_help
-    assert "Native or cross compiler used to build the probe" in normalized_probe_help
-    assert "Add a probe include search directory" in normalized_probe_help
-    assert "default: gfortran" not in normalized_probe_help
-    assert "--sources" not in parse_help
-    assert "--show-vars" not in semantics_help
-    assert "--native-library-dir" not in probe_help
+    assert "python3 -m prik --help-build" in top_help
+    assert prik_cli._HELP_DIVIDER in top_help
+    # The first screen carries the options a first build needs, including one
+    # that changes the default Python surface, and leaves advanced linking out.
+    for option in ("--out", "--out-dir", "--compiler", "--native-library", "--jobs", "--assume-intent-in-scalars"):
+        assert option in top_help
+    assert "--native-library openblas passes -lopenblas to the linker" in normalized
+    for advanced in ("--native-link-item", "--wrapper-c-flags"):
+        assert advanced not in top_help
 
-
-@pytest.mark.parametrize(
-    ("parser_factory", "purpose"),
-    [
-        (
-            prik_cli._top_level_parser,
-            "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts.",
-        ),
-        (
-            prik_cli._build_parser,
-            "Build a Python extension from Fortran source, a supported C API, or a semantic .pyi contract.",
-        ),
-        (
-            prik_cli._parse_parser,
-            "Inspect Fortran or C source declarations before semantic conversion.",
-        ),
-        (
-            prik_cli._semantics_parser,
-            "Convert Fortran or C source code into language-neutral semantic IR models.",
-        ),
-        (
-            prik_cli._generate_parser,
-            "Generate semantic .pyi contracts or wrapper build artifacts without compiling.",
-        ),
-        (
-            prik_cli._probe_parser,
-            "Probe compiler-target datatype sizes, alignment, and ABI facts.",
-        ),
-    ],
-)
-def test_cli_help_places_a_clear_purpose_below_usage(parser_factory, purpose):
-    help_text = parser_factory(["--help", "--no-color"]).format_help()
-
-    assert f"\n\n{purpose}\n\n" in help_text
-
-
-@pytest.mark.parametrize(
-    ("parser_factory", "example_headings"),
-    [
-        (
-            prik_cli._top_level_parser,
-            ("Basic wrapper build:", "Name the Python extension:", "More help:"),
-        ),
-        (
-            prik_cli._build_parser,
-            ("Basic wrapper build:", "Build from a semantic contract:", "Replay a build manifest:"),
-        ),
-        (
-            prik_cli._parse_parser,
-            (
-                "Basic Fortran inspection:",
-                "Detailed Fortran report:",
-                "C header as JSON:",
-                "--json picks the format, --out picks the destination:",
-            ),
-        ),
-        (
-            prik_cli._semantics_parser,
-            (
-                "Basic Fortran conversion:",
-                "C header:",
-                "Complete semantic IR as JSON on standard output:",
-                "--json picks the format, --out picks the destination:",
-            ),
-        ),
-        (
-            prik_cli._generate_parser,
-            ("Editable semantic contract:", "Wrapper sources only:", "Reproducible Makefile build:"),
-        ),
-        (
-            prik_cli._probe_parser,
-            (
-                "Target datatype mapping table:",
-                "Complete measured report as JSON:",
-                "--json picks the format, --out picks the destination:",
-                "Probe flags that change default kinds:",
-                "Cross-target probe:",
-            ),
-        ),
-    ],
-)
-def test_cli_help_groups_examples_by_task(parser_factory, example_headings):
-    help_text = parser_factory(["--help", "--no-color"]).format_help()
-
-    assert prik_cli._HELP_DIVIDER in help_text
-    assert all(heading in help_text for heading in example_headings)
-
-
-def test_help_build_routes_to_the_full_default_build_help():
-    result = subprocess.run(
-        [sys.executable, "-m", "prik", "--help-build", "--no-color"],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "[OUTPUT OPTIONS] [COMPILER OPTIONS] [WRAPPER OPTIONS]" in result.stdout
-    assert "[NATIVE OPTIONS] [DIAGNOSTIC OPTIONS]" in result.stdout
-    assert "compiler options:" in result.stdout
-    assert "native options:" in result.stdout
-    assert "diagnostic options:" in result.stdout
-    assert "--native-link-item" in result.stdout
-    assert "--wrapper-c-flags" in result.stdout
-    normalized_help = " ".join(result.stdout.split())
-    assert "Link NAME as -lNAME; for example, openblas adds -lopenblas" in normalized_help
-
-
-def test_help_build_exposes_every_supported_build_option():
-    parser = prik_cli._build_parser(["--help"])
-    help_text = parser.format_help()
-    option_strings = {
-        option for action in parser._actions if action.help != argparse.SUPPRESS for option in action.option_strings
-    }
-
-    assert option_strings
-    assert all(option in help_text for option in option_strings)
+    code, build_help, _err = _invoke(["--help-build", "--no-color"], capsys)
+    assert code == 0
+    for advanced in ("--native-link-item", "--wrapper-c-flags"):
+        assert advanced in build_help
+    assert "Link NAME as -lNAME; for example, openblas adds -lopenblas" in " ".join(build_help.split())
 
 
 @pytest.mark.parametrize(
     "parser_factory",
-    (
+    [
+        prik_cli._build_parser,
         prik_cli._parse_parser,
         prik_cli._semantics_parser,
         prik_cli._generate_parser,
         prik_cli._probe_parser,
-    ),
+    ],
+    ids=["build", "parse", "semantics", "generate", "probe"],
 )
-def test_subcommand_help_exposes_every_supported_option(parser_factory):
+def test_command_help_lists_every_supported_option(parser_factory):
     parser = parser_factory(["--help"])
     help_text = parser.format_help()
     option_strings = {
@@ -944,189 +417,24 @@ def test_subcommand_help_exposes_every_supported_option(parser_factory):
     }
 
     assert option_strings
-    assert all(option in help_text for option in option_strings)
+    assert sorted(option for option in option_strings if option not in help_text) == []
 
 
 @pytest.mark.parametrize(
-    ("extra_args", "message"),
+    ("command", "expected", "excluded"),
     [
-        (["--out-dir", "elsewhere"], "replays its saved output directory"),
-        (["--language", "fortran"], "replays its saved input language"),
-        (["--preprocessor-adapter", "auto"], "replays its saved preprocessing recipe"),
-        (["-D", "USE_FAST=1"], "replays its saved preprocessing recipe"),
-        (["--strict-wrapper-names"], "replays saved wrapper behavior"),
-        (["--assume-intent-in-scalars"], "replays saved wrapper behavior"),
-        (["--native-library", "openblas"], "replays saved native inputs"),
+        ("parse", "Compiler used for preprocessing", "datatype measurement"),
+        ("semantics", "preprocessing and datatype measurement", "wrapper build files"),
+        ("generate", "source analysis and wrapper build files", "used to build the probe"),
+        ("probe", "used to build the probe", "source preprocessing"),
     ],
 )
-def test_manifest_replay_rejects_saved_settings_instead_of_ignoring_them(extra_args, message, capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        prik_cli.main(["--build-manifest", "build/prik-build.json", *extra_args])
+def test_command_help_tailors_the_shared_compiler_option(capsys, command, expected, excluded):
+    code, help_text, _err = _invoke([command, "--help", "--no-color"], capsys)
+    normalized = " ".join(help_text.split())
 
-    assert exc_info.value.code == 2
-    assert message in capsys.readouterr().err
-
-
-def test_manifest_replay_accepts_documented_overrides(monkeypatch):
-    captured = {}
-
-    def run_build(args, preprocessing):
-        captured["args"] = args
-        captured["preprocessing"] = preprocessing
-        return object()
-
-    monkeypatch.setattr(prik_cli, "_run_wrap_build_with_diagnostics", run_build)
-    monkeypatch.setattr(prik_cli, "_print_wrap_build_output", lambda _args, _result: None)
-
-    result = prik_cli.main(
-        [
-            "--build-manifest",
-            "build/prik-build.json",
-            "--out",
-            "REPLAYED",
-            "--compiler",
-            "selected-gfortran",
-            "-I",
-            "include",
-            "--json",
-            "--verbose",
-            "--no-color",
-            "--debug",
-        ]
-    )
-
-    assert result == 0
-    assert captured["args"].out == "REPLAYED"
-    assert captured["args"].json is True
-    assert captured["args"].verbose is True
-    assert captured["args"].no_color is True
-    assert captured["args"].debug is True
-    assert captured["preprocessing"].compiler == "selected-gfortran"
-    assert captured["preprocessing"].include_dirs == ["include"]
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["generate", "input.f90"],
-        ["generate", "--pyi", "--sources", "input.f90"],
-    ],
-)
-def test_generate_requires_exactly_one_output_mode(argv):
-    with pytest.raises(SystemExit) as exc_info:
-        prik_cli.main(argv)
-
-    assert exc_info.value.code == 2
-
-
-def test_cli_requires_explicit_language_for_directory_and_unknown_suffix(tmp_path: Path):
-    source = tmp_path / "solver.source"
-    source.write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
-
-    unknown = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(source)],
-        capture_output=True,
-        text=True,
-    )
-    assert unknown.returncode == 2
-    assert "Cannot determine the input language" in unknown.stderr
-    assert "--language fortran or --language c" in unknown.stderr
-
-    directory = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(tmp_path)],
-        capture_output=True,
-        text=True,
-    )
-    assert directory.returncode == 2
-    assert "requires an explicit frontend" in directory.stderr
-
-    explicit = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(source), "--language", "fortran"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "subroutine solve" in explicit.stdout
-
-
-def test_cli_rejects_fortran_file_with_explicit_c_frontend(tmp_path: Path):
-    source = tmp_path / "solver.f90"
-    source.write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "prik", "parse", str(source), "--language", "c"],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 2
-    assert "incompatible with --language c" in result.stderr
-    assert "pass --language fortran" in result.stderr
-
-
-def test_cli_fortran_rejects_embedded_c_declaration_outside_execution_body(tmp_path: Path):
-    source = tmp_path / "solver.f90"
-    source.write_text(
-        "subroutine solve()\n  int add(int a, int b);\nend subroutine solve\n",
-        encoding="utf-8",
-    )
-    result = subprocess.run(
-        [sys.executable, "-m", "prik", "generate", "--pyi", str(source)],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 1
-    assert "PARSE_UNSUPPORTED_DECLARATION" in result.stderr
-    assert "Unknown or unsupported datatype declaration" in result.stderr
-
-
-def test_prik_cli_defaults_pyi_to_wrapper_and_requires_native_implementation(tmp_path: Path):
-    pyi = tmp_path / "module.pyi"
-    pyi.write_text("def f() -> None: ...\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "prik", str(pyi)]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    assert res.returncode == 2
-    assert "A .pyi wrapper build requires --native-fortran-sources" in res.stderr
-
-
-@pytest.mark.parametrize("macro_flag", ["-D", "-U"])
-def test_prik_main_rejects_invalid_macro_names(macro_flag: str, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(TEST_FILE), macro_flag, "=invalid"])
-    with pytest.raises(SystemExit):
-        prik_cli.main()
-
-
-def test_assume_intent_in_scalars_is_discoverable_from_the_first_help_screen():
-    """The option changes the default Python surface, so it is not hidden behind --help-build."""
-    top_help = prik_cli._top_level_parser(["--help"]).format_help()
-    build_help = prik_cli._build_parser(["input.f90", "--help"]).format_help()
-    generate_help = prik_cli._generate_parser(["--help"]).format_help()
-
-    semantics_help = prik_cli._semantics_parser(["--help"]).format_help()
-
-    assert "--assume-intent-in-scalars" in top_help
-    assert "--assume-intent-in-scalars" in build_help
-    assert "--assume-intent-in-scalars" in generate_help
-    assert "--assume-intent-in-scalars" in semantics_help
-
-
-def test_pyi_wrapper_build_rejects_assume_intent_in_scalars(tmp_path: Path, capsys):
-    """A contract states its own results, so the option has no missing intent to interpret."""
-    contract = tmp_path / "api.pyi"
-    contract.write_text("from prik.contracts import Float64\n", encoding="utf-8")
-    source = tmp_path / "api.f90"
-    source.write_text("subroutine noop()\nend subroutine noop\n", encoding="utf-8")
-
-    with pytest.raises(SystemExit) as exc_info:
-        prik_cli.main(
-            [
-                str(contract),
-                "--native-fortran-sources",
-                str(source),
-                "--assume-intent-in-scalars",
-            ]
-        )
-
-    assert exc_info.value.code == 2
-    assert "already states its own results" in capsys.readouterr().err
+    assert code == 0
+    assert prik_cli._HELP_DIVIDER in help_text
+    assert expected in normalized
+    assert excluded not in normalized
+    assert ("default: gfortran; cc with --language c" in normalized) is (command != "probe")

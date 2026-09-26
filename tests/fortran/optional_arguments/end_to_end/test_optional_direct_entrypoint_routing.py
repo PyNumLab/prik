@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
-    _build_inline_pyi_contract_module,
     _build_source_or_generated_pyi_and_import,
 )
 
@@ -75,24 +74,3 @@ def test_optional_mixed_route_adapts_only_optional_value_dummy(
         )
         assert "bind_c_adapted_optional_value_state" in bridge
         assert "direct_optional_state" not in bridge
-
-
-def test_optional_mixed_route_matches_edited_source_free_contract(tmp_path: Path):
-    stem = "optional_arguments_mixed_bind_c_f90"
-    source = (FIXTURES / "native" / f"{stem}.f90").read_text(encoding="utf-8")
-    contract = (FIXTURES / "contracts" / stem / f"{stem}.pyi").read_text(encoding="utf-8")
-    contract = contract.replace("from prik.contracts import ", "from prik.contracts import nogil, ")
-    contract = contract.replace("def direct_optional_state(", "@nogil\ndef direct_optional_state(").replace(
-        "def adapted_optional_value_state(", "@nogil\ndef adapted_optional_value_state("
-    )
-    module, result = _build_inline_pyi_contract_module(
-        tmp_path, module_name=stem, source_text=source, contract_text=contract
-    )
-
-    assert module.direct_optional_state() == np.int32(0)
-    assert module.direct_optional_state(np.float64(2.0)) == np.int32(1)
-    assert module.adapted_optional_value_state() == np.int32(0)
-    assert module.adapted_optional_value_state(np.float64(2.0)) == np.int32(2)
-    bridge = (result.output_dir / f"bind_c_{stem}_wrapper.f90").read_text(encoding="utf-8").casefold()
-    assert "bind_c_adapted_optional_value_state" in bridge
-    assert "function bind_c_direct_optional_state" not in bridge

@@ -1,4 +1,4 @@
-"""Public native-binding support surface checks."""
+"""ABI and lifetime mechanisms of the bundled native-array backend record."""
 
 import re
 
@@ -6,38 +6,6 @@ from tests.fortran._support.paths import REPO_ROOT
 
 
 SUPPORT_HEADER = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
-SUPPORT_SOURCE = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
-
-
-def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
-    header = SUPPORT_HEADER.read_text(encoding="utf-8")
-    assert not SUPPORT_SOURCE.exists()
-
-    assert "static inline int prik_array_validate(" in header
-    assert "static inline int prik_array_validate_ndarray(" in header
-    assert "PyArrayObject *array," in header
-    assert "PRIK_ARRAY_LAYOUT_SIGNED_STRIDED_F" in header
-    assert "prik_array_actual" in header
-    assert "prik_release_owned_memory" in header
-    assert "prik_capture_address" in header
-
-    scalar_suffixes = (
-        "bool",
-        "int8",
-        "int16",
-        "int32",
-        "int64",
-        "float32",
-        "float64",
-        "complex64",
-        "complex128",
-    )
-    for suffix in scalar_suffixes:
-        assert f"prik_{suffix}_unpack_exact" in header
-        assert f"PRIK_DEFINE_SCALAR_OR_STORAGE({suffix}, " in header
-        assert f"prik_{suffix}_unpack" in header
-        assert f"prik_{suffix}_to_python" in header
-        assert f"prik_{suffix}_to_numpy" in header
 
 
 BACKEND_RECORD = (
@@ -98,33 +66,6 @@ def test_the_capsule_name_covers_semantic_version_and_the_whole_record():
     assert "for (character = layout[index].name; *character != '\\0'; ++character)" in header
 
 
-def test_native_array_backend_capsule_exposes_one_entry_point_and_its_readers():
-    """One entry point reaches the descriptor; the readers validate a producer.
-
-    The context is what that entry point needs to get there, and a release
-    marks that context as this extension's to free.
-    """
-    header = SUPPORT_HEADER.read_text(encoding="utf-8")
-
-    for name in (
-        "prik_native_array_backend_capsule_new",
-        "prik_native_array_backend_capsule_destructor",
-        "prik_native_array_backend_from_capsule",
-        "prik_native_array_backend_for_descriptor",
-        "prik_native_array_backend_for_actual",
-        "prik_native_array_backend_owned_descriptor",
-        "prik_native_array_backend_layout_tag",
-        "prik_native_array_backend_capsule_name",
-        "prik_native_array_backend_release",
-        "prik_native_array_owned_with_descriptor",
-    ):
-        assert name in header
-
-    assert "invalid prik native array descriptor attribute" in header
-    assert "backend->descriptor_attribute != expected_descriptor_attribute" in header
-    assert "does not expose the descriptor attribute required by the dummy argument" in header
-
-
 def test_native_array_backend_release_is_idempotent_and_defers_active_storage():
     """Owned storage is cleared once and remains alive through active calls."""
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
@@ -139,8 +80,9 @@ def test_native_array_backend_release_is_idempotent_and_defers_active_storage():
     assert "prik_native_array_backend_release_now(backend);" in body
     assert "backend->context = NULL;" in release_now
     assert "backend->release(context);" in release_now
-    assert "context_kind == PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR" in release_now
-    assert "free(context);" in release_now
+    # Release frees C descriptor storage only; a Fortran owner belongs to its
+    # runtime, so freeing it here would be undefined.
+    assert "if (context_kind == PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR) {\n        free(context);" in release_now
     # A released owned backend reports itself closed rather than handing over
     # storage that is gone.
     reader = header[header.index("static inline prik_native_array_backend *prik_native_array_backend_from_capsule(") :]
@@ -164,18 +106,6 @@ def test_address_capture_primitive_has_external_linkage_behind_one_opt_in():
     assert "static inline void *prik_capture_address" not in header
 
 
-def test_a_fortran_owner_context_is_never_freed_as_c_storage():
-    """Release frees C storage only; a Fortran owner belongs to its runtime.
-
-    v1 called ``free()`` on every released context because an owned context was
-    always ``malloc``'d descriptor storage. An owner is allocated by the Fortran
-    runtime instead, so freeing it here as well would be undefined.
-    """
-    header = SUPPORT_HEADER.read_text(encoding="utf-8")
-
-    assert "if (context_kind == PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR) {\n        free(context);" in header
-
-
 def test_owning_storage_is_no_longer_the_same_fact_as_owning_a_descriptor():
     """The owned-descriptor accessor refuses a context that is not a descriptor.
 
@@ -190,14 +120,20 @@ def test_owning_storage_is_no_longer_the_same_fact_as_owning_a_descriptor():
     assert "owns a Fortran entity" in body
 
 
-def test_a_fortran_owner_cannot_be_published_without_an_identity():
-    """An owner is the one context a reader cannot check by inspection.
+def test_a_published_context_agrees_with_its_ownership_and_identity():
+    """A backend cannot publish owned storage as borrowed, or the reverse.
 
-    Nothing about the address says which compiler laid out the bytes behind it
-    or which entity it was generated for, so publishing one without both values
-    would leave a foreign reader nothing to compare.
+    A Fortran owner is also the one context a reader cannot check by
+    inspection: nothing about the address says which compiler laid out the
+    bytes behind it or which entity it was generated for, so publishing one
+    without both identity values would leave a foreign reader nothing to
+    compare.
     """
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
+
+    assert "context == NULL && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_NONE" in header
+    assert "prik native array backend cannot release borrowed context storage" in header
+    assert "prik native array owned context needs a release entry point" in header
 
     assert "PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER && (owner_abi == 0 || owner_signature == 0)" in header
     assert "prik native array Fortran owner needs an owner ABI identity" in header
@@ -206,15 +142,6 @@ def test_a_fortran_owner_cannot_be_published_without_an_identity():
         "context_kind != PRIK_NATIVE_ARRAY_CONTEXT_FORTRAN_OWNER && (owner_abi != 0 || owner_signature != 0)" in header
     )
     assert "#define PRIK_FORTRAN_OWNER_ABI UINT64_C(0)" in header
-
-
-def test_context_kind_agrees_with_storage_ownership():
-    """A backend cannot publish owned storage as borrowed, or the reverse."""
-    header = SUPPORT_HEADER.read_text(encoding="utf-8")
-
-    assert "context == NULL && context_kind != PRIK_NATIVE_ARRAY_CONTEXT_NONE" in header
-    assert "prik native array backend cannot release borrowed context storage" in header
-    assert "prik native array owned context needs a release entry point" in header
 
 
 def test_owner_identity_is_compared_before_any_dereference():

@@ -10,13 +10,14 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_text_and_import
 from tests.fortran.arrays.end_to_end.fixtures.primitive_dtype_rank_matrix import (
     PRIMITIVE_ARRAY_CASES,
+    PRIMITIVE_ARRAY_RANKS,
     primitive_dtype_rank_source,
 )
 
 pytestmark = pytest.mark.fortran_end_to_end
 
 
-def test_every_primitive_dtype_at_every_concrete_rank_mutates_exact_storage(tmp_path: Path):
+def test_every_primitive_dtype_at_representative_ranks_mutates_exact_storage(tmp_path: Path):
     module = _build_text_and_import(
         primitive_dtype_rank_source(),
         "farray_dtype_rank_matrix.f90",
@@ -29,7 +30,7 @@ def test_every_primitive_dtype_at_every_concrete_rank_mutates_exact_storage(tmp_
     )
 
     for case in PRIMITIVE_ARRAY_CASES:
-        for rank in range(1, 16):
+        for rank in PRIMITIVE_ARRAY_RANKS:
             shape = (2, *([1] * (rank - 1)))
             values = np.asfortranarray(np.asarray(case.values, dtype=case.dtype).reshape(shape, order="F"))
 

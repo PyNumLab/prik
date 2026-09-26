@@ -213,6 +213,10 @@ def test_module_and_derived_pointer_handles_track_native_association(
     assert field_handle.shape == (3,)
     assert module.sum_values(field_handle) == np.float64(24.0)
 
+    # Association hands over the source's descriptor facts, strides included.
+    module.associate_module_slice()
+    field_handle.associate(module_handle)
+    assert module.sum_pointer_descriptor(field_handle) == np.float64(6.0)
     module.associate_module_contiguous()
     field_handle.associate(module_handle)
     assert module.sum_pointer_descriptor(field_handle) == np.float64(9.0)
@@ -278,7 +282,7 @@ def test_caller_created_pointer_crosses_separately_built_extensions(tmp_path: Pa
     assert values.closed is True
 
 
-def test_a_reversed_pointer_target_keeps_its_data_pointer_strides_and_span(tmp_path: Path):
+def test_pointer_descriptor_views_preserve_strides_span_and_parent_lifetime(tmp_path: Path):
     """A negative stride reaches the view exactly as the descriptor records it.
 
     The descriptor's base address is the first element in Fortran order and its
@@ -304,10 +308,7 @@ def test_a_reversed_pointer_target_keeps_its_data_pointer_strides_and_span(tmp_p
     module.associate_module_reversed()
     np.testing.assert_allclose(handle.to_numpy(), np.array([50.0, 4.0, 3.0, 2.0]))
 
-
-def test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime(tmp_path: Path):
-    module = _pointer_descriptor_view_module(tmp_path)
-
+    # A strided slice keeps its strides, and a field view outlives its parent.
     module_handle = module.module_values
     module.associate_module_slice()
     module_view = module_handle.to_numpy()
@@ -352,8 +353,8 @@ def test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifeti
     np.testing.assert_allclose(field_view, np.array([6.0, 12.0], dtype=np.float64))
 
 
-def test_module_native_array_handles_use_canonical_plan(tmp_path: Path):
-    """Replay module pointer/allocatable handles without derived-field owners."""
+def test_module_native_array_handles_and_caller_created_pointers_use_canonical_plan(tmp_path: Path):
+    """Replay module pointer/allocatable handles and a native pointer output from an edited contract."""
     source = tmp_path / "native" / "fpointer_handles_f90.f90"
     source.parent.mkdir()
     source.write_text(POINTER_HANDLE_SOURCE, encoding="utf-8")
@@ -361,7 +362,7 @@ def test_module_native_array_handles_use_canonical_plan(tmp_path: Path):
     contract = tmp_path / "pointer_handles" / "fpointer_handles_f90.pyi"
     contract.parent.mkdir()
     contract.write_text(
-        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, bind
+        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns, bind
 
 module_values: Annotated[
     Pointer[Float64[:]],
@@ -389,6 +390,25 @@ def sum_values(values: Float64[:]) -> Float64: ...
 def sum_four(values: Float64[4]) -> Float64: ...
 def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
 def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
+
+def select_module_values(
+    values: Annotated[
+        Pointer[Float64[:]],
+        PointerAssociation("runtime"),
+        PointerPolicy(
+            nullable=True,
+            transfer="call_local",
+            target_owner="module",
+            lifetime="module",
+            deallocation="never",
+            shape_source="pointer_bounds",
+            contiguity="contiguous",
+            reassociation="native",
+            aliasing="borrowed",
+            mutability="view",
+        ),
+    ],
+) -> Returns["values", Pointer[Float64[:]]]: ...
 """,
         encoding="utf-8",
     )
@@ -431,52 +451,11 @@ def sum_allocatable_descriptor(values: Allocatable[Float64[:]]) -> Float64: ...
     allocatable_handle.deallocate()
     assert allocatable_handle.allocated is False
 
-
-def test_caller_created_pointer_handle_tracks_native_output_association(tmp_path: Path):
-    source = tmp_path / "native" / "fpointer_handles_f90.f90"
-    source.parent.mkdir()
-    source.write_text(POINTER_HANDLE_SOURCE, encoding="utf-8")
-    native_object = _compile_native_object(source, tmp_path / "native_build")
-    contract = tmp_path / "contracts" / "fpointer_handles_f90.pyi"
-    contract.parent.mkdir()
-    pointer_type = """Annotated[
-    Pointer[Float64[:]],
-    PointerAssociation("runtime"),
-    PointerPolicy(
-        nullable=True,
-        transfer="call_local",
-        target_owner="module",
-        lifetime="module",
-        deallocation="never",
-        shape_source="pointer_bounds",
-        contiguity="contiguous",
-        reassociation="native",
-        aliasing="borrowed",
-        mutability="view",
-    ),
-]"""
-    contract.write_text(
-        f"""from prik.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns
-
-def select_module_values(
-    values: {pointer_type},
-) -> Returns["values", {pointer_type}]: ...
-
-def sum_pointer_descriptor(values: Pointer[Float64[:]]) -> Float64: ...
-""",
-        encoding="utf-8",
-    )
-    result = build_pyi_extension(
-        contract,
-        input_compiler=_compiler(),
-        native_objects=[native_object],
-        native_include_dirs=[native_object.parent],
-        output_dir=tmp_path / "build",
-    )
-    module = _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
-
+    # A caller-created handle tracks the association a native output makes,
+    # and a pending association reaches native storage once it is attached.
     handle = Pointer[Float64[:]]()
     assert handle.associated is False
+    assert handle.owned is True
     assert module.sum_pointer_descriptor(handle) == np.float64(-1.0)
     assert module.select_module_values(handle) is handle
     assert handle.associated is True

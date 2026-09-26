@@ -13,39 +13,26 @@ class ChildNode(BaseNode):
     """More specific model used to prove MRO dispatch."""
 
 
-def test_class_visitor_uses_the_most_specific_available_handler() -> None:
-    class Visitor(ClassVisitor):
-        @staticmethod
-        def _visit_BaseNode(_node):
-            return "base"
-
-        @staticmethod
-        def _visit_ChildNode(_node):
-            return "child"
-
-    assert Visitor()._visit(ChildNode()) == "child"
+class GrandchildNode(ChildNode):
+    """Model whose nearest handler is its parent's."""
 
 
-def test_class_visitor_falls_back_to_a_base_model_handler() -> None:
-    class Visitor(ClassVisitor):
-        @staticmethod
-        def _visit_BaseNode(_node):
-            return "base"
-
-    assert Visitor()._visit(ChildNode()) == "base"
-
-
-def test_class_visitor_supports_a_configured_handler_prefix() -> None:
+def test_class_visitor_dispatches_by_mro_and_rejects_unhandled_models() -> None:
     class ParserVisitor(ClassVisitor):
         visitor_method_prefix = "_parse"
 
         @staticmethod
         def _parse_BaseNode(node):
-            return type(node).__name__
+            return ("base", type(node).__name__)
 
-    assert ParserVisitor()._visit(ChildNode()) == "ChildNode"
+        @staticmethod
+        def _parse_ChildNode(node):
+            return ("child", type(node).__name__)
 
+    visitor = ParserVisitor()
 
-def test_class_visitor_reports_an_unsupported_model() -> None:
+    assert visitor._visit(BaseNode()) == ("base", "BaseNode")
+    assert visitor._visit(ChildNode()) == ("child", "ChildNode")
+    assert visitor._visit(GrandchildNode()) == ("child", "GrandchildNode")
     with pytest.raises(TypeError, match="Unsupported model for class visitor"):
-        ClassVisitor()._visit(object())
+        visitor._visit(object())

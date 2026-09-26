@@ -13,8 +13,6 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     RESOLVED_RUNTIME_STATUS_ERROR_POLICY_METADATA,
-    SemanticFunction,
-    SemanticType,
 )
 from prik.policy.ownership import (
     CodegenAction,
@@ -26,15 +24,13 @@ from prik.policy.ownership import (
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
     ArgumentConversionPhase,
-    ArgumentHandoffMode,
     BridgeDataAction,
     ExternalDeclarationMode,
-    FunctionWrapperPolicy,
     NativeStatusErrorPolicy,
     OptionalMode,
     PythonExceptionKind,
 )
-from prik.policy.construction import build_function_wrapper_policy, completed_function_wrapper_policy
+from prik.policy.construction import completed_function_wrapper_policy
 
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/contracts/fmath/__init__.pyi")
 
@@ -49,24 +45,84 @@ def _source_semantic_module(filename: str, *, module_name: str):
     return module
 
 
-def test_fmath_fixture_gets_completed_function_wrapper_policy():
-    module = pyi_file_to_semantic_module(FMATH_CONTRACT, module_name="fmath")
+@pytest.mark.parametrize(
+    ("lane", "native_name", "slot_value_kind"),
+    [
+        pytest.param("source", "ADD_R8", "arg", id="fortran_source"),
+        # The contract states no separate native name: `add_r8` reaches
+        # Fortran's `ADD_R8`, which is named without regard to case.
+        pytest.param("contract", "add_r8", "addr", id="pyi_contract"),
+    ],
+)
+def test_fmath_scalar_replacements_complete_one_policy_from_source_and_contract(lane, native_name, slot_value_kind):
+    if lane == "source":
+        module = _source_semantic_module("fmath.f", module_name="fmath")
+    else:
+        module = pyi_file_to_semantic_module(FMATH_CONTRACT, module_name="fmath")
+        complete_semantic_policies(module)
+    policies = {function.name.casefold(): completed_function_wrapper_policy(function) for function in module.functions}
 
-    complete_semantic_policies(module)
+    # Every conservative scalar replacement is supported and needs no cleanup.
+    for policy in policies.values():
+        assert policy.supported is True
+        assert policy.blockers == ()
+        assert policy.writeback_actions
+        assert policy.cleanup_actions == ()
+        assert policy.release_actions == ()
+        assert all(argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE for argument in policy.arguments)
 
-    policies = [function.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] for function in module.functions]
-    assert policies
-    assert all(isinstance(policy, FunctionWrapperPolicy) for policy in policies)
-    assert all(policy.supported for policy in policies)
-    assert all(policy.blockers == () for policy in policies)
-    assert all(policy.writeback_actions for policy in policies)
-    assert all(
-        argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE
-        for policy in policies
+    policy = policies["add_r8"]
+    assert policy.owner_path.casefold() == "fmath.add_r8"
+    assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
+    assert policy.native_name == native_name
+    assert policy.standalone is True
+    assert [
+        (
+            argument.name,
+            argument.python_position,
+            argument.native_position,
+            argument.codegen_action,
+            argument.python_barrier_action,
+            argument.native_barrier_action,
+            argument.storage_mode,
+        )
         for argument in policy.arguments
-    )
-    assert all(policy.cleanup_actions == () for policy in policies)
-    assert all(policy.release_actions == () for policy in policies)
+    ] == [
+        (
+            name,
+            position,
+            position,
+            CodegenAction.COPY_IN_OUT,
+            PythonBarrierAction.SCALAR_VALUE,
+            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
+            StorageMode.STACK,
+        )
+        for position, name in enumerate(("X", "Y"))
+    ]
+    assert [
+        (
+            slot.source_kind,
+            slot.value_kind,
+            slot.native_position,
+            slot.python_position,
+            slot.native_barrier_action,
+            slot.codegen_action,
+        )
+        for slot in policy.native_call_slots
+    ] == [
+        (
+            "projection",
+            slot_value_kind,
+            position,
+            position,
+            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
+            CodegenAction.COPY_IN_OUT,
+        )
+        for position in (0, 1)
+    ]
+    [result] = policy.results
+    assert result.codegen_action is CodegenAction.DIRECT_VALUE
+    assert result.storage_mode is StorageMode.STACK
 
 
 def test_rank_zero_scalar_storage_results_complete_as_numpy_array_policies():
@@ -105,30 +161,6 @@ def hidden_storage_result() -> Float64[()]: ...
     assert hidden_policy.native_call_slots[0].native_barrier_action is hidden.native_barrier_action
 
 
-def test_hidden_result_policy_reports_a_missing_return_projection_after_selection():
-    module = parse_pyi_text(
-        """
-@native_call([Return("status", 0)])
-def hidden_status() -> Int32: ...
-""",
-        module_name="missing_hidden_projection",
-    )
-    complete_semantic_policies(module)
-    function = module.functions[0]
-
-    # Preserve the completed hidden-output ownership decision while removing
-    # its result mapping to characterize the candidate builder's fail-closed path.
-    function.projection = []
-    policy = build_function_wrapper_policy(
-        function,
-        owner_path="missing_hidden_projection.hidden_status",
-        module_export=True,
-    )
-
-    assert policy.results == ()
-    assert "hidden result 'status' has no completed return projection" in policy.blockers
-
-
 def test_hidden_result_policy_keeps_blocked_bridge_action_on_the_candidate():
     module = parse_pyi_text(
         """
@@ -164,56 +196,6 @@ def optional(value: Annotated[Float64, Immutable] | None = ...) -> None: ...
     assert optional.external_declaration is ExternalDeclarationMode.EXPLICIT_INTERFACE
 
 
-def test_source_fmath_scalar_policy_projects_conservative_replacements():
-    module = _source_semantic_module("fmath.f", module_name="fmath")
-    function = next(item for item in module.functions if item.name == "ADD_R8")
-    policies = [item.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] for item in module.functions]
-
-    policy = function.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert isinstance(policy, FunctionWrapperPolicy)
-    assert policy.supported is True
-    assert policy.blockers == ()
-    assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
-    assert policy.native_name == "ADD_R8"
-    assert policy.standalone is True
-    assert [argument.name for argument in policy.arguments] == ["X", "Y"]
-    assert [argument.codegen_action for argument in policy.arguments] == [
-        CodegenAction.COPY_IN_OUT,
-        CodegenAction.COPY_IN_OUT,
-    ]
-    assert all(argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE for argument in policy.arguments)
-    assert [argument.python_barrier_action for argument in policy.arguments] == [
-        PythonBarrierAction.SCALAR_VALUE,
-        PythonBarrierAction.SCALAR_VALUE,
-    ]
-    assert [argument.native_barrier_action for argument in policy.arguments] == [
-        NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
-        NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
-    ]
-    assert [argument.storage_mode for argument in policy.arguments] == [StorageMode.STACK, StorageMode.STACK]
-    assert all(policy.writeback_actions for policy in policies)
-    assert all(policy.cleanup_actions == () for policy in policies)
-    assert all(policy.release_actions == () for policy in policies)
-    assert [
-        (slot.source_kind, slot.value_kind, slot.native_barrier_action, slot.codegen_action)
-        for slot in policy.native_call_slots
-    ] == [
-        (
-            "projection",
-            "arg",
-            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
-            CodegenAction.COPY_IN_OUT,
-        ),
-        (
-            "projection",
-            "arg",
-            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
-            CodegenAction.COPY_IN_OUT,
-        ),
-    ]
-
-
 def test_source_export_policy_resolves_names_inside_each_namespace():
     module = _source_semantic_module("fnaming_f90.f90", module_name="fnaming_f90")
     policies = {
@@ -235,61 +217,6 @@ def test_source_export_policy_resolves_names_inside_each_namespace():
     )
 
 
-def test_fmath_scalar_policy_records_address_projected_call_slots():
-    module = pyi_file_to_semantic_module(FMATH_CONTRACT, module_name="fmath")
-    complete_semantic_policies(module)
-    function = next(item for item in module.functions if item.name == "add_r8")
-
-    policy = completed_function_wrapper_policy(function)
-
-    assert policy.owner_path == "fmath.add_r8"
-    assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
-    # The contract states no separate native name: `add_r8` reaches Fortran's
-    # `ADD_R8`, which is named without regard to case.
-    assert policy.native_name == "add_r8"
-    assert policy.standalone is True
-
-    assert [argument.name for argument in policy.arguments] == ["X", "Y"]
-    assert [argument.python_position for argument in policy.arguments] == [0, 1]
-    assert [argument.native_position for argument in policy.arguments] == [0, 1]
-    for argument in policy.arguments:
-        assert argument.semantic_type_name == "Float64"
-        assert argument.rank == 0
-        assert argument.optional is False
-        assert argument.ownership.kind is ObjectKind.SCALAR
-        assert argument.codegen_action is CodegenAction.COPY_IN_OUT
-        assert argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE
-        assert argument.python_barrier_action is PythonBarrierAction.SCALAR_VALUE
-        assert argument.native_barrier_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-        assert argument.storage_mode is StorageMode.STACK
-        assert argument.boundary_storage_mode is StorageMode.STACK
-        assert argument.projects_result is True
-        assert argument.python_visible is True
-
-    assert [(slot.native_position, slot.python_position) for slot in policy.native_call_slots] == [
-        (0, 0),
-        (1, 1),
-    ]
-    assert [slot.source_kind for slot in policy.native_call_slots] == ["projection", "projection"]
-    assert [slot.value_kind for slot in policy.native_call_slots] == ["addr", "addr"]
-    assert [slot.native_name for slot in policy.native_call_slots] == ["X", "Y"]
-    assert all(
-        slot.native_barrier_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS for slot in policy.native_call_slots
-    )
-
-    assert len(policy.results) == 1
-    result = policy.results[0]
-    assert result.owner_path == "fmath.add_r8.return"
-    assert result.semantic_type_name == "Float64"
-    assert result.rank == 0
-    assert result.ownership.kind is ObjectKind.SCALAR
-    assert result.codegen_action is CodegenAction.DIRECT_VALUE
-    assert result.python_barrier_action is PythonBarrierAction.NONE
-    assert result.native_barrier_action is NativeBarrierAction.NONE
-    assert result.storage_mode is StorageMode.STACK
-    assert result.boundary_storage_mode is StorageMode.STACK
-
-
 def test_wrapper_policy_records_runtime_and_native_order_metadata():
     module = parse_pyi_text(
         """
@@ -298,12 +225,14 @@ def test_wrapper_policy_records_runtime_and_native_order_metadata():
 @standalone
 @native_call([Addr(Arg(1)), Addr(Arg(0))])
 def swap_args(x: Float64, y: Float64) -> Float64: ...
+
+def add(x: Float64, y: Float64) -> Float64: ...
 """,
         module_name="runtime_policy",
     )
     complete_semantic_policies(module)
 
-    policy = completed_function_wrapper_policy(module.functions[0])
+    policy, implicit = (completed_function_wrapper_policy(function) for function in module.functions)
 
     assert policy.release_gil is True
     assert policy.standalone is True
@@ -312,6 +241,13 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert [(slot.native_position, slot.python_position, slot.value_kind) for slot in policy.native_call_slots] == [
         (0, 1, "addr"),
         (1, 0, "addr"),
+    ]
+    # Without a native_call, Python order is the native order.
+    assert implicit.release_gil is False
+    assert [argument.native_position for argument in implicit.arguments] == [0, 1]
+    assert [(slot.source_kind, slot.native_position, slot.python_position) for slot in implicit.native_call_slots] == [
+        ("implicit", 0, 0),
+        ("implicit", 1, 1),
     ]
 
 
@@ -345,25 +281,6 @@ def solve(value: Int32) -> None: ...
     assert policy.results == ()
     assert [slot.semantic_type_name for slot in policy.native_call_slots] == ["Int32", "Int32", "String"]
     assert [slot.character_length for slot in policy.native_call_slots] == [None, None, 32]
-
-
-def test_wrapper_policy_records_implicit_native_order():
-    module = parse_pyi_text(
-        """
-def add(x: Float64, y: Float64) -> Float64: ...
-""",
-        module_name="implicit_order",
-    )
-    complete_semantic_policies(module)
-
-    policy = completed_function_wrapper_policy(module.functions[0])
-
-    assert policy.release_gil is False
-    assert [argument.native_position for argument in policy.arguments] == [0, 1]
-    assert [(slot.source_kind, slot.native_position, slot.python_position) for slot in policy.native_call_slots] == [
-        ("implicit", 0, 0),
-        ("implicit", 1, 1),
-    ]
 
 
 def test_wrapper_policy_records_primitive_hidden_literals():
@@ -440,65 +357,33 @@ def scale(x: Float64) -> Float64: ...
     ]
 
 
-def test_wrapper_policy_completes_a_computed_projection_with_its_stated_type():
-    module = parse_pyi_text(
-        """
-@native_call([Int32(Arg(0).shape[0]), Arg(0)])
-def scale(values: Float64[:]) -> None: ...
-""",
-        module_name="typed_extent",
-    )
-    complete_semantic_policies(module)
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert policy.supported is True
-    assert policy.native_call_slots[0].semantic_type_name == "Int32"
-
-
-def test_wrapper_policy_defaults_an_unstated_computed_projection_to_size_t():
-    module = parse_pyi_text(
-        """
-@native_call([Arg(0).shape[0], Arg(0)])
-def scale(values: Float64[:]) -> None: ...
-""",
-        module_name="default_extent",
-    )
-    complete_semantic_policies(module)
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert policy.supported is True
-    assert policy.native_call_slots[0].semantic_type_name == "SizeT"
-
-
-def test_wrapper_policy_blocks_a_non_integer_computed_projection_type():
-    module = parse_pyi_text(
-        """
-@native_call([Float64(Arg(0).shape[0]), Arg(0)])
-def scale(values: Float64[:]) -> None: ...
-""",
-        module_name="real_extent",
-    )
-    complete_semantic_policies(module)
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert policy.supported is False
-    assert "native-call shape slot 0 cannot be materialized as 'Float64'" in policy.blockers
-
-
-@pytest.mark.parametrize("cast_type", ["Int", "UInt"])
-def test_wrapper_policy_blocks_an_unresolved_integer_computed_projection_type(cast_type):
+@pytest.mark.parametrize(
+    ("slot_spelling", "slot_type", "blocker"),
+    [
+        pytest.param("Int32(Arg(0).shape[0])", "Int32", None, id="stated_integer_type"),
+        pytest.param("Arg(0).shape[0]", "SizeT", None, id="unstated_type_defaults_to_size_t"),
+        pytest.param("Float64(Arg(0).shape[0])", None, "cannot be materialized as 'Float64'", id="non_integer_type"),
+        pytest.param("Int(Arg(0).shape[0])", None, "cannot be materialized as 'Int'", id="unresolved_int"),
+        pytest.param("UInt(Arg(0).shape[0])", None, "cannot be materialized as 'UInt'", id="unresolved_uint"),
+    ],
+)
+def test_wrapper_policy_types_or_blocks_a_computed_shape_projection(slot_spelling, slot_type, blocker):
     module = parse_pyi_text(
         f"""
-@native_call([{cast_type}(Arg(0).shape[0]), Arg(0)])
+@native_call([{slot_spelling}, Arg(0)])
 def scale(values: Float64[:]) -> None: ...
 """,
-        module_name="unresolved_integer_extent",
+        module_name="computed_extent",
     )
     complete_semantic_policies(module)
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
 
-    assert policy.supported is False
-    assert f"native-call shape slot 0 cannot be materialized as '{cast_type}'" in policy.blockers
+    if blocker is None:
+        assert policy.supported is True
+        assert policy.native_call_slots[0].semantic_type_name == slot_type
+    else:
+        assert policy.supported is False
+        assert f"native-call shape slot 0 {blocker}" in policy.blockers
 
 
 def test_wrapper_policy_completes_a_one_character_hidden_literal():
@@ -519,31 +404,23 @@ def tagged(x: Float64) -> Float64: ...
     assert slot.object_kind is None
 
 
-def test_wrapper_policy_blocks_a_multi_character_hidden_literal():
-    module = parse_pyi_text(
-        """
-@native_call([Arg(0), String[4]("NOPE")])
-def tagged(x: Float64) -> Float64: ...
-""",
-        module_name="long_string_literal",
-    )
-    complete_semantic_policies(module)
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert policy.supported is False
-    assert "native-call literal slot 1 uses unsupported first-lane literal type 'String[4]'" in policy.blockers
-
-
 @pytest.mark.parametrize(
     ("literal", "blocker"),
     [
-        ('String[1]("")', "its value must contain exactly one character"),
-        ('String[1]("NO")', "its value must contain exactly one character"),
-        ("String[1](1)", "its value is not a string"),
-        ('String[1]("🎉")', "its value is not representable as one C char byte"),
+        pytest.param('String[4]("NOPE")', "uses unsupported first-lane literal type 'String[4]'", id="multi_character"),
+        pytest.param(
+            'String[1]("")', "declares String[1] but its value must contain exactly one character", id="empty"
+        ),
+        pytest.param(
+            'String[1]("NO")', "declares String[1] but its value must contain exactly one character", id="two"
+        ),
+        pytest.param("String[1](1)", "declares String[1] but its value is not a string", id="not_a_string"),
+        pytest.param(
+            'String[1]("🎉")', "declares String[1] but its value is not representable as one C char byte", id="non_byte"
+        ),
     ],
 )
-def test_wrapper_policy_blocks_an_invalid_one_character_literal_value(literal, blocker):
+def test_wrapper_policy_blocks_an_invalid_character_hidden_literal(literal, blocker):
     module = parse_pyi_text(
         f"""
 @native_call([Arg(0), {literal}])
@@ -555,104 +432,7 @@ def tagged(x: Float64) -> Float64: ...
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
 
     assert policy.supported is False
-    assert f"native-call literal slot 1 declares String[1] but {blocker}" in policy.blockers
-
-
-def test_wrapper_policy_completes_required_rank_one_array_buffer_handoff():
-    module = parse_pyi_text(
-        """
-def sum_values(values: Float64[:]) -> Float64: ...
-""",
-        module_name="array_argument",
-    )
-    complete_semantic_policies(module)
-    function = module.functions[0]
-    policy = function.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    assert isinstance(policy, FunctionWrapperPolicy)
-    assert policy.supported is True
-    assert policy.blockers == ()
-    argument = policy.arguments[0]
-    assert argument.ownership.kind is ObjectKind.NUMPY_ARRAY
-    assert argument.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
-    assert argument.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-    assert argument.bridge_data_action is BridgeDataAction.ASSOCIATE_VIEW
-    assert argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-    assert argument.array is not None
-    assert argument.array.rank == 1
-    assert argument.array.shape == (":",)
-    assert argument.array.axes == ("dense",)
-    assert argument.array.contiguous is True
-    assert policy.native_call_slots[0].array == argument.array
-
-
-def test_wrapper_policy_flattens_python_rank_for_rank_one_assumed_size_storage():
-    module = parse_pyi_text(
-        """
-def sum_flat(n: Int32, values: Float64[Flat]) -> Float64: ...
-""",
-        module_name="flat_array_argument",
-    )
-    complete_semantic_policies(module)
-    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-
-    argument = policy.arguments[1]
-    assert argument.array is not None
-    assert argument.array.rank == 1
-    assert argument.array.shape == (":",)
-    assert argument.array.category == "assumed_size"
-    assert argument.array.flatten_python_storage is True
-    assert argument.array.flat_axis == 0
-    assert argument.native_array_actual is not None
-    assert argument.native_array_actual.rank == 1
-    assert argument.native_array_actual.shape == (":",)
-    assert argument.native_array_actual.flatten_storage is True
-    assert argument.native_array_actual.flat_axis == 0
-    assert policy.native_call_slots[1].array == argument.array
-
-
-def test_wrapper_policy_flattens_remaining_axes_for_multidimensional_assumed_size_storage():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Annotated, Flat, Float64, Int32, ORDER_C
-
-def sum_fortran(rows: Int32, values: Float64[rows, Flat]) -> Float64: ...
-def sum_c(columns: Int32, values: Annotated[Float64[Flat, columns], ORDER_C]) -> Float64: ...
-""",
-        module_name="flat_matrix_argument",
-    )
-    complete_semantic_policies(module)
-    policies = {
-        function.name: function.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] for function in module.functions
-    }
-
-    fortran_argument = policies["sum_fortran"].arguments[1]
-    assert fortran_argument.array is not None
-    assert fortran_argument.array.rank == 2
-    assert fortran_argument.array.shape == ("rows", ":")
-    assert fortran_argument.array.order == "ORDER_F"
-    assert fortran_argument.array.category == "assumed_size"
-    assert fortran_argument.array.flatten_python_storage is True
-    assert fortran_argument.array.flat_axis == 1
-    assert fortran_argument.native_array_actual is not None
-    assert fortran_argument.native_array_actual.rank == 2
-    assert fortran_argument.native_array_actual.shape == ("rows", ":")
-    assert fortran_argument.native_array_actual.flatten_storage is True
-    assert fortran_argument.native_array_actual.flat_axis == 1
-
-    c_argument = policies["sum_c"].arguments[1]
-    assert c_argument.array is not None
-    assert c_argument.array.rank == 2
-    assert c_argument.array.shape == (":", "columns")
-    assert c_argument.array.order == "ORDER_C"
-    assert c_argument.array.category == "assumed_size"
-    assert c_argument.array.flatten_python_storage is True
-    assert c_argument.array.flat_axis == 0
-    assert c_argument.native_array_actual is not None
-    assert c_argument.native_array_actual.rank == 2
-    assert c_argument.native_array_actual.shape == (":", "columns")
-    assert c_argument.native_array_actual.flatten_storage is True
-    assert c_argument.native_array_actual.flat_axis == 0
+    assert f"native-call literal slot 1 {blocker}" in policy.blockers
 
 
 def test_wrapper_policy_completes_assumed_optional_replacements_and_blocks_unreleased_status_cleanup():
@@ -713,17 +493,6 @@ def projected_raw(label: Addr(String[8])) -> Returns["label", String[8]]: ...
     assert "optional raw string address is unsupported" in "; ".join(policies[1].blockers)
     assert "string storage unexpectedly projects a result" in "; ".join(policies[2].blockers)
     assert "raw string address unexpectedly projects a result" in "; ".join(policies[3].blockers)
-
-
-def test_missing_wrapper_policy_fails_before_planning():
-    function = SemanticFunction(
-        name="add",
-        arguments=[],
-        return_type=SemanticType(name="Float64", dtype="Float64"),
-    )
-
-    with pytest.raises(ValueError, match="missing completed wrapper policy"):
-        completed_function_wrapper_policy(function)
 
 
 def test_completed_function_policy_rejects_unimplemented_runtime_constraints():

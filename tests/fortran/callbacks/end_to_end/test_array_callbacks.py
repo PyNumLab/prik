@@ -22,6 +22,11 @@ def test_immediate_dummy_procedure_converts_array_arguments_and_results(
     pyi_parity_build_mode: str,
     tmp_path: Path,
 ):
+    """Explicit-shape and assumed-shape callback arrays cross in both directions.
+
+    An assumed-shape callback dummy carries its extent from the native
+    descriptor and reaches Python as a contiguous copy.
+    """
     module = _build_source_or_generated_pyi_and_import(
         CALLBACK_ARRAY_F90_SOURCE,
         tmp_path,
@@ -46,23 +51,6 @@ def test_immediate_dummy_procedure_converts_array_arguments_and_results(
     assert result is None
     np.testing.assert_array_equal(transformed, np.array([2.0, 4.0, 6.0], dtype=np.float64))
 
-
-def test_assumed_shape_callback_arrays_cross_the_boundary_as_contiguous_copies(
-    pyi_parity_build_mode: str,
-    tmp_path: Path,
-):
-    """An assumed-shape callback dummy carries its extent from the native descriptor."""
-    module = _build_source_or_generated_pyi_and_import(
-        CALLBACK_ARRAY_F90_SOURCE,
-        tmp_path,
-        {
-            "bind_c_fcallback_array_f90_wrapper.f90",
-            "fcallback_array_f90_wrapper.c",
-            "fcallback_array_f90_wrapper.h",
-        },
-        CONTRACT_FIXTURES / "fcallback_array_f90",
-        pyi_parity_build_mode,
-    )
     values = np.asfortranarray(np.array([1.5, 2.5, 3.5, 4.5], dtype=np.float64))
     doubled = np.zeros(4, dtype=np.float64)
     seen = []

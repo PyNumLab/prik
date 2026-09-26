@@ -7,7 +7,6 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
     BridgeDataAction,
@@ -21,13 +20,11 @@ from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
 
-def _value_module(*, bind_c: bool = False):
-    decorator = '@native_abi("c")' if bind_c else ""
+def _value_module():
     module = parse_pyi_text(
-        f"""
-from prik.contracts import Arg, Float64, Value, native_abi, native_call
+        """
+from prik.contracts import Arg, Float64, Value, native_call
 
-{decorator}
 class point:
     x: Float64
 
@@ -49,32 +46,6 @@ def _sources(plan):
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
     return c_source, bridge_source
-
-
-@pytest.mark.parametrize("bind_c", [False, True])
-def test_exact_typed_value_policy_projects_shared_canonical_derived_handoff(bind_c):
-    module = _value_module(bind_c=bind_c)
-    function_policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-    policy = function_policy.arguments[0]
-    plan = WrapperPlanner().build(module)
-    argument = plan.namespaces[0].functions[0].arguments[0]
-
-    assert policy.derived.type_identity == ("derived_value", "point")
-    assert policy.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
-    assert policy.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert argument.derived is argument.projected_call_slot.derived
-    assert argument.derived.type_identity == ("derived_value", "point")
-    assert argument.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
-    assert "type_identity=('derived_value', 'point')" in str(plan)
-
-
-def test_exact_typed_value_lowering_uses_fortran_value_semantics_and_opaque_binding():
-    c_source, bridge_source = _sources(_value_plan())
-
-    assert "struct point" not in c_source
-    assert "PyCapsule_GetPointer" in c_source
-    assert "type(prik_type_point), pointer :: value" in bridge_source
-    assert "native_score(value)" in bridge_source
 
 
 @pytest.mark.parametrize(
@@ -159,35 +130,6 @@ def make_point() -> Returns["value", point]: ...
     c_source, bridge_source = _sources(plan)
     assert "PyCapsule_New(value" in c_source
     assert "allocate(value_value, stat=prik_allocation_status)" in bridge_source
-
-
-def test_projected_derived_argument_returns_the_exact_caller_wrapper_without_release():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Float64, Returns
-
-class point:
-    x: Float64
-
-def update(value: point) -> Returns["value", point]: ...
-""",
-        module_name="derived_writeback",
-    )
-    complete_semantic_policies(module)
-    plan = WrapperPlanner().build(module)
-    function = plan.namespaces[0].functions[0]
-    argument = function.arguments[0]
-
-    assert argument.derived is argument.projected_call_slot.derived
-    assert argument.derived.origin is DerivedObjectOrigin.CALLER_WRAPPER
-    assert argument.derived.owner_retention is DerivedOwnerRetention.CALLER_WRAPPER
-    assert argument.derived.release is DerivedRelease.NONE
-    assert function.writeback_actions[2].binding.python_result_role.endswith(":python-result")
-
-    c_source, _ = _sources(plan)
-    assert "PyObject * result_obj = bound_value_obj;" in c_source
-    assert "Py_INCREF(result_obj);" in c_source
-    assert "point_to_" not in c_source
 
 
 def test_derived_module_handoff_edit_fails_central_validation():

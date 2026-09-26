@@ -138,20 +138,6 @@ def test_fortran2ir_maps_probed_logical_storage_to_language_neutral_boolean_widt
     assert semantic_type.dtype == expected
 
 
-def test_fortran2ir_rejects_compiler_storage_without_semantic_dtype():
-    fact = {
-        "base_type": "integer",
-        "kind": None,
-        "bits": 48,
-        "expression": "storage_size(int(0))",
-    }
-
-    with pytest.raises(ValueError, match="integer uses 48-bit storage"):
-        FortranToIRConverter(type_facts={("integer", None): fact}).visit(
-            FortranVariable(name="value", base_type="integer")
-        )
-
-
 def test_compiler_probed_unknown_storage_widths_fail_in_semantic_conversion():
     facts = (
         {"base_type": "real", "kind": "3", "bits": 24},

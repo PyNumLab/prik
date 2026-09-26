@@ -7,10 +7,8 @@ import pytest
 
 import prik
 from tests.docs._structure_support import (
-    CLI_HELP_GROUP_HEADINGS,
     CLI_REFERENCE_OPTIONS,
     CLI_REFERENCE_PATH,
-    CLI_VISIBLE_HELP_OPTIONS,
     DOCS_ROOT,
     FEATURE_MATRIX_PATH,
     FEATURE_MATRIX_ROWS,
@@ -26,56 +24,49 @@ from tests.docs._structure_support import (
 DOCUMENTATION_PATH_REFERENCE = re.compile(r"`(docs/[^`]+\.md)`")
 
 
-@pytest.mark.parametrize("heading", CLI_HELP_GROUP_HEADINGS)
-def test_cli_help_uses_documented_option_groups(heading: str) -> None:
-    assert heading in _prik_cli_help()
+def test_cli_reference_and_help_expose_every_public_option() -> None:
+    reference = CLI_REFERENCE_PATH.read_text(encoding="utf-8")
+    help_text = _prik_cli_help()
+
+    undocumented = [option for option in CLI_REFERENCE_OPTIONS if option not in reference]
+    hidden = [option for option in CLI_REFERENCE_OPTIONS if option not in help_text]
+    assert not undocumented, f"{CLI_REFERENCE_PATH.relative_to(ROOT)} does not document: {undocumented}"
+    assert not hidden, f"`python -m prik --help` output does not show: {hidden}"
 
 
-@pytest.mark.parametrize("option", CLI_REFERENCE_OPTIONS)
-def test_cli_reference_documents_public_option(option: str) -> None:
-    content = CLI_REFERENCE_PATH.read_text(encoding="utf-8")
-    assert option in content
-
-
-@pytest.mark.parametrize("option", CLI_VISIBLE_HELP_OPTIONS)
-def test_cli_help_exposes_documented_public_option(option: str) -> None:
-    assert option in _prik_cli_help()
-
-
-@pytest.mark.parametrize("name", sorted(prik.__all__))
-def test_python_api_reference_documents_public_export(name: str) -> None:
+def test_python_api_reference_documents_every_public_export() -> None:
     content = PYTHON_API_REFERENCE_PATH.read_text(encoding="utf-8")
-    assert f"`{name}`" in content
+    missing = [name for name in sorted(prik.__all__) if f"`{name}`" not in content]
+    assert not missing, f"{PYTHON_API_REFERENCE_PATH.relative_to(ROOT)} does not document: {missing}"
 
 
-def test_feature_matrix_has_rows() -> None:
-    assert FEATURE_MATRIX_ROWS
-
-
-@pytest.mark.parametrize("row", FEATURE_MATRIX_ROWS, ids=lambda row: row["Feature"])
-def test_feature_matrix_support_claim_is_complete(row: dict[str, str]) -> None:
-    assert row["Status"] in FEATURE_MATRIX_STATUSES
-    for column in ["Feature", "Status", "User docs", "Evidence", "Limitations"]:
-        assert row[column]
+def _feature_matrix_row_problems(row: dict[str, str]) -> list[str]:
+    feature = row["Feature"] or "<unnamed row>"
+    problems = [f"{feature}: {column} is empty" for column in row if not row[column]]
+    if row["Status"] not in FEATURE_MATRIX_STATUSES:
+        problems.append(f"{feature}: unknown status {row['Status']!r}")
     for column in ["User docs", "Evidence"]:
-        assert MARKDOWN_LINK.search(row[column]), f"{row['Feature']}: {column} must contain a Markdown link"
+        targets = MARKDOWN_LINK.findall(row[column])
+        if not targets:
+            problems.append(f"{feature}: {column} must contain a Markdown link")
+        for target in targets:
+            if target.startswith(("http://", "https://")):
+                continue
+            if not (FEATURE_MATRIX_PATH.parent / target).resolve().exists():
+                problems.append(f"{feature}: {column} link target does not exist: {target}")
     if row["Status"] in {"Supported", "Partially supported"}:
         evidence_targets = [
             (FEATURE_MATRIX_PATH.parent / target).resolve() for target in MARKDOWN_LINK.findall(row["Evidence"])
         ]
-        assert any(target.is_relative_to(ROOT / "tests") for target in evidence_targets), (
-            f"{row['Feature']}: support claims need direct test evidence"
-        )
+        if not any(target.is_relative_to(ROOT / "tests") for target in evidence_targets):
+            problems.append(f"{feature}: support claims need direct test evidence")
+    return problems
 
 
-@pytest.mark.parametrize("row", FEATURE_MATRIX_ROWS, ids=lambda row: row["Feature"])
-def test_feature_matrix_links_point_to_existing_files(row: dict[str, str]) -> None:
-    for column in ["User docs", "Evidence"]:
-        for target in MARKDOWN_LINK.findall(row[column]):
-            if target.startswith(("http://", "https://")):
-                continue
-            resolved_target = (FEATURE_MATRIX_PATH.parent / target).resolve()
-            assert resolved_target.exists(), f"{row['Feature']}: {column} link target does not exist: {target}"
+def test_feature_matrix_support_claims_are_complete_and_linked() -> None:
+    assert FEATURE_MATRIX_ROWS, f"{FEATURE_MATRIX_PATH.relative_to(ROOT)}: feature matrix table has no rows"
+    problems = [problem for row in FEATURE_MATRIX_ROWS for problem in _feature_matrix_row_problems(row)]
+    assert not problems, "\n".join(problems)
 
 
 REVIEWED_CONTRIBUTOR_MAPS = [

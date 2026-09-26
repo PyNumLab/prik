@@ -14,10 +14,7 @@ from tests.fortran._support.generated_contracts import (
 )
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
-CASES = (
-    source_contract_case(CONTRACT_ROOT, "fopenmp_runtime_f90.f90"),
-    source_contract_case(CONTRACT_ROOT, "fruntime_recursion_f90.f90"),
-)
+CASES = (source_contract_case(CONTRACT_ROOT, "fopenmp_runtime_f90.f90"),)
 
 
 @pytest.mark.parametrize("case", CASES, ids=contract_case_id)

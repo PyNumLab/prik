@@ -111,20 +111,6 @@ def _assert_scale_runtime_contract(module) -> None:
     assert module.scale(np.float64(2.0), np.float64(4.0)) == np.float64(8.0)
 
 
-def test_wrapper_build_result_import_module_loads_and_caches_a_built_extension(tmp_path: Path):
-    result = build_fortran_extension(SOURCE, output_dir=tmp_path / "source_build")
-
-    sys.modules.pop(result.module_name, None)
-    try:
-        module = result.import_module()
-        assert module.__file__ == str(result.shared_library)
-        native_module = _sole_native_module(module)
-        assert native_module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
-        assert result.import_module() is module
-    finally:
-        sys.modules.pop(result.module_name, None)
-
-
 def test_wrapper_build_result_import_module_requires_a_built_artifact(tmp_path: Path):
     result = WrapperBuildResult(
         sources=(),
@@ -139,18 +125,6 @@ def test_wrapper_build_result_import_module_requires_a_built_artifact(tmp_path: 
 
     with pytest.raises(FileNotFoundError, match=r"Built extension not found: .+missing_extension\.so"):
         result.import_module()
-
-
-@pytest.fixture
-def scale_runtime_module(pyi_parity_build_mode: str, tmp_path: Path):
-    if pyi_parity_build_mode == "source":
-        result = build_fortran_extension(SOURCE, output_dir=tmp_path / "source_build")
-        return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
-
-    generated_pyi = _generate_pyi(SOURCE, tmp_path / "contracts", RUNTIME_ABI_GENERATED)
-    native_object = _compile_native_object(SOURCE, tmp_path / "native")
-    module, _payload = _build_pyi_cli(generated_pyi, native_object, tmp_path / "pyi_build")
-    return _sole_native_module(module)
 
 
 def test_pyi_cli_requires_a_native_link_input(tmp_path: Path):
@@ -398,13 +372,31 @@ def test_pyi_python_api_accepts_exactly_one_entry_contract(tmp_path: Path):
         build_pyi_extension([PYI_FIXTURE], native_objects=[tmp_path / "unused.o"])
 
 
-def test_generated_pyi_fixture_builds_from_native_object_without_source_reparse(tmp_path: Path):
-    native_object = _compile_native_object(SOURCE, tmp_path / "native")
-    module, payload = _build_pyi_cli(PYI_FIXTURE, native_object, tmp_path / "pyi_build")
+def test_generated_pyi_replay_matches_source_build_without_source_reparse(tmp_path: Path):
+    """A source build and a replay of its generated contract over the native object agree.
+
+    The generated contract is compared with its checked fixture, and the replay
+    compiles nothing from source: its only native input is the prebuilt object.
+    """
+    source_result = build_fortran_extension(SOURCE, output_dir=tmp_path / "source_build")
+    sys.modules.pop(source_result.module_name, None)
+    try:
+        source_module = source_result.import_module()
+        assert source_module.__file__ == str(source_result.shared_library)
+        assert source_result.import_module() is source_module
+        source_native = _sole_native_module(source_module)
+
+        generated_pyi = _generate_pyi(SOURCE, tmp_path / "contracts", RUNTIME_ABI_GENERATED)
+        native_object = _compile_native_object(SOURCE, tmp_path / "native")
+        replay_module, payload = _build_pyi_cli(generated_pyi, native_object, tmp_path / "pyi_build")
+        replay_native = _sole_native_module(replay_module)
+    finally:
+        sys.modules.pop(source_result.module_name, None)
     native_plan = payload["native_build_plan"]
 
+    assert payload["module_name"] == source_result.module_name
     assert Path(payload["shared_library"]).is_file()
-    assert payload["sources"] == [str(PYI_FIXTURE)]
+    assert payload["sources"] == [str(generated_pyi), str(generated_pyi.parent / PYI_FIXTURE.name)]
     assert "native_inputs" not in payload
     assert native_plan["compilation_units"] == []
     assert native_plan["produced_objects"] == []
@@ -412,7 +404,9 @@ def test_generated_pyi_fixture_builds_from_native_object_without_source_reparse(
     assert native_plan["module_dirs"] == [str(native_object.parent)]
     assert native_plan["include_dirs"] == [str(native_object.parent)]
     assert native_plan["link_items"] == [{"kind": "object", "path": str(native_object)}]
-    assert module.scale(np.float64(2.0), np.float64(4.0)) == np.float64(8.0)
+    for arguments, expected in (((2.0, 4.0), 8.0), ((3.0, 2.5), 7.5)):
+        values = tuple(np.float64(value) for value in arguments)
+        assert source_native.scale(*values) == replay_native.scale(*values) == np.float64(expected)
 
 
 def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
@@ -458,11 +452,3 @@ def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
     assert manifest_link_items[1]["kind"] == "object"
     assert manifest_link_items[1]["path"].endswith(native_object.name)
     assert manifest_link_items[2] == {"argument": "-Wl,--end-group", "kind": "linker_argument"}
-
-
-def test_generated_pyi_matches_checked_in_fixture(tmp_path: Path):
-    _generate_pyi(SOURCE, tmp_path / "contracts", RUNTIME_ABI_GENERATED)
-
-
-def test_scale_runtime_contract(scale_runtime_module):
-    _assert_scale_runtime_contract(scale_runtime_module)

@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_imports_and_packages.py`."""
+"""Generated contract imports, packages, public-name spelling, and `__all__`."""
 
 import json
 import pytest
@@ -7,7 +7,6 @@ from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.policy.contract_imports import complete_contract_imports
 from prik.policy.exports import contract_name_for_source
 from prik.printers import (
-    PyiPrinter,
     emit_module,
 )
 from prik.pipeline.pyi import (
@@ -34,26 +33,6 @@ from prik.semantics.models import (
     SemanticVariable,
 )
 from tests.fortran._support.printer_models import generate_pyi
-
-
-def test_pyi_pipeline_exports_module_stub_emitter():
-    assert "emit_module_stubs" in pyi_pipeline.__all__
-    assert pyi_pipeline.emit_module_stubs is emit_module_stubs
-
-
-def test_generated_pyi_separates_top_level_functions_with_a_blank_line():
-    int_type = SemanticType("Int")
-    code = emit_module(
-        SemanticModule(
-            name="readable",
-            functions=[
-                SemanticFunction("first", return_type=int_type),
-                SemanticFunction("second", return_type=int_type),
-            ],
-        )
-    )
-
-    assert "def first() -> Int: ...\n\ndef second() -> Int: ..." in code
 
 
 def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace():
@@ -88,22 +67,6 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
     assert "def lambda__3" not in code
 
 
-def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
-    printer = PyiPrinter(normalize_public_names=True)
-    first = printer._emission_context(SemanticModule(name="first"))
-    second = printer._emission_context(SemanticModule(name="second"))
-    nested = first.inside_class("record_t")
-
-    first.contract("Addr")
-    nested.contract("Pointer")
-
-    assert first.contract_import() == "from prik.contracts import Addr, Pointer"
-    assert nested.contract_import() == first.contract_import()
-    assert nested.public_namespace == ("record_t",)
-    assert first.public_namespace == ()
-    assert second.contract_import() == ""
-
-
 def test_printing_loaded_contract_preserves_absolute_support_imports():
     module = _parse_pyi_text(
         "from typing import Any\nfrom prik.contracts import Int32\n\ndef identity(value: Int32) -> Int32: ...\n",
@@ -113,16 +76,7 @@ def test_printing_loaded_contract_preserves_absolute_support_imports():
     assert "from typing import Any" in emit_module(module)
 
 
-def test_printer_validation_and_opaque_dependency_edge_cases():
-    printer = PyiPrinter()
-
-    with pytest.raises(ValueError, match="Shape constraints are not canonical"):
-        printer.emit(SemanticConstraint("Shape"))
-
-    plain_type = SemanticType("Float64", dtype="Float64")
-    context = printer._emission_context(SemanticModule(name="edge_cases"))
-    assert printer._emit_storage_type(plain_type, context) == "Float64"
-
+def test_contract_imports_skip_malformed_refs_and_stub_emission_rejects_duplicate_modules():
     malformed_import = SemanticType(
         "external_type",
         dtype="external_type",
@@ -138,42 +92,6 @@ def test_printer_validation_and_opaque_dependency_edge_cases():
     complete_python_export_policy(malformed_module)
     complete_contract_imports([malformed_module])
     assert malformed_module.imports == []
-
-    invalid_opaque_ref = SemanticType(
-        "external_type",
-        dtype="external_type",
-        metadata={
-            "external_type_ref": {
-                "representation": "opaque",
-                "origin_module": "types",
-                "name": 42,
-            }
-        },
-    )
-    known_opaque_ref = SemanticType(
-        "external_type",
-        dtype="external_type",
-        metadata={
-            "external_type_ref": {
-                "representation": "opaque",
-                "origin_module": "types",
-                "name": "external_type",
-            }
-        },
-    )
-    assert (
-        opaque_dependency_modules(
-            SemanticModule(
-                name="api",
-                variables=[
-                    SemanticArgument("invalid", invalid_opaque_ref),
-                    SemanticArgument("known", known_opaque_ref),
-                ],
-            ),
-            available_modules=[SemanticModule(name="types", classes=[SemanticClass(name="external_type")])],
-        )
-        == []
-    )
 
     with pytest.raises(ValueError, match="duplicate semantic module"):
         emit_module_stubs([SemanticModule(name="duplicate"), SemanticModule(name="duplicate")])
@@ -241,28 +159,11 @@ def test_opaque_dependency_modules_scan_all_references_and_preserve_metadata():
             ],
         )
     ]
-
-
-def test_emit_module_stubs_honors_available_opaque_dependency_modules():
-    known_opaque_ref = SemanticType(
-        "known_type",
-        dtype="known_type",
-        metadata={
-            "external_type_ref": {
-                "representation": "opaque",
-                "origin_module": "types",
-                "name": "known_type",
-            }
-        },
-    )
+    # A dependency the caller already has adds no opaque stub module.
     stubs = emit_module_stubs(
-        SemanticModule(
-            name="api",
-            variables=[SemanticArgument("known", known_opaque_ref)],
-        ),
+        SemanticModule(name="api", variables=[SemanticArgument("known", known_opaque_ref)]),
         available_modules=[SemanticModule(name="types", classes=[SemanticClass(name="known_type")])],
     )
-
     assert set(stubs) == {"api"}
 
 
@@ -712,14 +613,19 @@ def test_non_fortran_declaration_compares_its_native_spelling_exactly():
     assert '@bind("ScaleValue")' in code
 
 
-def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
-    """A renamed class states its native type so the contract reads back."""
+@pytest.mark.parametrize(
+    ("python_name", "expected", "binds"),
+    [("PointType", '@bind("POINT_T")\nclass Pointtype:', True), ("point_t", "class Point_T:", False)],
+    ids=["renamed-type-binds", "case-only-name-binds-nothing"],
+)
+def test_generated_contract_binds_a_class_only_when_its_python_name_renames_its_type(python_name, expected, binds):
+    """A renamed class states its native type so the contract reads back; a case-only rename does not."""
     origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
     module = SemanticModule(
         name="shapes_mod",
         classes=[
             SemanticClass(
-                name="PointType",
+                name=python_name,
                 native_name="POINT_T",
                 fields=[SemanticField("x", SemanticType("Float64"))],
                 origin=origin,
@@ -731,30 +637,8 @@ def test_generated_contract_binds_a_class_whose_python_name_renames_its_type():
 
     code = emit_module(module, normalize_public_names=True)
 
-    assert '@bind("POINT_T")\nclass Pointtype:' in code
-
-
-def test_generated_contract_omits_a_class_bind_for_a_case_only_python_name():
-    """A class named without regard to case states no separate native type."""
-    origin = SemanticOrigin(source_language="fortran", native_scope="shapes_mod")
-    module = SemanticModule(
-        name="shapes_mod",
-        classes=[
-            SemanticClass(
-                name="point_t",
-                native_name="POINT_T",
-                fields=[SemanticField("x", SemanticType("Float64"))],
-                origin=origin,
-            )
-        ],
-        origin=origin,
-    )
-    complete_python_export_policy(module)
-
-    code = emit_module(module, normalize_public_names=True)
-
-    assert "class Point_T:" in code
-    assert "@bind(" not in code
+    assert expected in code
+    assert ("@bind(" in code) is binds
 
 
 def test_prototype_spelling_is_kept_only_for_the_module_that_declares_one():

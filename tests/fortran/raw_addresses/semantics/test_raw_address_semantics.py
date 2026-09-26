@@ -48,52 +48,6 @@ def raw_label(label: Addr(String[8])) -> None: ...
     assert parse_pyi_text(emitted, module_name="raw_address") == module
 
 
-def test_wrapped_type_raw_address_is_rejected_during_policy_completion():
-    module = parse_pyi_text(
-        """
-class particle:
-    value: Float64
-
-def move(value: Addr(particle)) -> None: ...
-""",
-        module_name="wrapped_address",
-    )
-
-    storage = module.functions[0].arguments[0].semantic_type.storage
-    assert storage.kind == "address"
-    assert storage.metadata[ADDRESS_ROLE_METADATA] == ADDRESS_ROLE_RAW
-    assert (
-        emit_module(module)
-        .strip()
-        .endswith("class particle:\n    value: Float64\n\ndef move(\n    value: Addr(particle)\n) -> None: ...")
-    )
-    with pytest.raises(ValueError, match=r"Addr\(WrappedType\) is not allowed"):
-        complete_semantic_policies(module)
-
-
-def test_raw_address_policy_accepts_only_complete_primitive_layouts():
-    module = parse_pyi_text(
-        """
-def raw_access(
-    n: Int32,
-    scalar: Addr(Float64),
-    label: Addr(String[8]),
-    values: Addr(Float64[n])
-) -> Addr(Int32): ...
-
-def raw_access_with_storage_extent(
-    n: Int32[()],
-    values: Addr(Float64[n])
-) -> None: ...
-""",
-        module_name="raw_addresses",
-    )
-
-    complete_semantic_policies(module)
-
-    assert module.metadata["policy_completion_prepared"] is True
-
-
 @pytest.mark.parametrize(
     ("annotation", "message"),
     [

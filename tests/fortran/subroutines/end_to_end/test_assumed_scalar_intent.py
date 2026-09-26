@@ -29,6 +29,7 @@ def _module(workdir: Path, *, assume_intent_in_scalars: bool):
 
 
 def test_conservative_default_returns_every_undeclared_scalar(tmp_path: Path):
+    """Primitive and character scalars without intent share one conservative default."""
     module = _module(tmp_path, assume_intent_in_scalars=False)
     values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
 
@@ -37,39 +38,24 @@ def test_conservative_default_returns_every_undeclared_scalar(tmp_path: Path):
         np.int32(3),
         np.float64(2.0),
     )
+    assert module.label_width("abcd") == (np.int32(4), "abcd")
 
 
-def test_assumed_scalar_intent_returns_only_the_function_result(tmp_path: Path):
+def test_assumed_scalar_intent_drops_only_undeclared_scalar_results(tmp_path: Path):
+    """The option reaches undeclared scalars, primitive and character alike.
+
+    A declared intent keeps its replacement result, and arrays and derived
+    objects keep writing back in place.
+    """
     module = _module(tmp_path, assume_intent_in_scalars=True)
     values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
 
     assert module.weighted(np.int32(3), values, np.float64(2.0)) == np.float64(12.0)
+    assert module.label_width("abcd") == np.int32(4)
+    assert module.declared(np.float64(4.0)) == np.float64(5.0)
 
-
-def test_assumed_scalar_intent_keeps_array_and_derived_writeback(tmp_path: Path):
-    module = _module(tmp_path, assume_intent_in_scalars=True)
     item = module.Sample(x=np.float64(1.0))
     values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-
     assert module.touch(np.int32(5), item, values) is None
     assert item.x == np.float64(2.0)
     np.testing.assert_array_equal(values, np.array([2.0, 4.0, 6.0]))
-
-
-def test_undeclared_character_scalar_follows_the_same_conservative_default(tmp_path: Path):
-    """A character dummy with no intent is returned exactly like a primitive one."""
-    module = _module(tmp_path, assume_intent_in_scalars=False)
-
-    assert module.label_width("abcd") == (np.int32(4), "abcd")
-
-
-def test_assumed_scalar_intent_also_drops_the_character_result(tmp_path: Path):
-    module = _module(tmp_path, assume_intent_in_scalars=True)
-
-    assert module.label_width("abcd") == np.int32(4)
-
-
-def test_assumed_scalar_intent_does_not_change_a_declared_intent(tmp_path: Path):
-    module = _module(tmp_path, assume_intent_in_scalars=True)
-
-    assert module.declared(np.float64(4.0)) == np.float64(5.0)

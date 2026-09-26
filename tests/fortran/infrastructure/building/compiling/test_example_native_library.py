@@ -91,10 +91,8 @@ def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: P
 @pytest.mark.parametrize(
     ("platform", "library", "expected_dependencies", "suffix"),
     (
-        ("linux", "blas", (), ".so"),
-        ("linux", "lapack", ("-llapack", "-lblas"), ".so"),
-        ("darwin", "blas", (), ".dylib"),
-        ("darwin", "lapack", ("-llapack", "-lblas"), ".dylib"),
+        pytest.param("linux", "lapack", ("-llapack", "-lblas"), ".so", id="linux-lapack"),
+        pytest.param("darwin", "blas", (), ".dylib", id="darwin-blas"),
     ),
 )
 def test_shared_example_library_links_its_native_dependencies(

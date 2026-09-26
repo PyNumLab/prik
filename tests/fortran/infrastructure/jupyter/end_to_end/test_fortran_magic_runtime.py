@@ -19,7 +19,14 @@ pytestmark = pytest.mark.fortran_end_to_end
 
 
 @pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
-def test_fortran_cell_compiles_once_and_publishes_its_declared_module(tmp_path: Path, monkeypatch):
+def test_fortran_cell_compiles_once_and_publishes_its_module_under_the_bound_name(tmp_path: Path, monkeypatch):
+    """A cell's private cache module name must not reach anything the user sees.
+
+    The extension is imported under a cache name derived from the cell digest.
+    Every published object is renamed to what the session actually binds,
+    including the generated heap type that carries module variables, and
+    re-running the unchanged cell reuses that build.
+    """
     build_calls = 0
     build_fortran_extension = magic_module.build_fortran_extension
 
@@ -33,44 +40,7 @@ def test_fortran_cell_compiles_once_and_publishes_its_declared_module(tmp_path: 
     monkeypatch.setenv("IPYTHONDIR", str(tmp_path / "ipython"))
     shell = InteractiveShell()
     load_ipython_extension(shell)
-    cell = """module maths
-contains
-    real(8) function square(x)
-        real(8), intent(in) :: x
-        square = x*x
-    end function
-end module
-"""
-
-    shell.run_cell_magic("fortran", "", cell)
-    first_namespace = shell.user_ns["maths"]
-    assert first_namespace.square(np.float64(4.0)) == np.float64(16.0)
-    assert first_namespace.__name__ == "maths"
-    assert first_namespace.square.__module__ == "maths"
-    assert pretty(first_namespace.square) == "<function maths.square>"
-
-    shell.run_cell_magic("fortran", "", cell)
-    assert build_calls == 1
-    assert shell.user_ns["maths"] is first_namespace
-
-
-@pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")
-def test_published_names_carry_no_private_cache_module_identity(tmp_path: Path, monkeypatch):
-    """A cell's private cache module name must not reach anything the user sees.
-
-    The extension is imported under a cache name derived from the cell digest.
-    Every published object is renamed to what the session actually binds,
-    including the generated heap type that carries module variables.
-    """
-    monkeypatch.setenv("PRIK_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("IPYTHONDIR", str(tmp_path / "ipython"))
-    shell = InteractiveShell()
-    load_ipython_extension(shell)
-
-    shell.run_cell_magic(
-        "fortran",
-        "",
-        """module cfg
+    cell = """module cfg
     real(8) :: gain = 2.0d0
 contains
     real(8) function scaled(x)
@@ -78,14 +48,16 @@ contains
         scaled = gain*x
     end function
 end module
-""",
-    )
+"""
+
+    shell.run_cell_magic("fortran", "", cell)
     namespace = shell.user_ns["cfg"]
 
     assert namespace.scaled(np.float64(3.0)) == np.float64(6.0)
     assert namespace.gain == np.float64(2.0)
     assert namespace.__name__ == "cfg"
     assert namespace.scaled.__module__ == "cfg"
+    assert pretty(namespace.scaled) == "<function cfg.scaled>"
     # The module-variable namespace is an instance of a generated heap type,
     # whose own name embeds the private root until it is restated too.
     assert type(namespace).__module__ == "cfg"
@@ -101,6 +73,10 @@ end module
     assert not any("_prik_f_" in identity for identity in identities), identities
     # The private name still owns the import registration.
     assert any(name.startswith("_prik_f_") for name in sys.modules)
+
+    shell.run_cell_magic("fortran", "", cell)
+    assert build_calls == 1
+    assert shell.user_ns["cfg"] is namespace
 
 
 @pytest.mark.skipif(shutil.which("gfortran") is None, reason="requires gfortran")

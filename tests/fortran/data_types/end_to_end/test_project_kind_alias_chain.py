@@ -19,13 +19,14 @@ NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 KIND_ALIAS_SOURCE = (NATIVE_FIXTURES / "kinds.f90").read_text(encoding="utf-8")
 
 
-def test_kind_alias_chain_reaches_the_probe_as_intrinsic_expressions(tmp_path: Path):
+def test_kind_alias_chain_resolves_in_source_and_generated_contract_builds(tmp_path: Path):
     """A project names its kinds through its own parameters, and they resolve.
 
     Each `use` of one module adds to what the scope imported, and a parameter
     may name another, so `RP` reaches `REAL64` through `DP`. The probe measures
     target storage and is given expressions a compiler understands, never a
-    project name it has no way to evaluate.
+    project name it has no way to evaluate. The generated contract states the
+    resolved types, and rebuilding from it keeps the behavior.
     """
     source = tmp_path / "kinds.f90"
     source.write_text(KIND_ALIAS_SOURCE, encoding="utf-8")
@@ -48,11 +49,6 @@ def test_kind_alias_chain_reaches_the_probe_as_intrinsic_expressions(tmp_path: P
     )
     assert module.consumer_mod.work(np.float64(2.5), np.int32(4)) == pytest.approx(10.0)
 
-
-def test_kind_alias_chain_survives_its_generated_contract(tmp_path: Path):
-    """The contract states resolved types, and rebuilding keeps the behavior."""
-    source = tmp_path / "kinds.f90"
-    source.write_text(KIND_ALIAS_SOURCE, encoding="utf-8")
     contracts = tmp_path / "contracts"
     subprocess.run(
         [

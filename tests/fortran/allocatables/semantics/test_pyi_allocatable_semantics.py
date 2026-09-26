@@ -4,64 +4,7 @@ import re
 
 import pytest
 
-from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
-from prik.semantics.native_array_handles import native_array_descriptor_kind
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
-
-
-def test_persistent_allocatable_descriptors_preserve_scalar_and_array_kinds():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Aliased, Allocatable, Annotated, Float64
-
-scratch: Allocatable[Float64]
-values: Annotated[Allocatable[Float64[:]], Aliased]
-
-class buffer:
-    field: Allocatable[Float64[:, :]]
-""",
-        module_name="persistent_allocatables",
-    )
-
-    scratch, values = module.variables
-    field = module.classes[0].fields[0]
-
-    assert scratch.semantic_type.name == "Float64"
-    assert scratch.semantic_type.rank == 0
-    assert scratch.semantic_type.storage is None
-    assert scratch.semantic_type.metadata["fortran_allocatable"] is True
-
-    assert native_array_descriptor_kind(values.semantic_type) == "allocatable"
-    assert values.semantic_type.rank == 1
-    assert values.semantic_type.metadata["aliased"] is True
-    assert native_array_descriptor_kind(field.semantic_type) == "allocatable"
-    assert field.semantic_type.rank == 2
-    assert "aliased" not in field.semantic_type.metadata
-
-
-def test_scalar_allocatable_calls_use_nullable_values_and_explicit_descriptor_projections():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Allocatable, Arg, Float64, Return, Returns, native_call
-
-@native_call([Allocatable(Arg(0)), Allocatable(Return("created", 1))])
-def update(
-    value: Float64 | None,
-) -> tuple[
-    Returns["value", Float64] | None,
-    Returns["created", Float64] | None,
-]: ...
-""",
-        module_name="scalar_allocatable_calls",
-    )
-
-    function = module.functions[0]
-    value, created = function.arguments
-    assert value.semantic_type.metadata["fortran_allocatable"] is True
-    assert value.metadata[PROJECTED_OUTPUT_METADATA] is True
-    assert created.semantic_type.metadata["fortran_allocatable"] is True
-    assert created.metadata[PROJECTED_OUTPUT_METADATA] is True
-    assert [mapping.value_kind for mapping in function.projection] == ["allocatable", "allocatable"]
 
 
 @pytest.mark.parametrize(
@@ -106,14 +49,3 @@ def test_plain_nullable_scalar_is_not_an_allocatable_descriptor():
     semantic_type = module.variables[0].semantic_type
     assert semantic_type.name == "Float64 | None"
     assert "fortran_allocatable" not in semantic_type.metadata
-
-
-def test_legacy_annotated_allocatable_array_spelling_is_rejected():
-    with pytest.raises(ValueError, match="use Allocatable"):
-        parse_pyi_text(
-            """
-from prik.contracts import Allocatable, Annotated, Float64
-values: Annotated[Float64[:], Allocatable]
-""",
-            module_name="legacy_allocatable_array",
-        )

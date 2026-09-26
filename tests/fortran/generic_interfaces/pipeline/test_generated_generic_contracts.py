@@ -17,21 +17,13 @@ from tests.fortran._support.generated_contracts import (
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CONTRACT_ROOT = FIXTURES / "contracts"
+# `foverloads_f90` and `foperators_f90` are compared in their end-to-end
+# generated-`.pyi` lanes; the fixed-form source is only generated, never built.
 CASES = (
-    GeneratedContractCase(
-        "foverloads_f90",
-        (FIXTURES / "native" / "foverloads_f90.f90",),
-        CONTRACT_ROOT / "foverloads_f90",
-    ),
     GeneratedContractCase(
         "foverloads_fixed",
         (FIXTURES / "native" / "foverloads_fixed.f",),
         CONTRACT_ROOT / "foverloads_fixed",
-    ),
-    GeneratedContractCase(
-        "foperators_f90",
-        (FIXTURES / "native" / "foperators_f90.f90",),
-        CONTRACT_ROOT / "foperators_f90",
     ),
 )
 

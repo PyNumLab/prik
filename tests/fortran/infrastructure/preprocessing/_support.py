@@ -32,21 +32,6 @@ sys.stdout.write(os.environ["PRIK_FAKE_COMPILER_OUTPUT"])
     return script, args_file, env
 
 
-def _failing_compiler(tmp_path: Path, stderr: str) -> Path:
-    script = tmp_path / "failing-cc"
-    script.write_text(
-        f"""#!{sys.executable}
-import sys
-
-sys.stderr.write({stderr!r})
-sys.exit(1)
-""",
-        encoding="utf-8",
-    )
-    script.chmod(0o755)
-    return script
-
-
 def _assert_preprocessing_error(
     exc_info: pytest.ExceptionInfo[PreprocessingError],
     *,

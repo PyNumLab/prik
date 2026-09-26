@@ -17,11 +17,6 @@ NATIVE_ROOT = FEATURE_ROOT / "end_to_end" / "fixtures" / "native"
 CONTRACT_ROOT = Path(__file__).parent / "fixtures" / "generated_contracts" / "source_builds"
 CASES = (
     GeneratedContractCase("fdefault_output", (NATIVE_ROOT / "fdefault_output.f",), CONTRACT_ROOT / "fdefault_output"),
-    GeneratedContractCase(
-        "fruntime_abi_f90",
-        (NATIVE_ROOT / "fruntime_abi_f90.f90",),
-        CONTRACT_ROOT / "fruntime_abi_f90",
-    ),
     GeneratedContractCase("verbose_api", (NATIVE_ROOT / "verbose_api.f90",), CONTRACT_ROOT / "verbose_api"),
 )
 

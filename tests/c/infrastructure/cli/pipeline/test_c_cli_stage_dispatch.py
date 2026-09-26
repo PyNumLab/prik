@@ -1,196 +1,123 @@
-"""C input-language CLI dispatch contracts."""
+"""C input-language stage dispatch: parse-error presentation and the C parser module launcher."""
 
+import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
 import prik.cli as prik_cli
-from prik.parsers.c import sources as c_sources
-from tests.c._support.cli import (
-    _install_main_parser,
-    _main_args,
+from prik.parsers.c import CParseError
+from prik.parsers.c import cli as c_parser_cli
+
+INVALID_SPECIFIERS = "unsigned float value;\n"
+KNR_DEFINITION = "int add(a, b)\nint a;\nint b;\n{\n    return a + b;\n}\n"
+FOREIGN_SYNTAX = "int add(int a, int b);\nvalue_type :: state;\n"
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "argv", "source", "environment", "concise"),
+    [
+        pytest.param(
+            "prik",
+            ["parse", "bad.h", "--language", "c"],
+            INVALID_SPECIFIERS,
+            {},
+            ("\033[", "CPARSE_INVALID_SPECIFIER_SEQUENCE"),
+            id="prik-colored-by-default",
+        ),
+        pytest.param(
+            "prik",
+            ["parse", "bad.h", "--language", "c", "--no-color"],
+            INVALID_SPECIFIERS,
+            {},
+            ("error[CPARSE_INVALID_SPECIFIER_SEQUENCE]: Invalid type specifier sequence 'unsigned float'.",),
+            id="prik-no-color-flag",
+        ),
+        pytest.param(
+            "prik",
+            ["parse", "bad.h", "--language", "c"],
+            KNR_DEFINITION,
+            {"NO_COLOR": "1"},
+            ("K&R style function definitions are not supported",),
+            id="prik-no-color-environment",
+        ),
+        pytest.param(
+            "prik",
+            ["generate", "--pyi", "bad.h", "--language", "c", "--no-color"],
+            FOREIGN_SYNTAX,
+            {},
+            ("error[CPARSE_INVALID_SYNTAX]", "Invalid C syntax"),
+            id="prik-generate-pyi-invalid-syntax",
+        ),
+        pytest.param(
+            "prik", ["parse", "bad.h", "--language", "c", "--debug"], INVALID_SPECIFIERS, {}, None, id="prik-debug-flag"
+        ),
+        pytest.param(
+            "prik",
+            ["parse", "bad.h", "--language", "c"],
+            INVALID_SPECIFIERS,
+            {"C_PARSER_DEBUG": "1"},
+            None,
+            id="prik-debug-environment",
+        ),
+        pytest.param(
+            "parser-module",
+            ["bad.h", "--no-color"],
+            "@@@;\n",
+            {},
+            ("bad.h:1:1: error[CPARSE_INVALID_SYNTAX]",),
+            id="parser-module-concise",
+        ),
+        pytest.param("parser-module", ["bad.h", "--debug"], "@@@;\n", {}, None, id="parser-module-debug-flag"),
+    ],
 )
-
-
-def test_prik_main_preserves_c_parse_dispatch_contract(monkeypatch):
-    class StopAfterDispatch(Exception):
-        pass
-
-    args = _main_args(language="requested", parse=True)
-    _install_main_parser(monkeypatch, args)
-    preprocessing = type("Preprocessing", (), {"include_dirs": ("include",)})()
-    parse_payload = {"parse": "payload"}
-    calls = []
-
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: "c")
-    monkeypatch.setattr(
-        prik_cli,
-        "_build_preprocessing_config",
-        lambda active_args, parser: preprocessing,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "parse_c_report",
-        lambda paths, active_preprocessing: calls.append(("parse", paths, active_preprocessing)) or parse_payload,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_select_main_payload",
-        lambda *_args: (_ for _ in ()).throw(StopAfterDispatch),
-    )
-
-    with pytest.raises(StopAfterDispatch):
-        prik_cli.main()
-
-    # The C parse report receives the one preprocessing configuration the CLI built.
-    assert calls == [("parse", args.paths, preprocessing)]
-
-
-@pytest.mark.parametrize("stage", ["semantics", "pyi"])
-def test_prik_main_accepts_each_non_parse_c_stage(monkeypatch, stage):
-    class StopAfterDispatch(Exception):
-        pass
-
-    args = _main_args(language="c", **{stage: True})
-    _install_main_parser(monkeypatch, args)
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
-    monkeypatch.setattr(
-        prik_cli,
-        "_build_preprocessing_config",
-        lambda active_args, parser: object(),
-    )
-    monkeypatch.setattr(prik_cli, "_semantic_report", lambda *args, **kwargs: {})
-    monkeypatch.setattr(
-        prik_cli,
-        "_select_main_payload",
-        lambda *_args: (_ for _ in ()).throw(StopAfterDispatch),
-    )
-
-    with pytest.raises(StopAfterDispatch):
-        prik_cli.main()
-
-
-def test_one_c_parse_preserves_parser_and_preprocessing_arguments(
-    tmp_path: Path,
-    monkeypatch,
+def test_c_parse_errors_are_concise_unless_debugging(
+    tmp_path: Path, monkeypatch, capsys, entrypoint, argv, source, environment, concise
 ):
-    """Every C route parses a path through parse_c_source, raw or compiler-preprocessed."""
-    path = tmp_path / "api.h"
-    raw_parsed = object()
-    compiled_parsed = object()
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "bad.h").write_text(source, encoding="utf-8")
+    for name in ("NO_COLOR", "C_PARSER_DEBUG", "PRIK_DEBUG"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    main = prik_cli.main if entrypoint == "prik" else c_parser_cli.main
 
-    class RawParser:
-        def parse_file(self, source, *, filename, include_dirs, preprocessing):
-            assert source == path
-            assert filename == str(path)
-            assert include_dirs == ["include"]
-            assert preprocessing == "raw"
-            return raw_parsed
+    if concise is None:
+        with pytest.raises(CParseError):
+            main(argv)
+        return
 
-    raw_config = prik_cli.PreprocessingConfig(include_dirs=["include"])
-    assert c_sources.parse_c_source(path, raw_config, parser=RawParser()) is raw_parsed
+    assert main(argv) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert [fragment for fragment in concise if fragment not in captured.err] == []
+    assert ("\033[" in captured.err) is ("NO_COLOR" not in environment and "--no-color" not in argv)
 
-    class Recipe:
-        def to_dict(self):
-            return {"mode": "compiler"}
 
-    def preprocess(received_path, *, language, config):
-        assert received_path == path
-        assert language == "c"
-        assert config is compiler_config
-        return "int add(int x);\n", Recipe()
+def test_c_parser_module_launcher_reports_every_mode(tmp_path: Path, capsys):
+    """``python -m prik.parsers.c`` prints the parse report, JSON, or a JSON file for C inputs only."""
+    header = tmp_path / "api.h"
+    output = tmp_path / "c-report.json"
+    header.write_text("int add(int a, int b);\n", encoding="utf-8")
+    (tmp_path / "ignored.txt").write_text("ignored\n", encoding="utf-8")
 
-    class CompilerParser:
-        def parse_file(self, source, *, filename, include_dirs, preprocessing):
-            assert source == "int add(int x);\n"
-            assert filename == str(path)
-            assert include_dirs == ["include"]
-            assert preprocessing == "compiler"
-            return compiled_parsed
-
-    def attach_recipe(parsed, recipe):
-        assert parsed is compiled_parsed
-        assert recipe == {"mode": "compiler"}
-
-    compiler_config = prik_cli.PreprocessingConfig(
-        mode="compiler",
-        compiler="cc",
-        include_dirs=["include"],
+    launched = subprocess.run(
+        [sys.executable, "-m", "prik.parsers.c", str(header), "--json"],
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    monkeypatch.setattr(c_sources, "run_compiler_preprocessor_with_recipe", preprocess)
-    monkeypatch.setattr(c_sources, "attach_preprocessing_recipe", attach_recipe)
+    assert json.loads(launched.stdout)[str(header)]["functions"][0]["name"] == "add"
 
-    assert c_sources.parse_c_source(path, compiler_config, parser=CompilerParser()) is compiled_parsed
+    # A directory expands to its C inputs; other files in it are ignored.
+    assert c_parser_cli.main([str(tmp_path)]) == 0
+    report = capsys.readouterr().out
+    assert f"File: {header}" in report
+    assert "Functions: 1" in report
+    assert "ignored.txt" not in report
 
-
-def test_prik_main_preserves_c_parse_error_rendering_contract(monkeypatch, capsys):
-    args = _main_args(language="c", parse=True, no_color=True)
-    _install_main_parser(monkeypatch, args)
-    preprocessing = type("Preprocessing", (), {"include_dirs": ()})()
-    error = prik_cli.CParseError("bad parse")
-    calls = []
-
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: "c")
-    monkeypatch.setattr(
-        prik_cli,
-        "_build_preprocessing_config",
-        lambda active_args, parser: preprocessing,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_env_flag",
-        lambda name: calls.append(("env", name)) or False,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_diagnostic_color_enabled",
-        lambda *, disabled: calls.append(("color", disabled)) or "color-enabled",
-    )
-    monkeypatch.setattr(
-        prik_cli.CParseError,
-        "format_diagnostic",
-        lambda self, *, color, debug: calls.append(("render", color, debug)) or "rendered diagnostic",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "parse_c_report",
-        lambda *args, **kwargs: (_ for _ in ()).throw(error),
-    )
-
-    assert prik_cli.main() == 1
-    assert capsys.readouterr().err == "rendered diagnostic\n"
-    assert calls == [
-        ("env", "C_PARSER_DEBUG"),
-        ("color", True),
-        ("render", "color-enabled", False),
-    ]
-
-
-def test_prik_main_reraises_c_parse_errors_for_debug_environment(monkeypatch):
-    args = _main_args(language="c", parse=True)
-    _install_main_parser(monkeypatch, args)
-    preprocessing = type("Preprocessing", (), {"include_dirs": ()})()
-    error = prik_cli.CParseError("bad parse")
-    calls = []
-
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: "c")
-    monkeypatch.setattr(
-        prik_cli,
-        "_build_preprocessing_config",
-        lambda active_args, parser: preprocessing,
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "_env_flag",
-        lambda name: calls.append(name) or name == "C_PARSER_DEBUG",
-    )
-    monkeypatch.setattr(
-        prik_cli,
-        "parse_c_report",
-        lambda *args, **kwargs: (_ for _ in ()).throw(error),
-    )
-
-    with pytest.raises(prik_cli.CParseError):
-        prik_cli.main()
-
-    assert calls == ["C_PARSER_DEBUG"]
+    assert c_parser_cli.main([str(header), "--out", str(output)]) == 0
+    assert capsys.readouterr().out == ""
+    assert json.loads(output.read_text(encoding="utf-8"))[str(header)]["language"] == "c"

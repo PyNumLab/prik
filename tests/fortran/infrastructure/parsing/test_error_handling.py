@@ -1,696 +1,479 @@
+"""Parser diagnostics and the boundary where the parser stops reading a unit.
+
+Every rejected source reports a stable error code, a message naming the owning
+scope, and, when the parser knows it, the line the user wrote. Content the
+parser does not model (execution parts, internal procedure bodies) is skipped
+rather than validated.
+"""
+
 import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
 
-# ---------------------------------------------------------------------------
-# FortranParseError attributes
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Duplicate declaration errors
-# ---------------------------------------------------------------------------
-
-
-def test_duplicate_declaration_raises_parse_error():
-    code = """
-subroutine dup(x)
-  real :: x
-  integer :: x
-end subroutine dup
-"""
-    with pytest.raises(FortranParseError, match="Duplicate declaration"):
-        parse_fortran_file(code, filename="dup.f90")
-
-
-def test_duplicate_function_result_raises_parse_error():
-    code = """
-real function f(x)
-  real :: x
-  real :: f
-end function f
-"""
-    with pytest.raises(FortranParseError, match="Duplicate declaration"):
-        parse_fortran_file(code, filename="dup_result.f90")
-
-
-def test_duplicate_function_result_with_result_keyword_raises_parse_error():
-    code = """
-real function f(x) result(res)
-  real :: x
-  real :: res
-end function f
-"""
-    with pytest.raises(FortranParseError, match="Duplicate declaration"):
-        parse_fortran_file(code, filename="dup_result_kw.f90")
-
-
-def test_duplicate_initialized_declaration_raises_parse_error():
-    code = """
-subroutine dup_init()
-  integer :: x = 1
-  integer :: x = 2
-end subroutine dup_init
-"""
-    with pytest.raises(FortranParseError, match="Duplicate declaration"):
-        parse_fortran_file(code, filename="dup_init.f90")
-
-
-# ---------------------------------------------------------------------------
-# Duplicate procedure name errors
-# ---------------------------------------------------------------------------
-
-
-def test_duplicate_procedure_name_global_scope_raises_parse_error():
-    code = """
-subroutine work(n)
-  integer, intent(in) :: n
-end subroutine work
-
-function work(n) result(out)
-  integer, intent(in) :: n
-  integer :: out
-end function work
-"""
-    with pytest.raises(FortranParseError, match="Duplicate procedure name"):
-        parse_fortran_file(code, filename="dup_proc.f90")
-
-
-def test_duplicate_procedure_name_in_module_raises_parse_error():
-    code = """
-module m
-contains
-  subroutine work(n)
-    integer, intent(in) :: n
-  end subroutine work
-  function work(n) result(out)
-    integer, intent(in) :: n
-    integer :: out
-  end function work
-end module m
-"""
-    with pytest.raises(FortranParseError, match="Duplicate procedure name"):
-        parse_fortran_file(code, filename="dup_mod_proc.f90")
-
-
-def test_contained_procedures_with_same_name_in_different_hosts_are_allowed():
-    code = """
-module m
-contains
-  subroutine host_a()
-  contains
-    subroutine swap_order()
-    end subroutine swap_order
-  end subroutine host_a
-
-  subroutine host_b()
-  contains
-    subroutine swap_order()
-    end subroutine swap_order
-  end subroutine host_b
-end module m
-"""
-    parsed = parse_fortran_file(code, filename="contained_scope_ok.f90")
-    assert [sig.name.lower() for sig in parsed.modules[0].procedures] == ["host_a", "host_b"]
-
-
-def test_duplicate_procedure_name_error_carries_location():
-    code = """
-subroutine work(n)
-  integer, intent(in) :: n
-end subroutine work
-
-subroutine work(n)
-  integer, intent(in) :: n
-end subroutine work
-"""
-    with pytest.raises(FortranParseError) as exc_info:
-        parse_fortran_file(code, filename="dup.f90")
-    err = exc_info.value
-    assert err.filename == "dup.f90"
-    assert err.line_number is not None
-
-
-# ---------------------------------------------------------------------------
-# Star-kind declarations
-# ---------------------------------------------------------------------------
-
-
-def test_star_kind_in_modern_source_is_parsed():
-    code = """
-subroutine bad(x)
-  real*8 :: x
-end subroutine bad
-"""
-    proc = parse_fortran_file(code, filename="bad.f90").procedures[0]
-    assert proc.arguments[0].base_type == "real"
-    assert proc.arguments[0].kind == "8"
-
-
-def test_star_kind_in_module_variable_is_parsed():
-    code = """
-module m
-  real*8 :: x
-end module m
-"""
-    var = parse_fortran_file(code, filename="bad.f90").modules[0].variables[0]
-    assert var.base_type == "real"
-    assert var.kind == "8"
-
-
-# ---------------------------------------------------------------------------
-# Unknown/unsupported type declaration errors
-# ---------------------------------------------------------------------------
-
-
-def test_unknown_type_in_subroutine_raises_parse_error():
-    code = """
-subroutine bad(x)
-  weirdtype :: x
-end subroutine bad
-"""
-    with pytest.raises(FortranParseError, match="Unknown or unsupported datatype"):
-        parse_fortran_file(code, filename="bad.f90")
-
-
-def test_unknown_type_in_module_variable_raises_parse_error():
-    code = """
-module m
-  weirdtype :: x
-end module m
-"""
-    with pytest.raises(FortranParseError, match="Unknown or unsupported datatype"):
-        parse_fortran_file(code, filename="bad.f90")
-
-
-def test_unknown_type_in_interface_raises_parse_error():
-    code = """
-module m
-  interface foo
-    subroutine bar(x)
-      weirdtype :: x
-    end subroutine bar
-  end interface
-end module m
-"""
-    with pytest.raises(FortranParseError, match="Unknown or unsupported datatype"):
-        parse_fortran_file(code, filename="bad.f90")
-
-
-# ---------------------------------------------------------------------------
-# Module variable type validation
-# ---------------------------------------------------------------------------
-
-
-def test_module_variable_with_unknown_type_raises_parse_error():
-    code = """
-module m
-  integer :: n
-end module m
-"""
-    parsed = parse_fortran_file(code)
-    assert parsed.modules[0].variables[0].base_type == "integer"
-
-
-def test_module_variable_parsed_correctly_no_error():
-    code = """
-module cfg
-  real(kind=8) :: tolerance
-  integer :: max_iter
-  logical :: verbose
-end module cfg
-"""
-    parsed = parse_fortran_file(code)
-    assert len(parsed.modules[0].variables) == 3
-    assert parsed.modules[0].variables[0].base_type == "real"
-    assert parsed.modules[0].variables[1].base_type == "integer"
-    assert parsed.modules[0].variables[2].base_type == "logical"
-
-
-# ---------------------------------------------------------------------------
-# Derived type field type validation
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Parameter symbol errors
-# ---------------------------------------------------------------------------
-
-
-def test_parameter_without_type_in_implicit_none_scope_raises_parse_error():
-    code = """
-      subroutine cst(a)
-      implicit none
-      real a
-      parameter ( zero = 0.0e+0 )
-      end
-"""
-    with pytest.raises(FortranParseError, match="Unknown datatype for PARAMETER symbol"):
-        parse_fortran_file(code, filename="legacy.f")
-
-
-def test_duplicate_parameter_declaration_raises_parse_error():
-    code = """
-subroutine dup_param()
-  integer, parameter :: n = 5
-  integer, parameter :: n = 10
-end subroutine dup_param
-"""
-    with pytest.raises(FortranParseError, match="Duplicate PARAMETER declaration"):
-        parse_fortran_file(code, filename="dup_param.f90")
-
-
-# ---------------------------------------------------------------------------
-# Mixed-era source forms
-# ---------------------------------------------------------------------------
-
-
-def test_f77_source_with_module_keyword_is_parsed():
-    code = """
-      module bad_module
-      end module bad_module
-"""
-    parsed = parse_fortran_file(code, filename="legacy.f77")
-    assert parsed.format == "fixed"
-    assert parsed.modules[0].name == "bad_module"
-
-
-def test_f77_source_file_metadata_is_preserved():
-    code = """
-      module bad_module
-      end module bad_module
-"""
-    parsed = parse_fortran_file(code, filename="legacy.f77")
-    assert parsed.filename == "legacy.f77"
-
-
-# ---------------------------------------------------------------------------
-# Function result type errors
-# ---------------------------------------------------------------------------
-
-
-def test_function_with_implicit_none_and_missing_result_type_raises():
-    code = """
-function f(x) result(res)
-  implicit none
-  real :: x
-end function f
-"""
-    with pytest.raises(FortranParseError, match=r"has no type declaration|Unknown datatype for function result"):
-        parse_fortran_file(code, filename="bad.f90")
-
-
-# ---------------------------------------------------------------------------
-# Error location accuracy
-# ---------------------------------------------------------------------------
-
-
-def test_error_reports_correct_line_number():
-    code = "subroutine foo(x)\n  integer :: x\n  weirdtype :: y\nend subroutine foo\n"
-    with pytest.raises(FortranParseError) as exc_info:
-        parse_fortran_file(code, filename="foo.f90")
-    err = exc_info.value
-    assert err.line_number == 3
-
-
-def test_error_reports_source_line_content():
-    code = "subroutine foo(x)\n  integer :: x\n  weirdtype :: y\nend subroutine foo\n"
-    with pytest.raises(FortranParseError) as exc_info:
-        parse_fortran_file(code, filename="foo.f90")
-    err = exc_info.value
-    assert "weirdtype" in (err.source_line or "")
-
-
-# ---------------------------------------------------------------------------
-# Duplicate argument name errors
-# ---------------------------------------------------------------------------
-
-
-def test_duplicate_argument_name_in_subroutine_raises_parse_error():
-    code = """
-subroutine dup(x, y, x)
-  integer, intent(in) :: x
-  real, intent(in) :: y
-end subroutine dup
-"""
-    with pytest.raises(FortranParseError, match="Duplicate argument name"):
-        parse_fortran_file(code, filename="dup_arg.f90")
-
-
-def test_duplicate_argument_name_in_function_raises_parse_error():
-    code = """
-function f(a, b, a) result(res)
-  integer, intent(in) :: a
-  real, intent(in) :: b
-  integer :: res
-end function f
-"""
-    with pytest.raises(FortranParseError, match="Duplicate argument name"):
-        parse_fortran_file(code, filename="dup_arg_func.f90")
-
-
-# ---------------------------------------------------------------------------
-# Implicit none: undeclared arguments
-# ---------------------------------------------------------------------------
-
-
-def test_implicit_none_undeclared_arg_raises_parse_error():
-    code = """
-subroutine foo(x, y)
-  implicit none
-  integer, intent(in) :: x
-end subroutine foo
-"""
-    with pytest.raises(FortranParseError, match="has no type declaration"):
-        parse_fortran_file(code, filename="implicit_none.f90")
-
-
-def test_implicit_none_all_args_declared_no_error():
-    code = """
-subroutine foo(x, y)
-  implicit none
-  integer, intent(in) :: x
-  real, intent(out) :: y
-end subroutine foo
-"""
-    parsed = parse_fortran_file(code, filename="ok.f90")
-    assert len(parsed.procedures) == 1
-    assert all(a.base_type != "unknown" for a in parsed.procedures[0].arguments)
-
-
-def test_implicit_none_undeclared_function_result_raises_parse_error():
-    code = """
-function f(x)
-  implicit none
-  integer, intent(in) :: x
-end function f
-"""
-    with pytest.raises(FortranParseError, match=r"has no type declaration|Unknown datatype for function result"):
-        parse_fortran_file(code, filename="implicit_none_func.f90")
-
-
-# ---------------------------------------------------------------------------
-# Function result validation
-# ---------------------------------------------------------------------------
-
-
-def test_function_result_shadowing_arg_name_raises_parse_error():
-    code = """
-function f(res) result(res)
-  integer, intent(in) :: res
-end function f
-"""
-    with pytest.raises(FortranParseError, match="shadows an argument name"):
-        parse_fortran_file(code, filename="shadow.f90")
-
-
-def test_function_with_explicit_result_clause_no_error():
-    code = """
-function f(x) result(out)
-  implicit none
-  integer, intent(in) :: x
-  integer :: out
-end function f
-"""
-    parsed = parse_fortran_file(code, filename="ok.f90")
-    assert len(parsed.procedures) == 1
-    assert parsed.procedures[0].result is not None
-    assert parsed.procedures[0].result.name == "out"
-    assert parsed.procedures[0].result.base_type == "integer"
-
-
-# ---------------------------------------------------------------------------
-# Derived type duplicate field names
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Module duplicate variable names
-# ---------------------------------------------------------------------------
-
-
-def test_duplicate_variable_in_module_raises_parse_error():
-    code = """
-module m
-  integer :: n
-  real :: n
-end module m
-"""
-    with pytest.raises(FortranParseError, match="Duplicate variable"):
-        parse_fortran_file(code, filename="dup_var.f90")
-
-
-def test_module_unique_variables_no_error():
-    code = """
-module m
-  integer :: n
-  real :: x
-  logical :: flag
-end module m
-"""
-    parsed = parse_fortran_file(code, filename="ok.f90")
-    assert len(parsed.modules[0].variables) == 3
-
-
-def test_duplicate_variable_in_program_raises_parse_error():
-    code = """
-program main
-  integer n
-  real n
-end program main
-"""
-    with pytest.raises(FortranParseError, match=r"Duplicate variable.*program"):
-        parse_fortran_file(code, filename="dup_program_var.f90")
-
-
-def test_duplicate_variable_in_block_data_raises_parse_error():
-    code = """
-      block data init_data
-      integer n
-      real n
-      end
-"""
-    with pytest.raises(FortranParseError, match=r"Duplicate variable.*block data"):
-        parse_fortran_file(code, filename="dup_block_data_var.f")
-
-
-def test_same_level_duplicate_modules_raise_parse_error():
-    code = """
-module same_name
-end module same_name
-
-module same_name
-end module same_name
-"""
-    with pytest.raises(FortranParseError, match="Duplicate module name 'same_name' in file scope"):
-        parse_fortran_file(code, filename="dup_modules.f90")
-
-
-def test_slicer_reports_mismatched_end_unit_name():
-    code = """
-module expected_name
-end module wrong_name
-"""
-    with pytest.raises(FortranParseError, match="Mismatched end module name 'wrong_name' for module 'expected_name'"):
-        parse_fortran_file(code, filename="mismatch_module.f90")
-
-
-def test_slicer_accepts_mismatched_procedure_end_name_without_preferred_alternative():
-    parsed = parse_fortran_file(
-        """
-subroutine expected_name()
-end subroutine alternate_name
-""",
-        filename="mismatch_procedure_raw_alternative.f90",
-    )
-
-    assert parsed.procedures[0].name == "expected_name"
-
-
-def test_slicer_reports_missing_end_unit():
-    code = """
-module missing_end
-  integer :: n
-"""
-    with pytest.raises(FortranParseError, match="Missing end module for module 'missing_end'"):
-        parse_fortran_file(code, filename="missing_end_module.f90")
-
-
-@pytest.mark.parametrize(
-    "code",
-    [
-        "int add(int a, int b);\n",
-        "api_size count(void);\n",
-        """
-subroutine mixed_spec()
-  api_size count(void);
-end subroutine mixed_spec
-""",
-    ],
-)
-def test_fortran_parser_rejects_invalid_non_fortran_syntax_outside_execution_bodies(code):
-    with pytest.raises(
-        FortranParseError,
-        match=r"Invalid Fortran syntax|Unknown or unsupported datatype declaration",
-    ) as exc_info:
-        parse_fortran_file(code, filename="mixed.f90")
-
-    assert exc_info.value.code in {"PARSE_INVALID_SYNTAX", "PARSE_UNSUPPORTED_DECLARATION"}
-
-
-def test_fortran_parser_ignores_non_fortran_syntax_after_execution_boundary():
-    parsed = parse_fortran_file(
-        """
-subroutine mixed_body()
-  call noop()
-  api_size count(void);
-end subroutine mixed_body
-""",
-        filename="mixed_body.f90",
-    )
-
-    assert parsed.procedures[0].name == "mixed_body"
-
-
-@pytest.mark.parametrize(
-    "code",
-    [
+def _error(filename, source, code, message, line):
+    return pytest.param(filename, source, code, message, line)
+
+
+_DIAGNOSTICS = {
+    # Duplicate names, compared case-insensitively within one scope.
+    "duplicate-declaration-in-procedure": _error(
+        "dup.f90",
+        "subroutine dup(x)\n  real :: x\n  integer :: x\nend subroutine dup\n",
+        "PARSE_DUPLICATE_DECLARATION",
+        "Duplicate declaration of symbol 'x' in procedure 'dup'.",
+        3,
+    ),
+    "duplicate-function-name-result": _error(
+        "dup_result.f90",
+        "real function f(x)\n  real :: x\n  real :: f\nend function f\n",
+        "PARSE_DUPLICATE_DECLARATION",
+        "Duplicate declaration of symbol 'f' in procedure 'f'.",
+        3,
+    ),
+    "duplicate-result-clause-variable": _error(
+        "dup_result_kw.f90",
+        "real function f(x) result(res)\n  real :: x\n  real :: res\nend function f\n",
+        "PARSE_DUPLICATE_DECLARATION",
+        "Duplicate declaration of symbol 'res' in procedure 'f'.",
+        3,
+    ),
+    "procedure-dummy-retyped": _error(
+        "declarations.f90",
+        "subroutine apply(callback)\n"
+        "  procedure(callback_iface), external :: callback\n"
+        "  integer :: callback\n"
+        "end subroutine apply\n",
+        "PARSE_DUPLICATE_DECLARATION",
+        "Duplicate declaration of symbol 'callback' in procedure 'apply'.",
+        3,
+    ),
+    "duplicate-parameter": _error(
+        "parameters.f90",
+        "subroutine shape()\n  integer, parameter :: n = 4, m = n + 2\n  integer, parameter :: n = 8\nend subroutine shape\n",
+        "PARSE_DUPLICATE_PARAMETER",
+        "Duplicate PARAMETER declaration of symbol 'n' in procedure 'shape'.",
+        3,
+    ),
+    "duplicate-argument-case-insensitive": _error(
+        "dup_arg.f90",
+        "subroutine step(value, VALUE)\nend subroutine step\n",
+        "PARSE_DUPLICATE_ARGUMENT",
+        "Duplicate argument name 'VALUE' in procedure 'step'.",
+        1,
+    ),
+    "duplicate-procedure-global-scope": _error(
+        "dup_proc.f90",
+        "subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n\n"
+        "function work(n) result(out)\n  integer, intent(in) :: n\n  integer :: out\nend function work\n",
+        "PARSE_DUPLICATE_PROCEDURE",
+        "Duplicate procedure name 'work' in global scope.",
+        5,
+    ),
+    "duplicate-procedure-in-module-case-insensitive": _error(
+        "dup_mod_proc.f90",
+        "module m\ncontains\n  subroutine step()\n  end subroutine step\n"
+        "  subroutine STEP()\n  end subroutine STEP\nend module m\n",
+        "PARSE_DUPLICATE_PROCEDURE",
+        "Duplicate procedure name 'STEP' in module 'm'.",
+        5,
+    ),
+    "duplicate-module-in-file-case-insensitive": _error(
+        "dup_modules.f90",
+        "module same_name\nend module same_name\n\nmodule Same_Name\nend module Same_Name\n",
+        "PARSE_DUPLICATE_UNIT",
+        "Duplicate module name 'Same_Name' in file scope.",
+        4,
+    ),
+    "duplicate-field-case-insensitive": _error(
+        "dup_field.f90",
+        "module m\n  type :: state_t\n    integer, pointer :: ids(:), IDs(:)\n  end type state_t\nend module m\n",
+        "PARSE_DUPLICATE_FIELD",
+        "Duplicate field 'IDs' in derived type 'state_t'.",
+        None,
+    ),
+    "duplicate-module-variable": _error(
+        "dup_var.f90",
+        "module m\n  integer :: n\n  real :: n\nend module m\n",
+        "PARSE_DUPLICATE_VARIABLE",
+        "Duplicate variable 'n' in module 'm'.",
+        None,
+    ),
+    "duplicate-program-variable": _error(
+        "dup_program_var.f90",
+        "program main\n  integer n\n  real n\nend program main\n",
+        "PARSE_DUPLICATE_VARIABLE",
+        "Duplicate variable 'n' in program 'main'.",
+        None,
+    ),
+    "duplicate-block-data-variable-fixed-form": _error(
+        "dup_block_data_var.f",
+        "      block data init_data\n      integer n\n      real n\n      end\n",
+        "PARSE_DUPLICATE_VARIABLE",
+        "Duplicate variable 'n' in block data 'init_data'.",
+        None,
+    ),
+    # Unknown datatypes in every metadata scope.
+    "unknown-type-with-kind-in-procedure": _error(
+        "procedure_contract.f90",
+        "subroutine work()\n  vector(kind=4) :: value\nend subroutine work\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration for procedure 'work': vector(kind=4) :: value",
+        2,
+    ),
+    "unknown-type-in-interface-body": _error(
+        "bad_iface.f90",
+        "module m\n  interface foo\n    subroutine bar(x)\n      weirdtype :: x\n"
+        "    end subroutine bar\n  end interface\nend module m\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration for procedure 'bar': weirdtype :: x",
+        4,
+    ),
+    "unknown-type-in-module": _error(
+        "bad_mod.f90",
+        "module m\n  weirdtype :: x\nend module m\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration in module 'm': weirdtype :: x",
+        2,
+    ),
+    "unknown-type-in-module-without-double-colon": _error(
+        "bad_mod.f90",
+        "module owner_mod\n  weirdtype value\nend module owner_mod\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration in module 'owner_mod': weirdtype value",
+        2,
+    ),
+    "unknown-type-in-derived-type-without-double-colon": _error(
+        "bad_type.f90",
+        "module m\n  type :: state_t\n    weirdtype value\n  end type state_t\nend module m\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration in type 'state_t': weirdtype value",
+        3,
+    ),
+    "c-prototype-in-procedure-specification": _error(
+        "mixed.f90",
+        "subroutine mixed_spec()\n  api_size count(void);\nend subroutine mixed_spec\n",
+        "PARSE_UNSUPPORTED_DECLARATION",
+        "Unknown or unsupported datatype declaration for procedure 'mixed_spec': api_size count(void);",
+        2,
+    ),
+    # Implicit typing and function results.
+    "implicit-none-undeclared-argument": _error(
+        "implicit_none.f90",
+        "subroutine foo(x, y)\n  implicit none\n  integer, intent(in) :: x\nend subroutine foo\n",
+        "PARSE_IMPLICIT_NONE_UNDECLARED_SYMBOL",
+        "Argument 'y' in procedure 'foo' has no type declaration (implicit none is active).",
+        None,
+    ),
+    "implicit-none-undeclared-function-name-result": _error(
+        "implicit_none_func.f90",
+        "function f(x)\n  implicit none\n  integer, intent(in) :: x\nend function f\n",
+        "PARSE_IMPLICIT_NONE_UNDECLARED_SYMBOL",
+        "Function result 'f' in procedure 'f' has no type declaration (implicit none is active).",
+        None,
+    ),
+    "implicit-none-undeclared-result-clause": _error(
+        "bad_result.f90",
+        "function f(x) result(res)\n  implicit none\n  real :: x\nend function f\n",
+        "PARSE_UNKNOWN_FUNCTION_RESULT_TYPE",
+        "Unknown datatype for function result 'res' in procedure 'f'.",
+        None,
+    ),
+    "legacy-parameter-without-type-under-implicit-none": _error(
+        "legacy.f",
+        "      subroutine cst(a)\n      implicit none\n      real a\n      parameter ( zero = 0.0e+0 )\n      end\n",
+        "PARSE_UNKNOWN_PARAMETER_TYPE",
+        "Unknown datatype for PARAMETER symbol 'zero' in procedure 'cst'.",
+        4,
+    ),
+    "result-shadows-argument": _error(
+        "shadow.f90",
+        "function f(res) result(res)\n  integer, intent(in) :: res\nend function f\n",
+        "PARSE_RESULT_SHADOWS_ARGUMENT",
+        "Function result variable 'res' in function 'f' shadows an argument name.",
+        None,
+    ),
+    # Unit boundaries and headers.
+    "mismatched-end-module-name": _error(
+        "mismatch_module.f90",
+        "module expected_name\nend module wrong_name\n",
+        "PARSE_MISMATCHED_UNIT_END",
+        "Mismatched end module name 'wrong_name' for module 'expected_name'.",
+        2,
+    ),
+    "missing-end-module": _error(
+        "missing_end_module.f90",
+        "module missing_end\n  integer :: n\n",
+        "PARSE_MISSING_UNIT_END",
+        "Missing end module for module 'missing_end'.",
+        1,
+    ),
+    "unterminated-internal-procedure": _error(
+        "unterminated_internal_unit.f90",
+        "subroutine host()\ncontains\n  subroutine nested()\nend subroutine host\n",
+        "PARSE_MISSING_UNIT_END",
+        "Missing end procedure for procedure 'host'.",
+        1,
+    ),
+    "missing-end-derived-type": _error(
+        "module_contract.f90",
+        "module owner_mod\n  type :: missing_end\nend module owner_mod\n",
+        "PARSE_MISSING_DERIVED_TYPE_END",
+        "Missing end derived type for derived type 'missing_end'.",
+        2,
+    ),
+    "missing-end-type-nested-in-derived-type": _error(
+        "type_field_invalid.f90",
+        "module m\n  type :: state\n    type :: nested_marker\n  end type state\nend module m\n",
+        "PARSE_MISSING_DERIVED_TYPE_END",
+        "Missing end derived type for derived type 'nested_marker'.",
+        3,
+    ),
+    "malformed-module-header": _error(
+        "headers.f90",
+        "module bad-name\nend module bad-name\n",
+        "PARSE_MALFORMED_HEADER",
+        "Unsupported or malformed module header: module bad-name",
+        1,
+    ),
+    "malformed-separate-module-procedure-header": _error(
+        "headers.f90",
+        "submodule (p) c\ncontains\n  module procedure bad(x)\n  end procedure bad\nend submodule c\n",
+        "PARSE_MALFORMED_HEADER",
+        "Unsupported or malformed module procedure header: module procedure bad(x)",
+        3,
+    ),
+    "stray-end-statement-in-file-scope": _error(
+        "stray_ends.f90",
+        "end module stray_mod\nsubroutine kept()\nend subroutine kept\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in file scope: end module stray_mod",
+        1,
+    ),
+    # Invalid syntax, reported by the scope that owns the line.
+    "invalid-syntax-in-file-scope": _error(
+        "invalid_syntax.f90",
         "@@@\n",
-        """
-module bad_spec
-  @@@
-end module bad_spec
-""",
-        """
-subroutine bad_spec()
-  @@@
-end subroutine bad_spec
-""",
-    ],
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in file scope: @@@",
+        1,
+    ),
+    "c-prototype-in-file-scope": _error(
+        "mixed.f90",
+        "int add(int a, int b);\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in file scope: int add(int a, int b);",
+        1,
+    ),
+    "invalid-syntax-in-module-specification": _error(
+        "invalid_syntax.f90",
+        "module bad_spec\n  @@@\nend module bad_spec\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in module 'bad_spec' specification part: @@@",
+        2,
+    ),
+    "invalid-syntax-in-procedure-specification": _error(
+        "invalid_syntax.f90",
+        "subroutine work()\n  @@@\nend subroutine work\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in procedure 'work' specification part: @@@",
+        2,
+    ),
+    "invalid-syntax-in-derived-type-specification": _error(
+        "type_contract.f90",
+        "module m\n  type :: state_t\n    call invalid_in_type_spec()\n  end type state_t\nend module m\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in type 'state_t' specification part: call invalid_in_type_spec()",
+        3,
+    ),
+    "invalid-syntax-in-module-contains-part": _error(
+        "contains_contract.f90",
+        "module owner_mod\ncontains\n  @@@\nend module owner_mod\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in module 'owner_mod' contains part: @@@",
+        3,
+    ),
+    "invalid-syntax-in-interface-after-valid-lines": _error(
+        "interface_contract.f90",
+        "module m\n  interface Callbacks\n    MODULE PROCEDURE :: First, Second\n"
+        "    PROCEDURE(Callback) :: Handler\n    @@@\n  end interface Callbacks\nend module m\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in interface 'Callbacks': @@@",
+        5,
+    ),
+    "nested-type-in-interface": _error(
+        "nested_contract.f90",
+        "interface callbacks\n  type :: nested\n  end type nested\nend interface\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in interface 'callbacks': type :: nested",
+        2,
+    ),
+    "nested-type-in-derived-type": _error(
+        "nested_contract.f90",
+        "type :: outer\n  type :: nested\n  end type nested\nend type outer\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in derived type 'outer' specification part: type :: nested",
+        2,
+    ),
+    "nested-type-in-block-data": _error(
+        "nested_contract.f90",
+        "block data init_data\n  type :: nested\n  end type nested\nend block data init_data\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in block data 'init_data' specification part: type :: nested",
+        2,
+    ),
+    "interface-in-block-data": _error(
+        "invalid_block_data.f90",
+        "block data invalid_block\n  interface\n  end interface\nend block data invalid_block\n",
+        "PARSE_INVALID_SYNTAX",
+        "Invalid Fortran syntax in block data 'invalid_block' specification part: interface",
+        2,
+    ),
+    "malformed-type-bound-declaration": _error(
+        "type_contains_bad.f90",
+        "module m\n  type :: state\n  contains\n    integer, public :: bad_binding\n  end type state\nend module m\n",
+        "PARSE_UNSUPPORTED_TYPE_BOUND_DECLARATION",
+        "Unsupported or malformed type-bound declaration in type 'state': integer, public :: bad_binding",
+        4,
+    ),
+    # Executable statements and OpenMP directives outside an execution part.
+    "executable-statement-in-module-specification": _error(
+        "module_contract.f90",
+        "module owner_mod\n  call work()\nend module owner_mod\n",
+        "PARSE_EXECUTABLE_IN_SPECIFICATION",
+        "Executable statement is not allowed in module specification part 'owner_mod': call work()",
+        2,
+    ),
+    "openmp-executable-directive-in-module": _error(
+        "bad_omp_mod.f90",
+        "module bad_omp_mod\n!$omp parallel\nend module bad_omp_mod\n",
+        "PARSE_EXECUTABLE_IN_SPECIFICATION",
+        "Executable statement is not allowed in module specification part 'bad_omp_mod': !$omp parallel",
+        2,
+    ),
+    "openmp-declarative-directive-in-module": _error(
+        "omp_mod.f90",
+        "module owner_mod\n  !$omp threadprivate(counter)\nend module owner_mod\n",
+        "PARSE_UNSUPPORTED_OPENMP_DIRECTIVE",
+        "Unsupported OpenMP declarative directive in module 'owner_mod': !$omp threadprivate(counter)",
+        2,
+    ),
+    "openmp-declarative-directive-in-procedure": _error(
+        "omp_decl.f90",
+        "subroutine omp_decl(x)\n!$omp declare simd\n  integer, intent(inout) :: x\nend subroutine omp_decl\n",
+        "PARSE_UNSUPPORTED_OPENMP_DIRECTIVE",
+        "Unsupported OpenMP declarative directive in procedure 'omp_decl': !$omp declare simd",
+        2,
+    ),
+    "openmp-declarative-directive-in-derived-type": _error(
+        "omp_type.f90",
+        "module m\n  type :: state\n!$omp declare target\n    integer :: value\n  end type state\nend module m\n",
+        "PARSE_UNSUPPORTED_OPENMP_DIRECTIVE",
+        "Unsupported OpenMP declarative directive in type 'state': !$omp declare target",
+        3,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("filename", "source", "code", "message", "line"),
+    list(_DIAGNOSTICS.values()),
+    ids=list(_DIAGNOSTICS),
 )
-def test_fortran_parser_rejects_invalid_syntax_outside_execution_bodies(code):
-    with pytest.raises(FortranParseError, match="Invalid Fortran syntax") as exc_info:
-        parse_fortran_file(code, filename="invalid_syntax.f90")
+def test_parse_error_reports_code_message_and_location(filename, source, code, message, line):
+    with pytest.raises(FortranParseError) as exc_info:
+        parse_fortran_file(source, filename=filename)
 
-    assert exc_info.value.code == "PARSE_INVALID_SYNTAX"
-
-
-def test_fortran_parser_ignores_invalid_syntax_after_execution_boundary():
-    parsed = parse_fortran_file(
-        """
-subroutine ignored_body()
-  call noop()
-  @@@
-end subroutine ignored_body
-""",
-        filename="invalid_body.f90",
-    )
-
-    assert parsed.procedures[0].name == "ignored_body"
+    error = exc_info.value
+    assert isinstance(error, ValueError)
+    assert (error.code, error.base_message, error.filename, error.line_number) == (code, message, filename, line)
+    if line is not None:
+        assert error.source_line.strip() == source.splitlines()[line - 1].strip()
+    diagnostic = error.format_diagnostic(color=False)
+    assert f"error[{code}]" in diagnostic
+    assert message in diagnostic
 
 
-def test_fortran_parser_skips_standalone_include_fragment_after_execution_boundary():
-    parsed = parse_fortran_file(
-        """
-include 'fragment.inc'
-if (enabled) then
-  @@@
-else
-  @@@
-endif
-""",
-        filename="fragment.inc",
-    )
-
-    assert parsed.procedures == []
-
-
-def test_fortran_parser_skips_balanced_internal_procedure_contents():
-    parsed = parse_fortran_file(
-        """
-subroutine host()
-contains
-  subroutine nested()
-    @@@
-  end subroutine nested
-end subroutine host
-""",
-        filename="ignored_internal_body.f90",
-    )
-
-    assert parsed.procedures[0].name == "host"
-
-
-def test_fortran_parser_rejects_unterminated_internal_procedure_unit():
-    with pytest.raises(FortranParseError, match="Missing end procedure"):
-        parse_fortran_file(
-            """
-subroutine host()
-contains
-  subroutine nested()
-end subroutine host
-""",
-            filename="unterminated_internal_unit.f90",
-        )
-
-
-def test_fortran_parser_skips_nested_unit_like_lines_after_execution_boundary():
-    parsed = parse_fortran_file(
-        """
-subroutine host()
-  call begin_work()
-  interface
-    subroutine ignored()
-      @@@
-    end subroutine ignored
-  end interface
-end subroutine host
-""",
-        filename="ignored_nested_execution.f90",
-    )
-
-    assert parsed.procedures[0].name == "host"
-
-
-def test_fortran_parser_skips_unterminated_unit_like_lines_after_execution_boundary():
-    parsed = parse_fortran_file(
-        """
-subroutine host()
-  call begin_work()
-  subroutine ignored()
-end subroutine host
-""",
-        filename="ignored_unterminated_nested_execution.f90",
-    )
-
-    assert parsed.procedures[0].name == "host"
-
-
-def test_fortran_parser_rejects_subunit_inside_block_data():
-    with pytest.raises(FortranParseError, match="Invalid Fortran syntax") as exc_info:
-        parse_fortran_file(
-            """
-block data invalid_block
-  interface
-  end interface
-end block data invalid_block
-""",
-            filename="invalid_block_data.f90",
-        )
-
-    assert exc_info.value.code == "PARSE_INVALID_SYNTAX"
+_ACCEPTED = {
+    "non-fortran-after-execution-boundary": (
+        "mixed_body.f90",
+        "subroutine mixed_body()\n  call noop()\n  api_size count(void);\nend subroutine mixed_body\n",
+        ["mixed_body"],
+    ),
+    "invalid-syntax-after-execution-boundary": (
+        "accepted.f90",
+        "subroutine ignored_body()\n  call noop()\n  @@@\nend subroutine ignored_body\n",
+        ["ignored_body"],
+    ),
+    "semicolon-separated-statements": (
+        "accepted.f90",
+        "subroutine valid_body(x)\n  real :: x\n  call update(x); write(*,*) x\nend subroutine valid_body\n",
+        ["valid_body"],
+    ),
+    "nested-unit-lines-after-execution-boundary": (
+        "accepted.f90",
+        "subroutine host()\n  call begin_work()\n  interface\n    subroutine ignored()\n      @@@\n"
+        "    end subroutine ignored\n  end interface\nend subroutine host\n",
+        ["host"],
+    ),
+    "unterminated-unit-line-after-execution-boundary": (
+        "accepted.f90",
+        "subroutine host()\n  call begin_work()\n  subroutine ignored()\nend subroutine host\n",
+        ["host"],
+    ),
+    "internal-procedure-body-is-not-validated": (
+        "accepted.f90",
+        "subroutine host()\ncontains\n  subroutine nested()\n    @@@\n  end subroutine nested\nend subroutine host\n",
+        ["host"],
+    ),
+    "same-internal-procedure-name-in-different-hosts": (
+        "accepted.f90",
+        "module m\ncontains\n  subroutine host_a()\n  contains\n    subroutine swap_order()\n"
+        "    end subroutine swap_order\n  end subroutine host_a\n\n  subroutine host_b()\n  contains\n"
+        "    subroutine swap_order()\n    end subroutine swap_order\n  end subroutine host_b\nend module m\n",
+        ["host_a", "host_b"],
+    ),
+    "procedure-end-name-mismatch-is-tolerated": (
+        "accepted.f90",
+        "subroutine expected_name()\nend subroutine alternate_name\n",
+        ["expected_name"],
+    ),
+    "named-block-construct-starts-execution": (
+        "accepted.f90",
+        "module block_mod\n  implicit none\ncontains\n  subroutine scale_value(x)\n    real(8),intent(inout) :: x\n"
+        "    main: block\n      real(8) :: factor\n      factor = 2.0d0\n      x = x * factor\n"
+        "    end block main\n  end subroutine scale_value\nend module block_mod\n",
+        ["scale_value"],
+    ),
+    "openmp-executable-directive-in-body": (
+        "accepted.f90",
+        "subroutine omp_body(x)\n  integer, intent(inout) :: x\n!$omp parallel do\n  do i = 1, x\n"
+        "    x = x + i\n  end do\nend subroutine omp_body\n",
+        ["omp_body"],
+    ),
+    "fixed-form-openmp-sentinel-in-body": (
+        "fixed_omp.f",
+        "      subroutine fixed_omp(n)\n      integer n\nC$OMP PARALLEL DO\n      do 10 i = 1, n\n10    continue\n      end\n",
+        ["fixed_omp"],
+    ),
+    "include-and-declaration-in-module-contains-part": (
+        "accepted.f90",
+        "module owner_mod\ncontains\n  include 'shape.inc'\n  integer :: macro_decl\n"
+        "  subroutine s()\n  end subroutine s\nend module owner_mod\n",
+        ["s"],
+    ),
+    "standalone-include-fragment": (
+        "fragment.inc",
+        "include 'fragment.inc'\nif (enabled) then\n  @@@\nelse\n  @@@\nendif\n",
+        [],
+    ),
+}
 
 
-def test_invalid_syntax_guard_preserves_valid_semicolon_separated_fortran_statements():
-    parsed = parse_fortran_file(
-        """
-subroutine valid_body(x)
-  real :: x
-  call update(x); write(*,*) x
-end subroutine valid_body
-""",
-        filename="valid_body.f90",
-    )
+@pytest.mark.parametrize(("filename", "source", "procedures"), list(_ACCEPTED.values()), ids=list(_ACCEPTED))
+def test_parser_skips_content_it_does_not_model(filename, source, procedures):
+    parsed = parse_fortran_file(source, filename=filename)
 
-    assert parsed.procedures[0].name == "valid_body"
+    names = [procedure.name for procedure in parsed.procedures]
+    names += [procedure.name for module in parsed.modules for procedure in module.procedures]
+    assert names == procedures

@@ -46,6 +46,7 @@ def test_borrowed_child_wrapper_never_finalizes_native_component(
     assert module.get_final_count() == np.int32(0)
 
     borrowed = owner.value
+    assert borrowed._prik_owner is owner
     del owner
     gc.collect()
     assert module.get_final_count() == np.int32(0)

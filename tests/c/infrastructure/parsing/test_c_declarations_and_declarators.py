@@ -3,126 +3,6 @@
 import pytest
 
 
-def test_primitive_specifiers_create_concrete_primitive_types():
-    from prik.parsers.c import CBool, CShort, CUnsignedLongLong, parse_c_file
-
-    parsed = parse_c_file(
-        """
-unsigned long long next_id(void);
-signed short clamp_short(signed short value);
-_Bool enabled(void);
-""",
-        filename="primitives.h",
-    )
-
-    functions = {function.name: function for function in parsed.functions}
-    assert isinstance(functions["next_id"].result_type, CUnsignedLongLong)
-    assert isinstance(functions["clamp_short"].parameters[0].type, CShort)
-    assert isinstance(functions["enabled"].result_type, CBool)
-
-
-@pytest.mark.parametrize(
-    ("spelling", "expected_name"),
-    [
-        ("void", "CVoid"),
-        ("_Bool", "CBool"),
-        ("char", "CChar"),
-        ("signed char", "CSignedChar"),
-        ("unsigned char", "CUnsignedChar"),
-        ("short", "CShort"),
-        ("short int", "CShort"),
-        ("signed short", "CShort"),
-        ("signed short int", "CShort"),
-        ("unsigned short", "CUnsignedShort"),
-        ("unsigned short int", "CUnsignedShort"),
-        ("int", "CInt"),
-        ("signed", "CInt"),
-        ("signed int", "CInt"),
-        ("unsigned", "CUnsignedInt"),
-        ("unsigned int", "CUnsignedInt"),
-        ("long", "CLong"),
-        ("long int", "CLong"),
-        ("signed long", "CLong"),
-        ("signed long int", "CLong"),
-        ("unsigned long", "CUnsignedLong"),
-        ("unsigned long int", "CUnsignedLong"),
-        ("long long", "CLongLong"),
-        ("long long int", "CLongLong"),
-        ("signed long long", "CLongLong"),
-        ("signed long long int", "CLongLong"),
-        ("unsigned long long", "CUnsignedLongLong"),
-        ("unsigned long long int", "CUnsignedLongLong"),
-        ("float", "CFloat"),
-        ("double", "CDouble"),
-        ("long double", "CLongDouble"),
-        ("float _Complex", "CFloatComplex"),
-        ("_Complex", "CDoubleComplex"),
-        ("double _Complex", "CDoubleComplex"),
-        ("long double _Complex", "CLongDoubleComplex"),
-    ],
-)
-def test_every_supported_primitive_spelling_creates_a_concrete_ctype(spelling, expected_name):
-    import prik.parsers.c as c_parser
-    from prik.parsers.c import CType, parse_c_file
-
-    function = parse_c_file(f"{spelling} primitive(void);\n", filename="primitive_table.h").functions[0]
-    expected = getattr(c_parser, expected_name)
-
-    assert isinstance(function.result_type, expected)
-    assert isinstance(function.result_type, CType)
-
-
-@pytest.mark.parametrize(
-    ("spelling", "expected_name"),
-    [
-        ("int unsigned", "CUnsignedInt"),
-        ("int long unsigned", "CUnsignedLong"),
-        ("double long", "CLongDouble"),
-        ("_Complex float", "CFloatComplex"),
-    ],
-)
-def test_valid_reordered_primitive_specifiers_are_normalized(spelling, expected_name):
-    import prik.parsers.c as c_parser
-    from prik.parsers.c import parse_c_file
-
-    function = parse_c_file(f"{spelling} primitive(void);\n", filename="reordered_primitives.h").functions[0]
-
-    assert isinstance(function.result_type, getattr(c_parser, expected_name))
-    assert function.result_type.source_text == spelling
-
-
-@pytest.mark.parametrize(
-    ("source", "expected_column"),
-    [
-        ("unsigned float value;\n", 1),
-        ("void bad(long char value);\n", 1),
-        ("struct bad { signed unsigned value; };\n", 14),
-        ("unsigned float bad(void) { return 0; }\n", 1),
-    ],
-)
-def test_invalid_primitive_specifier_sequences_raise_parse_errors(source, expected_column):
-    from prik.parsers.c import CParseError, parse_c_file
-
-    with pytest.raises(CParseError, match="Invalid type specifier sequence") as error:
-        parse_c_file(source, filename="invalid_specifiers.h")
-
-    assert error.value.code == "CPARSE_INVALID_SPECIFIER_SEQUENCE"
-    assert (
-        f"invalid_specifiers.h:1:{expected_column}: error[CPARSE_INVALID_SPECIFIER_SEQUENCE]"
-        in error.value.format_diagnostic(color=False)
-    )
-
-
-def test_unresolved_single_typedef_name_is_preserved_until_resolution():
-    from prik.parsers.c import CTypedef, parse_c_file
-
-    parsed = parse_c_file("external_type value;\n", filename="deferred_typedef.h")
-
-    assert isinstance(parsed.variables[0].type, CTypedef)
-    assert parsed.variables[0].type.name == "external_type"
-    assert parsed.diagnostics == []
-
-
 def test_pointer_qualifiers_belong_to_the_component_they_qualify():
     from prik.parsers.c import CComposedType, CConst, CDouble, CPointer, CRestrict, parse_c_file
 
@@ -235,77 +115,6 @@ void set_basis(basis3 basis);
     assert isinstance(parsed.functions[1].parameters[0].type, CTypedef)
 
 
-def test_repeated_file_scope_tentative_variable_declarations_merge():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file("int i;\nint i;\n", filename="tentative.c")
-
-    assert [variable.name for variable in parsed.variables] == ["i"]
-    assert parsed.variables[0].initializer is None
-    assert [location.line for location in parsed.variables[0].declaration_locations] == [2]
-    assert parsed.diagnostics == []
-
-
-def test_tentative_variable_declaration_followed_by_definition_prefers_definition():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file("int i;\nint i = 1;\n", filename="definition.c")
-
-    assert [variable.name for variable in parsed.variables] == ["i"]
-    assert parsed.variables[0].initializer.source_text == "1"
-    assert parsed.variables[0].source_location.line == 2
-    assert [location.line for location in parsed.variables[0].declaration_locations] == [1]
-    assert parsed.diagnostics == []
-
-
-def test_duplicate_initialized_file_scope_variables_report_diagnostic():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file("int i = 1;\nint i = 2;\n", filename="duplicate_variables.c")
-
-    assert [variable.name for variable in parsed.variables] == ["i"]
-    assert parsed.variables[0].initializer.source_text == "1"
-    assert any(diag.code == "C_DUPLICATE_VARIABLE_DEFINITION" for diag in parsed.diagnostics)
-
-
-def test_conflicting_file_scope_variable_declarations_report_diagnostic():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file("int i;\ndouble i;\n", filename="conflicting_variables.c")
-
-    assert [variable.name for variable in parsed.variables] == ["i"]
-    assert any(diag.code == "C_CONFLICTING_VARIABLE_DECLARATION" for diag in parsed.diagnostics)
-
-
-def test_type_key_preserves_seen_state_for_recursive_composed_types():
-    from prik.parsers.c import CComposedType, CParser, CPointer, CTypedef
-
-    typedef = CTypedef(name="node")
-    recursive = CComposedType(components=[CPointer(), typedef])
-    typedef.type = recursive
-
-    assert CParser()._type_key(recursive) == (
-        "CComposedType",
-        (
-            ("CPointer", ()),
-            ("CTypedef", ("cycle", "CComposedType", None), ()),
-        ),
-        (),
-    )
-
-
-def test_compatible_repeated_typedefs_merge_but_conflicting_typedefs_diagnose():
-    from prik.parsers.c import parse_c_file
-
-    compatible = parse_c_file("typedef int count_t;\ntypedef int count_t;\n", filename="typedefs.h")
-    conflicting = parse_c_file("typedef int count_t;\ntypedef double count_t;\n", filename="bad_typedefs.h")
-
-    assert [typedef.name for typedef in compatible.typedefs] == ["count_t"]
-    assert [location.line for location in compatible.typedefs[0].declaration_locations] == [2]
-    assert compatible.diagnostics == []
-    assert any(diag.code == "C_CONFLICTING_TYPEDEF" for diag in conflicting.diagnostics)
-
-
 def test_variables_preserve_initializer_text_arrays_and_concrete_tag_types():
     from prik.parsers.c import CArray, CEnum, CInt, CStruct, CUnion, parse_c_file
 
@@ -331,47 +140,6 @@ int answer = 42;
     assert all(isinstance(component, CArray) for component in variables["matrix"].type.components[:2])
     assert isinstance(variables["answer"].type, CInt)
     assert variables["answer"].initializer.source_text == "42"
-
-
-def test_parameters_preserve_concrete_struct_union_and_enum_uses():
-    from prik.parsers.c import CEnum, CStruct, CUnion, parse_c_file
-
-    parsed = parse_c_file(
-        "void consume(const struct state *s, union scalar *u, enum status status);\n",
-        filename="tag_params.h",
-    )
-
-    params = {parameter.name: parameter for parameter in parsed.functions[0].parameters}
-    assert isinstance(params["s"].type.components[-1], CStruct)
-    assert params["s"].type.components[-1].name == "state"
-    assert isinstance(params["u"].type.components[-1], CUnion)
-    assert isinstance(params["status"].type, CEnum)
-
-
-def test_incomplete_structs_and_pointer_uses_are_concrete_objects():
-    from prik.parsers.c import CComposedType, CPointer, CStruct, parse_c_file
-
-    parsed = parse_c_file(
-        """
-struct handle;
-struct handle *open_handle(void);
-void close_handle(struct handle *handle);
-""",
-        filename="opaque.h",
-    )
-
-    handle = parsed.structs[0]
-    assert isinstance(handle, CStruct)
-    assert handle.name == "handle"
-    assert handle.is_incomplete is True
-    assert handle.members == []
-
-    functions = {function.name: function for function in parsed.functions}
-    result = functions["open_handle"].result_type
-    assert isinstance(result, CComposedType)
-    assert isinstance(result.components[0], CPointer)
-    assert isinstance(result.components[1], CStruct)
-    assert result.components[1].name == "handle"
 
 
 def test_storage_is_declaration_metadata_and_qualifiers_are_type_metadata():
@@ -428,23 +196,6 @@ _Atomic(int) *pointer_to_atomic;
     assert parsed.diagnostics == []
 
 
-@pytest.mark.parametrize(
-    ("source", "message"),
-    [
-        ("_Atomic(int) long value;\n", "Invalid type specifier sequence"),
-        ("_Atomic() value;\n", "Invalid _Atomic type-name"),
-        ("_Atomic(int named) value;\n", "Invalid _Atomic type-name"),
-    ],
-)
-def test_invalid_atomic_type_specifiers_raise_focused_errors(source, message):
-    from prik.parsers.c import CParseError, parse_c_file
-
-    with pytest.raises(CParseError, match=message) as exc_info:
-        parse_c_file(source, filename="invalid_atomic.h")
-
-    assert exc_info.value.code == "CPARSE_INVALID_SPECIFIER_SEQUENCE"
-
-
 def test_function_bodies_do_not_contribute_local_variables():
     from prik.parsers.c import parse_c_file
 
@@ -457,135 +208,6 @@ extern int exported_value;
     )
 
     assert [variable.name for variable in parsed.variables] == ["exported_value"]
-
-
-def test_declarations_return_concrete_objects_instead_of_kind_fields():
-    from prik.parsers.c import (
-        CArray,
-        CFunction,
-        CFunctionType,
-        CInt,
-        CPointer,
-        CStruct,
-        CTypedef,
-        CVariable,
-        parse_c_file,
-    )
-
-    parsed = parse_c_file(
-        """
-struct handle;
-typedef int (*compare_fn)(const void *, const void *);
-extern int *values[4];
-extern int (*matrix)[4];
-int add(int a, int b);
-void sort_items(int (*fallback)(const void *, const void *));
-""",
-        filename="declaration_matrix.h",
-    )
-
-    assert isinstance(parsed.structs[0], CStruct)
-    assert all(isinstance(typedef, CTypedef) for typedef in parsed.typedefs)
-    assert all(isinstance(variable, CVariable) for variable in parsed.variables)
-    assert all(isinstance(function, CFunction) for function in parsed.functions)
-
-    compare = parsed.typedefs[0].type
-    assert [type(component) for component in compare.components] == [CPointer, CFunctionType]
-    values, matrix = parsed.variables
-    assert [type(component) for component in values.type.components] == [CArray, CPointer, CInt]
-    assert [type(component) for component in matrix.type.components] == [CPointer, CArray, CInt]
-    assert parsed.functions[1].parameters[0].callback_candidate is True
-
-
-def test_composite_definitions_are_concrete_objects_and_static_assert_is_diagnostic():
-    from prik.parsers.c import CEnum, CStruct, CUnion, CVariable, parse_c_file
-
-    parsed = parse_c_file(
-        """
-struct point { double x; double y; };
-union value { int i; double d; };
-enum status { STATUS_OK = 0 };
-_Static_assert(sizeof(int) == 4, "expected int width");
-""",
-        filename="composites.h",
-    )
-
-    assert isinstance(parsed.structs[0], CStruct)
-    assert all(isinstance(member, CVariable) for member in parsed.structs[0].members)
-    assert [member.name for member in parsed.structs[0].members] == ["x", "y"]
-    assert isinstance(parsed.unions[0], CUnion)
-    assert isinstance(parsed.enums[0], CEnum)
-    assert [diagnostic.unit_kind for diagnostic in parsed.diagnostics] == ["static_assert"]
-
-
-def test_parenthesized_declarators_preserve_pointer_array_order():
-    from prik.parsers.c import CArray, CInt, CPointer, parse_c_file
-
-    parsed = parse_c_file("extern int *values[4];\nextern int (*matrix)[4];\n", filename="paren_decl.h")
-    variables = {variable.name: variable for variable in parsed.variables}
-
-    assert [type(component) for component in variables["values"].type.components] == [CArray, CPointer, CInt]
-    assert [type(component) for component in variables["matrix"].type.components] == [CPointer, CArray, CInt]
-
-
-def test_function_type_discards_placeholder_parameter_names():
-    from prik.parsers.c import CFunctionType, CPointer, parse_c_file
-
-    parsed = parse_c_file(
-        "typedef int (*compare_fn)(const void *left, const void *right);\n",
-        filename="callback_typedef.h",
-    )
-
-    type_ = parsed.typedefs[0].type
-    assert isinstance(type_.components[0], CPointer)
-    signature = type_.components[1]
-    assert isinstance(signature, CFunctionType)
-    assert len(signature.parameter_types) == 2
-
-
-def test_conflicting_function_pointer_typedefs_report_diagnostic():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        "typedef int (*callback_fn)(int);\ntypedef double (*callback_fn)(double);\n",
-        filename="callback_typedef_conflict.h",
-    )
-
-    assert [typedef.name for typedef in parsed.typedefs] == ["callback_fn"]
-    assert [(diagnostic.code, diagnostic.unit_kind, diagnostic.unit_name) for diagnostic in parsed.diagnostics] == [
-        ("C_CONFLICTING_TYPEDEF", "typedef", "callback_fn")
-    ]
-
-
-def test_recursive_compositions_cover_tables_callback_arrays_and_function_results():
-    from prik.parsers.c import CArray, CFunctionType, CInt, CPointer, parse_c_file
-
-    parsed = parse_c_file(
-        """
-extern int *(*table)[4];
-typedef int (*callback_table[8])(int);
-int (*factory(void))(int);
-int direct(void), *value;
-""",
-        filename="recursive_declarators.h",
-    )
-
-    variables = {variable.name: variable for variable in parsed.variables}
-    assert [type(component) for component in variables["table"].type.components] == [
-        CPointer,
-        CArray,
-        CPointer,
-        CInt,
-    ]
-    assert [type(component) for component in variables["value"].type.components] == [CPointer, CInt]
-    callbacks = parsed.typedefs[0].type
-    assert [type(component) for component in callbacks.components] == [CArray, CPointer, CFunctionType]
-    functions = {function.name: function for function in parsed.functions}
-    assert set(functions) == {"factory", "direct"}
-    assert [type(component) for component in functions["factory"].result_type.components] == [
-        CPointer,
-        CFunctionType,
-    ]
 
 
 def test_declaration_attributes_are_tolerated_and_layout_omissions_are_diagnosed():
@@ -628,59 +250,6 @@ def test_unsupported_top_level_declarator_is_reported_with_source_location():
 
 
 @pytest.mark.parametrize(
-    ("text", "unit_kind", "message"),
-    [
-        ("struct pending { int value; }", "struct_definition", "Struct definitions are not supported yet."),
-        ("union pending { int value; }", "union_definition", "Union definitions are not supported yet."),
-        ("enum pending { value }", "enum_definition", "Enum definitions are not supported yet."),
-        ("_Static_assert(sizeof(int) == 4)", "static_assert", "Static assertions are recorded but not evaluated."),
-        ("int value __attribute__((used))", "attribute_declaration", "Compiler-specific declaration attributes"),
-        ("int value __declspec(dllexport)", "attribute_declaration", "Compiler-specific declaration attributes"),
-        ("int value [[deprecated]]", "attribute_declaration", "Compiler-specific declaration attributes"),
-        ("_Alignas(16) int value", "alignment_declaration", "Declaration alignment specifiers"),
-        ("alignas(16) int value", "alignment_declaration", "Declaration alignment specifiers"),
-        ("int values[] = {1, 2, 3}", "brace_declaration", "Unsupported declaration containing braces."),
-    ],
-)
-def test_unsupported_declaration_diagnostic_classifies_known_shapes(text, unit_kind, message):
-    from prik.parsers.c import CParser
-    from prik.parsers.c.lexer import CTopLevelSegment
-
-    segment = CTopLevelSegment(
-        text=text,
-        terminator=";",
-        filename="unsupported.h",
-        original_start_line=7,
-        original_start_column=3,
-        original_source_line=f"  {text};",
-    )
-
-    diagnostic = CParser()._unsupported_declaration_diagnostic(segment)
-
-    assert diagnostic is not None
-    assert diagnostic.code == "C_UNSUPPORTED_DECLARATION"
-    assert diagnostic.severity == "warning"
-    assert diagnostic.unit_kind == unit_kind
-    assert diagnostic.unit_name is None
-    assert message in diagnostic.message
-    assert diagnostic.location is not None
-    assert diagnostic.location.filename == "unsupported.h"
-    assert diagnostic.location.line == 7
-    assert diagnostic.location.column == 3
-    assert diagnostic.location.source_line == f"  {text};"
-
-
-def test_unsupported_declaration_diagnostic_ignores_empty_and_plain_declarations():
-    from prik.parsers.c import CParser
-    from prik.parsers.c.lexer import CTopLevelSegment
-
-    parser = CParser()
-
-    assert parser._unsupported_declaration_diagnostic(CTopLevelSegment(text="", terminator=";")) is None
-    assert parser._unsupported_declaration_diagnostic(CTopLevelSegment(text="int value", terminator=";")) is None
-
-
-@pytest.mark.parametrize(
     "source",
     [
         "int;\n",
@@ -695,24 +264,6 @@ def test_non_c_top_level_grammar_is_rejected_without_language_guessing(source):
         parse_c_file(source, filename="invalid_top_level.h")
 
     assert exc_info.value.code == "CPARSE_INVALID_SYNTAX"
-
-
-@pytest.mark.parametrize(
-    ("source", "name", "type_name"),
-    [
-        ("class widget;\n", "widget", "class"),
-        ("namespace api = other;\n", "api", "namespace"),
-        ("using size_type = value;\n", "size_type", "using"),
-    ],
-)
-def test_identifier_spelling_does_not_trigger_foreign_language_detection(source, name, type_name):
-    from prik.parsers.c import CTypedef, parse_c_file
-
-    parsed = parse_c_file(source, filename="identifier_spelling.h")
-
-    assert [variable.name for variable in parsed.variables] == [name]
-    assert isinstance(parsed.variables[0].type, CTypedef)
-    assert parsed.variables[0].type.name == type_name
 
 
 def test_braced_and_designated_initializer_declarations_preserve_source_text():
@@ -762,3 +313,246 @@ def test_storage_class_and_inline_specifiers_are_recorded_on_functions():
     assert functions["local_add"].storage == ["static"]
     assert "inline" in functions["local_add"].specifiers
     assert functions["exported_add"].storage == ["extern"]
+
+
+@pytest.mark.parametrize(
+    ("spelling", "expected_name"),
+    [
+        pytest.param("void", "CVoid", id="void"),
+        pytest.param("_Bool", "CBool", id="bool"),
+        pytest.param("char", "CChar", id="plain-char"),
+        pytest.param("signed char", "CSignedChar", id="signed-char-is-distinct"),
+        pytest.param("unsigned char", "CUnsignedChar", id="unsigned-char"),
+        pytest.param("signed short int", "CShort", id="short-with-sign-and-int"),
+        pytest.param("unsigned short", "CUnsignedShort", id="unsigned-short"),
+        pytest.param("signed", "CInt", id="bare-signed-is-int"),
+        pytest.param("unsigned", "CUnsignedInt", id="bare-unsigned-is-unsigned-int"),
+        pytest.param("long int", "CLong", id="long-int"),
+        pytest.param("unsigned long", "CUnsignedLong", id="unsigned-long"),
+        pytest.param("signed long long int", "CLongLong", id="long-long-counts-two-longs"),
+        pytest.param("unsigned long long", "CUnsignedLongLong", id="unsigned-long-long"),
+        pytest.param("float", "CFloat", id="float"),
+        pytest.param("double", "CDouble", id="double"),
+        pytest.param("long double", "CLongDouble", id="long-double"),
+        pytest.param("float _Complex", "CFloatComplex", id="float-complex"),
+        pytest.param("_Complex", "CDoubleComplex", id="bare-complex-is-double"),
+        pytest.param("long double _Complex", "CLongDoubleComplex", id="long-double-complex"),
+        pytest.param("int unsigned", "CUnsignedInt", id="reordered-int-unsigned"),
+        pytest.param("int long unsigned", "CUnsignedLong", id="reordered-int-long-unsigned"),
+        pytest.param("double long", "CLongDouble", id="reordered-double-long"),
+        pytest.param("_Complex float", "CFloatComplex", id="reordered-complex-float"),
+    ],
+)
+def test_primitive_specifier_spellings_create_one_concrete_ctype(spelling, expected_name):
+    import prik.parsers.c as c_parser
+    from prik.parsers.c import parse_c_file
+
+    function = parse_c_file(f"{spelling} primitive(void);\n", filename="primitive_table.h").functions[0]
+
+    assert isinstance(function.result_type, getattr(c_parser, expected_name))
+    # The source spelling survives normalization, whatever the specifier order.
+    assert function.result_type.source_text == spelling
+
+
+@pytest.mark.parametrize(
+    ("source", "message", "expected_column"),
+    [
+        pytest.param("unsigned float value;\n", "Invalid type specifier sequence", 1, id="variable"),
+        pytest.param("void bad(long char value);\n", "Invalid type specifier sequence", 1, id="parameter"),
+        pytest.param(
+            "struct bad { signed unsigned value; };\n", "Invalid type specifier sequence", 14, id="struct-member"
+        ),
+        pytest.param("unsigned float bad(void) { return 0; }\n", "Invalid type specifier sequence", 1, id="definition"),
+        pytest.param("_Atomic(int) long value;\n", "Invalid type specifier sequence", None, id="atomic-plus-long"),
+        pytest.param("_Atomic() value;\n", "Invalid _Atomic type-name", None, id="empty-atomic"),
+        pytest.param("_Atomic(int named) value;\n", "Invalid _Atomic type-name", None, id="atomic-with-declarator"),
+    ],
+)
+def test_invalid_type_specifier_sequences_raise_located_parse_errors(source, message, expected_column):
+    from prik.parsers.c import CParseError, parse_c_file
+
+    with pytest.raises(CParseError, match=message) as error:
+        parse_c_file(source, filename="invalid_specifiers.h")
+
+    assert error.value.code == "CPARSE_INVALID_SPECIFIER_SEQUENCE"
+    if expected_column is not None:
+        assert (
+            f"invalid_specifiers.h:1:{expected_column}: error[CPARSE_INVALID_SPECIFIER_SEQUENCE]"
+            in error.value.format_diagnostic(color=False)
+        )
+
+
+def test_declarators_compose_pointer_array_and_function_layers_in_c_binding_order():
+    from prik.parsers.c import CArray, CFunctionType, CInt, CPointer, parse_c_file
+
+    parsed = parse_c_file(
+        """
+extern int *values[4];
+extern int (*matrix)[4];
+extern int *(*table)[4];
+typedef int (*compare_fn)(const void *left, const void *right);
+typedef int (*callback_table[8])(int);
+int (*factory(void))(int);
+int direct(void), *value;
+void sort_items(int (*fallback)(const void *, const void *));
+""",
+        filename="recursive_declarators.h",
+    )
+
+    def layers(type_):
+        return [type(component) for component in type_.components]
+
+    variables = {variable.name: variable for variable in parsed.variables}
+    assert layers(variables["values"].type) == [CArray, CPointer, CInt]
+    assert layers(variables["matrix"].type) == [CPointer, CArray, CInt]
+    assert layers(variables["table"].type) == [CPointer, CArray, CPointer, CInt]
+    assert layers(variables["value"].type) == [CPointer, CInt]
+    typedefs = {typedef.name: typedef for typedef in parsed.typedefs}
+    assert layers(typedefs["compare_fn"].type) == [CPointer, CFunctionType]
+    # Placeholder parameter names do not become part of a function type.
+    assert len(typedefs["compare_fn"].type.components[1].parameter_types) == 2
+    assert layers(typedefs["callback_table"].type) == [CArray, CPointer, CFunctionType]
+    functions = {function.name: function for function in parsed.functions}
+    assert set(functions) == {"factory", "direct", "sort_items"}
+    assert layers(functions["factory"].result_type) == [CPointer, CFunctionType]
+    assert functions["sort_items"].parameters[0].callback_candidate is True
+
+
+@pytest.mark.parametrize(
+    ("source", "section", "kept_lines", "initializer", "codes"),
+    [
+        pytest.param("int i;\nint i;\n", "variables", [2], None, [], id="repeated-tentative-variable-merges"),
+        pytest.param(
+            "int i;\nint i = 1;\n", "variables", [1], "1", [], id="tentative-then-definition-keeps-definition"
+        ),
+        pytest.param(
+            "int i = 1;\nint i = 2;\n",
+            "variables",
+            None,
+            "1",
+            ["C_DUPLICATE_VARIABLE_DEFINITION"],
+            id="duplicate-definition",
+        ),
+        pytest.param(
+            "int i;\ndouble i;\n",
+            "variables",
+            None,
+            None,
+            ["C_CONFLICTING_VARIABLE_DECLARATION"],
+            id="conflicting-types",
+        ),
+        pytest.param("typedef int i;\ntypedef int i;\n", "typedefs", [2], None, [], id="compatible-typedef-merges"),
+        pytest.param(
+            "typedef int i;\ntypedef double i;\n",
+            "typedefs",
+            None,
+            None,
+            ["C_CONFLICTING_TYPEDEF"],
+            id="typedef-conflict",
+        ),
+        pytest.param(
+            "typedef int (*i)(int);\ntypedef double (*i)(double);\n",
+            "typedefs",
+            None,
+            None,
+            ["C_CONFLICTING_TYPEDEF"],
+            id="function-pointer-typedef-conflict",
+        ),
+    ],
+)
+def test_file_scope_redeclarations_merge_or_diagnose(source, section, kept_lines, initializer, codes):
+    from prik.parsers.c import parse_c_file
+
+    parsed = parse_c_file(source, filename="redeclarations.c")
+
+    declarations = getattr(parsed, section)
+    assert [declaration.name for declaration in declarations] == ["i"]
+    assert [diagnostic.code for diagnostic in parsed.diagnostics] == codes
+    if kept_lines is not None:
+        assert [location.line for location in declarations[0].declaration_locations] == kept_lines
+    if section == "variables":
+        kept = declarations[0].initializer
+        assert (kept.source_text if kept is not None else None) == initializer
+
+
+@pytest.mark.parametrize(
+    ("text", "unit_kind", "message"),
+    [
+        pytest.param(
+            "_Static_assert(sizeof(int) == 4)",
+            "static_assert",
+            "Static assertions are recorded but not evaluated.",
+            id="static-assert",
+        ),
+        pytest.param(
+            "int value __attribute__((used))",
+            "attribute_declaration",
+            "Compiler-specific declaration attributes",
+            id="gnu-attribute",
+        ),
+        pytest.param(
+            "int value __declspec(dllexport)",
+            "attribute_declaration",
+            "Compiler-specific declaration attributes",
+            id="declspec",
+        ),
+        pytest.param(
+            "int value [[deprecated]]",
+            "attribute_declaration",
+            "Compiler-specific declaration attributes",
+            id="standard-attribute",
+        ),
+        pytest.param(
+            "_Alignas(16) int value", "alignment_declaration", "Declaration alignment specifiers", id="alignas-keyword"
+        ),
+        pytest.param(
+            "alignas(16) int value", "alignment_declaration", "Declaration alignment specifiers", id="alignas-macro"
+        ),
+        pytest.param(
+            "struct packed { int a; } __attribute__((packed)) value",
+            "struct_definition",
+            "Struct definitions are not supported yet.",
+            id="attributed-struct-definition",
+        ),
+    ],
+)
+def test_raw_unsupported_declarations_warn_with_their_location_and_later_declarations_continue(
+    text, unit_kind, message
+):
+    from prik.parsers.c import parse_c_file
+
+    parsed = parse_c_file(f"int kept;\n  {text};\nint later;\n", filename="unsupported.h")
+
+    assert [variable.name for variable in parsed.variables] == ["kept", "later"]
+    assert len(parsed.diagnostics) == 1
+    diagnostic = parsed.diagnostics[0]
+    assert diagnostic.code == "C_UNSUPPORTED_DECLARATION"
+    assert diagnostic.severity == "warning"
+    assert diagnostic.unit_kind == unit_kind
+    assert diagnostic.unit_name is None
+    assert message in diagnostic.message
+    assert diagnostic.location.filename == "unsupported.h"
+    assert diagnostic.location.line == 2
+    assert diagnostic.location.column == 3
+    assert diagnostic.location.source_line == f"  {text};"
+
+
+@pytest.mark.parametrize(
+    ("source", "name", "type_name"),
+    [
+        pytest.param("external_type value;\n", "value", "external_type", id="unresolved-typedef-name"),
+        pytest.param("class widget;\n", "widget", "class", id="cpp-class-keyword"),
+        pytest.param("namespace api = other;\n", "api", "namespace", id="cpp-namespace-keyword"),
+        pytest.param("using size_type = value;\n", "size_type", "using", id="cpp-using-keyword"),
+    ],
+)
+def test_identifier_spelling_is_a_deferred_typedef_not_foreign_language_detection(source, name, type_name):
+    from prik.parsers.c import CTypedef, parse_c_file
+
+    parsed = parse_c_file(source, filename="identifier_spelling.h")
+
+    assert [variable.name for variable in parsed.variables] == [name]
+    assert isinstance(parsed.variables[0].type, CTypedef)
+    assert parsed.variables[0].type.name == type_name
+    assert parsed.variables[0].type.type is None
+    assert parsed.diagnostics == []

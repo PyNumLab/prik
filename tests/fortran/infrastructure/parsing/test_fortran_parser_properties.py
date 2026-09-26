@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_properties.py`."""
+"""Property and fuzz checks for the Fortran parser."""
 
 import pytest
 from contextlib import suppress
@@ -17,30 +17,16 @@ from tests.fortran._support.parser_properties import (
 
 @pytest.mark.property
 @given(fortran_subroutines())
-def test_generated_fortran_subroutines_preserve_argument_order(case):
+def test_generated_fortran_subroutines_preserve_argument_order_in_any_case(case):
     proc_name, arg_names, source = case
 
-    parsed = parse_fortran_file(source, filename=f"{proc_name}.f90")
+    for text in (source, source.upper()):
+        parsed = parse_fortran_file(text, filename=f"{proc_name}.f90")
 
-    assert parsed.diagnostics == []
-    assert len(parsed.procedures) == 1
-    procedure = parsed.procedures[0]
-    assert procedure.name == proc_name
-    assert [arg.name for arg in procedure.arguments] == arg_names
-
-
-@pytest.mark.property
-@given(fortran_subroutines())
-def test_generated_fortran_subroutines_survive_case_changes(case):
-    proc_name, arg_names, source = case
-
-    parsed = parse_fortran_file(source.upper(), filename=f"{proc_name}.f90")
-
-    assert parsed.diagnostics == []
-    assert len(parsed.procedures) == 1
-    procedure = parsed.procedures[0]
-    assert procedure.name.lower() == proc_name
-    assert [arg.name.lower() for arg in procedure.arguments] == arg_names
+        assert parsed.diagnostics == []
+        (procedure,) = parsed.procedures
+        assert procedure.name.lower() == proc_name
+        assert [arg.name.lower() for arg in procedure.arguments] == arg_names
 
 
 @pytest.mark.property

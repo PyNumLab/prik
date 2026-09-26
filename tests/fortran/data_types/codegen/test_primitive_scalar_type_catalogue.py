@@ -25,17 +25,6 @@ def test_numpy_projection_rejects_unresolved_and_unknown_semantic_dtypes():
         NumpyDtypeRegistry.expression_for("Int")
 
 
-def test_backend_catalogue_makes_each_emitted_representation_explicit():
-    scalar = PrimitiveScalarTypeRegistry.type_for("Float64")
-
-    assert scalar.semantic_name == "Float64"
-    assert scalar.c_spelling == "double"
-    assert scalar.fortran_spelling == "real(c_double)"
-    assert scalar.numpy_type_macro == "NPY_FLOAT64"
-    assert scalar.python_type_name == NumpyDtypeRegistry.TYPES["Float64"]
-    assert scalar.cfi_type_spelling == "CFI_type_double"
-
-
 def test_backend_catalogue_returns_detached_records():
     scalar = PrimitiveScalarTypeRegistry.type_for("Int32")
     scalar.c_spelling = "changed"

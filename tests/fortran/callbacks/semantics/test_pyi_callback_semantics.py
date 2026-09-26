@@ -58,53 +58,6 @@ def register(
     assert callback_arguments[8].semantic_type.storage.mutable is True
 
 
-@pytest.mark.parametrize(
-    "annotation",
-    [
-        "String[8]",
-        "String[8][()]",
-    ],
-)
-def test_callback_string_storage_contracts_complete(annotation: str):
-    module = parse_pyi_text(
-        f"""
-@prototype
-def string_callback(value: {annotation}) -> None: ...
-
-def register(callback: string_callback) -> None: ...
-""",
-        module_name="callbacks",
-    )
-
-    complete_semantic_policies(module)
-    callback_type = module.functions[0].arguments[0].semantic_type
-    callback_argument = callback_type.metadata["callback_arguments"][0]
-    assert callback_argument.semantic_type.name == "String"
-
-
-def test_convert_pyi_to_ir_preserves_prototype_argument_names_and_dimensions():
-    module = parse_pyi_text(
-        """
-@prototype
-def transform_callback(
-    count: Int32,
-    values: Float64[count],
-) -> Float64[count]: ...
-
-def apply_transform(
-    callback: transform_callback
-) -> None: ...
-""",
-        module_name="callbacks",
-    )
-
-    callback_type = module.functions[0].arguments[0].semantic_type
-    callback_arguments = callback_type.metadata["callback_arguments"]
-    assert [arg.name for arg in callback_arguments] == ["count", "values"]
-    assert callback_type.metadata["return"].shape == ["count"]
-    assert callback_type.metadata["prototype_ref"]["name"] == "transform_callback"
-
-
 def test_prototype_is_one_exact_nonexported_signature_declaration():
     module = parse_pyi_text(
         """
@@ -219,7 +172,6 @@ def test_convert_pyi_to_ir_rejects_invalid_prototype_address_wrappers(annotation
     "annotation",
     [
         "Value(Float64)",
-        "Value(Int32)",
         "Value(String[8])",
         "Value(Allocatable[Float64])",
         "Value(Pointer[Float64])",

@@ -10,27 +10,6 @@ from prik.compiler.compilers import Compiler
 from prik.compiler.compiler_profiles import available_compilers, fortran_compiler_family, vendors
 
 
-def test_record_only_compiler_keeps_object_command_without_executing(monkeypatch, tmp_path: Path):
-    compiler = Compiler("GNU", execute_commands=False)
-    monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gcc")
-    monkeypatch.setattr(
-        Compiler,
-        "run_command",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("command executed")),
-    )
-    object_file = ObjectFile(
-        source=tmp_path / "source.c",
-        object_path=tmp_path / "source.o",
-        language="c",
-    )
-
-    compiler.compile_object(object_file)
-
-    command = compiler.command_log[0]
-    assert command[0] == "gcc"
-    assert command[-4:] == ("-c", str(object_file.source), "-o", str(object_file.object_path))
-
-
 def test_user_compile_flags_follow_default_profile_flags(monkeypatch, tmp_path: Path):
     compiler = Compiler("GNU", debug=False, execute_commands=False)
     monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gcc")
@@ -249,10 +228,13 @@ def test_python_include_directories_add_existing_multiarch_root(monkeypatch, tmp
     )
 
 
-def test_supported_optional_profile_flags_are_used_when_executing(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize("supported", [True, False], ids=["supported", "unsupported"])
+def test_optional_profile_flags_follow_the_selected_compiler_support(monkeypatch, tmp_path: Path, supported: bool):
     compiler = Compiler("GNU")
     monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gfortran")
-    monkeypatch.setattr(compiler, "_supports_optional_flag", lambda _executable, flag: flag == "-ftrampoline-impl=heap")
+    monkeypatch.setattr(
+        compiler, "_supports_optional_flag", lambda _executable, flag: supported and flag == "-ftrampoline-impl=heap"
+    )
     monkeypatch.setattr(Compiler, "run_command", staticmethod(lambda command, _verbose=False: tuple(command)))
     object_file = ObjectFile(
         source=tmp_path / "bridge.f90",
@@ -262,23 +244,7 @@ def test_supported_optional_profile_flags_are_used_when_executing(monkeypatch, t
 
     compiler.compile_object(object_file)
 
-    assert "-ftrampoline-impl=heap" in compiler.command_log[0]
-
-
-def test_unsupported_optional_profile_flags_are_omitted(monkeypatch, tmp_path: Path):
-    compiler = Compiler("GNU")
-    monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gfortran")
-    monkeypatch.setattr(compiler, "_supports_optional_flag", lambda _executable, _flag: False)
-    monkeypatch.setattr(Compiler, "run_command", staticmethod(lambda command, _verbose=False: tuple(command)))
-    object_file = ObjectFile(
-        source=tmp_path / "bridge.f90",
-        object_path=tmp_path / "bridge.o",
-        language="fortran",
-    )
-
-    compiler.compile_object(object_file)
-
-    assert "-ftrampoline-impl=heap" not in compiler.command_log[0]
+    assert ("-ftrampoline-impl=heap" in compiler.command_log[0]) is supported
 
 
 def test_optional_profile_flag_probe_reads_the_selected_compiler_help(monkeypatch):

@@ -5,8 +5,24 @@ from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.scope import ScopeUses
 
 
-def test_same_argument_name_in_different_procedures_is_allowed():
-    code = """
+def _declared_names(parsed) -> list[str]:
+    """Return every procedure, module variable, and type component a file declares."""
+    names = [procedure.name for procedure in parsed.procedures]
+    for module in parsed.modules:
+        names.append(module.name)
+        names += [f"{module.name}.{procedure.name.lower()}" for procedure in module.procedures]
+        names += [f"{module.name}.{variable.name}" for variable in module.variables]
+        names += [
+            f"{module.name}.{dtype.name}.{field.name}" for dtype in module.derived_types for field in dtype.fields
+        ]
+    return sorted(names)
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        pytest.param(
+            """
 subroutine a(x)
   implicit none
   integer :: x
@@ -16,13 +32,12 @@ subroutine b(x)
   implicit none
   real(8) :: x
 end subroutine b
-"""
-    parsed = parse_fortran_file(code, filename="scope_args_ok.f90")
-    assert [s.name for s in parsed.procedures] == ["a", "b"]
-
-
-def test_interface_argument_names_do_not_conflict_with_host_locals():
-    code = """
+""",
+            ["a", "b"],
+            id="argument-names-in-different-procedures",
+        ),
+        pytest.param(
+            """
 subroutine host(func, x)
   implicit none
   interface
@@ -33,14 +48,12 @@ subroutine host(func, x)
   end interface
   real(8) :: x
 end subroutine host
-"""
-    parsed = parse_fortran_file(code, filename="scope_interface_ok.f90")
-    assert len(parsed.procedures) == 1
-    assert parsed.procedures[0].name == "host"
-
-
-def test_same_contained_procedure_name_in_different_hosts_is_allowed():
-    code = """
+""",
+            ["host"],
+            id="interface-arguments-and-host-locals",
+        ),
+        pytest.param(
+            """
 module m
 contains
   subroutine host_a()
@@ -57,31 +70,12 @@ contains
     end subroutine helper
   end subroutine host_b
 end module m
-"""
-    parsed = parse_fortran_file(code, filename="scope_contains_ok.f90")
-    module = parsed.modules[0]
-    assert [s.name.lower() for s in module.procedures] == ["host_a", "host_b"]
-
-
-def test_duplicate_procedure_name_in_same_scope_still_errors():
-    code = """
-module m
-contains
-  subroutine work(n)
-    integer :: n
-  end subroutine work
-  function work(n) result(out)
-    integer :: n
-    integer :: out
-  end function work
-end module m
-"""
-    with pytest.raises(FortranParseError, match="Duplicate procedure name"):
-        parse_fortran_file(code, filename="scope_dup_err.f90")
-
-
-def test_type_components_do_not_conflict_with_host_procedure_locals():
-    code = """
+""",
+            ["m", "m.host_a", "m.host_b"],
+            id="contained-procedures-in-different-hosts",
+        ),
+        pytest.param(
+            """
 module component_vs_local
   implicit none
   type :: box_t
@@ -93,14 +87,12 @@ contains
     integer :: n
   end subroutine touch
 end module component_vs_local
-"""
-    parsed = parse_fortran_file(code, filename="scope_component_local_ok.f90")
-    module = parsed.modules[0]
-    assert [s.name for s in module.procedures] == ["touch"]
-
-
-def test_module_variable_and_type_component_same_name_is_allowed():
-    code = """
+""",
+            ["component_vs_local", "component_vs_local.box_t.n", "component_vs_local.touch"],
+            id="type-components-and-procedure-locals",
+        ),
+        pytest.param(
+            """
 module module_vs_component
   implicit none
   integer :: vals
@@ -108,17 +100,12 @@ module module_vs_component
      integer :: vals
   end type payload
 end module module_vs_component
-"""
-    parsed = parse_fortran_file(code, filename="scope_module_component_same_name_ok.f90")
-    module = parsed.modules[0]
-
-    assert {v.name for v in module.variables} == {"vals"}
-    assert [t.name for t in module.derived_types] == ["payload"]
-    assert {f.name for f in module.derived_types[0].fields} == {"vals"}
-
-
-def test_type_component_names_do_not_leak_between_different_modules():
-    code = """
+""",
+            ["module_vs_component", "module_vs_component.payload.vals", "module_vs_component.vals"],
+            id="module-variable-and-type-component",
+        ),
+        pytest.param(
+            """
 module a_mod
   type :: t
      integer :: vals
@@ -130,15 +117,38 @@ module b_mod
      real(8) :: vals
   end type t
 end module b_mod
-"""
-    parsed = parse_fortran_file(code, filename="scope_cross_module_components_ok.f90")
-    assert [m.name for m in parsed.modules] == ["a_mod", "b_mod"]
-    assert {f.name for f in parsed.modules[0].derived_types[0].fields} == {"vals"}
-    assert {f.name for f in parsed.modules[1].derived_types[0].fields} == {"vals"}
+""",
+            ["a_mod", "a_mod.t.vals", "b_mod", "b_mod.t.vals"],
+            id="type-components-in-different-modules",
+        ),
+    ],
+)
+def test_the_same_name_in_different_scopes_is_not_a_duplicate(code: str, expected: list[str]):
+    """Each scope owns its names, so a spelling repeated in another scope parses and keeps both."""
+    assert _declared_names(parse_fortran_file(code, filename="scopes.f90")) == expected
 
 
-def test_duplicate_type_component_name_still_errors_inside_single_type_scope():
-    code = """
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        pytest.param(
+            """
+module m
+contains
+  subroutine work(n)
+    integer :: n
+  end subroutine work
+  function work(n) result(out)
+    integer :: n
+    integer :: out
+  end function work
+end module m
+""",
+            "Duplicate procedure name",
+            id="procedure-in-one-module",
+        ),
+        pytest.param(
+            """
 module dup_component_mod
   implicit none
   type :: thing
@@ -146,9 +156,15 @@ module dup_component_mod
     real(8) :: vals
   end type thing
 end module dup_component_mod
-"""
-    with pytest.raises(FortranParseError, match="Duplicate field 'vals' in derived type 'thing'"):
-        parse_fortran_file(code, filename="scope_component_dup_err.f90")
+""",
+            "Duplicate field 'vals' in derived type 'thing'",
+            id="component-in-one-type",
+        ),
+    ],
+)
+def test_the_same_name_twice_in_one_scope_is_a_duplicate(code: str, message: str):
+    with pytest.raises(FortranParseError, match=message):
+        parse_fortran_file(code, filename="duplicates.f90")
 
 
 def test_module_parameter_shape_is_visible_to_contained_function_scope():
@@ -176,19 +192,6 @@ end module dims_mod
     assert proc.arguments[0].base_type == "real"
     assert proc.result.base_type == "real"
     assert proc.variables == {}
-
-
-def test_fortran_parser_class_entrypoint():
-    source = """
-subroutine touch(x)
-    integer, intent(inout) :: x
-end subroutine
-"""
-
-    signatures = parse_fortran_file(source).procedures
-
-    assert len(signatures) == 1
-    assert signatures[0].name == "touch"
 
 
 def test_repeated_use_of_one_module_accumulates_its_imports():

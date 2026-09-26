@@ -76,12 +76,15 @@ def test_rank_zero_callback_storage_writes_through_to_the_native_caller(tmp_path
 SOURCE_DEFAULT = NATIVE_FIXTURES / "fcallback_default_storage_f90.f90"
 
 
-def test_out_scalar_callback_writes_back_without_editing_the_contract(tmp_path: Path):
+def test_out_scalar_callback_writes_back_and_documents_the_callable_without_editing_the_contract(tmp_path: Path):
     """Wrapping Fortran source directly produces a callback that can answer.
 
     The generated default must be the spelling that works: an `intent(out)`
     scalar reaches Python as writable storage, so the value the callable
-    computes reaches the native caller with no contract edit.
+    computes reaches the native caller with no contract edit. The docstring is
+    the only callback description in the source-only workflow, and guessing a
+    callback signature wrong is fatal at the callback boundary, so `help()`
+    must state the arity, direction, and how an output is delivered.
     """
     module = _build_source_and_import(
         SOURCE_DEFAULT,
@@ -101,24 +104,7 @@ def test_out_scalar_callback_writes_back_without_editing_the_contract(tmp_path: 
 
     assert module.evaluate(objective_prik, np.array([1.0, 2.0, 3.0])) == np.float64(14.0)
 
-
-def test_callback_docstring_states_the_callable_signature_and_write_through(tmp_path: Path):
-    """The docstring is the only callback description in the source-only workflow.
-
-    Guessing a callback signature wrong is fatal at the callback boundary, so
-    `help()` must state the arity, direction, and how an output is delivered.
-    """
-    module = _build_source_and_import(
-        SOURCE_DEFAULT,
-        tmp_path / "build",
-        {
-            "bind_c_fcallback_default_storage_f90_wrapper.f90",
-            "fcallback_default_storage_f90_wrapper.c",
-            "fcallback_default_storage_f90_wrapper.h",
-        },
-    )
     documentation = module.evaluate.__doc__
-
     assert "Called as: calfun(x, f) -> None" in documentation
     assert "x : ndarray[float64], rank 1, shape (::), intent(in)" in documentation
     assert "f : ndarray[float64], intent(out); assign through it (f[...] = value)" in documentation
@@ -140,33 +126,18 @@ def _undeclared_intent_module(tmp_path: Path):
     )
 
 
-def test_callback_scalar_without_declared_intent_is_read_and_written(tmp_path: Path):
+def test_undeclared_intent_is_read_and_written_from_source_and_its_generated_contract(tmp_path: Path):
     """An undeclared ``intent`` is conservatively both read and written.
 
     Fortran permits the callee to modify such a dummy, so the callable must
     observe the incoming value and see its own write reach the native caller.
+    The absence must survive source, contract, codegen and runtime: building
+    through PRIK's own generated contract proves the bare ``Float64[()]``
+    spelling carries the conservative read/write transfer to the trampoline.
     """
-    module = _undeclared_intent_module(tmp_path)
-    observed = []
-
-    def tweak(value):
-        observed.append(float(value))
-        assert value.flags.writeable
-        value[...] = float(value) * 3.0
-
-    assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)
-    assert observed == [7.0]
-
-
-def test_undeclared_intent_survives_the_generated_contract_round_trip(tmp_path: Path):
-    """The absent ``intent`` must survive source, contract, codegen and runtime.
-
-    Building through PRIK's own generated contract proves the bare
-    ``Float64[()]`` spelling carries the conservative read/write transfer all
-    the way to the trampoline, rather than only appearing in the contract text.
-    """
+    source_module = _undeclared_intent_module(tmp_path)
     workdir = tmp_path / "round_trip"
-    module = _build_generated_pyi_and_import(SOURCE_UNDECLARED, workdir)
+    contract_module = _build_generated_pyi_and_import(SOURCE_UNDECLARED, workdir)
 
     contract = (workdir / "contracts" / SOURCE_UNDECLARED.stem / f"{SOURCE_UNDECLARED.stem}.pyi").read_text(
         encoding="utf-8"
@@ -179,10 +150,16 @@ def test_undeclared_intent_survives_the_generated_contract_round_trip(tmp_path: 
     assert not any(f"intent({direction}) :: value" in bridge for direction in ("in", "out", "inout"))
     assert "value = value_callback_storage" in bridge
 
+    observed = []
+
     def tweak(value):
+        observed.append((float(value), bool(value.flags.writeable)))
         value[...] = float(value) * 3.0
 
-    assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)
+    for module in (source_module, contract_module):
+        observed.clear()
+        assert module.drive(tweak, np.float64(7.0)) == np.float64(21.0)
+        assert observed == [(7.0, True)]
 
 
 def test_assume_intent_in_scalars_makes_an_undeclared_callback_scalar_input_only(tmp_path: Path):

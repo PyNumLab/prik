@@ -1,4 +1,4 @@
-"""Tests split by stable ownership concept from `test_c_conversion_properties.py`."""
+"""Printer and loader agreement: generated and canonical contracts round-trip through semantic IR."""
 
 import pytest
 from hypothesis import (
@@ -17,6 +17,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticType,
 )
+from tests.fortran._support.pyi_conversion import parse_pyi_text as parse_pyi_contract
 from tests.fortran._support.semantic_properties import (
     _NATIVE_NAMES,
     _PYI_IDENTIFIER_STEMS,
@@ -113,3 +114,143 @@ def test_generated_semantic_ir_round_trips_through_pyi(arguments):
 
     assert emit_module(reparsed) == emitted
     assert parse_pyi_text(emit_module(reparsed), module_name="generated") == reparsed
+
+
+CONTRACT_SPELLINGS = {
+    "pointer-depths": """
+deep: Addr[3](Float64)
+shallow: Addr[2](Float64)
+raw: Addr(Float64)
+""",
+    "array-descriptor-handles": """
+grid: Allocatable[Float64[:, :]]
+mask: Allocatable[Annotated[Bool[1], Finite]]
+maybe: Annotated[Allocatable[Float64[:]], MaybeUnallocated]
+target: Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]
+labels: Pointer[String[8][:]]
+""",
+    "array-layout-and-constraints": """
+flat: Float64[Flat]
+matrix: Float64[3, Flat]
+c_matrix: Annotated[Float64[Flat, 3], ORDER_C]
+c_dense: Annotated[Float64[:, :], ORDER_C]
+any_order: Annotated[Float64[:, :], ORDER_ANY, Finite, Range(1, 3)]
+bounded: Annotated[Int32, Bounded(1, 8), Finite]
+""",
+    "array-dimensions": """
+def apply(
+    A: Float64[LDA, N],
+    work: Float64[::],
+    bounded: Float64[0:n:],
+    scratch: Float64[:],
+    rank_any: Float64[...],
+    computed: Float64[xl.size],
+    scalar: Float64[()]
+) -> None: ...
+""",
+    "copy-order": """
+def consume(
+    values: Annotated[Float64[:, :], ORDER_C, COPY_F]
+) -> None: ...
+""",
+    "scalar-descriptors": """
+scratch: Allocatable[Float64]
+current: Pointer[Int32]
+maybe_value: Float64 | None
+label: String[16]
+names: Allocatable[String[:]]
+
+@native_call([Allocatable(Arg(0)), Pointer(Arg(1))], result=Pointer(Return(0)))
+def combine(
+    scale: Float64 | None,
+    value: Int32 | None
+) -> Float64 | None: ...
+""",
+    "optional-descriptor-handles": """
+def maybe_consume(
+    values: Allocatable[Float64[:]] | None = ...,
+    target: Pointer[Float64[:]] | None = ...
+) -> None: ...
+""",
+    "boolean-widths": """
+def inspect(
+    default: Bool,
+    byte: Bool8[:],
+    short: Bool16[:],
+    word: Bool32[:],
+    wide: Bool64[:]
+) -> None: ...
+""",
+    "hidden-native-values": """
+@native_call([Arg(0), Int32(1), Float64(0.5), Bool(False), String[1]("N"), Len(Arg(0)), Arg(0).shape[0], IsPresent(Arg(1)), Work('tmp')])
+def wrapper(
+    x: Float64[n],
+    b: Int32 | None = ...
+) -> None: ...
+""",
+    "return-and-work-references": """
+@native_call([Len(Return(0)), Work('tmp').shape[1]])
+def wrapper() -> Float64: ...
+""",
+    "typed-projections": """
+@native_call([Int32(Arg(0).shape[0]), Int64(Arg(0).strides[0]), Arg(0), Int32(Len(Arg(1))), Arg(1), Arg(0).size, Int32(Arg(0).size), Int32(-1), Float64(-0.5), Complex64((1+2j))])
+def scale(
+    values: Float64[::],
+    label: String[8]
+) -> None: ...
+""",
+    "named-output-return": """
+@native_call([Arg(0), Arg(1), Return('c', 0)])
+def add(
+    a: Float64,
+    b: Float64
+) -> Float64: ...
+""",
+    "value-transport-and-native-abi": """
+@native_abi("c")
+class point:
+    x: Float64
+
+@native_call([Value(Arg(0))])
+def score(
+    value: point
+) -> Float64: ...
+
+@native_abi("c")
+@bind("renamed_entry")
+@native_call([Addr(Arg(0)), Arg(0).shape[0], Return('result', 0)])
+def transform(
+    values: Float64[:]
+) -> Float64: ...
+""",
+    "visibility-and-module-state": """
+import iso_c_binding
+
+class particle:
+    id: Int32
+
+scale: private[Float64]
+answer: Final[Int32]
+hidden_answer: private[Final[Int32]]
+literal_answer: Final[Int32] = 42
+output: Float64[:] = ...
+var['class']: Int32
+
+@private
+@bind("native_helper")
+def helper(
+    value: private[Int32]
+) -> None: ...
+""",
+}
+
+
+@pytest.mark.parametrize("body", list(CONTRACT_SPELLINGS.values()), ids=list(CONTRACT_SPELLINGS))
+def test_contract_spellings_round_trip_through_semantic_ir(body: str):
+    """Each canonical spelling loads, prints back as written, and reloads to the same IR."""
+    module = parse_pyi_contract(body, module_name="spellings")
+    emitted = emit_module(module)
+
+    emitted_lines = set(emitted.splitlines())
+    assert [line for line in body.strip().splitlines() if line and line not in emitted_lines] == []
+    assert parse_pyi_contract(emitted, module_name="spellings") == module

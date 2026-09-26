@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The test suite consolidates overlapping checks around compiled workflows and
+  retains focused parser, semantic, diagnostic, and ABI boundary coverage;
+  contributor guidance now favors observable behavior over implementation shape.
+
 - Generated bindings pass a wrapped derived-type object about twice as fast:
   they read its native storage through attribute names interned once instead
   of building a new name string on every call, and no longer scan the

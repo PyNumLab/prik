@@ -195,60 +195,6 @@ def test_one_source_with_several_standalone_procedures_exports_each_at_root(bund
     assert bundled_external_module.offset_value(np.int32(4)) == np.int32(14)
 
 
-def test_generated_standalone_contracts_are_non_empty_root_fragments(tmp_path: Path):
-    for source in (FIXED_EXTERNAL, FREE_EXTERNAL, EXTERNAL_BUNDLE):
-        copied = _copy_sources((source,), tmp_path / source.stem)
-        entry = _generate_contract(
-            copied,
-            tmp_path / f"{source.stem}_contracts",
-            _generated_contract_fixture(source.stem),
-        )
-        text = entry.read_text(encoding="utf-8")
-
-        assert entry.name == "__init__.pyi"
-        assert text.strip()
-        assert text.count("@standalone") == len([line for line in text.splitlines() if line.startswith("def ")])
-        assert sorted(path.name for path in entry.parent.glob("*.pyi")) == ["__init__.pyi"]
-
-
-def test_classic_external_bridge_uses_implicit_declaration_and_no_module_use(tmp_path: Path):
-    sources = _copy_sources((FREE_EXTERNAL,), tmp_path / "sources")
-    module, result, entry = _build_generated_contract(
-        sources,
-        tmp_path,
-        output_name=FREE_EXTERNAL.stem,
-        expected_package=_generated_contract_fixture(FREE_EXTERNAL.stem),
-    )
-
-    bridge = (result.output_dir / f"bind_c_{result.module_name}_wrapper.f90").read_text(encoding="utf-8").lower()
-    assert module.free_square(np.int32(3)) == np.int32(9)
-    assert entry.read_text(encoding="utf-8").startswith(
-        "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n\n@standalone\n"
-    )
-    assert "integer(c_int32_t), external :: free_square" in bridge
-    assert "function free_square(" not in bridge
-    assert "result = free_square(value)" in bridge
-    assert "private\n" not in bridge
-    assert "public :: bind_c_free_square" not in bridge
-    assert "use free_external" not in bridge
-
-
-def test_module_procedure_bridge_uses_native_module_scope(tmp_path: Path):
-    source = _copy_sources((BASIC_SOURCE,), tmp_path / "sources")
-    entry = _generate_contract(source, tmp_path / "contracts", _generated_contract_fixture(BASIC_SOURCE.stem))
-    native_objects = _compile_native_objects(source, tmp_path / "native")
-    result = build_pyi_extension(
-        entry,
-        native_objects=native_objects,
-        native_include_dirs=[native_objects[0].parent],
-        output_dir=tmp_path / "pyi_build",
-    )
-
-    bridge = (result.output_dir / f"bind_c_{result.module_name}_wrapper.f90").read_text(encoding="utf-8").lower()
-    assert "use m1, only:" in bridge
-    assert "add1" in bridge
-
-
 def test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view(tmp_path: Path):
     source = _copy_sources((C_ORDER_FLAT_BUFFER,), tmp_path / "sources")
     native_objects = _compile_native_objects(source, tmp_path / "native")

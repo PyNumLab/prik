@@ -69,7 +69,7 @@ def test_addressable_module_array_takes_its_address_directly():
     assert "capture_array_address" not in getter
 
 
-@pytest.mark.parametrize("python_name", ["plain", "counts", "labels"])
+@pytest.mark.parametrize("python_name", ["plain", "labels"])
 def test_ordinary_module_array_captures_its_address_in_c(python_name):
     """Without `target`, the address is taken on the C side, never by `c_loc`.
 
@@ -99,18 +99,24 @@ def test_captured_address_declares_one_typeless_c_interface():
     assert captures[0].parameters[0].attributes == ("dimension(*)",)
 
 
-def test_capture_helper_is_declared_only_where_an_array_needs_it():
-    """A module whose arrays are all addressable declares no capture interface."""
+def test_an_all_addressable_module_needs_no_capture_primitive():
+    """A module whose arrays are all addressable declares no capture interface.
+
+    Neither side pulls in the capture symbol: the bridge declares no interface
+    for it and the binding does not opt into the bundled definition.
+    """
     module = parse_pyi_text(
         "addressable: Annotated[Float64[4], Aliased]\n",
         module_name="array_state",
     )
     complete_semantic_policies(module)
-    bridge = FortranBridgeGenerator()
-    emitted = bridge.visit(WrapperPlanner().build(module))
+    plan = WrapperPlanner().build(module)
+    emitted = FortranBridgeGenerator().visit(plan)
 
     names = [procedure.name for interface in emitted.interfaces for procedure in interface.procedures]
     assert "prik_capture_address" not in names
+    binding = CBindingGenerator().binding_module(plan)
+    assert not any(define.name == "PRIK_BINDING_CAPTURE_ADDRESS" for define in binding.defines)
 
 
 def test_binding_opts_into_the_bundled_capture_primitive():
@@ -125,18 +131,6 @@ def test_binding_opts_into_the_bundled_capture_primitive():
 
     assert any(define.name == "PRIK_BINDING_CAPTURE_ADDRESS" for define in binding.defines)
     assert not any(function.name == "prik_capture_address" for function in binding.functions)
-
-
-def test_binding_omits_the_capture_primitive_when_no_array_needs_it():
-    """An extension whose arrays are all addressable pulls in no capture symbol."""
-    module = parse_pyi_text(
-        "addressable: Annotated[Float64[4], Aliased]\n",
-        module_name="array_state",
-    )
-    complete_semantic_policies(module)
-    binding = CBindingGenerator().binding_module(WrapperPlanner().build(module))
-
-    assert not any(define.name == "PRIK_BINDING_CAPTURE_ADDRESS" for define in binding.defines)
 
 
 def _undecided_plan():

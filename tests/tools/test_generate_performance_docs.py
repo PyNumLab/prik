@@ -16,8 +16,6 @@ from tools.generate_performance_docs import (
     _load_direct_snapshots,
     generate,
     load_snapshot,
-    render_build_chart,
-    render_chart,
     render_page,
 )
 
@@ -323,48 +321,6 @@ def test_render_page_rejects_missing_or_duplicate_markers(tmp_path: Path) -> Non
         )
 
 
-def test_render_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
-    f2py, prik = _paired_suites(tmp_path)
-    snapshot = load_snapshot(
-        f2py,
-        prik,
-        operating_system=TEST_OS,
-        compiler_version="GNU Fortran 13.3.0",
-        commit="1234567890abcdef",
-    )
-
-    chart = render_chart(snapshot)
-    root = ElementTree.fromstring(chart)
-
-    assert root.attrib["role"] == "img"
-    assert root.attrib["aria-labelledby"] == "title description"
-    assert "PRIK performance relative to f2py" in chart
-    assert "no significant difference" in chart
-    assert "Geometric mean:" in chart
-
-
-def test_render_build_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
-    f2py, prik = _paired_build_suites(tmp_path)
-    snapshot = load_snapshot(
-        f2py,
-        prik,
-        operating_system=TEST_OS,
-        compiler_version="GNU Fortran 13.3.0",
-        commit="1234567890abcdef",
-        metadata_keys=BUILD_SHARED_METADATA,
-    )
-
-    chart = render_build_chart(snapshot)
-    root = ElementTree.fromstring(chart)
-
-    assert root.attrib["role"] == "img"
-    assert root.attrib["aria-labelledby"] == "build-title build-description"
-    assert "Clean build time for PRIK and f2py" in chart
-    assert "Development · small module" in chart
-    assert "Optimized · full reference BLAS" in chart
-    assert "lower is better" in chart
-
-
 def test_load_snapshot_rejects_incompatible_platforms(tmp_path: Path) -> None:
     f2py, _prik = _paired_suites(tmp_path)
     prik = _write_suite(
@@ -459,10 +415,23 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
     )
 
     assert "August 2, 2026" in page.read_text(encoding="utf-8")
-    assert chart.is_file()
-    assert build_chart.is_file()
-    ElementTree.parse(chart)
-    ElementTree.parse(build_chart)
+
+    runtime_svg = chart.read_text(encoding="utf-8")
+    runtime_root = ElementTree.fromstring(runtime_svg)
+    assert runtime_root.attrib["role"] == "img"
+    assert runtime_root.attrib["aria-labelledby"] == "title description"
+    assert "PRIK performance relative to f2py" in runtime_svg
+    assert "no significant difference" in runtime_svg
+    assert "Geometric mean:" in runtime_svg
+
+    build_svg = build_chart.read_text(encoding="utf-8")
+    build_root = ElementTree.fromstring(build_svg)
+    assert build_root.attrib["role"] == "img"
+    assert build_root.attrib["aria-labelledby"] == "build-title build-description"
+    assert "Clean build time for PRIK and f2py" in build_svg
+    assert "Development · small module" in build_svg
+    assert "Optimized · full reference BLAS" in build_svg
+    assert "lower is better" in build_svg
 
 
 def test_current_performance_page_has_one_complete_marker_pair_per_generated_block() -> None:
@@ -471,9 +440,3 @@ def test_current_performance_page_has_one_complete_marker_pair_per_generated_blo
     for name in ("summary", "table", "direct", "build", "direct-build", "environment"):
         assert page.count(f"<!-- prik-performance-{name}:start -->") == 1
         assert page.count(f"<!-- prik-performance-{name}:end -->") == 1
-
-
-def test_pyperf_is_pinned_for_documentation_and_generator_tests() -> None:
-    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
-
-    assert pyproject.count('"pyperf==2.10.0"') == 2

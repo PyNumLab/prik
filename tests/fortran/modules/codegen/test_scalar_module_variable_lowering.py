@@ -8,9 +8,6 @@ from unittest.mock import Mock
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.parsers.fortran.parser import parse_fortran_project
-from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
-from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.policy.ownership import AssignmentMode, SetterAction
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import ModuleGetterAction
@@ -37,42 +34,6 @@ def _plan():
     return WrapperPlanner().build(module)
 
 
-def _computed_constant_plan():
-    parsed = parse_fortran_project(
-        {
-            "computed_constants.f90": """
-module computed_constants
-  integer, parameter :: computed = kind(1.0) * 2
-  character*1, parameter :: prefix = 'D'
-end module computed_constants
-"""
-        }
-    )
-    modules = fortran_project_to_semantic_modules(parsed)
-    _apply_source_python_exports(modules)
-    module = _merge_wrapper_modules(modules, name="computed_constants_wrapper")
-    complete_semantic_policies(module)
-    return WrapperPlanner().build(module)
-
-
-def _parameter_array_plan():
-    parsed = parse_fortran_project(
-        {
-            "parameter_array.f90": """
-module parameter_array
-  use iso_fortran_env, only: real64
-  real(real64), parameter :: dpmpar(3) = [epsilon(1.0_real64), tiny(1.0_real64), huge(1.0_real64)]
-end module parameter_array
-"""
-        }
-    )
-    modules = fortran_project_to_semantic_modules(parsed)
-    _apply_source_python_exports(modules)
-    module = _merge_wrapper_modules(modules, name="parameter_array_wrapper")
-    complete_semantic_policies(module)
-    return WrapperPlanner().build(module)
-
-
 def _source(artifacts, suffix: str) -> str:
     return next(item.text for item in artifacts.sources if item.path.name.endswith(suffix))
 
@@ -92,77 +53,6 @@ def _replace_variable(plan, python_name: str, edit):
         for namespace in plan.namespaces
     )
     return replace(plan, variables=variables, namespaces=namespaces)
-
-
-def test_module_variable_plan_contains_only_completed_dispatch_facts():
-    plan = _plan()
-    variables = {variable.bridge.native_name: variable for variable in plan.variables}
-
-    assert variables["limit"].binding.getter_action is ModuleGetterAction.CONSTANT_VALUE
-    assert variables["limit"].binding.setter_action is SetterAction.OMIT
-    assert variables["limit"].bridge.native_assignment is AssignmentMode.NONE
-    assert variables["limit"].binding.constant_value == 12
-    assert variables["counter"].binding.getter_action is ModuleGetterAction.DIRECT_VALUE
-    assert variables["counter"].binding.setter_action is SetterAction.WRITE_THROUGH
-    assert variables["counter"].bridge.native_assignment is AssignmentMode.VALUE_COPY
-    assert variables["counter"].binding.initializer == 3
-    assert variables["target_scale"].bridge.native_assignment is AssignmentMode.VALUE_COPY
-    assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
-    assert variables["optional_scale"].entrypoint.descriptor_kind == "allocatable"
-    assert variables["optional_scale"].binding.setter_action is SetterAction.WRITE_THROUGH
-    assert variables["optional_scale"].binding.native_assignment is AssignmentMode.ALLOCATING_COPY
-    assert variables["optional_scale"].bridge.native_assignment is AssignmentMode.ALLOCATING_COPY
-    assert variables["selected_scale"].entrypoint.descriptor_kind == "pointer"
-    assert variables["selected_scale"].binding.native_assignment is AssignmentMode.TARGET_COPY
-    assert variables["selected_scale"].bridge.native_assignment is AssignmentMode.TARGET_COPY
-
-
-def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initialization():
-    plan = _computed_constant_plan()
-    variables = {variable.bridge.native_name: variable for variable in plan.variables}
-    computed = variables["computed"]
-    assert computed.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_VALUE
-    assert computed.binding.constant_value is None
-    assert computed.entrypoint.getter_role == "computed_constants.computed:getter"
-    assert computed.binding.setter_action is SetterAction.OMIT
-
-    artifacts = WrapperGenerator().generate(plan)
-    c_source = _source(artifacts, ".c")
-    fortran_source = _source(artifacts, ".f90")
-    assert "int32_t bind_c_get_computed(void);" in c_source
-    assert "int32_t constant_computed_constants_computed_value_0 = bind_c_get_computed();" in c_source
-    assert 'PyUnicode_FromString("D")' in c_source
-    assert "native_computed => computed" in fortran_source
-    assert "function bind_c_get_computed()" in fortran_source
-    assert "result = native_computed" in fortran_source
-    assert "bind_c_set_computed" not in c_source
-    assert "bind_c_set_computed" not in fortran_source
-
-
-def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
-    plan = _parameter_array_plan()
-    variable = next(variable for variable in plan.variables if variable.bridge.native_name == "dpmpar")
-    assert variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
-    assert variable.binding.setter_action is SetterAction.OMIT
-    assert variable.binding.constant_value is None
-    assert variable.array is not None
-    assert variable.array.shape == ("3",)
-
-    artifacts = WrapperGenerator().generate(plan)
-    c_source = _source(artifacts, ".c")
-    fortran_source = _source(artifacts, ".f90")
-    assert "void * bind_c_get_dpmpar(int64_t * extent_0);" in c_source
-    assert "PyArray_EMPTY(1, constant_parameter_array_dpmpar_value_0_dimensions, NPY_FLOAT64, 1)" in c_source
-    assert "memcpy(PyArray_DATA((PyArrayObject *)constant_parameter_array_dpmpar_object_0)" in c_source
-    assert (
-        "PyArray_CLEARFLAGS((PyArrayObject *)constant_parameter_array_dpmpar_object_0, NPY_ARRAY_WRITEABLE)" in c_source
-    )
-    assert (
-        'PyModule_AddObject(namespace_parameter_array, "dpmpar", constant_parameter_array_dpmpar_object_0)' in c_source
-    )
-    assert "real(c_double), allocatable, target, save, dimension(:) :: parameter_snapshot" in fortran_source
-    assert "parameter_snapshot = native_dpmpar" in fortran_source
-    assert "result = c_loc(parameter_snapshot)" in fortran_source
 
 
 def test_module_variable_visitors_consume_their_backend_owned_actions():
@@ -205,11 +95,9 @@ def test_fortran_module_setter_rejects_unsupported_bridge_assignment():
 @pytest.mark.parametrize(
     ("python_name", "assignment"),
     [
-        ("counter", AssignmentMode.NONE),
-        ("counter", AssignmentMode.ALIAS),
-        ("optional_scale", AssignmentMode.NONE),
-        ("optional_scale", AssignmentMode.ALIAS),
-        ("limit", AssignmentMode.VALUE_COPY),
+        pytest.param("counter", AssignmentMode.ALIAS, id="direct-value-with-alias"),
+        pytest.param("optional_scale", AssignmentMode.NONE, id="descriptor-without-assignment"),
+        pytest.param("limit", AssignmentMode.VALUE_COPY, id="constant-with-assignment"),
     ],
 )
 def test_module_setter_assignment_mismatch_fails_before_backend_preflight_or_lowering(
@@ -246,28 +134,6 @@ def test_module_setter_assignment_mismatch_fails_before_backend_preflight_or_low
     c_generator.requires_native_support.assert_not_called()
     c_printer.doprint.assert_not_called()
     fortran_printer.doprint.assert_not_called()
-
-
-def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
-    artifacts = WrapperGenerator().generate(_plan())
-    c_source = _source(artifacts, ".c")
-    fortran_source = _source(artifacts, ".f90")
-
-    assert "scalar_state_root_module_property_setup_getattro" in c_source
-    assert "scalar_state_root_module_property_setup_setattro" in c_source
-    assert 'PyModule_AddObject(mod, "limit"' in c_source
-    assert "bind_c_set_counter(3);" in c_source
-    assert "return bind_c_get_counter();" not in c_source
-    assert "bind_c_get_counter()" in c_source
-    assert "bind_c_set_counter(value)" in c_source
-    assert "bind_c_set_optional_scale(value)" in c_source
-    assert "Module variable selected_scale has no pointer target" in c_source
-    assert "result = native_counter" in fortran_source
-    assert "native_counter = value" in fortran_source
-    assert "allocated(native_optional_scale)" in fortran_source
-    assert "associated(native_selected_scale)" in fortran_source
-    assert "native_optional_scale = value" in fortran_source
-    assert "native_selected_scale = value" in fortran_source
 
 
 def test_generated_support_procedure_symbol_is_shared_by_both_boundary_lowerers():

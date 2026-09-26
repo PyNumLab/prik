@@ -30,29 +30,22 @@ def built(tmp_path_factory):
     return _import_from_build_dir(result.module_name, result.output_dir)
 
 
-def test_a_scalar_publication_reads_and_writes_one_native_variable(built):
-    """Both namespaces name the same storage, so either one observes the other."""
+def test_every_scalar_publication_reads_and_writes_one_native_variable(built):
+    """Direct, renamed, and multi-hop publications all name the declaring storage.
+
+    A rename changes the Python name a namespace binds, never the variable, and
+    A -> B -> C publishes what A declares, not a copy B made.
+    """
     built.store_mod.counter = np.int32(11)
     assert built.facade_mod.counter == np.int32(11)
-
     built.facade_mod.counter = np.int32(23)
     assert built.store_mod.counter == np.int32(23)
 
-
-def test_a_renamed_publication_reaches_the_same_variable(built):
-    """A rename changes the Python name a namespace binds, never the variable."""
-    built.store_mod.counter = np.int32(31)
-    assert built.renamed_mod.tally == np.int32(31)
-
+    assert built.renamed_mod.tally == np.int32(23)
     built.renamed_mod.tally = np.int32(37)
     assert built.store_mod.counter == np.int32(37)
 
-
-def test_a_multi_hop_publication_resolves_to_the_declaring_variable(built):
-    """A -> B -> C publishes what A declares, not a copy B made."""
-    built.store_mod.counter = np.int32(41)
-    assert built.hop_mod.tally == np.int32(41)
-
+    assert built.hop_mod.tally == np.int32(37)
     built.hop_mod.tally = np.int32(43)
     assert built.store_mod.counter == np.int32(43)
     assert built.renamed_mod.tally == np.int32(43)
@@ -147,26 +140,6 @@ def test_a_parameter_publishes_a_value_rather_than_shared_storage(built):
     assert built.store_mod.limit == np.int32(42)
 
 
-def test_one_native_accessor_serves_every_publication(tmp_path: Path):
-    """The second namespace adds names, so no second accessor is generated."""
-    source = tmp_path / "store.f90"
-    source.write_text(SOURCE, encoding="utf-8")
-
-    result = build_fortran_extension(
-        source,
-        output_dir=tmp_path / "generated",
-        output_name="accessor_api",
-        generate_sources=True,
-    )
-    wrapper = (result.output_dir / "accessor_api_wrapper.c").read_text(encoding="utf-8")
-
-    # One getter and one setter definition carry `counter`, however many
-    # namespaces publish it; the four dispatches all call the same pair.
-    assert wrapper.count("static PyObject * module_get_counter(void) {") == 1
-    assert wrapper.count("static int module_set_counter(PyObject * value_obj) {") == 1
-    assert wrapper.count("return module_get_counter();") == 4
-
-
 def test_a_facade_may_publish_a_variable_its_declaring_namespace_hides(tmp_path: Path):
     """Owning the one variable plan must not put the declaring module in Python."""
     source = tmp_path / "store.f90"
@@ -238,6 +211,13 @@ def test_a_generated_contract_publishes_the_same_variables_as_its_source(tmp_pat
         }
 
     assert surface(from_source) == surface(from_contract)
+
+    # The second namespace adds names, so no second accessor is generated: one
+    # getter and one setter carry `counter`, and all four dispatches call them.
+    wrapper = (source_result.output_dir / "parity_source_wrapper.c").read_text(encoding="utf-8")
+    assert wrapper.count("static PyObject * module_get_counter(void) {") == 1
+    assert wrapper.count("static int module_set_counter(PyObject * value_obj) {") == 1
+    assert wrapper.count("return module_get_counter();") == 4
 
     # The contract route reaches the same native variable, not a copy of it.
     from_contract.facade_mod.counter = np.int32(61)

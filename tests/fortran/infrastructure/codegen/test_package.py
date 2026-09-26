@@ -62,20 +62,14 @@ def _package_imports(root: Path) -> set[str]:
     return set().union(*(_imported_modules(path) for path in root.rglob("*.py")))
 
 
-def test_backend_generators_do_not_import_each_other():
-    binding_imports = _imported_modules(CODEGEN_ROOT / "c" / "binding.py")
-    bridge_imports = _imported_modules(CODEGEN_ROOT / "fortran" / "bridge.py")
-
-    assert not _imports_under(binding_imports, "prik.codegen.fortran")
-    assert not _imports_under(bridge_imports, "prik.codegen.c")
-
-
 def test_wrapper_stage_packages_follow_the_documented_dependency_direction():
     semantic_imports = _package_imports(SEMANTICS_ROOT)
     policy_imports = _package_imports(POLICY_ROOT)
     planning_imports = _package_imports(PLANNING_ROOT)
     codegen_imports = _package_imports(CODEGEN_ROOT)
     printer_imports = _package_imports(PRINTERS_ROOT)
+    binding_imports = _imported_modules(CODEGEN_ROOT / "c" / "binding.py")
+    bridge_imports = _imported_modules(CODEGEN_ROOT / "fortran" / "bridge.py")
 
     assert not _imports_under(semantic_imports, "prik.policy")
     assert not _imports_under(semantic_imports, "prik.planning")
@@ -88,3 +82,6 @@ def test_wrapper_stage_packages_follow_the_documented_dependency_direction():
     assert not _imports_under(printer_imports, "prik.policy")
     assert not _imports_under(printer_imports, "prik.planning")
     assert not _imports_under(printer_imports, "prik.pipeline")
+    # The two backend generators lower the same plan independently.
+    assert not _imports_under(binding_imports, "prik.codegen.fortran")
+    assert not _imports_under(bridge_imports, "prik.codegen.c")

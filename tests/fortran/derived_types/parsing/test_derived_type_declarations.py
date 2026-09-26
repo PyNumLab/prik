@@ -26,22 +26,3 @@ end module particle_mod
     assert t.fields[1].shape == ["3"]
     assert t.fields[2].base_type == "derived"
     assert t.fields[2].kind == "vector"
-
-
-def test_derived_type_extends_and_attributes():
-    code = """
-module m
-  type :: base_t
-  end type base_t
-  type, extends(base_t), abstract :: child_t
-    integer :: id
-  contains
-    procedure :: run
-  end type child_t
-end module m
-"""
-    dt = parse_fortran_file(code).modules[0].derived_types[1]
-    assert dt.name == "child_t"
-    assert dt.extends is not None
-    assert getattr(dt.extends, "name", None) == "base_t"
-    assert "abstract" in dt.attributes

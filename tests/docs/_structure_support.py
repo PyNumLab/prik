@@ -26,24 +26,6 @@ ALLOWED_STATUSES = {
     "not-yet-implemented",
     "planned-documentation",
 }
-CLI_HELP_GROUP_HEADINGS = [
-    "commands:",
-    "positional arguments:",
-    "input selection:",
-    "input options:",
-    "generation modes:",
-    "compiler and preprocessing options:",
-    "preprocessing options:",
-    "C include options:",
-    "report options:",
-    "compiler options:",
-    "wrapper options:",
-    "native options:",
-    "probe options:",
-    "execution options:",
-    "output options:",
-    "diagnostic options:",
-]
 CLI_REFERENCE_OPTIONS = [
     "paths",
     "--help-build",
@@ -85,7 +67,6 @@ CLI_REFERENCE_OPTIONS = [
     "--no-color",
     "--debug",
 ]
-CLI_VISIBLE_HELP_OPTIONS = CLI_REFERENCE_OPTIONS
 FEATURE_MATRIX_STATUSES = {
     "Supported",
     "Partially supported",

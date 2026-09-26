@@ -1,4 +1,4 @@
-"""Native-call runtime-envelope and status-error lowering tests."""
+"""Status-error plan validation before lowering."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.policy.completion import complete_semantic_policies
-from prik.policy.models import BridgeDataAction, PythonExceptionKind
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import DatatypeFamily, WrapperPlanner
 
@@ -30,144 +29,51 @@ def _runtime_plan():
     return WrapperPlanner().build(module)
 
 
-def _rendered_source(artifacts, suffix: str) -> str:
-    return next(source.text for source in artifacts.sources if source.path.name.endswith(suffix))
+def _drop_message_copy_reason(function):
+    return replace(
+        function,
+        entrypoint=replace(
+            function.entrypoint,
+            projected_slots=tuple(
+                replace(slot, adapter=replace(slot.adapter, bridge_copy_reason=None))
+                if slot.datatype_family is DatatypeFamily.STRING
+                else slot
+                for slot in function.entrypoint.projected_slots
+            ),
+        ),
+    )
 
 
-def _function_source(source: str, function_name: str, next_name: str | None = None) -> str:
-    start = source.index(f"static PyObject * wrap_{function_name}")
-    if next_name is None:
-        return source[start : source.index("PyMODINIT_FUNC", start)]
-    return source[start : source.index(f"static PyObject * wrap_{next_name}", start)]
+def _drop_status_role(function):
+    return replace(
+        function,
+        binding=replace(
+            function.binding,
+            status_error=replace(function.binding.status_error, status_role="missing:status"),
+        ),
+    )
 
 
-def _edit_function(plan, function_name: str, edit):
+@pytest.mark.parametrize(
+    ("edit", "diagnostic"),
+    [
+        (_drop_message_copy_reason, "missing-bridge-copy-reason"),
+        (_drop_status_role, "missing-status-result-role"),
+    ],
+    ids=["message-copy-without-reason", "status-error-without-status-result"],
+)
+def test_status_error_plan_edits_fail_before_backend_lowering(edit, diagnostic):
+    """A status error must name a produced status and a completed message copy.
+
+    Runtime status projection, message text, and GIL placement are proved in
+    ``end_to_end/test_status_projection.py``.
+    """
+    plan = _runtime_plan()
     root = plan.namespaces[0]
     functions = tuple(
-        edit(function) if function.binding.python_name == function_name else function for function in root.functions
+        edit(function) if function.binding.python_name == "solve" else function for function in root.functions
     )
-    return replace(plan, namespaces=(replace(root, functions=functions), *plan.namespaces[1:]))
+    invalid = replace(plan, namespaces=(replace(root, functions=functions), *plan.namespaces[1:]))
 
-
-def test_planner_records_editable_native_runtime_and_status_error_facts():
-    plan = _runtime_plan()
-    functions = {function.binding.python_name: function for function in plan.namespaces[0].functions}
-    solve = functions["solve"]
-
-    assert functions["pause_for_one_second"].binding.release_gil is True
-    assert functions["pause_with_gil"].binding.release_gil is False
-    assert solve.binding.release_gil is True
-    assert solve.binding.status_error is not None
-    assert solve.binding.status_error.success == 0
-    assert solve.binding.status_error.exception_kind is PythonExceptionKind.RUNTIME_ERROR
-    assert solve.binding.status_error.status_role == solve.entrypoint.projected_slots[1].symbolic_role
-    assert solve.binding.status_error.message_role == solve.entrypoint.projected_slots[2].symbolic_role
-    assert [(result.parameter_name, result.native_result_role) for result in solve.entrypoint.results] == [
-        ("status", solve.binding.status_error.status_role),
-        ("message", solve.binding.status_error.message_role),
-    ]
-    assert [parameter.source_kind for parameter in solve.entrypoint.parameters] == [
-        "argument",
-        "hidden_result",
-        "hidden_result",
-    ]
-    WrapperGenerator().generate(plan)
-    assert "Raises\n------" in solve.binding.docstring
-    assert solve.binding.docstring.count("RuntimeError\n") == 1
-    assert "If native status differs from the success value 0." in solve.binding.docstring
-    assert solve.entrypoint.projected_slots[1].semantic_type_name == "Int32"
-    assert solve.entrypoint.projected_slots[1].datatype_family is DatatypeFamily.INTEGER
-    assert solve.entrypoint.projected_slots[1].adapter.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER
-    assert solve.entrypoint.projected_slots[1].adapter.bridge_copy_reason is None
-    assert solve.entrypoint.projected_slots[2].semantic_type_name == "String"
-    assert solve.entrypoint.projected_slots[2].datatype_family is DatatypeFamily.STRING
-    assert solve.entrypoint.projected_slots[2].character_length == 32
-    assert solve.entrypoint.projected_slots[2].adapter.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert solve.entrypoint.projected_slots[2].adapter.bridge_copy_reason == (
-        "copy fixed-length Fortran character output into C-owned null-terminated storage"
-    )
-
-
-def test_direct_binding_lowering_places_only_opted_in_native_call_outside_the_gil():
-    artifacts = WrapperGenerator().generate(_runtime_plan())
-    c_source = _rendered_source(artifacts, ".c")
-    released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")
-    held = _function_source(c_source, "pause_with_gil", "solve")
-    solve = _function_source(c_source, "solve")
-
-    assert released.index("Py_BEGIN_ALLOW_THREADS") < released.index("bind_c_pause_for_one_second()")
-    assert released.index("bind_c_pause_for_one_second()") < released.index("Py_END_ALLOW_THREADS")
-    assert "Py_BEGIN_ALLOW_THREADS" not in held
-    assert "Py_END_ALLOW_THREADS" not in held
-    assert solve.index("Py_BEGIN_ALLOW_THREADS") < solve.index("bind_c_solve(bound_value_storage, &status, &message)")
-    assert solve.index("bind_c_solve(bound_value_storage, &status, &message)") < solve.index("Py_END_ALLOW_THREADS")
-    assert solve.index("Py_END_ALLOW_THREADS") < solve.index("prik_status_message_text")
-    assert solve.index("prik_status_message_text") < solve.index("status != 0")
-    assert "PyErr_SetObject(PyExc_RuntimeError, message_obj)" in solve
-    assert "free(message)" in solve
-
-
-def test_direct_bridge_lowering_projects_status_and_copies_fixed_message():
-    artifacts = WrapperGenerator().generate(_runtime_plan())
-    fortran_source = _rendered_source(artifacts, ".f90")
-
-    assert "subroutine bind_c_solve(value, status, message)" in fortran_source
-    assert "integer(c_int32_t) :: status" in fortran_source
-    assert "type(c_ptr) :: message" in fortran_source
-    assert "character(kind=c_char, len=32) :: message_value" in fortran_source
-    assert "call native_solve(value, status, message_value)" in fortran_source
-    assert "message = c_malloc(33_c_size_t)" in fortran_source
-    assert "message_copy(33) = c_null_char" in fortran_source
-
-
-def test_fixed_message_bridge_copy_requires_its_completed_reason():
-    plan = _runtime_plan()
-    invalid = _edit_function(
-        plan,
-        "solve",
-        lambda function: replace(
-            function,
-            entrypoint=replace(
-                function.entrypoint,
-                projected_slots=tuple(
-                    replace(
-                        slot,
-                        adapter=replace(slot.adapter, bridge_copy_reason=None),
-                    )
-                    if slot.datatype_family is DatatypeFamily.STRING
-                    else slot
-                    for slot in function.entrypoint.projected_slots
-                ),
-            ),
-        ),
-    )
-
-    with pytest.raises(ValueError, match="missing-bridge-copy-reason"):
-        WrapperGenerator().generate(invalid)
-
-
-def test_runtime_plan_edits_dispatch_to_named_lowering_and_validate_roles():
-    plan = _runtime_plan()
-    held = _edit_function(
-        plan,
-        "pause_for_one_second",
-        lambda function: replace(function, binding=replace(function.binding, release_gil=False)),
-    )
-    c_source = _rendered_source(WrapperGenerator().generate(held), ".c")
-    released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")
-    assert "Py_BEGIN_ALLOW_THREADS" not in released
-    assert "Py_END_ALLOW_THREADS" not in released
-
-    invalid = _edit_function(
-        plan,
-        "solve",
-        lambda function: replace(
-            function,
-            binding=replace(
-                function.binding,
-                status_error=replace(function.binding.status_error, status_role="missing:status"),
-            ),
-        ),
-    )
-    with pytest.raises(ValueError, match="missing-status-result-role"):
+    with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(invalid)

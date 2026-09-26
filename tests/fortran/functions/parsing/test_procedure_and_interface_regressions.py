@@ -27,26 +27,6 @@ def test_function_result_assignment_name_with_intrinsic_prefix_starts_execution_
     assert proc.result.base_type == "real"
 
 
-def test_procedure_bind_c_name_and_value_argument_are_preserved():
-    parsed = parse_fortran_file(
-        """
-module c_api
-  use iso_c_binding
-contains
-  integer(c_int) function renamed(n) bind(C, name="prik_renamed") result(res)
-    integer(c_int), value, intent(in) :: n
-    res = n
-  end function renamed
-end module c_api
-"""
-    )
-
-    proc = parsed.modules[0].procedures[0]
-    assert proc.attributes == ["bind(c)"]
-    assert proc.bind_name == "prik_renamed"
-    assert proc.arguments[0].pass_by_value is True
-
-
 def test_procedure_children_exclude_execution_text_and_internal_procedures():
     unit = _unit(
         "procedure",

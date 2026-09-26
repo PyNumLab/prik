@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.fortran._support.wrapper_build import _compiler, _import_from_build_dir
+from tests.fortran._support.wrapper_build import _build_source_and_import, _compiler, _import_from_build_dir
 from prik import build_pyi_extension
 from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.semantics.native_contract import native_contract_issues
@@ -45,14 +45,15 @@ def _generate_contracts(tmp_path: Path) -> tuple[Path, list[Path]]:
     return contracts, sources
 
 
-def test_multi_file_generation_places_the_prototype_with_its_declaring_module(tmp_path: Path):
+def test_multi_file_generation_places_each_prototype_with_its_declaring_module_and_builds(tmp_path: Path):
     """Each module's contract records what that module declares or imports.
 
     The per-file CLI conversion path is where an imported interface previously
     degraded to an opaque placeholder, so this exercises that workflow rather
-    than whole-project conversion.
+    than whole-project conversion. PRIK must read back every contract it just
+    wrote, and the whole route must survive: source, contract, parse, build, call.
     """
-    contracts, _sources = _generate_contracts(tmp_path)
+    contracts, sources = _generate_contracts(tmp_path)
 
     declaring = (contracts / "pintrf_mod.pyi").read_text(encoding="utf-8")
     assert "@prototype\ndef OBJ(" in declaring
@@ -72,21 +73,12 @@ def test_multi_file_generation_places_the_prototype_with_its_declaring_module(tm
     assert "calfun: SCOPED_OBJ" in scoped
     assert "import SCOPED_OBJ" not in scoped.replace("OBJ as SCOPED_OBJ", "")
 
-
-def test_generated_multi_file_contracts_parse_without_native_contract_issues(tmp_path: Path):
-    """PRIK must be able to read back every contract it just wrote."""
-    contracts, _sources = _generate_contracts(tmp_path)
-
     for contract in sorted(contracts.glob("*.pyi")):
         if contract.name == "__init__.pyi":
             continue
         module = pyi_text_to_semantic_module(contract.read_text(encoding="utf-8"), module_name=contract.stem)
         assert native_contract_issues(module) == [], contract.name
 
-
-def test_building_from_generated_multi_file_contracts_runs_the_callback(tmp_path: Path):
-    """The whole route must survive: source, contract, parse, build, call."""
-    contracts, sources = _generate_contracts(tmp_path)
     result = build_pyi_extension(
         contracts / "__init__.pyi",
         input_compiler=_compiler(),
@@ -157,12 +149,16 @@ def test_imported_callback_returning_a_module_owned_type_builds(tmp_path: Path):
 RENAMED_CHAIN_SOURCE = NATIVE_FIXTURES / "chain.f90"
 
 
-def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path: Path):
+def test_renamed_reexport_chain_builds_from_its_generated_contracts_and_its_source(tmp_path: Path):
     """Each hop renames the interface, so only the declaring module names it.
 
     A rename and a re-export are covered separately elsewhere; combining them
     is what exposes a reference that followed the module back to the declaration
     while keeping an alias from somewhere along the way.
+
+    Built directly from source, publishing an imported interface adds no
+    runtime name to alias: a signature is not an object Python holds, so the
+    chain reaches the build through prototype resolution alone.
     """
     contracts = tmp_path / "contracts"
     subprocess.run(
@@ -205,20 +201,10 @@ def test_renamed_reexport_chain_builds_through_its_generated_contracts(tmp_path:
 
     assert module.chain_consumer_mod.run_chain(objective, np.float64(6.0)) == np.float64(42.0)
 
-
-def test_renamed_reexport_chain_builds_directly_from_its_fortran_source(tmp_path: Path):
-    """Publishing an imported interface adds no runtime name to alias.
-
-    A module publishing an imported prototype states where a callback signature
-    comes from, and a signature is not an object Python holds. Binding one at
-    runtime reaches for an attribute of a module that exports nothing at all,
-    so the chain has to reach the build through prototype resolution alone.
-    """
-    from tests.fortran._support.wrapper_build import _build_source_and_import
-
+    # The same chain built directly from its Fortran source.
     module = _build_source_and_import(
         RENAMED_CHAIN_SOURCE,
-        tmp_path / "build",
+        tmp_path / "source_build",
         {"bind_c_chain_wrapper.f90", "chain_wrapper.c", "chain_wrapper.h"},
     )
 

@@ -7,7 +7,6 @@ from prik.parsers.c.models import (
     CArray,
     CComposedType,
     CDouble,
-    CFile,
     CFunction,
     CInitializer,
     CInt,
@@ -27,12 +26,7 @@ from prik.semantics.c2ir import (
     c_file_to_semantic_modules,
 )
 from prik.semantics.models import (
-    SemanticArgument,
-    SemanticClass,
     SemanticField,
-    SemanticModule,
-    SemanticOrigin,
-    SemanticType,
 )
 from tests.c._support.semantic_conversion import (
     _assert_c_origin,
@@ -85,6 +79,7 @@ int hidden_value;
 # 1 "api.h" 2
 struct private_context *make_context(void);
 void use_context(struct private_context *ctx);
+void use_context_value(struct private_context ctx);
 """,
         filename="api.h",
         preprocessing="compiler",
@@ -113,6 +108,8 @@ void use_context(struct private_context *ctx);
         "wrapped": False,
         "representation": "opaque",
     }
+    by_value = _function(module, "use_context_value").arguments[0].semantic_type
+    assert by_value.metadata["external_type_ref"]["representation"] == "opaque"
     assert "from .private import private_context" in stubs["api"]
     assert (
         stubs["private"]
@@ -161,65 +158,6 @@ def test_c2ir_preserves_anonymous_aggregate_members_as_nested_c_classes():
     assert [constraint.name for constraint in reparsed_flags.fields[0].semantic_type.constraints] == [
         "CAnonymousMember"
     ]
-
-
-def test_c2ir_private_include_opaque_struct_by_value_preserves_the_external_reference():
-    parsed = parse_c_file(
-        """
-# 1 "private.h" 1
-struct private_context { int internal; };
-# 1 "api.h" 2
-void use_context(struct private_context ctx);
-""",
-        filename="api.h",
-        preprocessing="compiler",
-    )
-    parsed.preprocessing_recipe = {
-        "included_files": [
-            {"path": "api.h", "dependency_kind": "root", "exposure": "public"},
-            {"path": "private.h", "dependency_kind": "project", "exposure": "private"},
-        ]
-    }
-
-    module = c_file_to_semantic_modules(parsed)[0]
-    semantic_type = _function(module, "use_context").arguments[0].semantic_type
-    assert semantic_type.metadata["external_type_ref"]["representation"] == "opaque"
-
-
-def test_c2ir_externalizes_only_private_opaque_classes_with_external_origins():
-    converter = CToIRConverter()
-    public = SemanticClass(name="public", origin=SemanticOrigin(source_location={"filename": "api.h"}))
-    private_plain = SemanticClass(
-        name="private_plain",
-        visibility="private",
-        origin=SemanticOrigin(source_location={"filename": "private.h"}),
-    )
-    private_without_location = SemanticClass(
-        name="private_without_location", visibility="private", base_classes=["Opaque"]
-    )
-    private_external = SemanticClass(
-        name="private_external",
-        visibility="private",
-        base_classes=["Opaque"],
-        origin=SemanticOrigin(source_location={"filename": "private.h"}),
-    )
-    reference = SemanticArgument(name="value", semantic_type=SemanticType(name="private_external"))
-    module = SemanticModule(
-        name="api",
-        classes=[public, private_plain, private_without_location, private_external],
-        variables=[reference],
-    )
-
-    converter._externalize_private_classes(module)
-
-    assert [cls.name for cls in module.classes] == ["public", "private_plain", "private_without_location"]
-    assert reference.semantic_type.metadata["external_type_ref"] == {
-        "name": "private_external",
-        "local_name": "private_external",
-        "origin_module": "private",
-        "wrapped": False,
-        "representation": "opaque",
-    }
 
 
 def test_c2ir_uses_standard_type_probe_opaque_handle_facts():
@@ -342,7 +280,7 @@ def test_c2ir_models_pointer_to_arrays_unknown_extents_unions_and_anonymous_alia
     assert CToIRConverter().visit(CUnion(name="fresh_union"), as_type=True).name == "fresh_union"
 
 
-def test_c2ir_preserves_nested_unresolved_owners_and_private_opaque_bases():
+def test_c2ir_preserves_nested_unresolved_owners():
     converter = CToIRConverter()
     nested_array = converter.visit(
         CComposedType(
@@ -369,24 +307,11 @@ def test_c2ir_preserves_nested_unresolved_owners_and_private_opaque_bases():
         CComposedType(components=[CUnknownType(spelling="missing_t", source_text="missing_t")]),
         owner="singleton",
     )
-    private_class = SemanticClass(
-        name="private_handle",
-        base_classes=["Opaque"],
-        origin=SemanticOrigin(source_language="c", source_location={"filename": "private.h"}),
-    )
-    private_module = SemanticModule(name="api", classes=[private_class])
-    private_file = CFile(
-        filename="api.h",
-        preprocessing_recipe={"included_files": [{"path": "private.h", "exposure": "private"}]},
-    )
-    converter._apply_include_exposure(private_module, private_file)
 
     assert nested_array.name == "missing_t"
     assert nested_pointer.name == "missing_t"
     assert nested_pointer_array.name == "missing_t"
     assert singleton.name == "missing_t"
-    assert private_class.visibility == "private"
-    assert private_class.base_classes == ["Opaque"]
 
 
 def test_c2ir_marks_incomplete_by_value_structs_and_preserves_initializer_locations():

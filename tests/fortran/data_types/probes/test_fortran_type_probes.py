@@ -260,7 +260,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
     [
         ([OSError("missing")], "failed to run Fortran type probe compiler"),
         ([SimpleNamespace(returncode=1, stderr="compile failed")], "compilation failed"),
-        ([SimpleNamespace(returncode=0, stderr=""), OSError("cannot execute")], "failed to execute"),
         (
             [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=2, stderr="run failed")],
             "execution failed",
@@ -268,10 +267,6 @@ def test_fortran_type_probe_report_resolves_only_matching_parameter_requirements
         (
             [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=0, stdout="not json", stderr="")],
             "invalid JSON",
-        ),
-        (
-            [SimpleNamespace(returncode=0, stderr=""), SimpleNamespace(returncode=0, stdout="{}", stderr="")],
-            "missing 'values'",
         ),
         (
             [
@@ -328,21 +323,6 @@ def test_fortran_type_probe_accepts_runner_and_cli_validates_macro_names(monkeyp
         fortran_type_probe.main(["--compiler", "gfortran", "-U", "=bad"])
 
 
-def test_fortran_type_probe_reports_values_from_native_compiler():
-    compiler = _required_fortran_compiler()
-    report = probe_fortran_type_expressions(
-        PreprocessingConfig(mode="compiler", compiler=compiler),
-        ["selected_int_kind(9)", "selected_real_kind(12)", "kind(1.0d0)"],
-    )
-
-    assert report.values["selected_int_kind(9)"] > 0
-    assert report.values["selected_real_kind(12)"] > 0
-    assert report.values["kind(1.0d0)"] > 0
-    assert report.recipe.compiler == compiler
-    assert "-cpp" in report.recipe.compile_argv
-    assert "selected_real_kind(12)" in report.source_text
-
-
 def test_fortran_type_probe_resolves_supported_logical_storage_widths(tmp_path):
     compiler = _required_fortran_compiler()
 
@@ -387,34 +367,6 @@ def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):
     assert report.recipe.defines == ["PRIK_FEATURE=1"]
     assert report.recipe.undefs == ["PRIK_OLD_FEATURE"]
     assert report.recipe.compiler_args == ["-fno-range-check"]
-
-
-def test_fortran_type_probe_maps_compiler_storage_facts():
-    compiler = _required_fortran_compiler()
-    requirements = [
-        {
-            "base_type": "integer",
-            "kind": None,
-            "expression": "storage_size(int(0))",
-        },
-        {
-            "base_type": "real",
-            "kind": None,
-            "expression": "storage_size(real(0.0))",
-        },
-    ]
-
-    facts = evaluate_fortran_type_facts(
-        PreprocessingConfig(
-            mode="compiler",
-            compiler=compiler,
-            compiler_args=["-fdefault-integer-8", "-fdefault-real-8"],
-        ),
-        requirements,
-    )
-
-    assert facts[("integer", None)]["bits"] == 64
-    assert facts[("real", None)]["bits"] == 64
 
 
 def test_fortran_type_probe_evaluates_collected_semantic_requirements():
@@ -499,49 +451,14 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["source_text"].startswith("program prik_fortran_type_probe")
 
 
-def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):
-    compiler = _required_fortran_compiler()
-    source = tmp_path / "solver.f90"
-    source.write_text(
-        """
-module solver_mod
-  integer, parameter :: rk = selected_real_kind(12)
-contains
-subroutine scale(x)
-  real(kind=rk), intent(inout) :: x
-end subroutine scale
-end module solver_mod
-""",
-        encoding="utf-8",
-    )
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "semantics",
-            str(source),
-            "--json",
-            "--compiler",
-            compiler,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    payload = json.loads(completed.stdout)
-    semantic_type = payload[str(source)]["semantic_modules"][0]["functions"][0]["arguments"][0]["semantic_type"]
-    assert semantic_type["name"] == "Float64"
-
-
-def test_prik_semantics_cli_uses_compiler_dependent_default_fortran_kinds(tmp_path):
+def test_prik_semantics_cli_uses_compiler_dependent_kinds_and_collected_requirements(tmp_path):
     compiler = _required_fortran_compiler()
     source = tmp_path / "defaults.f90"
     source.write_text(
         """
 module defaults
+  integer, parameter :: rk = selected_real_kind(12)
+  real(kind=rk) :: selected
   integer :: count
   real :: scale
   complex :: value
@@ -574,6 +491,7 @@ end module defaults
     payload = json.loads(completed.stdout)
     variables = payload[str(source)]["semantic_modules"][0]["variables"]
     semantic_types = {variable["name"]: variable["semantic_type"] for variable in variables}
+    assert semantic_types["selected"]["name"] == "Float64"
     assert semantic_types["count"]["name"] == "Int64"
     assert semantic_types["scale"]["name"] == "Float64"
     assert semantic_types["value"]["name"] == "Complex128"

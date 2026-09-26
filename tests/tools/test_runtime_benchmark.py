@@ -14,30 +14,18 @@ import pytest
 RUNTIME_SCRIPT = Path("benchmarks/runtime.py")
 
 
-@pytest.mark.parametrize(
-    ("group", "processes", "values", "expected_names"),
-    [
-        ("calls", 16, 4, ("call.noop", "call.add_scalars")),
-        ("vector-latency", 16, 4, ("array.increment_vector.n=1", "array.increment_vector.n=16")),
-        ("vector-bulk", 4, 3, ("array.increment_vector.n=1024", "array.increment_vector.n=1000000")),
-        ("matrix-sum-latency", 16, 4, ("matrix.sum.4x4.order=F",)),
-        (
-            "matrix-sum-bulk",
-            2,
-            3,
-            ("matrix.sum.32x32.order=F", "matrix.sum.256x256.order=F", "matrix.sum.1024x1024.order=F"),
-        ),
-        ("matrix-update-latency", 16, 4, ("matrix.update.4x4.order=F", "matrix.update.256x256.order=F")),
-        ("matrix-update-bulk", 8, 3, ("matrix.update.1024x1024.order=F",)),
-    ],
+RUNTIME_GROUPS = (
+    "calls",
+    "vector-latency",
+    "vector-bulk",
+    "matrix-sum-latency",
+    "matrix-sum-bulk",
+    "matrix-update-latency",
+    "matrix-update-bulk",
 )
-def test_runtime_groups_assign_more_samples_only_to_noisy_cases(
-    monkeypatch: pytest.MonkeyPatch,
-    group: str,
-    processes: int,
-    values: int,
-    expected_names: tuple[str, ...],
-) -> None:
+
+
+def _run_runtime_group(monkeypatch: pytest.MonkeyPatch, group: str) -> dict[str, object]:
     observed: dict[str, object] = {"names": []}
 
     class FakeRunner:
@@ -62,16 +50,28 @@ def test_runtime_groups_assign_more_samples_only_to_noisy_cases(
     monkeypatch.setattr(pyperf, "Runner", FakeRunner)
 
     runpy.run_path(RUNTIME_SCRIPT, run_name="__main__")
-
-    assert observed["processes"] == processes
-    assert observed["values"] == values
-    assert observed["metadata"]["cpu_model_name"] == "Published Benchmark CPU"
-    assert observed["metadata"]["runtime_order_pass"] == "prik-first"
-    assert observed["metadata"]["runtime_order_protocol"] == "balanced_ab_ba"
-    assert observed["names"] == list(expected_names)
+    return observed
 
 
-def test_run_script_balances_reduced_runtime_budget_in_public_table_order() -> None:
+def test_runtime_groups_partition_all_cases_and_sample_latency_cases_more(monkeypatch: pytest.MonkeyPatch) -> None:
+    every_case = _run_runtime_group(monkeypatch, "all")["names"]
+    groups = {group: _run_runtime_group(monkeypatch, group) for group in RUNTIME_GROUPS}
+
+    # The reduced per-group budget still measures every public case exactly once, in table order.
+    assert [name for group in RUNTIME_GROUPS for name in groups[group]["names"]] == every_case
+    for observed in groups.values():
+        assert observed["metadata"]["cpu_model_name"] == "Published Benchmark CPU"
+        assert observed["metadata"]["runtime_order_pass"] == "prik-first"
+        assert observed["metadata"]["runtime_order_protocol"] == "balanced_ab_ba"
+
+    # Nanosecond-scale latency cases are the noisy ones and get more processes and values than bulk cases.
+    samples = {group: observed["processes"] * observed["values"] for group, observed in groups.items()}
+    latency = [samples[group] for group in RUNTIME_GROUPS if group == "calls" or group.endswith("-latency")]
+    bulk = [samples[group] for group in RUNTIME_GROUPS if group.endswith("-bulk")]
+    assert min(latency) > max(bulk)
+
+
+def test_run_script_balances_order_passes_and_keeps_direct_results_separate() -> None:
     source = Path("benchmarks/run.sh").read_text(encoding="utf-8")
 
     positions = [
@@ -99,6 +99,15 @@ def test_run_script_balances_reduced_runtime_budget_in_public_table_order() -> N
     assert '--output "results/$binding_tool.json"' in source
     assert "PRIK_BUILD_BENCHMARK_RUNS:-4" in source
     assert "PRIK_BENCHMARK_CPU_MODEL" in source
+
+    # The direct-entrypoint cohort is preflighted, runs its own balanced passes,
+    # and merges into per-route results that never join the default population.
+    assert "python3 direct_preflight.py" in source
+    assert "python3 direct_build_time.py" in source
+    assert "direct_runtime.py" in source
+    assert "direct_runtime_passes=(forward reverse)" in source
+    assert "direct_routes=(prik-adapted f2py-direct prik-direct)" in source
+    assert '--output "results/$direct_route.json"' in source
 
 
 def test_pyperf_merge_preserves_both_runtime_order_passes(tmp_path: Path) -> None:

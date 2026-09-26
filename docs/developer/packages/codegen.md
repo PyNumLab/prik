@@ -244,8 +244,8 @@ reaches into its dictionary before the script runs.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Codegen infrastructure](../../../tests/fortran/infrastructure/codegen/test_binding.py) | C binding nodes, module assembly, source-independent lowering, and selected validation paths. |
-| [Plan handoff and generated wrappers](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Docstring rendering, plan freezing, cross-backend validation, node generation, and rendered-wrapper assembly. |
+| [Codegen infrastructure](../../../tests/fortran/infrastructure/codegen/) | Direct and adapted entrypoint routing, backend facet ownership, package dependency direction, and planner boundaries. |
+| [Plan handoff and generated wrappers](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Rendered-wrapper assembly, revalidation of edited plans before lowering, binding/bridge edit ownership, and plan freezing after generation. |
 | [Primitive scalar lowering](../../../tests/fortran/data_types/codegen/test_primitive_scalar_type_catalogue.py) | Scalar spelling catalogue and exact C, Fortran, NumPy, and result representation selection. |
 | [Array lowering](../../../tests/fortran/arrays/codegen/test_array_buffer_lowering.py) | Planned buffer handoff and emitted binding/bridge operations. |
 | [Derived-type lowering](../../../tests/fortran/derived_types/codegen/test_derived_lowering.py) | Plan-selected native object, lifecycle, and bridge/binding mechanisms. |

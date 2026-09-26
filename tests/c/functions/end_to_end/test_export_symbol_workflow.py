@@ -71,25 +71,13 @@ def _generate_contract(probe: Path, exports: Path, contract: Path) -> None:
     )
 
 
-def test_generate_pyi_selects_one_function_from_a_private_include(tmp_path: Path):
-    _header, probe, _implementation = _write_private_include_project(tmp_path)
-    exports = tmp_path / "exports.txt"
-    exports.write_text("# reviewed public surface\nincrement\n", encoding="utf-8")
-    contract = tmp_path / "api.pyi"
-
-    _generate_contract(probe, exports, contract)
-
-    text = contract.read_text(encoding="utf-8")
-    assert "def increment(" in text
-    assert "omitted" not in text
-    assert "private_state" not in text
-    assert _stated_exports(contract) == ["increment"]
-
-
-def test_generated_all_states_the_selected_declarations_not_the_allowlist_lines(tmp_path: Path):
+def test_generate_pyi_selects_functions_from_a_private_include(tmp_path: Path):
     """The allowlist selects declarations; __all__ states the Python names they publish."""
     header = tmp_path / "reviewed_api.h"
-    header.write_text("int zulu(int __v);\nint alpha(int __v);\nint omitted(int __v);\n", encoding="utf-8")
+    header.write_text(
+        "extern int private_state;\nint zulu(int __v);\nint alpha(int __v);\nint omitted(int __v);\n",
+        encoding="utf-8",
+    )
     probe = tmp_path / "probe.c"
     probe.write_text('#include "reviewed_api.h"\n', encoding="utf-8")
     exports = tmp_path / "exports.txt"
@@ -98,25 +86,15 @@ def test_generated_all_states_the_selected_declarations_not_the_allowlist_lines(
 
     _generate_contract(probe, exports, contract)
 
+    text = contract.read_text(encoding="utf-8")
+    assert "def zulu(" in text
+    assert "def alpha(" in text
+    assert "omitted" not in text
+    assert "private_state" not in text
     # Declaration order, not allowlist order: the list follows the declarations
     # the selection kept, so comments, blank lines, and the file's own ordering
     # never reach it.
     assert _stated_exports(contract) == ["zulu", "alpha"]
-    assert "omitted" not in contract.read_text(encoding="utf-8")
-
-
-def test_a_repeated_allowlist_name_is_rejected_rather_than_stated_twice(tmp_path: Path):
-    """A stated surface names each declaration once, so a repeat is a request error."""
-    _header, probe, _implementation = _write_private_include_project(tmp_path)
-    exports = tmp_path / "exports.txt"
-    exports.write_text("increment\nincrement\n", encoding="utf-8")
-    contract = tmp_path / "api.pyi"
-
-    with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _generate_contract(probe, exports, contract)
-
-    assert "Repeated C function name in --export-symbols" in exc_info.value.stderr
-    assert not contract.exists()
 
 
 def test_source_build_reuses_selection_with_positional_and_collision_policies(tmp_path: Path):
@@ -141,6 +119,8 @@ def test_source_build_reuses_selection_with_positional_and_collision_policies(tm
     module = sole_native_module(result.import_module())
 
     assert module.increment(np.int32(4)) == np.int32(5)
+    # Positional-only publishes generated names, never the header's reserved ``__value``.
+    assert module.increment.__doc__.splitlines()[0] == "increment(arg0) -> int32"
     with pytest.raises(TypeError, match="keyword"):
         module.increment(arg0=np.int32(4))
     assert {name for name in dir(module) if not name.startswith("_")} == {"increment"}

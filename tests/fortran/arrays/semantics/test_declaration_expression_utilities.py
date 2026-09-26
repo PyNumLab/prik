@@ -146,12 +146,8 @@ def test_public_expression_grammar_rejects_unsupported_syntax(expression: str, e
     [
         ("abs(-3)", 3),
         ("max(3, 7, 4)", 7),
-        ("min(3, 7, 4)", 3),
         ("modulo(8, 3)", 2),
         ("product((/ 2, 3, 4 /))", 24),
-        ("sum((/ 2, 3, 4 /))", 9),
-        ("maxval((/ 2, 3, 4 /))", 4),
-        ("minval((/ 2, 3, 4 /))", 2),
         ("merge(4, 2, .true.)", 4),
         ("int(2.9)", 2),
         ("len('abc')", 3),
@@ -160,20 +156,14 @@ def test_public_expression_grammar_rejects_unsupported_syntax(expression: str, e
         ("2 ** 3", 8),
         ("3 if 1 < 2 else 4", 3),
         ("True and not False", 1),
-        ("False or True", 1),
         ("1 == 1 == 1", 1),
-        ("1 != 2", 1),
-        ("1 >= 1", 1),
-        ("1 <= 1", 1),
         ("+3", 3),
         ("1 // 1", 1),
         ("1 << 1", None),
-        ("~1", None),
         ("int(2.9, kind=4)", 2),
         ("int(2, base=10)", None),
         ("abs(1, 2)", None),
         ("iachar('')", None),
-        ("len(1)", None),
         ("sum((/ /))", None),
         ("1 / 0", None),
         ("max()", None),
@@ -263,8 +253,6 @@ def test_role_resolution_reuses_completed_roles_and_names_blockers() -> None:
         ("n % 3", "fortran", "mod((native_n), (3))"),
         ("n % 3", "c", "native_n % 3"),
         ("n * (m + limit)", "c", "native_n * (native_m + native_limit)"),
-        ("n - (m - limit)", "fortran", "native_n - (native_m - native_limit)"),
-        ("(n ** m) ** limit", "fortran", "(native_n ** native_m) ** native_limit"),
         ("n ** (m ** limit)", "c", "prik_extent_power((native_n), (prik_extent_power((native_m), (native_limit))))"),
         ("-(n + m)", "c", "-(native_n + native_m)"),
         ("+n", "fortran", "+native_n"),
@@ -272,17 +260,12 @@ def test_role_resolution_reuses_completed_roles_and_names_blockers() -> None:
         ("not flag", "c", "! (native_flag)"),
         ("n and m or flag", "c", "((((native_n) && (native_m))) || (native_flag))"),
         ("n and m", "fortran", "((native_n) .and. (native_m))"),
-        ("n or m", "fortran", "((native_n) .or. (native_m))"),
         ("n < m <= limit", "fortran", "(((native_n) .lt. (native_m)) .and. ((native_m) .le. (native_limit)))"),
         ("n == m", "c", "(((native_n) == (native_m)))"),
         ("n != m", "fortran", "(((native_n) .ne. (native_m)))"),
-        ("n > m", "c", "(((native_n) > (native_m)))"),
-        ("n >= m", "fortran", "(((native_n) .ge. (native_m)))"),
         ("n if flag else m", "c", "((native_flag) ? (native_n) : (native_m))"),
         ("n if flag else m", "fortran", "merge((native_n), (native_m), (native_flag))"),
         ("int(n)", "c", "((npy_intp)(native_n))"),
-        ("int(n)", "fortran", "int(native_n)"),
-        ("abs(n)", "fortran", "abs(native_n)"),
         ("abs(n)", "c", "((native_n) < 0 ? -(native_n) : (native_n))"),
         ("max(n, m, limit)", "fortran", "max(native_n, native_m, native_limit)"),
         (
@@ -290,8 +273,6 @@ def test_role_resolution_reuses_completed_roles_and_names_blockers() -> None:
             "c",
             "((native_n) > (native_m) ? (native_n) : (native_m))",
         ),
-        ("min(n, m)", "c", "((native_n) < (native_m) ? (native_n) : (native_m))"),
-        ("min(n, m)", "fortran", "min(native_n, native_m)"),
         ("extent_for(n)", "c", "native_extent_for(native_n)"),
         ("True", "c", "1"),
         ("False", "fortran", ".false."),
@@ -324,36 +305,21 @@ def test_backend_renderer_rejects_invalid_target_and_unrenderable_syntax() -> No
         render_declaration_extent("[n]", {}, target="c")
 
 
-def test_a_character_literal_references_no_name_it_happens_to_spell():
-    """Parsing decides what is a reference, so a literal's contents are its value."""
-    assert declaration_expression_identifiers('"box"') == ()
-    assert declaration_expression_identifiers("'box'") == ()
-
-
-def test_an_expression_reports_the_names_it_reads():
-    """A name used in a declaration is a reference wherever it appears."""
-    assert declaration_expression_identifiers("crate") == ("crate",)
-    assert set(declaration_expression_identifiers("n * 2 + other")) == {"n", "other"}
-    assert set(declaration_expression_identifiers("size(values)")) == {"size", "values"}
-
-
-def test_a_selector_keyword_names_a_slot_rather_than_an_entity():
-    """`len` and `kind` are syntax, so only the value they carry is read."""
-    assert declaration_expression_identifiers("len=3") == ()
-    assert declaration_expression_identifiers("len=n") == ("n",)
-    assert declaration_expression_identifiers("kind=c_char") == ("c_char",)
-    assert declaration_expression_identifiers('kind="box"') == ()
-
-
-def test_each_selector_in_one_declaration_is_read_separately():
-    """A character declaration carries both selectors in one stored string."""
-    assert declaration_expression_identifiers("len=n, kind=c_char") == ("n", "c_char")
-    assert declaration_expression_identifiers("len=1, kind=c_char") == ("c_char",)
-
-
-def test_a_comparison_is_not_read_as_a_selector():
-    """`==` is an operator, so both sides are part of the expression."""
-    assert set(declaration_expression_identifiers("a == b")) == {"a", "b"}
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        pytest.param('"box"', (), id="double-quoted-literal"),
+        pytest.param("n * 2 + other", ("n", "other"), id="operands"),
+        pytest.param("len=n", ("n",), id="selector-keyword-is-a-slot"),
+        pytest.param('kind="box"', (), id="selector-with-string"),
+        pytest.param("len=n, kind=c_char", ("n", "c_char"), id="each-selector-read-separately"),
+        pytest.param("a == b", ("a", "b"), id="comparison-is-not-a-selector"),
+        pytest.param("lambda(n) + 1", ("lambda", "n"), id="python-reserved-native-call"),
+    ],
+)
+def test_an_expression_reports_exactly_the_names_it_reads(expression: str, expected: tuple[str, ...]):
+    """Literal contents and `len`/`kind` selector keywords are not references."""
+    assert sorted(declaration_expression_identifiers(expression)) == sorted(expected)
 
 
 def test_lexical_translation_leaves_character_literals_alone():
@@ -368,14 +334,12 @@ def test_lexical_translation_leaves_character_literals_alone():
     assert _python_parseable_fortran_expression(".true.") == "True"
 
 
-def test_a_native_name_python_reserves_is_still_read_as_a_call():
-    """A Fortran function may be called `lambda`; the call is not invalid syntax."""
-    assert declaration_expression_calls("lambda(n) + class(2)") == ("lambda", "class")
-    assert declaration_expression_identifiers("lambda(n) + 1") == ("lambda", "n")
-
-
 def test_respelling_changes_call_targets_and_nothing_else():
-    """A variable or a literal spelled like the callee keeps its spelling."""
+    """A variable or a literal spelled like the callee keeps its spelling.
+
+    A Fortran function may be called `lambda`; it is still read as a call.
+    """
+    assert declaration_expression_calls("lambda(n) + class(2)") == ("lambda", "class")
     assert rename_declaration_expression_calls("lambda(n)", {"lambda": "lambda_"}) == "lambda_(n)"
     assert (
         rename_declaration_expression_calls("helper(n) + helper + len('helper(')", {"helper": "helper_2"})

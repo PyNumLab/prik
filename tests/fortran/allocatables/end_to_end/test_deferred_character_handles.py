@@ -122,6 +122,11 @@ def replace_names(
     assert handle.dtype == np.dtype("S4")
     with pytest.raises(TypeError, match="needs an element_length"):
         handle.resize(2)
+    with pytest.raises(ValueError, match="must not be negative"):
+        handle.resize(2, element_length=-1)
+    with pytest.raises(TypeError, match="must be an integer"):
+        handle.resize(2, element_length=1.5)
+    assert handle.shape == (3,)
 
     caller_created = Allocatable[String[:][:]]()
     assert module.replace_names(caller_created) is caller_created

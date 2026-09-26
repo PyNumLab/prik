@@ -24,7 +24,7 @@ def test_edited_pyi_selects_direct_c_storage_or_fortran_copy_semantics(tmp_path:
     contract = tmp_path / "contract"
     contract.mkdir()
     (contract / "__init__.pyi").write_text(
-        "from .array_ops import scale_without_intent, sum_columns_copy_f, sum_columns_direct_c\n",
+        "from .array_ops import scale_in_place, scale_without_intent, sum_columns_copy_f, sum_columns_direct_c\n",
         encoding="utf-8",
     )
     (contract / "array_ops.pyi").write_text(
@@ -61,6 +61,9 @@ def sum_columns_copy_f(
 def scale_without_intent(
     values: Annotated[Float64[:], Immutable],
 ) -> Returns["values", Float64[:]]: ...
+
+@bind("scale_without_intent")
+def scale_in_place(values: Float64[:]) -> Returns["values", Float64[:]]: ...
 """,
         encoding="utf-8",
     )
@@ -95,3 +98,8 @@ def scale_without_intent(
     np.testing.assert_array_equal(original, np.array([2.0, 5.0, 7.0]))
     np.testing.assert_array_equal(replacement, np.array([4.0, 10.0, 14.0]))
     assert replacement is not original
+
+    # A mutable projected output is the caller's own array, mutated in place.
+    mutable = np.array([2.0, 5.0, 7.0], dtype=np.float64)
+    assert module.scale_in_place(mutable) is mutable
+    np.testing.assert_array_equal(mutable, np.array([4.0, 10.0, 14.0]))

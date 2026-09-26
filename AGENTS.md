@@ -55,6 +55,51 @@ When asked to change or move an API, import path, command, feature, or behavior,
 When updating tests, remove obsolete tests that only assert removed/old implementation behavior does not exist. Do not preserve rejection or absence checks for API/features that were intentionally removed unless explicitly requested.
 Do not add tests whose purpose is only to prove that removed or nonexistent features are rejected. Test supported behavior and meaningful validation boundaries instead. For example, if `ArrayCategory` is removed, delete its tests; do not add a test asserting that `ArrayCategory` now fails.
 
+Optimize the test suite for maximum confidence per test and minimum
+maintenance burden, not for test count. Treat end-to-end tests as the primary
+proof that a feature works: where practical, demonstrate a feature through the
+real workflow (source, preprocessing, parsing, semantic IR, `.pyi` contract,
+replay or build, generated wrapper, compile and link, import, runtime call) and
+finish by checking a concrete, repeatable result such as runtime values, native
+state, generated contract or source text, or the native build plan. One strong
+end-to-end test that covers several cooperating features should replace
+several lower-level tests that only repeat pieces of the same behavior.
+
+Delete a test, rather than preserve it because it exists, when its only
+purpose is to check implementation details, trivial getters, constructors,
+dataclass fields, or plumbing; to repeat behavior a stronger end-to-end test
+already proves; to assert an intermediate object only because it currently
+exists; to test a tiny helper that is exercised thoroughly elsewhere; to repeat
+one case at several stages; to lock internal architecture without protecting
+user-visible behavior; or to add near-identical permutations that do not
+represent distinct failure modes.
+
+Keep a focused isolated test only when it is the cheapest or clearest way to
+protect a boundary that end-to-end tests do not cover economically, and when
+it has a clear answer to: **what realistic regression does this catch that
+would otherwise be difficult, expensive, or ambiguous to detect?** Typical
+answers are parser grammar edge cases; preprocessing and source-discovery
+rules; semantic transformations with many meaningful combinations; export and
+re-export resolution; diagnostics and error locations; contract round trips;
+compiler-independent behavior that would otherwise need many native builds;
+subtle regressions whose end-to-end failure would not say which rule broke;
+and negative validation paths that are cumbersome or unsafe to reproduce
+through a full build. If there is no good answer, remove the test. In PRIK,
+scrutinize especially tests of parser internals, semantic IR details,
+policy and planning intermediates, generated-code string fragments,
+source-versus-build route parity, and duplicated source-versus-generated-`.pyi`
+assertions; where the two routes are meant to agree, prefer one shared parity
+test over the same behavioral assertions in both.
+
+When fixing a real bug, first ask whether an existing end-to-end test can be
+strengthened to cover the regression. If not, add the smallest focused
+regression test at the layer where the bug reproduces clearly. Do not add a
+unit test merely because production code changed. Before testing a subsystem
+in isolation, list the distinct realistic ways it could fail and test those
+behavioral boundaries with a small table of meaningful cases instead of
+mirroring the implementation line by line. Do not change production behavior
+to make a test easier to delete.
+
 Treat tests as evidence for a named invariant, not as specifications merely
 because they already exist. Add or retain automated tests when they protect at
 least one of the following:
@@ -87,7 +132,10 @@ and the earliest stage that can prove it. Keep the resulting evidence concise:
 - One test may assert several related consequences of the same setup and
   invariant. Do not create one test function per field or incidental detail.
 - Use parametrization when cases exercise the same operation and assertion
-  shape with different inputs, and give every row a descriptive ID.
+  shape with different inputs, and give every row a descriptive ID. Keep only
+  the rows that exercise distinct code paths instead of a full matrix.
+- Prefer one end-to-end workflow that exercises several cooperating features
+  over a separate native build for every small operation.
 - Do not repeat the same invariant at adjacent stages. Add another stage test
   only when it protects a real handoff, completed decision, generated artifact,
   ABI mechanism, or runtime behavior.

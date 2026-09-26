@@ -1,156 +1,66 @@
-"""Tests split by stable ownership concept from `test_cli.py`."""
+"""C preprocessing options reach the compiler exactly, and its output reaches the parse report."""
 
 import json
 from pathlib import Path
-import subprocess
-import sys
 
+import pytest
+
+import prik.cli as prik_cli
+from prik.preprocessing import PreprocessingError
 from tests.c._support.preprocessing import (
     _failing_compiler,
     _fake_compiler,
 )
 
 
-def test_cli_c_default_compiler_mode_accepts_include_dirs(tmp_path: Path):
-    include_dir = tmp_path / "include"
-    include_dir.mkdir()
-    dependency = include_dir / "types.h"
-    header = tmp_path / "api.h"
-    dependency.write_text("typedef int api_int;\n", encoding="utf-8")
-    header.write_text('#include "types.h"\nint run(void);\n', encoding="utf-8")
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--json",
-            "-I",
-            str(include_dir),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    payload = json.loads(res.stdout)[str(header)]
-
-    assert payload["preprocessing"] == "compiler"
-    assert payload["preprocessing_recipe"]["compiler"] == "cc"
+def _use_fake_compiler(monkeypatch, tmp_path: Path, output: str) -> tuple[Path, Path]:
+    compiler, args_file, env = _fake_compiler(tmp_path, output)
+    for name in ("PRIK_FAKE_COMPILER_ARGS", "PRIK_FAKE_COMPILER_OUTPUT"):
+        monkeypatch.setenv(name, env[name])
+    return compiler, args_file
 
 
-def test_cli_c_default_compiler_mode_accepts_define_flags(tmp_path: Path):
-    header = tmp_path / "api.h"
-    header.write_text("int run(void);\n", encoding="utf-8")
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "-D",
-            "USE_FAST",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert res.returncode == 0
-
-
-def test_cli_compiler_mode_uses_default_c_compiler(tmp_path: Path):
-    header = tmp_path / "api.h"
-    header.write_text("int run(void);\n", encoding="utf-8")
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--json",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert res.returncode == 0
-    assert json.loads(res.stdout)[str(header)]["preprocessing_recipe"]["compiler"] == "cc"
-
-
-def test_cli_accepts_explicit_compiler_flag(tmp_path: Path):
-    header = tmp_path / "api.h"
-    header.write_text("int run(void);\n", encoding="utf-8")
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--compiler",
-            "gcc-13",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert res.returncode in {0, 1}
-
-
-def test_cli_c_compiler_mode_runs_exact_compiler_and_parses_preprocessed_stdout(tmp_path: Path):
+def test_cli_c_compiler_mode_runs_exact_compiler_and_parses_preprocessed_stdout(tmp_path: Path, monkeypatch, capsys):
     header = tmp_path / "api.h"
     header.write_text("#define API(ret) ret\nAPI(int) hidden(void);\n", encoding="utf-8")
-    compiler, args_file, env = _fake_compiler(tmp_path, '# 44 "include/api.h"\nint expanded(void);\n')
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--json",
-            "--compiler",
-            str(compiler),
-            "-I",
-            "include",
-            "-D",
-            "API_EXPORT=",
-            "-U",
-            "DEBUG",
-            "--std",
-            "c11",
-            "--compiler-arg=--sysroot=/opt/sdk",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
+    compiler, args_file = _use_fake_compiler(
+        monkeypatch,
+        tmp_path,
+        '# 44 "include/api.h"\n#define API_VERSION 3\nint expanded(void);\n',
     )
-    payload = json.loads(res.stdout)[str(header)]
+
+    assert (
+        prik_cli.main(
+            [
+                "parse",
+                str(header),
+                "--language",
+                "c",
+                "--json",
+                "--compiler",
+                str(compiler),
+                "-I",
+                "include",
+                "-D",
+                "API_EXPORT=",
+                "-U",
+                "DEBUG",
+                "--std",
+                "c11",
+                "--compiler-arg=--sysroot=/opt/sdk",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)[str(header)]
     compiler_args = args_file.read_text(encoding="utf-8").splitlines()
 
     assert payload["preprocessing"] == "compiler"
     assert [fn["name"] for fn in payload["functions"]] == ["expanded"]
     assert "origin" not in payload["functions"][0]
     assert payload["functions"][0]["source_location"]["filename"] == "include/api.h"
-    assert payload["functions"][0]["source_location"]["line"] == 44
+    assert payload["functions"][0]["source_location"]["line"] == 45
+    assert {macro["name"]: macro["value"] for macro in payload["macros"]} == {"API_VERSION": "3"}
     assert compiler_args == [
         "-E",
         "-x",
@@ -178,55 +88,28 @@ def test_cli_c_compiler_mode_runs_exact_compiler_and_parses_preprocessed_stdout(
     assert payload["original_source_paths"] == ["include/api.h"]
 
 
-def test_cli_preprocessing_failure_has_category_without_traceback_unless_debug(tmp_path: Path):
+def test_cli_preprocessing_failure_has_category_without_traceback_unless_debug(tmp_path: Path, monkeypatch, capsys):
     header = tmp_path / "api.h"
     header.write_text("int run(void);\n", encoding="utf-8")
     compiler = _failing_compiler(tmp_path, "bad option\n")
+    monkeypatch.delenv("PRIK_DEBUG", raising=False)
+    argv = ["parse", str(header), "--language", "c", "--compiler", str(compiler)]
 
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--compiler",
-            str(compiler),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    debug_res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--compiler",
-            str(compiler),
-            "--debug",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    assert prik_cli.main(argv) == 1
+    err = capsys.readouterr().err
+    assert "error[PREPROCESSOR_FAILED]" in err
+    assert "bad option" in err
 
-    assert res.returncode == 1
-    assert "error[PREPROCESSOR_FAILED]" in res.stderr
-    assert "bad option" in res.stderr
-    assert "Traceback" not in res.stderr
-    assert debug_res.returncode == 1
-    assert "Traceback" in debug_res.stderr
+    with pytest.raises(PreprocessingError, match="bad option"):
+        prik_cli.main([*argv, "--debug"])
 
 
-def test_cli_c_compile_commands_mode_uses_exact_database_compiler(tmp_path: Path):
+def test_cli_c_compile_commands_mode_uses_exact_database_compiler(tmp_path: Path, monkeypatch, capsys):
     source = tmp_path / "api.c"
     source.write_text("API(int) hidden(void);\n", encoding="utf-8")
-    compiler, args_file, env = _fake_compiler(tmp_path, '#line 12 "generated/api.h"\nint from_database(void);\n')
+    compiler, args_file = _use_fake_compiler(
+        monkeypatch, tmp_path, '#line 12 "generated/api.h"\nint from_database(void);\n'
+    )
     database = tmp_path / "compile_commands.json"
     database.write_text(
         json.dumps(
@@ -249,25 +132,8 @@ def test_cli_c_compile_commands_mode_uses_exact_database_compiler(tmp_path: Path
         encoding="utf-8",
     )
 
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(source),
-            "--language",
-            "c",
-            "--json",
-            "--compile-commands",
-            str(database),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
-    payload = json.loads(res.stdout)[str(source)]
+    assert prik_cli.main(["parse", str(source), "--language", "c", "--json", "--compile-commands", str(database)]) == 0
+    payload = json.loads(capsys.readouterr().out)[str(source)]
     compiler_args = args_file.read_text(encoding="utf-8").splitlines()
 
     assert [fn["name"] for fn in payload["functions"]] == ["from_database"]
@@ -281,34 +147,3 @@ def test_cli_c_compile_commands_mode_uses_exact_database_compiler(tmp_path: Path
     assert recipe["compile_commands"] == str(database)
     assert recipe["compile_commands_entry"]["file"] == str(source)
     assert recipe["compile_commands_entry"]["arguments"][0] == str(compiler)
-
-
-def test_cli_c_compiler_mode_macro_metadata_flows_to_parse_report(tmp_path: Path):
-    header = tmp_path / "api.h"
-    header.write_text("#define API_VERSION 3\nint api(void);\n", encoding="utf-8")
-    compiler, _args_file, env = _fake_compiler(
-        tmp_path,
-        "#define API_VERSION 3\nint api(void);\n",
-    )
-
-    res = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "parse",
-            str(header),
-            "--language",
-            "c",
-            "--json",
-            "--compiler",
-            str(compiler),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
-
-    macros = {macro["name"]: macro for macro in json.loads(res.stdout)[str(header)]["macros"]}
-    assert macros["API_VERSION"]["value"] == "3"

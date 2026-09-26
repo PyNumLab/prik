@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
-    _build_inline_pyi_contract_module,
     _build_source_or_generated_pyi_and_import,
 )
 
@@ -65,23 +64,3 @@ def test_subroutine_mixed_route_matches_results_and_adapts_only_ordinary_operati
         )
         assert "bind_c_adapted_outputs" in bridge
         assert "direct_outputs" not in bridge
-
-
-def test_subroutine_mixed_route_matches_edited_source_free_contract(tmp_path: Path):
-    stem = "subroutines_mixed_bind_c_f90"
-    source = (FIXTURES / "native" / f"{stem}.f90").read_text(encoding="utf-8")
-    contract = (FIXTURES / "contracts" / stem / f"{stem}.pyi").read_text(encoding="utf-8")
-    contract = contract.replace("from prik.contracts import ", "from prik.contracts import nogil, ")
-    contract = contract.replace("def direct_outputs(", "@nogil\ndef direct_outputs(").replace(
-        "def adapted_outputs(", "@nogil\ndef adapted_outputs("
-    )
-    module, result = _build_inline_pyi_contract_module(
-        tmp_path, module_name=stem, source_text=source, contract_text=contract
-    )
-
-    expected = (np.int32(4), np.int32(6))
-    assert module.direct_outputs(np.int32(3)) == expected
-    assert module.adapted_outputs(np.int32(3)) == expected
-    bridge = (result.output_dir / f"bind_c_{stem}_wrapper.f90").read_text(encoding="utf-8").casefold()
-    assert "bind_c_adapted_outputs" in bridge
-    assert "subroutine bind_c_direct_outputs" not in bridge

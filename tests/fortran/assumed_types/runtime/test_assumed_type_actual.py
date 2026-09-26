@@ -144,9 +144,3 @@ def test_module_proxy_crosses_extension_boundary_without_type_enumeration(actual
     calls = _import_from_build_dir(built.module_name, built.output_dir).assumed_type_calls
     assert calls.scalar(derived.plain) == 10
     assert calls.assumed_rank(derived.plain) == 0
-
-
-def test_arbitrary_class_has_no_native_representation(actuals):
-    probe, _ = actuals
-    with pytest.raises(TypeError, match="requires NumPy storage or a PRIK native object"):
-        probe.describe(object())

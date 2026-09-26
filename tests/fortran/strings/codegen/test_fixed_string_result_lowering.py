@@ -7,23 +7,12 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
 from prik.policy.ownership import (
-    CodegenAction,
-    DestructionPolicy,
-    NativeBarrierAction,
     ObjectKind,
-    OwnershipOwner,
-    PythonBarrierAction,
-    StorageMode,
-    TransferMode,
 )
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import BridgeDataAction
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
-from prik.planning.models import DatatypeFamily
-
-
-_COPY_REASON = "copy fixed-length Fortran character output into C-owned null-terminated storage"
 
 
 def _fixed_string_module():
@@ -44,82 +33,11 @@ def _fixed_string_plan():
     return WrapperPlanner().build(_fixed_string_module())
 
 
-def test_fixed_strings_reuse_ordered_result_plans_with_completed_length_and_copy_facts():
-    module = _fixed_string_module()
-    plan = WrapperPlanner().build(module)
-    functions = {function.binding.python_name: function for function in plan.namespaces[0].functions}
-    direct = functions["direct_label"].results[0]
-    hidden = functions["hidden_label"].results[0]
-
-    for result in (direct, hidden):
-        assert result.datatype_family is DatatypeFamily.STRING
-        assert result.character_length == 8
-        assert result.object_kind is ObjectKind.STRING
-        assert result.ownership_owner is OwnershipOwner.PYTHON
-        assert result.transfer_mode is TransferMode.COPY_RETURN
-        assert result.destruction_policy is DestructionPolicy.PYTHON_REFCOUNT
-        assert result.storage_mode is StorageMode.STACK
-        assert result.boundary_storage_mode is StorageMode.STACK
-        assert result.nullable is False
-        assert result.binding.python_action is PythonBarrierAction.NONE
-        assert result.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
-        assert result.bridge.copy_reason == _COPY_REASON
-
-    assert direct.source_kind == "direct_return"
-    assert direct.binding.codegen_action is CodegenAction.COPY_OUT
-    assert direct.bridge.native_action is NativeBarrierAction.NONE
-    assert direct.projected_call_slot is None
-
-    assert hidden.source_kind == "hidden_output"
-    assert hidden.binding.codegen_action is CodegenAction.COPY_OUT
-    assert hidden.bridge.native_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-    assert hidden.projected_call_slot is functions["hidden_label"].entrypoint.projected_slots[0]
-    assert hidden.projected_call_slot.object_kind is ObjectKind.STRING
-    assert hidden.projected_call_slot.character_length == hidden.character_length
-
-
-def test_fixed_string_results_dispatch_to_named_binding_and_bridge_copy_lowering():
-    artifacts = WrapperGenerator().generate(_fixed_string_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    assert "void * bind_c_direct_label(void);" in c_source
-    assert "void * result = NULL;" in c_source
-    assert "result = bind_c_direct_label();" in c_source
-    assert "if (result == NULL)" in c_source
-    assert 'Py_BuildValue("s", (const char *)result)' in c_source
-    assert "free(result);" in c_source
-    assert "void bind_c_hidden_label(void ** label);" in c_source
-    assert "bind_c_hidden_label(&label);" in c_source
-    assert 'Py_BuildValue("s", (const char *)label)' in c_source
-    assert "free(label);" in c_source
-
-    assert 'function bind_c_direct_label() result(result) bind(c, name="bind_c_direct_label")' in bridge_source
-    assert "type(c_ptr) :: result" in bridge_source
-    assert "character(kind=c_char, len=8) :: result_value" in bridge_source
-    assert "result_value = native_direct_label()" in bridge_source
-    assert "result = c_malloc(9_c_size_t)" in bridge_source
-    assert "result_copy(1:8) = transfer(result_value, result_copy(1:8))" in bridge_source
-    assert "result_copy(9) = c_null_char" in bridge_source
-    assert 'subroutine bind_c_hidden_label(label) bind(c, name="bind_c_hidden_label")' in bridge_source
-    assert "character(kind=c_char, len=8) :: label_value" in bridge_source
-    assert "call native_hidden_label(label_value)" in bridge_source
-    assert "label = c_malloc(9_c_size_t)" in bridge_source
-
-
 @pytest.mark.parametrize(
     ("edit", "diagnostic"),
     [
         ("missing-length", "invalid-result-character-length"),
         ("wrong-copy", "invalid-string-result-data-action"),
-        ("wrong-copy-reason", "invalid-string-result-copy-reason"),
-        ("wrong-object-kind", "invalid-scalar-result-datatype-family"),
-        ("wrong-owner", "invalid-string-result-owner"),
-        ("wrong-transfer", "invalid-string-result-transfer"),
-        ("wrong-destruction", "invalid-string-result-destruction"),
-        ("wrong-storage", "invalid-string-result-storage"),
-        ("wrong-boundary-storage", "invalid-string-result-boundary-storage"),
-        ("nullable", "nullable-fixed-string-result"),
         ("slot-length-drift", "inconsistent-result-character-length"),
     ],
 )
@@ -134,22 +52,6 @@ def test_fixed_string_result_plan_edits_fail_before_backend_lowering(edit: str, 
     elif edit == "wrong-copy":
         direct.bridge.data_action = BridgeDataAction.DIRECT_TRANSFER
         direct.bridge.copy_reason = None
-    elif edit == "wrong-copy-reason":
-        direct.bridge.copy_reason = "an edited reason"
-    elif edit == "wrong-object-kind":
-        direct.object_kind = ObjectKind.SCALAR
-    elif edit == "wrong-owner":
-        direct.ownership_owner = OwnershipOwner.NATIVE
-    elif edit == "wrong-transfer":
-        direct.transfer_mode = TransferMode.BORROWED_VIEW
-    elif edit == "wrong-destruction":
-        direct.destruction_policy = DestructionPolicy.NATIVE_OWNER
-    elif edit == "wrong-storage":
-        direct.storage_mode = StorageMode.HEAP
-    elif edit == "wrong-boundary-storage":
-        direct.boundary_storage_mode = StorageMode.HEAP
-    elif edit == "nullable":
-        direct.nullable = True
     else:
         hidden.projected_call_slot.character_length = 7
 

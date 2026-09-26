@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -154,6 +155,8 @@ def _assert_combined_runtime(module) -> None:
 
 
 def test_multi_file_modules_build_one_merged_extension(tmp_path: Path):
+    for name in ("first_api.first_api", "first_api.second_api"):
+        sys.modules.pop(name, None)
     module, payload = _build_sources_and_import(
         [
             ("first_api.f90", _source_text(FIRST_API_SOURCE)),
@@ -174,32 +177,19 @@ def test_multi_file_modules_build_one_merged_extension(tmp_path: Path):
     assert "use first_api" in bridge
     assert "use second_api" in bridge
 
-
-def test_generated_child_modules_are_importable_submodules(tmp_path: Path):
-    _module, payload = _build_sources_and_import(
-        [
-            ("first_api.f90", _source_text(FIRST_API_SOURCE)),
-            ("second_api.f90", _source_text(SECOND_API_SOURCE)),
-        ],
-        tmp_path,
-    )
-
-    module_name = str(payload["module_name"])
-    for name in (module_name, f"{module_name}.first_api", f"{module_name}.second_api"):
-        sys.modules.pop(name, None)
+    # Each generated child module is also an importable submodule of the extension.
+    assert sys.modules["first_api.first_api"] is module.first_api
+    assert sys.modules["first_api.second_api"] is module.second_api
     sys.path.insert(0, str(tmp_path))
     try:
         from first_api.first_api import add_one
         from first_api.second_api import double_value
 
-        root = importlib.import_module("first_api")
-        assert sys.modules["first_api.first_api"] is root.first_api
-        assert sys.modules["first_api.second_api"] is root.second_api
-        assert add_one(np.int32(4)) == 5
-        assert double_value(np.int32(4)) == 10
+        assert add_one is module.first_api.add_one
+        assert double_value is module.second_api.double_value
     finally:
         sys.path.remove(str(tmp_path))
-        for name in (f"{module_name}.second_api", f"{module_name}.first_api", module_name):
+        for name in ("first_api.second_api", "first_api.first_api", "first_api"):
             sys.modules.pop(name, None)
 
 
@@ -247,35 +237,31 @@ end module fftpack_kind
     assert module.twice(np.float64(1.25)) == np.float64(2.5)
 
 
-def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
-    sources = _write_combined_sources(tmp_path)
-    package = tmp_path / "contracts"
-    entry = _generate_combined_contract(sources, package)
+@pytest.fixture(scope="module")
+def combined(tmp_path_factory: pytest.TempPathFactory) -> SimpleNamespace:
+    """Build the combined sources once, and generate their contract and native objects once.
 
-    assert entry == package / "__init__.pyi"
-    assert sorted(path.relative_to(package).as_posix() for path in package.rglob("*.pyi")) == [
-        "__init__.pyi",
-        "box_ops.pyi",
-        "first_math.pyi",
-        "second_math.pyi",
-        "shared_types.pyi",
-    ]
-    assert not (package / "first_api").exists()
-    assert not (package / "second_api").exists()
-    assert not (package / "combined_extensions").exists()
-    assert entry.read_text(encoding="utf-8") == (
-        "from . import first_math\nfrom . import shared_types\nfrom . import second_math\nfrom . import box_ops\n\n"
-        '__all__ = ["first_math", "shared_types", "second_math", "box_ops"]\n'
+    Generating the contract compares the whole package, file set and text, with
+    its checked fixture, so every test using it also proves the flat layout.
+    """
+    root = tmp_path_factory.mktemp("combined")
+    sources = _write_combined_sources(root)
+    source_module, source_payload = _build_sources(sources, root / "source_build")
+    return SimpleNamespace(
+        root=root,
+        sources=sources,
+        source_module=source_module,
+        source_payload=source_payload,
+        entry=_generate_combined_contract(sources, root / "contracts"),
+        native_objects=_compile_native_objects(sources, root / "native"),
     )
-    assert "from .shared_types import Box\n" in (package / "box_ops.pyi").read_text(encoding="utf-8")
-    assert "from .first_math import add_one" in (package / "second_math.pyi").read_text(encoding="utf-8")
 
 
-def test_multi_source_generated_contract_build_matches_source_runtime_and_link_order(tmp_path: Path):
-    sources = _write_combined_sources(tmp_path)
-    source_module, source_payload = _build_sources(sources, tmp_path / "source_build")
-    entry = _generate_combined_contract(sources, tmp_path / "contracts")
-    native_objects = _compile_native_objects(sources, tmp_path / "native")
+def test_multi_source_generated_contract_build_matches_source_runtime_and_link_order(
+    combined: SimpleNamespace, tmp_path: Path
+):
+    entry, native_objects = combined.entry, combined.native_objects
+    source_module, source_payload = combined.source_module, combined.source_payload
     generated_module, generated_payload = _build_contract(
         entry,
         native_objects,
@@ -293,7 +279,7 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
         str(entry.parent / "shared_types.pyi"),
     ]
     assert [item["path"] for item in source_payload["native_build_plan"]["link_items"]] == [
-        str(Path(source_payload["output_dir"]) / f"{source.stem}.o") for source in sources
+        str(Path(source_payload["output_dir"]) / f"{source.stem}.o") for source in combined.sources
     ]
     assert generated_payload["native_build_plan"]["link_items"] == [
         {"kind": "object", "path": str(native_objects[0])},
@@ -309,14 +295,11 @@ def test_multi_source_generated_contract_build_matches_source_runtime_and_link_o
     assert generated_module.shared_types.Box is not None
 
 
-def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
-    sources = _write_combined_sources(tmp_path)
-    entry = _generate_combined_contract(sources, tmp_path / "contracts")
-    native_objects = _compile_native_objects(sources, tmp_path / "native")
-
+def test_generated_module_leaf_loads_sibling_type_contract(combined: SimpleNamespace, tmp_path: Path):
+    entry = combined.entry
     module, payload = _build_contract(
         entry.parent / "box_ops.pyi",
-        native_objects,
+        combined.native_objects,
         tmp_path / "leaf_build",
         output_name="box_leaf",
     )
@@ -335,13 +318,11 @@ def test_generated_module_leaf_loads_sibling_type_contract(tmp_path: Path):
     assert module.box_value(box) == np.int32(7)
 
 
-def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias(tmp_path: Path):
-    sources = _write_combined_sources(tmp_path)
-    source_module, source_payload = _build_sources(sources, tmp_path / "source_build")
-    generated_entry = _generate_combined_contract(sources, tmp_path / "contracts")
-    native_objects = _compile_native_objects(sources, tmp_path / "native")
+def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias(
+    combined: SimpleNamespace, tmp_path: Path
+):
     modified_package = tmp_path / "modified_contracts"
-    shutil.copytree(generated_entry.parent, modified_package)
+    shutil.copytree(combined.entry.parent, modified_package)
     modified_entry = modified_package / "__init__.pyi"
     modified_entry.write_text(
         "# Intentional difference: preserve native module children and add a root alias.\n"
@@ -356,15 +337,45 @@ def test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias
 
     modified_module, modified_payload = _build_contract(
         modified_entry,
-        native_objects,
+        combined.native_objects,
         tmp_path / "modified_build",
-        output_name=str(source_payload["module_name"]),
+        output_name=str(combined.source_payload["module_name"]),
     )
 
-    assert modified_payload["module_name"] == source_payload["module_name"]
-    assert not hasattr(source_module, "fused_value")
+    assert modified_payload["module_name"] == combined.source_payload["module_name"]
+    assert not hasattr(combined.source_module, "fused_value")
     assert modified_module.fused_value(np.int32(4)) == np.int32(10)
     _assert_combined_runtime(modified_module)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
+@pytest.mark.parametrize("artifact_kind", ["archive", "shared_library"])
+def test_imported_contracts_resolve_from_one_archive_or_shared_library(
+    combined: SimpleNamespace,
+    tmp_path: Path,
+    artifact_kind: str,
+):
+    native_objects = combined.native_objects
+    if artifact_kind == "archive":
+        artifact = tmp_path / "libcombined.a"
+        subprocess.run(["ar", "rcs", str(artifact), *(str(obj) for obj in native_objects)], check=True)
+    else:
+        artifact = tmp_path / "libcombined.so"
+        subprocess.run([_compiler(), "-shared", "-o", str(artifact), *(str(obj) for obj in native_objects)], check=True)
+
+    result = build_pyi_extension(
+        combined.entry,
+        native_objects=[artifact],
+        native_include_dirs=[native_objects[0].parent],
+        output_name="combined_from_single_artifact",
+        output_dir=tmp_path / "build",
+    )
+    module = _import_extension(result.module_name, result.output_dir)
+    native_plan = result.native_build_plan.to_dict()
+
+    assert native_plan["prebuilt_artifacts"] == [{"kind": artifact_kind, "path": str(artifact)}]
+    assert native_plan["link_items"] == [{"kind": artifact_kind, "path": str(artifact)}]
+    _assert_combined_runtime(module)
 
 
 @pytest.mark.skipif(
@@ -414,6 +425,7 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
             "all",
             "PRIK_FFLAGS=-O3",
             "PRIK_CFLAGS=-O3",
+            "PRIK_LDFLAGS=-O3",
         ],
         capture_output=True,
         text=True,

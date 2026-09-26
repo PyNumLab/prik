@@ -298,7 +298,7 @@ alias. This gives every imported module procedure a distinct bridge-local name.
 | --- | --- |
 | [Wrapper-generator handoff](../../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Frozen-plan validation and generated Fortran bridge assembly. |
 | [Module-variable lowering](../../../../tests/fortran/modules/codegen/test_scalar_module_variable_lowering.py) | Matched C and Fortran scalar module-variable operations and their bridge procedures. |
-| [Array lowering](../../../../tests/fortran/arrays/codegen/test_specialized_array_roles.py) | Plan-selected specialized array roles lower through the bridge ABI. |
+| [Array lowering](../../../../tests/fortran/arrays/end_to_end/test_signed_stride_handoff.py) | Plan-selected specialized array roles lower through the bridge ABI. |
 
 ## Failure Boundary
 

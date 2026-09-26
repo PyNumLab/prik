@@ -1,10 +1,8 @@
-"""Tests split by stable CLI output-contract ownership."""
+"""CLI output contracts: report formats, destinations, and generated contract packages."""
 
 import builtins
-from dataclasses import dataclass
 from importlib import metadata
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,24 +12,18 @@ import types
 import prik
 import pytest
 
-from prik.preprocessing import PreprocessResult
-from prik.preprocessing import source as preprocessing_source
-
 import prik.cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
-from prik.preprocessing import (
-    PreprocessingConfig,
-    PreprocessingDiagnostic,
-    PreprocessingError,
-)
 from tests.fortran._support.paths import GENERAL_FORTRAN_DIR
-from tests.fortran.infrastructure.cli.pipeline._support import (
-    TEST_FILE,
-    _MainParserError,
-    _install_main_parser,
-    _main_args,
-    _patch_main_report_payloads,
-)
+
+
+def _invoke(argv: list[str], capsys) -> tuple[int, str, str]:
+    try:
+        code = prik_cli.main(argv)
+    except SystemExit as exc:
+        code = exc.code
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
 
 
 def test_cli_and_python_api_report_installed_distribution_version():
@@ -51,724 +43,94 @@ def test_cli_and_python_api_report_installed_distribution_version():
         assert result.stderr == ""
 
 
-def test_cli_readable_output():
-    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert f"File: {TEST_FILE}" in res.stdout
-    assert "subroutine add1" in res.stdout
-    assert "Variables:" not in res.stdout
-    assert "Derived types: 0" not in res.stdout
-    print(res.stdout)
-    assert "Wrappable:" not in res.stdout
+SCOPES_SOURCE = """subroutine work(n)
+  integer, intent(in) :: n
+end subroutine work
 
-
-def test_cli_parse_show_vars_prints_scope_variables(tmp_path: Path):
-    f90 = tmp_path / "module_vars.f90"
-    f90.write_text(
-        """
-module module_vars
+module m
   integer :: n
   real(kind=8), dimension(3) :: x
 contains
-  subroutine work()
+  subroutine work(n)
+    integer, intent(in) :: n
   end subroutine work
-end module module_vars
-""".strip(),
-        encoding="utf-8",
-    )
-
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--show-vars"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert "    - module module_vars (vars=2, uses=0)" in res.stdout
-    assert "      Variables: 2" in res.stdout
-    assert "        - n:integer[0]" in res.stdout
-    assert "        - x:real(8)[1]" in res.stdout
-
-
-def test_cli_parse_print_limit_limits_scope_variables_when_shown(tmp_path: Path):
-    f90 = tmp_path / "module_vars.f90"
-    f90.write_text(
-        """
-module module_vars
-  integer :: n
-  real(kind=8), dimension(3) :: x
-contains
-  subroutine work()
-  end subroutine work
-end module module_vars
-""".strip(),
-        encoding="utf-8",
-    )
-
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--show-vars", "--print-limit", "1"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert "      Variables: 2" in res.stdout
-    assert "        - n:integer[0]" in res.stdout
-    assert "        - x:real(8)[1]" not in res.stdout
-    assert "        ... 1 more variables" in res.stdout
-
-
-def test_cli_parse_print_limit_limits_procedures(tmp_path: Path):
-    f90 = tmp_path / "many_procs.f90"
-    f90.write_text(
-        """
-module many_procs
-contains
-  subroutine first()
-  end subroutine first
 
   subroutine second()
   end subroutine second
-end module many_procs
-""".strip(),
-        encoding="utf-8",
-    )
-
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--print-limit", "1"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert "      Procedures: 2" in res.stdout
-    assert "        - subroutine first()" in res.stdout
-    assert "        - subroutine second()" not in res.stdout
-    assert "        ... 1 more procedures" in res.stdout
-    assert "Variables:" not in res.stdout
-
-
-def test_cli_json_out(tmp_path: Path):
-    out = tmp_path / "report.json"
-    cmd = [
-        sys.executable,
-        "-m",
-        "prik",
-        "parse",
-        str(TEST_FILE),
-        "--json",
-        "--out",
-        str(out),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.stdout == ""
-    assert out.exists()
-    file_payload = json.loads(out.read_text())
-    assert str(TEST_FILE) in file_payload
-
-
-def test_cli_out_without_filename_uses_source_basename_json(tmp_path: Path):
-    """--out with no path writes one sibling file per source in the selected format."""
-    f90 = tmp_path / "mini.f90"
-    f90.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--json", "--out"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.stdout == ""
-    out = tmp_path / "mini.json"
-    assert out.exists()
-    file_payload = json.loads(out.read_text())
-    assert str(f90) in file_payload
-
-
-def test_cli_out_without_json_writes_the_human_report_beside_each_source(tmp_path: Path):
-    """--out selects only the destination, so without --json it writes the report text."""
-    f90 = tmp_path / "mini.f90"
-    f90.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--out"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.stdout == ""
-    assert not (tmp_path / "mini.json").exists()
-    assert f"File: {f90}" in (tmp_path / "mini.txt").read_text(encoding="utf-8")
-
-
-def test_cli_json_output_without_out():
-    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE), "--json"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    payload = json.loads(res.stdout)
-    assert str(TEST_FILE) in payload
-
-
-def test_cli_pyi_output_without_out():
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(TEST_FILE)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert f"File: {TEST_FILE}" in res.stdout
-    assert "def add1(" in res.stdout
-
-
-def test_cli_formats_parse_error_with_ansi_by_default(tmp_path: Path):
-    f90 = tmp_path / "bad.f90"
-    f90.write_text(
-        """subroutine bad(x)
-  weirdtype :: x
-end subroutine bad
-""",
-        encoding="utf-8",
-    )
-
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90)]
-    env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
-    res = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-    assert res.returncode == 1
-    assert "\033[" in res.stderr
-    assert "error" in res.stderr
-
-
-def test_cli_semantics_out_writes_json_without_stdout(tmp_path: Path):
-    out = tmp_path / "prik.semantics.json"
-    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE), "--json", "--out", str(out)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert res.stdout == ""
-    assert out.exists()
-    payload = json.loads(out.read_text(encoding="utf-8"))
-    assert str(TEST_FILE) in payload
-    assert "semantic_modules" in payload[str(TEST_FILE)]
-
-
-def test_cli_semantics_without_json_output():
-    """semantics prints the human summary by default and the record under --json."""
-    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.stdout.startswith(f"File: {TEST_FILE}")
-    assert "Semantic modules:" in res.stdout
-
-    res = subprocess.run([*cmd, "--json"], capture_output=True, text=True, check=True)
-    payload = json.loads(res.stdout)
-    assert str(TEST_FILE) in payload
-    assert "semantic_modules" in payload[str(TEST_FILE)]
-
-
-@pytest.mark.parametrize(
-    ("command", "description"),
-    [
-        (("semantics",), "semantics"),
-        (("generate", "--pyi"), "generate --pyi"),
-    ],
-)
-def test_cli_source_stage_rejects_pyi_contract_instead_of_printing_empty_output(
-    tmp_path: Path,
-    command: tuple[str, ...],
-    description: str,
-):
-    contract = tmp_path / "contract.pyi"
-    contract.write_text("def add1(value: int) -> int: ...\n", encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "prik", *command, str(contract)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert f"{description} expects recognized fortran source suffixes" in result.stderr
-    assert str(contract) in result.stderr
-
-
-def test_cli_pyi_output():
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(TEST_FILE)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert f"File: {TEST_FILE}" in res.stdout
-    assert "def add1(" in res.stdout
-
-
-def test_cli_pyi_out_writes_adjacent_contract_package(tmp_path: Path):
-    f90 = tmp_path / "mini.f90"
-    f90.write_text(
-        """module m
-contains
-  subroutine add1(x)
-    integer, intent(inout) :: x
-    x = x + 1
-  end subroutine add1
 end module m
-""",
-        encoding="utf-8",
-    )
+"""
 
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(f90), "--out"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert res.stdout == ""
-    package = tmp_path / "mini"
-    assert (package / "mini.pyi").read_text(encoding="utf-8") == 'from . import m\n\n__all__ = ["m"]\n'
-    assert "def add1" in (package / "m.pyi").read_text(encoding="utf-8")
-
-
-def test_cli_pyi_out_writes_modules_inside_source_contract_package(tmp_path: Path):
-    source = tmp_path / "combined.f90"
-    source.write_text(
-        """module first_mod
-contains
-  subroutine first()
-  end subroutine first
-end module first_mod
-
-module second_mod
-contains
-  subroutine second()
-  end subroutine second
-end module second_mod
-""",
-        encoding="utf-8",
-    )
-
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert result.stdout == ""
-    package = tmp_path / "combined"
-    assert (package / "combined.pyi").read_text(encoding="utf-8") == (
-        'from . import first_mod\nfrom . import second_mod\n\n__all__ = ["first_mod", "second_mod"]\n'
-    )
-    assert "def first(" in (package / "first_mod.pyi").read_text(encoding="utf-8")
-    assert "def second(" in (package / "second_mod.pyi").read_text(encoding="utf-8")
-
-
-def test_cli_pyi_out_uses_explicit_contract_package_from_inline_code(tmp_path: Path):
-    f90 = tmp_path / "explicit.f90"
-    f90.write_text(
-        """module explicit_mod
-contains
-  subroutine set_value(x)
-    real(8), intent(out) :: x
-  end subroutine set_value
-end module explicit_mod
-""",
-        encoding="utf-8",
-    )
-    out = tmp_path / "contracts"
-
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(f90), "--out", str(out)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert res.stdout == ""
-    text = (out / "__init__.pyi").read_text(encoding="utf-8")
-    assert text == 'from . import explicit_mod\n\n__all__ = ["explicit_mod"]\n'
-    leaf_text = (out / "explicit_mod.pyi").read_text(encoding="utf-8")
-    assert "@native_call([Return('x', 0)])" in leaf_text
-    assert "def set_value(" in leaf_text
-    assert "-> Float64: ..." in leaf_text
-
-
-def test_cli_pyi_out_directory_resolves_renamed_project_kind(tmp_path: Path):
-    (tmp_path / "precision.f90").write_text(
-        """module precision_mod
-  integer, parameter :: word = 4
-  integer, parameter :: wp = word * 2
-end module precision_mod
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "solver.f90").write_text(
-        """subroutine consume(x)
-  use precision_mod, only: local_wp => wp
-  real(kind=local_wp), intent(inout) :: x(*)
-end subroutine consume
-""",
-        encoding="utf-8",
-    )
-    out = tmp_path / "contracts"
-
-    cmd = [
-        sys.executable,
-        "-m",
-        "prik",
-        "generate",
-        "--pyi",
-        str(tmp_path),
-        "--language",
-        "fortran",
-        "--out",
-        str(out),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert result.stdout == ""
-    text = (out / "__init__.pyi").read_text(encoding="utf-8")
-    assert "def consume(" in text
-    assert "x: Float64[Flat]" in text
-    assert "local_wp" not in text
-
-
-def test_prik_write_pyi_dependencies_handles_nested_modules_and_empty_payloads(tmp_path: Path):
-    output_dir = tmp_path / "out"
-    text = "class Shared:\n    pass"
-
-    prik_cli._write_pyi_dependencies(
-        {
-            str(tmp_path / "nodeps.f90"): {},
-            str(tmp_path / "first.f90"): {"pyi_dependencies": {"pkg.sub.shared": text}},
-            str(tmp_path / "second.f90"): {"pyi_dependencies": {"pkg.sub.shared": text}},
-        },
-        output_dir=output_dir,
-    )
-
-    assert (output_dir / "pkg" / "sub" / "shared.pyi").read_text(encoding="utf-8") == text + "\n"
-    assert not (output_dir / "pkg.sub.shared.pyi").exists()
-
-
-def test_prik_write_pyi_dependencies_uses_explicit_utf8(tmp_path: Path, monkeypatch):
-    writes = []
-
-    def write_text(path, data, *args, **kwargs):
-        assert not args
-        assert kwargs.get("encoding") is not None
-        assert kwargs["encoding"].lower() == "utf-8"
-        writes.append((path, data))
-        return len(data)
-
-    monkeypatch.setattr(Path, "write_text", write_text)
-
-    prik_cli._write_pyi_dependencies(
-        {str(tmp_path / "first.f90"): {"pyi_dependencies": {"shared": "class Shared:\n    pass"}}},
-        output_dir=tmp_path,
-    )
-
-    assert writes == [(tmp_path / "shared.pyi", "class Shared:\n    pass\n")]
-
-
-def test_prik_main_formats_preprocessing_errors_with_and_without_diagnostics(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(TEST_FILE)])
-
-    def fail_with_diagnostic(_paths, _preprocessing):
-        raise PreprocessingError(
-            "compiler failed",
-            category="PREPROCESSOR_FAILED",
-            diagnostics=[
-                PreprocessingDiagnostic(
-                    category="PREPROCESSOR_FAILED",
-                    message="bad include",
-                    path="source.F90",
-                    line=9,
-                )
-            ],
-        )
-
-    monkeypatch.setattr(prik_cli, "_parse_report", fail_with_diagnostic)
-    assert prik_cli.main() == 1
-    assert "source.F90:9: error[PREPROCESSOR_FAILED]: bad include" in capsys.readouterr().err
-
-    def fail_without_diagnostic(_paths, _preprocessing):
-        raise PreprocessingError("plain failure", category="PREPROCESSOR_FAILED")
-
-    monkeypatch.setattr(prik_cli, "_parse_report", fail_without_diagnostic)
-    assert prik_cli.main() == 1
-    assert "prik: error[PREPROCESSOR_FAILED]: plain failure" in capsys.readouterr().err
-
-
-def test_prik_main_preserves_zero_print_limit_and_legacy_vars_limit_contract(monkeypatch, capsys):
-    args = _main_args(parse=True, print_limit=0, vars_limit=7)
-    _install_main_parser(monkeypatch, args)
-    preprocessing = object()
-    parse_payload = {"parse": "payload"}
-    format_calls = []
-
-    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
-    monkeypatch.setattr(prik_cli, "_build_preprocessing_config", lambda active_args, parser: preprocessing)
-    monkeypatch.setattr(prik_cli, "_parse_report", lambda paths, active_preprocessing: parse_payload)
-    monkeypatch.setattr(
-        prik_cli,
-        "_format_report",
-        lambda payload, **kwargs: format_calls.append((payload, kwargs)) or "formatted",
-    )
-
-    assert prik_cli.main() == 0
-    assert capsys.readouterr().out == "formatted\n"
-    assert format_calls == [(parse_payload, {"show_vars": True, "print_limit": 0})]
-
-
-def test_prik_main_preserves_conflicting_json_and_pyi_out_diagnostic(monkeypatch):
-    args = _main_args(pyi=True, json=True, out="/tmp/conflict.pyi")
-    _install_main_parser(monkeypatch, args)
-    _patch_main_report_payloads(monkeypatch, semantic_payload={"input.f90": {"pyi": "def work() -> None: ..."}})
-
-    with pytest.raises(_MainParserError) as exc_info:
-        prik_cli.main()
-
-    assert str(exc_info.value) == "--out cannot be used with both --json and --pyi"
-
-
-def test_prik_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypatch):
-    writes = []
-    monkeypatch.setattr(
-        Path,
-        "write_text",
-        lambda path, data, **kwargs: writes.append((path, data, kwargs)) or len(data),
-    )
-
-    explicit_payload = {"input.f90": {"node": 1}}
-    explicit_args = _main_args(parse=True, json=True, out="/tmp/report.json")
-    _install_main_parser(monkeypatch, explicit_args)
-    _patch_main_report_payloads(monkeypatch, parse_payload=explicit_payload)
-    assert prik_cli.main() == 0
-
-    adjacent_payload = {
-        "/tmp/first.f90": {"node": 1},
-        "/tmp/empty.f90": {},
-    }
-    adjacent_args = _main_args(parse=True, json=True, out="")
-    _install_main_parser(monkeypatch, adjacent_args)
-    _patch_main_report_payloads(monkeypatch, parse_payload=adjacent_payload)
-    assert prik_cli.main() == 0
-
-    assert writes == [
-        (Path("/tmp/report.json"), json.dumps(explicit_payload, indent=2), {"encoding": "utf-8"}),
-        (
-            Path("/tmp/first.json"),
-            json.dumps({"/tmp/first.f90": {"node": 1}}, indent=2),
-            {"encoding": "utf-8"},
-        ),
-        (Path("/tmp/empty.json"), json.dumps({"/tmp/empty.f90": {}}, indent=2), {"encoding": "utf-8"}),
-    ]
-
-
-def test_prik_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
-    parse_payload = {"parse": {"node": 1}}
-    semantic_payload = {"semantic": {"node": 2}}
-    scenarios = [
-        ({"semantics": True}, "SEMANTIC\n", [("semantic-format", semantic_payload, {"print_limit": None})]),
-        ({"parse": True, "json": True}, json.dumps(parse_payload, indent=2) + "\n", []),
-        ({"pyi": True}, "", [("pyi-format", semantic_payload), ("pyi-output", "PYI")]),
-        (
-            {"parse": True},
-            "PARSE\n",
-            [("parse-format", parse_payload, {"show_vars": False, "print_limit": None})],
-        ),
-    ]
-
-    for overrides, expected_stdout, expected_formats in scenarios:
-        args = _main_args(**overrides)
-        _install_main_parser(monkeypatch, args)
-        _patch_main_report_payloads(
-            monkeypatch,
-            parse_payload=parse_payload,
-            semantic_payload=semantic_payload,
-        )
-        formats = []
-        monkeypatch.setattr(
-            prik_cli,
-            "_format_report",
-            lambda payload, _formats=formats, **kwargs: _formats.append(("parse-format", payload, kwargs)) or "PARSE",
-        )
-        monkeypatch.setattr(
-            prik_cli,
-            "_format_semantic_report",
-            lambda payload, _formats=formats, **kwargs: (
-                _formats.append(("semantic-format", payload, kwargs)) or "SEMANTIC"
-            ),
-        )
-        monkeypatch.setattr(
-            prik_cli,
-            "_format_pyi_report",
-            lambda payload, _formats=formats: _formats.append(("pyi-format", payload)) or "PYI",
-        )
-        monkeypatch.setattr(
-            prik_cli,
-            "print_pyi_output",
-            lambda text, _formats=formats: _formats.append(("pyi-output", text)),
-        )
-
-        assert prik_cli.main() == 0
-        assert capsys.readouterr().out == expected_stdout
-        assert formats == expected_formats
-
-
-def test_prik_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path, monkeypatch):
-    class ErrorParser:
-        def error(self, message):
-            raise ValueError(message)
-
-    def args(**overrides):
-        values = {
-            "defines": [],
-            "undefs": [],
-            "compiler": None,
-            "compile_commands": None,
-            "preprocessor_adapter": "auto",
-            "preprocess_template": None,
-            "include_dirs": [],
-            "std": None,
-            "compiler_args": [],
-            "include_exposure": "reachable-project",
-            "public_includes": [],
-            "private_includes": [],
-            "language": "fortran",
-        }
-        values.update(overrides)
-        return types.SimpleNamespace(**values)
-
-    parser = ErrorParser()
-    stub = tmp_path / "api.pyi"
-    stub.write_text("def add(x: Int32) -> Int32: ...\n", encoding="utf-8")
-    upper_stub = tmp_path / "upper.PYI"
-    upper_stub.write_text("def upper() -> None: ...\n", encoding="utf-8")
-    (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
-
-    # A directory yields every contract it holds, whatever the suffix's case, and each once.
-    assert prik_cli._expand_pyi_paths([str(tmp_path), str(stub)]) == [stub, upper_stub]
-    assert prik_cli._expand_pyi_paths([str(stub)]) == [stub]
-    assert prik_cli._expand_pyi_paths([str(upper_stub)]) == [upper_stub]
-    assert prik_cli._expand_pyi_paths([str(tmp_path / "notes.txt")]) == []
-    with pytest.raises(ValueError, match="Cannot determine"):
-        prik_cli._resolve_language([str(tmp_path / "notes.txt")], None, parser)
-
-    with pytest.raises(ValueError, match="--preprocess-template requires"):
-        prik_cli._build_preprocessing_config(
-            args(
-                compiler="cc",
-                preprocess_template="{compiler} -E {source}",
-            ),
-            parser,
-        )
-
-    def preprocess(path, *, language, config):
-        assert path == source
-        assert language == "fortran"
-        assert config.compiler == "gfortran"
-        return PreprocessResult(
-            source="subroutine work()\nend subroutine work\n",
-            recipe={"language": "fortran", "mode": "compiler"},
-        )
-
-    # A parse report reads each file through the shared reader, recipe included.
-    source = tmp_path / "api.f90"
-    source.write_text("subroutine ignored()\nend subroutine ignored\n", encoding="utf-8")
-    monkeypatch.setattr(preprocessing_source, "preprocess_source", preprocess)
-    report = prik_cli._parse_report(
-        [str(source)],
-        PreprocessingConfig(mode="compiler", compiler="gfortran"),
-    )
-    assert report[str(source)]["signatures"][0]["name"] == "work"
-    assert report[str(source)]["preprocessing_recipe"]["mode"] == "compiler"
-
-
-def test_cli_help_is_concise_and_points_to_detailed_help():
-    cmd = [sys.executable, "-m", "prik", "--help"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    normalized_help = " ".join(res.stdout.split())
-    assert "INPUT [INPUT ...] [BUILD OPTIONS]" in res.stdout
-    assert "positional arguments:" in res.stdout.lower()
-    assert "build options:" in res.stdout
-    assert "--native-compile-flags" in res.stdout
-    assert "--jobs" in res.stdout
-    assert "Input-language compiler used throughout the extension" in res.stdout
-    assert "default: gfortran" in normalized_help
-    assert "Add an include directory used throughout the extension" in res.stdout
-    assert "--native-library openblas passes -lopenblas to the linker" in normalized_help
-    assert "------------------------------ EXAMPLES ------------------------------" in res.stdout
-    assert "Basic wrapper build:" in res.stdout
-    assert "Name the Python extension:" in res.stdout
-    assert "Generate an editable semantic contract:" in res.stdout
-    assert "python3 -m prik points.f90" in res.stdout
-    assert "python3 -m prik points.f90 --out geometry" in res.stdout
-    assert "python3 -m prik generate --pyi points.f90 --out contracts" in res.stdout
-    assert "See the PRIK homepage for the points.f90 source and generated Python API:" in res.stdout
-    assert "https://pynumlab.github.io/prik/#see-it-in-action" in res.stdout
-    assert "python3 -m prik --help-build" in res.stdout
-    assert "python3 -m prik parse --help" in res.stdout
-    assert "python3 -m prik semantics --help" in res.stdout
-    assert "python3 -m prik generate --help" in res.stdout
-    assert "python3 -m prik probe --help" in res.stdout
+MODERN_DERIVED_BLOCK = """      Derived types: 3
+        - type particle (fields=3, methods=0)
+          Fields: 3
+            - id:integer[0]
+            - mass:real(8)[0]
+            - position:real(8)[1]
+        - type vector3 (fields=1, methods=0)
+          Fields: 1
+            - values:real(8)[1]
+        - type hidden_state (fields=1, methods=0)
+          Fields: 1
+            - code:integer[0]
+"""
 
 
 @pytest.mark.parametrize(
-    ("command", "expected", "excluded"),
+    ("source", "options", "present", "absent"),
     [
-        ("parse", "Compiler used for preprocessing", "datatype measurement"),
-        ("semantics", "preprocessing and datatype measurement", "wrapper build files"),
-        ("generate", "source analysis and wrapper build files", "used to build the probe"),
-        ("probe", "used to build the probe", "source preprocessing"),
+        pytest.param(
+            "scopes.f90",
+            [],
+            [
+                "  Procedures: 1\n    - subroutine work(n:integer[0])",
+                "    - module m (vars=2, uses=0)\n      Procedures: 2",
+                "        - subroutine second()",
+            ],
+            ["Variables:"],
+            id="free-and-module-procedure-share-a-name",
+        ),
+        pytest.param(
+            "scopes.f90",
+            ["--show-vars"],
+            ["      Variables: 2\n        - n:integer[0]\n        - x:real(8)[1]"],
+            [],
+            id="show-vars",
+        ),
+        pytest.param(
+            "scopes.f90",
+            ["--show-vars", "--print-limit", "1"],
+            ["        - n:integer[0]\n        ... 1 more variables", "        ... 1 more procedures"],
+            ["x:real(8)[1]", "subroutine second()"],
+            id="print-limit-truncates-variables-and-procedures",
+        ),
+        pytest.param(
+            "scopes.f90",
+            ["--print-limit", "0"],
+            ["    ... 1 more procedures", "    ... 1 more modules"],
+            ["subroutine work"],
+            id="zero-print-limit-is-honoured",
+        ),
+        pytest.param(
+            str(GENERAL_FORTRAN_DIR / "modern_pyi_example.f90"),
+            [],
+            [MODERN_DERIVED_BLOCK, "init_particle(p:type(particle)[0]"],
+            [],
+            id="module-derived-types-and-derived-arguments",
+        ),
     ],
 )
-def test_subcommand_help_tailors_shared_compiler_options(command, expected, excluded):
-    result = subprocess.run(
-        [sys.executable, "-m", "prik", command, "--help", "--no-color"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    normalized_help = " ".join(result.stdout.split())
+def test_parse_report_lists_each_scope_and_honours_report_options(
+    tmp_path: Path, monkeypatch, capsys, source, options, present, absent
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "scopes.f90").write_text(SCOPES_SOURCE, encoding="utf-8")
 
-    assert "options:" in result.stdout
-    assert "------------------------------ EXAMPLES ------------------------------" in result.stdout
-    if command != "probe":
-        assert "positional arguments:" in result.stdout
-        assert "default: gfortran; cc with --language c" in normalized_help
-    else:
-        assert "default: gfortran" not in normalized_help
-    assert expected in normalized_help
-    assert excluded not in normalized_help
+    code, out, _err = _invoke(["parse", source, *options], capsys)
 
-
-def test_cli_parse_shows_module_derived_types_and_derived_arg_kinds():
-    fixture = GENERAL_FORTRAN_DIR / "modern_pyi_example.f90"
-    cmd = [sys.executable, "-m", "prik", "parse", str(fixture)]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-    assert "      Derived types: 3" in res.stdout
-    assert "type particle" in res.stdout
-    assert "Fields: 3" in res.stdout
-    assert "- id:integer[0]" in res.stdout
-    assert "- mass:real(8)[0]" in res.stdout
-    assert "- position:real(8)[1]" in res.stdout
-    assert "init_particle(p:type(particle)[0]" in res.stdout
-
-
-def test_fortran_parser_cli_helper_branches(tmp_path: Path, monkeypatch):
-    @dataclass
-    class Node:
-        name: str
-        parent: object = None
-
-    monkeypatch.setenv("FORTRAN_PARSER_TEST_FLAG", " yes ")
-    assert fortran_parser_cli._env_flag("FORTRAN_PARSER_TEST_FLAG") is True
-    monkeypatch.delenv("FORTRAN_PARSER_TEST_FLAG")
-    assert fortran_parser_cli._env_flag("FORTRAN_PARSER_TEST_FLAG") is False
-
-    assert fortran_parser_cli._diagnostic_color_enabled(disabled=True) is False
-    monkeypatch.setenv("NO_COLOR", "1")
-    assert fortran_parser_cli._diagnostic_color_enabled(disabled=False) is False
-    monkeypatch.delenv("NO_COLOR")
-    assert fortran_parser_cli._diagnostic_color_enabled(disabled=False) is True
-
-    parent = Node("root")
-    assert fortran_parser_cli._to_dict_no_parent(Node("child", parent=parent)) == {"name": "child"}
-    assert fortran_parser_cli._to_dict_no_parent(Node("child", parent="root")) == {
-        "name": "child",
-        "parent": "root",
-    }
-
-    source = tmp_path / "nested" / "mini.f90"
-    source.parent.mkdir()
-    source.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    (source.parent / "notes.txt").write_text("ignore", encoding="utf-8")
-
-    report = fortran_parser_cli._parse_paths([str(tmp_path)])
-    assert list(report) == [str(source)]
-    assert report[str(source)]["signatures"][0]["name"] == "work"
-
-
-def test_fortran_parser_cli_formatting_branches():
-    report = fortran_parser_cli._format_report(
-        {
-            "types.f90": {
-                "signatures": [],
-                "types": [{"name": "particle", "fields": [], "methods": []}],
-                "modules": [],
-                "submodules": [],
-                "programs": [],
-                "block_data": [],
-            }
-        }
-    )
-    assert "Derived types: 1" in report
-    assert "- type particle (fields=0, methods=0)" in report
-    assert (
-        fortran_parser_cli._format_var_type({"base_type": "derived", "kind": "particle", "rank": 0})
-        == "type(particle)[0]"
-    )
-    assert fortran_parser_cli._format_var_type({"base_type": "real", "kind": "4", "rank": 2}) == "real(4)[2]"
+    assert code == 0
+    assert out.startswith(f"File: {source}\n")
+    assert [text for text in present if text not in out] == []
+    assert [text for text in absent if text in out] == []
 
 
 def test_fortran_parser_cli_format_report_print_limit_covers_sections():
@@ -859,135 +221,219 @@ def test_fortran_parser_cli_format_report_print_limit_covers_sections():
     assert "    - block data <unnamed> (vars=2)" in report
     assert "    ... 1 more block data units" in report
 
-    assert fortran_parser_cli._format_variable_lines([], indent="  ", print_limit=1) == []
+
+MINI_SOURCE = """module m
+contains
+  subroutine work(n)
+    integer, intent(in) :: n
+  end subroutine work
+end module m
+"""
 
 
-def test_fortran_parser_cli_json_and_parse_errors(tmp_path: Path):
-    good = tmp_path / "good.f90"
-    good.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    ("argv", "report_format", "written", "marker"),
+    [
+        pytest.param(["parse", "mini.f90"], "text", None, "subroutine work", id="parse-text-stdout"),
+        pytest.param(["parse", "mini.f90", "--json"], "json", None, "modules", id="parse-json-stdout"),
+        pytest.param(
+            ["parse", "mini.f90", "--json", "--out", "report.json"],
+            "json",
+            "report.json",
+            "modules",
+            id="parse-json-file",
+        ),
+        pytest.param(
+            ["parse", "mini.f90", "--json", "--out"], "json", "mini.json", "modules", id="parse-json-adjacent"
+        ),
+        pytest.param(["parse", "mini.f90", "--out"], "text", "mini.txt", "subroutine work", id="parse-text-adjacent"),
+        pytest.param(["semantics", "mini.f90"], "text", None, "Semantic modules:", id="semantics-text-stdout"),
+        pytest.param(["semantics", "mini.f90", "--json"], "json", None, "semantic_modules", id="semantics-json-stdout"),
+        pytest.param(
+            ["semantics", "mini.f90", "--json", "--out", "semantics.json"],
+            "json",
+            "semantics.json",
+            "semantic_modules",
+            id="semantics-json-file",
+        ),
+        pytest.param(["generate", "--pyi", "mini.f90"], "text", None, "def work(", id="generate-pyi-stdout"),
+    ],
+)
+def test_report_format_and_destination_are_chosen_independently(
+    tmp_path: Path, monkeypatch, capsys, argv, report_format, written, marker
+):
+    """--json picks the format and --out picks the destination; neither changes the report."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "mini.f90").write_text(MINI_SOURCE, encoding="utf-8")
 
-    json_cmd = [sys.executable, "-m", "prik.parsers.fortran", str(good), "--json"]
-    json_res = subprocess.run(json_cmd, capture_output=True, text=True, check=True)
-    assert str(good) in json.loads(json_res.stdout)
+    code, out, _err = _invoke(argv, capsys)
 
-    bad = tmp_path / "bad.f90"
-    bad.write_text("subroutine bad(x)\n  weirdtype :: x\nend subroutine bad\n", encoding="utf-8")
-    bad_cmd = [sys.executable, "-m", "prik.parsers.fortran", str(bad), "--no-color"]
-    bad_res = subprocess.run(bad_cmd, capture_output=True, text=True)
-    assert bad_res.returncode == 1
-    assert bad_res.stdout == ""
-    assert "Traceback" not in bad_res.stderr
-    assert "Unknown or unsupported datatype" in bad_res.stderr
-
-
-def test_prik_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
-    @dataclass
-    class Node:
-        name: str
-        parent: object = None
-
-    @dataclass
-    class ParentFirstNode:
-        parent: object
-        name: str
-
-    monkeypatch.setenv("PRIK_TEST_FLAG", "ON")
-    assert prik_cli._env_flag("PRIK_TEST_FLAG") is True
-    monkeypatch.delenv("PRIK_TEST_FLAG")
-    assert prik_cli._env_flag("PRIK_TEST_FLAG") is False
-
-    assert prik_cli._diagnostic_color_enabled(disabled=True) is False
-    monkeypatch.setenv("NO_COLOR", "1")
-    assert prik_cli._diagnostic_color_enabled(disabled=False) is False
-    monkeypatch.delenv("NO_COLOR")
-
-    assert prik_cli._to_dict_no_parent(Node("child", parent=Node("root"))) == {"name": "child"}
-    assert prik_cli._to_dict_no_parent(ParentFirstNode(parent=Node("root"), name="child")) == {"name": "child"}
-    assert prik_cli._to_dict_no_parent({"node": Node("child", parent=Node("root"))}) == {"node": {"name": "child"}}
-
-    source = tmp_path / "mini.f90"
-    source.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    assert prik_cli._expand_paths([str(tmp_path)]) == [source]
-
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    real_import = builtins.__import__
-
-    def fail_rich_import(name, *args, **kwargs):
-        if name.startswith("rich"):
-            raise ImportError("rich disabled for test")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fail_rich_import)
-    prik_cli.print_pyi_output("def f() -> None: ...")
-    assert "def f() -> None: ..." in capsys.readouterr().out
+    assert code == 0
+    if written is None:
+        report = out
+    else:
+        assert out == ""
+        report = (tmp_path / written).read_text(encoding="utf-8")
+    if report_format == "json":
+        assert marker in json.loads(report)["mini.f90"]
+    else:
+        assert report.startswith("File: mini.f90\n")
+        assert marker in report
 
 
-def test_prik_print_pyi_output_uses_rich_and_falls_back(monkeypatch, capsys):
-    calls = []
+TWO_MODULES_SOURCE = """module first_mod
+contains
+  subroutine first()
+  end subroutine first
+end module first_mod
 
-    class FakeSyntax:
-        def __init__(self, code, lexer, **options):
-            self.code = code
-            self.lexer = lexer
-            self.options = options
+module second_mod
+contains
+  subroutine second()
+  end subroutine second
+end module second_mod
+"""
 
-    class FakeConsole:
-        def __init__(self, **options):
-            self.options = options
+EXTERNAL_TYPE_SOURCE = """module physics
+  use types_mod, only: particle
+contains
+  function create_particle() result(p)
+    type(particle) :: p
+  end function create_particle
+end module physics
+"""
 
-        def print(self, syntax):
-            calls.append((syntax.code, syntax.lexer, syntax.options, self.options))
+OPAQUE_PARTICLE_STUB = (
+    'from prik.contracts import Opaque\n\nclass particle(Opaque):\n    pass\n\n__all__ = ["particle"]\n'
+)
 
-    rich_module = types.ModuleType("rich")
-    console_module = types.ModuleType("rich.console")
-    syntax_module = types.ModuleType("rich.syntax")
-    console_module.Console = FakeConsole
-    syntax_module.Syntax = FakeSyntax
-    monkeypatch.setitem(sys.modules, "rich", rich_module)
-    monkeypatch.setitem(sys.modules, "rich.console", console_module)
-    monkeypatch.setitem(sys.modules, "rich.syntax", syntax_module)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
 
-    prik_cli.print_pyi_output("def f() -> None: ...")
-    assert calls == [
-        (
-            "def f() -> None: ...",
-            "python",
+@pytest.mark.parametrize(
+    ("sources", "argv", "expected"),
+    [
+        pytest.param(
+            {"mini.f90": MINI_SOURCE},
+            ["mini.f90", "--out"],
+            {"mini/mini.pyi": 'from . import m\n\n__all__ = ["m"]\n', "mini/m.pyi": ("def work(",)},
+            id="adjacent-package-for-one-module",
+        ),
+        pytest.param(
+            {"combined.f90": TWO_MODULES_SOURCE},
+            ["combined.f90", "--out"],
             {
-                "theme": "ansi_dark",
-                "background_color": "default",
-                "line_numbers": False,
-                "word_wrap": False,
+                "combined/combined.pyi": (
+                    'from . import first_mod\nfrom . import second_mod\n\n__all__ = ["first_mod", "second_mod"]\n'
+                ),
+                "combined/first_mod.pyi": ("def first(",),
+                "combined/second_mod.pyi": ("def second(",),
             },
-            {"force_terminal": True, "color_system": "auto"},
+            id="adjacent-package-for-two-modules",
+        ),
+        pytest.param(
+            {
+                "explicit.f90": "module explicit_mod\ncontains\n  subroutine set_value(x)\n"
+                "    real(8), intent(out) :: x\n  end subroutine set_value\nend module explicit_mod\n"
+            },
+            ["explicit.f90", "--out", "contracts"],
+            {
+                "contracts/__init__.pyi": 'from . import explicit_mod\n\n__all__ = ["explicit_mod"]\n',
+                "contracts/explicit_mod.pyi": ("@native_call([Return('x', 0)])", "def set_value(", "-> Float64: ..."),
+            },
+            id="explicit-package-directory",
+        ),
+        pytest.param(
+            {"physics.f90": EXTERNAL_TYPE_SOURCE},
+            ["physics.f90", "--out"],
+            {
+                "physics/__init__.pyi": 'from . import physics\n\n__all__ = ["physics"]\n',
+                "physics/types_mod.pyi": OPAQUE_PARTICLE_STUB,
+            },
+            id="opaque-dependency-stub-for-external-type",
+        ),
+        pytest.param(
+            {
+                "project/precision.f90": "module precision_mod\n  integer, parameter :: word = 4\n"
+                "  integer, parameter :: wp = word * 2\nend module precision_mod\n",
+                "project/solver.f90": "subroutine consume(x)\n  use precision_mod, only: local_wp => wp\n"
+                "  real(kind=local_wp), intent(inout) :: x(*)\nend subroutine consume\n",
+            },
+            ["project", "--language", "fortran", "--out", "contracts"],
+            {"contracts/__init__.pyi": ("def consume(", "x: Float64[Flat]")},
+            id="directory-input-resolves-renamed-project-kind",
+        ),
+    ],
+)
+def test_generate_pyi_writes_one_contract_per_module(tmp_path: Path, monkeypatch, capsys, sources, argv, expected):
+    monkeypatch.chdir(tmp_path)
+    for name, text in sources.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text, encoding="utf-8")
+
+    code, out, _err = _invoke(["generate", "--pyi", *argv], capsys)
+
+    assert code == 0
+    assert out == ""
+    for name, content in expected.items():
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        if isinstance(content, str):
+            assert text == content
+        else:
+            assert [fragment for fragment in content if fragment not in text] == []
+
+
+def test_generate_pyi_rejects_a_single_file_destination(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "combined.f90").write_text(TWO_MODULES_SOURCE, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="generated contracts use one file per module"):
+        prik_cli.main(["generate", "--pyi", "combined.f90", "--out", "combined.pyi"])
+
+    assert not (tmp_path / "combined.pyi").exists()
+
+
+def test_pyi_dependency_stubs_are_shared_once_and_conflicts_rejected(tmp_path: Path):
+    report = {
+        "first.f90": {
+            "pyi": "def first() -> None: ...",
+            "pyi_dependencies": {"shared": "class shared(Opaque):\n    pass"},
+        },
+        "second.f90": {
+            "pyi": "def second() -> None: ...",
+            "pyi_dependencies": {
+                "shared": "class shared(Opaque):\n    pass",
+                "extra": "class extra(Opaque):\n    pass",
+            },
+        },
+        "empty.f90": {},
+    }
+
+    assert prik_cli._format_pyi_report(report) == (
+        "File: first.f90\ndef first() -> None: ...\n\n"
+        "Dependency stub: shared.pyi\nclass shared(Opaque):\n    pass\n\n"
+        "File: second.f90\ndef second() -> None: ...\n\n"
+        "Dependency stub: extra.pyi\nclass extra(Opaque):\n    pass\n\n"
+        "File: empty.f90\n<no module declarations found>"
+    )
+
+    stub = "class Shared:\n    pass"
+    prik_cli._write_pyi_dependencies(
+        {
+            "first.f90": {"pyi_dependencies": {"pkg.sub.shared": stub}},
+            "second.f90": {"pyi_dependencies": {"pkg.sub.shared": stub}},
+        },
+        output_dir=tmp_path,
+    )
+    assert (tmp_path / "pkg" / "sub" / "shared.pyi").read_text(encoding="utf-8") == stub + "\n"
+    assert not (tmp_path / "pkg.sub.shared.pyi").exists()
+
+    with pytest.raises(ValueError, match="Conflicting generated dependency stub"):
+        prik_cli._write_pyi_dependencies(
+            {
+                "first.f90": {"pyi_dependencies": {"shared": "class shared:\n    pass"}},
+                "second.f90": {"pyi_dependencies": {"shared": "class shared:\n    value: int"}},
+            },
+            output_dir=tmp_path,
         )
-    ]
-    assert capsys.readouterr().out == ""
-
-    class RaisingConsole(FakeConsole):
-        def print(self, syntax):
-            raise RuntimeError("terminal failed")
-
-    console_module.Console = RaisingConsole
-    prik_cli.print_pyi_output("def g() -> None: ...")
-    assert "def g() -> None: ..." in capsys.readouterr().out
-
-
-def test_prik_main_formats_value_errors_or_reraises_for_debug(tmp_path: Path, monkeypatch, capsys):
-    source = tmp_path / "input.f90"
-    source.write_text("module input\nend module input\n", encoding="utf-8")
-
-    def fail_parse(_paths, _preprocessing):
-        raise ValueError("invalid generated interface")
-
-    monkeypatch.setattr(prik_cli, "_parse_report", fail_parse)
-    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(source)])
-    assert prik_cli.main() == 1
-    assert "prik: error: invalid generated interface" in capsys.readouterr().err
-
-    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(source), "--debug"])
-    with pytest.raises(ValueError, match="invalid generated interface"):
-        prik_cli.main()
 
 
 ASSUMED_INTENT_SOURCE = """module legacy_mod
@@ -1001,37 +447,31 @@ end module legacy_mod
 """
 
 
-def _generated_legacy_contract(tmp_path: Path, *extra_options: str) -> str:
-    source = tmp_path / f"legacy{len(extra_options)}.f90"
-    source.write_text(ASSUMED_INTENT_SOURCE, encoding="utf-8")
-    out = tmp_path / f"contracts{len(extra_options)}"
+def test_assume_intent_in_scalars_reaches_the_generated_contract(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "legacy.f90").write_text(ASSUMED_INTENT_SOURCE, encoding="utf-8")
 
-    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(out), *extra_options]
-    subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return (out / "legacy_mod.pyi").read_text(encoding="utf-8")
+    assert _invoke(["generate", "--pyi", "legacy.f90", "--out", "default"], capsys)[0] == 0
+    assert (
+        _invoke(["generate", "--pyi", "legacy.f90", "--out", "assumed", "--assume-intent-in-scalars"], capsys)[0] == 0
+    )
 
-
-def test_generated_contract_projects_undeclared_scalars_by_default(tmp_path: Path):
-    text = _generated_legacy_contract(tmp_path)
-
-    assert 'Returns["count", Int32]' in text
-    assert 'Returns["factor", Float64]' in text
-
-
-def test_assume_intent_in_scalars_removes_them_from_the_generated_contract(tmp_path: Path):
-    text = _generated_legacy_contract(tmp_path, "--assume-intent-in-scalars")
-
-    assert "Returns" not in text
-    assert "-> Float64: ..." in text
+    default = (tmp_path / "default" / "legacy_mod.pyi").read_text(encoding="utf-8")
+    assumed = (tmp_path / "assumed" / "legacy_mod.pyi").read_text(encoding="utf-8")
+    assert 'Returns["count", Int32]' in default
+    assert 'Returns["factor", Float64]' in default
+    assert "Returns" not in assumed
+    assert "-> Float64: ..." in assumed
 
 
-def test_fortran_parser_cli_pyi_is_the_contract_generate_writes(tmp_path: Path):
+def test_fortran_parser_cli_pyi_is_the_contract_generate_writes(tmp_path: Path, monkeypatch, capsys):
     """The parser CLI shows the generated contract, not an unplanned rendering of its own.
 
     Its report converted and printed each module alone, so a module importing
     from another file lost the import completion plans and the spelling
     completion gives each name.
     """
+    monkeypatch.chdir(tmp_path)
     helpers = tmp_path / "helpers.f90"
     helpers.write_text(
         "module helpers\ncontains\n"
@@ -1046,15 +486,46 @@ def test_fortran_parser_cli_pyi_is_the_contract_generate_writes(tmp_path: Path):
         "end module user_mod\n",
         encoding="utf-8",
     )
-    contracts = tmp_path / "contracts"
-    subprocess.run(
-        [sys.executable, "-m", "prik", "generate", "--pyi", str(helpers), str(user), "--out", str(contracts)],
-        check=True,
-        capture_output=True,
-    )
+    assert _invoke(["generate", "--pyi", str(helpers), str(user), "--out", "contracts"], capsys)[0] == 0
 
     report = fortran_parser_cli._semantic_report([str(helpers), str(user)])
 
+    contracts = tmp_path / "contracts"
     assert report[str(helpers)]["pyi"] == (contracts / "helpers.pyi").read_text(encoding="utf-8").strip()
     assert report[str(user)]["pyi"] == (contracts / "user_mod.pyi").read_text(encoding="utf-8").strip()
     assert "from .helpers import lambda_" in report[str(user)]["pyi"]
+
+
+@pytest.mark.parametrize("failure", ["rich-unavailable", "terminal-print-fails"])
+def test_pyi_terminal_highlighting_falls_back_to_plain_text(monkeypatch, capsys, failure):
+    """Syntax highlighting is optional; the contract text must still reach the terminal."""
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    if failure == "rich-unavailable":
+        real_import = builtins.__import__
+
+        def fail_rich_import(name, *args, **kwargs):
+            if name.startswith("rich"):
+                raise ImportError("rich disabled for test")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fail_rich_import)
+    else:
+
+        class RaisingConsole:
+            def __init__(self, **_options):
+                pass
+
+            def print(self, _syntax):
+                raise RuntimeError("terminal failed")
+
+        console_module = types.ModuleType("rich.console")
+        syntax_module = types.ModuleType("rich.syntax")
+        console_module.Console = RaisingConsole
+        syntax_module.Syntax = lambda code, *_args, **_options: code
+        monkeypatch.setitem(sys.modules, "rich", types.ModuleType("rich"))
+        monkeypatch.setitem(sys.modules, "rich.console", console_module)
+        monkeypatch.setitem(sys.modules, "rich.syntax", syntax_module)
+
+    prik_cli.print_pyi_output("def f() -> None: ...")
+
+    assert "def f() -> None: ..." in capsys.readouterr().out

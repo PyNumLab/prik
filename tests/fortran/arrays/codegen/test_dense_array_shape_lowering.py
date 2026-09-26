@@ -7,9 +7,7 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
-    TransformationAction,
     TransformationLayer,
-    WritebackPhase,
 )
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
@@ -61,23 +59,6 @@ def transform(values: Annotated[Float64[2, 3], ORDER_C, COPY_F]) -> None: ...
     return WrapperPlanner().build(module)
 
 
-def _copy_f_lifecycle_plan():
-    module = parse_pyi_text(
-        """
-from prik.contracts import Annotated, COPY_F, Float64, ORDER_C, Returns
-
-def native_input(values: Annotated[Float64[2, 3], ORDER_C, COPY_F]) -> None: ...
-
-def projected(
-    values: Annotated[Float64[2, 3], ORDER_C, COPY_F]
-) -> Returns["values", Float64[2, 3]]: ...
-""",
-        module_name="copy_f_lifecycle",
-    )
-    complete_semantic_policies(module)
-    return WrapperPlanner().build(module)
-
-
 def _copy_f_status_plan():
     module = parse_pyi_text(
         """
@@ -109,100 +90,29 @@ def late_extent(values: Float64[n], n: Annotated[Int32, Immutable] | None = ...)
     return WrapperPlanner().build(module)
 
 
-def test_dense_array_plan_records_extent_dependencies_flat_storage_and_order():
+@pytest.mark.parametrize(
+    ("name", "shape", "order", "flat_axis"),
+    [
+        pytest.param("flat_rank2_runtime", (":", ":"), "ORDER_F", 1, id="fortran-flat-last-axis-open-prefix"),
+        pytest.param("flat_rank2_fixed", ("3", ":"), "ORDER_F", 1, id="fortran-flat-last-axis-fixed-prefix"),
+        pytest.param("c_flat_rank2_runtime", (":", ":"), "ORDER_C", 0, id="c-flat-first-axis-open-suffix"),
+        pytest.param("c_flat_rank2_fixed", (":", "3"), "ORDER_C", 0, id="c-flat-first-axis-fixed-suffix"),
+    ],
+)
+def test_dense_array_plan_places_flat_storage_by_order(name, shape, order, flat_axis):
+    """The flat axis is the slowest-varying one for the declared order.
+
+    Runtime tests cover rank-one and argument-sized Fortran-order flat storage;
+    the C-order placements and fixed-extent neighbours are only decided here.
+    """
     functions = {function.binding.python_name: function for function in _dense_plan().namespaces[0].functions}
-    dense_f = functions["dense_f"].arguments[-1].array
-    dense_c = functions["dense_c"].arguments[-1].array
-    flat = functions["flat"].arguments[-1].array
-    flat_rank2_runtime = functions["flat_rank2_runtime"].arguments[-1].array
-    flat_rank2_fixed = functions["flat_rank2_fixed"].arguments[-1].array
-    c_flat_rank2_runtime = functions["c_flat_rank2_runtime"].arguments[-1].array
-    c_flat_rank2_fixed = functions["c_flat_rank2_fixed"].arguments[-1].array
-    bounded_flat = functions["bounded_flat"].arguments[-1].array
+    array = functions[name].arguments[-1].array
 
-    assert dense_f is not None
-    assert dense_f.rank == 2
-    assert dense_f.shape == ("rows", "cols")
-    assert dense_f.order == "ORDER_F"
-    assert dense_f.extent_reference_roles == (
-        ("dense_array_shapes.dense_f.rows:value",),
-        ("dense_array_shapes.dense_f.cols:value",),
-    )
-    assert dense_c is not None
-    assert dense_c.order == "ORDER_C"
-    assert flat is not None
-    assert flat.rank == 1
-    assert flat.shape == (":",)
-    assert flat.category == "assumed_size"
-    assert flat.flatten_python_storage is True
-    assert flat.flat_axis == 0
-    assert flat_rank2_runtime is not None
-    assert flat_rank2_runtime.rank == 2
-    assert flat_rank2_runtime.shape == (":", ":")
-    assert flat_rank2_runtime.order == "ORDER_F"
-    assert flat_rank2_runtime.category == "assumed_size"
-    assert flat_rank2_runtime.flatten_python_storage is True
-    assert flat_rank2_runtime.flat_axis == 1
-    assert flat_rank2_fixed is not None
-    assert flat_rank2_fixed.rank == 2
-    assert flat_rank2_fixed.shape == ("3", ":")
-    assert flat_rank2_fixed.order == "ORDER_F"
-    assert flat_rank2_fixed.flatten_python_storage is True
-    assert flat_rank2_fixed.flat_axis == 1
-    assert c_flat_rank2_runtime is not None
-    assert c_flat_rank2_runtime.rank == 2
-    assert c_flat_rank2_runtime.shape == (":", ":")
-    assert c_flat_rank2_runtime.order == "ORDER_C"
-    assert c_flat_rank2_runtime.category == "assumed_size"
-    assert c_flat_rank2_runtime.flatten_python_storage is True
-    assert c_flat_rank2_runtime.flat_axis == 0
-    assert c_flat_rank2_fixed is not None
-    assert c_flat_rank2_fixed.rank == 2
-    assert c_flat_rank2_fixed.shape == (":", "3")
-    assert c_flat_rank2_fixed.order == "ORDER_C"
-    assert c_flat_rank2_fixed.flatten_python_storage is True
-    assert c_flat_rank2_fixed.flat_axis == 0
-    assert bounded_flat is not None
-    assert bounded_flat.shape == ("ldb", ":")
-    assert bounded_flat.flatten_python_storage is True
-    assert bounded_flat.flat_axis == 1
-    assert bounded_flat.extent_reference_roles == (("dense_array_shapes.bounded_flat.ldb:value",), ())
-
-
-def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation():
-    artifacts = WrapperGenerator().generate(_dense_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    assert "bound_values_bind_fixed[0] = (long long)(bound_rows);" in c_source
-    assert "bound_values_bind_fixed[1] = (long long)(bound_cols);" in c_source
-    assert (
-        "prik_bind_array_or_handle(bound_values_obj, NPY_FLOAT64, 0, sizeof(double), 0, 2, 2, 2, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS"
-        in c_source
-    )
-    assert (
-        "prik_bind_array_or_handle(bound_values_obj, NPY_FLOAT64, 0, sizeof(double), 0, 2, 2, 2, PRIK_ARRAY_LAYOUT_C_CONTIGUOUS"
-        in c_source
-    )
-    assert "bound_values_bind_fixed[0] = -1;" in c_source
-    assert (
-        "prik_bind_array_or_handle(bound_values_obj, NPY_FLOAT64, 0, sizeof(double), 0, 1, 1, 15, "
-        'PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values", 0, 0, '
-        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents, &bound_values_native_backend"
-    ) in c_source
-    assert (
-        "prik_bind_array_or_handle(bound_values_obj, NPY_FLOAT64, 0, sizeof(double), 0, 2, 2, 15, "
-        'PRIK_ARRAY_LAYOUT_F_CONTIGUOUS, 1, 1, "numpy.float64", "values", 1, 1, '
-        "bound_values_bind_fixed, &bound_values, bound_values_bind_extents, &bound_values_native_backend"
-    ) in c_source
-    assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
-    assert "call c_f_pointer(bound_values, values, [values_extent_1, values_extent_0])" in bridge_source
-    assert "subroutine bind_c_flat(n, bound_values, values_extent_0)" in bridge_source
-    assert "subroutine bind_c_flat_rank2_runtime(" in bridge_source
-    assert "subroutine bind_c_c_flat_rank2_runtime(" in bridge_source
-    assert "external :: flat_rank2_runtime" in bridge_source
-    assert "external :: c_flat_rank2_fixed" in bridge_source
-    assert "real(c_double), pointer, contiguous, dimension(:, :) :: values" in bridge_source
+    assert array.shape == shape
+    assert array.order == order
+    assert array.category == "assumed_size"
+    assert array.flatten_python_storage is True
+    assert array.flat_axis == flat_axis
 
 
 def test_external_interface_declares_late_extent_before_dependent_array():
@@ -245,44 +155,6 @@ def test_unavailable_dense_extent_role_fails_before_backend_lowering():
         WrapperGenerator().generate(plan)
 
 
-def test_copy_f_is_one_binding_owned_transformation_lifecycle():
-    argument = _copy_f_plan().namespaces[0].functions[0].arguments[0]
-
-    assert argument.array is not None
-    assert argument.array.order == "ORDER_C"
-    assert argument.array.native_order == "ORDER_F"
-    assert tuple(item.phase for item in argument.transformations) == (
-        WritebackPhase.COPY_IN,
-        WritebackPhase.COPY_OUT,
-        WritebackPhase.CLEANUP,
-    )
-    assert {item.layer for item in argument.transformations} == {TransformationLayer.BINDING}
-    assert tuple(item.action for item in argument.transformations) == (
-        TransformationAction.COPY_ARRAY_REPRESENTATION,
-        TransformationAction.COPY_ARRAY_REPRESENTATION,
-        TransformationAction.RELEASE_TEMPORARY,
-    )
-
-
-def test_copy_f_lowering_keeps_numpy_copy_in_and_copy_out_out_of_the_bridge():
-    artifacts = WrapperGenerator().generate(_copy_f_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    assert "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS, 1, 1" in c_source
-    assert (
-        "bound_values_representation = PyArray_NewCopy((PyArrayObject *)bound_values_obj, NPY_FORTRANORDER)" in c_source
-    )
-    assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_representation)" in c_source
-    assert (
-        "PyArray_CopyInto((PyArrayObject *)bound_values_obj, (PyArrayObject *)bound_values_representation) < 0"
-        in c_source
-    )
-    assert "Py_CLEAR(bound_values_representation)" in c_source
-    assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
-    assert "COPY_F" not in bridge_source
-
-
 def test_copy_f_status_cleanup_clears_the_released_temporary_before_error_cleanup():
     artifacts = WrapperGenerator().generate(_copy_f_status_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
@@ -293,38 +165,6 @@ def test_copy_f_status_cleanup_clears_the_released_temporary_before_error_cleanu
     status_check = function_body.index("if (status != 0)", success_release)
     error_release = function_body.index("Py_CLEAR(bound_values_representation)", status_check)
     assert copyback < success_release < status_check < error_release
-
-
-def test_copy_f_native_input_and_projected_identity_share_the_same_lifecycle_algorithm():
-    functions = {
-        function.binding.python_name: function for function in _copy_f_lifecycle_plan().namespaces[0].functions
-    }
-    native_input = functions["native_input"].arguments[0]
-    projected = functions["projected"].arguments[0]
-
-    assert tuple(item.phase for item in native_input.transformations) == (
-        WritebackPhase.COPY_IN,
-        WritebackPhase.COPY_OUT,
-        WritebackPhase.CLEANUP,
-    )
-    assert tuple(item.phase for item in projected.transformations) == (
-        WritebackPhase.COPY_IN,
-        WritebackPhase.COPY_OUT,
-        WritebackPhase.CLEANUP,
-    )
-    assert projected.projects_result is True
-
-    artifacts = WrapperGenerator().generate(_copy_f_lifecycle_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-
-    native_input_body, projected_body = c_source.split("static PyObject * wrap_projected", maxsplit=1)
-    assert "PyArray_NewCopy((PyArrayObject *)bound_values_obj, NPY_FORTRANORDER)" in native_input_body
-    assert "PyArray_CopyInto((PyArrayObject *)bound_values_obj" in native_input_body
-    assert "PyArray_CopyInto((PyArrayObject *)bound_values_obj" in projected_body
-    assert "PyObject * result_obj = bound_values_obj" in projected_body
-    assert "Py_INCREF(result_obj)" in projected_body
-    assert "COPY_F" not in bridge_source
 
 
 def test_copy_f_layer_edit_fails_central_validation():

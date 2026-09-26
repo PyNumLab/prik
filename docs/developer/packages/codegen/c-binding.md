@@ -294,9 +294,9 @@ reverse-call entrypoints used by adapter-local callback procedures.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Binding infrastructure](../../../../tests/fortran/infrastructure/codegen/test_binding.py) | Invalid NumPy scalar macros fail at the C binding helper boundary. |
+| [Binding facet ownership](../../../../tests/fortran/infrastructure/codegen/test_consumer_facet_boundaries.py) | The binding reads only its own plan facet and consumes planned support inventories instead of re-deriving them. |
 | [Wrapper-generator handoff](../../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Frozen-plan validation and generated C binding, header, and wrapper assembly. |
-| [Array lowering](../../../../tests/fortran/arrays/codegen/test_specialized_array_roles.py) | Plan-selected specialized array roles lower through the binding boundary. |
+| [Array lowering](../../../../tests/fortran/arrays/end_to_end/test_signed_stride_handoff.py) | Plan-selected specialized array roles lower through the binding boundary. |
 
 ## Failure Boundary
 

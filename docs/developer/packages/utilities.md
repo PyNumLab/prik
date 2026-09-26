@@ -123,9 +123,9 @@ MRO fallback: expression:Expression
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Utility tests](../../../tests/fortran/infrastructure/utilities/) | Local-name allocation and generic visitor dispatch. |
+| [Utility tests](../../../tests/fortran/infrastructure/utilities/) | Generic visitor dispatch. Local-name allocation is exercised through the [naming tests](../../../tests/fortran/infrastructure/naming/). |
 | [Declaration-expression tests](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py) | Translation, validation, role resolution, evaluation, and rendering. |
-| [Wrapper freeze-boundary tests](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Plans and generated nodes reject mutation after consumption. |
+| [Wrapper freeze-boundary tests](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | A wrapper plan rejects mutation once the generator has consumed it. |
 
 Move a helper out of `utilities/` as soon as it starts selecting semantic
 policy, emitted mechanisms, or a pipeline action.

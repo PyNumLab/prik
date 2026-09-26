@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -18,88 +20,22 @@ TRANSITIVE_NATIVE = NATIVE_FIXTURES / "contract_import_graph.f90"
 MULTI_MODULE = NATIVE_FIXTURES / "contract_multi_module.f90"
 
 
-def _generate_contract_package(source: Path, package: Path) -> Path:
+@pytest.mark.parametrize(
+    "source",
+    [STANDALONE_ONLY, SOURCE_NAMESPACE, SAME_NAME_MIXED, TRANSITIVE_NATIVE],
+    ids=lambda path: path.stem,
+)
+def test_generated_contract_package_matches_reviewed_layout(source: Path, tmp_path: Path):
+    """The CLI writes an explicit `__init__.pyi` entry plus one leaf per native module, as reviewed."""
+    package = tmp_path / "contracts" / source.stem
     subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "prik",
-            "generate",
-            "--pyi",
-            str(source),
-            "--out",
-            str(package),
-        ],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(package)],
         capture_output=True,
         text=True,
         check=True,
     )
-    assert_generated_pyi_package_matches_fixture(
-        package,
-        CONTRACT_FIXTURES / source.stem / "generated",
-    )
-    return package / "__init__.pyi"
 
-
-def test_standalone_generation_writes_explicit_package_entry(tmp_path: Path):
-    entry = _generate_contract_package(
-        STANDALONE_ONLY,
-        tmp_path / "contracts" / "contract_standalone_only",
-    )
-
-    assert entry == tmp_path / "contracts" / "contract_standalone_only" / "__init__.pyi"
-    assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi"}
-    text = entry.read_text(encoding="utf-8")
-    assert text.count("@standalone") == 2
-    assert "def standalone_ping() -> None: ..." in text
-    assert "def standalone_double(" in text
-
-
-def test_module_generation_writes_explicit_package_entry_and_native_leaf(tmp_path: Path):
-    entry = _generate_contract_package(
-        SOURCE_NAMESPACE,
-        tmp_path / "contracts" / "contract_mixed_module_external",
-    )
-
-    assert entry == tmp_path / "contracts" / "contract_mixed_module_external" / "__init__.pyi"
-    assert {path.name for path in entry.parent.iterdir()} == {
-        "__init__.pyi",
-        "contract_math_mod.pyi",
-    }
-    assert entry.read_text(encoding="utf-8").startswith(
-        "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n"
-        "from . import contract_math_mod\n\n"
-        "@standalone\n"
-    )
-
-
-def test_same_named_module_uses_init_entry_and_keeps_externals_at_root(tmp_path: Path):
-    entry = _generate_contract_package(
-        SAME_NAME_MIXED,
-        tmp_path / "contracts" / "contract_same_name",
-    )
-
-    assert entry == tmp_path / "contracts" / "contract_same_name" / "__init__.pyi"
-    assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi", "contract_same_name.pyi"}
-    assert entry.read_text(encoding="utf-8") == (
-        "from prik.contracts import standalone\n"
-        "from . import contract_same_name\n\n"
-        "@standalone\n"
-        "def external_ping() -> None: ...\n\n"
-        '__all__ = ["contract_same_name", "external_ping"]\n'
-    )
-    assert "def module_ping() -> None: ..." in (entry.parent / "contract_same_name.pyi").read_text(encoding="utf-8")
-
-
-def test_import_graph_generation_writes_entry_and_native_leaves(tmp_path: Path):
-    entry = _generate_contract_package(
-        TRANSITIVE_NATIVE,
-        tmp_path / "contracts" / "contract_import_graph",
-    )
-
-    assert entry == tmp_path / "contracts" / "contract_import_graph" / "__init__.pyi"
-    assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi", "deep.pyi", "m1.pyi"}
-    assert entry.read_text(encoding="utf-8") == ('from . import m1\nfrom . import deep\n\n__all__ = ["m1", "deep"]\n')
+    assert_generated_pyi_package_matches_fixture(package, CONTRACT_FIXTURES / source.stem / "generated")
 
 
 def test_multi_module_generation_keeps_each_native_namespace(tmp_path: Path):

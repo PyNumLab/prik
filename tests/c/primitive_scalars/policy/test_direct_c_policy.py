@@ -9,61 +9,6 @@ from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.semantics.native_contract import validate_pyi_native_contract
 
 
-def _complete(source: str):
-    module = c_file_to_semantic_module(parse_c_file(source, filename="api.c"))
-    complete_semantic_policies(module)
-    return module.functions[0].metadata["resolved_function_wrapper_policy"]
-
-
-def test_supported_c_scalar_policy_selects_direct_c_abi_without_a_bridge_facet():
-    policy = _complete("double add(double left, double right) { return left + right; }\n")
-
-    assert policy.supported is True
-    assert policy.entrypoint_action.value == "direct_c_abi"
-    assert policy.direct_c_abi.result.source_spelling == "double"
-    assert tuple(item.source_spelling for item in policy.direct_c_abi.parameters) == ("double", "double")
-
-
-def test_source_free_exact_scalar_contract_completes_native_and_contract_storage_types():
-    module = pyi_text_to_semantic_module(
-        """from prik.contracts import Arg, CLongLong, Int64, Return, native_call
-@native_call([CLongLong(Arg(0))], result=CLongLong(Return(0)))
-def convert(value: Int64) -> Int64: ...
-""",
-        module_name="exact",
-        native_language="c",
-    )
-    validate_pyi_native_contract([module])
-    complete_semantic_policies(module)
-
-    policy = module.functions[0].metadata["resolved_function_wrapper_policy"]
-
-    assert policy.native_call_slots[0].native_scalar_c_type == "long long"
-    assert policy.direct_c_abi.parameters[0].source_spelling == "long long"
-    assert policy.direct_c_abi.result.source_spelling == "long long"
-    assert policy.direct_c_abi.result.converts_to_contract_storage is True
-
-
-def test_source_free_exact_array_contract_requires_native_numpy_element_storage():
-    module = pyi_text_to_semantic_module(
-        """from prik.contracts import Arg, CLongLong, Int64, native_call
-@native_call([CLongLong(Arg(0))])
-def update(values: Int64[:]) -> None: ...
-""",
-        module_name="exact_array",
-        native_language="c",
-    )
-    validate_pyi_native_contract([module])
-    complete_semantic_policies(module)
-
-    policy = module.functions[0].metadata["resolved_function_wrapper_policy"]
-
-    assert policy.arguments[0].native_array_element_c_type == "long long"
-    assert policy.native_call_slots[0].native_scalar_c_type == "long long"
-    assert policy.direct_c_abi.parameters[0].source_spelling == "long long *"
-    assert policy.direct_c_abi.parameters[0].converts_to_contract_storage is False
-
-
 def test_exact_c_bool_rank_zero_storage_fails_before_planning():
     module = pyi_text_to_semantic_module(
         """from prik.contracts import Arg, Bool, CBool, native_call

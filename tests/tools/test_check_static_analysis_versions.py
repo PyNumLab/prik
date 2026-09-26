@@ -6,28 +6,19 @@ from tools.check_static_analysis_versions import (
 )
 
 
-def test_static_analysis_version_errors_reports_missing_and_mismatched_tools():
-    installed = {
-        "bandit": None,
-        "radon": "6.0.1",
-        "ruff": "0.11.7",
-        "vulture": "2.16",
-    }
-
-    assert static_analysis_version_errors(installed) == [
-        "bandit: not installed, expected 1.9.4",
-        "ruff: installed 0.11.7, expected 0.15.17",
-    ]
-
-
-def test_static_analysis_version_errors_accepts_exact_pins():
+def test_static_analysis_version_errors_accept_exact_pins_and_report_drift():
     assert static_analysis_version_errors(EXPECTED_STATIC_ANALYSIS_VERSIONS) == []
+
+    installed = {**EXPECTED_STATIC_ANALYSIS_VERSIONS, "bandit": None, "ruff": "0.0.1"}
+    assert static_analysis_version_errors(installed) == [
+        f"bandit: not installed, expected {EXPECTED_STATIC_ANALYSIS_VERSIONS['bandit']}",
+        f"ruff: installed 0.0.1, expected {EXPECTED_STATIC_ANALYSIS_VERSIONS['ruff']}",
+    ]
 
 
 def test_static_analysis_version_pins_match_qa_extra():
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    extras = {"bandit": "bandit[toml]", "radon": "radon[toml]"}
 
-    assert '"bandit[toml]==1.9.4"' in pyproject
-    assert '"radon[toml]==6.0.1"' in pyproject
-    assert '"ruff==0.15.17"' in pyproject
-    assert '"vulture==2.16"' in pyproject
+    for package, expected in EXPECTED_STATIC_ANALYSIS_VERSIONS.items():
+        assert f'"{extras.get(package, package)}=={expected}"' in pyproject, f"{package} is not pinned to {expected}"

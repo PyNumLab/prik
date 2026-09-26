@@ -2,7 +2,6 @@
 
 import pytest
 import re
-from dataclasses import asdict
 from prik.printers import emit_module
 from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
@@ -28,17 +27,9 @@ class particle:
     assert method.visibility == "private"
     assert method.origin.metadata[USER_PRIVATE_METADATA] is True
     assert [arg.name for arg in method.arguments] == ["self"]
-    assert asdict(method.projection[0]) == {
-        "python_name": "self",
-        "native_name": "self",
-        "native_position": 0,
-        "python_position": 0,
-        "result_position": None,
-        "value_kind": None,
-        "value": None,
-        "value_cast": None,
-        "native_c_identity": None,
-    }
+    assert [(item.native_position, item.python_position, item.python_name) for item in method.projection] == [
+        (0, 0, "self")
+    ]
     emitted = emit_module(module)
     assert "    @private\n    def reset(self) -> Int32: ..." in emitted
     reparsed = parse_pyi_text(emitted, module_name="edited")

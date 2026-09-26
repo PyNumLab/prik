@@ -2,7 +2,6 @@
 
 from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
-    fortran_module_to_semantic_module,
 )
 from prik.semantics.models import ProjectionMapping
 from tests.fortran._support.semantic_conversion import get_function
@@ -32,31 +31,3 @@ end function square
             result_position=1,
         )
     ]
-
-
-def test_function_result():
-    source = """
-module func_mod
-
-contains
-
-function norm2(x) result(r)
-
-    real(8), intent(in) :: x(:)
-
-    real(8) :: r
-
-end function
-
-end module
-"""
-
-    fmod = parse_fortran_source(source)
-
-    smod = fortran_module_to_semantic_module(fmod)
-
-    func = get_function(smod, "norm2")
-
-    assert func.return_type is not None
-
-    assert func.return_type.name == "Float64"

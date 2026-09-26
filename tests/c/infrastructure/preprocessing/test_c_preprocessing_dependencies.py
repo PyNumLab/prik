@@ -1,48 +1,9 @@
-"""Tests split by stable ownership concept from `test_cli.py`."""
+"""Compiler linemarkers become include dependencies, exposure, source mappings, and macros."""
 
-import json
 from pathlib import Path
 
 import prik.preprocessing.source as preprocessing
-from prik.preprocessing import PreprocessingConfig, build_compile_commands_invocation
-
-
-def test_compile_commands_filters_dependency_and_windows_compile_flags(tmp_path: Path):
-    source = tmp_path / "src" / "api.c"
-    source.parent.mkdir()
-    source.write_text("int api(void);\n", encoding="utf-8")
-    compiler = tmp_path / "cc"
-    database = tmp_path / "compile_commands.json"
-    database.write_text(
-        json.dumps(
-            [
-                {
-                    "directory": str(tmp_path),
-                    "file": str(source),
-                    "arguments": [
-                        str(compiler),
-                        "-MF",
-                        "deps.d",
-                        "-MT",
-                        "api.o",
-                        "-MQtarget",
-                        "-MFdeps2.d",
-                        "/c",
-                        "src/api.c",
-                        "-Wall",
-                    ],
-                }
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    invocation = build_compile_commands_invocation(
-        source,
-        config=PreprocessingConfig(mode="compiler", compile_commands=str(database)),
-    )
-
-    assert invocation.argv == [str(compiler), "-E", "-Wall", str(source)]
+from prik.preprocessing import PreprocessingConfig
 
 
 def test_linemarker_dependency_exposure_and_macro_edges(tmp_path: Path):
@@ -80,34 +41,9 @@ def test_linemarker_dependency_exposure_and_macro_edges(tmp_path: Path):
 
     assert mappings[0].original_line == 7
     assert 'api".h' in mappings[0].original_path
-    assert preprocessing._unescape_linemarker_filename(r"a\nb\rc\td\\e\"f\x") == 'a\nb\rc\td\\e"fx'
-    assert preprocessing._unescape_linemarker_filename("trailing\\") == "trailing\\"
-    assert preprocessing._parse_linemarker('# 12 "api.h" 1 3') == (12, "api.h", [1, 3])
-    assert preprocessing._parse_linemarker("#line 14 api.h") == (14, "api.h", [])
-    assert preprocessing._parse_linemarker("int api;") is None
-    assert preprocessing._dependency_kind("api.h", [3]) == "system"
-    assert preprocessing._dependency_kind("<command-line>") == "system"
-    assert preprocessing._dependency_kind("api.h") == "project"
-    assert preprocessing._exposure_for(
-        "private/api.h", "project", PreprocessingConfig(private_includes=["private"])
-    ) == ("private")
-    assert preprocessing._exposure_for("public/api.h", "project", PreprocessingConfig(public_includes=["public"])) == (
-        "public"
-    )
-    assert preprocessing._exposure_for("api.h", "system", PreprocessingConfig()) == "private"
-    assert preprocessing._exposure_for("api.h", "project", PreprocessingConfig(include_exposure="roots-only")) == (
-        "private"
-    )
-    assert preprocessing._exposure_for("api.h", "root", PreprocessingConfig(include_exposure="roots-only")) == "public"
     no_filename_mappings = preprocessing.parse_linemarker_mappings("#line 42\nint next;\n", filename=str(root))
     assert no_filename_mappings[0].original_path == str(root)
     assert no_filename_mappings[0].original_line == 42
-    assert preprocessing._included_files_from_linemarkers(
-        "#line 5\nint next;\n",
-        root_path=root,
-        language="c",
-        config=PreprocessingConfig(),
-    ) == [files[0]]
     assert macros[0].name == "BUILTIN"
     assert macros[0].builtin is True
     assert by_path[str(root)].dependency_kind == "root"
@@ -200,15 +136,6 @@ def test_linemarker_dependency_exposure_and_macro_edges(tmp_path: Path):
             "builtin": True,
         }
     ]
-
-
-def test_linemarker_parser_accepts_bare_filename():
-    assert preprocessing._parse_linemarker("# 14 api.h") == (14, "api.h", [])
-
-
-def test_dependency_kind_requires_both_system_filename_brackets():
-    assert preprocessing._dependency_kind("<api.h") == "project"
-    assert preprocessing._dependency_kind("api.h>") == "project"
 
 
 def test_linemarker_mapping_and_macro_helpers_cover_default_and_return_edges():

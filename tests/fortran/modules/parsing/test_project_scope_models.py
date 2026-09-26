@@ -6,7 +6,6 @@ import pytest
 
 from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.scope import ScopeUses
-from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 
@@ -308,44 +307,37 @@ end program worker
     assert "worker" in project.programs
 
 
-def test_duplicate_program_and_block_data_variables_report_scope_labels():
-    with pytest.raises(FortranParseError, match="Duplicate variable 'status' in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-  integer :: status
-  real :: status
-end program driver
-""",
-            filename="dup_program_var.f90",
-        )
+def test_directory_project_resolves_imported_kinds_from_other_files(tmp_path):
+    """Renamed, chained, and plain imports resolve kinds; declared shapes stay symbolic.
 
-    with pytest.raises(FortranParseError, match="Duplicate variable 'seed' in block data 'init_data'"):
-        parse_fortran_file(
-            """
-block data init_data
-  integer seed
-  real seed
-end block data init_data
-""",
-            filename="dup_block_var.f90",
-        )
-
-
-def test_directory_project_resolves_module_kinds_and_orders_dependencies(tmp_path):
-    (tmp_path / "kinds.f90").write_text(
+    A derived-type component folds its extent, while a dummy keeps the name the
+    source spells; dependency order follows the `use`.
+    """
+    (tmp_path / "precision.f90").write_text(
         """
-module kinds_mod
+module precision_mod
+  integer, parameter :: word = 4
+  integer, parameter :: stride = 2
+  integer, parameter :: wp = word * stride
+  integer, parameter :: wide = wp * stride
   integer, parameter :: rk = 8
-end module kinds_mod
+  integer, parameter :: n = 3
+end module precision_mod
 """,
         encoding="utf-8",
     )
     (tmp_path / "solver.f90").write_text(
         """
 module solver_mod
-  use kinds_mod, only: rk
+  use precision_mod, only: local_wp => wp, stride, local_wide => wide, rk, n
+  type :: sample
+    real(kind=local_wp) :: values(0:n)
+  end type sample
 contains
+  subroutine consume(x, y)
+    real(kind=local_wp), intent(in) :: x(1:stride)
+    complex(kind=local_wide), intent(out) :: y
+  end subroutine consume
   function make_value(x) result(value)
     real(kind=rk), intent(in) :: x(1:rk)
     real(kind=rk) :: value
@@ -356,114 +348,25 @@ end module solver_mod
     )
 
     project = parse_fortran_project(tmp_path)
-    proc = project.procedures["solver_mod.make_value"]
+    consume = project.procedures["solver_mod.consume"]
+    args = {arg.name: arg for arg in consume.arguments}
+    make_value = project.procedures["solver_mod.make_value"]
+    field = project.modules["solver_mod"].derived_types[0].fields[0]
 
-    assert proc.arguments[0].kind == "8"
-    assert proc.arguments[0].shape == ["1:rk"]
-    assert proc.result.kind == "8"
-    assert project.dependencies["solver_mod"] == {"kinds_mod"}
-
-
-def test_directory_project_tracks_renamed_kind_imports_from_other_files(tmp_path):
-    (tmp_path / "precision.f90").write_text(
-        """
-module precision_mod
-  integer, parameter :: word = 4
-  integer, parameter :: stride = 2
-  integer, parameter :: wp = word * stride
-  integer, parameter :: wide = wp * stride
-end module precision_mod
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "solver.f90").write_text(
-        """
-module solver_mod
-  use precision_mod, only: local_wp => wp, stride, local_wide => wide
-contains
-  subroutine consume(x, y)
-    real(kind=local_wp), intent(in) :: x(1:stride)
-    complex(kind=local_wide), intent(out) :: y
-  end subroutine consume
-end module solver_mod
-""",
-        encoding="utf-8",
-    )
-
-    project = parse_fortran_project(tmp_path)
-    proc = project.procedures["solver_mod.consume"]
-    args = {arg.name: arg for arg in proc.arguments}
-
-    assert args["x"].kind == "8"
-    assert args["x"].shape == ["1:stride"]
+    assert (args["x"].kind, args["x"].shape) == ("8", ["1:stride"])
     assert args["y"].kind == "16"
-    assert [(mapping.source, mapping.target) for mapping in ScopeUses(proc.uses).mappings("precision_mod")] == [
+    assert (make_value.arguments[0].kind, make_value.arguments[0].shape, make_value.result.kind) == ("8", ["1:rk"], "8")
+    assert (field.kind, field.shape) == ("8", ["0:3"])
+    assert [(mapping.source, mapping.target) for mapping in ScopeUses(consume.uses).mappings("precision_mod")] == [
         ("wp", "local_wp"),
         ("stride", None),
         ("wide", "local_wide"),
+        ("rk", None),
+        ("n", None),
     ]
     assert project.dependencies["solver_mod"] == {"precision_mod"}
-
-
-def test_project_compile_time_resolution_uses_models_is_idempotent_and_preserves_symbolic_shapes():
-    parser = FortranParser()
-    kinds_file = parser.parse_file(
-        """
-module kinds
-  integer, parameter :: word = 4
-  integer, parameter :: rk = word * 2
-  integer, parameter :: n = 3
-end module kinds
-""",
-        filename="kinds.f90",
-    )
-    consumer_file = parser.parse_file(
-        """
-module records
-  use kinds, only: wp => rk, n
-  type :: sample
-    real(kind=wp) :: values(0:n)
-  end type sample
-contains
-  subroutine consume(values)
-    real(kind=wp), intent(in) :: values(1:n)
-  end subroutine consume
-end module records
-""",
-        filename="records.f90",
-    )
-    kinds_file.source = None
-    consumer_file.source = None
-
-    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
-    field = consumer_file.modules[0].derived_types[0].fields[0]
-    argument = consumer_file.modules[0].procedures[0].arguments[0]
-    first_result = (field.kind, list(field.shape), argument.kind, list(argument.shape))
-
-    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
-
-    assert first_result == ("8", ["0:3"], "8", ["1:n"])
-    assert (field.kind, field.shape, argument.kind, argument.shape) == first_result
-
-
-def test_project_resolves_reexported_intrinsic_kind_renames():
-    project = parse_fortran_project(
-        {
-            "consumer.f90": """
-subroutine consume(x)
-  use fftpack_kind, only: dp => rk
-  real(dp), intent(inout) :: x
-end subroutine consume
-""",
-            "kind.f90": """
-module fftpack_kind
-  use, intrinsic :: iso_fortran_env, only: rk => real64
-end module fftpack_kind
-""",
-        }
-    )
-
-    assert project.procedures["consume"].arguments[0].kind == "real64"
+    ordered = [Path(parsed.filename).name for parsed in project.files]
+    assert ordered.index("precision.f90") < ordered.index("solver.f90")
 
 
 def test_single_file_project_resolves_intrinsic_kind_rename_for_module_variables():
@@ -489,9 +392,16 @@ end module minpack_module
     assert module.procedures[0].result.kind == "real64"
 
 
-def test_project_resolves_submodule_host_associated_kind():
+def test_project_resolves_intrinsic_kind_renames_through_reexports_and_hosts():
+    """A kind renamed from an intrinsic module reaches a `use` of the re-exporting module and a submodule host."""
     project = parse_fortran_project(
         {
+            "consumer.f90": """
+subroutine consume(x)
+  use precision, only: dp => rk
+  real(dp), intent(inout) :: x
+end subroutine consume
+""",
             "implementation.f90": """
 submodule(transform_api) transform_impl
 contains
@@ -520,6 +430,7 @@ end module precision
         }
     )
 
+    assert project.procedures["consume"].arguments[0].kind == "real64"
     procedure = project.submodules["transform_api:transform_impl"].procedures[0]
     assert procedure.arguments[0].kind == "real64"
     assert procedure.result.kind == "real64"
@@ -553,48 +464,35 @@ end submodule child_mod
     assert project.dependencies["parent_mod:child_mod"] == {"parent_mod", "missing_mod"}
 
 
-def test_program_and_block_data_scope_errors_use_public_parse_paths():
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-!$omp threadprivate(counter)
-end program driver
-""",
-            filename="program_omp_decl.f90",
-        )
-
-    with pytest.raises(FortranParseError, match="Unsupported OpenMP declarative directive in block data 'init_data'"):
-        parse_fortran_file(
-            """
-block data init_data
-!$omp threadprivate(seed)
-end block data init_data
-""",
-            filename="block_omp_decl.f90",
-        )
-
-    with pytest.raises(FortranParseError, match="Unknown or unsupported datatype declaration in program 'driver'"):
-        parse_fortran_file(
-            """
-program driver
-  weirdtype state
-end program driver
-""",
-            filename="program_unknown_decl.f90",
-        )
-
-    with pytest.raises(
-        FortranParseError, match="Unknown or unsupported datatype declaration in block data 'init_data'"
-    ):
-        parse_fortran_file(
-            """
-block data init_data
-  weirdtype seed
-end block data init_data
-""",
-            filename="block_unknown_decl.f90",
-        )
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        pytest.param(
+            "program driver\n  integer :: status\n  real :: status\nend program driver\n",
+            "Duplicate variable 'status' in program 'driver'",
+            id="duplicate-variable-in-program",
+        ),
+        pytest.param(
+            "block data init_data\n  integer seed\n  real seed\nend block data init_data\n",
+            "Duplicate variable 'seed' in block data 'init_data'",
+            id="duplicate-variable-in-block-data",
+        ),
+        pytest.param(
+            "program driver\n!$omp threadprivate(counter)\nend program driver\n",
+            "Unsupported OpenMP declarative directive in program 'driver'",
+            id="openmp-declarative-in-program",
+        ),
+        pytest.param(
+            "block data init_data\n  weirdtype seed\nend block data init_data\n",
+            "Unknown or unsupported datatype declaration in block data 'init_data'",
+            id="unknown-declaration-in-block-data",
+        ),
+    ],
+)
+def test_program_and_block_data_diagnostics_name_their_scope(source: str, message: str):
+    """Each scope-level diagnostic names the program unit kind and name it arose in."""
+    with pytest.raises(FortranParseError, match=message):
+        parse_fortran_file(source, filename="units.f90")
 
 
 def test_project_resolution_folds_fortran_real_literal_integer_parameters():

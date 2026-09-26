@@ -3,7 +3,6 @@
 import pytest
 
 from prik.parsers.fortran import FortranParseError, FortranParser, parse_fortran_file, parse_fortran_project
-from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 
 
 def test_parser_public_entrypoint_aliases_and_singular_contracts_use_inline_sources():
@@ -44,6 +43,9 @@ end interface callback
     with pytest.raises(FortranParseError, match="none were found"):
         parser.parse_module("program not_a_module\nend program not_a_module\n")
 
+    with pytest.raises(FortranParseError, match="only standalone procedures were found"):
+        parser.parse_module("subroutine lone_proc()\nend subroutine lone_proc\n")
+
     with pytest.raises(FortranParseError, match="found 2"):
         parser.parse_module(
             """
@@ -53,18 +55,6 @@ module second_mod
 end module second_mod
 """
         )
-
-
-def test_fortran_parser_package_exports_the_supported_parser_api():
-    parsed_fortran = FortranParser().parse_file(
-        """
-subroutine work(n)
-  integer, intent(in) :: n
-end subroutine work
-"""
-    )
-
-    assert fortran_file_to_semantic_modules(parsed_fortran)[0].functions[0].name == "work"
 
 
 def test_file_path_and_unknown_filename_public_parse_paths(tmp_path):
@@ -95,41 +85,6 @@ end subroutine from_unknown
     assert parsed_from_path.format == "free"
     assert parsed_from_path.procedures[0].name == "from_path"
     assert parsed_unknown_suffix.format == "free"
-
-
-def test_public_instance_visitor_entrypoints_use_source_strings():
-    parser = FortranParser()
-
-    assert (
-        parser.parse_file(
-            """
-subroutine alias_proc()
-end subroutine alias_proc
-"""
-        )
-        .procedures[0]
-        .name
-        == "alias_proc"
-    )
-    assert (
-        "alias_mod"
-        in parser.parse_project(
-            {
-                "alias_mod.f90": """
-module alias_mod
-end module alias_mod
-"""
-            }
-        ).modules
-    )
-
-    with pytest.raises(FortranParseError, match="only standalone procedures were found"):
-        parser.parse_module(
-            """
-subroutine lone_proc()
-end subroutine lone_proc
-"""
-        )
 
 
 @pytest.mark.parametrize(

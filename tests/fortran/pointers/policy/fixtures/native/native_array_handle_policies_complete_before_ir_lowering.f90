@@ -1,5 +1,6 @@
 values: Allocatable[Float64[:]]
 target_values: Annotated[Allocatable[Float64[:]], Aliased]
+module_target: Pointer[Float64[:]]
 
 class box:
     values: Allocatable[Float64[:]]

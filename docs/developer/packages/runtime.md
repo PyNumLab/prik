@@ -91,10 +91,10 @@ resizes it. The compiler installs the native header into a generated
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Allocatable runtime tests](../../../tests/fortran/allocatables/runtime/) | Allocation state, operations, descriptor handoffs, and NumPy views. |
+| [Allocatable handle tests](../../../tests/fortran/allocatables/end_to_end/test_allocatable_handles.py) | Allocation state, operations, descriptor handoffs, and NumPy views. |
 | [Pointer runtime tests](../../../tests/fortran/pointers/runtime/) | Association, nullification, pointer descriptors, and views. |
 | [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) | Owner retention, release, and array handoffs. |
-| [Native-support tests](../../../tests/fortran/infrastructure/runtime/) | Bundled payload discovery and installation inputs. |
+| [Native-support tests](../../../tests/fortran/infrastructure/runtime/) | Native-array backend record layout, release lifetime, and owner-identity checks in the bundled payload. |
 | [Compiled runtime compatibility](../../../tests/fortran/infrastructure/building/end_to_end/test_runtime_compatibility.py) | The payload and Python runtime working through a real extension. |
 
 An outstanding zero-copy NumPy view cannot be revoked after native

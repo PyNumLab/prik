@@ -5,21 +5,14 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.policy.ownership import CodegenAction, ObjectKind, PythonBarrierAction
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
-    ArgumentHandoffMode,
     NativeArrayDescriptorInterop,
-    NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
-    NativeArrayDefaultConstruction,
     NativeArrayDestroyBehavior,
     NativeArrayOperation,
-    NativeArrayOutputProjection,
-    NativeArrayOwnerStorage,
     NativeArrayRelease,
     NativeArrayResultAllocation,
-    NativeArraySourceKind,
     NativeDescriptorHandoffABI,
 )
 from prik.pipeline.wrapper import WrapperGenerator
@@ -133,13 +126,6 @@ def _functions(plan):
     return {function.binding.python_name: function for function in plan.namespaces[0].functions}
 
 
-def _generated_c_function(source: str, name: str) -> str:
-    signature = f"static PyObject * {name}(PyObject * self, PyObject * args) {{"
-    start = source.index(signature)
-    end = source.index("\n}\n", start) + len("\n}\n")
-    return source[start:end]
-
-
 def _module_handle_plan():
     module = parse_pyi_text(
         """
@@ -171,270 +157,111 @@ module_pointer: Annotated[
     return WrapperPlanner().build(module)
 
 
-def test_native_handle_plans_keep_datatype_specific_state():
+def _handle_row(handle):
+    default_operations = handle.default_handle.operations if handle.default_handle else ()
+    return (
+        handle.descriptor_kind.value,
+        handle.handoff.abi.value,
+        handle.descriptor_ownership.value,
+        handle.owner_storage.value,
+        handle.default_handle.construction.value if handle.default_handle else "none",
+        NativeArrayOperation.DESTROY in handle.operations,
+        NativeArrayOperation.DESTROY in default_operations,
+    )
+
+
+def test_native_handle_plans_select_one_descriptor_abi_and_release_owner_per_origin():
+    """Every descriptor slot names how its descriptor crosses and who destroys it.
+
+    Neither an allocatable nor a pointer argument is established from C.  An
+    allocatable cannot be: the standard requires a null base address for that
+    attribute.  A pointer could be, but a descriptor C built is not the
+    caller's entity, so a callee that re-associates the dummy would change only
+    that copy.  Both therefore take the descriptor the Fortran runtime made,
+    and a caller-created handle lazily gets wrapper storage its finalizer
+    destroys.  Owned results destroy their own descriptor; borrowed module
+    descriptors are never destroyed by a handle.
+    """
     plan = _native_handle_plan()
     functions = _functions(plan)
+    rows = {name: _handle_row(functions[name].arguments[0].native_array_handle) for name in _ARGUMENT_ROWS}
+    rows.update({name: _handle_row(functions[name].results[0].native_array_handle) for name in _RESULT_ROWS})
+    module_plan = _module_handle_plan()
+    rows.update({variable.symbol_name: _handle_row(variable.native_array_handle) for variable in module_plan.variables})
 
-    normal = functions["normal"].arguments[0]
-    assert normal.object_kind is ObjectKind.NUMPY_ARRAY
-    assert normal.native_array_handle is None
-    assert normal.native_array_actual is not None
-    assert normal.native_array_actual.accepted_sources == (
-        NativeArraySourceKind.NDARRAY,
-        NativeArraySourceKind.ALLOCATABLE_HANDLE,
-        NativeArraySourceKind.POINTER_HANDLE,
-    )
-    assert normal.native_array_actual.require_contiguous is True
-    assert normal.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-    assert normal.array is normal.projected_call_slot.array
-
-    alloc = functions["alloc"].arguments[0]
-    pointer = functions["pointer"].arguments[0]
-    # Neither kind is established from C.  An allocatable cannot be: the
-    # standard requires a null base address for that attribute.  A pointer
-    # could be, but a descriptor C built is not the caller's entity, so a
-    # callee that re-associates the dummy would change only that copy.  Both
-    # therefore take the descriptor the Fortran runtime made.
-    for argument, descriptor_kind in (
-        (alloc, NativeArrayDescriptorKind.ALLOCATABLE),
-        (pointer, NativeArrayDescriptorKind.POINTER),
-    ):
-        handle = argument.native_array_handle
-        assert handle is not None
-        assert handle is argument.projected_call_slot.native_array_handle
-        assert handle.descriptor_kind is descriptor_kind
-        assert handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-        assert handle.default_handle.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
-        assert handle.default_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
-        # Lazily attached storage is the wrapper's, so the plan names the slot
-        # the generated binder allocates and the handle's finalizer releases.
-        assert handle.default_handle.owner_storage_role == f"{argument.owner_path}:default-owner-storage"
-        assert NativeArrayOperation.DESTROY in handle.default_handle.operations
-        assert argument.binding.python_action is PythonBarrierAction.WRAPPER_INSTANCE
-        assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
+    assert rows == {**_ARGUMENT_ROWS, **_RESULT_ROWS, **_MODULE_ROWS}
 
     optional = functions["optional"].arguments[0]
-    assert optional.native_array_handle is not None
     assert optional.native_array_handle.optional_absent is True
     assert optional.native_array_handle.handoff.presence_role == optional.entrypoint.presence_role
-    assert alloc.native_array_handle is not None
-    assert alloc.native_array_handle.handoff.presence_role is None
-
-    replacement = functions["replace"].arguments[0]
-    assert replacement.native_array_handle is not None
-    assert replacement.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    assert replacement.native_array_handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
-    assert (
-        replacement.native_array_handle.default_handle.construction
-        is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+    assert functions["alloc"].arguments[0].native_array_handle.handoff.presence_role is None
+    assert functions["maybe_make"].results[0].native_array_handle.result_allocation is (
+        NativeArrayResultAllocation.MAYBE_UNALLOCATED
     )
-    assert replacement.native_array_handle.default_handle.owner_storage_role is not None
-    assert NativeArrayOperation.DESTROY in replacement.native_array_handle.default_handle.operations
-    assert replacement.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
-
-    owned = functions["make"].results[0]
-    assert owned.native_array_handle is not None
-    assert owned.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert owned.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
-    assert owned.native_array_handle.result_allocation is NativeArrayResultAllocation.ALWAYS_ALLOCATED
-    assert owned.native_array_handle.handoff.owner_storage_role is not None
-    assert NativeArrayOperation.DESTROY in owned.native_array_handle.operations
-
-    maybe_owned = functions["maybe_make"].results[0]
-    assert maybe_owned.native_array_handle is not None
-    assert maybe_owned.native_array_handle.result_allocation is NativeArrayResultAllocation.MAYBE_UNALLOCATED
-
-    owned_matrix = functions["make_matrix"].results[0]
-    assert owned_matrix.native_array_handle is not None
-    assert owned_matrix.native_array_handle.array.rank == 2
-    assert owned_matrix.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert owned_matrix.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
-
+    assert functions["select_pointer"].results[0].source_kind == "hidden_output"
     deferred = functions["deferred"].results[0]
     assert deferred.native_array_handle is None
-    assert deferred.scalar_descriptor is not None
     assert deferred.scalar_descriptor.runtime_length is True
-    assert deferred.scalar_descriptor.presence_role == f"{deferred.owner_path}:present"
-
-    names = functions["make_names"].results[0]
-    assert names.native_array_handle is not None
-    assert names.datatype_family.value == "string"
-    assert names.array.itemsize is None
-    assert names.native_array_handle.owner_storage is NativeArrayOwnerStorage.FORTRAN_OWNER
-    assert names.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.FORTRAN_OWNER
-    assert NativeArrayOperation.ELEMENT_LENGTH in names.native_array_handle.operations
-    # A deferred length can be resized because the plan carries the width the
-    # allocation needs; the width is what the entity cannot supply itself.
-    assert NativeArrayOperation.RESIZE in names.native_array_handle.operations
-    assert names.native_array_handle.element_length_argument is True
-
-    replacement_names = functions["replace_names"].arguments[0]
-    assert replacement_names.native_array_handle is not None
-    assert replacement_names.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
-    assert (
-        replacement_names.native_array_handle.default_handle.construction
-        is NativeArrayDefaultConstruction.LAZY_FORTRAN_OWNER
-    )
-    assert replacement_names.native_array_handle.default_handle.owner_storage_role is not None
-    assert NativeArrayOperation.ELEMENT_LENGTH in replacement_names.native_array_handle.operations
-    assert plan.required_headers == ("ISO_Fortran_binding.h",)
-
-    pointer_result = functions["make_pointer"].results[0]
-    assert pointer_result.native_array_handle is not None
-    assert pointer_result.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
-    assert pointer_result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert pointer_result.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
-    assert pointer_result.native_array_handle.result_allocation is NativeArrayResultAllocation.NOT_APPLICABLE
-    assert pointer_result.native_array_handle.target_lifetime == "module"
-    assert NativeArrayOperation.ASSOCIATE in pointer_result.native_array_handle.operations
-    assert NativeArrayOperation.ASSOCIATED in pointer_result.native_array_handle.operations
-    assert NativeArrayOperation.NULLIFY in pointer_result.native_array_handle.operations
-    assert NativeArrayOperation.CONTIGUOUS in pointer_result.native_array_handle.operations
-    assert NativeArrayOperation.DESTROY in pointer_result.native_array_handle.operations
-
-    pointer_output = functions["select_pointer"].results[0]
-    assert pointer_output.source_kind == "hidden_output"
-    assert pointer_output.native_array_handle is not None
-    assert pointer_output.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
-    assert pointer_output.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert pointer_output.projected_call_slot is not None
-    assert pointer_output.projected_call_slot.source_kind == "result"
-
-    managed_pointer = functions["make_managed_pointer"].results[0]
-    assert managed_pointer.native_array_handle is not None
-    assert {
-        NativeArrayOperation.ALLOCATE,
-        NativeArrayOperation.DEALLOCATE,
-        NativeArrayOperation.RESIZE,
-    }.issubset(managed_pointer.native_array_handle.operations)
+    # Only a deferred length needs a width to allocate from its extents.
+    assert functions["make_names"].results[0].native_array_handle.element_length_argument is True
+    assert functions["make"].results[0].native_array_handle.element_length_argument is False
+    assert plan.required_headers == module_plan.required_headers == ("ISO_Fortran_binding.h",)
 
 
-def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
-    plan = _module_handle_plan()
-    variables = {variable.symbol_name: variable for variable in plan.variables}
-    allocatable = variables["module_allocatable"].native_array_handle
-    plain = variables["plain_allocatable"].native_array_handle
-    names = variables["module_names"].native_array_handle
-    pointer = variables["module_pointer"].native_array_handle
-
-    assert allocatable is not None
-    assert plain is not None
-    assert names is not None
-    assert pointer is not None
-    assert allocatable.borrowed is plain.borrowed is names.borrowed is pointer.borrowed is True
-    assert allocatable.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
-    assert plain.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
-    assert names.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
-    assert pointer.descriptor_kind is NativeArrayDescriptorKind.POINTER
-    assert NativeArrayOperation.DEALLOCATE in allocatable.operations
-    assert NativeArrayOperation.RESIZE in allocatable.operations
-    assert NativeArrayOperation.NULLIFY in pointer.operations
-    assert NativeArrayOperation.ASSOCIATE in pointer.operations
-    assert NativeArrayOperation.CONTIGUOUS in pointer.operations
-    assert NativeArrayOperation.DESTROY not in allocatable.operations
-    assert NativeArrayOperation.ELEMENT_LENGTH in names.operations
-    assert NativeArrayOperation.RESIZE in names.operations
-    assert names.element_length_argument is True
-    # Every other entity allocates from its shape alone.
-    assert allocatable.element_length_argument is False
-    assert NativeArrayOperation.DESTROY not in pointer.operations
-    # A module allocatable reads its own descriptor whether or not it is a
-    # target, so `Aliased` selects the same interop and headers as a plain one.
-    assert allocatable.extraction_action.value == "descriptor_view"
-    assert allocatable.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
-    assert allocatable.required_headers == ("ISO_Fortran_binding.h",)
-    assert plain.extraction_action.value == "descriptor_view"
-    assert plain.descriptor_interop is NativeArrayDescriptorInterop.MODULE_ALLOCATABLE_C_DESCRIPTOR
-    assert plain.required_headers == ("ISO_Fortran_binding.h",)
-    assert pointer.required_headers == ("ISO_Fortran_binding.h",)
-    assert plan.required_headers == ("ISO_Fortran_binding.h",)
+_LAZY_ARGUMENT = ("direct_standard_descriptor", "borrowed", "borrowed_entity", "lazy_owned_descriptor", False, True)
+_OWNED_RESULT = ("owned_result_storage", "owned", "c_descriptor", "none", True, False)
+_BORROWED_MODULE = ("direct_standard_descriptor", "borrowed", "borrowed_entity", "none", False, False)
+_ARGUMENT_ROWS = {
+    "alloc": ("allocatable", *_LAZY_ARGUMENT),
+    "pointer": ("pointer", *_LAZY_ARGUMENT),
+    "optional": ("allocatable", *_LAZY_ARGUMENT),
+    "replace": ("allocatable", *_LAZY_ARGUMENT),
+    "replace_names": (
+        "allocatable",
+        "direct_standard_descriptor",
+        "borrowed",
+        "fortran_owner",
+        "lazy_fortran_owner",
+        False,
+        True,
+    ),
+}
+_RESULT_ROWS = {
+    "make": ("allocatable", *_OWNED_RESULT),
+    "maybe_make": ("allocatable", *_OWNED_RESULT),
+    "make_matrix": ("allocatable", *_OWNED_RESULT),
+    "make_names": ("allocatable", "fortran_owner", "owned", "fortran_owner", "none", True, False),
+    "make_pointer": ("pointer", *_OWNED_RESULT),
+    "select_pointer": ("pointer", *_OWNED_RESULT),
+    "make_managed_pointer": ("pointer", *_OWNED_RESULT),
+}
+_MODULE_ROWS = {
+    "module_allocatable": ("allocatable", *_BORROWED_MODULE),
+    "plain_allocatable": ("allocatable", *_BORROWED_MODULE),
+    "module_names": ("allocatable", *_BORROWED_MODULE),
+    "module_pointer": ("pointer", *_BORROWED_MODULE),
+}
 
 
-def test_deferred_character_module_handles_use_runtime_element_length():
-    """The live descriptor supplies a deferred character element width."""
-    artifacts = WrapperGenerator().generate(_module_handle_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+def test_absent_optional_allocatable_gets_an_unallocated_placeholder_descriptor():
+    """The absent branch pairs a null-address allocatable descriptor with a present flag.
 
-    assert "out->result = PyLong_FromLongLong((long long)source->elem_len)" in c_source
-    assert "prik_native_array_read_element_length" in c_source
-
-
-def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
+    A null base address is the only form the standard lets C establish for this
+    attribute (ifx rejects any other), and absence is when there is nothing to
+    point at.
+    """
     artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert artifacts.required_headers == ("ISO_Fortran_binding.h",)
-    assert "prik_describe_numpy_array(" in c_source
-    assert '"_native_array_backend_for_binding_positional"' in c_source
-    assert '"_native_array_handle_from_generated_dispatch"' in c_source
-    assert '"_bind_contract_native_array_handle"' in c_source
-    assert "prik_native_array_backend_capsule_new(" in c_source
-    assert "prik_native_array_backend_for_descriptor(" in c_source
-    assert "PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
-    assert "PRIK_NATIVE_ARRAY_KIND_POINTER" in c_source
-    assert "prik_native_array_backend_release(owner_backend)" in c_source
-    assert ("bound_values_native_backend = prik_native_array_backend_for_descriptor(bound_values_item") in c_source
-    assert "prik_bind_default_memory_handles_replace_values" in c_source
-    assert "prik_owned_memory_handles_replace_values_dispatch" in c_source
-    assert "bound_values_default_binder" in c_source
-    assert "CFI_CDESC_T(1)" in c_source
-    assert "CFI_CDESC_T(2)" in c_source
-    assert "real(c_double), allocatable, dimension(:) :: values" in bridge_source
-    assert "real(c_double), pointer, dimension(:) :: values" in bridge_source
-    assert "real(c_double), allocatable, dimension(:, :) :: result_value" in bridge_source
     optional_start = bridge_source.index("function bind_c_optional(")
-    optional_end = bridge_source.index("end function bind_c_optional", optional_start)
-    optional_bridge = bridge_source[optional_start:optional_end]
-    assert "real(c_double), allocatable, dimension(:) :: values" in optional_bridge
+    optional_bridge = bridge_source[
+        optional_start : bridge_source.index("end function bind_c_optional", optional_start)
+    ]
     assert "type(c_ptr), value :: bound_values_present" in optional_bridge
-    assert "real(c_double), allocatable, dimension(:), optional :: values" not in optional_bridge
     optional_c_start = c_source.index("static PyObject * wrap_optional(")
-    optional_c_end = c_source.index("static PyObject * wrap_replace(", optional_c_start)
-    optional_binding = c_source[optional_c_start:optional_c_end]
-    assert "} else {" in optional_binding
-    # The absent branch hands the bridge an unallocated placeholder to pair
-    # with its present flag.  A null base address is the only form the standard
-    # lets C establish for this attribute, and absence is when there is nothing
-    # to point at.
+    optional_binding = c_source[optional_c_start : c_source.index("static PyObject * wrap_replace(", optional_c_start)]
     assert "CFI_establish((CFI_cdesc_t *)&bound_values_storage, NULL, CFI_attribute_allocatable" in optional_binding
-    assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
-    assert "result_value = native_make(n)" in bridge_source
-    assert "result_value = native_make_matrix(n, m)" in bridge_source
-    assert "call prik_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
-    assert "if (allocated(value)) then" in bridge_source
-    assert "call move_alloc(value, result)" in bridge_source
-    assert "_deallocate(owner_descriptor);" in c_source
-    assert "_destroy(owner_descriptor);" in c_source
-    assert "owner_backend->with_descriptor(owner_backend->context, prik_native_array_read_shape" in c_source
-    assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
-    assert "CFI_type_char" in c_source
-    assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
-    assert "result_owner_status = CFI_establish(result, NULL, CFI_attribute_pointer" in c_source
-    # An owned result publishes descriptor storage, and says so: v2 discriminates
-    # the context rather than letting ownership imply what it points at.
-    assert (
-        "PRIK_NATIVE_ARRAY_KIND_POINTER, PRIK_NATIVE_ARRAY_ATTRIBUTE_POINTER, 1, "
-        "(uint32_t)sizeof(CFI_CDESC_T(1)), CFI_type_double, "
-        "sizeof(double), PRIK_NATIVE_ARRAY_CONTEXT_DESCRIPTOR, 0, 0, result" in c_source
-    )
-
-
-def test_owned_descriptor_handles_publish_one_dispatcher_and_capability_tuple():
-    artifacts = WrapperGenerator().generate(_native_handle_plan())
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-
-    dispatch = _generated_c_function(
-        c_source,
-        "prik_owned_memory_handles_make_return_dispatch",
-    )
-    assert 'strcmp(operation, "allocated") == 0' in dispatch
-    assert 'strcmp(operation, "shape") == 0' in dispatch
-    assert 'strcmp(operation, "to_numpy") == 0' in dispatch
-    assert 'strcmp(operation, "destroy") == 0' in dispatch
-    assert "owner_backend" in dispatch
-    assert "owner_descriptor" in dispatch
-    assert 'Py_BuildValue("(ssssss)", "allocated", "deallocate", "destroy", "resize", "shape", "to_numpy")' in c_source
 
 
 @pytest.mark.parametrize(

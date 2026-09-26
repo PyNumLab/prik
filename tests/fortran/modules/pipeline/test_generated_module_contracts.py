@@ -16,17 +16,9 @@ from tests.fortran._support.generated_contracts import (
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CONTRACT_ROOT = FIXTURES / "contracts"
+# Contracts that an end-to-end test also replays are compared there, in its
+# generated-`.pyi` lane; only the ones no build replays are compared here.
 CASES = (
-    GeneratedContractCase(
-        "fcommon_block_f90",
-        (FIXTURES / "native" / "fcommon_block_f90.f90",),
-        CONTRACT_ROOT / "fcommon_block_f90",
-    ),
-    GeneratedContractCase(
-        "fmodule_vars_f90",
-        (FIXTURES / "native" / "fmodule_vars_f90.f90",),
-        CONTRACT_ROOT / "fmodule_vars_f90",
-    ),
     GeneratedContractCase(
         "module_exports",
         (FIXTURES / "native" / "module_exports.f90",),

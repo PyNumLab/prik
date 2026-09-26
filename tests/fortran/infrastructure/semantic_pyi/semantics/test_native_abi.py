@@ -91,29 +91,6 @@ def test_native_abi_rejects_contradictory_or_misplaced_annotations(
         parse_pyi_text(source, module_name="invalid_native_abi", native_language=native_language)
 
 
-def test_native_abi_round_trip_keeps_marker_symbol_and_projection():
-    original = parse_pyi_text(
-        """
-@native_abi("c")
-@bind("renamed_entry")
-@native_call([Addr(Arg(0)), Arg(0).shape[0], Return("result", 0)])
-def transform(values: Float64[:]) -> Float64: ...
-""",
-        module_name="round_trip_native_abi",
-    )
-
-    rendered = emit_module(original)
-    loaded = parse_pyi_text(rendered, module_name=original.name)
-    function = loaded.functions[0]
-
-    assert '@native_abi("c")' in rendered
-    assert '@bind("renamed_entry")' in rendered
-    assert function.origin.native_abi == "c"
-    assert function.origin.native_symbol == "renamed_entry"
-    assert function.origin.source_language == "fortran"
-    assert function.projection == original.functions[0].projection
-
-
 def test_source_free_native_abi_selects_the_preserved_symbol_and_direct_route():
     module = parse_pyi_text(
         """

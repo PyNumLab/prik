@@ -124,7 +124,7 @@ extern long int rinttol(double)
 
 
 def test_modern_prototype_before_old_style_definition_does_not_stop_knr_detection():
-    from prik.parsers.c import CParseError, CParser, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     source = """
 int modern(int value)
@@ -148,53 +148,12 @@ int a;
     assert error.column == 5
     assert error.source_line == "int legacy(a)"
 
-    with pytest.raises(CParseError):
-        CParser()._raise_for_unsupported_old_style_definitions(
-            source,
-            "mixed_knr.c",
-            use_linemarkers=False,
-            normalize_compiler_extensions=False,
-        )
 
-
-def test_old_style_knr_scan_skips_directives_and_keeps_scanning():
-    from prik.parsers.c import CParseError, CParser
-
-    parser = CParser()
-    parser._raise_for_unsupported_old_style_definitions(
-        "#if defined(FEATURE)\nint value;\n",
-        "feature_guard.c",
-        use_linemarkers=False,
-        normalize_compiler_extensions=False,
-    )
-
-    with pytest.raises(CParseError):
-        parser._raise_for_unsupported_old_style_definitions(
-            "(not_a_declaration)\nint legacy(a)\nint a;\n",
-            "scan_through.c",
-            use_linemarkers=False,
-            normalize_compiler_extensions=False,
-        )
-
-
-def test_find_parameter_list_returns_outer_function_signature_bounds():
-    from prik.parsers.c import CParser
-
-    parser = CParser()
-    text = "int run(int (*callback)(char ch), const char *label)   "
-
-    assert parser._find_parameter_list(text) == (text.index("("), text.rstrip().rindex(")"))
-    assert parser._find_parameter_list("int value") is None
-
-
-def test_control_statement_parameter_lists_inside_function_bodies_are_not_knr_definitions():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """
-int run(int value)
-{
-    if (value)
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            """    if (value)
     {
         return value;
     }
@@ -211,11 +170,20 @@ branch: switch (value)
     default:
         return value;
     }
-    return 0;
-}
 """,
-        filename="body_control.c",
-    )
+            id="braced-control-statements-and-labels",
+        ),
+        pytest.param(
+            "    if (value)\n        value = 1;\n    else if (value)\n        value = 2;\n", id="else-if-chain"
+        ),
+        pytest.param("    value_type :: state;\n", id="non-c-tokens"),
+        pytest.param("    @@@\n", id="invalid-syntax"),
+    ],
+)
+def test_function_bodies_are_skipped_without_knr_or_syntax_checks(body):
+    from prik.parsers.c import parse_c_file
+
+    parsed = parse_c_file(f"\nint run(int value)\n{{\n{body}    return 0;\n}}\n", filename="body.c")
 
     assert [function.name for function in parsed.functions] == ["run"]
 
@@ -223,13 +191,17 @@ branch: switch (value)
 @pytest.mark.parametrize(
     "source",
     [
-        "def solve():\n    return 0\n",
-        "lambda x: x\n",
-        "int add(int a, int b);\ninteger :: state;\n",
-        "int add(int a, int b);\ntype(c_ptr) :: handle;\n",
+        pytest.param("def solve():\n    return 0\n", id="python-definition"),
+        pytest.param("int add(int a, int b);\ninteger :: state;\n", id="fortran-declaration-after-c"),
+        pytest.param("@@@\n", id="garbage-only"),
+        pytest.param("int run(void);\n@@@;\n", id="garbage-after-c"),
+        pytest.param("struct bad { @@@; };\n", id="struct-member"),
+        pytest.param("enum bad { OK, @@@ };\n", id="enum-constant"),
+        pytest.param("int run(@@@);\n", id="parameter-list"),
+        pytest.param("int run(int first, ..., int last);\n", id="ellipsis-before-last-parameter"),
     ],
 )
-def test_c_parser_rejects_non_c_top_level_syntax(source):
+def test_c_parser_rejects_invalid_top_level_and_nested_syntax(source):
     from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
@@ -251,115 +223,6 @@ def test_c_parser_invalid_syntax_error_maps_preprocessed_source_location():
     assert exc_info.value.code == "CPARSE_INVALID_SYNTAX"
     assert exc_info.value.filename == "generated.input"
     assert exc_info.value.line_number == 80
-
-
-def test_c_parser_skips_non_c_tokens_inside_function_body():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """
-int run(void)
-{
-    value_type :: state;
-    return 0;
-}
-""",
-        filename="mixed_body.c",
-    )
-
-    assert [function.name for function in parsed.functions] == ["run"]
-
-
-def test_c_parser_does_not_classify_valid_c_from_typedef_identifier_spelling():
-    from prik.parsers.c import CTypedef, parse_c_file
-
-    parsed = parse_c_file("subroutine solve(void);\n", filename="identifier_spelling.h")
-
-    assert [function.name for function in parsed.functions] == ["solve"]
-    assert isinstance(parsed.functions[0].result_type, CTypedef)
-    assert parsed.functions[0].result_type.name == "subroutine"
-
-
-@pytest.mark.parametrize("source", ["@@@\n", "int run(void);\n@@@;\n"])
-def test_c_parser_rejects_invalid_top_level_syntax(source):
-    from prik.parsers.c import CParseError, parse_c_file
-
-    with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
-        parse_c_file(source, filename="invalid.c")
-
-    assert exc_info.value.code == "CPARSE_INVALID_SYNTAX"
-
-
-def test_c_parser_ignores_invalid_syntax_inside_function_body():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """
-int run(void)
-{
-    @@@
-    return 0;
-}
-""",
-        filename="invalid_body.c",
-    )
-
-    assert [function.name for function in parsed.functions] == ["run"]
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "struct bad { @@@; };\n",
-        "enum bad { OK, @@@ };\n",
-        "int run(@@@);\n",
-        "int run(int first, ..., int last);\n",
-    ],
-)
-def test_c_parser_rejects_invalid_nested_grammar_units(source):
-    from prik.parsers.c import CParseError, parse_c_file
-
-    with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
-        parse_c_file(source, filename="invalid_nested.h")
-
-    assert exc_info.value.code == "CPARSE_INVALID_SYNTAX"
-
-
-def test_control_flow_conditions_inside_function_body_do_not_look_like_knr_definitions():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        """
-int evaluate(int value)
-{
-    if (value)
-        value = 1;
-    else if (value)
-        value = 2;
-    return value;
-}
-""",
-        filename="control_flow.c",
-    )
-
-    assert [function.name for function in parsed.functions] == ["evaluate"]
-
-
-def test_function_pointer_parameter_is_a_callback_candidate_with_nameless_signature():
-    from prik.parsers.c import CFunctionType, CInt, CPointer, parse_c_file
-
-    parsed = parse_c_file(
-        "void sort_items(void *items, int (*compare)(const void *, const void *));\n",
-        filename="callbacks.h",
-    )
-
-    compare = parsed.functions[0].parameters[1]
-    assert compare.callback_candidate is True
-    assert compare.callback_policy is None
-    assert [type(component) for component in compare.type.components] == [CPointer, CFunctionType]
-    signature = compare.type.components[1]
-    assert isinstance(signature.result_type, CInt)
-    assert len(signature.parameter_types) == 2
 
 
 def test_function_parameter_preserves_declaration_and_adjusts_to_callback_pointer():
@@ -480,23 +343,13 @@ def test_unsupported_function_declarator_is_reported_and_later_declarations_cont
     assert diagnostic.location.column == 1
 
 
-def test_conflicting_function_prototypes_report_diagnostic():
-    from prik.parsers.c import parse_c_file
-
-    parsed = parse_c_file(
-        "int work(int value);\ndouble work(double value);\n",
-        filename="conflicting_functions.h",
-    )
-
-    assert [function.name for function in parsed.functions] == ["work"]
-    assert any(diag.code == "C_CONFLICTING_FUNCTION_DECLARATION" for diag in parsed.diagnostics)
-
-
 def test_function_conflicts_consider_parameters_and_variadic_marker():
     from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
+int work(int value);
+double work(double value);
 int same_return(int value);
 int same_return(double value);
 int log_msg(const char *fmt);
@@ -510,7 +363,7 @@ int log_msg(const char *fmt, ...);
         for diagnostic in parsed.diagnostics
         if diagnostic.code == "C_CONFLICTING_FUNCTION_DECLARATION"
     ]
-    assert conflicts == ["same_return", "log_msg"]
+    assert conflicts == ["work", "same_return", "log_msg"]
 
 
 def test_duplicate_function_definitions_report_diagnostic():
