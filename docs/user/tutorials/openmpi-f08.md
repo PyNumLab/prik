@@ -628,15 +628,20 @@ runs the same program and prints the same lines.
 
 ## How fast it is
 
-Compared with mpi4py:
+Time per call, compared with mpi4py:
 
-| Call | Generated functions | `prik_mpi.py` |
-| --- | --- | --- |
-| `Allreduce`, 1 integer | 33% faster | 10% faster |
-| `Allreduce`, 1,024 integers | 20% faster | 9% faster |
-| `Allreduce`, large arrays | same speed | same speed |
-| `Barrier` | 40% slower | 49% slower |
-| `Get_rank` | about 9× slower | about 9× slower |
+| Call | mpi4py | Generated functions | `prik_mpi.py` |
+| --- | ---: | ---: | ---: |
+| `Allreduce`, 1 integer | 1.26 µs | 0.85 µs (33% faster) | 1.14 µs (10% faster) |
+| `Allreduce`, 1,024 integers | 2.62 µs | 2.10 µs (20% faster) | 2.40 µs (9% faster) |
+| `Allreduce`, 1,048,576 integers | 3.04 ms | 2.82 ms (about the same) | 2.81 ms (about the same) |
+| `Barrier` | 0.35 µs | 0.49 µs (41% slower) | 0.52 µs (49% slower) |
+| `Get_rank` | 34 ns | 289 ns (about 9× slower) | 307 ns (about 9× slower) |
+
+These were measured on a local machine, with two ranks on it: an AMD Ryzen 5
+5600H laptop (x86-64, 6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory)
+running Ubuntu 22.04, with Python 3.10, NumPy 2.2, GCC and gfortran 11.4,
+Open MPI 5.0.11, and mpi4py 4.1.2.
 
 ## Why the configured tree must match the installation
 
