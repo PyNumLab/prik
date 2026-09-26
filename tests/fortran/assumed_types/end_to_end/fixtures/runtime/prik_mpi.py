@@ -25,6 +25,7 @@ MAX = _mpi.mpi_max
 # The MPI datatype of each NumPy element type, for buffers given without one.
 _DATATYPES = {np.dtype(np.uint8): BYTE, np.dtype(np.int32): INT, np.dtype(np.float64): DOUBLE}
 
+
 def _message(buf):
     """Return a buffer's array and MPI datatype; ``buf`` is an array or ``[array, datatype]``."""
     if isinstance(buf, np.ndarray):
