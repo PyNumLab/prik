@@ -632,19 +632,20 @@ Time per call, compared with mpi4py:
 
 | Call | mpi4py | Generated functions | `prik_mpi.py` |
 | --- | ---: | ---: | ---: |
-| `Allreduce`, 1 integer | 1.26 µs | 0.85 µs (33% faster) | 1.14 µs (10% faster) |
-| `Allreduce`, 1,024 integers | 2.62 µs | 2.10 µs (20% faster) | 2.40 µs (9% faster) |
-| `Allreduce`, 1,048,576 integers | 3.04 ms | 2.82 ms (about the same) | 2.81 ms (about the same) |
-| `Barrier` | 0.35 µs | 0.49 µs (41% slower) | 0.52 µs (49% slower) |
-| `Get_rank` | 34 ns | 289 ns (about 9× slower) | 307 ns (about 9× slower) |
+| `Allreduce`, 1 integer | 1.02 µs | 0.67 µs (35% faster) | 0.92 µs (10% faster) |
+| `Allreduce`, 1,024 integers | 2.33 µs | 1.78 µs (23% faster) | 2.15 µs (7% faster) |
+| `Allreduce`, 1,048,576 integers | 2.33 ms | 2.12 ms (about the same) | 2.37 ms (about the same) |
+| `Barrier` | 0.32 µs | 0.32 µs (the same) | 0.50 µs (57% slower) |
+| `Get_rank` | 19 ns | 134 ns (about 7× slower) | 297 ns (about 15× slower) |
 
-`Get_rank` and `Barrier` do almost no work, so their times are just the
-overhead of making a call, which is higher through PRIK than through mpi4py.
+`Get_rank` does almost no work, so its time is just the overhead of making a
+call, which is higher through PRIK than through mpi4py.
 
-These were measured on a local machine, with two ranks on it: an AMD Ryzen 5
-5600H laptop (x86-64, 6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory)
-running Ubuntu 22.04, with Python 3.10, NumPy 2.2, GCC and gfortran 11.4,
-Open MPI 5.0.11, and mpi4py 4.1.2.
+These were measured on a local machine, with two ranks on it, and timed with
+mpi4py's `MPI.Wtime` for all three: an AMD Ryzen 5 5600H laptop (x86-64,
+6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory) running Ubuntu 22.04,
+with Python 3.10, NumPy 2.2, GCC and gfortran 11.4, Open MPI 5.0.11, and
+mpi4py 4.1.2.
 
 ## Why the configured tree must match the installation
 
