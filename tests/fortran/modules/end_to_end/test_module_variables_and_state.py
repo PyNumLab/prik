@@ -731,3 +731,26 @@ def test_a_reexport_binds_one_callable_from_source_and_from_its_contract(tmp_pat
     # One wrapper defines the procedure on either route.
     generated = (result.output_dir / "reexport_contract_wrapper.c").read_text(encoding="utf-8")
     assert generated.count("static PyObject * wrap_scale_value") == 1
+
+
+def test_a_derived_module_variable_argument_is_the_variable_itself(pyi_parity_build_mode: str, tmp_path: Path):
+    """A procedure given a module variable receives that variable's storage, not a copy.
+
+    Libraries recognize predefined objects by address -- Open MPI's
+    ``MPI_STATUS_IGNORE`` is one -- so passing one must pass the object itself.
+    """
+    module = _build_source_or_generated_pyi_and_import(
+        NATIVE_FIXTURES / "module_variable_arguments.f90",
+        tmp_path,
+        {
+            "bind_c_module_variable_arguments_wrapper.f90",
+            "module_variable_arguments_wrapper.c",
+            "module_variable_arguments_wrapper.h",
+        },
+        None,
+        pyi_parity_build_mode,
+    )
+
+    assert module.is_shared(module.shared)
+    assert module.is_shared_c(module.shared_c)
+    assert not module.is_shared(module.Box())

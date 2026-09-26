@@ -12,6 +12,7 @@ from .mpi_f08_types import (
     mpi_in_place,
     mpi_int,
     mpi_max,
+    mpi_status_ignore,
     mpi_sum,
 )
 
@@ -53,19 +54,20 @@ def send(
 
 @raises(status="ierror", success=0)
 @bind("MPI_Recv")
-@native_call([Arg(0), Int32(Arg(0).size), Arg(1), Arg(2), Arg(3), Arg(4), Return("status", 0), Hidden("ierror", Int32)])
+@native_call([Arg(0), Int32(Arg(0).size), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Hidden("ierror", Int32)])
 def recv(
     buf: AnyNative[Flat],
     datatype: Mpi_Datatype,
     source: Int32,
     tag: Int32,
     comm: Mpi_Comm,
-) -> Mpi_Status: ...
+    status: Mpi_Status,
+) -> None: ...
 
 @raises(status="ierror", success=0)
 @bind("MPI_Probe")
-@native_call([Arg(0), Arg(1), Arg(2), Return("status", 0), Hidden("ierror", Int32)])
-def probe(source: Int32, tag: Int32, comm: Mpi_Comm) -> Mpi_Status: ...
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Hidden("ierror", Int32)])
+def probe(source: Int32, tag: Int32, comm: Mpi_Comm, status: Mpi_Status) -> None: ...
 
 @raises(status="ierror", success=0)
 @bind("MPI_Get_count")
@@ -125,5 +127,6 @@ __all__ = [
     "mpi_in_place",
     "mpi_int",
     "mpi_max",
+    "mpi_status_ignore",
     "mpi_sum",
 ]

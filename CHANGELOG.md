@@ -132,7 +132,10 @@ release tags add a leading `v` to the package version.
   Python module spelling mpi4py's `COMM_WORLD`, `Send`/`Recv`, pickled
   `send`/`recv`, `Bcast`, `Reduce`, and `Allreduce`, and runs a two-rank
   program under `mpirun` that mpi4py also runs unchanged but for its import.
-  An opt-in integration test runs the same commands and program; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
+  `Recv` without a status passes Open MPI's own `MPI_STATUS_IGNORE`, a
+  generated `Mpi_Status` module object. An opt-in integration test follows
+  the tutorial's steps in one working directory and checks that Open MPI
+  recognizes that object; the Open MPI Integration lane runs it against Open MPI 4.1.8 and
   5.0.11 built from source. The test requires the configured tree to record the
   same configure run as the installation, and reports missing or failing
   Open MPI tools as unavailable -- a skip locally, a failure where Open MPI is

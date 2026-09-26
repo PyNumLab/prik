@@ -1,10 +1,11 @@
 """Real Open MPI source to generated contract to two-rank execution.
 
-The test runs the commands the Open MPI ``mpi_f08`` tutorial shows: generate
-a restricted contract from the configured Open MPI sources, replace its facade
-with the tutorial's edited one, build it against the installation without
-compiling any Open MPI source, and run the tutorial's mpi4py-style program
-under the Open MPI launcher.
+The test follows the Open MPI ``mpi_f08`` tutorial step by step, in one
+working directory as a reader would: generate a restricted contract from the
+configured Open MPI sources, replace its facade with the tutorial's edited
+one, build it against the installation without compiling any Open MPI source,
+save the tutorial's Python files beside the extension, and run its
+mpi4py-style program there under the Open MPI launcher.
 """
 
 from __future__ import annotations
@@ -26,31 +27,11 @@ import pytest
 pytestmark = pytest.mark.fortran_end_to_end
 # The tutorial displays these files; the test uses them as written.
 FIXTURES = Path(__file__).parent / "fixtures"
+EXPORT_LIST = FIXTURES / "contracts" / "openmpi" / "mpi_exports.txt"
 EDITED_FACADE = FIXTURES / "contracts" / "openmpi" / "mpi_f08.pyi"
 PROGRAM = (FIXTURES / "runtime" / "prik_mpi.py", FIXTURES / "runtime" / "mpi_example.py")
-EXPORTS = (
-    "MPI_Init",
-    "MPI_Finalize",
-    "MPI_Comm_rank",
-    "MPI_Comm_size",
-    "MPI_Barrier",
-    "MPI_Send",
-    "MPI_Recv",
-    "MPI_Probe",
-    "MPI_Get_count",
-    "MPI_Bcast",
-    "MPI_Reduce",
-    "MPI_Allreduce",
-    "MPI_COMM_WORLD",
-    "MPI_BYTE",
-    "MPI_INT",
-    "MPI_DOUBLE",
-    "MPI_SUM",
-    "MPI_MAX",
-    "MPI_IN_PLACE",
-    "MPI_ANY_SOURCE",
-    "MPI_ANY_TAG",
-)
+# Not shown in the tutorial: shows MPI_STATUS_IGNORE reaches Open MPI as itself.
+STATUS_IGNORE_CHECK = FIXTURES / "runtime" / "mpi_status_ignore_check.py"
 # ``ompi_info`` reports these for the configure run that built the
 # installation, and a configured tree records the same values, so they
 # identify that run: its date, host, user, and exact command line.
@@ -163,11 +144,10 @@ def _configured_openmpi() -> tuple[Path, Path, str, str]:
 
 
 def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) -> None:
-    """The tutorial's contract, build, and program run against a real Open MPI."""
+    """The tutorial's steps, run in one directory, communicate through a real Open MPI."""
     source, build, mpifort, launcher = _configured_openmpi()
-    contract = tmp_path / "contract"
-    exports = tmp_path / "mpi_exports.txt"
-    exports.write_text("".join(f"mpi_f08::{symbol}\n" for symbol in EXPORTS), encoding="utf-8")
+    shutil.copyfile(EXPORT_LIST, tmp_path / "mpi_exports.txt")
+    exports = [line.partition("::")[2] for line in EXPORT_LIST.read_text(encoding="utf-8").split()]
     includes = (
         build,
         build / "ompi/mpi/fortran/use-mpi-f08",
@@ -176,6 +156,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         build / "ompi/include",
         source / "ompi/include",
     )
+    # Step 3: generate the contract.
     subprocess.run(
         [
             sys.executable,
@@ -189,9 +170,9 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             "--module-source-dir",
             str(build),
             "--export-symbols",
-            str(exports),
+            "mpi_exports.txt",
             "--out",
-            str(contract),
+            "contract",
             "--compiler",
             mpifort,
             *(part for include in includes for part in ("-I", str(include))),
@@ -200,14 +181,19 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         capture_output=True,
         text=True,
         timeout=300,
+        cwd=tmp_path,
     )
+    contract = tmp_path / "contract"
     facade = (contract / "mpi_f08.pyi").read_text(encoding="utf-8")
     types = (contract / "mpi_f08_types.pyi").read_text(encoding="utf-8")
     interfaces = (contract / "mpi_f08_interfaces.pyi").read_text(encoding="utf-8")
-    assert all(f'"{symbol.lower()}"' in facade for symbol in EXPORTS)
+    assert all(f'"{symbol.lower()}"' in facade for symbol in exports)
     assert all(f'"Mpi_{name}"' in facade for name in ("Comm", "Datatype", "Op", "Status"))
     assert "mpi_waitall" not in facade
+    # Predefined objects keep their declared types: MPI_IN_PLACE is native
+    # integer storage, and MPI_STATUS_IGNORE an Mpi_Status object.
     assert "mpi_in_place: Int32[()]" in types
+    assert "mpi_status_ignore: Mpi_Status" in types
     assert "mpi_comm_world: Final[Mpi_Comm]" in types
     assert "mpi_sum: Final[Mpi_Op]" in types
     assert "mpi_int: Final[Mpi_Datatype]" in types
@@ -216,7 +202,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     declarations = "".join(path.read_text(encoding="utf-8") for path in contract.glob("*.pyi"))
     assert all(f"class Mpi_{name}" in declarations for name in ("Comm", "Datatype", "Op", "Status"))
     assert "AnyNative[" in interfaces and '@overload("mpi_send_f08")\ndef mpi_send(' in interfaces
-    # The tutorial edits the generated facade into the Python API it wants.
+    # Step 5: replace the generated facade with the edited one.
     shutil.copyfile(EDITED_FACADE, contract / "mpi_f08.pyi")
 
     def showme(flag: str) -> list[str]:
@@ -227,12 +213,14 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     command = showme("command")
     if len(command) != 1:
         _unavailable(f"mpifort --showme:command is a multi-token command {command}; pass one compiler executable")
+    # Step 6: build, with the tutorial's options; --jobs and --json only bound
+    # the compiler processes and report the build.
     built = subprocess.run(
         [
             sys.executable,
             "-m",
             "prik",
-            str(contract / "__init__.pyi"),
+            "contract/__init__.pyi",
             "--compiler",
             command[0],
             f"--wrapper-fortran-flags={shlex.join(showme('compile'))}",
@@ -243,7 +231,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             "--out",
             "prik_openmpi_f08",
             "--out-dir",
-            str(tmp_path / "extension"),
+            "build",
             "--jobs",
             "2",
             "--json",
@@ -261,26 +249,32 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         "bind_c_prik_openmpi_f08_wrapper.o",
         "prik_openmpi_f08_wrapper.o",
     ]
-    bridge = (tmp_path / "extension" / "bind_c_prik_openmpi_f08_wrapper.f90").read_text(encoding="utf-8")
+    bridge = (tmp_path / "build" / "bind_c_prik_openmpi_f08_wrapper.f90").read_text(encoding="utf-8")
     assert "native_allreduce => MPI_Allreduce" in bridge and "native_send => MPI_Send" in bridge
-    for path in PROGRAM:
-        shutil.copyfile(path, tmp_path / "extension" / path.name)
+    # The tutorial imports the extension from the working directory.
+    assert (tmp_path / "prik_openmpi_f08.so").is_file()
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(tmp_path / "extension"), env.get("PYTHONPATH", ""))))
-    env["LD_LIBRARY_PATH"] = os.pathsep.join((*showme("libdirs"), env.get("LD_LIBRARY_PATH", "")))
-    completed = subprocess.run(
-        [launcher, "-n", "2", sys.executable, str(tmp_path / "extension" / "mpi_example.py")],
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert sorted(completed.stdout.splitlines()) == [
+    # Steps 7 and 8: save the Python files beside the extension and run the
+    # program there, with nothing added to the environment.
+    for path in (*PROGRAM, STATUS_IGNORE_CHECK):
+        shutil.copyfile(path, tmp_path / path.name)
+
+    def run(script: str) -> list[str]:
+        completed = subprocess.run(
+            [launcher, "-n", "2", sys.executable, script],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=tmp_path,
+        )
+        return sorted(completed.stdout.splitlines())
+
+    assert run("mpi_example.py") == [
         "rank 0 max [2, 3]",
         "rank 0 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
         "rank 1 of 2: bcast [0.0, 1.0, 2.0], sum [3, 5], in place [3, 5]",
-        "rank 1 received [0, 1, 2, 3] from rank 0",
-        "rank 1 received {'a': 7, 'b': 3.14}",
+        "rank 1 received [0, 1, 2, 3]",
+        "rank 1 received {'a': 7, 'b': 3.14} from rank 0",
     ]
+    assert run(STATUS_IGNORE_CHECK.name) == ["Mpi_Status: status tag 21, ignored status unchanged True"]

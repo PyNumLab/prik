@@ -10,6 +10,7 @@ from prik_openmpi_f08 import mpi_f08 as _mpi
 ANY_SOURCE = int(_mpi.mpi_any_source)
 ANY_TAG = int(_mpi.mpi_any_tag)
 IN_PLACE = _mpi.mpi_in_place
+STATUS_IGNORE = _mpi.mpi_status_ignore
 BYTE = _mpi.mpi_byte
 INT = _mpi.mpi_int
 DOUBLE = _mpi.mpi_double
@@ -29,10 +30,10 @@ def _message(buf):
 
 
 class Status:
-    """What MPI reports about a received message."""
+    """What MPI reports about a received message, filled in by the call given it."""
 
     def __init__(self):
-        self._native = None
+        self._native = _mpi.Mpi_Status()
 
     @property
     def source(self):
@@ -52,9 +53,9 @@ class Status:
         return int(_mpi.get_count(self._native, datatype))
 
 
-def _report(status, native):
-    if status is not None:
-        status._native = native
+def _native_status(status):
+    """Return the status MPI fills in; without one, MPI_STATUS_IGNORE, as in mpi4py."""
+    return STATUS_IGNORE if status is None else status._native
 
 
 class Comm:
@@ -81,10 +82,10 @@ class Comm:
 
     def Recv(self, buf, source=ANY_SOURCE, tag=ANY_TAG, status=None):
         array, datatype = _message(buf)
-        _report(status, _mpi.recv(array, datatype, np.int32(source), np.int32(tag), self.handle))
+        _mpi.recv(array, datatype, np.int32(source), np.int32(tag), self.handle, _native_status(status))
 
     def Probe(self, source=ANY_SOURCE, tag=ANY_TAG, status=None):
-        _report(status, _mpi.probe(np.int32(source), np.int32(tag), self.handle))
+        _mpi.probe(np.int32(source), np.int32(tag), self.handle, _native_status(status))
         return True
 
     def Bcast(self, buf, root=0):

@@ -10,8 +10,9 @@ size = comm.Get_size()
 if rank == 0:
     comm.send({"a": 7, "b": 3.14}, dest=1, tag=11)
 elif rank == 1:
-    data = comm.recv(source=0, tag=11)
-    print(f"rank 1 received {data}")
+    status = MPI.Status()
+    data = comm.recv(source=MPI.ANY_SOURCE, tag=11, status=status)
+    print(f"rank 1 received {data} from rank {status.Get_source()}")
 
 # NumPy arrays travel as buffers, with an explicit MPI datatype ...
 if rank == 0:
@@ -19,9 +20,8 @@ if rank == 0:
     comm.Send([data, MPI.INT], dest=1, tag=77)
 elif rank == 1:
     data = np.empty(4, dtype="i")
-    status = MPI.Status()
-    comm.Recv([data, MPI.INT], source=MPI.ANY_SOURCE, tag=77, status=status)
-    print(f"rank 1 received {data.tolist()} from rank {status.Get_source()}")
+    comm.Recv([data, MPI.INT], source=0, tag=77)
+    print(f"rank 1 received {data.tolist()}")
 
 # ... or with the datatype taken from the array.
 data = np.arange(3, dtype=np.float64) if rank == 0 else np.empty(3, dtype=np.float64)
