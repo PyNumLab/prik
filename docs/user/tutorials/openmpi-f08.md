@@ -626,6 +626,18 @@ No part of Open MPI was rebuilt.
 With `from mpi4py import MPI` in place of `import prik_mpi as MPI`, mpi4py
 runs the same program and prints the same lines.
 
+## How fast it is
+
+Compared with mpi4py:
+
+| Call | Generated functions | `prik_mpi.py` |
+| --- | --- | --- |
+| `Allreduce`, 1 integer | 33% faster | 10% faster |
+| `Allreduce`, 1,024 integers | 20% faster | 9% faster |
+| `Allreduce`, large arrays | same speed | same speed |
+| `Barrier` | 40% slower | 49% slower |
+| `Get_rank` | about 9× slower | about 9× slower |
+
 ## Why the configured tree must match the installation
 
 `mpi_f08` is not the same text in every Open MPI build. `configure` decides
