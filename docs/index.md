@@ -11,7 +11,29 @@ publication: reviewed
 <p align="center">
   <img src="user/assets/prik-logo.png"
        alt="PRIK — Bring Native Code to Python"
-       width="500">
+       width="420">
+</p>
+
+<p align="center">
+  <b>Turn Fortran and C code into native Python extensions,<br>
+  then design the Python API by editing a <code>.pyi</code> contract.</b>
+</p>
+
+<p align="center">
+  <img class="prik-demo" src="user/assets/prik-demo.gif"
+       alt="Terminal demo: a Fortran module with a derived type is built with one PRIK command, then imported and called from Python, printing 4.0 2.0 and 20.0"
+       width="720">
+</p>
+
+<p class="prik-notebook-actions prik-hero-actions" markdown>
+[▶&nbsp; Try it in Colab](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb){ .prik-primary-cta }
+[Install](user/getting-started/installation.md){ .prik-secondary-cta }
+[Explore real libraries](user/examples/index.md){ .prik-secondary-cta }
+</p>
+
+<p align="center">
+  Tested on BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, PRIMA, Open MPI,
+  libm, and TA-Lib across Linux and macOS.
 </p>
 
 **PRIK (Python Runtime Interop Kit)** generates native Python bindings for
