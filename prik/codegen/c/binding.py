@@ -2692,7 +2692,14 @@ class CBindingGenerator(ClassVisitor):
             function
             for derived in derived_types
             for field in derived.fields
-            for function in self._allocatable_holder_field_functions(derived, field)
+            for function in self._holder_field_functions(
+                derived,
+                field,
+                "allocatable",
+                self._allocatable_holder_owner_nodes,
+                self._allocatable_holder_field_method_name,
+                self._allocatable_holder_field_bridge_name,
+            )
         )
         presence = tuple(self._allocatable_holder_presence_method(derived) for derived in derived_types)
         return (*presence, *fields)
@@ -2704,7 +2711,14 @@ class CBindingGenerator(ClassVisitor):
             function
             for derived in derived_types
             for field in derived.fields
-            for function in self._pointer_holder_field_functions(derived, field)
+            for function in self._holder_field_functions(
+                derived,
+                field,
+                "pointer",
+                self._pointer_holder_owner_nodes,
+                self._pointer_holder_field_method_name,
+                self._pointer_holder_field_bridge_name,
+            )
         )
         presence = tuple(self._pointer_holder_presence_method(derived) for derived in derived_types)
         return (*presence, *fields)
@@ -2741,57 +2755,46 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _allocatable_holder_field_functions(
+    def _holder_field_functions(
         self,
         derived: DerivedTypePlan,
         field: DerivedFieldPlan,
+        holder: str,
+        owner_nodes,
+        method_name,
+        bridge_name,
     ) -> tuple[CFunction, ...]:
-        """Expose scalar holder fields through holder-checked private methods."""
+        """Expose one scalar field of an allocatable- or pointer-held object through holder-checked methods.
+
+        The holders differ in how the checked owner is extracted, which
+        ``owner_nodes`` supplies; the field access itself is the same.
+        """
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        owner_nodes = self._allocatable_holder_owner_nodes(derived.backend_symbol, setter=False)
+        getter_call = f"{bridge_name(derived, field, 'get')}(owner_address)"
         if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
-            getter = self._derived_private_method(
-                self._allocatable_holder_field_method_name(derived, field, "get"),
-                (
-                    *owner_nodes,
-                    *self._scalar_storage_view_nodes(
-                        f"{self._allocatable_holder_field_bridge_name(derived, field, 'get')}(owner_address)",
-                        field.semantic_type_name,
-                        None,
-                        "owner_obj",
-                    ),
-                ),
+            value_nodes: tuple = self._scalar_storage_view_nodes(
+                getter_call, field.semantic_type_name, None, "owner_obj"
             )
         elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
+            raise ValueError(f"Unsupported {holder}-holder field for {field.owner_path!r}: {field.access.value}")
         else:
-            getter = self._derived_private_method(
-                self._allocatable_holder_field_method_name(derived, field, "get"),
-                (
-                    *owner_nodes,
-                    CDeclaration(
-                        "value",
-                        scalar.c_spelling,
-                        CodeExpression(
-                            self._allocatable_holder_field_bridge_name(derived, field, "get") + "(owner_address)"
-                        ),
-                    ),
-                    CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
-                ),
+            value_nodes = (
+                CDeclaration("value", scalar.c_spelling, CodeExpression(getter_call)),
+                CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
             )
+        getter = self._derived_private_method(
+            method_name(derived, field, "get"),
+            (*owner_nodes(derived.backend_symbol, setter=False), *value_nodes),
+        )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
         setter = self._derived_private_method(
-            self._allocatable_holder_field_method_name(derived, field, "set"),
+            method_name(derived, field, "set"),
             (
-                *self._allocatable_holder_owner_nodes(derived.backend_symbol, setter=True),
+                *owner_nodes(derived.backend_symbol, setter=True),
                 CDeclaration("value", scalar.c_spelling),
                 self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
-                CExpressionStatement(
-                    CodeExpression(
-                        f"{self._allocatable_holder_field_bridge_name(derived, field, 'set')}(owner_address, value)"
-                    )
-                ),
+                CExpressionStatement(CodeExpression(f"{bridge_name(derived, field, 'set')}(owner_address, value)")),
                 CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
             ),
         )
@@ -2799,15 +2802,13 @@ class CBindingGenerator(ClassVisitor):
 
     def _allocatable_holder_owner_nodes(self, type_name: str, *, setter: bool) -> tuple:
         """Parse property arguments and extract one exact typed-holder capsule."""
-        declarations: tuple = (CDeclaration("owner_obj", "PyObject *"),)
-        if setter:
-            declarations = (*declarations, CDeclaration("value_obj", "PyObject *"))
-            parse = 'if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL'
-        else:
-            parse = 'if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL'
+        return self._holder_owner_nodes(self._allocatable_holder_capsule_name(type_name), setter=setter)
+
+    @staticmethod
+    def _holder_owner_nodes(capsule_name: str, *, setter: bool) -> tuple:
+        """Parse a holder method's arguments and extract the holder's typed capsule address."""
         return (
-            *declarations,
-            CExpressionStatement(CodeExpression(parse)),
+            *CBindingGenerator._owner_argument_nodes(value=setter),
             CDeclaration(
                 "owner_capsule",
                 "PyObject *",
@@ -2817,9 +2818,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 "owner_address",
                 "void *",
-                CodeExpression(
-                    f'PyCapsule_GetPointer(owner_capsule, "{self._allocatable_holder_capsule_name(type_name)}")'
-                ),
+                CodeExpression(f'PyCapsule_GetPointer(owner_capsule, "{capsule_name}")'),
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(owner_capsule)")),
             CIf(CodeExpression("owner_address == NULL"), body=(CReturn(CodeExpression("NULL")),)),
@@ -2848,95 +2847,15 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    def _pointer_holder_field_functions(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> tuple[CFunction, ...]:
-        """Build pointer holder field functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
-            getter = self._derived_private_method(
-                self._pointer_holder_field_method_name(derived, field, "get"),
-                (
-                    *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=False),
-                    *self._scalar_storage_view_nodes(
-                        f"{self._pointer_holder_field_bridge_name(derived, field, 'get')}(owner_address)",
-                        field.semantic_type_name,
-                        None,
-                        "owner_obj",
-                    ),
-                ),
-            )
-        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
-        else:
-            getter = self._derived_private_method(
-                self._pointer_holder_field_method_name(derived, field, "get"),
-                (
-                    *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=False),
-                    CDeclaration(
-                        "value",
-                        scalar.c_spelling,
-                        CodeExpression(
-                            self._pointer_holder_field_bridge_name(derived, field, "get") + "(owner_address)"
-                        ),
-                    ),
-                    CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
-                ),
-            )
-        if field.setter_action is not SetterAction.WRITE_THROUGH:
-            return (getter,)
-        setter = self._derived_private_method(
-            self._pointer_holder_field_method_name(derived, field, "set"),
-            (
-                *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=True),
-                CDeclaration("value", scalar.c_spelling),
-                self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
-                CExpressionStatement(
-                    CodeExpression(
-                        f"{self._pointer_holder_field_bridge_name(derived, field, 'set')}(owner_address, value)"
-                    )
-                ),
-                CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
-            ),
-        )
-        return getter, setter
-
     def _pointer_holder_owner_nodes(self, type_name: str, *, setter: bool) -> tuple:
-        """Build pointer holder owner nodes from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        declarations: tuple = (CDeclaration("owner_obj", "PyObject *"),)
-        if setter:
-            declarations = (*declarations, CDeclaration("value_obj", "PyObject *"))
-            parse = 'if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL'
-        else:
-            parse = 'if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL'
-        return (
-            *declarations,
-            CExpressionStatement(CodeExpression(parse)),
-            CDeclaration(
-                "owner_capsule",
-                "PyObject *",
-                CodeExpression('prik_getattr_interned(owner_obj, &prik_name_prik_capsule, "_prik_capsule")'),
-            ),
-            CIf(CodeExpression("owner_capsule == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-            CDeclaration(
-                "owner_address",
-                "void *",
-                CodeExpression(
-                    f'PyCapsule_GetPointer(owner_capsule, "{self._pointer_holder_capsule_name(type_name)}")'
-                ),
-            ),
-            CExpressionStatement(CodeExpression("Py_DECREF(owner_capsule)")),
-            CIf(CodeExpression("owner_address == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-        )
+        """Parse property arguments and extract one exact pointer-holder capsule."""
+        return self._holder_owner_nodes(self._pointer_holder_capsule_name(type_name), setter=setter)
 
     def _module_derived_presence_method(self, variable: ModuleVariablePlan) -> CFunction:
         """Reject stale field access after native deallocation or nullification."""
         name = self._module_derived_presence_method_name(variable)
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             CIf(
                 CodeExpression(f"!{self._module_derived_presence_bridge_name(variable)}()"),
                 body=(
@@ -3020,17 +2939,11 @@ class CBindingGenerator(ClassVisitor):
 
     def _direct_scalar_storage_field_functions(self, derived, field) -> tuple[CFunction, ...]:
         """Lend a stored scalar field's storage and copy assigned values into it."""
-        getter = self._derived_private_method(
+        getter = self._scalar_storage_field_getter(
+            field,
             self._derived_field_method_name(derived, field, "get"),
-            (
-                *self._derived_owner_address_nodes(derived),
-                *self._scalar_storage_view_nodes(
-                    f"{self._derived_field_bridge_name(derived, field, 'get')}(owner_address)",
-                    field.semantic_type_name,
-                    field.character_length if field.string_element else None,
-                    "owner_obj",
-                ),
-            ),
+            self._derived_owner_address_nodes(derived),
+            f"{self._derived_field_bridge_name(derived, field, 'get')}(owner_address)",
         )
         setter = (
             self._direct_string_field_setter(derived, field)
@@ -3042,18 +2955,11 @@ class CBindingGenerator(ClassVisitor):
     def _module_scalar_storage_member_functions(self, variable, member) -> tuple[CFunction, ...]:
         """Lend a module object's stored scalar member and copy assigned values into it."""
         field = member.field
-        getter = self._derived_private_method(
+        getter = self._scalar_storage_field_getter(
+            field,
             self._module_member_method_name(variable, member, "get"),
-            (
-                CDeclaration("owner_obj", "PyObject *"),
-                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
-                *self._scalar_storage_view_nodes(
-                    f"{self._module_member_bridge_name(variable, member, 'get')}()",
-                    field.semantic_type_name,
-                    field.character_length if field.string_element else None,
-                    "owner_obj",
-                ),
-            ),
+            self._owner_argument_nodes(),
+            f"{self._module_member_bridge_name(variable, member, 'get')}()",
         )
         setter = (
             self._module_string_member_setter(variable, member)
@@ -3061,6 +2967,27 @@ class CBindingGenerator(ClassVisitor):
             else self._module_scalar_member_setter(variable, member)
         )
         return self._optional_field_functions(getter, setter)
+
+    def _scalar_storage_field_getter(
+        self,
+        field: DerivedFieldPlan,
+        method: str,
+        owner_nodes: tuple,
+        address_call: str,
+    ) -> CFunction:
+        """Lend one stored scalar field as a live view kept alive by its owner."""
+        return self._derived_private_method(
+            method,
+            (
+                *owner_nodes,
+                *self._scalar_storage_view_nodes(
+                    address_call,
+                    field.semantic_type_name,
+                    field.character_length if field.string_element else None,
+                    "owner_obj",
+                ),
+            ),
+        )
 
     def _direct_scalar_descriptor_field_functions(self, derived, field) -> tuple[CFunction, ...]:
         """Lend a scalar allocatable or pointer field's storage and assign through it."""
@@ -3083,17 +3010,8 @@ class CBindingGenerator(ClassVisitor):
             self._module_member_bridge_name(variable, member, "set"),
             self._module_member_method_name(variable, member, "get"),
             self._module_member_method_name(variable, member, "set"),
-            owner_nodes=(
-                CDeclaration("owner_obj", "PyObject *"),
-                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
-            ),
-            owner_value_nodes=(
-                CDeclaration("owner_obj", "PyObject *"),
-                CDeclaration("value_obj", "PyObject *"),
-                CExpressionStatement(
-                    CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
-                ),
-            ),
+            owner_nodes=self._owner_argument_nodes(),
+            owner_value_nodes=self._owner_argument_nodes(value=True),
             leading_arguments=(),
         )
 
@@ -3278,8 +3196,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> CFunction:
         """Create one parent-retaining Phase 7 handle for an address-backed field."""
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             *self._field_handle_factory_nodes(derived, field, "owner_obj"),
         )
         return self._derived_private_method(self._derived_field_method_name(derived, field, "get"), body)
@@ -3349,8 +3266,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> CFunction:
         """Create a live NumPy view over one plain-module fixed array member."""
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             *self._borrowed_array_view_nodes(
                 member.field,
                 self._module_member_bridge_name(variable, member, "get"),
@@ -3366,8 +3282,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> CFunction:
         """Create one parent-retaining handle for a plain-module field path."""
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             *self._field_handle_factory_nodes((variable, member), member.field, "owner_obj"),
         )
         return self._derived_private_method(self._module_member_method_name(variable, member, "get"), body)
@@ -3380,8 +3295,7 @@ class CBindingGenerator(ClassVisitor):
         """Copy one fixed plain-module string member into Python storage."""
         length = self._fixed_string_field_length(member.field)
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             CDeclaration(f"value[{length + 1}]", _character_c_type(member.field.semantic_type_name)),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'get')}(value)")),
             CExpressionStatement(CodeExpression(_terminator("value", length, member.field.semantic_type_name))),
@@ -3399,11 +3313,7 @@ class CBindingGenerator(ClassVisitor):
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return None
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CDeclaration("value_obj", "PyObject *"),
-            CExpressionStatement(
-                CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
-            ),
+            *self._owner_argument_nodes(value=True),
             *self._fixed_string_field_input_nodes(field, "value_obj"),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value)")),
             *self._text_release_nodes(field.semantic_type_name),
@@ -3623,11 +3533,7 @@ class CBindingGenerator(ClassVisitor):
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return None
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CDeclaration("value_obj", "PyObject *"),
-            CExpressionStatement(
-                CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
-            ),
+            *self._owner_argument_nodes(value=True),
             *self._ordinary_array_field_input_nodes(field, "value_obj", "value_array"),
             CExpressionStatement(
                 CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(PyArray_DATA(value_array))")
@@ -3733,8 +3639,7 @@ class CBindingGenerator(ClassVisitor):
         """Return module scalar member getter from the supplied completed binding records; this helper preserves the selected binding behavior."""
         scalar = PrimitiveScalarTypeRegistry.type_for(member.field.semantic_type_name)
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             CDeclaration(
                 "value",
                 scalar.c_spelling,
@@ -3755,11 +3660,7 @@ class CBindingGenerator(ClassVisitor):
             return None
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CDeclaration("value_obj", "PyObject *"),
-            CExpressionStatement(
-                CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
-            ),
+            *self._owner_argument_nodes(value=True),
             CDeclaration("value", scalar.c_spelling),
             self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value)")),
@@ -3829,8 +3730,7 @@ class CBindingGenerator(ClassVisitor):
         if field.derived is None:
             raise ValueError(f"Nested module member {field.owner_path!r} has no derived handoff")
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            *self._owner_argument_nodes(),
             *self._borrowed_derived_wrapper_nodes(
                 field.derived.type_identity,
                 "Py_None",
@@ -3851,11 +3751,7 @@ class CBindingGenerator(ClassVisitor):
         if field.setter_action is not SetterAction.WRITE_THROUGH or field.derived is None:
             return None
         body = (
-            CDeclaration("owner_obj", "PyObject *"),
-            CDeclaration("value_obj", "PyObject *"),
-            CExpressionStatement(
-                CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
-            ),
+            *self._owner_argument_nodes(value=True),
             *self._exact_derived_type_check_nodes(field.derived, "value_obj", field.name),
             *self._derived_address_from_object_nodes(field.derived.backend_symbol, "value_obj", "value"),
             CExpressionStatement(
@@ -3937,22 +3833,33 @@ class CBindingGenerator(ClassVisitor):
             body=body,
         )
 
-    def _derived_owner_address_nodes(self, derived: DerivedTypePlan) -> tuple:
-        """Extract one checked opaque parent address from a live wrapper."""
-        return (
-            CDeclaration("owner_obj", "PyObject *"),
-            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
-            *self._derived_address_from_object_nodes(derived.backend_symbol, "owner_obj", "owner"),
-        )
-
-    def _derived_owner_and_value_nodes(self, derived: DerivedTypePlan) -> tuple:
-        """Extract one checked parent address and Python setter value."""
+    @staticmethod
+    def _owner_argument_nodes(*, value: bool = False) -> tuple:
+        """Parse a private field method's owner, and the assigned value for a setter."""
+        if not value:
+            return (
+                CDeclaration("owner_obj", "PyObject *"),
+                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            )
         return (
             CDeclaration("owner_obj", "PyObject *"),
             CDeclaration("value_obj", "PyObject *"),
             CExpressionStatement(
                 CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
             ),
+        )
+
+    def _derived_owner_address_nodes(self, derived: DerivedTypePlan) -> tuple:
+        """Extract one checked opaque parent address from a live wrapper."""
+        return (
+            *self._owner_argument_nodes(),
+            *self._derived_address_from_object_nodes(derived.backend_symbol, "owner_obj", "owner"),
+        )
+
+    def _derived_owner_and_value_nodes(self, derived: DerivedTypePlan) -> tuple:
+        """Extract one checked parent address and Python setter value."""
+        return (
+            *self._owner_argument_nodes(value=True),
             *self._derived_address_from_object_nodes(derived.backend_symbol, "owner_obj", "owner"),
         )
 
@@ -8221,85 +8128,71 @@ class CBindingGenerator(ClassVisitor):
         )
 
     @staticmethod
-    def _required_wide_string_validation_nodes(
+    def _required_string_validation_nodes(
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
         payload_name: str,
     ) -> tuple[CExpressionStatement, ...]:
-        """Measure one str in four-byte characters; the call buffer converts it."""
+        """Return shared required-string type, encoding, NUL, and length checks.
+
+        One-byte characters borrow the str's UTF-8 bytes; four-byte characters
+        are only measured here, and the call buffer converts them.
+        """
+        name = plan.binding.python_name
+        wide = character_width(plan.semantic_type_name) == 4
         nodes = [
             CExpressionStatement(
                 CodeExpression(
                     f"if (!PyUnicode_Check({names.object_name})) {{ "
                     f'PyErr_Format(PyExc_TypeError, "Expected an argument of type str for argument '
-                    f"{plan.binding.python_name}. Received <class '%s'>\", "
+                    f"{name}. Received <class '%s'>\", "
                     f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
                 )
             ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (prik_character_text({names.object_name}, {int(bool(plan.character_allows_embedded_nul))}, "
-                    f'"{plan.binding.python_name}", &{payload_name}, &{names.length_name}, 4) < 0) return NULL'
-                )
-            ),
         ]
-        if plan.character_length is not None:
+        if wide:
             nodes.append(
                 CExpressionStatement(
                     CodeExpression(
-                        f"if ({names.length_name} != {plan.character_length}) {{ "
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must contain '
-                        f'exactly {plan.character_length} characters"); return NULL; }}'
+                        f"if (prik_character_text({names.object_name}, {int(bool(plan.character_allows_embedded_nul))}, "
+                        f'"{name}", &{payload_name}, &{names.length_name}, 4) < 0) return NULL'
                     )
                 )
             )
-        return tuple(nodes)
-
-    def _required_string_validation_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        names: _CArgumentNames,
-        payload_name: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Return shared required-string type, encoding, NUL, and length checks."""
-        width = character_width(plan.semantic_type_name)
-        if width == 4:
-            return self._required_wide_string_validation_nodes(plan, names, payload_name)
-        nodes = [
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (!PyUnicode_Check({names.object_name})) {{ "
-                    f'PyErr_Format(PyExc_TypeError, "Expected an argument of type str for argument '
-                    f"{plan.binding.python_name}. Received <class '%s'>\", "
-                    f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
-                )
-            ),
-            CExpressionStatement(
-                CodeExpression(f"{payload_name} = PyUnicode_AsUTF8AndSize({names.object_name}, &{names.length_name})")
-            ),
-            CExpressionStatement(CodeExpression(f"if ({payload_name} == NULL) return NULL")),
-            *(
-                ()
-                if plan.character_allows_embedded_nul
-                else (
+        else:
+            nodes.extend(
+                (
                     CExpressionStatement(
                         CodeExpression(
-                            f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
-                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} cannot contain '
-                            'embedded NUL"); return NULL; }'
+                            f"{payload_name} = PyUnicode_AsUTF8AndSize({names.object_name}, &{names.length_name})"
+                        )
+                    ),
+                    CExpressionStatement(CodeExpression(f"if ({payload_name} == NULL) return NULL")),
+                    *(
+                        ()
+                        if plan.character_allows_embedded_nul
+                        else (
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
+                                    f'PyErr_SetString(PyExc_TypeError, "Argument {name} cannot contain '
+                                    'embedded NUL"); return NULL; }'
+                                )
+                            ),
                         )
                     ),
                 )
-            ),
-        ]
+            )
         fixed_length = plan.character_length
         if fixed_length is not None:
+            measure = (
+                f"contain exactly {fixed_length} characters" if wide else f"encode to exactly {fixed_length} bytes"
+            )
             nodes.append(
                 CExpressionStatement(
                     CodeExpression(
                         f"if ({names.length_name} != {fixed_length}) {{ "
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must encode to '
-                        f'exactly {fixed_length} bytes"); return NULL; }}'
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {name} must {measure}"); return NULL; }}'
                     )
                 )
             )

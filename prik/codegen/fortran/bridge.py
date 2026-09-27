@@ -7726,7 +7726,13 @@ class FortranBridgeGenerator(ClassVisitor):
             for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
                 "field:allocatable:",
-                self._allocatable_holder_field_procedures(derived, field),
+                self._holder_field_procedures(
+                    derived,
+                    field,
+                    "allocatable",
+                    self._allocatable_holder_type_name(derived.backend_symbol),
+                    self._allocatable_holder_field_bridge_name,
+                ),
             )
         )
 
@@ -7739,7 +7745,13 @@ class FortranBridgeGenerator(ClassVisitor):
             for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
                 "field:pointer:",
-                self._pointer_holder_field_procedures(derived, field),
+                self._holder_field_procedures(
+                    derived,
+                    field,
+                    "pointer",
+                    self._pointer_holder_type_name(derived.backend_symbol),
+                    self._pointer_holder_field_bridge_name,
+                ),
             )
         )
 
@@ -7771,84 +7783,41 @@ class FortranBridgeGenerator(ClassVisitor):
             self._bridge_pointer_holder_field_owner_paths,
         )
 
-    def _allocatable_holder_field_procedures(
+    def _holder_field_procedures(
         self,
         derived: DerivedTypePlan,
         field: DerivedFieldPlan,
+        holder: str,
+        holder_type: str,
+        bridge_name,
     ) -> tuple[FortranFunction, ...]:
-        """Lower scalar fields through the typed holder selected by policy."""
-        scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        holder_type = self._allocatable_holder_type_name(derived.backend_symbol)
-        getter_name = self._allocatable_holder_field_bridge_name(derived, field, "get")
-        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
-            getter = self._scalar_storage_getter(
-                getter_name,
-                f"owner%value%{field.native_name}",
-                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
-                prologue=(self._derived_owner_association(),),
-            )
-        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
-        else:
-            getter = FortranFunction(
-                name=getter_name,
-                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-                result_name="result",
-                result_type=scalar.fortran_spelling,
-                bind_name=getter_name,
-                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
-                body=(
-                    self._derived_owner_association(),
-                    FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
-                ),
-            )
-        if field.setter_action is not SetterAction.WRITE_THROUGH:
-            return (getter,)
-        setter_name = self._allocatable_holder_field_bridge_name(derived, field, "set")
-        setter = FortranFunction(
-            name=setter_name,
-            parameters=(
-                FortranParameter("owner_address", "type(c_ptr)", ("value",)),
-                FortranParameter("value", scalar.fortran_spelling, ("value",)),
-            ),
-            bind_name=setter_name,
-            declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
-            body=(
-                self._derived_owner_association(),
-                FortranAssignment(f"owner%value%{field.native_name}", CodeExpression("value")),
-            ),
-            is_subroutine=True,
-        )
-        return getter, setter
+        """Read and write one scalar field of the object an allocatable or pointer holder holds.
 
-    def _pointer_holder_field_procedures(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> tuple[FortranFunction, ...]:
-        """Lower scalar fields through a pointer holder without owning its target."""
+        Both holders reach the object as ``owner%value``; what differs is only
+        the holder type and the procedure names, which the caller supplies.
+        """
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        holder_type = self._pointer_holder_type_name(derived.backend_symbol)
-        getter_name = self._pointer_holder_field_bridge_name(derived, field, "get")
+        owner_parameter = FortranParameter("owner_address", "type(c_ptr)", ("value",))
+        owner_declaration = FortranDeclaration("owner", f"type({holder_type})", ("pointer",))
+        getter_name = bridge_name(derived, field, "get")
         if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
             getter = self._scalar_storage_getter(
                 getter_name,
                 f"owner%value%{field.native_name}",
-                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                parameters=(owner_parameter,),
+                declarations=(owner_declaration,),
                 prologue=(self._derived_owner_association(),),
             )
         elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
+            raise ValueError(f"Unsupported {holder}-holder field for {field.owner_path!r}: {field.access.value}")
         else:
             getter = FortranFunction(
                 name=getter_name,
-                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                parameters=(owner_parameter,),
                 result_name="result",
                 result_type=scalar.fortran_spelling,
                 bind_name=getter_name,
-                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                declarations=(owner_declaration,),
                 body=(
                     self._derived_owner_association(),
                     FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
@@ -7856,15 +7825,12 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
-        setter_name = self._pointer_holder_field_bridge_name(derived, field, "set")
+        setter_name = bridge_name(derived, field, "set")
         setter = FortranFunction(
             name=setter_name,
-            parameters=(
-                FortranParameter("owner_address", "type(c_ptr)", ("value",)),
-                FortranParameter("value", scalar.fortran_spelling, ("value",)),
-            ),
+            parameters=(owner_parameter, FortranParameter("value", scalar.fortran_spelling, ("value",))),
             bind_name=setter_name,
-            declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+            declarations=(owner_declaration,),
             body=(
                 self._derived_owner_association(),
                 FortranAssignment(f"owner%value%{field.native_name}", CodeExpression("value")),

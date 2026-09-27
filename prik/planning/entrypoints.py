@@ -656,49 +656,47 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             owner_parameter=owner_parameter,
         )
 
+    def _field_operation(self, owner, field, route, owner_path, action, parameters, result=None):
+        """Plan one field accessor entrypoint of one owner route."""
+        return self._operation(
+            owner_path,
+            f"field:{route}:{action}",
+            self._field_symbol(owner, field, route, action),
+            parameters,
+            result,
+        )
+
+    def _character_buffer(self, entity, intent):
+        """Return the fixed-width character buffer of one field or module variable, passed by address."""
+        return self._value(
+            "value",
+            NativeEntrypointABIValueKind.CHARACTER,
+            pointer_depth=1,
+            const=intent == "in",
+            character_length=entity.character_length,
+            semantic_type_name=entity.semantic_type_name,
+            intent=intent,
+        )
+
     def _scalar_field_operations(self, owner, field, route, owner_path, *, owner_parameter):
         parameters = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        result = (
-            self._opaque_result()
-            if field.object_kind is ObjectKind.DERIVED_TYPE
-            else self._scalar_result(field.semantic_type_name)
+        derived = field.object_kind is ObjectKind.DERIVED_TYPE
+        result = self._opaque_result() if derived else self._scalar_result(field.semantic_type_name)
+        getter = self._field_operation(owner, field, route, owner_path, "get", parameters, result)
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        value = (
+            self._opaque_parameter("value", fortran_name="value_address")
+            if derived
+            else self._scalar_parameter(field.semantic_type_name)
         )
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                parameters,
-                result,
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            value = (
-                self._opaque_parameter("value", fortran_name="value_address")
-                if field.object_kind is ObjectKind.DERIVED_TYPE
-                else self._scalar_parameter(field.semantic_type_name)
-            )
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*parameters, value),
-                )
-            )
-        return tuple(operations)
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*parameters, value))
 
     def _nested_module_field_operations(self, owner, field, route, owner_path):
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return ()
-        return (
-            self._operation(
-                owner_path,
-                f"field:{route}:set",
-                self._field_symbol(owner, field, route, "set"),
-                (self._opaque_parameter("value", fortran_name="value_address"),),
-            ),
-        )
+        value = self._opaque_parameter("value", fortran_name="value_address")
+        return (self._field_operation(owner, field, route, owner_path, "set", (value,)),)
 
     def _scalar_storage_field_operations(self, owner, field, route, owner_path, owner_parameter):
         """Plan the storage-address getter and value setter of a stored scalar field.
@@ -707,102 +705,37 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         number by value, or a character in a buffer of the declared width.
         """
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                owner_values,
-                self._opaque_result(),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            value = (
-                self._value(
-                    "value",
-                    NativeEntrypointABIValueKind.CHARACTER,
-                    pointer_depth=1,
-                    const=True,
-                    character_length=field.character_length,
-                    semantic_type_name=field.semantic_type_name,
-                    intent="in",
-                )
-                if field.string_element
-                else self._scalar_parameter(field.semantic_type_name)
-            )
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*owner_values, value),
-                )
-            )
-        return tuple(operations)
+        getter = self._field_operation(owner, field, route, owner_path, "get", owner_values, self._opaque_result())
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        value = (
+            self._character_buffer(field, "in")
+            if field.string_element
+            else self._scalar_parameter(field.semantic_type_name)
+        )
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*owner_values, value))
 
     def _scalar_descriptor_field_operations(self, owner, field, route, owner_path, owner_parameter):
         """Plan the current-storage getter and status-reporting setter of a scalar descriptor field."""
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
         width = (self._int64_parameter("length", reference=True, intent="out"),) if field.string_element else ()
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                (*owner_values, *width),
-                self._opaque_result(),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            values, result = self._scalar_descriptor_setter_signature(field.string_element, field.semantic_type_name)
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*owner_values, *values),
-                    result,
-                )
-            )
-        return tuple(operations)
+        getter = self._field_operation(
+            owner, field, route, owner_path, "get", (*owner_values, *width), self._opaque_result()
+        )
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        values, result = self._scalar_descriptor_setter_signature(field.string_element, field.semantic_type_name)
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*owner_values, *values), result)
 
     def _string_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        output = self._value(
-            "value",
-            NativeEntrypointABIValueKind.CHARACTER,
-            pointer_depth=1,
-            character_length=field.character_length,
-            semantic_type_name=field.semantic_type_name,
-            intent="out",
+        getter = self._field_operation(
+            owner, field, route, owner_path, "get", (*owner_values, self._character_buffer(field, "out"))
         )
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                (*owner_values, output),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            value = self._value(
-                "value",
-                NativeEntrypointABIValueKind.CHARACTER,
-                pointer_depth=1,
-                const=True,
-                character_length=field.character_length,
-                semantic_type_name=field.semantic_type_name,
-                intent="in",
-            )
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*owner_values, value),
-                )
-            )
-        return tuple(operations)
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        setter_values = (*owner_values, self._character_buffer(field, "in"))
+        return getter, self._field_operation(owner, field, route, owner_path, "set", setter_values)
 
     def _ordinary_array_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
@@ -1218,16 +1151,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             elif variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
                 # A character value has no by-value C ABI, so it copies out
                 # through the same fixed-width buffer a character field uses.
-                parameters = (
-                    self._value(
-                        "value",
-                        NativeEntrypointABIValueKind.CHARACTER,
-                        pointer_depth=1,
-                        character_length=variable.character_length,
-                        semantic_type_name=variable.semantic_type_name,
-                        intent="out",
-                    ),
-                )
+                parameters = (self._character_buffer(variable, "out"),)
                 result = self._void_result()
             else:
                 parameters = ()
@@ -1260,16 +1184,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         """
         assignment = variable.binding.native_assignment
         if assignment is AssignmentMode.CHARACTER_COPY:
-            value = self._value(
-                "value",
-                NativeEntrypointABIValueKind.CHARACTER,
-                pointer_depth=1,
-                const=True,
-                character_length=variable.character_length,
-                semantic_type_name=variable.semantic_type_name,
-                intent="in",
-            )
-            return (value,), None
+            return (self._character_buffer(variable, "in"),), None
         if assignment not in {AssignmentMode.ALLOCATING_COPY, AssignmentMode.TARGET_COPY}:
             return (self._scalar_parameter(variable.semantic_type_name),), None
         return self._scalar_descriptor_setter_signature(
