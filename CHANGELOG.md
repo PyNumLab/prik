@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The README and derived-type contract guides show how to bind a class method
+  to a module procedure, including when the two share a name.
 - Fortran `character(kind=selected_char_kind('ISO_10646'))` (UCS-4) values are
   supported through the new `UString` contract type, which takes every form
   `String` does and maps storage to NumPy `U<n>` instead of `S<n>`. A

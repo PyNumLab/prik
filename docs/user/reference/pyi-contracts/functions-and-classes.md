@@ -18,23 +18,26 @@ Keep the module procedure declaration and add a method that calls it. `Pass()`
 places `self` in the native argument list:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, Pass, native_call, private
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call, private
 
-class point:
+class Point:
+    @bind("move")
     @native_call([Pass(), Addr(Arg(0))])
     def move(self, dx: Float64) -> None: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
-def move(item: point, dx: Float64) -> None: ...
+def move(item: Point, dx: Float64) -> None: ...
 ```
 
 Python exposes `item.move(dx)`. The private module declaration keeps the native
 procedure information but is not callable from Python. Remove `@private` when
 both `move(item, dx)` and `item.move(dx)` should be public.
 
-The method name normally selects the native procedure. Add `@bind("move")` to
-the method when its Python name differs from that procedure.
+`@bind("move")` selects the module procedure, even when the method has the
+same name. A method without `@bind` calls a type-bound procedure of its own
+name. To call a differently named type-bound procedure, use a class-qualified
+target such as `@bind("Point.translate")`.
 
 ## Edit an Overload Set
 

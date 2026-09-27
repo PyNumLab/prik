@@ -286,6 +286,68 @@ def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
         sys.modules.pop("geometry.points", None)
         sys.modules.pop("geometry", None)
 
+    contracts = tmp_path / "contracts"
+    subprocess.run(
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(contracts)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=tmp_path,
+    )
+    contract = contracts / "points.pyi"
+    generated = contract.read_text(encoding="utf-8")
+    assert "class Point:" in generated
+    assert "x: Float64[()] = 0.0" in generated
+    methods = """
+    @bind("move")
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
+    def translate(self, dx: Float64, dy: Float64) -> None: ...
+
+    @bind("norm_squared")
+    @native_call([Pass()])
+    def norm_squared(self) -> Float64: ...
+"""
+    module_move = "\n@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])"
+    assert generated.count(module_move) == 1
+    contract.write_text(
+        "from prik.contracts import Pass, bind\n" + generated.replace(module_move, f"\n{methods}{module_move}"),
+        encoding="utf-8",
+    )
+
+    edited = tmp_path / "edited"
+    edited.mkdir()
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            str(contracts / "__init__.pyi"),
+            "--native-fortran-sources",
+            str(source),
+            "--out",
+            "geometry",
+            "--out-dir",
+            str(edited / "build" / "geometry"),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=edited,
+    )
+
+    sys.path.insert(0, str(edited))
+    try:
+        geometry = importlib.import_module("geometry")
+        item = geometry.points.Point(x=np.float64(3.0), y=np.float64(4.0))
+        item.translate(np.float64(1.0), np.float64(-2.0))
+        assert item.x == np.float64(4.0)
+        assert item.y == np.float64(2.0)
+        assert item.norm_squared() == np.float64(20.0)
+    finally:
+        sys.path.remove(str(edited))
+        sys.modules.pop("geometry.points", None)
+        sys.modules.pop("geometry", None)
+
 
 def test_source_build_result_records_structured_native_plan(tmp_path: Path):
     """The internal preprocessor still builds an importable wrapper whose result records its native plan."""

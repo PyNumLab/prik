@@ -129,15 +129,16 @@ class Point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
+    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` is needed because `translate` has a different Python name.
-`norm_squared` needs no `@bind`: matching Python and native names select the
-same procedure. `Pass()` supplies the receiver (`self`) to the native call;
-`Addr(Arg(...))` passes the remaining arguments by address as required by the
-native calling convention.
+A method without `@bind` calls the type-bound procedure of its own name. Both
+methods here call module procedures instead, so each names one with `@bind`:
+`translate` calls `move`, and `norm_squared` calls `norm_squared`. `Pass()`
+supplies the receiver (`self`) to the native call; `Addr(Arg(...))` passes the
+remaining arguments by address as required by the native calling convention.
 
 Build from the contract:
 
@@ -328,8 +329,8 @@ print(stats.extremes(values))  # (np.float64(1.0), np.float64(5.0))
 `count` never appears in the Python signature — the contract derives it from
 the array — and the two output pointers come back as a tuple instead of being
 passed in. `mean` and `extremes` need no `@bind` because their Python and C
-names match; use `@bind("native_name")` only when they differ. The same rule
-applies to Fortran contracts.
+names match; use `@bind("native_name")` only when they differ. Fortran module
+functions follow the same rule.
 
 ### What C support covers
 

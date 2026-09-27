@@ -343,27 +343,31 @@ end subroutine increment
 ```
 
 ```python
-item = counters.counter(value=np.int32(4))
+item = counters.Counter(value=np.int32(4))
 item.increment(np.int32(3))
 print(item.value)  # 7
 ```
 
-The method mutates the existing `counter`; it does not replace the Python
-object.
+The method mutates the existing `Counter`; it does not replace the Python
+object. In a contract, a method without `@bind` calls the type-bound procedure
+of its own name, and `@bind("Counter.increment")` names a type-bound procedure
+whose name differs from the method's.
 
 ### Expose a Module Procedure as a Method
 
 The `move(item, dx, dy)` procedure from this page's example can remain a
-module-level function and also become `point.move(dx, dy)`.
+module-level function and also become `Point.move(dx, dy)`.
 
-`Pass()` supplies `self` to the native call. `Arg(i)` refers to a visible
-Python argument. Add the method to the existing `point` class while keeping
-the module declaration:
+`@bind("move")` makes the method call the module procedure `move` rather than a
+type-bound procedure. `Pass()` supplies `self` to the native call. `Arg(i)`
+refers to a visible Python argument. Add the method to the existing `Point`
+class while keeping the module declaration:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, Pass, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class Point:
+    @bind("move")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def move(self, dx: Float64, dy: Float64) -> None: ...
 

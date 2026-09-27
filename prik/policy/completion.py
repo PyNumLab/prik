@@ -811,7 +811,7 @@ def _class_overload_native_target(procedure: models.SemanticFunction) -> str:
 
 
 def _uses_type_bound_invocation(method: models.SemanticMethod, class_name: str) -> bool:
-    """Restore generated-.pyi type-bound calls when their private root target is absent."""
+    """Select type-bound calls for implicit or class-qualified method targets."""
     if method.is_static:
         return False
 
