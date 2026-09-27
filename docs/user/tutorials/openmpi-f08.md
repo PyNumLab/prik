@@ -454,15 +454,3 @@ median of five runs was:
 
 `Get_rank` does almost nothing, so its time is the overhead of a call, which
 PRIK can still reduce.
-
-## Limitations
-
-- Routines taking arrays of handles, such as `MPI_Waitall`, are not supported
-  yet.
-- A Python callback is valid only during the call it is passed to, so MPI
-  callbacks kept for later, such as those of `MPI_Op_create`, are not
-  supported. See [Callbacks](../guide/callbacks.md).
-- Nonblocking routines such as `MPI_Isend` work, but your program must keep
-  the buffer alive until the operation completes.
-- `prik_mpi.py` accepts `np.int32` buffers, ranks, and tags only; a plain
-  Python `int` is refused with a `TypeError`.
