@@ -302,7 +302,7 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         shutil.copyfile(BENCHMARK, tmp_path / BENCHMARK.name)
         report_dir = Path(os.environ["PRIK_OPENMPI_BENCHMARK_DIR"])
         report_dir.mkdir(parents=True, exist_ok=True)
-        for backend in ("direct", "facade", "mpi4py"):
+        for backend in ("wrapped", "python", "mpi4py"):
             result = subprocess.run(
                 [launcher, "-n", "2", sys.executable, BENCHMARK.name, backend],
                 capture_output=True,

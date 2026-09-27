@@ -16,9 +16,10 @@ release tags add a leading `v` to the package version.
   against Open MPI 4.1 and 5.0 with paired GNU C/Fortran compilers, and
   compares its two-rank result with mpi4py built from the same installation.
   The tutorial provides a repeatable matched-installation benchmark and a
-  labeled local results table comparing the generated calls and Python facade
-  with mpi4py, including relative timings; CI uploads separate results for
-  each platform and Open MPI version.
+  labeled local results table comparing its wrapped API and mpi4py-style
+  Python API with mpi4py, including relative timings. The benchmark binds
+  each callable and fixes buffer placement before timing; CI uploads separate
+  results for each platform and Open MPI version.
 - The test suite consolidates overlapping checks around compiled workflows and
   retains focused parser, semantic, diagnostic, and ABI boundary coverage;
   contributor guidance now favors observable behavior over implementation shape.

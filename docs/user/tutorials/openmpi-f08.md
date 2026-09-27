@@ -1,8 +1,8 @@
 ---
 title: Wrap Open MPI mpi_f08 for Python
-description: Turn a reviewed part of Open MPI's Fortran mpi_f08 interface into an mpi4py-style Python MPI API
+description: Generate a Python extension from Open MPI's Fortran mpi_f08 sources and give it an mpi4py-style Python API
 audience: users
-prerequisites: an Open MPI installation with mpi_f08, and the configured Open MPI source and build trees it was built from
+prerequisites: Python with PRIK and NumPy, a GNU Fortran and GCC pair, and Open MPI built from source as shown below
 related: ../guide/wrapping-modules.md, ../guide/callbacks.md, ../reference/cli-commands.md, ../reference/pyi-format.md
 status: maintained
 publication: reviewed
@@ -10,9 +10,11 @@ publication: reviewed
 
 # Wrap Open MPI `mpi_f08` for Python
 
-This tutorial turns a reviewed part of Open MPI's real Fortran `mpi_f08`
-interface into a Python MPI API modeled on [mpi4py](https://mpi4py.readthedocs.io),
-the standard Python binding of MPI. At the end, this program runs under
+PRIK reads Open MPI's Fortran `mpi_f08` sources and generates a Python
+extension that calls the installed Open MPI library. You write no C, Cython,
+or `ctypes`. You edit the generated `.pyi` contract into the Python signatures
+you want, add a short Python module in the style of
+[mpi4py](https://mpi4py.readthedocs.io), and this program runs under
 `mpirun`:
 
 <!-- prik-doc-source: tests/fortran/assumed_types/end_to_end/fixtures/runtime/mpi_example.py -->
@@ -57,35 +59,53 @@ if rank == 0:
     print(f"rank 0 max {largest.tolist()}")
 ```
 
-If you know mpi4py, you know this program: `COMM_WORLD`, `Get_rank`,
-`Send`/`Recv`, `Bcast`, `Reduce`, `Allreduce`, `MPI.SUM`, and `MPI.IN_PLACE`
-are all spelled as mpi4py spells them. Replace `import prik_mpi as MPI` with
-`from mpi4py import MPI` and the same program runs under mpi4py and prints
-the same lines.
+It is also a valid mpi4py program: replace `import prik_mpi as MPI` with
+`from mpi4py import MPI` and mpi4py prints the same lines.
 
-Two layers make this work:
+You build two APIs on the way:
 
-- **The extension PRIK generates.** Every MPI routine, handle type, and
-  constant the program reaches comes from the declarations in Open MPI's
-  Fortran sources, and every call enters the installed Open MPI library through
-  generated code. You shape that native API by editing a generated `.pyi`
-  contract: hiding counts that follow from the buffers, turning error codes
-  into exceptions, returning results instead of filling output arguments.
-- **A short Python module, `prik_mpi.py`.** It gives the native API mpi4py's
-  shape: a `Comm` class with methods and keyword defaults. It is ordinary
-  Python over the generated functions, with no C and no `ctypes`, and it is
-  kept small on purpose: an illustration of the approach, not a complete MPI
-  binding.
+- **The wrapped API**, `prik_openmpi_f08`: the extension PRIK generates from
+  Open MPI's declarations and your edited contract. Every call goes straight
+  into Open MPI.
+- **The Python API**, `prik_mpi.py`: about fifty lines of Python that give the
+  wrapped API mpi4py's `Comm` object and keyword defaults.
+
+On small messages both are faster than mpi4py; see
+[Compare call times](#compare-call-times).
+
+## What you need
+
+- Linux or macOS, with Python 3.10 or later, NumPy, and PRIK installed; see
+  [Installation](../getting-started/installation.md).
+- GNU Fortran and GCC of the same version; CI uses version 13.
+- Open MPI and mpi4py, built as shown in the next section.
+- The files this tutorial uses, from the PRIK repository:
+  [`mpi_exports.txt`](https://github.com/PyNumLab/prik/blob/main/tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_exports.txt),
+  [`mpi_f08.pyi`](https://github.com/PyNumLab/prik/blob/main/tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_f08.pyi),
+  [`prik_mpi.py`](https://github.com/PyNumLab/prik/blob/main/tests/fortran/assumed_types/end_to_end/fixtures/runtime/prik_mpi.py),
+  [`mpi_example.py`](https://github.com/PyNumLab/prik/blob/main/tests/fortran/assumed_types/end_to_end/fixtures/runtime/mpi_example.py), and
+  [`openmpi_f08.py`](https://github.com/PyNumLab/prik/blob/main/benchmarks/openmpi_f08.py). Each is also shown in
+  full below. Download them into an empty working directory:
+
+```bash
+PRIK_RAW=https://raw.githubusercontent.com/PyNumLab/prik/main
+for file in \
+  tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_exports.txt \
+  tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_f08.pyi \
+  tests/fortran/assumed_types/end_to_end/fixtures/runtime/prik_mpi.py \
+  tests/fortran/assumed_types/end_to_end/fixtures/runtime/mpi_example.py \
+  benchmarks/openmpi_f08.py; do
+  curl -fsSLO "$PRIK_RAW/$file"
+done
+```
 
 ## Install Open MPI and mpi4py
 
-This tutorial uses Open MPI 5.0.11. CI also tests Open MPI 4.1.8, on Linux and
-macOS. For each version, CI builds the PRIK wrapper and compares this page's
-two-rank program with mpi4py. Keep the source and configured build trees: PRIK
-reads them to generate the contract, then links the wrapper to that same
-installation. You need GNU Fortran 13 and GCC 13, plus Python with PRIK
-installed. Run these commands in one shell, from a directory where you want
-the Open MPI source archive:
+This tutorial uses [Open MPI 5.0.11](https://www.open-mpi.org/software/ompi/v5.0/);
+CI also tests Open MPI 4.1.8, on Linux and macOS. Build it from source and
+keep its source and configured build trees: PRIK reads them to generate the
+contract, then links the extension to the same installation. Run these
+commands in one shell, from your working directory:
 
 ```bash
 OMPI_ROOT="$HOME/openmpi-5.0.11"
@@ -107,7 +127,8 @@ OMPI_SRC="$OMPI_ROOT/source"
 OMPI_BUILD="$OMPI_ROOT/build"
 ```
 
-Build mpi4py against this Open MPI, rather than using a prebuilt wheel:
+Then build mpi4py against this Open MPI rather than installing a prebuilt
+wheel, and check that both report Open MPI 5.0.11:
 
 ```bash
 MPI4PY_BUILD_MPICC="$OMPI_ROOT/install/bin/mpicc" \
@@ -116,39 +137,24 @@ mpirun --version
 python3 -c 'from mpi4py import MPI; print(MPI.Get_library_version())'
 ```
 
-Both version checks should report Open MPI 5.0.11. Use this installation's
-`mpifort`, `mpicc`, and `mpirun` throughout. To test 4.1.8 instead, change
-`5.0.11` to `4.1.8` and `v5.0` to `v4.1` in the commands above.
+Use this installation's `mpifort` and `mpirun` throughout. For Open MPI 4.1.8,
+change `5.0.11` to `4.1.8` and `v5.0` to `v4.1` in these commands.
 
-## 1. See what PRIK reads
+## 1. Choose what to wrap
 
-`mpi_f08` is an ordinary Fortran module that gathers other modules:
-
-```fortran
-module mpi_f08
-  use mpi_f08_types
-  use mpi_f08_interfaces
-  use pmpi_f08_interfaces
-  use mpi_f08_callbacks
-  use mpi_f08_interfaces_callbacks
-end module mpi_f08
-```
-
-The handle types and predefined objects are declared in those modules:
+`mpi_f08` is an ordinary Fortran module that gathers others. Its handle types
+and predefined objects are Fortran declarations:
 
 ```fortran
 type(MPI_Comm), parameter     :: MPI_COMM_WORLD = MPI_Comm(OMPI_MPI_COMM_WORLD)
 type(MPI_Op), parameter       :: MPI_SUM        = MPI_Op(OMPI_MPI_SUM)
 type(MPI_Datatype), parameter :: MPI_INT        = MPI_Datatype(OMPI_MPI_INT)
 
-integer MPI_ANY_SOURCE
-parameter (MPI_ANY_SOURCE=-1)
-
 integer, bind(C, name="mpi_fortran_in_place_") :: MPI_IN_PLACE
 type(MPI_Status), bind(C, name="mpi_fortran_status_ignore_") :: MPI_STATUS_IGNORE
 ```
 
-and each MPI routine is a generic interface over its specific procedures:
+and each MPI routine is a generic interface:
 
 ```fortran
 interface MPI_Allreduce
@@ -165,20 +171,8 @@ interface MPI_Allreduce
 end interface MPI_Allreduce
 ```
 
-These excerpts are simplified from Open MPI 5.0. PRIK does not need to be
-told where each declaration lives. It starts from the entry source
-`mpi-f08.F90`, follows every `use` to the source that defines that module, and
-continues through the modules those use. File names play no part: Open MPI
-declares its types in `mpi_f08_types` in one release series and in a
-configure-generated `mpi_types` module in another, and PRIK finds whichever
-the sources declare. Some of these declarations, such as `MPI_IN_PLACE` above,
-are in headers that Open MPI's `configure` writes into its build tree.
-
-## 2. Choose a small native surface
-
-`mpi_f08` publishes hundreds of routines and constants. Start with a reviewed
-subset instead of all of them. Save the Fortran identities to publish in
-`mpi_exports.txt`:
+`mpi_f08` publishes hundreds of names. `mpi_exports.txt` selects the ones
+the program needs, each qualified by the module that publishes it:
 
 <!-- prik-doc-source: tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_exports.txt -->
 ```text
@@ -202,25 +196,14 @@ mpi_f08::MPI_ANY_SOURCE
 mpi_f08::MPI_ANY_TAG
 ```
 
-These are the routines and objects behind the mpi4py names the program uses.
-The program does not name `MPI_STATUS_IGNORE`; `Recv` passes it, since this
-small API reports no status.
+PRIK publishes exactly these names and keeps the declarations they depend on,
+such as the handle types in their signatures. `--export-symbols` works this
+way for any Fortran project; nothing here is specific to MPI.
 
-Selecting symbols this way is not an MPI feature. `--export-symbols` accepts
-module-qualified public symbols from any Fortran project -- procedures,
-generics, and module variables -- and here every name is qualified by
-`mpi_f08`, the facade that re-exports it. PRIK publishes exactly those names
-and keeps whatever supporting declarations they need, such as the handle types
-their signatures name, without publishing the rest of the API.
+## 2. Generate the contract
 
-## 3. Generate the contract
-
-PRIK reads the Fortran declarations from the Open MPI source and configured
-build trees you kept during installation. Keep `OMPI_SRC` and `OMPI_BUILD` set
-to those trees.
-
-Generate the contract from the one entry source, letting PRIK discover the
-modules it uses under both trees:
+Point PRIK at the one entry source. It follows each `use` to the source that
+defines that module, under both Open MPI trees:
 
 ```bash
 python3 -m prik generate --pyi \
@@ -238,29 +221,14 @@ python3 -m prik generate --pyi \
   -I "$OMPI_SRC/ompi/include"
 ```
 
-The Open MPI sources are preprocessed Fortran that includes headers from both
-trees: the hand-written ones stay in the source tree, and the configured ones
-are generated into the build tree beside them. The `-I` options name those
-directories so PRIK reads each source exactly as the Fortran compiler did.
+The `-I` directories are where Open MPI's Fortran sources find their headers,
+some of which `configure` wrote into the build tree. PRIK reads the sources
+to learn their declarations; it does not compile them.
 
-PRIK reads these sources to learn their declarations. It does not compile
-them.
+## 3. Read the contract
 
-## 4. Read the generated contract
-
-The `contract/` directory holds one editable `.pyi` file per Fortran module the
-selection needs. `contract/mpi_f08.pyi` publishes the selected names:
-
-```python
-from .mpi_f08_types import mpi_any_source, mpi_any_tag, mpi_comm_world, mpi_in_place, mpi_int, mpi_max, mpi_status_ignore, mpi_sum
-from .mpi_f08_interfaces import mpi_allreduce, mpi_barrier, mpi_bcast, mpi_comm_rank, mpi_comm_size, mpi_finalize, mpi_init, mpi_recv, mpi_reduce, mpi_send
-from .mpi_types import Mpi_Comm, Mpi_Datatype, Mpi_Op, Mpi_Status
-```
-
-These excerpts come from Open MPI 5.0, which declares the handle types in
-`mpi_types`. Open MPI 4.1 declares them in `mpi_f08_types`, so there they are
-imported from that module and written as `mpi_f08_types.Mpi_Datatype` and so
-on. The predefined objects become typed module attributes in
+`contract/` holds one editable `.pyi` file per Fortran module the selection
+needs. The predefined objects keep their Fortran types, in
 `contract/mpi_f08_types.pyi`:
 
 ```python
@@ -277,7 +245,7 @@ mpi_in_place: Int32[()]
 mpi_status_ignore: Mpi_Status
 ```
 
-and each selected routine keeps its Fortran interface in
+and each routine keeps its Fortran interface, in
 `contract/mpi_f08_interfaces.pyi`:
 
 ```python
@@ -293,63 +261,31 @@ def mpi_allreduce(
 ) -> Returns["ierror", Int32[()]] | None: ...
 ```
 
-`MPI_Allreduce` is a generic whose one specific is `MPI_Allreduce_f08`, so
-`mpi_allreduce` is an overload of the specific declared as `mpi_allreduce_f08`
-in the same file, and a call to it calls that specific.
+These excerpts come from Open MPI 5.0, which declares the handle types in
+`mpi_types`; Open MPI 4.1 declares them in `mpi_f08_types`. Three mappings
+matter for MPI:
 
-Four mappings are worth a closer look.
+- **Handles are typed objects.** `Mpi_Comm`, `Mpi_Datatype`, `Mpi_Op`, and
+  `Mpi_Status` are Open MPI's derived types with their real fields, and a
+  handle argument accepts only its own type.
+- **Buffers are `AnyNative`.** MPI's `type(*)` buffers accept any contiguous
+  NumPy array, passed by address.
+- **Special objects are Open MPI's own.** `mpi_in_place` and
+  `mpi_status_ignore` are live views of Open MPI's `MPI_IN_PLACE` and
+  `MPI_STATUS_IGNORE` variables. Passing one passes that variable's address,
+  which is how Open MPI recognizes it.
 
-**Handles are concrete types.** `Mpi_Comm`, `Mpi_Datatype`, `Mpi_Op`, and
-`Mpi_Status` are the derived types Open MPI declares, with their real
-components. For example, `Mpi_Comm` holds the one integer handle Open MPI
-stores, and `Mpi_Status` the source, tag, and error of a message:
+This contract already builds. Its functions are still Fortran's, though: every
+count is an argument, and every call returns an error code.
 
-```python
-class Mpi_Status:
-    def __init__(
-        self,
-        *,
-        mpi_source: Int32 = ...,
-        mpi_tag: Int32 = ...,
-        mpi_error: Int32 = ...
-    ) -> None: ...
+## 4. Edit the contract into a Python API
 
-    mpi_source: Int32
-    mpi_tag: Int32
-    mpi_error: Int32
+Replace `contract/mpi_f08.pyi`, the module the extension publishes, with the
+edited file you downloaded:
+
+```bash
+cp mpi_f08.pyi contract/mpi_f08.pyi
 ```
-
-A handle argument accepts only an object of its own type, and the predefined
-handles are `Final` module constants.
-
-**`MPI_IN_PLACE` is native storage.** Its declaration is a C-bound integer
-module variable, so it becomes rank-zero native integer storage, `Int32[()]`.
-Python sees `mpi_in_place` as a live NumPy scalar view of Open MPI's own
-`MPI_IN_PLACE` variable. Passing that view as a buffer passes the address of
-that variable, which is how Open MPI recognizes an in-place operation.
-Nothing here knows about MPI: it is the same mapping any Fortran module
-variable declared this way receives.
-
-**`MPI_STATUS_IGNORE` is an `Mpi_Status` object.** It is declared as a
-C-bound module variable of type `MPI_Status`, so it keeps that type: it is not
-a generic buffer, and it is accepted wherever an `Mpi_Status` is. Passing a
-module variable passes the variable itself, not a copy, so Open MPI receives
-its own `MPI_STATUS_IGNORE` and recognizes it by address.
-
-**Choice buffers are `AnyNative`.** The send and receive buffers of MPI
-routines are `type(*)` dummies, which accept data of any type, so they become
-`AnyNative[Flat]`: any NumPy array, passed as a raw address. `AnyNative`
-appears only for these assumed-type dummies; `MPI_IN_PLACE` is a concrete
-module object with a concrete type.
-
-This contract already builds, and its functions are Fortran's: every count
-is an argument, every routine takes and returns the optional `ierror`, and
-`MPI_Comm_rank` returns the rank together with that error code.
-
-## 5. Edit the facade into a Python API
-
-The contract is yours to edit. Replace `contract/mpi_f08.pyi`, the facade the
-extension publishes, with this one:
 
 <!-- prik-doc-source: tests/fortran/assumed_types/end_to_end/fixtures/contracts/openmpi/mpi_f08.pyi -->
 ```python
@@ -471,45 +407,23 @@ __all__ = [
 ]
 ```
 
-Each function still calls the Fortran routine it names; only its Python face
-changes. `@native_call` lists the native arguments in Fortran order and says
-where each one comes from:
+Each function still calls the Fortran routine it names; only its Python
+signature changes. `@native_call` lists the Fortran arguments in order and
+says where each comes from:
 
 | Edit | Example | Effect in Python |
 | --- | --- | --- |
 | `@bind("MPI_Send")` on `def send` | every function | The Python name differs from the Fortran name it calls. |
-| `Int32(Arg(0).size)` | `count` of `MPI_Send` | The count is computed from the buffer, so the caller does not pass it. |
-| `Return("rank", 0)` | `rank` of `MPI_Comm_rank` | The output argument becomes the return value: `comm_rank` returns the rank. |
+| `Int32(Arg(0).size)` | `count` of `MPI_Send` | The count comes from the buffer, so the caller does not pass it. |
+| `Return("rank", 0)` | `rank` of `MPI_Comm_rank` | The output argument becomes the return value. |
 | `Hidden("ierror", Int32)` with `@raises(status="ierror", success=0)` | every function | The error code is not an argument; a nonzero code raises an exception. |
 
-`recv` keeps its `status` as an argument. A caller that wants the status
-passes an `Mpi_Status` for Open MPI to fill in; one that does not passes
-`mpi_status_ignore`, which tells Open MPI not to.
+The same file works with Open MPI 4.1 and 5.0.
 
-The facade imports its handle types and constants from
-`mpi_f08_types` in both Open MPI 4.1 and 5.0: in 5.0 that module re-exports
-them from `mpi_types`, and PRIK follows the re-export to the declaration. So
-the same edited file serves both release series.
+## 5. Build the wrapped API
 
-## 6. Build from the contract
-
-The contract, not the Open MPI sources, is what the extension is built from:
-
-```text
-Open MPI Fortran sources
-        |
-PRIK semantic analysis
-        |
-restricted .pyi contract, edited into the API you want
-        |
-PRIK wrapper generation
-        |
-Python extension linked to the installed Open MPI
-```
-
-Build `contract/__init__.pyi`, asking the installed `mpifort` wrapper for the
-compiler it wraps, the flags that find Open MPI's Fortran modules, and the
-libraries to link:
+Build the edited contract, asking `mpifort` for the compiler, flags, and
+libraries of your Open MPI:
 
 ```bash
 python3 -m prik contract/__init__.pyi \
@@ -521,16 +435,12 @@ python3 -m prik contract/__init__.pyi \
   --out-dir build
 ```
 
-This compiles in `build/` and writes `prik_openmpi_f08.so`, a stable copy of
-the extension, in the current directory; the rest of this tutorial works in
-that directory and imports the extension from there. The build compiles only
-the bridge and binding PRIK generates; no Open MPI source is compiled. The
-installed Open MPI already provides the implementation, and the extension
-links against its libraries. `--compiler` takes the compiler `mpifort` runs
-rather than `mpifort` itself because PRIK identifies a Fortran compiler's
-family from its executable name.
+This writes `prik_openmpi_f08.so` in the working directory. Only the code
+PRIK generates is compiled; the extension links to the installed Open MPI.
+`--compiler` takes the compiler `mpifort` runs, because PRIK recognizes a
+compiler by its executable name.
 
-The extension can already run MPI:
+The wrapped API already runs MPI:
 
 ```python
 import numpy as np
@@ -544,12 +454,11 @@ mpi_f08.allreduce(values, total, mpi_f08.mpi_int, mpi_f08.mpi_sum, mpi_f08.mpi_c
 mpi_f08.finalize()
 ```
 
-## 7. Add the mpi4py-style layer
+## 6. Add the Python API
 
-A contract describes native calls. What mpi4py adds on top of MPI is a Python
-object model, and that belongs in Python. Save this module as `prik_mpi.py`
-in the same directory as `prik_openmpi_f08.so`. It is deliberately small: one
-datatype and no status, enough to show the shape.
+mpi4py's object model is Python, so the Python API is plain Python over the
+wrapped API. `prik_mpi.py`, downloaded beside `prik_openmpi_f08.so`, is
+deliberately small:
 
 <!-- prik-doc-source: tests/fortran/assumed_types/end_to_end/fixtures/runtime/prik_mpi.py -->
 ```python
@@ -615,36 +524,24 @@ _mpi.init()
 atexit.register(_mpi.finalize)
 ```
 
-Everything in it calls the generated functions of step 5:
+- `Comm` wraps an `Mpi_Comm` handle and spells mpi4py's methods; each method
+  is one call to the wrapped API.
+- Every buffer is an `np.int32` array sent as `MPI_INT`, and `Recv` passes
+  `MPI_STATUS_IGNORE`, as mpi4py does when given no status.
+- Ranks and tags are `np.int32`, the type the contract takes, from the start:
+  `Get_rank` returns one, and `rank + 1` stays one. They pass straight
+  through without conversion.
+- As with mpi4py, importing the module starts MPI, and exiting stops it.
 
-- **Objects and methods.** `Comm` wraps an `Mpi_Comm` handle and spells
-  mpi4py's methods; `COMM_WORLD` wraps `mpi_comm_world`. Each method is one
-  call to a generated function.
-- **One datatype.** Every buffer is an `np.int32` array, so every call passes
-  `MPI_INT`.
-- **No status.** `Recv` always passes `MPI_STATUS_IGNORE`, as mpi4py does when
-  it is given no status.
-- **Defaults and `np.int32` values.** `tag`, `source=ANY_SOURCE`, `root`,
-  and `op=SUM` are keyword defaults. Ranks and tags are the `np.int32` values
-  the contract's `Int32` arguments take from the start -- `Get_rank` returns
-  one, `ANY_SOURCE` and the defaults are, and `rank + 1` stays one -- so they
-  pass straight through. Converting a plain integer on every call would cost
-  more than a small MPI call.
-- **Lifetime.** As with mpi4py, importing the module initializes MPI, and MPI
-  is finalized when the interpreter exits.
+## 7. Run it
 
-## 8. Run it under Open MPI
-
-Save the program from the top of this page as `mpi_example.py` in the same
-directory, beside `prik_mpi.py` and `prik_openmpi_f08.so`, and start two ranks
-there with the installed Open MPI launcher:
+Run the program from the top of this page with two ranks:
 
 ```bash
 mpirun -n 2 python3 mpi_example.py
 ```
 
-The two ranks print these lines, each rank's lines in order but the ranks in
-whichever order they finish:
+The ranks print these lines, in whichever order they finish:
 
 ```text
 rank 1 received [0, 1, 2, 3]
@@ -653,94 +550,67 @@ rank 0 max [2, 3]
 rank 1 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]
 ```
 
-Here is what happened. `mpirun` started two Python processes as MPI ranks.
-Each call went through `prik_mpi.py`, then PRIK's generated binding and
-bridge, straight into the installed Open MPI library. The NumPy arrays crossed
-the boundary as native buffers: `Recv` wrote into rank 1's `data`, `Bcast`
-into every rank's `data`, and each reduction into its receive array directly.
-No part of Open MPI was rebuilt.
+Each call went from `prik_mpi.py` through the wrapped API into Open MPI, and
+the NumPy arrays crossed as native buffers, written in place by `Recv`,
+`Bcast`, and the reductions.
 
-To compare with the mpi4py installation from the setup above, run the same
-program with only its import changed:
+Run the same program with mpi4py to compare:
 
 ```bash
 sed 's/^import prik_mpi as MPI$/from mpi4py import MPI/' mpi_example.py > mpi4py_example.py
 mpirun -n 2 python3 mpi4py_example.py
 ```
 
-The two programs print the same lines.
+It prints the same lines.
 
 ## Compare call times
 
-After building the wrapper, copy `benchmarks/openmpi_f08.py` from the PRIK
-checkout beside `prik_mpi.py` and `prik_openmpi_f08.so`. Run the same five
-operations through each API with the Open MPI launcher from the setup above:
+`openmpi_f08.py` times the same operations through each API:
 
 ```bash
-for backend in direct facade mpi4py; do
-  mpirun -n 2 python3 openmpi_f08.py "$backend"
+for api in wrapped python mpi4py; do
+  mpirun -n 2 python3 openmpi_f08.py "$api"
 done
 ```
 
-The script reports nanoseconds per call for `Allreduce` with 1, 1,024, and
-1,048,576 `np.int32` values, `Barrier`, and `Get_rank`. It uses the same two
-ranks, arrays, prepared MPI handles, mpi4py `MPI.Wtime` timer, and repeated
-batches for each backend. Compare results from one machine and one Open MPI
-installation; timings vary by host.
+It reports nanoseconds per call for `Allreduce` with 1, 1,024, and 1,048,576
+`np.int32` values, `Barrier`, and `Get_rank`, timing every API the same way:
+one prepared call per loop iteration, the same buffer placement, and mpi4py's
+`MPI.Wtime`. On an AMD Ryzen 5 5600H with Ubuntu 22.04.5, Open MPI 5.0.11 built
+with GNU Fortran 11.4, and mpi4py 4.1.2 built against it, the median of five
+runs was:
 
-These results were measured on an AMD Ryzen 5 5600H running Ubuntu 22.04.5,
-with Open MPI 5.0.11 built using GNU Fortran 11.4 and mpi4py 4.1.2 built
-against that same installation. Each value is the median of three runs; each
-run takes the fastest of five timed batches with two ranks.
-
-Time per call, compared with mpi4py:
-
-| Operation | mpi4py | Generated API | `prik_mpi.py` |
+| Operation | mpi4py | Wrapped API | Python API |
 | --- | ---: | ---: | ---: |
-| `Allreduce`, 1 `int32` | 1.101 µs | 0.738 µs (33% faster) | 0.887 µs (19% faster) |
-| `Allreduce`, 1,024 `int32` values | 3.675 µs | 3.439 µs (6% faster) | 3.387 µs (8% faster) |
-| `Allreduce`, 1,048,576 `int32` values | 2.247 ms | 2.272 ms (1% slower) | 2.106 ms (6% faster) |
-| `Barrier` | 0.342 µs | 0.390 µs (14% slower) | 0.457 µs (34% slower) |
-| `Get_rank` | 32 ns | 164 ns (about 5× slower) | 233 ns (about 7× slower) |
+| `Allreduce`, 1 `int32` | 1.037 µs | 0.697 µs (33% faster) | 0.841 µs (19% faster) |
+| `Allreduce`, 1,024 `int32` values | 2.314 µs | 1.779 µs (23% faster) | 2.027 µs (12% faster) |
+| `Allreduce`, 1,048,576 `int32` values | 2.719 ms | 2.752 ms (about the same) | 2.827 ms (about the same) |
+| `Barrier` | 0.330 µs | 0.328 µs (about the same) | 0.428 µs (30% slower) |
+| `Get_rank` | 30 ns | 145 ns (about 5× slower) | 236 ns (about 8× slower) |
 
 `Get_rank` is the cheapest call, so its time is almost all the overhead of
 making a call. That overhead is small, but higher through PRIK than through
-mpi4py, and can be optimized later.
-
-The relative figures describe this local run; the differences for the largest
-`Allreduce` are small compared with its variation between runs.
-
-CI uploads JSON results for each Linux and macOS Open MPI job so you can
-compare its measurements with this local run.
+mpi4py, and can be optimized later. Timings vary by machine; compare APIs on
+one machine and one Open MPI installation.
 
 ## Limitations
 
-This tutorial selected eighteen names; the rest of `mpi_f08` works the same
-way when you select it, within these limits of what PRIK supports today:
+The eighteen names selected here are a start; the rest of `mpi_f08` wraps the
+same way when you select it, within these limits:
 
-- **Arrays of handles.** Routines taking an array of derived-type values, such
-  as the request and status arrays of `MPI_Waitall`, are not supported:
-  building a contract that selects one stops with an error naming the
-  argument.
-- **Stored callbacks.** PRIK passes a Python callable as a callback that is
-  valid only during the call it is passed to. MPI keeps some callbacks for
-  later -- the copy and delete functions of `MPI_Comm_create_keyval`, or the
-  function given to `MPI_Op_create` -- and calls them after that call has
-  returned, which is not supported. See [Callbacks](../guide/callbacks.md).
-- **Nonblocking buffers.** Routines such as `MPI_Isend` wrap, but the
-  operation keeps using its buffer after the call returns. PRIK does not hold
-  on to that NumPy array, so your program must keep it alive and unchanged
-  until the operation completes. This is also why `prik_mpi.py` offers no
-  `Isend` or `Irecv`: mpi4py's request objects keep their buffers alive, and
-  a faithful imitation would need arrays of requests, the first limitation.
+- **Arrays of handles**, such as the request and status arrays of
+  `MPI_Waitall`, are not supported yet; selecting one stops the build with an
+  error naming the argument.
+- **Stored callbacks** are not supported: a Python callback is valid only
+  during the call it is passed to, and MPI keeps some for later, such as the
+  functions given to `MPI_Comm_create_keyval` or `MPI_Op_create`. See
+  [Callbacks](../guide/callbacks.md).
+- **Nonblocking buffers** must stay alive: routines such as `MPI_Isend` wrap,
+  but your program must keep the array alive and unchanged until the operation
+  completes.
 
-`prik_mpi.py` is an illustration, not a complete binding. Its buffers are
-contiguous `np.int32` arrays only -- a strided view is refused with a
-`TypeError` -- and it reports no status. Ranks and tags must be `np.int32`,
-as in the program above; a plain Python `int` is refused with a `TypeError`,
-where mpi4py accepts one. It has none of mpi4py's other datatypes,
-communicators, pickled-object methods, or `MPI.Exception`: under Open MPI's
-default error handler an MPI error aborts the job, and otherwise a nonzero
-`ierror` raises the exception the contract's `@raises` produces. Each of these
-is more Python over the same kind of generated calls, or more names in the
-export list.
+`prik_mpi.py` illustrates the approach rather than covering mpi4py. It takes
+contiguous `np.int32` buffers and `np.int32` ranks and tags only, where mpi4py
+also accepts other datatypes and plain Python integers, and it reports no
+status. More of mpi4py is more Python over the same kind of wrapped calls, or
+more names in `mpi_exports.txt`.
