@@ -77,6 +77,46 @@ Two layers make this work:
   kept small on purpose: an illustration of the approach, not a complete MPI
   binding.
 
+## Install Open MPI and mpi4py
+
+This tutorial uses Open MPI 5.0.11. CI also tests Open MPI 4.1.8, on Linux and
+macOS. For each version, CI builds the PRIK wrapper and compares this page's
+two-rank program with mpi4py. Keep the source and configured build trees: PRIK
+reads them to generate the contract, then links the wrapper to that same
+installation. You need a C compiler, GNU Fortran 13, and Python with PRIK
+installed. Run these commands in one shell, from a directory where you want
+the Open MPI source archive:
+
+```bash
+OMPI_ROOT="$HOME/openmpi-5.0.11"
+TUTORIAL_DIR="$PWD"
+mkdir -p "$OMPI_ROOT/source" "$OMPI_ROOT/build"
+curl -fsSLO https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.11.tar.bz2
+tar -xjf openmpi-5.0.11.tar.bz2 -C "$OMPI_ROOT/source" --strip-components=1
+cd "$OMPI_ROOT/build"
+../source/configure --prefix="$OMPI_ROOT/install" --enable-mpi-fortran=usempif08 FC=gfortran-13
+make -j2 && make install
+cd "$TUTORIAL_DIR"
+export PATH="$OMPI_ROOT/install/bin:$PATH"
+export LD_LIBRARY_PATH="$OMPI_ROOT/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export DYLD_LIBRARY_PATH="$OMPI_ROOT/install/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+OMPI_SRC="$OMPI_ROOT/source"
+OMPI_BUILD="$OMPI_ROOT/build"
+```
+
+Build mpi4py against this Open MPI, rather than using a prebuilt wheel:
+
+```bash
+MPI4PY_BUILD_MPICC="$OMPI_ROOT/install/bin/mpicc" \
+  python3 -m pip install --no-cache-dir --no-binary=mpi4py mpi4py==4.1.2
+mpirun --version
+python3 -c 'from mpi4py import MPI; print(MPI.Get_library_version())'
+```
+
+Both version checks should report Open MPI 5.0.11. Use this installation's
+`mpifort`, `mpicc`, and `mpirun` throughout. To test 4.1.8 instead, change
+`5.0.11` to `4.1.8` and `v5.0` to `v4.1` in the commands above.
+
 ## 1. See what PRIK reads
 
 `mpi_f08` is an ordinary Fortran module that gathers other modules:
@@ -172,15 +212,9 @@ their signatures name, without publishing the rest of the API.
 
 ## 3. Generate the contract
 
-PRIK reads the Fortran declarations from a configured Open MPI source tree and
-its build tree, which must be the ones your installed Open MPI was built from;
-[why it must match](#why-the-configured-tree-must-match-the-installation)
-comes later. Point two shell variables at them:
-
-```bash
-OMPI_SRC=/path/to/openmpi-5.0.11
-OMPI_BUILD=/path/to/openmpi-5.0.11/build
-```
+PRIK reads the Fortran declarations from the Open MPI source and configured
+build trees you kept during installation. Keep `OMPI_SRC` and `OMPI_BUILD` set
+to those trees.
 
 Generate the contract from the one entry source, letting PRIK discover the
 modules it uses under both trees:
@@ -623,8 +657,15 @@ the boundary as native buffers: `Recv` wrote into rank 1's `data`, `Bcast`
 into every rank's `data`, and each reduction into its receive array directly.
 No part of Open MPI was rebuilt.
 
-With `from mpi4py import MPI` in place of `import prik_mpi as MPI`, mpi4py
-runs the same program and prints the same lines.
+To compare with the mpi4py installation from the setup above, run the same
+program with only its import changed:
+
+```bash
+sed 's/^import prik_mpi as MPI$/from mpi4py import MPI/' mpi_example.py > mpi4py_example.py
+mpirun -n 2 python3 mpi4py_example.py
+```
+
+The two programs print the same lines.
 
 ## How fast it is
 
@@ -647,49 +688,6 @@ mpi4py's `MPI.Wtime` for all three: an AMD Ryzen 5 5600H laptop (x86-64,
 6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory) running Ubuntu 22.04,
 with Python 3.10, NumPy 2.2, GCC and gfortran 11.4, Open MPI 5.0.11, and
 mpi4py 4.1.2.
-
-## Why the configured tree must match the installation
-
-`mpi_f08` is not the same text in every Open MPI build. `configure` decides
-details of the Fortran interface for the compiler and options it is given, and
-writes some of the Fortran sources and headers PRIK reads -- the
-`MPI_IN_PLACE` declaration shown earlier is one of them. Two builds of the
-same Open MPI version with the same `gfortran` but different Fortran flags can
-therefore declare different interfaces. PRIK has to read the declarations of
-the build it links against, so the source and build trees must be the ones
-that installation was configured from; the version number alone does not
-guarantee that.
-
-Open MPI records each configure run in the installation and in the build tree,
-so you can compare them. The installation reports when, where, by whom, and
-with which command line it was configured:
-
-```bash
-ompi_info --parsable | grep '^config:\(timestamp\|host\|user\|cli\)'
-```
-
-and the build tree records the same run:
-
-```bash
-grep '^OPAL_CONFIGURE_\(DATE\|HOST\|USER\)' "$OMPI_BUILD/Makefile"
-grep OPAL_CONFIGURE_CLI "$OMPI_BUILD/opal/include/opal/version.h"
-```
-
-The simplest way to have a matching pair is to build Open MPI yourself and
-keep its trees:
-
-```bash
-tar -xjf openmpi-5.0.11.tar.bz2
-mkdir openmpi-5.0.11/build && cd openmpi-5.0.11/build
-../configure --prefix="$HOME/openmpi-5.0.11" --enable-mpi-fortran=usempif08 FC=gfortran
-make -j4 && make install
-```
-
-PRIK's Open MPI integration test runs the commands in this tutorial and checks
-this relationship before it starts: it requires the configured tree and the
-installation to record the same configure run. Continuous integration runs it
-against Open MPI 4.1.8 and 5.0.11 built this way. Those are the configurations
-exercised in CI, not the only ones that can work.
 
 ## Limitations
 
