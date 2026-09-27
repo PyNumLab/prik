@@ -10,7 +10,7 @@ publication: reviewed
 # Contributing Workflow
 
 This page is the practical path for changing PRIK. The root
-[`CONTRIBUTING.md`](../../../CONTRIBUTING.md) is the short public entrypoint.
+[`.github/CONTRIBUTING.md`](../../../.github/CONTRIBUTING.md) is the short public entrypoint.
 
 ## Prepare The Checkout
 

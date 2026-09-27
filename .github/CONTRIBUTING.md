@@ -33,11 +33,11 @@ Keep the pull request easy to review: explain the problem, the solution, and
 how you verified it. All required GitHub checks must pass before merge.
 
 For the complete workflow, see the
-[contributing workflow](docs/developer/workflows/contributing.md) and
-[quality-assurance guide](docs/developer/workflows/quality-assurance.md).
+[contributing workflow](../docs/developer/workflows/contributing.md) and
+[quality-assurance guide](../docs/developer/workflows/quality-assurance.md).
 
 ## License
 
-Contributions are accepted under the [MIT License](LICENSE). By submitting a
+Contributions are accepted under the [MIT License](../LICENSE). By submitting a
 contribution, you confirm that you have the right to license it under those
 terms.
