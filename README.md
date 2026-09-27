@@ -35,13 +35,8 @@
   <a href="https://doi.org/10.5281/zenodo.21881987"><img src="https://zenodo.org/badge/1241799694.svg" alt="DOI"></a>
 </p>
 
-**PRIK (Python Runtime Interop Kit)** preserves modules, derived types, arrays,
-callbacks, and native behavior while letting you reshape the resulting Python
-API through editable `.pyi` contracts instead of writing low-level binding code.
-No install needed to try it: the [quickstart
-notebook](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb)
-compiles a Fortran cell and a C cell, then reshapes the generated API by editing
-its `.pyi` contract.
+**PRIK (Python Runtime Interop Kit)** generates native Python bindings for
+Fortran and C code.
 
 **Project status: Alpha.** Core Fortran workflows and the currently supported
 C wrapper features are implemented and tested across supported compilers, but
