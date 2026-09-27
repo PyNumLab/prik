@@ -688,6 +688,22 @@ ranks, arrays, prepared MPI handles, mpi4py `MPI.Wtime` timer, and repeated
 batches for each backend. Compare results from one machine and one Open MPI
 installation; timings vary by host.
 
+These results were measured on an AMD Ryzen 5 5600H running Ubuntu 22.04.5,
+with Open MPI 5.0.11 built using GNU Fortran 11.4 and mpi4py 4.1.2 built
+against that same installation. Each value is the median of three runs; each
+run takes the fastest of five timed batches with two ranks.
+
+| Operation | Generated API | `prik_mpi.py` | mpi4py |
+| --- | ---: | ---: | ---: |
+| `Allreduce`, 1 `int32` | 0.851 µs | 0.987 µs | 1.106 µs |
+| `Allreduce`, 1,024 `int32` values | 3.262 µs | 3.494 µs | 3.652 µs |
+| `Allreduce`, 1,048,576 `int32` values | 2.279 ms | 2.379 ms | 2.424 ms |
+| `Barrier` | 0.443 µs | 0.507 µs | 0.342 µs |
+| `Get_rank` | 247 ns | 310 ns | 31 ns |
+
+CI uploads JSON results for each Linux and macOS Open MPI job so you can
+compare its measurements with this local run.
+
 ## Limitations
 
 This tutorial selected eighteen names; the rest of `mpi_f08` works the same
