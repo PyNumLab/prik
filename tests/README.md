@@ -28,7 +28,7 @@ language.
 The tracked pre-push hook runs the blocking static-analysis gate, the focused
 publication and user-content documentation smoke tests, one compiled scalar
 source-to-native-call wrapper test, `tests/tools/`, and `tests/workflows/`
-locally; activate it once per clone with `git config core.hooksPath .githooks`.
+locally; activate it once per clone with `git config core.hooksPath tools/githooks`.
 GitHub Actions runs the checks again as the shared enforcement boundary.
 
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`

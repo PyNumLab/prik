@@ -16,7 +16,7 @@ This page is the practical path for changing PRIK. The root
 
 ```bash
 python3 -m pip install -e ".[qa]"
-git config core.hooksPath .githooks
+git config core.hooksPath tools/githooks
 ```
 
 This enables PRIK's repository pre-push checks for this checkout.
