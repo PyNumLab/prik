@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Local builds now write `prik.egg-info/` to the repository root, where Git
+  ignores it; `.artifacts/` still holds the documentation site and
+  distributions. Subprocess coverage uses the startup hook that ships with
+  coverage, so `COVERAGE_PROCESS_START` works as before.
+
 ## 0.5.1 — 2026-09-27
 
 ### Breaking changes
