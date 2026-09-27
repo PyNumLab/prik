@@ -294,17 +294,17 @@ its `.pyi` contract. It needs no installation.
 
 ## Proven on real libraries
 
-The maintained example suite covers six Fortran libraries—
+The Fortran library workflows cover
 [BLAS](user/examples/fortran/blas-wrapper.md),
 [LAPACK](user/examples/fortran/lapack-wrapper.md),
 [FFTPACK](user/examples/fortran/fftpack-wrapper.md),
 [MINPACK](user/examples/fortran/minpack-wrapper.md),
-[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md), and
-[PRIMA](user/examples/fortran/prima-wrapper.md)—and two C
-libraries: [libm](user/examples/c/libm-wrapper.md) and
-[TA-Lib](user/examples/c/ta-lib-wrapper.md). Each project has a complete build
-and numerical validation workflow, including its tested platforms and
-toolchains, in the [Examples Gallery](user/examples/index.md).
+[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md),
+[PRIMA](user/examples/fortran/prima-wrapper.md), and
+[Open MPI `mpi_f08`](user/tutorials/openmpi-f08.md). The C library workflows
+cover [libm](user/examples/c/libm-wrapper.md) and
+[TA-Lib](user/examples/c/ta-lib-wrapper.md). Each linked page provides its
+build and validation steps.
 
 ## Measured against NumPy's f2py
 

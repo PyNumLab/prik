@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.5.1 — 2026-09-27
+
 ### Breaking changes
 
 - Fortran derived-type scalar fields now expose live, writable rank-zero NumPy
