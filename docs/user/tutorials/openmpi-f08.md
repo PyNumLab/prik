@@ -703,6 +703,10 @@ Time per call, compared with mpi4py:
 | `Barrier` | 0.342 µs | 0.443 µs (30% slower) | 0.507 µs (48% slower) |
 | `Get_rank` | 31 ns | 247 ns (about 8× slower) | 310 ns (10× slower) |
 
+`Get_rank` is the cheapest call, so its time is almost all the overhead of
+making a call. That overhead is small, but higher through PRIK than through
+mpi4py, and can be optimized later.
+
 The relative figures describe this local run; the differences for the largest
 `Allreduce` are small compared with its variation between runs.
 
