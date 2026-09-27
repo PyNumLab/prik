@@ -98,7 +98,7 @@ end module points
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 points.move(item, np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)             # 4.0 2.0
@@ -119,9 +119,9 @@ Want a more Pythonic API? Edit `contracts/points.pyi`:
 ```python
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
-class point:
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+class Point:
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
     def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
 
@@ -153,7 +153,7 @@ The native Fortran is unchanged, but the Python surface is now:
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 item.translate(np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)       # 4.0 2.0
