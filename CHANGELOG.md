@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The README now opens with a short terminal demo that builds a Fortran module
+  and calls it from Python, followed by links to Colab, installation, and the
+  real-library examples.
+
 ## 0.5.1 — 2026-09-27
 
 ### Breaking changes
