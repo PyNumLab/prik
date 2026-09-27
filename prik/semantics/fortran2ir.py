@@ -16,7 +16,7 @@ compile-time requirement utilities at the end of the module.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
-from typing import NamedTuple
+from typing import Final, NamedTuple
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
@@ -172,6 +172,15 @@ FORTRAN_TYPE_MAP = {
     ("character", "selected_char_kind('iso_10646')"): "UString",
 }
 
+# The character sets a compiler numbers for itself, and the string type each is.
+# Probing these selectors maps a numeric character kind to its set on the
+# target compiler, since kind numbers are not portable.
+CHARACTER_SET_SELECTORS: Final[tuple[tuple[str, str], ...]] = (
+    ("selected_char_kind('DEFAULT')", "String"),
+    ("selected_char_kind('ASCII')", "String"),
+    ("selected_char_kind('ISO_10646')", "UString"),
+)
+
 _FORTRAN_INTRINSIC_TYPES = frozenset({"integer", "real", "complex", "logical", "character"})
 _FORTRAN_STORAGE_PROBE_TYPES = frozenset({"integer", "real", "complex", "logical"})
 _FORTRAN_STORAGE_TYPE_MAP = {
@@ -275,6 +284,20 @@ class _DeclarationCallableContext:
     uses: list[FortranUseStatement]
 
 
+def _character_kinds(compile_time_values: Mapping[str, str]) -> dict[str, str]:
+    """Map each character kind number the target compiler assigns to its string type.
+
+    The numbers come from probing ``CHARACTER_SET_SELECTORS``; a set the
+    compiler does not provide reports ``-1`` and adds nothing.
+    """
+    kinds: dict[str, str] = {}
+    for selector, semantic_type in CHARACTER_SET_SELECTORS:
+        number = compile_time_values.get(selector.lower())
+        if number is not None and number.lstrip("-").isdigit() and int(number) > 0:
+            kinds[number] = semantic_type
+    return kinds
+
+
 def _normalize_compile_time_values(
     compile_time_values: dict[str, int | str] | None,
 ) -> dict[str, str]:
@@ -367,6 +390,7 @@ class FortranToIRConverter(ClassVisitor):
         self._abstract_derived_types: set[tuple[str, str]] = set()
         self.type_map = FORTRAN_TYPE_MAP if type_map is None else type_map
         self.compile_time_values = _normalize_compile_time_values(compile_time_values)
+        self.character_kinds = _character_kinds(self.compile_time_values)
         self.wrapped_derived_types = {
             (str(module).lower(), str(name).lower()) for module, name in (wrapped_derived_types or [])
         }
@@ -2741,12 +2765,19 @@ class FortranToIRConverter(ClassVisitor):
 
         kind = self._semantic_kind_key(var)
         semantic_type = self.type_map.get((base_type, kind))
+        if semantic_type is None and base_type == "character":
+            semantic_type = self.character_kinds.get(kind)
         if semantic_type is None:
             type_text = base_type if kind is None else f"{base_type}(kind={kind})"
             if base_type == "character" and kind == "-1":
                 raise ValueError(
                     f"Unsupported Fortran semantic type for variable '{var.name}': {type_text}; "
                     "this compiler does not provide the requested character set (selected_char_kind returned -1)"
+                )
+            if base_type == "character" and kind is not None and kind.isdigit() and self.character_kinds:
+                raise ValueError(
+                    f"Unsupported Fortran semantic type for variable '{var.name}': {type_text}; "
+                    f"this compiler numbers no default, ASCII, or ISO_10646 character set as kind {kind}"
                 )
             raise ValueError(f"Unsupported Fortran semantic type for variable '{var.name}': {type_text}")
         return semantic_type
@@ -4541,6 +4572,8 @@ def _compile_time_requirement_message(code: str, symbol: str, expression: str) -
         return f"Parameter '{symbol}' needs a compile-time value for expression '{expression}'."
     if code == "unsupported_kind":
         return f"Kind expression for '{symbol}' needs a supported compile-time value."
+    if code == "character_set":
+        return f"Character set '{expression}' needs the kind number the compiler assigns it."
     return f"Compile-time value required for '{symbol}'."
 
 
@@ -4724,6 +4757,11 @@ def collect_semantic_compile_time_requirements(
                 base_type=base_type,
                 kind=kind_key,
             )
+            if base_type == "character":
+                # A numeric character kind names whichever set the target
+                # compiler numbers that way, so the sets' numbers are measured.
+                for selector, _semantic_type in CHARACTER_SET_SELECTORS:
+                    add_requirement("character_set", {}, expression=selector, base_type=base_type)
 
     return requirements
 

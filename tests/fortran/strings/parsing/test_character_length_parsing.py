@@ -92,4 +92,8 @@ def test_a_recorded_selector_is_what_semantics_reads_for_a_character_kind():
     unsupported.record_character_selector("(kind=bad)")
     requirements = collect_semantic_compile_time_requirements(FortranFile(variables=[unsupported]))
 
-    assert [(item["symbol"], item["kind"], item["expression"]) for item in requirements] == [("x", "bad", "bad")]
+    assert [
+        (item["symbol"], item["kind"], item["expression"])
+        for item in requirements
+        if item["code"] == "unsupported_kind"
+    ] == [("x", "bad", "bad")]

@@ -11,7 +11,9 @@ release tags add a leading `v` to the package version.
   supported through the new `UString` contract type, which takes every form
   `String` does and maps storage to NumPy `U<n>` instead of `S<n>`. A
   character kind given by `selected_char_kind('ASCII')` or `'DEFAULT'` is now
-  an ordinary `String` instead of an unsupported kind.
+  an ordinary `String` instead of an unsupported kind. A numeric character
+  kind such as `kind=4` is classified by asking the compiler which character
+  set it numbers that way.
 - **Breaking:** scalar fields of a Fortran derived type read as live rank-zero
   NumPy views of the object's storage, as module variables do. A numeric or
   logical field returns a writable `T[()]` view instead of a NumPy scalar, and
