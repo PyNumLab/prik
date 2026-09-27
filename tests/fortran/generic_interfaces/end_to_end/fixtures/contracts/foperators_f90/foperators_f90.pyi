@@ -7,7 +7,7 @@ class Vector:
         value: Float64 = 0.0
     ) -> None: ...
 
-    value: Float64 = 0.0
+    value: Float64[()] = 0.0
 
     @overload("add_vectors")
     def __add__(
@@ -187,7 +187,7 @@ class Offset:
         value: Float64 = 0.0
     ) -> None: ...
 
-    value: Float64 = 0.0
+    value: Float64[()] = 0.0
 
     @overload("add_vector_offset")
     def __radd__(
@@ -208,7 +208,7 @@ class Counter:
         value: Int32 = 0
     ) -> None: ...
 
-    value: Int32 = 0
+    value: Int32[()] = 0
 
     @private
     @bind("counter_add_integer")

@@ -172,13 +172,17 @@ def _member_proxy_fields(plan: ModulePlan) -> tuple[DerivedFieldPlan, ...]:
     )
 
 
-def has_scalar_descriptor_fields(plan: ModulePlan) -> bool:
-    """Read whether a planned field lends scalar allocatable or pointer storage."""
+def has_scalar_view_fields(plan: ModulePlan) -> bool:
+    """Read whether a planned field lends a rank-zero view of its own storage."""
     fields = (
         *(field for namespace in plan.namespaces for derived in namespace.derived_types for field in derived.fields),
         *_member_proxy_fields(plan),
     )
-    return any(field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW for field in fields)
+    return any(
+        field.access
+        in {DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}
+        for field in fields
+    )
 
 
 def requires_address_capture(plan: ModulePlan) -> bool:
@@ -195,7 +199,7 @@ def requires_address_capture(plan: ModulePlan) -> bool:
             field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
             for field in _member_proxy_fields(plan)
         )
-        or has_scalar_descriptor_fields(plan)
+        or has_scalar_view_fields(plan)
     )
 
 

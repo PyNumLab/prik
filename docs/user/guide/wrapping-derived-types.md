@@ -101,8 +101,8 @@ class Point:
         y: Float64 = 0.0
     ) -> None: ...
 
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
 class Holder:
     def __init__(self) -> None: ...
@@ -159,7 +159,7 @@ print(item.x, item.y)  # 4.0 6.0
 made = points.make_point(np.float64(8.0), np.float64(9.0))
 
 # Nested component
-container = points.holder()
+container = points.Holder()
 points.set_origin(container, made)
 container.origin.x = np.float64(12.0)
 print(container.origin.x)  # 12.0
@@ -215,12 +215,15 @@ print(points.Point.__init__.__doc__)
 - **Missing intent**: A dummy without `intent` follows the same conservative
   in-place rule as `intent(inout)`.
 - **Fields**: Public scalar numeric, logical, complex, and character fields
-  become Python attributes. A scalar `allocatable` or `pointer` field reads as
-  a live read-only rank-zero NumPy view, or `None` when it is unallocated or
-  disassociated. Assigning to it allocates an allocatable field or writes a
-  pointer field's current target, as for
-  [module variables](allocatables.md#key-concepts). The view keeps its parent
-  object alive; read the field again after its storage changes.
+  read as live rank-zero NumPy views of the object's storage, as module
+  variables do. A numeric or logical field is a writable `T[()]` view, and a
+  fixed-length character field is a writable fixed-width bytes view: writing
+  through the view or assigning the attribute updates the object. A scalar
+  `allocatable` or `pointer` field reads as a view of its current storage, or
+  `None` when it is unallocated or disassociated; assigning to it allocates an
+  allocatable field or writes a pointer field's current target. Every view keeps its
+  parent object alive; read an `allocatable` or `pointer` field again after
+  its storage changes.
 - **Nested types**: Appear as generated objects tied to their parent.
 - **Results**: Derived-type function results create new independent objects.
   An `allocatable` result must be allocated when the function returns, as
@@ -298,8 +301,8 @@ In this mapping, `@bind` selects the native initializer,
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class Point:
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
     @bind("initialize_point")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])

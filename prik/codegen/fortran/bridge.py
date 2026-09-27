@@ -82,7 +82,7 @@ from prik.codegen.nodes import (
     FortranTypeDefinition,
     FortranUse,
 )
-from prik.planning.planner import has_scalar_descriptor_fields, requires_address_capture
+from prik.planning.planner import has_scalar_view_fields, requires_address_capture
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -3734,7 +3734,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _captures_scalar_address(self, plan: ModulePlan) -> bool:
         """Report whether a scalar view or scalar descriptor field takes its address in C."""
-        return has_scalar_descriptor_fields(plan) or any(
+        return has_scalar_view_fields(plan) or any(
             variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
             and variable.bridge.native_getter_action
             in {
@@ -7681,23 +7681,32 @@ class FortranBridgeGenerator(ClassVisitor):
         field: DerivedFieldPlan,
     ) -> tuple[FortranFunction, ...]:
         """Lower scalar fields through the typed holder selected by policy."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
         holder_type = self._allocatable_holder_type_name(derived.backend_symbol)
         getter_name = self._allocatable_holder_field_bridge_name(derived, field, "get")
-        getter = FortranFunction(
-            name=getter_name,
-            parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-            result_name="result",
-            result_type=scalar.fortran_spelling,
-            bind_name=getter_name,
-            declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
-            body=(
-                self._derived_owner_association(),
-                FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
-            ),
-        )
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            getter = self._scalar_storage_getter(
+                getter_name,
+                f"owner%value%{field.native_name}",
+                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                prologue=(self._derived_owner_association(),),
+            )
+        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
+            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
+        else:
+            getter = FortranFunction(
+                name=getter_name,
+                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                result_name="result",
+                result_type=scalar.fortran_spelling,
+                bind_name=getter_name,
+                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                body=(
+                    self._derived_owner_association(),
+                    FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
+                ),
+            )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
         setter_name = self._allocatable_holder_field_bridge_name(derived, field, "set")
@@ -7723,23 +7732,32 @@ class FortranBridgeGenerator(ClassVisitor):
         field: DerivedFieldPlan,
     ) -> tuple[FortranFunction, ...]:
         """Lower scalar fields through a pointer holder without owning its target."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
         holder_type = self._pointer_holder_type_name(derived.backend_symbol)
         getter_name = self._pointer_holder_field_bridge_name(derived, field, "get")
-        getter = FortranFunction(
-            name=getter_name,
-            parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-            result_name="result",
-            result_type=scalar.fortran_spelling,
-            bind_name=getter_name,
-            declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
-            body=(
-                self._derived_owner_association(),
-                FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
-            ),
-        )
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            getter = self._scalar_storage_getter(
+                getter_name,
+                f"owner%value%{field.native_name}",
+                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                prologue=(self._derived_owner_association(),),
+            )
+        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
+            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
+        else:
+            getter = FortranFunction(
+                name=getter_name,
+                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                result_name="result",
+                result_type=scalar.fortran_spelling,
+                bind_name=getter_name,
+                declarations=(FortranDeclaration("owner", f"type({holder_type})", ("pointer",)),),
+                body=(
+                    self._derived_owner_association(),
+                    FortranAssignment("result", CodeExpression(f"owner%value%{field.native_name}")),
+                ),
+            )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
         setter_name = self._pointer_holder_field_bridge_name(derived, field, "set")
@@ -7764,72 +7782,174 @@ class FortranBridgeGenerator(ClassVisitor):
         derived: DerivedTypePlan,
         field: DerivedFieldPlan,
     ) -> tuple[FortranFunction, ...]:
-        """Dispatch address-backed field access by completed object kind."""
-        if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
-            getter = self._direct_string_field_getter(derived, field)
-            setter = self._direct_string_field_setter(derived, field)
-            return (getter, *((setter,) if setter is not None else ()))
-        if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
-            return self._direct_native_handle_field_procedures(derived, field)
-        if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
-            access = self._field_descriptor(
-                field,
-                f"owner%{field.native_name}",
-                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
-                declarations=(self._derived_owner_declaration(derived),),
-                prologue=(self._derived_owner_association(),),
-            )
-            return self._scalar_descriptor_field_procedures(
-                field,
-                access,
-                self._derived_field_bridge_name(derived, field, "get"),
-                self._derived_field_bridge_name(derived, field, "set"),
-            )
-        if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
-            getter = self._direct_ordinary_array_field_getter(derived, field)
-            setter = self._direct_ordinary_array_field_setter(derived, field)
-        elif field.access is DerivedFieldAccessMechanism.SCALAR_VALUE:
-            getter = self._direct_scalar_field_getter(derived, field)
-            setter = self._direct_scalar_field_setter(derived, field)
-        elif field.access is DerivedFieldAccessMechanism.NESTED_OBJECT:
-            getter = self._direct_nested_field_getter(derived, field)
-            setter = self._direct_nested_field_setter(derived, field)
-        else:
-            raise ValueError(f"Unsupported Fortran field lowering for {field.owner_path!r}")
-        return (getter, *((setter,) if setter is not None else ()))
+        """Dispatch address-backed field access by its completed access mechanism."""
+        builders = {
+            DerivedFieldAccessMechanism.FIXED_STRING_COPY: self._direct_string_field_procedures,
+            DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._direct_native_handle_field_procedures,
+            DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW: self._direct_scalar_storage_field_procedures,
+            DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._direct_scalar_descriptor_field_procedures,
+            DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._direct_ordinary_array_field_procedures,
+            DerivedFieldAccessMechanism.SCALAR_VALUE: self._direct_scalar_value_field_procedures,
+            DerivedFieldAccessMechanism.NESTED_OBJECT: self._direct_nested_field_procedures,
+        }
+        try:
+            return builders[field.access](derived, field)
+        except KeyError as error:
+            raise ValueError(f"Unsupported Fortran field lowering for {field.owner_path!r}") from error
+
+    @staticmethod
+    def _field_accessors(getter: FortranFunction | None, setter: FortranFunction | None) -> tuple[FortranFunction, ...]:
+        """Return the accessors a field's completed getter and setter actions produced."""
+        return tuple(procedure for procedure in (getter, setter) if procedure is not None)
+
+    def _direct_owner(self, derived: DerivedTypePlan) -> dict:
+        """Return the owner parameter, declaration, and association of a direct field procedure."""
+        return {
+            "parameters": (FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+            "declarations": (self._derived_owner_declaration(derived),),
+            "prologue": (self._derived_owner_association(),),
+        }
+
+    def _direct_string_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Copy a fixed character field through a byte buffer."""
+        return self._field_accessors(
+            self._direct_string_field_getter(derived, field),
+            self._direct_string_field_setter(derived, field),
+        )
+
+    def _direct_scalar_storage_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Lend a stored scalar field's address and copy assigned values into it."""
+        getter = self._scalar_storage_getter(
+            self._derived_field_bridge_name(derived, field, "get"),
+            f"owner%{field.native_name}",
+            **self._direct_owner(derived),
+        )
+        setter = (
+            self._direct_string_field_setter(derived, field)
+            if field.string_element
+            else self._direct_scalar_field_setter(derived, field)
+        )
+        return self._field_accessors(getter, setter)
+
+    def _direct_scalar_descriptor_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Lend a scalar allocatable or pointer field's current storage and assign through it."""
+        return self._scalar_descriptor_field_procedures(
+            field,
+            self._field_descriptor(field, f"owner%{field.native_name}", **self._direct_owner(derived)),
+            self._derived_field_bridge_name(derived, field, "get"),
+            self._derived_field_bridge_name(derived, field, "set"),
+        )
+
+    def _direct_ordinary_array_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Report a fixed array field's storage and extents."""
+        return self._field_accessors(
+            self._direct_ordinary_array_field_getter(derived, field),
+            self._direct_ordinary_array_field_setter(derived, field),
+        )
+
+    def _direct_scalar_value_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Copy a scalar field an edited contract declares as a plain value."""
+        return self._field_accessors(
+            self._direct_scalar_field_getter(derived, field),
+            self._direct_scalar_field_setter(derived, field),
+        )
+
+    def _direct_nested_field_procedures(self, derived, field) -> tuple[FortranFunction, ...]:
+        """Lend a nested derived field's address."""
+        return self._field_accessors(
+            self._direct_nested_field_getter(derived, field),
+            self._direct_nested_field_setter(derived, field),
+        )
 
     def _module_member_procedures(
         self,
         variable: ModuleVariablePlan,
         member: DerivedMemberPathPlan,
     ) -> tuple[FortranFunction, ...]:
-        """Dispatch one plain-module member operation by typed field kind."""
-        field = member.field
-        if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
-            getter = self._module_string_member_getter(variable, member)
-            setter = self._module_string_member_setter(variable, member)
-            return (getter, *((setter,) if setter is not None else ()))
-        if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
-            return self._module_native_handle_member_procedures(variable, member)
-        if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
-            return self._scalar_descriptor_field_procedures(
-                field,
-                self._field_descriptor(field, self._module_member_expression(variable, member)),
-                self._module_member_bridge_name(variable, member, "get"),
-                self._module_member_bridge_name(variable, member, "set"),
-            )
-        if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
-            getter = self._module_ordinary_array_member_getter(variable, member)
-            setter = self._module_ordinary_array_member_setter(variable, member)
-            return (getter, *((setter,) if setter is not None else ()))
-        if field.access is DerivedFieldAccessMechanism.SCALAR_VALUE:
-            getter = self._module_scalar_member_getter(variable, member)
-            setter = self._module_scalar_member_setter(variable, member)
-            return (getter, *((setter,) if setter is not None else ()))
-        if field.access is DerivedFieldAccessMechanism.NESTED_OBJECT:
-            setter = self._module_nested_member_setter(variable, member)
-            return (setter,) if setter is not None else ()
-        raise ValueError(f"Unsupported Fortran module member lowering for {field.owner_path!r}")
+        """Dispatch one plain-module member operation by its completed access mechanism."""
+        builders = {
+            DerivedFieldAccessMechanism.FIXED_STRING_COPY: self._module_string_member_procedures,
+            DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._module_native_handle_member_procedures,
+            DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW: self._module_scalar_storage_member_procedures,
+            DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._module_scalar_descriptor_member_procedures,
+            DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._module_ordinary_array_member_procedures,
+            DerivedFieldAccessMechanism.SCALAR_VALUE: self._module_scalar_value_member_procedures,
+            DerivedFieldAccessMechanism.NESTED_OBJECT: self._module_nested_member_procedures,
+        }
+        try:
+            return builders[member.field.access](variable, member)
+        except KeyError as error:
+            raise ValueError(f"Unsupported Fortran module member lowering for {member.field.owner_path!r}") from error
+
+    def _module_string_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Copy a module object's fixed character member through a byte buffer."""
+        return self._field_accessors(
+            self._module_string_member_getter(variable, member),
+            self._module_string_member_setter(variable, member),
+        )
+
+    def _module_scalar_storage_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Lend a module object's stored scalar member and copy assigned values into it."""
+        getter = self._scalar_storage_getter(
+            self._module_member_bridge_name(variable, member, "get"),
+            self._module_member_expression(variable, member),
+        )
+        setter = (
+            self._module_string_member_setter(variable, member)
+            if member.field.string_element
+            else self._module_scalar_member_setter(variable, member)
+        )
+        return self._field_accessors(getter, setter)
+
+    def _module_scalar_descriptor_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Lend a module object's scalar allocatable or pointer member and assign through it."""
+        return self._scalar_descriptor_field_procedures(
+            member.field,
+            self._field_descriptor(member.field, self._module_member_expression(variable, member)),
+            self._module_member_bridge_name(variable, member, "get"),
+            self._module_member_bridge_name(variable, member, "set"),
+        )
+
+    def _module_ordinary_array_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Report a module object's fixed array member storage and extents."""
+        return self._field_accessors(
+            self._module_ordinary_array_member_getter(variable, member),
+            self._module_ordinary_array_member_setter(variable, member),
+        )
+
+    def _module_scalar_value_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Copy a module object's scalar member an edited contract declares as a plain value."""
+        return self._field_accessors(
+            self._module_scalar_member_getter(variable, member),
+            self._module_scalar_member_setter(variable, member),
+        )
+
+    def _module_nested_member_procedures(self, variable, member) -> tuple[FortranFunction, ...]:
+        """Replace a module object's nested derived member; reads go through the proxy."""
+        return self._field_accessors(None, self._module_nested_member_setter(variable, member))
+
+    @staticmethod
+    def _scalar_storage_getter(
+        name: str,
+        native: str,
+        *,
+        parameters: tuple[FortranParameter, ...] = (),
+        declarations: tuple[FortranDeclaration, ...] = (),
+        prologue: tuple[FortranCall, ...] = (),
+    ) -> FortranFunction:
+        """Return where one stored scalar field lives, captured on the C side.
+
+        The field need not be a target, so ``c_loc`` cannot name it.
+        """
+        return FortranFunction(
+            name=name,
+            parameters=parameters,
+            result_name="result",
+            result_type="type(c_ptr)",
+            bind_name=name,
+            declarations=declarations,
+            body=(*prologue, FortranAssignment("result", CodeExpression(f"{_MODULE_SCALAR_CAPTURE_NAME}({native})"))),
+        )
 
     def _scalar_descriptor_field_procedures(
         self,

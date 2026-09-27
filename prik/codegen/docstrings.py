@@ -86,7 +86,7 @@ _MODULE_SCALAR_VIEW_NOTES = {
         "Live view of the module's fixed-width character bytes; writing through it updates the module."
     ),
     ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: (
-        "Live read-only view of the current storage, or None when it holds none."
+        "Live view of the current storage, or None when it holds none; read it again after reallocation."
     ),
 }
 
@@ -570,6 +570,8 @@ class WrapperDocstringBuilder:
             lines.append("    The parent wrapper retains the descriptor owner.")
         elif field.array is not None:
             lines.append("    Borrowed native view retained by the parent wrapper.")
+        elif field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            lines.append("    Live view of the object's storage; writing through it updates the object.")
         elif field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
             lines.append(f"    {_MODULE_SCALAR_VIEW_NOTES[ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW]}")
         if field.setter_action is SetterAction.WRITE_THROUGH:

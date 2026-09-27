@@ -975,7 +975,7 @@ class OwnershipPolicyResolver:
         storage = self.decide_semantic_variable(variable, context)
         if storage.is_blocked or storage.kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return storage
-        if context.is_module_variable and variable.semantic_type.metadata.get("native_storage"):
+        if (context.is_module_variable or context.is_field) and variable.semantic_type.metadata.get("native_storage"):
             return storage
         if (context.is_module_variable or context.is_field) and (
             variable.semantic_type.metadata.get("fortran_allocatable")
@@ -1022,7 +1022,8 @@ class OwnershipPolicyResolver:
             incoming,
             assignment_mode=(
                 AssignmentMode.VALUE_COPY
-                if context.is_module_variable and variable.semantic_type.metadata.get("native_storage")
+                if (context.is_module_variable or context.is_field)
+                and variable.semantic_type.metadata.get("native_storage")
                 else AssignmentMode.ALIAS
                 if storage.storage_mode is StorageMode.ALIAS
                 else AssignmentMode.VALUE_COPY
@@ -1038,8 +1039,8 @@ class OwnershipPolicyResolver:
     ) -> AssignmentMode | None:
         """Select how a scalar allocatable or pointer module variable or field is assigned.
 
-        Its getter lends a read-only view of the current storage, so Python
-        writes only through the setter: an allocatable takes intrinsic
+        Its getter lends a view of the current storage, and its setter
+        reaches whatever storage is current: an allocatable takes intrinsic
         assignment, while a pointer's current target receives the value.
         """
         if not (context.is_module_variable or context.is_field):
@@ -1918,7 +1919,7 @@ class OwnershipPolicyResolver:
                 boundary_storage_mode=StorageMode.ALIAS,
                 nullable=True,
                 borrowed=True,
-                reason="scalar module descriptor lends a read-only view of its current storage on each read",
+                reason="scalar module descriptor lends a view of its current storage on each read",
             )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:
@@ -1980,7 +1981,18 @@ class OwnershipPolicyResolver:
                 boundary_storage_mode=StorageMode.ALIAS,
                 nullable=True,
                 borrowed=True,
-                reason="scalar field descriptor lends a read-only view of its current storage on each read",
+                reason="scalar field descriptor lends a view of its current storage on each read",
+            )
+        if (facts.metadata or {}).get("native_storage") and facts.rank == 0 and not facts.is_custom:
+            return OwnershipDecision(
+                self._kind(facts, OwnershipContext()),
+                OwnershipOwner.WRAPPER,
+                TransferMode.BORROWED_VIEW,
+                DestructionPolicy.WRAPPER_DEALLOC,
+                storage_mode=StorageMode.ALIAS,
+                boundary_storage_mode=StorageMode.ALIAS,
+                borrowed=True,
+                reason="stored scalar field lends a live view of its storage",
             )
         if facts.allocatable and facts.rank == 0:
             return self._allocatable_scalar_decision(facts, context)

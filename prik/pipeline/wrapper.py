@@ -177,6 +177,12 @@ class GeneratedWrapper(StageRecord):
         return (*self.compile_sources, *self.headers)
 
 
+# Field accesses that lend a rank-zero view of the field's own storage.
+_SCALAR_VIEW_FIELD_ACCESS = frozenset(
+    {DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}
+)
+
+
 class WrapperGenerator:
     """Turn one editable ``ModulePlan`` into one complete generated wrapper.
 
@@ -881,6 +887,7 @@ class WrapperGenerator:
                 DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
                 DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
                 DerivedFieldAccessMechanism.NESTED_OBJECT,
+                DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW,
                 DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW,
             }
             else DerivedOwnerRetention.NONE
@@ -916,10 +923,8 @@ class WrapperGenerator:
     def _derived_field_family_diagnostics(self, field) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch field-facet consistency from its completed object kind."""
         match field.object_kind:
-            case ObjectKind.SCALAR | ObjectKind.STRING if (
-                field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
-            ):
-                valid = field.getter_action is CodegenAction.BORROWED_VIEW and field.rank == 0
+            case ObjectKind.SCALAR | ObjectKind.STRING if field.access in _SCALAR_VIEW_FIELD_ACCESS:
+                valid = self._valid_scalar_view_derived_field(field)
             case ObjectKind.SCALAR:
                 valid = self._valid_scalar_derived_field(field)
             case ObjectKind.STRING:
@@ -935,6 +940,22 @@ class WrapperGenerator:
         if field.native_array_handle is None:
             return ()
         return tuple(self._native_array_handle_shape_diagnostics(field.owner_path, field.native_array_handle))
+
+    @staticmethod
+    def _valid_scalar_view_derived_field(field) -> bool:
+        """Return whether one field lends a rank-zero view of its own storage.
+
+        A stored character field lends its declared width, so it needs one.
+        """
+        return (
+            field.getter_action is CodegenAction.BORROWED_VIEW
+            and field.rank == 0
+            and not (
+                field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW
+                and field.string_element
+                and not field.character_length
+            )
+        )
 
     @staticmethod
     def _valid_scalar_derived_field(field) -> bool:

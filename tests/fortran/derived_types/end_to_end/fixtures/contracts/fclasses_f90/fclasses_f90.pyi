@@ -8,8 +8,8 @@ class Vector:
         y: Float64 = ...
     ) -> None: ...
 
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
     @native_call([Pass(), Addr(Arg(0))])
     def scale(

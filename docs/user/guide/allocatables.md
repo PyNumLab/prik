@@ -18,9 +18,8 @@ and an array handle gives Python access to that descriptor.
 
 - Scalar allocatable dummies and results appear as values or `None`. Reading a
   scalar allocatable module variable or derived-type field returns a live
-  read-only rank-zero NumPy view or `None`; assigning to it allocates when
-  needed. Array allocatables use
-  `Allocatable[T[...]]` handles.
+  rank-zero NumPy view or `None`; assigning to it allocates when needed. Array
+  allocatables use `Allocatable[T[...]]` handles.
 - An array handle exposes allocation state and descriptor operations; it is not
   itself a NumPy array.
 - `allocated` reports whether storage exists; `to_numpy()` returns a live view
@@ -86,13 +85,14 @@ The annotation supplies the element dtype and rank. The handle creates its
 native storage when first passed to a matching writable argument. It stays the
 same Python object after the call.
 `Allocatable[Float64]()` is not supported. Reading a scalar module variable or
-derived-type field declared `Allocatable[Float64]` returns a live read-only rank-zero `float64`
-array when allocated, or `None` otherwise. Assign to the attribute to change
-the value: `module.scale = np.float64(2.0)` allocates the variable when it is
+derived-type field declared `Allocatable[Float64]` returns a live rank-zero
+`float64` array when allocated, or `None` otherwise. Write through the view to
+change the current value, or assign to the attribute:
+`module.scale = np.float64(2.0)` allocates the variable when it is
 unallocated, and a deferred-length character takes the width of the assigned
 `str`. Read the attribute again after reallocation; an older view may refer to
 storage that is no longer valid. An allocated empty deferred-length character
-reads as `b""`.
+reads as a detached `b""`.
 
 A returned or attribute array handle remains present even when its descriptor
 is unallocated. Reading the Python attribute

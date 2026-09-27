@@ -222,7 +222,7 @@ _BINDING_GETTER_SUMMARIES = {
     ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
     ModuleGetterAction.NATIVE_SCALAR_VIEW: "Wraps live native scalar storage in a rank-zero NumPy view.",
     ModuleGetterAction.NATIVE_CHARACTER_VIEW: "Wraps live native character bytes in a rank-zero NumPy view.",
-    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: "Lends the current native scalar storage read-only, or returns None.",
+    ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW: "Lends the current native scalar storage, or returns None.",
     ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
     ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
     ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
@@ -2677,24 +2677,38 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
     ) -> tuple[CFunction, ...]:
         """Expose scalar holder fields through holder-checked private methods."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
         owner_nodes = self._allocatable_holder_owner_nodes(derived.backend_symbol, setter=False)
-        getter = self._derived_private_method(
-            self._allocatable_holder_field_method_name(derived, field, "get"),
-            (
-                *owner_nodes,
-                CDeclaration(
-                    "value",
-                    scalar.c_spelling,
-                    CodeExpression(
-                        self._allocatable_holder_field_bridge_name(derived, field, "get") + "(owner_address)"
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            getter = self._derived_private_method(
+                self._allocatable_holder_field_method_name(derived, field, "get"),
+                (
+                    *owner_nodes,
+                    *self._scalar_storage_view_nodes(
+                        f"{self._allocatable_holder_field_bridge_name(derived, field, 'get')}(owner_address)",
+                        field.semantic_type_name,
+                        None,
+                        "owner_obj",
                     ),
                 ),
-                CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
-            ),
-        )
+            )
+        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
+            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
+        else:
+            getter = self._derived_private_method(
+                self._allocatable_holder_field_method_name(derived, field, "get"),
+                (
+                    *owner_nodes,
+                    CDeclaration(
+                        "value",
+                        scalar.c_spelling,
+                        CodeExpression(
+                            self._allocatable_holder_field_bridge_name(derived, field, "get") + "(owner_address)"
+                        ),
+                    ),
+                    CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
+                ),
+            )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
         setter = self._derived_private_method(
@@ -2770,21 +2784,37 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
     ) -> tuple[CFunction, ...]:
         """Build pointer holder field functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-        getter = self._derived_private_method(
-            self._pointer_holder_field_method_name(derived, field, "get"),
-            (
-                *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=False),
-                CDeclaration(
-                    "value",
-                    scalar.c_spelling,
-                    CodeExpression(self._pointer_holder_field_bridge_name(derived, field, "get") + "(owner_address)"),
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            getter = self._derived_private_method(
+                self._pointer_holder_field_method_name(derived, field, "get"),
+                (
+                    *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=False),
+                    *self._scalar_storage_view_nodes(
+                        f"{self._pointer_holder_field_bridge_name(derived, field, 'get')}(owner_address)",
+                        field.semantic_type_name,
+                        None,
+                        "owner_obj",
+                    ),
                 ),
-                CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
-            ),
-        )
+            )
+        elif field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
+            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
+        else:
+            getter = self._derived_private_method(
+                self._pointer_holder_field_method_name(derived, field, "get"),
+                (
+                    *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=False),
+                    CDeclaration(
+                        "value",
+                        scalar.c_spelling,
+                        CodeExpression(
+                            self._pointer_holder_field_bridge_name(derived, field, "get") + "(owner_address)"
+                        ),
+                    ),
+                    CReturn(CodeExpression(self._scalar_result_expression(scalar, "&value"))),
+                ),
+            )
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return (getter,)
         setter = self._derived_private_method(
@@ -2864,6 +2894,7 @@ class CBindingGenerator(ClassVisitor):
             DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._direct_handle_field_functions,
             DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._direct_array_field_functions,
             DerivedFieldAccessMechanism.SCALAR_VALUE: self._direct_scalar_field_functions,
+            DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW: self._direct_scalar_storage_field_functions,
             DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._direct_scalar_descriptor_field_functions,
             DerivedFieldAccessMechanism.NESTED_OBJECT: self._direct_nested_field_functions,
         }
@@ -2883,6 +2914,7 @@ class CBindingGenerator(ClassVisitor):
             DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._module_handle_member_functions,
             DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._module_array_member_functions,
             DerivedFieldAccessMechanism.SCALAR_VALUE: self._module_scalar_member_functions,
+            DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW: self._module_scalar_storage_member_functions,
             DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._module_scalar_descriptor_member_functions,
             DerivedFieldAccessMechanism.NESTED_OBJECT: self._module_nested_member_functions,
         }
@@ -2915,6 +2947,50 @@ class CBindingGenerator(ClassVisitor):
             self._direct_scalar_field_getter(derived, field),
             self._direct_scalar_field_setter(derived, field),
         )
+
+    def _direct_scalar_storage_field_functions(self, derived, field) -> tuple[CFunction, ...]:
+        """Lend a stored scalar field's storage and copy assigned values into it."""
+        getter = self._derived_private_method(
+            self._derived_field_method_name(derived, field, "get"),
+            (
+                *self._derived_owner_address_nodes(derived),
+                *self._scalar_storage_view_nodes(
+                    f"{self._derived_field_bridge_name(derived, field, 'get')}(owner_address)",
+                    field.semantic_type_name,
+                    field.character_length if field.string_element else None,
+                    "owner_obj",
+                ),
+            ),
+        )
+        setter = (
+            self._direct_string_field_setter(derived, field)
+            if field.string_element
+            else self._direct_scalar_field_setter(derived, field)
+        )
+        return self._optional_field_functions(getter, setter)
+
+    def _module_scalar_storage_member_functions(self, variable, member) -> tuple[CFunction, ...]:
+        """Lend a module object's stored scalar member and copy assigned values into it."""
+        field = member.field
+        getter = self._derived_private_method(
+            self._module_member_method_name(variable, member, "get"),
+            (
+                CDeclaration("owner_obj", "PyObject *"),
+                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+                *self._scalar_storage_view_nodes(
+                    f"{self._module_member_bridge_name(variable, member, 'get')}()",
+                    field.semantic_type_name,
+                    field.character_length if field.string_element else None,
+                    "owner_obj",
+                ),
+            ),
+        )
+        setter = (
+            self._module_string_member_setter(variable, member)
+            if field.string_element
+            else self._module_scalar_member_setter(variable, member)
+        )
+        return self._optional_field_functions(getter, setter)
 
     def _direct_scalar_descriptor_field_functions(self, derived, field) -> tuple[CFunction, ...]:
         """Lend a scalar allocatable or pointer field's storage and assign through it."""
@@ -6238,54 +6314,66 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_getter_native_scalar_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Expose live scalar module storage as a rank-zero NumPy view."""
-        scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-        owner = self._module_native_array_owner_name(plan)
         return (
             CFunction(
                 self._module_getter_name(plan),
                 "PyObject *",
                 storage="static",
-                body=(
-                    CDeclaration("data", "void *", CodeExpression(f"{self._module_bridge_getter_name(plan)}()")),
-                    CDeclaration(
-                        "result",
-                        "PyObject *",
-                        CodeExpression(f"PyArray_SimpleNewFromData(0, NULL, {scalar.array_numpy_type}, data)"),
-                    ),
-                    *self._ordinary_array_field_owner_nodes("result", owner),
+                body=self._scalar_storage_view_nodes(
+                    f"{self._module_bridge_getter_name(plan)}()",
+                    plan.semantic_type_name,
+                    None,
+                    self._module_native_array_owner_name(plan),
                 ),
             ),
         )
 
     def _lower_module_getter_native_character_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Expose fixed character storage as a live rank-zero NumPy bytes view."""
-        length = self._module_character_length(plan)
-        owner = self._module_native_array_owner_name(plan)
         return (
             CFunction(
                 self._module_getter_name(plan),
                 "PyObject *",
                 storage="static",
-                body=(
-                    CDeclaration("data", "void *", CodeExpression(f"{self._module_bridge_getter_name(plan)}()")),
-                    CDeclaration(
-                        "result",
-                        "PyObject *",
-                        CodeExpression(
-                            f"PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, data, {length}, "
-                            "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
-                        ),
-                    ),
-                    *self._ordinary_array_field_owner_nodes("result", owner),
+                body=self._scalar_storage_view_nodes(
+                    f"{self._module_bridge_getter_name(plan)}()",
+                    plan.semantic_type_name,
+                    self._module_character_length(plan),
+                    self._module_native_array_owner_name(plan),
                 ),
             ),
         )
 
-    def _lower_module_getter_native_nullable_scalar_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
-        """Lend the currently present scalar storage as one read-only rank-zero view.
+    def _scalar_storage_view_nodes(
+        self,
+        address_call: str,
+        semantic_type_name: str,
+        character_length: int | None,
+        owner: str,
+    ) -> tuple:
+        """Lend fixed scalar storage as a live writable rank-zero view kept alive by ``owner``.
 
-        The descriptor may be reallocated or reassociated after this read, so
-        Python writes through the setter rather than through the view.
+        A character lends its declared width as fixed-width bytes.
+        """
+        if character_length is not None:
+            view = (
+                f"PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, data, {character_length}, "
+                "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
+            )
+        else:
+            scalar = PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
+            view = f"PyArray_SimpleNewFromData(0, NULL, {scalar.array_numpy_type}, data)"
+        return (
+            CDeclaration("data", "void *", CodeExpression(address_call)),
+            CDeclaration("result", "PyObject *", CodeExpression(view)),
+            *self._ordinary_array_field_owner_nodes("result", owner),
+        )
+
+    def _lower_module_getter_native_nullable_scalar_view(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Lend the currently present scalar storage as one writable rank-zero view.
+
+        The view is valid until the descriptor is reallocated or reassociated;
+        assigning the attribute always reaches the current storage.
         """
         return (
             CFunction(
@@ -6311,10 +6399,12 @@ class CBindingGenerator(ClassVisitor):
         semantic_type_name: str,
         owner: str,
     ) -> tuple:
-        """Lend one scalar descriptor's current storage read-only, or return ``None``.
+        """Lend one scalar descriptor's current storage as a writable view, or return ``None``.
 
         The view keeps ``owner`` alive, which holds the descriptor: a module
-        variable's module or a field's parent object.
+        variable's module or a field's parent object. Like an array view, it
+        is valid until native code reallocates, deallocates, or reassociates
+        that storage.
         """
         if character:
             numpy_type, width = "NPY_STRING", "(int)length"
@@ -6333,7 +6423,8 @@ class CBindingGenerator(ClassVisitor):
                 "result",
                 "PyObject *",
                 CodeExpression(
-                    f"PyArray_New(&PyArray_Type, 0, NULL, {numpy_type}, NULL, data, {width}, NPY_ARRAY_ALIGNED, NULL)"
+                    f"PyArray_New(&PyArray_Type, 0, NULL, {numpy_type}, NULL, data, {width}, "
+                    "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
                 ),
             ),
             *self._ordinary_array_field_owner_nodes("result", owner),

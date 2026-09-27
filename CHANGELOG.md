@@ -7,14 +7,21 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- **Breaking:** scalar fields of a Fortran derived type read as live rank-zero
+  NumPy views of the object's storage, as module variables do. A numeric or
+  logical field returns a writable `T[()]` view instead of a NumPy scalar, and
+  a fixed-length character field returns a writable fixed-width bytes view
+  instead of a `str`; writing through the view or assigning the attribute
+  updates the object. Generated contracts spell these fields `T[()]` and
+  `String[n][()]`; an edited contract that keeps plain `T` or `String[n]`
+  still reads a copied value.
 - Scalar `allocatable` and `pointer` fields of a derived type, numeric,
   logical, complex, or character, are now wrapped like the matching module
-  variables: reading one returns a live read-only rank-zero NumPy view or
-  `None`, and assigning to it allocates an allocatable (resizing a
-  deferred-length character) or writes a pointer's current target. The view
-  keeps its parent object alive. These fields are not keywords of the default
-  constructor, in the built class and in the generated `.pyi` alike. Such a
-  type previously failed to build.
+  variables: reading one returns a live rank-zero NumPy view or `None`, and
+  assigning to it allocates an allocatable (resizing a deferred-length
+  character) or writes a pointer's current target. These fields are not
+  keywords of the default constructor, in the built class and in the
+  generated `.pyi` alike. Such a type previously failed to build.
 - A derived object passed through a `pointer` dummy now reports a field it
   cannot reach as a policy diagnostic, as an `allocatable` dummy already did,
   instead of failing during wrapper planning.
@@ -134,10 +141,12 @@ release tags add a leading `v` to the package version.
   dummies wider than one byte use integer storage of their own width, as
   logical arrays do, so default-logical `intent(inout)` updates reach Python.
 - Omitting an optional `intent(inout)` scalar argument returns `None` for it.
-- Scalar allocatable and pointer module variables return live read-only
-  rank-zero NumPy views, or `None` when storage is absent. Assigning to the
-  attribute allocates an allocatable (resizing a deferred-length character) or
-  writes a pointer's current target.
+- Scalar allocatable and pointer module variables return live writable
+  rank-zero NumPy views of their current storage, or `None` when storage is
+  absent. A view is valid until native code reallocates, deallocates, or
+  reassociates that storage. Assigning to the attribute allocates an
+  allocatable (resizing a deferred-length character) or writes a pointer's
+  current target.
 - A separate module-level `PARAMETER` statement types an undeclared name by the
   module's `IMPLICIT` rules and is rejected under `implicit none`.
 - A derived type a module reaches through another module's re-export is

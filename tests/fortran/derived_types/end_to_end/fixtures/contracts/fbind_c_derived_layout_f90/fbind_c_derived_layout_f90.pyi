@@ -9,8 +9,8 @@ class Point:
         axis: Int32 = ...
     ) -> None: ...
 
-    x: Float64
-    axis: Int32
+    x: Float64[()]
+    axis: Int32[()]
 
 @native_abi("c")
 class Tagged_Point:
@@ -21,7 +21,7 @@ class Tagged_Point:
     ) -> None: ...
 
     position: Point
-    weight: Complex128
+    weight: Complex128[()]
 
 @native_abi("c")
 def populate(

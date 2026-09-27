@@ -313,8 +313,9 @@ def test_descriptor_character_module_variables_follow_current_storage(pyi_parity
     assert fixed is not None and fixed[()] == b"FIXEDV"
     assert view is not None and view.shape == () and view.dtype == np.dtype("S6")
     assert view[()] == b"STORED"
-    with pytest.raises(ValueError, match="read-only"):
-        view[()] = b"PYTHON"
+    # The pointer view and the attribute both write the pointer's target.
+    view[()] = b"VIEWED"
+    assert module.store[()] == b"VIEWED"
     module.link = "PYTHON"
     assert view[()] == b"PYTHON"
     assert module.store[()] == b"PYTHON"

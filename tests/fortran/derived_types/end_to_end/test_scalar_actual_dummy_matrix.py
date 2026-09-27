@@ -218,6 +218,14 @@ def test_wrapper_owned_empty_holders_fill_in_place_and_pointer_holders_track_the
     assert module.set_pointer(pointer, np.int32(2)) is pointer
     assert (allocatable.value, allocatable_target.value, pointer.value) == (7, 8, 60)
 
+    # A holder lends its object's storage, so a write through the view is
+    # what the next native reader observes.
+    for holder in (allocatable, pointer):
+        view = holder.value
+        view[...] = 99
+        assert module.read_object(holder) == 99
+    module.set_pointer(pointer, np.int32(2))
+
     # A pointer holder retains its native owner and follows reassociation and nullification.
     assert pointer._prik_owner is module
     assert module.set_pointer(pointer, np.int32(3)) is pointer

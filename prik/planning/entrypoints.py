@@ -630,6 +630,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         owner_path = self._field_owner_path(owner, field)
         owner_parameter = route != "module"
         if route in {"allocatable", "pointer"}:
+            if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW and not field.string_element:
+                return self._scalar_storage_field_operations(owner, field, route, owner_path, owner_parameter=True)
             if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
                 raise ValueError(f"Unsupported {route}-holder field entrypoint for {field.owner_path!r}")
             return self._scalar_field_operations(owner, field, route, owner_path, owner_parameter=True)
@@ -637,6 +639,8 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             return self._field_handle_operations(owner, field, route, owner_path, owner_parameter)
         if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
             return self._scalar_descriptor_field_operations(owner, field, route, owner_path, owner_parameter)
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            return self._scalar_storage_field_operations(owner, field, route, owner_path, owner_parameter)
         if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
             return self._string_field_operations(owner, field, route, owner_path, owner_parameter)
         if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
@@ -694,6 +698,45 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 (self._opaque_parameter("value", fortran_name="value_address"),),
             ),
         )
+
+    def _scalar_storage_field_operations(self, owner, field, route, owner_path, owner_parameter):
+        """Plan the storage-address getter and value setter of a stored scalar field.
+
+        The setter takes the value the way a copied field's setter does: a
+        number by value, or a character in a buffer of the declared width.
+        """
+        owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
+        operations = [
+            self._operation(
+                owner_path,
+                f"field:{route}:get",
+                self._field_symbol(owner, field, route, "get"),
+                owner_values,
+                self._opaque_result(),
+            )
+        ]
+        if field.setter_action is SetterAction.WRITE_THROUGH:
+            value = (
+                self._value(
+                    "value",
+                    NativeEntrypointABIValueKind.CHARACTER,
+                    pointer_depth=1,
+                    const=True,
+                    character_length=field.character_length,
+                    intent="in",
+                )
+                if field.string_element
+                else self._scalar_parameter(field.semantic_type_name)
+            )
+            operations.append(
+                self._operation(
+                    owner_path,
+                    f"field:{route}:set",
+                    self._field_symbol(owner, field, route, "set"),
+                    (*owner_values, value),
+                )
+            )
+        return tuple(operations)
 
     def _scalar_descriptor_field_operations(self, owner, field, route, owner_path, owner_parameter):
         """Plan the current-storage getter and status-reporting setter of a scalar descriptor field."""

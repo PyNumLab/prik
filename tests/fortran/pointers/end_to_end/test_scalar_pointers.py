@@ -71,17 +71,16 @@ def test_scalar_pointers_project_nullable_native_views(
     with pytest.raises(ValueError, match="no pointer target"):
         module.selected_scale = np.float64(9.0)
 
-    # Assignment writes the current target; the view it reads is live but read-only.
+    # Assignment and the view it reads both write the current target.
     module.point_to_target(np.float64(2.5))
     module.selected_scale = np.float64(3.5)
     view = module.selected_scale
     assert view is not None and view.shape == () and view.dtype == np.dtype("float64")
     assert view[()] == np.float64(3.5)
-    with pytest.raises(ValueError, match="read-only"):
-        view[()] = np.float64(4.5)
+    view[()] = np.float64(4.5)
     module.bump_native()
-    assert view[()] == np.float64(23.5)
-    assert module.selected_scale[()] == np.float64(23.5)
+    assert view[()] == np.float64(24.5)
+    assert module.selected_scale[()] == np.float64(24.5)
 
     assert module.echo_pointer(np.float64(3.0)) == np.float64(5.0)
     assert module.echo_pointer(None) == np.float64(-2.0)

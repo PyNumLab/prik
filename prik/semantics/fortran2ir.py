@@ -773,7 +773,7 @@ class FortranToIRConverter(ClassVisitor):
             declaration_arrays=declaration_arrays,
         )
         if (
-            source_kind == "variable"
+            source_kind in {"variable", "field"}
             and var.rank == 0
             and not var.is_parameter
             and not getattr(var, "allocatable", False)

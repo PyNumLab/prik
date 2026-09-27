@@ -192,8 +192,8 @@ The generated `points.pyi` is:
 from prik.contracts import Addr, Arg, Float64, native_call
 
 class Point:
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
     def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
 
@@ -221,8 +221,8 @@ The edited `points.pyi` is:
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class Point:
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
     def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
 

@@ -211,8 +211,8 @@ def _assert_scalar_descriptor_fields(module) -> None:
     weight = record.weight
     assert weight.shape == () and weight.dtype == np.float64 and float(weight) == 2.5
     assert record.name.dtype == np.dtype("S5") and record.name[()] == b"hello"
-    with pytest.raises(ValueError, match="read-only"):
-        weight[...] = 0.0
+    weight[...] = 6.0
+    assert module.total(record) == 7.5
 
     # Assignment allocates or writes the current target, and the earlier view
     # of the pointer target sees the write.
@@ -239,7 +239,33 @@ def _assert_scalar_descriptor_fields(module) -> None:
     assert module.shared_name() == "abc"
 
 
-def test_scalar_descriptor_fields_lend_live_storage_in_source_and_contract_builds(tmp_path: Path):
+def _assert_stored_fields_are_live_views(module) -> None:
+    """Check that stored scalar fields lend writable storage on every route."""
+    record = module.Record(plain=np.float64(5.0))
+    plain, label = record.plain, record.label
+    assert plain.shape == () and plain.flags.writeable and plain.dtype == np.float64
+    assert label.dtype == np.dtype("S4") and label.flags.writeable
+    plain[...] = 9.0
+    record.plain = np.float64(3.0)
+    assert float(plain) == 3.0
+
+    module.fill(record)
+    label[...] = b"wxyz"
+    assert record.tag[()] == b"abcd" and record.label[()] == b"wxyz"
+
+    # A module object's member and an allocatable result lend the same storage
+    # their Fortran procedures read.
+    module.shared.plain[...] = 4.0
+    assert float(module.shared.plain) == 4.0
+    item = module.make_counter(np.int32(2))
+    count = item.count
+    count[...] = 11
+    assert module.counter_value(item) == 11
+    item.count = np.int32(12)
+    assert int(count) == 12
+
+
+def test_scalar_fields_lend_live_storage_in_source_and_contract_builds(tmp_path: Path):
     source_module = _build_source_and_import(
         SCALAR_DESCRIPTOR_FIELD_SOURCE,
         tmp_path / "source",
@@ -253,13 +279,15 @@ def test_scalar_descriptor_fields_lend_live_storage_in_source_and_contract_build
 
     for module in (source_module, contract_module):
         _assert_scalar_descriptor_fields(module)
+        _assert_stored_fields_are_live_views(module)
 
     # The generated contract's constructor states the keywords both builds accept.
     contract = (tmp_path / "contract" / "contracts" / "fderived_scalar_descriptor_fields").rglob("*.pyi")
     constructor = next(
         text for text in (path.read_text(encoding="utf-8") for path in contract) if "class Record" in text
     )
-    assert "plain: Float64 = 0" in constructor
+    assert "plain: Float64 = 0" in constructor and "plain: Float64[()] = 0" in constructor
+    assert "label: String[4][()]" in constructor
     assert "scale: Allocatable[Float64]\n" in constructor and "scale: Allocatable[Float64] =" not in constructor
 
 

@@ -836,6 +836,14 @@ class _PyiAstParser:
             visibility=visibility,
             default_value=self.assignment_default_value(node.value, semantic_type),
         )
+        storage = semantic_type.storage
+        if storage is not None and storage.array is not None and storage.array.category == SCALAR_STORAGE_CATEGORY:
+            # `T[()]` states the declaration's own rank-zero native storage,
+            # which Python reads as a live view rather than a copied value.
+            if self.native_language != "fortran":
+                raise ValueError("rank-zero stored scalars are only supported for Fortran")
+            semantic_type.storage = None
+            semantic_type.metadata["native_storage"] = True
         if original_name is not None:
             # A declared name is what Python calls this entity; `SourceName`
             # states the entity it reaches, exactly as `bind` does for a
@@ -3806,14 +3814,7 @@ class _ModuleVisitor(ClassVisitor):
 
     def _visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Convert a module variable declaration."""
-        variable = self.parser.ann_assign(node)
-        storage = variable.semantic_type.storage
-        if storage is not None and storage.array is not None and storage.array.category == SCALAR_STORAGE_CATEGORY:
-            if self.parser.native_language != "fortran":
-                raise ValueError("rank-zero module storage is only supported for Fortran")
-            variable.semantic_type.storage = None
-            variable.semantic_type.metadata["native_storage"] = True
-        self.parser.module.variables.append(variable)
+        self.parser.module.variables.append(self.parser.ann_assign(node))
 
     def _visit_Assign(self, node: ast.Assign) -> None:
         """Record the list of names this contract states that it publishes."""

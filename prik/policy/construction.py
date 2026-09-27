@@ -390,17 +390,20 @@ def _derived_field_access_mechanism(
 ) -> DerivedFieldAccessMechanism:
     """Complete the typed field bridge mechanism before wrapper planning.
 
-    A nullable borrowed scalar or string getter is a scalar allocatable or
-    pointer field, which lends its current storage rather than a copy.
+    A scalar or string getter that borrows aliased storage lends the field
+    itself: a nullable one is a scalar allocatable or pointer, and any other
+    is the field's own stored value.
     """
     if handle is not None:
         return DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
     if (
         getter.kind in {ObjectKind.SCALAR, ObjectKind.STRING}
         and getter.transfer is TransferMode.BORROWED_VIEW
-        and getter.nullable
+        and getter.storage_mode is StorageMode.ALIAS
     ):
-        return DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+        if getter.nullable:
+            return DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+        return DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW
     return {
         ObjectKind.SCALAR: DerivedFieldAccessMechanism.SCALAR_VALUE,
         ObjectKind.STRING: DerivedFieldAccessMechanism.FIXED_STRING_COPY,
@@ -409,12 +412,23 @@ def _derived_field_access_mechanism(
     }[getter.kind]
 
 
+# A field access that hands Python a view of the parent's storage keeps the
+# parent alive for as long as the view exists.
+_PARENT_RETAINING_FIELD_ACCESS = frozenset(
+    {
+        DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
+        DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW,
+        DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW,
+    }
+)
+
+
 def _derived_field_owner_retention(
     object_kind: ObjectKind,
     access: DerivedFieldAccessMechanism,
 ) -> DerivedOwnerRetention:
     """Complete whether a returned field object must keep its parent alive."""
-    if access in {DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}:
+    if access in _PARENT_RETAINING_FIELD_ACCESS:
         return DerivedOwnerRetention.PARENT_WRAPPER
     if object_kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
         return DerivedOwnerRetention.PARENT_WRAPPER
@@ -700,7 +714,7 @@ def _class_constructor_policy(
             setter_action=field.setter_action,
         )
         for field in derived.fields
-        if field.access is DerivedFieldAccessMechanism.SCALAR_VALUE
+        if field.access in {DerivedFieldAccessMechanism.SCALAR_VALUE, DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW}
         and field.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
         and field.setter_action is SetterAction.WRITE_THROUGH
     )
@@ -910,6 +924,11 @@ def _derived_field_object_kind_blockers(
     if access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
         if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
             blockers.append(f"field {field.name!r} is not a primitive or character scalar descriptor")
+    elif access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
+            blockers.append(f"field {field.name!r} is not a primitive or character stored scalar")
+        elif semantic_type.name == "String" and _character_length(semantic_type) is None:
+            blockers.append(f"field {field.name!r} is not a fixed scalar string")
     elif getter.kind is ObjectKind.NUMPY_ARRAY:
         if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
             blockers.append(f"field {field.name!r} is an unsupported array of derived values")
@@ -4565,8 +4584,15 @@ def _holder_field_blockers(
     return tuple(
         f"{label} holder field {field.name!r} requires unsupported {field.access.value} access"
         for field in type_policy.fields
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE
+        if not _holder_reaches_field(field)
     )
+
+
+def _holder_reaches_field(field: DerivedFieldPolicy) -> bool:
+    """Return whether a holder's scalar-member procedures serve one field."""
+    if field.string_element:
+        return False
+    return field.access in {DerivedFieldAccessMechanism.SCALAR_VALUE, DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW}
 
 
 def _derived_handoff_policy(

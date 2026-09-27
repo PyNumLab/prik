@@ -37,7 +37,9 @@
                 "coercions": [],
                 "constraints": [],
                 "dtype": "Int32",
-                "metadata": {},
+                "metadata": {
+                  "native_storage": true
+                },
                 "name": "Int32",
                 "origin": {
                   "metadata": {
