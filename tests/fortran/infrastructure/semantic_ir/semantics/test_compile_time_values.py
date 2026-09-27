@@ -370,7 +370,7 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
             ]
         )
     )
-    assert {item["symbol"] for item in unsupported} == {
+    assert {item["symbol"] for item in unsupported if item["code"] == "unsupported_kind"} == {
         "bad_integer",
         "bad_real",
         "bad_complex",

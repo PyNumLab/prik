@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from prik.semantics.scalar_types import is_string_semantic_type_name
 from prik.utilities.declaration_expressions import RUNTIME_DIMENSION_MARKERS
 from prik.utilities.stage_values import StageRecord
 from prik.policy.ownership import (
@@ -175,6 +176,12 @@ class GeneratedWrapper(StageRecord):
     def generated_files(self) -> tuple[Path, ...]:
         """Return all generated wrapper paths, including headers."""
         return (*self.compile_sources, *self.headers)
+
+
+# Field accesses that lend a rank-zero view of the field's own storage.
+_SCALAR_VIEW_FIELD_ACCESS = frozenset(
+    {DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}
+)
 
 
 class WrapperGenerator:
@@ -881,6 +888,8 @@ class WrapperGenerator:
                 DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
                 DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
                 DerivedFieldAccessMechanism.NESTED_OBJECT,
+                DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW,
+                DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW,
             }
             else DerivedOwnerRetention.NONE
         )
@@ -898,7 +907,12 @@ class WrapperGenerator:
             diagnostics = []
             if field.setter_role is None:
                 diagnostics.append(self._diagnostic(field.owner_path, "missing-derived-field-setter-role", None))
-            if field.native_assignment not in {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}:
+            assignments = (
+                {AssignmentMode.ALLOCATING_COPY, AssignmentMode.TARGET_COPY}
+                if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+                else {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}
+            )
+            if field.native_assignment not in assignments:
                 diagnostics.append(
                     self._diagnostic(field.owner_path, "invalid-derived-field-assignment", field.native_assignment)
                 )
@@ -910,6 +924,8 @@ class WrapperGenerator:
     def _derived_field_family_diagnostics(self, field) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch field-facet consistency from its completed object kind."""
         match field.object_kind:
+            case ObjectKind.SCALAR | ObjectKind.STRING if field.access in _SCALAR_VIEW_FIELD_ACCESS:
+                valid = self._valid_scalar_view_derived_field(field)
             case ObjectKind.SCALAR:
                 valid = self._valid_scalar_derived_field(field)
             case ObjectKind.STRING:
@@ -925,6 +941,22 @@ class WrapperGenerator:
         if field.native_array_handle is None:
             return ()
         return tuple(self._native_array_handle_shape_diagnostics(field.owner_path, field.native_array_handle))
+
+    @staticmethod
+    def _valid_scalar_view_derived_field(field) -> bool:
+        """Return whether one field lends a rank-zero view of its own storage.
+
+        A stored character field lends its declared width, so it needs one.
+        """
+        return (
+            field.getter_action is CodegenAction.BORROWED_VIEW
+            and field.rank == 0
+            and not (
+                field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW
+                and field.string_element
+                and not field.character_length
+            )
+        )
 
     @staticmethod
     def _valid_scalar_derived_field(field) -> bool:
@@ -5463,7 +5495,7 @@ class WrapperGenerator:
         if (
             action.codegen_action is CodegenAction.COPY_IN_OUT
             and action.object_kind is ObjectKind.STRING
-            and action.semantic_type_name == "String"
+            and is_string_semantic_type_name(action.semantic_type_name)
             and action.datatype_family is DatatypeFamily.STRING
             and action.result_position == argument.result_position
         ):

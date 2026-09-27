@@ -8,8 +8,8 @@ class Visible_T:
         lambda__2: Annotated[Int32, SourceName("lambda_")] = 4
     ) -> None: ...
 
-    lambda_: Annotated[Int32, SourceName("lambda")] = 3
-    lambda__2: Annotated[Int32, SourceName("lambda_")] = 4
+    lambda_: Annotated[Int32[()], SourceName("lambda")] = 3
+    lambda__2: Annotated[Int32[()], SourceName("lambda_")] = 4
 
     @bind("Visible_T.from")
     def from_(self) -> Int32: ...

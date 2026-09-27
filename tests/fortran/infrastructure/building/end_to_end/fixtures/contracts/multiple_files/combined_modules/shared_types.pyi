@@ -7,7 +7,7 @@ class Box:
         value: Int32 = ...
     ) -> None: ...
 
-    value: Int32
+    value: Int32[()]
 
 @native_call([Addr(Arg(0))])
 def make_box(

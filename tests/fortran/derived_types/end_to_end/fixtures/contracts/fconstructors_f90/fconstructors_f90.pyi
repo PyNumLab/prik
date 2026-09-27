@@ -11,8 +11,8 @@ class Initialized:
     @destroy
     def cleanup_initialized(self) -> None: ...
 
-    id: Int32 = 7
-    scale: Float64 = 2.5
+    id: Int32[()] = 7
+    scale: Float64[()] = 2.5
 
 def get_final_count() -> Int32: ...
 

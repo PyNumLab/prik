@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 import platform
 
+from prik.semantics.scalar_types import is_string_semantic_type_name
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.parsers.c.models import (
     CBool,
@@ -358,7 +359,7 @@ def _numpy_dtype(semantic_dtype: str | None) -> str:
         expression = NumpyDtypeRegistry.expression_for(semantic_dtype)
     except KeyError:
         return "unsupported"
-    if semantic_dtype == "String":
+    if is_string_semantic_type_name(semantic_dtype):
         return f"{expression} / ABI bytes"
     return expression
 

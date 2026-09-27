@@ -34,15 +34,15 @@ def test_scalar_allocatables_project_values_and_unallocated_state(
     assert not hasattr(module, "get_optional_scale")
     assert not hasattr(module, "set_optional_scale")
 
-    # Assignment allocates the unallocated variable; the view it reads is live but read-only.
+    # Assignment allocates the unallocated variable; the view it reads writes
+    # the current storage, which native code then reads.
     module.optional_scale = np.float64(2.5)
     view = module.optional_scale
     assert view is not None and view.shape == () and view.dtype == np.dtype("float64")
     assert view[()] == np.float64(2.5)
-    with pytest.raises(ValueError, match="read-only"):
-        view[()] = np.float64(3.5)
+    view[()] = np.float64(3.5)
     module.bump_module_value()
-    assert view[()] == np.float64(12.5)
+    assert view[()] == np.float64(13.5)
 
     # Native reallocation replaces the storage, so the attribute is read again.
     module.set_module_value(np.float64(1.5))

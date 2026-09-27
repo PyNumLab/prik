@@ -51,6 +51,10 @@ _PROBE_ENVIRONMENT_VARIABLES = (
 )
 _SAFE_EXPRESSION_RE = re.compile(r"^[A-Za-z0-9_+\-*/().,= :]+$")
 _TOKEN_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+# A quoted name such as ``'ISO_10646'`` in ``selected_char_kind('ISO_10646')``.
+# It holds only word characters, so removing it before validation cannot hide
+# a statement, and the name it spells is data rather than an identifier.
+_QUOTED_NAME_RE = re.compile(r"'[A-Za-z0-9_]+'")
 
 _PROBE_INTRINSIC_NAMES = frozenset(
     {
@@ -239,7 +243,7 @@ def probe_can_resolve_expression(expression: str) -> bool:
     program that cannot resolve it.
     """
     known = _PROBE_INTRINSIC_NAMES | _ISO_FORTRAN_ENV_NAMES | _ISO_C_BINDING_NAMES
-    return all(token.lower() in known for token in _TOKEN_RE.findall(expression))
+    return all(token.lower() in known for token in _TOKEN_RE.findall(_QUOTED_NAME_RE.sub("", expression)))
 
 
 def build_fortran_type_probe_source(expressions: Sequence[str]) -> str:
@@ -314,7 +318,7 @@ def _validate_expression(expression: str) -> None:
         raise FortranTypeProbeError(
             f"Fortran type probe expression is not a single initialization expression: {expression!r}"
         )
-    if _SAFE_EXPRESSION_RE.fullmatch(expression) is None:
+    if _SAFE_EXPRESSION_RE.fullmatch(_QUOTED_NAME_RE.sub("0", expression)) is None:
         raise FortranTypeProbeError(f"Fortran type probe expression contains unsupported characters: {expression!r}")
 
 
@@ -325,7 +329,9 @@ def _probe_import_lines(expressions: Sequence[str]) -> list[str]:
     import for each supported intrinsic module. Names are sorted so generated
     source and cache keys stay deterministic.
     """
-    tokens = {token.lower() for expression in expressions for token in _TOKEN_RE.findall(expression)}
+    tokens = {
+        token.lower() for expression in expressions for token in _TOKEN_RE.findall(_QUOTED_NAME_RE.sub("", expression))
+    }
     lines: list[str] = []
     env_names = sorted(tokens & _ISO_FORTRAN_ENV_NAMES)
     c_names = sorted(tokens & _ISO_C_BINDING_NAMES)

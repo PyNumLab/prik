@@ -8,8 +8,8 @@ class particle:
         mass: Float64 = ...
     ) -> None: ...
 
-    id: Int32
-    mass: Float64
+    id: Int32[()]
+    mass: Float64[()]
     position: Float64[3]
 
 class vector3:

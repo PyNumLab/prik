@@ -400,14 +400,14 @@ counter: Int32[()]
 scale: Float64[()]
 ```
 
-Mutable Fortran module variables expose their native storage. Fixed-storage
-numeric and logical scalars use live rank-zero `T[()]` NumPy views; fixed-length
-character scalars use live rank-zero `String[n][()]` bytes views. `PARAMETER`
-declarations use `Final[...]` values. Scalar allocatable and pointer module
-variables return a live rank-zero view or `None` on each read; array descriptors
-use handles. An edited plain `T` module declaration requests a scalar value
-getter. A literal default on supported mutable scalar state is an import-time
-native initializer.
+Mutable Fortran module variables and derived-type fields expose their native
+storage. Fixed-storage numeric and logical scalars use live rank-zero `T[()]`
+NumPy views; fixed-length character scalars use live rank-zero `String[n][()]`
+bytes views. `PARAMETER` declarations use `Final[...]` values. Scalar
+allocatable and pointer module variables and fields return a live rank-zero
+view of their current storage or `None` on each read; array descriptors use handles. An edited
+plain `T` declaration requests a scalar value getter. A literal default on
+supported mutable scalar state is an import-time native initializer.
 
 C global declarations can be represented for inspection, but current C wrapper
 builds reject native global state. C functions remain the supported runtime
@@ -437,14 +437,16 @@ in generated files, although source order is accepted:
 from prik.contracts import Float64, Int32
 
 class particle:
-    identifier: Int32
-    mass: Float64
+    identifier: Int32[()]
+    mass: Float64[()]
 
     def reset(self) -> None: ...
 ```
 
 An untyped leading `self` is the only untyped callable parameter. Ordinary
-fields use the same type and storage syntax as variables.
+fields use the same type and storage syntax as variables: a stored `T[()]` or
+`String[n][()]` field reads as a live writable rank-zero view of the object's
+storage, and an edited plain `T` or `String[n]` field reads as a copied value.
 
 Fortran `bind(C)` types retain that fact without exposing their layout:
 
@@ -453,8 +455,8 @@ from prik.contracts import Float64, native_abi
 
 @native_abi("c")
 class point:
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 ```
 
 `@native_abi("c")` is Fortran-specific. A C-native contract already has a C
@@ -485,8 +487,8 @@ class state:
         scale: Float64 = 1.0,
     ) -> None: ...
 
-    identifier: Int32 = 0
-    scale: Float64 = 1.0
+    identifier: Int32[()] = 0
+    scale: Float64[()] = 1.0
 ```
 
 Removing that declaration removes public construction. A constructor bound to
@@ -811,7 +813,7 @@ stores or passes it:
 | Contract | Meaning | Languages |
 | --- | --- | --- |
 | `T` | Scalar Python value or wrapped object. | Shared. |
-| `T[()]` | Rank-zero NumPy storage; supported numeric module variables expose live native storage. | Shared. |
+| `T[()]` | Rank-zero NumPy storage; supported module variables and fields expose live native storage. | Shared. |
 | `T[n]` | Rank-one array with extent `n`. | Shared. |
 | `T[:]` | Rank-one array with runtime extent. | Shared. |
 | `T[:, :]` | Rank-two array with runtime extents. | Shared. |
@@ -858,6 +860,7 @@ subscription for storage shape:
 | `String[:]` | Deferred | Scalar descriptor value, with `Allocatable` or `Pointer` policy. |
 | `String[n][()]` | Fixed `n` | Rank-zero NumPy bytes storage. |
 | `String[n][:]` | Fixed `n` | Rank-one NumPy bytes array. |
+| `UString[...]` forms | As for `String` | Four-byte (UCS-4) characters: a `str`, or NumPy `U<n>` storage where `String` uses `S<n>`. |
 | `String[:][:]` | Deferred | Rank-one character array contract. |
 
 A single `String[...]` subscription is always a length, never an array shape.
@@ -1106,7 +1109,7 @@ valid and whether it is buildable.
 | Group | Public names |
 | --- | --- |
 | Typing forms | `Annotated`, `Any`, `Final` |
-| Scalar types | `AnyNative`, `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Void` |
+| Scalar types | `AnyNative`, `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UString`, `Void` |
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |

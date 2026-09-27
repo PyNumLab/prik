@@ -9,8 +9,8 @@ class Point:
         y: Float64 = ...
     ) -> None: ...
 
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
 @native_abi("c")
 def direct_sum(

@@ -378,7 +378,13 @@ class NativeArrayHandleBase:
             raise ValueError(
                 f"native array handle to_numpy_policy must be one of {sorted(self._VALID_TO_NUMPY_POLICIES)!r}"
             )
-        self._dtype = None if dtype is None else np.dtype(dtype)
+        # A flexible character dtype (``"S"`` or ``"U"``, no width) names a
+        # deferred-length character array: the width is read from native state
+        # and the letter says whether it holds bytes or UCS-4 code points.
+        declared = None if dtype is None else np.dtype(dtype)
+        deferred = declared is None or (declared.kind in "SU" and declared.itemsize == 0)
+        self._character_code = declared.kind if declared is not None and deferred else "S"
+        self._dtype = None if deferred else declared
         self._rank = int(rank)
         if not callable(invoke):
             raise TypeError(f"native array handle dispatcher must be callable; received {type(invoke).__name__}")
@@ -443,6 +449,9 @@ class NativeArrayHandleBase:
         length = operator.index(self._call_operation("element_length"))
         if length < 0:
             raise ValueError("native character array element length must be non-negative")
+        # The native element length counts bytes; a UCS-4 character takes four.
+        if self._character_code == "U":
+            return np.dtype(f"U{length // 4}")
         return np.dtype(f"S{length}")
 
     @property

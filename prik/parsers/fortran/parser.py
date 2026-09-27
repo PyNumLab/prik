@@ -5675,12 +5675,14 @@ class FortranParser(ClassVisitor):
             FortranParser._resolve_character_length(argument, visible_symbols, resolver=resolver)
             if resolve_shapes and argument.shape:
                 argument.shape = [resolver.resolve(dimension) for dimension in argument.shape]
-        if signature.result and signature.result.kind:
-            signature.result.kind = FortranParser._resolve_kind_expression(
-                signature.result.kind,
-                visible_symbols,
-                resolver=resolver,
-            )
+        if signature.result:
+            if signature.result.kind:
+                signature.result.kind = FortranParser._resolve_kind_expression(
+                    signature.result.kind,
+                    visible_symbols,
+                    resolver=resolver,
+                )
+            FortranParser._resolve_character_length(signature.result, visible_symbols, resolver=resolver)
 
     @staticmethod
     def _resolve_procedure_compile_time_facts(

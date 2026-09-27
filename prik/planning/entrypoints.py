@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from prik.semantics.scalar_types import is_string_semantic_type_name
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.policy.models import (
     CallbackABIKind,
@@ -346,7 +347,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             pointer_depth=1,
             semantic_type_name=semantic_type_name,
             rank=handle.array.rank,
-            character_length=handle.array.itemsize if semantic_type_name == "String" else None,
+            character_length=handle.array.itemsize if is_string_semantic_type_name(semantic_type_name) else None,
             descriptor_kind=handle.descriptor_kind,
             intent=intent,
         )
@@ -630,11 +631,17 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         owner_path = self._field_owner_path(owner, field)
         owner_parameter = route != "module"
         if route in {"allocatable", "pointer"}:
+            if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW and not field.string_element:
+                return self._scalar_storage_field_operations(owner, field, route, owner_path, owner_parameter=True)
             if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
                 raise ValueError(f"Unsupported {route}-holder field entrypoint for {field.owner_path!r}")
             return self._scalar_field_operations(owner, field, route, owner_path, owner_parameter=True)
         if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
             return self._field_handle_operations(owner, field, route, owner_path, owner_parameter)
+        if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+            return self._scalar_descriptor_field_operations(owner, field, route, owner_path, owner_parameter)
+        if field.access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+            return self._scalar_storage_field_operations(owner, field, route, owner_path, owner_parameter)
         if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
             return self._string_field_operations(owner, field, route, owner_path, owner_parameter)
         if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
@@ -649,85 +656,86 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             owner_parameter=owner_parameter,
         )
 
+    def _field_operation(self, owner, field, route, owner_path, action, parameters, result=None):
+        """Plan one field accessor entrypoint of one owner route."""
+        return self._operation(
+            owner_path,
+            f"field:{route}:{action}",
+            self._field_symbol(owner, field, route, action),
+            parameters,
+            result,
+        )
+
+    def _character_buffer(self, entity, intent):
+        """Return the fixed-width character buffer of one field or module variable, passed by address."""
+        return self._value(
+            "value",
+            NativeEntrypointABIValueKind.CHARACTER,
+            pointer_depth=1,
+            const=intent == "in",
+            character_length=entity.character_length,
+            semantic_type_name=entity.semantic_type_name,
+            intent=intent,
+        )
+
     def _scalar_field_operations(self, owner, field, route, owner_path, *, owner_parameter):
         parameters = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        result = (
-            self._opaque_result()
-            if field.object_kind is ObjectKind.DERIVED_TYPE
-            else self._scalar_result(field.semantic_type_name)
+        derived = field.object_kind is ObjectKind.DERIVED_TYPE
+        result = self._opaque_result() if derived else self._scalar_result(field.semantic_type_name)
+        getter = self._field_operation(owner, field, route, owner_path, "get", parameters, result)
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        value = (
+            self._opaque_parameter("value", fortran_name="value_address")
+            if derived
+            else self._scalar_parameter(field.semantic_type_name)
         )
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                parameters,
-                result,
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            value = (
-                self._opaque_parameter("value", fortran_name="value_address")
-                if field.object_kind is ObjectKind.DERIVED_TYPE
-                else self._scalar_parameter(field.semantic_type_name)
-            )
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*parameters, value),
-                )
-            )
-        return tuple(operations)
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*parameters, value))
 
     def _nested_module_field_operations(self, owner, field, route, owner_path):
         if field.setter_action is not SetterAction.WRITE_THROUGH:
             return ()
-        return (
-            self._operation(
-                owner_path,
-                f"field:{route}:set",
-                self._field_symbol(owner, field, route, "set"),
-                (self._opaque_parameter("value", fortran_name="value_address"),),
-            ),
+        value = self._opaque_parameter("value", fortran_name="value_address")
+        return (self._field_operation(owner, field, route, owner_path, "set", (value,)),)
+
+    def _scalar_storage_field_operations(self, owner, field, route, owner_path, owner_parameter):
+        """Plan the storage-address getter and value setter of a stored scalar field.
+
+        The setter takes the value the way a copied field's setter does: a
+        number by value, or a character in a buffer of the declared width.
+        """
+        owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
+        getter = self._field_operation(owner, field, route, owner_path, "get", owner_values, self._opaque_result())
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        value = (
+            self._character_buffer(field, "in")
+            if field.string_element
+            else self._scalar_parameter(field.semantic_type_name)
         )
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*owner_values, value))
+
+    def _scalar_descriptor_field_operations(self, owner, field, route, owner_path, owner_parameter):
+        """Plan the current-storage getter and status-reporting setter of a scalar descriptor field."""
+        owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
+        width = (self._int64_parameter("length", reference=True, intent="out"),) if field.string_element else ()
+        getter = self._field_operation(
+            owner, field, route, owner_path, "get", (*owner_values, *width), self._opaque_result()
+        )
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        values, result = self._scalar_descriptor_setter_signature(field.string_element, field.semantic_type_name)
+        return getter, self._field_operation(owner, field, route, owner_path, "set", (*owner_values, *values), result)
 
     def _string_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
-        output = self._value(
-            "value",
-            NativeEntrypointABIValueKind.CHARACTER,
-            pointer_depth=1,
-            character_length=field.character_length,
-            intent="out",
+        getter = self._field_operation(
+            owner, field, route, owner_path, "get", (*owner_values, self._character_buffer(field, "out"))
         )
-        operations = [
-            self._operation(
-                owner_path,
-                f"field:{route}:get",
-                self._field_symbol(owner, field, route, "get"),
-                (*owner_values, output),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            value = self._value(
-                "value",
-                NativeEntrypointABIValueKind.CHARACTER,
-                pointer_depth=1,
-                const=True,
-                character_length=field.character_length,
-                intent="in",
-            )
-            operations.append(
-                self._operation(
-                    owner_path,
-                    f"field:{route}:set",
-                    self._field_symbol(owner, field, route, "set"),
-                    (*owner_values, value),
-                )
-            )
-        return tuple(operations)
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        setter_values = (*owner_values, self._character_buffer(field, "in"))
+        return getter, self._field_operation(owner, field, route, owner_path, "set", setter_values)
 
     def _ordinary_array_field_operations(self, owner, field, route, owner_path, owner_parameter):
         owner_values = (self._opaque_parameter("owner", fortran_name="owner_address"),) if owner_parameter else ()
@@ -1143,15 +1151,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             elif variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
                 # A character value has no by-value C ABI, so it copies out
                 # through the same fixed-width buffer a character field uses.
-                parameters = (
-                    self._value(
-                        "value",
-                        NativeEntrypointABIValueKind.CHARACTER,
-                        pointer_depth=1,
-                        character_length=variable.character_length,
-                        intent="out",
-                    ),
-                )
+                parameters = (self._character_buffer(variable, "out"),)
                 result = self._void_result()
             else:
                 parameters = ()
@@ -1184,19 +1184,18 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         """
         assignment = variable.binding.native_assignment
         if assignment is AssignmentMode.CHARACTER_COPY:
-            value = self._value(
-                "value",
-                NativeEntrypointABIValueKind.CHARACTER,
-                pointer_depth=1,
-                const=True,
-                character_length=variable.character_length,
-                intent="in",
-            )
-            return (value,), None
+            return (self._character_buffer(variable, "in"),), None
         if assignment not in {AssignmentMode.ALLOCATING_COPY, AssignmentMode.TARGET_COPY}:
             return (self._scalar_parameter(variable.semantic_type_name),), None
-        if variable.datatype_family is not DatatypeFamily.STRING:
-            return (self._scalar_parameter(variable.semantic_type_name),), self._int_result()
+        return self._scalar_descriptor_setter_signature(
+            variable.datatype_family is DatatypeFamily.STRING,
+            variable.semantic_type_name,
+        )
+
+    def _scalar_descriptor_setter_signature(self, character: bool, semantic_type_name: str):
+        """Return the values and status result of a scalar allocatable or pointer assignment."""
+        if not character:
+            return (self._scalar_parameter(semantic_type_name),), self._int_result()
         value = self._value("value", NativeEntrypointABIValueKind.OPAQUE, pointer_depth=1, const=True)
         return (value, self._int64_parameter("length")), self._int_result()
 

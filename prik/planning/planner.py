@@ -37,6 +37,7 @@ from prik.policy.models import (
     DirectResultABI,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
+    ModuleStorageAddressMechanism,
     ModuleVariablePolicy,
     NativeArraySourceKind,
     OverloadPolicy,
@@ -149,7 +150,10 @@ from prik.planning.models import (
     TransformationPlan,
 )
 from prik.naming.native_symbols import NativeSymbolNames
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 from prik.utilities.visitor import ClassVisitor
 
 from prik.planning.entrypoints import (
@@ -159,6 +163,47 @@ from prik.planning.entrypoints import (
 
 # Re-export reaches Python only where the published name is one exported object.
 _ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "generic", "derived_type"})
+
+
+def _member_proxy_fields(plan: ModulePlan) -> tuple[DerivedFieldPlan, ...]:
+    """Return the fields a plain module object reaches through its member proxy."""
+    return tuple(
+        member.field
+        for variable in plan.variables
+        if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
+        for member in variable.derived.member_paths
+    )
+
+
+def has_scalar_view_fields(plan: ModulePlan) -> bool:
+    """Read whether a planned field lends a rank-zero view of its own storage."""
+    fields = (
+        *(field for namespace in plan.namespaces for derived in namespace.derived_types for field in derived.fields),
+        *_member_proxy_fields(plan),
+    )
+    return any(
+        field.access
+        in {DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}
+        for field in fields
+    )
+
+
+def requires_address_capture(plan: ModulePlan) -> bool:
+    """Read whether a borrowed view in the plan takes its storage address in C.
+
+    None of these names storage Fortran can take the address of: a module
+    variable whose declaration withheld ``target``, an array member of a plain
+    module object, and a scalar allocatable or pointer field, which need not be
+    a target either.
+    """
+    return (
+        any(variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS for variable in plan.variables)
+        or any(
+            field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
+            for field in _member_proxy_fields(plan)
+        )
+        or has_scalar_view_fields(plan)
+    )
 
 
 def requires_cfi_header(namespaces: tuple[NamespacePlan, ...]) -> bool:
@@ -204,6 +249,7 @@ _DATATYPE_FAMILIES = {
     "Complex128": DatatypeFamily.COMPLEX,
     "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
+    "UString": DatatypeFamily.STRING,
     "AnyNative": DatatypeFamily.ASSUMED_NATIVE,
 }
 
@@ -1680,7 +1726,7 @@ class WrapperPlanner(ClassVisitor):
             raise ValueError(f"Hidden entrypoint result {slot.owner_path!r} has incomplete type facts")
         character_capacity = (
             slot.character_length
-            if direct_c_abi and slot.semantic_type_name == "String" and slot.character_length
+            if direct_c_abi and is_string_semantic_type_name(slot.semantic_type_name) and slot.character_length
             else None
         )
         return NativeEntrypointResultPlan(

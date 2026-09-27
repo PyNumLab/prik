@@ -101,8 +101,8 @@ class Point:
         y: Float64 = 0.0
     ) -> None: ...
 
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
 class Holder:
     def __init__(self) -> None: ...
@@ -159,7 +159,7 @@ print(item.x, item.y)  # 4.0 6.0
 made = points.make_point(np.float64(8.0), np.float64(9.0))
 
 # Nested component
-container = points.holder()
+container = points.Holder()
 points.set_origin(container, made)
 container.origin.x = np.float64(12.0)
 print(container.origin.x)  # 12.0
@@ -214,7 +214,16 @@ print(points.Point.__init__.__doc__)
   instance and do not return it again.
 - **Missing intent**: A dummy without `intent` follows the same conservative
   in-place rule as `intent(inout)`.
-- **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
+- **Fields**: Public scalar numeric, logical, complex, and character fields
+  read as live rank-zero NumPy views of the object's storage, as module
+  variables do. A numeric or logical field is a writable `T[()]` view, and a
+  fixed-length character field is a writable fixed-width bytes view: writing
+  through the view or assigning the attribute updates the object. A scalar
+  `allocatable` or `pointer` field reads as a view of its current storage, or
+  `None` when it is unallocated or disassociated; assigning to it allocates an
+  allocatable field or writes a pointer field's current target. Every view keeps its
+  parent object alive; read an `allocatable` or `pointer` field again after
+  its storage changes.
 - **Nested types**: Appear as generated objects tied to their parent.
 - **Results**: Derived-type function results create new independent objects.
   An `allocatable` result must be allocated when the function returns, as
@@ -223,7 +232,7 @@ print(points.Point.__init__.__doc__)
   cannot turn into `None`. A `pointer` result may be disassociated: the
   returned object then raises `ReferenceError` when its value is read.
 - **Default constructor**: Automatically generated from public, writable
-  primitive scalar fields.
+  primitive scalar fields that are not `allocatable` or `pointer`.
 - **Constructor fields**: Passed by keyword (`logical`, `integer`, `real`, and
   `complex`).
 
@@ -292,8 +301,8 @@ In this mapping, `@bind` selects the native initializer,
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class Point:
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
     @bind("initialize_point")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
@@ -334,27 +343,31 @@ end subroutine increment
 ```
 
 ```python
-item = counters.counter(value=np.int32(4))
+item = counters.Counter(value=np.int32(4))
 item.increment(np.int32(3))
 print(item.value)  # 7
 ```
 
-The method mutates the existing `counter`; it does not replace the Python
-object.
+The method mutates the existing `Counter`; it does not replace the Python
+object. In a contract, a method without `@bind` calls the type-bound procedure
+of its own name, and `@bind("Counter.increment")` names a type-bound procedure
+whose name differs from the method's.
 
 ### Expose a Module Procedure as a Method
 
 The `move(item, dx, dy)` procedure from this page's example can remain a
-module-level function and also become `point.move(dx, dy)`.
+module-level function and also become `Point.move(dx, dy)`.
 
-`Pass()` supplies `self` to the native call. `Arg(i)` refers to a visible
-Python argument. Add the method to the existing `point` class while keeping
-the module declaration:
+`@bind("move")` makes the method call the module procedure `move` rather than a
+type-bound procedure. `Pass()` supplies `self` to the native call. `Arg(i)`
+refers to a visible Python argument. Add the method to the existing `Point`
+class while keeping the module declaration:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, Pass, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class Point:
+    @bind("move")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def move(self, dx: Float64, dy: Float64) -> None: ...
 

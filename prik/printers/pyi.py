@@ -19,7 +19,7 @@ import re
 from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.utilities.declaration_expressions import fortran_character_value, outside_character_literals
-from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES, is_string_semantic_type_name
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
     POINTER_POLICY_FIELDS,
@@ -635,7 +635,7 @@ class PyiPrinter(ClassVisitor):
         ``String`` shorthand; when a shape subscription follows, the length slot
         is always spelled so the two are never confused.
         """
-        if semantic_type.name != "String":
+        if not is_string_semantic_type_name(semantic_type.name):
             completed = semantic_type.metadata.get(CONTRACT_NAME_METADATA) if context.normalize_public_names else None
             if completed is not None:
                 # The type names a declaration this contract writes, which is
@@ -644,7 +644,7 @@ class PyiPrinter(ClassVisitor):
                 return str(completed)
             return context.contract_type(str(semantic_type.name))
         length = semantic_type.metadata.get("fortran_character_length")
-        string = context.contract("String")
+        string = context.contract(str(semantic_type.name))
         if length is None or str(length) in {"", "*"}:
             return f"{string}[...]" if shape_follows else string
         if str(length) == ":":
@@ -665,7 +665,7 @@ class PyiPrinter(ClassVisitor):
             and storage.pointer_depth == 1
             and storage.metadata.get(ADDRESS_ROLE_METADATA) != ADDRESS_ROLE_RAW
             and (
-                semantic_type.name == "String"
+                is_string_semantic_type_name(semantic_type.name)
                 or str(semantic_type.name) in context.semantic_class_names
                 or semantic_type.metadata.get(_WRAPPED_CALLABLE_TYPE_METADATA)
             )
@@ -967,7 +967,7 @@ class PyiPrinter(ClassVisitor):
         """Return the native prototype dummy type without transport wrappers."""
         storage = semantic_type.storage
         if (
-            semantic_type.name == "String"
+            is_string_semantic_type_name(semantic_type.name)
             and storage is not None
             and storage.array is not None
             and storage.array.category == SCALAR_STORAGE_CATEGORY
@@ -1000,7 +1000,8 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         return bool(
             semantic_type.rank == 0
-            and semantic_type.name not in {"String", "Void"}
+            and semantic_type.name != "Void"
+            and not is_string_semantic_type_name(semantic_type.name)
             and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
             and (storage is None or storage.kind == "value")
             and not PyiPrinter._is_prototype_descriptor_type(semantic_type)
@@ -1016,7 +1017,8 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         return bool(
             semantic_type.rank == 0
-            and semantic_type.name not in {"String", "Void"}
+            and semantic_type.name != "Void"
+            and not is_string_semantic_type_name(semantic_type.name)
             and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
             and storage is not None
             and storage.kind in {"reference", "address", "pointer"}
@@ -1174,7 +1176,7 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         return bool(
             semantic_type.rank == 0
-            and semantic_type.name != "String"
+            and not is_string_semantic_type_name(semantic_type.name)
             and not semantic_type.metadata.get("fortran_allocatable")
             and not semantic_type.metadata.get("fortran_pointer")
             and semantic_type.dtype in SEMANTIC_SCALAR_TYPE_NAMES
@@ -1479,13 +1481,19 @@ class PyiPrinter(ClassVisitor):
 
     @staticmethod
     def _constructor_accepts_field(field: SemanticVariable) -> bool:
-        """Handle constructor accepts field for the current generation context."""
+        """Return whether the keyword-field constructor takes one field.
+
+        A scalar allocatable or pointer field starts without storage, so it is
+        assigned after construction rather than passed as a keyword.
+        """
         semantic_type = field.semantic_type
         return (
             field.visibility == "public"
             and semantic_type.rank == 0
-            and semantic_type.name != "String"
+            and not is_string_semantic_type_name(semantic_type.name)
             and semantic_type.name in NumpyDtypeRegistry.TYPES
+            and not semantic_type.metadata.get("fortran_allocatable")
+            and not semantic_type.metadata.get("fortran_pointer")
         )
 
     @staticmethod
@@ -1850,7 +1858,7 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         if not (
             semantic_type.rank == 0
-            and semantic_type.name != "String"
+            and not is_string_semantic_type_name(semantic_type.name)
             and (semantic_type.dtype or semantic_type.name) not in SEMANTIC_SCALAR_TYPE_NAMES
             and storage is not None
             and storage.kind in {"reference", "pointer", "address"}

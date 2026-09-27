@@ -6,6 +6,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
 )
 from prik.semantics.models import (
+    RESOLVED_DERIVED_TYPE_POLICY_METADATA,
     RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA,
     RESOLVED_OWNERSHIP_POLICY_METADATA,
     RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA,
@@ -29,6 +30,7 @@ from prik.policy.ownership import (
     TransferMode,
 )
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import DerivedFieldAccessMechanism
 from tests.fortran._support.ownership_policy import (
     _scalar_type,
     parse_pyi_text,
@@ -114,11 +116,11 @@ def test_scalar_accessor_policies_are_complete_before_ir_lowering():
         assert setter.setter_action is SetterAction.WRITE_THROUGH
 
 
-def test_scalar_descriptor_fields_snapshot_while_module_variables_lend_current_storage():
-    """A descriptor field copies its value; a module descriptor lends its current storage.
+def test_scalar_descriptor_fields_and_module_variables_lend_current_storage():
+    """A scalar allocatable or pointer lends its current storage wherever it lives.
 
-    A module variable's setter assigns through the descriptor instead: an
-    allocatable is allocated when needed and a pointer writes its target.
+    Its setter assigns through the descriptor instead: an allocatable is
+    allocated when needed and a pointer writes its target.
     """
     module = parse_pyi_text(
         """
@@ -136,31 +138,22 @@ class point:
 
     alloc_module, ptr_module = module.variables
     alloc_field, ptr_field = module.classes[0].fields
-    for field in (alloc_field, ptr_field):
-        storage = field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA]
-        getter = field.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
-        assert storage.transfer is TransferMode.SNAPSHOT_COPY
-        assert storage.nullable is True
-        assert storage.codegen_action is CodegenAction.SNAPSHOT_COPY
-        assert getter.transfer is TransferMode.SNAPSHOT_COPY
-        assert getter.nullable is True
-        assert (
-            field.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA].setter_action is SetterAction.REJECT_REPLACEMENT
-        )
-    assert alloc_field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.HEAP
-    assert ptr_field.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].storage_mode is StorageMode.ALIAS
-
-    for variable, assignment in (
+    for entity, assignment in (
         (alloc_module, AssignmentMode.ALLOCATING_COPY),
         (ptr_module, AssignmentMode.TARGET_COPY),
+        (alloc_field, AssignmentMode.ALLOCATING_COPY),
+        (ptr_field, AssignmentMode.TARGET_COPY),
     ):
-        getter = variable.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
-        setter = variable.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA]
+        getter = entity.metadata[RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA]
+        setter = entity.metadata[RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA]
         assert getter.transfer is TransferMode.BORROWED_VIEW
         assert getter.nullable is True
         assert getter.storage_mode is StorageMode.ALIAS
         assert setter.setter_action is SetterAction.WRITE_THROUGH
         assert setter.assignment_mode is assignment
+
+    fields = module.classes[0].metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA].fields
+    assert {field.access for field in fields} == {DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}
 
 
 def test_scalar_descriptor_function_boundaries_use_normal_scalar_values():

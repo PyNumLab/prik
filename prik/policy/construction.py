@@ -180,8 +180,11 @@ from prik.utilities.declaration_expressions import (
 )
 from prik.semantics.scalar_types import (
     BOOLEAN_SEMANTIC_TYPE_NAMES,
+    STRING_SEMANTIC_TYPE_NAMES,
+    character_width,
     is_boolean_semantic_type_name,
     is_integer_semantic_type_name,
+    is_string_semantic_type_name,
 )
 
 
@@ -355,25 +358,26 @@ def build_derived_field_policy(
         origin=DerivedObjectOrigin.BORROWED_FIELD,
     )
     array = _array_handoff_policy(field.semantic_type)
+    access = _derived_field_access_mechanism(getter, handle)
     blockers = (
         *_runtime_semantic_validation_blockers(field.semantic_type, f"field {field.name!r}"),
-        *_derived_field_blockers(field, getter, setter, handle, array),
+        *_derived_field_blockers(field, getter, setter, handle, array, access),
     )
     return DerivedFieldPolicy(
         owner_path=field_path,
         name=field.name,
         native_name=str(field.origin.native_name or field.name),
         semantic_type_name=field.semantic_type.name,
-        string_element=field.semantic_type.name == "String",
+        string_element=is_string_semantic_type_name(field.semantic_type.name),
         rank=int(field.semantic_type.rank or 0),
         object_kind=getter.kind,
-        access=_derived_field_access_mechanism(getter.kind, handle),
+        access=access,
         getter=getter,
         setter=setter,
         getter_action=getter.codegen_action,
         setter_action=setter.setter_action,
         native_assignment=setter.assignment_mode,
-        owner_retention=_derived_field_owner_retention(getter.kind, handle),
+        owner_retention=_derived_field_owner_retention(getter.kind, access),
         character_length=_character_length(field.semantic_type),
         array=array,
         native_array_handle=handle,
@@ -384,26 +388,52 @@ def build_derived_field_policy(
 
 
 def _derived_field_access_mechanism(
-    object_kind: ObjectKind,
+    getter: OwnershipDecision,
     handle: NativeArrayHandleWrapperPolicy | None,
 ) -> DerivedFieldAccessMechanism:
-    """Complete the typed field bridge mechanism before wrapper planning."""
+    """Complete the typed field bridge mechanism before wrapper planning.
+
+    A scalar or string getter that borrows aliased storage lends the field
+    itself: a nullable one is a scalar allocatable or pointer, and any other
+    is the field's own stored value.
+    """
     if handle is not None:
         return DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
+    if (
+        getter.kind in {ObjectKind.SCALAR, ObjectKind.STRING}
+        and getter.transfer is TransferMode.BORROWED_VIEW
+        and getter.storage_mode is StorageMode.ALIAS
+    ):
+        if getter.nullable:
+            return DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+        return DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW
     return {
         ObjectKind.SCALAR: DerivedFieldAccessMechanism.SCALAR_VALUE,
         ObjectKind.STRING: DerivedFieldAccessMechanism.FIXED_STRING_COPY,
         ObjectKind.NUMPY_ARRAY: DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
         ObjectKind.DERIVED_TYPE: DerivedFieldAccessMechanism.NESTED_OBJECT,
-    }[object_kind]
+    }[getter.kind]
+
+
+# A field access that hands Python a view of the parent's storage keeps the
+# parent alive for as long as the view exists.
+_PARENT_RETAINING_FIELD_ACCESS = frozenset(
+    {
+        DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
+        DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW,
+        DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW,
+    }
+)
 
 
 def _derived_field_owner_retention(
     object_kind: ObjectKind,
-    handle: NativeArrayHandleWrapperPolicy | None,
+    access: DerivedFieldAccessMechanism,
 ) -> DerivedOwnerRetention:
     """Complete whether a returned field object must keep its parent alive."""
-    if handle is not None or object_kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
+    if access in _PARENT_RETAINING_FIELD_ACCESS:
+        return DerivedOwnerRetention.PARENT_WRAPPER
+    if object_kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
         return DerivedOwnerRetention.PARENT_WRAPPER
     return DerivedOwnerRetention.NONE
 
@@ -687,7 +717,7 @@ def _class_constructor_policy(
             setter_action=field.setter_action,
         )
         for field in derived.fields
-        if field.object_kind is ObjectKind.SCALAR
+        if field.access in {DerivedFieldAccessMechanism.SCALAR_VALUE, DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW}
         and field.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
         and field.setter_action is SetterAction.WRITE_THROUGH
     )
@@ -843,13 +873,14 @@ def _derived_field_blockers(
     setter: OwnershipDecision,
     handle: NativeArrayHandleWrapperPolicy | None,
     array: ArrayHandoffPolicy | None,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return exact unsupported public-field forms before lowering."""
     return [
         *_derived_field_completed_policy_blockers(field, getter, setter),
         *_derived_field_descriptor_blockers(field, handle),
-        *_derived_field_object_kind_blockers(field, getter),
-        *_derived_field_setter_blockers(field, setter),
+        *_derived_field_object_kind_blockers(field, getter, access),
+        *_derived_field_setter_blockers(field, setter, access),
         *_persistent_array_extent_blockers(f"field {field.name!r}", array),
     ]
 
@@ -887,13 +918,22 @@ def _derived_field_descriptor_blockers(
 def _derived_field_object_kind_blockers(
     field: models.SemanticField,
     getter: OwnershipDecision,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return blockers selected by the completed public field object kind."""
     semantic_type = field.semantic_type
     rank = int(semantic_type.rank or 0)
     blockers: list[str] = []
-    if getter.kind is ObjectKind.NUMPY_ARRAY:
-        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
+    if access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | STRING_SEMANTIC_TYPE_NAMES:
+            blockers.append(f"field {field.name!r} is not a primitive or character scalar descriptor")
+    elif access is DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW:
+        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | STRING_SEMANTIC_TYPE_NAMES:
+            blockers.append(f"field {field.name!r} is not a primitive or character stored scalar")
+        elif is_string_semantic_type_name(semantic_type.name) and _character_length(semantic_type) is None:
+            blockers.append(f"field {field.name!r} is not a fixed scalar string")
+    elif getter.kind is ObjectKind.NUMPY_ARRAY:
+        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | STRING_SEMANTIC_TYPE_NAMES:
             blockers.append(f"field {field.name!r} is an unsupported array of derived values")
     elif getter.kind is ObjectKind.DERIVED_TYPE:
         if rank != 0:
@@ -915,12 +955,15 @@ def _derived_field_object_kind_blockers(
 def _derived_field_setter_blockers(
     field: models.SemanticField,
     setter: OwnershipDecision,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return blockers for an incomplete native write-through assignment."""
-    if setter.setter_action is SetterAction.WRITE_THROUGH and setter.assignment_mode not in {
-        AssignmentMode.VALUE_COPY,
-        AssignmentMode.ALIAS,
-    }:
+    expected = (
+        _SCALAR_DESCRIPTOR_ASSIGNMENTS.get(_scalar_descriptor_kind(field.semantic_type) or "", set())
+        if access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+        else {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}
+    )
+    if setter.setter_action is SetterAction.WRITE_THROUGH and setter.assignment_mode not in expected:
         return [f"field {field.name!r} has no completed native setter assignment"]
     return []
 
@@ -960,7 +1003,7 @@ def build_module_variable_policy(
     # Gather semantic decisions shared by all module-variable policy families.
     getter = _ownership_decision(variable, models.RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA)
     setter = _ownership_decision(variable, models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
-    descriptor_kind = _scalar_module_descriptor_kind(variable)
+    descriptor_kind = _scalar_descriptor_kind(variable.semantic_type)
     constant = _is_scalar_module_constant(variable)
     native_array_handle = _native_array_handle_wrapper_policy(
         variable.semantic_type,
@@ -1217,7 +1260,7 @@ def _constant_array_module_variable_blockers(
         blockers.append("module parameter array is not public")
     if array is None or array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("module parameter array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | STRING_SEMANTIC_TYPE_NAMES:
         blockers.append("module parameter array requires a primitive numeric element type")
     expected_getter = (
         getter is not None
@@ -1295,7 +1338,7 @@ def _ordinary_array_module_variable_blockers(
     blockers = []
     if array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("ordinary module array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | STRING_SEMANTIC_TYPE_NAMES:
         blockers.append("ordinary module array requires a primitive numeric element type")
     expected_getter = (
         ("owner", getter.owner, OwnershipOwner.NATIVE),
@@ -1556,7 +1599,7 @@ def _callback_abi_kind(
     semantic_type = argument.semantic_type
     if derived:
         return CallbackABIKind.DERIVED_ADDRESS
-    if semantic_type.name == "String":
+    if is_string_semantic_type_name(semantic_type.name):
         return CallbackABIKind.DATA_AND_LENGTH
     if int(semantic_type.rank or 0) > 0:
         return CallbackABIKind.DATA_AND_SHAPE
@@ -1618,7 +1661,7 @@ def _callback_transfer_blockers(
             f"callback argument {argument.name!r} is intent({transfer.intent}) and cannot use the "
             f"value spelling Addr({semantic_type.name}); use {semantic_type.name}[()] for writable storage"
         )
-    if semantic_type.name == "String":
+    if is_string_semantic_type_name(semantic_type.name):
         if transfer.character_length is None or transfer.character_length <= 0:
             blockers.append(f"callback argument {argument.name!r} requires a fixed positive character length")
     elif transfer.rank > 0:
@@ -1988,7 +2031,7 @@ def _normalize_c_direct_scalar_identities(
             # A C payload is bytes plus whatever length the contract passes.
             # Refusing an embedded NUL would impose a terminator convention
             # that belongs to the C author, not to PRIK.
-            character_allows_embedded_nul=argument.semantic_type_name == "String",
+            character_allows_embedded_nul=is_string_semantic_type_name(argument.semantic_type_name),
         )
         for argument in arguments
     ]
@@ -2047,7 +2090,7 @@ def _complete_entrypoint_argument_route(
                 # declared width instead of the adapter assuming it.
                 or (
                     argument.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
-                    and argument.semantic_type_name == "String"
+                    and is_string_semantic_type_name(argument.semantic_type_name)
                 )
             )
         ),
@@ -2392,7 +2435,7 @@ def _direct_c_operation_ineligibility(
         else:
             reasons.extend(_direct_argument_ineligibility(argument))
     for result in results:
-        if result.semantic_type_name == "String":
+        if is_string_semantic_type_name(result.semantic_type_name):
             # Only argument character contracts are adopted. A projected string
             # result would need the owned-allocation protocol the Fortran
             # adapter provides, and C has no adapter to allocate it.
@@ -2412,7 +2455,7 @@ def _direct_c_operation_ineligibility(
 
 def _is_c_string_argument(argument: ArgumentPolicy) -> bool:
     """Return whether one completed C argument carries a character contract."""
-    return argument.semantic_type_name == "String"
+    return is_string_semantic_type_name(argument.semantic_type_name)
 
 
 def _direct_c_string_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
@@ -2680,7 +2723,7 @@ def _direct_c_abi_type_policy(
     converts_to_contract_storage: bool | None = None,
 ) -> DirectCABITypePolicy:
     """Normalize preserved source facts or the canonical source-free C form."""
-    if semantic_type_name == "String":
+    if is_string_semantic_type_name(semantic_type_name):
         return _direct_c_character_abi_type_policy(source, semantic_type=semantic_type, writes_output=writes_output)
     scalar_name = _c_direct_scalar_name(semantic_type) or semantic_type_name
     if scalar_name is None:
@@ -2939,7 +2982,7 @@ def _direct_slot_ineligibility(
         reasons.append(f"native-call slot {slot.native_position} has no binding projection action")
     if slot.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
         reasons.append(f"native-call slot {slot.native_position} has no C passing convention")
-    character_slot = slot.semantic_type_name == "String" and (
+    character_slot = is_string_semantic_type_name(slot.semantic_type_name) and (
         character_representation_is_binding_owned or slot.character_length == 1
     )
     if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not character_slot:
@@ -2977,7 +3020,7 @@ def _direct_descriptor_supported(argument: ArgumentPolicy) -> bool:
         and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
         and argument.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
         and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
-        and argument.semantic_type_name in {*_PLAN_PRIMITIVE_SCALAR_TYPES, "String"}
+        and argument.semantic_type_name in {*_PLAN_PRIMITIVE_SCALAR_TYPES, *STRING_SEMANTIC_TYPE_NAMES}
         and argument.rank > 0
         and argument.derived is None
         and not argument.transformations
@@ -3023,7 +3066,7 @@ def _result_requires_explicit_interface(result: ResultPolicy) -> bool:
         return False
     if result.scalar_descriptor is not None or result.native_array_handle is not None or result.derived is not None:
         return True
-    if result.rank > 0 or result.semantic_type_name == "String":
+    if result.rank > 0 or is_string_semantic_type_name(result.semantic_type_name):
         return True
     return _array_requires_explicit_interface(result.array)
 
@@ -3472,10 +3515,13 @@ def _completed_argument_blockers(
     blockers.extend(_derived_argument_handoff_blockers(argument, derived, derived_types))
     requires_holder = bool(
         derived_call is not None
-        and any(case.action is DerivedCallAction.ALLOCATABLE_HOLDER for case in derived_call.cases)
+        and any(
+            case.action in {DerivedCallAction.ALLOCATABLE_HOLDER, DerivedCallAction.POINTER_HOLDER}
+            for case in derived_call.cases
+        )
     )
     blockers.extend(
-        _allocatable_holder_field_blockers(
+        _holder_field_blockers(
             f"argument {argument.name!r}",
             derived,
             derived_types,
@@ -3572,11 +3618,11 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
     )
     blockers.extend(_derived_type_definition_blockers("result", derived, context.derived_types))
     blockers.extend(
-        _allocatable_holder_field_blockers(
+        _holder_field_blockers(
             "result",
             derived,
             context.derived_types,
-            required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
+            required=bool(derived is not None and derived.storage in _HOLDER_STORAGE),
         )
     )
     return _ResultPolicyCandidate(
@@ -3794,11 +3840,11 @@ def _hidden_result_candidate(
     blockers = (
         *blockers,
         *_derived_type_definition_blockers(label, derived, context.derived_types),
-        *_allocatable_holder_field_blockers(
+        *_holder_field_blockers(
             label,
             derived,
             context.derived_types,
-            required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
+            required=bool(derived is not None and derived.storage in _HOLDER_STORAGE),
         ),
     )
 
@@ -4520,24 +4566,36 @@ def _derived_type_definition_blockers(
     return (f"{label} has no completed wrapper type definition for {derived.type_identity!r}",)
 
 
-def _allocatable_holder_field_blockers(
+# A derived object held through an allocatable or pointer descriptor reaches
+# its fields only through the holder's scalar-member procedures.
+_HOLDER_STORAGE = frozenset({DerivedObjectStorage.ALLOCATABLE_HOLDER, DerivedObjectStorage.POINTER_HOLDER})
+
+
+def _holder_field_blockers(
     label: str,
     derived: DerivedHandoffPolicy | None,
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
     *,
     required: bool,
 ) -> tuple[str, ...]:
-    """Keep the first holder slice within its completed scalar-member policy."""
+    """Keep an allocatable or pointer holder within its completed scalar-member policy."""
     if not required or derived is None:
         return ()
     type_policy = derived_types.get(derived.type_identity)
     if type_policy is None:
         return ()
     return tuple(
-        f"{label} allocatable holder field {field.name!r} requires unsupported {field.access.value} access"
+        f"{label} holder field {field.name!r} requires unsupported {field.access.value} access"
         for field in type_policy.fields
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE
+        if not _holder_reaches_field(field)
     )
+
+
+def _holder_reaches_field(field: DerivedFieldPolicy) -> bool:
+    """Return whether a holder's scalar-member procedures serve one field."""
+    if field.string_element:
+        return False
+    return field.access in {DerivedFieldAccessMechanism.SCALAR_VALUE, DerivedFieldAccessMechanism.SCALAR_STORAGE_VIEW}
 
 
 def _derived_handoff_policy(
@@ -5791,7 +5849,7 @@ def _scalar_descriptor_result_blockers(
     blockers = []
     if decision.is_blocked:
         blockers.append(f"{label} has blocked ownership policy: {decision.blocker or decision.reason}")
-    expected_kind = ObjectKind.STRING if semantic_type.name == "String" else ObjectKind.SCALAR
+    expected_kind = ObjectKind.STRING if is_string_semantic_type_name(semantic_type.name) else ObjectKind.SCALAR
     if decision.kind is not expected_kind:
         blockers.append(f"{label} policy kind is {decision.kind.value}, not {expected_kind.value}")
     if decision.owner is not OwnershipOwner.PYTHON:
@@ -6108,7 +6166,7 @@ def _character_local_policy(
     attribute, and a ``pointer`` local is adapter-allocated storage the adapter
     must also release.
     """
-    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+    if int(semantic_type.rank or 0) != 0 or not is_string_semantic_type_name(semantic_type.name):
         return None
     plain = CharacterLocalPolicy(
         descriptor_kind=None,
@@ -6161,7 +6219,7 @@ def _character_descriptor_blockers(
     ``character(len=:)`` is not a declarable local without it.
     """
     semantic_type = argument.semantic_type
-    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+    if int(semantic_type.rank or 0) != 0 or not is_string_semantic_type_name(semantic_type.name):
         return ()
     descriptor = character_descriptor_kind(semantic_type.metadata)
     deferred = _has_deferred_character_length(semantic_type)
@@ -6266,7 +6324,7 @@ def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
     return bool(
         int(semantic_type.rank or 0) == 0
         and not _is_scalar_storage_type(semantic_type)
-        and semantic_type.name != "String"
+        and not is_string_semantic_type_name(semantic_type.name)
         and _is_plan_primitive_value_type(semantic_type)
     )
 
@@ -6325,7 +6383,7 @@ def _is_scalar_storage_type(semantic_type: models.SemanticType) -> bool:
 
 def _is_plan_string_value_type(semantic_type: models.SemanticType) -> bool:
     """Return whether one semantic type is a scalar Python string value."""
-    return bool(int(semantic_type.rank or 0) == 0 and semantic_type.name == "String")
+    return bool(int(semantic_type.rank or 0) == 0 and is_string_semantic_type_name(semantic_type.name))
 
 
 def _is_fixed_plan_string_result_type(semantic_type: models.SemanticType) -> bool:
@@ -6395,7 +6453,7 @@ def _scalar_descriptor_result_policy(
         return None
     return ScalarDescriptorResultPolicy(
         descriptor_kind=NativeArrayDescriptorKind(descriptor),
-        runtime_length=semantic_type.name == "String",
+        runtime_length=is_string_semantic_type_name(semantic_type.name),
         nullable=decision.nullable,
         copy_reason=SCALAR_DESCRIPTOR_RESULT_COPY_REASON,
         release_owner=OwnershipOwner.PYTHON,
@@ -6447,7 +6505,7 @@ def _native_array_handle_wrapper_policy(
     operations.add(NativeArrayOperation.SHAPE)
     if descriptor == "pointer" and descriptor_inquiries:
         operations.update({NativeArrayOperation.CONTIGUOUS, NativeArrayOperation.DESCRIPTOR})
-    if semantic_type.name == "String":
+    if is_string_semantic_type_name(semantic_type.name):
         operations.add(NativeArrayOperation.ELEMENT_LENGTH)
     if completed.destroy_behavior == NativeArrayDestroyBehavior.HANDLE_FINALIZER.value:
         operations.add(NativeArrayOperation.DESTROY)
@@ -6698,7 +6756,7 @@ def _array_replacement_transformations(
 ) -> tuple[tuple[TransformationPolicy, ...], tuple[str, ...]]:
     """Copy immutable storage once and publish the mutated temporary as output."""
     blockers = []
-    if argument.optional or array.rank is None or argument.semantic_type.name == "String":
+    if argument.optional or array.rank is None or is_string_semantic_type_name(argument.semantic_type.name):
         blockers.append(f"argument {argument.name!r} array replacement requires a required numeric fixed rank")
     if decision.codegen_action is not CodegenAction.COPY_IN_OUT or not decision.projects_result:
         blockers.append(f"argument {argument.name!r} array replacement has incomplete copy-out policy")
@@ -6752,7 +6810,7 @@ def _copy_to_fortran_argument_blockers(
         blockers.append(f"argument {argument.name!r} COPY_F requires ordinary NumPy array storage")
     if decision.descriptor_boundary or native_array_descriptor_kind(argument.semantic_type) is not None:
         blockers.append(f"argument {argument.name!r} COPY_F does not support native descriptors")
-    if argument.semantic_type.name == "String":
+    if is_string_semantic_type_name(argument.semantic_type.name):
         blockers.append(f"argument {argument.name!r} COPY_F character arrays are not implemented")
     if array.rank is None or array.rank <= 1 or array.contiguous is not True:
         blockers.append(f"argument {argument.name!r} COPY_F requires a concrete dense multidimensional array")
@@ -6773,9 +6831,10 @@ def _native_array_actual_dtype(argument: models.SemanticArgument) -> str | None:
     because a handle whose elements are a different length describes different
     storage. An assumed width is read from the live descriptor.
     """
-    if argument.semantic_type.name == "String":
+    if is_string_semantic_type_name(argument.semantic_type.name):
         length = _character_length(argument.semantic_type)
-        return "S" if length is None else f"S{length}"
+        code = "U" if character_width(argument.semantic_type.name) == 4 else "S"
+        return code if length is None else f"{code}{length}"
     return _NUMPY_DTYPE_NAMES.get(argument.semantic_type.name)
 
 
@@ -7026,10 +7085,10 @@ def _scalar_module_getter_blockers(
     literal_string = _is_binding_literal_string(variable, getter_action)
     character_value = getter_action in {ModuleGetterAction.CHARACTER_VALUE, ModuleGetterAction.NATIVE_CHARACTER_VIEW}
     # A descriptor character getter reports its current width with the address.
-    character_descriptor = (
-        getter_action in {ModuleGetterAction.NULLABLE_SNAPSHOT, ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW}
-        and variable.semantic_type.name == "String"
-    )
+    character_descriptor = getter_action in {
+        ModuleGetterAction.NULLABLE_SNAPSHOT,
+        ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
+    } and is_string_semantic_type_name(variable.semantic_type.name)
     string_getter = literal_string or character_value or character_descriptor
     if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter):
         blockers.append("module variable is not a primitive rank-zero scalar")
@@ -7054,7 +7113,9 @@ def _scalar_module_getter_blockers(
         blockers.append("module variable getter is not a supported scalar policy")
     elif getter.codegen_action not in supported_getter_actions:
         blockers.append(f"module variable getter action {getter.codegen_action.value!r} is unsupported")
-    if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW and variable.semantic_type.name == "String":
+    if getter_action is ModuleGetterAction.NATIVE_SCALAR_VIEW and is_string_semantic_type_name(
+        variable.semantic_type.name
+    ):
         blockers.append("native scalar storage view requires a primitive numeric type")
     return tuple(blockers)
 
@@ -7066,7 +7127,7 @@ def _is_binding_literal_string(
     """Return whether the binding materializes one rank-zero string literal."""
     return bool(
         getter_action is ModuleGetterAction.CONSTANT_VALUE
-        and variable.semantic_type.name == "String"
+        and is_string_semantic_type_name(variable.semantic_type.name)
         and int(variable.semantic_type.rank or 0) == 0
     )
 
@@ -7112,7 +7173,7 @@ def _scalar_module_initializer_blockers(
     return tuple(blockers)
 
 
-_SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS = {
+_SCALAR_DESCRIPTOR_ASSIGNMENTS = {
     "allocatable": {AssignmentMode.ALLOCATING_COPY},
     "pointer": {AssignmentMode.TARGET_COPY},
 }
@@ -7129,7 +7190,7 @@ def _scalar_module_setter_blockers(
             return ("scalar constant must omit native setter assignment",)
         return ()
     if setter.setter_action is SetterAction.WRITE_THROUGH:
-        expected_assignments = _SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS.get(
+        expected_assignments = _SCALAR_DESCRIPTOR_ASSIGNMENTS.get(
             descriptor_kind,
             {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY},
         )
@@ -7158,7 +7219,7 @@ def _scalar_module_getter_action(
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
-    if _scalar_module_descriptor_kind(variable) is not None:
+    if _scalar_descriptor_kind(variable.semantic_type) is not None:
         return ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
@@ -7177,7 +7238,7 @@ def _is_fixed_length_character_scalar(variable: models.SemanticVariable) -> bool
     """Return whether one module variable is a rank-zero declared-length character."""
     semantic_type = variable.semantic_type
     return bool(
-        semantic_type.name == "String"
+        is_string_semantic_type_name(semantic_type.name)
         and int(semantic_type.rank or 0) == 0
         and _character_length(semantic_type) is not None
         and character_descriptor_kind(semantic_type.metadata) is None
@@ -7210,16 +7271,6 @@ def _scalar_module_native_assignment(
     if setter.assignment_mode is AssignmentMode.VALUE_COPY and _is_fixed_length_character_scalar(variable):
         return AssignmentMode.CHARACTER_COPY
     return setter.assignment_mode
-
-
-def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | None:
-    """Return the scalar descriptor family recorded on a module variable, if any."""
-    metadata = variable.semantic_type.metadata
-    if metadata.get("fortran_allocatable"):
-        return "allocatable"
-    if metadata.get("fortran_pointer"):
-        return "pointer"
-    return None
 
 
 def _is_scalar_module_constant(variable: models.SemanticVariable) -> bool:
@@ -7257,7 +7308,7 @@ def _scalar_module_literal_value(value: object, semantic_type_name: str) -> obje
             return True
         if lowered in {".false.", "false"}:
             return False
-    if semantic_type_name == "String":
+    if is_string_semantic_type_name(semantic_type_name):
         # Fortran doubles a quote to hold one, which Python reads as two
         # literals side by side and joins, dropping the quote.
         character = fortran_character_value(text)
@@ -7584,7 +7635,8 @@ def _is_scalar_derived_type(semantic_type: models.SemanticType) -> bool:
     """Return whether semantic facts name a concrete rank-zero custom type."""
     return bool(
         int(semantic_type.rank or 0) == 0
-        and semantic_type.name not in {"String", "Void", "AnyNative"}
+        and not is_string_semantic_type_name(semantic_type.name)
+        and semantic_type.name not in {"Void", "AnyNative"}
         and not _is_plan_primitive_value_type(semantic_type)
         and semantic_type.name not in {"Procedure", "Callback", "FunctionPointer", "CFunctionPointer"}
     )
@@ -7602,7 +7654,8 @@ def _is_derived_value_array(semantic_type: models.SemanticType) -> bool:
     """Return whether an array contains custom derived values rather than primitives."""
     return bool(
         int(semantic_type.rank or 0) > 0
-        and semantic_type.name not in {"String", "AnyNative"}
+        and not is_string_semantic_type_name(semantic_type.name)
+        and semantic_type.name != "AnyNative"
         and not _is_plan_primitive_value_type(semantic_type)
     )
 
@@ -7626,7 +7679,7 @@ def _native_result_bridge_data_action(
         return BridgeDataAction.DIRECT_TRANSFER, None
     if _is_phase6_ordinary_array_type(semantic_type):
         return BridgeDataAction.COPY_REPRESENTATION, ORDINARY_ARRAY_RESULT_COPY_REASON
-    if semantic_type.name == "String" and _character_length(semantic_type) is not None:
+    if is_string_semantic_type_name(semantic_type.name) and _character_length(semantic_type) is not None:
         return (
             BridgeDataAction.COPY_REPRESENTATION,
             FIXED_STRING_RESULT_COPY_REASON,
@@ -7682,7 +7735,7 @@ def _array_handoff_policy(
     array = storage.array if storage is not None else None
     if array is None:
         return None
-    if semantic_type.name == "String" and array.category == SCALAR_STORAGE_CATEGORY:
+    if is_string_semantic_type_name(semantic_type.name) and array.category == SCALAR_STORAGE_CATEGORY:
         return None
     runtime_rank = array.category in {"assumed_rank", "runtime_rank"}
     rank = _array_handoff_rank(semantic_type, array.rank, runtime_rank)
@@ -7697,7 +7750,7 @@ def _array_handoff_policy(
     order = _array_handoff_order(array.order, array.category)
     entrypoint_abi = _array_entrypoint_abi(
         array.category,
-        character=semantic_type.name == "String",
+        character=is_string_semantic_type_name(semantic_type.name),
         source_language=source_language,
     )
     contiguous = _array_handoff_contiguous(array.contiguous, array.category, entrypoint_abi)
@@ -7717,7 +7770,7 @@ def _array_handoff_policy(
         flatten_python_storage=flatten_python_storage,
         flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
-        character=semantic_type.name == "String",
+        character=is_string_semantic_type_name(semantic_type.name),
         category=array.category,
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )
@@ -7886,7 +7939,7 @@ def _array_handoff_flat_axis(array: models.SemanticArrayContract) -> int | None:
 
 def _array_handoff_itemsize(semantic_type: models.SemanticType) -> int | None:
     """Carry fixed character width only for string array elements."""
-    if semantic_type.name == "String":
+    if is_string_semantic_type_name(semantic_type.name):
         return _character_length(semantic_type)
     return None
 
@@ -7904,7 +7957,7 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
     # A character array may leave its width assumed: every element of a NumPy
     # ``S`` array shares one itemsize, which already travels beside the buffer.
     supported_element = _is_plan_primitive_value_type(semantic_type) or (
-        semantic_type.name == "String" and not scalar_storage
+        is_string_semantic_type_name(semantic_type.name) and not scalar_storage
     )
     supported_rank = array_policy.rank is None or 1 <= array_policy.rank <= 15 or scalar_storage
     return bool(
@@ -7935,7 +7988,7 @@ def _is_phase6_raw_array_address_type(semantic_type: models.SemanticType) -> boo
     if len(policy.shape) != policy.rank or len(policy.axes) != policy.rank:
         return False
     supported_element = _is_plan_primitive_value_type(semantic_type) or (
-        semantic_type.name == "String" and policy.itemsize is not None
+        is_string_semantic_type_name(semantic_type.name) and policy.itemsize is not None
     )
     return supported_element and all(item not in RUNTIME_DIMENSION_MARKERS for item in policy.shape)
 
@@ -7971,8 +8024,8 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         signed_strides=False,
         minimum_rank=rank,
         maximum_rank=rank,
-        itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,
-        character=semantic_type.name == "String",
+        itemsize=_character_length(semantic_type) if is_string_semantic_type_name(semantic_type.name) else None,
+        character=is_string_semantic_type_name(semantic_type.name),
         category="raw_address",
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )

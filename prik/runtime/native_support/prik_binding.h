@@ -1143,22 +1143,58 @@ PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_rank_zero_storage(
 }
 
 /*
- * Borrow the rank-zero fixed-width bytes an ndarray passes for one character
+ * Decode ``length`` characters of native storage into a Python str.
+ *
+ * character_width is 1 for the default kind, whose bytes are UTF-8, or 4 for
+ * UCS-4 (``ISO_10646``), whose code points are native-order 32-bit values.
+ */
+PRIK_MAYBE_UNUSED static PyObject *prik_character_decode(const void *data, Py_ssize_t length, int character_width)
+{
+    if (character_width == 4) {
+        return PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, data, length);
+    }
+    return PyUnicode_DecodeUTF8((const char *)data, length, "strict");
+}
+
+/* Decode one NUL-terminated native character copy into a Python str. */
+PRIK_MAYBE_UNUSED static PyObject *prik_character_decode_terminated(const void *data, int character_width)
+{
+    Py_ssize_t length = 0;
+    if (character_width == 4) {
+        while (((const Py_UCS4 *)data)[length] != 0) {
+            length += 1;
+        }
+        return prik_character_decode(data, length, 4);
+    }
+    return Py_BuildValue("s", (const char *)data);
+}
+
+/*
+ * Borrow the rank-zero fixed-width storage an ndarray passes for one character
  * argument.
  *
- * value must be an ndarray. Returns 0 with *data set to its bytes, or -1 with
- * a TypeError set when it is not rank-zero S<width> storage.
+ * value must be an ndarray. Returns 0 with *data set to its storage, or -1
+ * with a TypeError set when it is not rank-zero S<width> storage, or
+ * U<width> storage for a four-byte character width.
  */
 PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_rank_zero_bytes(
     PyObject *value,
     Py_ssize_t width,
     int require_writeable,
     const char *argument_name,
-    const char **data)
+    const char **data,
+    int character_width)
 {
     PyArrayObject *array = (PyArrayObject *)value;
-    if (PyArray_TYPE(array) != NPY_STRING || PyArray_NDIM(array) != 0 || PyArray_ITEMSIZE(array) != width) {
-        PyErr_Format(PyExc_TypeError, "Argument %s requires rank-zero S%zd storage", argument_name, width);
+    int dtype = character_width == 4 ? NPY_UNICODE : NPY_STRING;
+    if (PyArray_TYPE(array) != dtype || PyArray_NDIM(array) != 0
+        || PyArray_ITEMSIZE(array) != width * character_width) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Argument %s requires rank-zero %c%zd storage",
+            argument_name,
+            character_width == 4 ? 'U' : 'S',
+            width);
         return -1;
     }
     if (!PyArray_ISALIGNED(array)) {
@@ -1174,12 +1210,74 @@ PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_rank_zero_bytes(
 }
 
 /*
- * Take one fixed-width character argument that also accepts rank-zero bytes.
+ * Measure one Python str in the characters of a native character width.
  *
- * An ndarray must be rank-zero S<width> storage, and *source then points at
- * its bytes. Any other value must be a str whose UTF-8 encoding is exactly
- * width bytes, without embedded NUL unless allow_embedded_nul is set.
- * *length receives the byte count. Returns 0, or -1 with an exception set.
+ * A one-byte width counts UTF-8 bytes and borrows them through *source; a
+ * four-byte width counts code points and leaves *source NULL, because the
+ * str holds no UCS-4 storage to lend -- prik_character_fill copies it.
+ * Returns 0, or -1 with an exception set.
+ */
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_text(
+    PyObject *value,
+    int allow_embedded_nul,
+    const char *argument_name,
+    const char **source,
+    Py_ssize_t *length,
+    int character_width)
+{
+    if (character_width == 4) {
+        *source = NULL;
+        *length = PyUnicode_GetLength(value);
+        if (*length < 0) {
+            return -1;
+        }
+        if (!allow_embedded_nul && PyUnicode_FindChar(value, 0, 0, *length, 1) >= 0) {
+            PyErr_Format(PyExc_TypeError, "Argument %s cannot contain embedded NUL", argument_name);
+            return -1;
+        }
+        return 0;
+    }
+    *source = PyUnicode_AsUTF8AndSize(value, length);
+    if (*source == NULL) {
+        return -1;
+    }
+    if (!allow_embedded_nul && (Py_ssize_t)strlen(*source) != *length) {
+        PyErr_Format(PyExc_TypeError, "Argument %s cannot contain embedded NUL", argument_name);
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Fill a call buffer of length + 1 characters from one measured str.
+ *
+ * The one-byte width copies the borrowed UTF-8 bytes; the four-byte width
+ * converts the str's code points. Both terminate the buffer with a NUL
+ * character. Returns 0, or -1 with an exception set.
+ */
+PRIK_MAYBE_UNUSED static int prik_character_fill(
+    char *buffer,
+    PyObject *value,
+    const char *source,
+    Py_ssize_t length,
+    int character_width)
+{
+    if (character_width == 4) {
+        return PyUnicode_AsUCS4(value, (Py_UCS4 *)buffer, length + 1, 1) == NULL ? -1 : 0;
+    }
+    memcpy(buffer, source, (size_t)length);
+    buffer[length] = '\0';
+    return 0;
+}
+
+/*
+ * Take one fixed-width character argument that also accepts rank-zero storage.
+ *
+ * An ndarray must be rank-zero S<width> storage, or U<width> for a four-byte
+ * character width, and *source then points at it. Any other value must be a
+ * str of exactly width characters of that width (UTF-8 bytes for the default
+ * kind), without embedded NUL unless allow_embedded_nul is set. *length
+ * receives the character count. Returns 0, or -1 with an exception set.
  */
 PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_input(
     PyObject *value,
@@ -1188,10 +1286,11 @@ PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_input(
     int require_writeable,
     const char *argument_name,
     const char **source,
-    Py_ssize_t *length)
+    Py_ssize_t *length,
+    int character_width)
 {
     if (PyArray_Check(value)) {
-        if (prik_rank_zero_bytes(value, width, require_writeable, argument_name, source) < 0) {
+        if (prik_rank_zero_bytes(value, width, require_writeable, argument_name, source, character_width) < 0) {
             return -1;
         }
         *length = width;
@@ -1205,16 +1304,16 @@ PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_input(
             Py_TYPE(value)->tp_name);
         return -1;
     }
-    *source = PyUnicode_AsUTF8AndSize(value, length);
-    if (*source == NULL) {
-        return -1;
-    }
-    if (!allow_embedded_nul && (Py_ssize_t)strlen(*source) != *length) {
-        PyErr_Format(PyExc_TypeError, "Argument %s cannot contain embedded NUL", argument_name);
+    if (prik_character_text(value, allow_embedded_nul, argument_name, source, length, character_width) < 0) {
         return -1;
     }
     if (*length != width) {
-        PyErr_Format(PyExc_TypeError, "Argument %s must encode to exactly %zd bytes", argument_name, width);
+        PyErr_Format(
+            PyExc_TypeError,
+            character_width == 4 ? "Argument %s must contain exactly %zd characters"
+                                 : "Argument %s must encode to exactly %zd bytes",
+            argument_name,
+            width);
         return -1;
     }
     return 0;
@@ -1226,13 +1325,17 @@ PRIK_NO_INLINE PRIK_MAYBE_UNUSED static int prik_character_input(
  * Rank-zero bytes storage was updated in place, so its bytes are decoded. A
  * str was copied into *buffer, which is converted and then released.
  */
-PRIK_NO_INLINE PRIK_MAYBE_UNUSED static PyObject *prik_character_result(PyObject *value, char **buffer, Py_ssize_t length)
+PRIK_NO_INLINE PRIK_MAYBE_UNUSED static PyObject *prik_character_result(
+    PyObject *value,
+    char **buffer,
+    Py_ssize_t length,
+    int character_width)
 {
     PyObject *result;
     if (PyArray_Check(value)) {
-        return PyUnicode_DecodeUTF8((const char *)*buffer, length, "strict");
+        return prik_character_decode(*buffer, length, character_width);
     }
-    result = Py_BuildValue("s", (const char *)*buffer);
+    result = character_width == 4 ? prik_character_decode(*buffer, length, 4) : Py_BuildValue("s", (const char *)*buffer);
     free(*buffer);
     *buffer = NULL;
     return result;

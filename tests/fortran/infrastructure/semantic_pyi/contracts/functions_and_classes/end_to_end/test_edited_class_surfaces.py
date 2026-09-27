@@ -47,8 +47,12 @@ def test_module_procedure_is_reused_by_bound_constructor_method_and_public_funct
     value.shift(np.float64(1.0), np.float64(-1.0))
     assert (value.x, value.y) == (np.float64(3.0), np.float64(2.0))
 
+    value.shift_vector(np.float64(1.0), np.float64(0.0))
+    assert (value.x, value.y) == (np.float64(4.0), np.float64(2.0))
+
     module.shift_vector(np.float64(2.0), value, np.float64(4.0))
-    assert (value.x, value.y) == (np.float64(5.0), np.float64(6.0))
+    assert (value.x, value.y) == (np.float64(6.0), np.float64(6.0))
+    assert value.magnitude() == pytest.approx(np.sqrt(72.0))
     assert "shift(dx, dy) -> None" in module.vector.shift.__doc__
 
 

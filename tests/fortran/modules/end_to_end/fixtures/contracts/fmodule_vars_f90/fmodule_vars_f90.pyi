@@ -9,9 +9,9 @@ class Rgb_Color:
         b: Int32 = ...
     ) -> None: ...
 
-    r: Int32
-    g: Int32
-    b: Int32
+    r: Int32[()]
+    g: Int32[()]
+    b: Int32[()]
 
 nmax: Final[Int32] = 12
 

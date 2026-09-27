@@ -7,7 +7,7 @@ class Accumulator:
         total: Float64 = 0.0
     ) -> None: ...
 
-    total: Float64 = 0.0
+    total: Float64[()] = 0.0
 
     @private
     @bind("accumulator_add_integer")
@@ -46,7 +46,7 @@ class Sample:
         value: Float64 = 0.0
     ) -> None: ...
 
-    value: Float64 = 0.0
+    value: Float64[()] = 0.0
 
 @private
 @native_call([Addr(Arg(0))])

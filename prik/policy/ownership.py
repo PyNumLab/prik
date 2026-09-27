@@ -52,7 +52,10 @@ from prik.semantics.metadata import (
 )
 from prik.semantics.models import PYTHON_VALUE_IMMUTABLE, PYTHON_VALUE_MUTABILITY_METADATA
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 
 
 # Completed policy vocabulary
@@ -975,9 +978,9 @@ class OwnershipPolicyResolver:
         storage = self.decide_semantic_variable(variable, context)
         if storage.is_blocked or storage.kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return storage
-        if context.is_module_variable and variable.semantic_type.metadata.get("native_storage"):
+        if (context.is_module_variable or context.is_field) and variable.semantic_type.metadata.get("native_storage"):
             return storage
-        if context.is_module_variable and (
+        if (context.is_module_variable or context.is_field) and (
             variable.semantic_type.metadata.get("fortran_allocatable")
             or variable.semantic_type.metadata.get("fortran_pointer")
         ):
@@ -1011,7 +1014,7 @@ class OwnershipPolicyResolver:
                 setter_action=SetterAction.OMIT,
             )
         incoming = self.decide_semantic_type(variable.semantic_type, OwnershipContext.argument())
-        descriptor_assignment = self._module_scalar_descriptor_assignment(storage, context, variable)
+        descriptor_assignment = self._scalar_descriptor_assignment(storage, context, variable)
         if descriptor_assignment is not None:
             return replace(
                 incoming,
@@ -1022,7 +1025,8 @@ class OwnershipPolicyResolver:
             incoming,
             assignment_mode=(
                 AssignmentMode.VALUE_COPY
-                if context.is_module_variable and variable.semantic_type.metadata.get("native_storage")
+                if (context.is_module_variable or context.is_field)
+                and variable.semantic_type.metadata.get("native_storage")
                 else AssignmentMode.ALIAS
                 if storage.storage_mode is StorageMode.ALIAS
                 else AssignmentMode.VALUE_COPY
@@ -1031,18 +1035,23 @@ class OwnershipPolicyResolver:
         )
 
     @staticmethod
-    def _module_scalar_descriptor_assignment(
+    def _scalar_descriptor_assignment(
         storage: OwnershipDecision,
         context: OwnershipContext,
         variable: Any,
     ) -> AssignmentMode | None:
-        """Select how a scalar allocatable or pointer module variable is assigned.
+        """Select how a scalar allocatable or pointer module variable or field is assigned.
 
-        Its getter lends a read-only view of the current storage, so Python
-        writes only through the setter: an allocatable takes intrinsic
+        Its getter lends a view of the current storage, and its setter
+        reaches whatever storage is current: an allocatable takes intrinsic
         assignment, while a pointer's current target receives the value.
         """
-        if not context.is_module_variable or storage.kind not in {ObjectKind.SCALAR, ObjectKind.STRING}:
+        if not (context.is_module_variable or context.is_field):
+            return None
+        if (
+            storage.kind not in {ObjectKind.SCALAR, ObjectKind.STRING}
+            or storage.transfer is not TransferMode.BORROWED_VIEW
+        ):
             return None
         metadata = variable.semantic_type.metadata
         if metadata.get("fortran_allocatable"):
@@ -1913,7 +1922,7 @@ class OwnershipPolicyResolver:
                 boundary_storage_mode=StorageMode.ALIAS,
                 nullable=True,
                 borrowed=True,
-                reason="scalar module descriptor lends a read-only view of its current storage on each read",
+                reason="scalar module descriptor lends a view of its current storage on each read",
             )
         if facts.rank > 0 or facts.is_ndarray:
             if facts.pointer:
@@ -1965,6 +1974,29 @@ class OwnershipPolicyResolver:
 
     def _derived_field_decision(self, facts: _StorageFacts, context: OwnershipContext) -> OwnershipDecision:
         """Return policy for storage that remains owned by the containing derived wrapper."""
+        if (facts.allocatable or facts.pointer) and facts.rank == 0 and not facts.is_custom:
+            return OwnershipDecision(
+                self._kind(facts, OwnershipContext()),
+                OwnershipOwner.WRAPPER,
+                TransferMode.BORROWED_VIEW,
+                DestructionPolicy.WRAPPER_DEALLOC,
+                storage_mode=StorageMode.ALIAS,
+                boundary_storage_mode=StorageMode.ALIAS,
+                nullable=True,
+                borrowed=True,
+                reason="scalar field descriptor lends a view of its current storage on each read",
+            )
+        if (facts.metadata or {}).get("native_storage") and facts.rank == 0 and not facts.is_custom:
+            return OwnershipDecision(
+                self._kind(facts, OwnershipContext()),
+                OwnershipOwner.WRAPPER,
+                TransferMode.BORROWED_VIEW,
+                DestructionPolicy.WRAPPER_DEALLOC,
+                storage_mode=StorageMode.ALIAS,
+                boundary_storage_mode=StorageMode.ALIAS,
+                borrowed=True,
+                reason="stored scalar field lends a live view of its storage",
+            )
         if facts.allocatable and facts.rank == 0:
             return self._allocatable_scalar_decision(facts, context)
         if facts.pointer and facts.rank == 0:
@@ -2281,7 +2313,9 @@ class OwnershipPolicyResolver:
                     "use PointerPolicy for extraction and descriptor operations"
                 )
             return None
-        required_transfer = TransferMode.BORROWED_VIEW if context.is_module_variable else TransferMode.SNAPSHOT_COPY
+        required_transfer = (
+            TransferMode.SNAPSHOT_COPY if context.is_field and facts.is_custom else TransferMode.BORROWED_VIEW
+        )
         if decision.transfer is not required_transfer:
             return f"scalar pointer {context.location} accessor requires {required_transfer.value} transfer"
         return None
@@ -2612,7 +2646,7 @@ class OwnershipPolicyResolver:
         storage_metadata = getattr(storage, "metadata", {}) if storage is not None else {}
         name = str(getattr(semantic_type, "name", ""))
         rank = int(getattr(semantic_type, "rank", 0) or 0)
-        is_string = name == "String"
+        is_string = is_string_semantic_type_name(name)
         is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES | {"AnyNative"}
         return _StorageFacts(
             rank=rank,

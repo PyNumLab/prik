@@ -19,8 +19,9 @@ shape, and strides. It does not by itself say who owns that target.
 - A pointer descriptor refers to target storage; it does not own that storage
   by default.
 - Scalar pointer dummies and results appear as values or `None`. Reading a
-  scalar pointer module variable returns a live read-only rank-zero NumPy view
-  or `None`; assigning to it writes the current target. Array pointers use live
+  scalar pointer module variable or derived-type field returns a live
+  rank-zero NumPy view of its target or `None`; writing through the view or
+  assigning to it writes the current target. Array pointers use live
   `Pointer[T[...]]` handles.
 - `associated` describes association, not ownership or target lifetime.
 - NumPy arrays returned by `to_numpy()` are live views, not copies.
@@ -77,10 +78,11 @@ assert target.associated is True
 The annotation supplies the element dtype and rank. The handle creates its
 native storage when first passed to a matching writable argument. It stays the
 same Python object after the call.
-`Pointer[Float64]()` is not supported. Reading a scalar module variable
-declared `Pointer[Float64]` returns a live read-only rank-zero `float64` array
-when associated, or `None` otherwise. Assigning to the attribute copies the
-value into the current target; it raises `ValueError` when the pointer is not
+`Pointer[Float64]()` is not supported. Reading a scalar module variable or
+derived-type field declared `Pointer[Float64]` returns a live rank-zero
+`float64` view of its target when associated, or `None` otherwise. Write
+through the view, or assign to the attribute to copy the value into the
+current target; it raises `ValueError` when the pointer is not
 associated, and a character value must encode to the target's width. Assignment
 never reassociates the pointer. Read the attribute again after reassociation;
 an older view may refer to storage that is no longer valid.

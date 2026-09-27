@@ -197,7 +197,7 @@ DECLARATION_CASES = {
             "class sparse_matrix(base_matrix):",
             "class state:\n    def __init__(\n        self,\n        *,\n        id: Int32 = 7,\n"
             "        scale: Float64 = 2.5,\n        enabled: Bool = True\n    ) -> None: ...\n\n"
-            "    id: Int32 = 7\n    scale: Float64 = 2.5\n    enabled: Bool = True\n",
+            "    id: Int32[()] = 7\n    scale: Float64[()] = 2.5\n    enabled: Bool[()] = True\n",
             "    values: Allocatable[Float64[:]]",
             "    @native_call([Pass(), Addr(Arg(0))])\n    def scale(\n        self,\n        alpha: Float64\n"
             "    ) -> None: ...",

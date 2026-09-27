@@ -8,8 +8,8 @@ class Point_T:
         y: Float64 = ...
     ) -> None: ...
 
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
 @prototype
 def value_callback(

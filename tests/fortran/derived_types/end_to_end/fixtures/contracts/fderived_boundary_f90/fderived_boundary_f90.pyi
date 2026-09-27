@@ -8,8 +8,8 @@ class Point:
         y: Float64 = ...
     ) -> None: ...
 
-    x: Float64
-    y: Float64
+    x: Float64[()]
+    y: Float64[()]
 
 class Holder:
     def __init__(
@@ -19,7 +19,7 @@ class Holder:
     ) -> None: ...
 
     origin: Point
-    scale: Float64
+    scale: Float64[()]
 
 def point_sum(
     p: Point

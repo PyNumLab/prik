@@ -7,7 +7,7 @@ class Paint:
         color: Int32 = ...
     ) -> None: ...
 
-    color: Int32
+    color: Int32[()]
 
 red: Final[Int32] = -1
 

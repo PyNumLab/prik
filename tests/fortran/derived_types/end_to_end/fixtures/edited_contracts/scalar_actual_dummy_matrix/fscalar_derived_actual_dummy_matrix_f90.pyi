@@ -17,7 +17,7 @@ from matrix_right_types import item as right_item
 
 
 class item:
-    value: Int32
+    value: Int32[()]
 
 
 class sequence_item:

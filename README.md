@@ -98,7 +98,7 @@ end module points
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 points.move(item, np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)             # 4.0 2.0
@@ -119,9 +119,9 @@ Want a more Pythonic API? Edit `contracts/points.pyi`:
 ```python
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
-class point:
-    x: Float64 = 0.0
-    y: Float64 = 0.0
+class Point:
+    x: Float64[()] = 0.0
+    y: Float64[()] = 0.0
 
     def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
 
@@ -129,15 +129,16 @@ class point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
+    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` is needed because `translate` has a different Python name.
-`norm_squared` needs no `@bind`: matching Python and native names select the
-same procedure. `Pass()` supplies the receiver (`self`) to the native call;
-`Addr(Arg(...))` passes the remaining arguments by address as required by the
-native calling convention.
+A method without `@bind` calls the type-bound procedure of its own name. Both
+methods here call module procedures instead, so each names one with `@bind`:
+`translate` calls `move`, and `norm_squared` calls `norm_squared`. `Pass()`
+supplies the receiver (`self`) to the native call; `Addr(Arg(...))` passes the
+remaining arguments by address as required by the native calling convention.
 
 Build from the contract:
 
@@ -153,7 +154,7 @@ The native Fortran is unchanged, but the Python surface is now:
 import numpy as np
 import geometry.points as points
 
-item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item = points.Point(x=np.float64(3.0), y=np.float64(4.0))
 item.translate(np.float64(1.0), np.float64(-2.0))
 
 print(item.x, item.y)       # 4.0 2.0
@@ -235,11 +236,10 @@ code generation with a diagnostic naming the boundary and the reason.
 
 **Types and arrays**
 
-- arrays of derived types and higher-rank assumed-size `type(*)` arrays;
-- parameterized derived types such as `type :: buffer_type(k, n)`;
-- character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype, and `allocatable` and `pointer` character *fields*.
-- real and complex storage wider than the target's `long double`. NumPy's
+- Arrays of derived types.
+- Parameterized derived types such as `type :: buffer_type(k, n)`.
+- `character` kinds other than the default kind and `ISO_10646` (UCS-4).
+- Real and complex storage wider than the target's `long double`. NumPy's
   `longdouble` is whatever the target C compiler provides, so `real(10)` and C
   `long double` are supported while IEEE quad `real(16)` is refused on a target
   whose `long double` is x87 extended precision. The diagnostic names the
@@ -247,9 +247,9 @@ code generation with a diagnostic naming the boundary and the reason.
 
 **Procedures and polymorphism**
 
-- procedure-pointer module variables, and
-  callbacks retained after the wrapped call returns;
-- polymorphic outputs, mutable polymorphic arguments, polymorphic
+- Procedure-pointer module variables, and
+  callbacks retained after the wrapped call returns.
+- Polymorphic outputs, mutable polymorphic arguments, polymorphic
   `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`).
 
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
@@ -329,8 +329,8 @@ print(stats.extremes(values))  # (np.float64(1.0), np.float64(5.0))
 `count` never appears in the Python signature — the contract derives it from
 the array — and the two output pointers come back as a tuple instead of being
 passed in. `mean` and `extremes` need no `@bind` because their Python and C
-names match; use `@bind("native_name")` only when they differ. The same rule
-applies to Fortran contracts.
+names match; use `@bind("native_name")` only when they differ. Fortran module
+functions follow the same rule.
 
 ### What C support covers
 

@@ -7,7 +7,7 @@ class Sample:
         value: Int32 = ...
     ) -> None: ...
 
-    value: Int32
+    value: Int32[()]
 
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3), Arg(4)])
 def summarize(
