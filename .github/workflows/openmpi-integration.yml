@@ -122,6 +122,8 @@ jobs:
         shell: bash
         env:
           PRIK_OPENMPI_REQUIRED: "1"
+          PRIK_OPENMPI_BENCHMARK: "1"
+          PRIK_OPENMPI_BENCHMARK_DIR: ${{ runner.temp }}/openmpi-benchmark
         run: |
           root="$HOME/prik-openmpi/$OPENMPI_VERSION"
           export PATH="$root/install/bin:$PATH"
@@ -131,4 +133,11 @@ jobs:
           export PRIK_OPENMPI_BUILD="$root/build"
           export PRIK_OPENMPI_MPIFORT="$root/install/bin/mpifort"
           export PRIK_OPENMPI_LAUNCHER="$root/install/bin/mpirun"
-          python -m pytest -q -rs tests/fortran/assumed_types/end_to_end/test_openmpi_f08.py
+          python -m pytest -q -rs -s tests/fortran/assumed_types/end_to_end/test_openmpi_f08.py
+      - name: Upload matched Open MPI benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmpi-benchmark-${{ matrix.version }}-${{ matrix.runner }}
+          path: ${{ runner.temp }}/openmpi-benchmark/*.json
+          if-no-files-found: ignore

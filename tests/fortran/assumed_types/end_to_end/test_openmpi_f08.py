@@ -33,6 +33,7 @@ EDITED_FACADE = FIXTURES / "contracts" / "openmpi" / "mpi_f08.pyi"
 PROGRAM = (FIXTURES / "runtime" / "prik_mpi.py", FIXTURES / "runtime" / "mpi_example.py")
 # Not shown in the tutorial: shows MPI_STATUS_IGNORE reaches Open MPI as itself.
 STATUS_IGNORE_CHECK = FIXTURES / "runtime" / "mpi_status_ignore_check.py"
+BENCHMARK = Path(__file__).resolve().parents[4] / "benchmarks" / "openmpi_f08.py"
 # ``ompi_info`` reports these for the configure run that built the
 # installation, and a configured tree records the same values, so they
 # identify that run: its date, host, user, and exact command line.
@@ -296,3 +297,22 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
     )
     assert run("mpi4py_example.py") == prik_result
     assert run(STATUS_IGNORE_CHECK.name) == ["Mpi_Status: status tag 21, ignored status unchanged True"]
+
+    if os.environ.get("PRIK_OPENMPI_BENCHMARK") == "1":
+        shutil.copyfile(BENCHMARK, tmp_path / BENCHMARK.name)
+        report_dir = Path(os.environ["PRIK_OPENMPI_BENCHMARK_DIR"])
+        report_dir.mkdir(parents=True, exist_ok=True)
+        for backend in ("direct", "facade", "mpi4py"):
+            result = subprocess.run(
+                [launcher, "-n", "2", sys.executable, BENCHMARK.name, backend],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=tmp_path,
+            )
+            if result.returncode:
+                pytest.fail(f"Open MPI {backend} benchmark failed:\n{result.stdout}\n{result.stderr}")
+            report = json.loads(result.stdout)
+            assert report["backend"] == backend
+            (report_dir / f"openmpi-{backend}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+            print(f"Open MPI {backend} benchmark: {result.stdout.strip()}", flush=True)

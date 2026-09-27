@@ -670,27 +670,23 @@ mpirun -n 2 python3 mpi4py_example.py
 
 The two programs print the same lines.
 
-## How fast it is
+## Compare call times
 
-Time per call, compared with mpi4py:
+After building the wrapper, copy `benchmarks/openmpi_f08.py` from the PRIK
+checkout beside `prik_mpi.py` and `prik_openmpi_f08.so`. Run the same five
+operations through each API with the Open MPI launcher from the setup above:
 
-| Call | mpi4py | Generated functions | `prik_mpi.py` |
-| --- | ---: | ---: | ---: |
-| `Allreduce`, 1 integer | 1.02 µs | 0.67 µs (35% faster) | 0.92 µs (10% faster) |
-| `Allreduce`, 1,024 integers | 2.33 µs | 1.78 µs (23% faster) | 2.15 µs (7% faster) |
-| `Allreduce`, 1,048,576 integers | 2.33 ms | 2.12 ms (about the same) | 2.37 ms (about the same) |
-| `Barrier` | 0.32 µs | 0.32 µs (the same) | 0.50 µs (57% slower) |
-| `Get_rank` | 19 ns | 134 ns (about 7× slower) | 297 ns (about 15× slower) |
+```bash
+for backend in direct facade mpi4py; do
+  mpirun -n 2 python3 openmpi_f08.py "$backend"
+done
+```
 
-`Get_rank` is the cheapest call, so its time is almost all the overhead of
-making a call. That overhead is small, but higher through PRIK than through
-mpi4py, and can be optimized later.
-
-These were measured on a local machine, with two ranks on it, and timed with
-mpi4py's `MPI.Wtime` for all three: an AMD Ryzen 5 5600H laptop (x86-64,
-6 cores and 12 threads, up to 4.28 GHz, 7 GB of memory) running Ubuntu 22.04,
-with Python 3.10, NumPy 2.2, GCC and gfortran 11.4, Open MPI 5.0.11, and
-mpi4py 4.1.2.
+The script reports nanoseconds per call for `Allreduce` with 1, 1,024, and
+1,048,576 `np.int32` values, `Barrier`, and `Get_rank`. It uses the same two
+ranks, arrays, prepared MPI handles, mpi4py `MPI.Wtime` timer, and repeated
+batches for each backend. Compare results from one machine and one Open MPI
+installation; timings vary by host.
 
 ## Limitations
 
