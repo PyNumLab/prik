@@ -6,8 +6,6 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# Buffers are np.int32 arrays, and ranks and tags are np.int32 too:
-# Get_rank returns one, and rank + 1 stays one.
 ROOT = np.int32(0)
 TAG = np.int32(77)
 

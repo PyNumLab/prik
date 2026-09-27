@@ -10,8 +10,6 @@ import numpy as np
 
 from prik_openmpi_f08 import mpi_f08 as _mpi
 
-# Ranks and tags are np.int32, the type the contract takes: the extension
-# returns them as np.int32, and so are these constants and defaults.
 ANY_SOURCE = _mpi.mpi_any_source
 ANY_TAG = _mpi.mpi_any_tag
 IN_PLACE = _mpi.mpi_in_place

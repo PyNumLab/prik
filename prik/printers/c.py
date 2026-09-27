@@ -149,109 +149,94 @@ class CSourcePrinter(ClassVisitor):
         )
 
     def _visit_CModulePropertySupport(self, node: CModulePropertySupport) -> str:
-        """Render all generated module-property routing support in stable order.
+        """Render module variables as get/set descriptors on a heap module type.
 
-        The node supplies getter and setter entries plus the heap subtype name.
-        This method returns the three dependent C definitions: attribute getter,
-        attribute setter, and module-type installer.
+        CPython finds a descriptor through the type's cached attribute lookup,
+        so reading a function or any other ordinary attribute costs what it
+        costs on a plain module, while each variable still reaches its
+        generated getter and setter ahead of the module dictionary.
         """
         return "\n\n".join(
             (
-                self._module_getattro_source(node),
-                self._module_setattro_source(node),
+                *(
+                    self._module_property_accessors_source(node, index, entry)
+                    for index, entry in enumerate(node.entries)
+                ),
+                self._module_property_table_source(node),
                 self._module_property_type_source(node),
             )
         )
 
-    def _module_getattro_source(self, node: CModulePropertySupport) -> str:
-        """Build the module attribute getter for every declared property entry.
+    def _module_property_accessors_source(
+        self,
+        node: CModulePropertySupport,
+        index: int,
+        entry: CModulePropertyEntry,
+    ) -> str:
+        """Adapt one entry's generated getter and setter to descriptor signatures.
 
-        The returned function compares only Unicode attribute names, delegates
-        matching names to generated getters, and preserves the base module
-        fallback for all other attributes.
+        A read-only entry rejects replacement and deletion with its own message,
+        and a writable one rejects deletion before calling its setter; an entry
+        with neither has no setter, so CPython reports it as not writable.
         """
-        lines = [f"static PyObject *{node.name}_getattro(PyObject *self, PyObject *name)", "{"]
-        lines.append("    if (PyUnicode_Check(name)) {")
-        for entry in node.entries:
-            lines.extend(self._module_getter_entry_source(entry))
-        lines.extend(("    }", "    return PyModule_Type.tp_getattro(self, name);", "}"))
-        return "\n".join(lines)
-
-    def _module_getter_entry_source(self, node: CModulePropertyEntry) -> tuple[str, ...]:
-        """Build one getter dispatch branch from a property entry.
-
-        The tuple is inserted into the enclosing Unicode-name guard. It returns
-        NULL on comparison failure and calls exactly the getter named by the
-        supplied entry when its Python name matches.
-        """
-        name = self._c_string_literal(node.python_name)
-        return (
-            "        {",
-            f"            int comparison = PyUnicode_CompareWithASCIIString(name, {name});",
-            "            if (comparison == -1 && PyErr_Occurred()) return NULL;",
-            f"            if (comparison == 0) return {node.getter_name}();",
-            "        }",
-        )
-
-    def _module_setattro_source(self, node: CModulePropertySupport) -> str:
-        """Build the module attribute setter for every declared property entry.
-
-        The returned function dispatches writable properties to their generated
-        setters and keeps the base module setter as the nonmatching fallback.
-        """
-        lines = [f"static int {node.name}_setattro(PyObject *self, PyObject *name, PyObject *value)", "{"]
-        lines.append("    if (PyUnicode_Check(name)) {")
-        for entry in node.entries:
-            lines.extend(self._module_setter_entry_source(entry))
-        lines.extend(("    }", "    return PyModule_Type.tp_setattro(self, name, value);", "}"))
-        return "\n".join(lines)
-
-    def _module_setter_entry_source(self, node: CModulePropertyEntry) -> tuple[str, ...]:
-        """Build one setter dispatch branch and its node-selected error path.
-
-        The tuple rejects replacement for read-only entries. Writable entries
-        reject deletion before calling their generated setter with the supplied
-        value; those rules are already encoded by the backend node.
-        """
-        name = self._c_string_literal(node.python_name)
         lines = [
-            "        {",
-            f"            int comparison = PyUnicode_CompareWithASCIIString(name, {name});",
-            "            if (comparison == -1 && PyErr_Occurred()) return -1;",
-            "            if (comparison == 0) {",
+            f"static PyObject *{node.name}_get_{index}(PyObject *self, void *closure)",
+            "{",
+            "    (void)self;",
+            "    (void)closure;",
+            f"    return {entry.getter_name}();",
+            "}",
         ]
-        if node.reject_replacement:
+        if entry.reject_replacement or entry.setter_name is not None:
             lines.extend(
                 (
-                    f'                PyErr_SetString(PyExc_AttributeError, "module variable {node.python_name} is read-only");',
-                    "                return -1;",
+                    f"static int {node.name}_set_{index}(PyObject *self, PyObject *value, void *closure)",
+                    "{",
+                    "    (void)self;",
+                    "    (void)closure;",
                 )
             )
-        else:
-            lines.extend(
-                (
-                    "                if (value == NULL) {",
-                    f'                    PyErr_SetString(PyExc_AttributeError, "module variable {node.python_name} cannot be deleted");',
-                    "                    return -1;",
-                    "                }",
-                    f"                return {node.setter_name}(value);",
+            if entry.reject_replacement:
+                lines.extend(
+                    (
+                        f'    PyErr_SetString(PyExc_AttributeError, "module variable {entry.python_name} is read-only");',
+                        "    return -1;",
+                    )
                 )
+            else:
+                lines.extend(
+                    (
+                        "    if (value == NULL) {",
+                        f'        PyErr_SetString(PyExc_AttributeError, "module variable {entry.python_name} cannot be deleted");',
+                        "        return -1;",
+                        "    }",
+                        f"    return {entry.setter_name}(value);",
+                    )
+                )
+            lines.append("}")
+        return "\n".join(lines)
+
+    def _module_property_table_source(self, node: CModulePropertySupport) -> str:
+        """Render the descriptor table naming each entry's accessors."""
+        lines = [f"static PyGetSetDef {node.name}_getset[] = {{"]
+        for index, entry in enumerate(node.entries):
+            setter = f"{node.name}_set_{index}" if entry.reject_replacement or entry.setter_name is not None else "NULL"
+            lines.append(
+                f"    {{{self._c_string_literal(entry.python_name)}, {node.name}_get_{index}, {setter}, NULL, NULL}},"
             )
-        lines.extend(("            }", "        }"))
-        return tuple(lines)
+        lines.extend(("    {NULL, NULL, NULL, NULL, NULL}", "};"))
+        return "\n".join(lines)
 
     def _module_property_type_source(self, node: CModulePropertySupport) -> str:
-        """Build C slots, type spec, and installer for module property support.
+        """Build the heap module type carrying the descriptors, and its installer.
 
-        The returned definitions are ordered so the installer can reference the
-        generated slots and type spec without forward declarations. The node's
-        name is reused consistently for all emitted symbols.
+        The installer gives the module this type, so every later attribute
+        lookup on the module sees the descriptors.
         """
         return "\n".join(
             (
                 f"static PyType_Slot {node.name}_slots[] = {{",
-                f"    {{Py_tp_getattro, (void *){node.name}_getattro}},",
-                f"    {{Py_tp_setattro, (void *){node.name}_setattro}},",
+                f"    {{Py_tp_getset, (void *){node.name}_getset}},",
                 "    {0, NULL}",
                 "};",
                 f"static PyType_Spec {node.name}_spec = {{",

@@ -13,8 +13,8 @@ concurrency:
 
 jobs:
   openmpi:
-    name: Open MPI mpi_f08 · ${{ matrix.version }} · Ubuntu 24.04
-    runs-on: ubuntu-24.04
+    name: Open MPI mpi_f08 · ${{ matrix.version }} · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -24,13 +24,25 @@ jobs:
           # mpi_f08_types, 5.0 re-exports them from a configured mpi_types.
           - version: "4.1.8"
             series: "v4.1"
+            target: Ubuntu 24.04
+            runner: ubuntu-24.04
           - version: "5.0.11"
             series: "v5.0"
+            target: Ubuntu 24.04
+            runner: ubuntu-24.04
+          - version: "4.1.8"
+            series: "v4.1"
+            target: macOS 15 ARM64
+            runner: macos-15
+          - version: "5.0.11"
+            series: "v5.0"
+            target: macOS 15 ARM64
+            runner: macos-15
     env:
       OPENMPI_VERSION: ${{ matrix.version }}
       OPENMPI_SERIES: ${{ matrix.series }}
       PRIK_GFORTRAN_BINARY: gfortran-13
-      PRIK_GFORTRAN_PACKAGE: gfortran-13
+      PRIK_GCC_BINARY: gcc-13
       PYTHONPATH: .
     steps:
       - name: Checkout repository
@@ -43,24 +55,43 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[qa]"
-      - name: Install pinned GFortran
+      - name: Install pinned GFortran on Ubuntu
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
+            sudo apt-get install --yes gfortran-13 gcc-13
           fi
           compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
           ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
+          "$compiler_dir/gcc" --version
+      - name: Install pinned GFortran on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
+            brew install gcc@13
+          fi
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+          "$compiler_dir/gcc" --version
       - name: Restore the Open MPI source, configured build, and installation
         id: openmpi-cache
         uses: actions/cache@v4
         with:
           path: ~/prik-openmpi/${{ matrix.version }}
-          key: openmpi-${{ matrix.version }}-ubuntu-24.04-gfortran-13-v1
+          key: openmpi-${{ matrix.version }}-${{ matrix.runner }}-gcc-gfortran-13-v2
       - name: Build and install Open MPI
         if: steps.openmpi-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -71,23 +102,42 @@ jobs:
             | tar -xj -C "$root"
           mv "$root/openmpi-$OPENMPI_VERSION" "$root/source"
           cd "$root/build"
-          ../source/configure --prefix="$root/install" --enable-mpi-fortran=usempif08 FC=gfortran
-          make -j"$(nproc)"
+          ../source/configure --prefix="$root/install" --enable-mpi-fortran=usempif08 CC=gcc FC=gfortran
+          make -j2
           make install
           # The test reads sources and generated headers from these trees and
           # links the installation, so build objects are not cached.
           find . \( -name '*.o' -o -name '*.lo' -o -name '*.a' -o -name '*.la' \) -delete
           find . -type d -name .libs -prune -exec rm -rf {} +
-      - name: Run the Open MPI mpi_f08 workflow test
+      - name: Build mpi4py against this Open MPI installation
         shell: bash
-        env:
-          PRIK_OPENMPI_REQUIRED: "1"
         run: |
           root="$HOME/prik-openmpi/$OPENMPI_VERSION"
           export PATH="$root/install/bin:$PATH"
           export LD_LIBRARY_PATH="$root/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export DYLD_LIBRARY_PATH="$root/install/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          export MPI4PY_BUILD_MPICC="$root/install/bin/mpicc"
+          python -m pip install --no-cache-dir --no-binary=mpi4py mpi4py==4.1.2
+      - name: Run the Open MPI mpi_f08 workflow test
+        shell: bash
+        env:
+          PRIK_OPENMPI_REQUIRED: "1"
+          PRIK_OPENMPI_BENCHMARK: "1"
+          PRIK_OPENMPI_BENCHMARK_DIR: ${{ runner.temp }}/openmpi-benchmark
+        run: |
+          root="$HOME/prik-openmpi/$OPENMPI_VERSION"
+          export PATH="$root/install/bin:$PATH"
+          export LD_LIBRARY_PATH="$root/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export DYLD_LIBRARY_PATH="$root/install/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           export PRIK_OPENMPI_SOURCE="$root/source"
           export PRIK_OPENMPI_BUILD="$root/build"
           export PRIK_OPENMPI_MPIFORT="$root/install/bin/mpifort"
           export PRIK_OPENMPI_LAUNCHER="$root/install/bin/mpirun"
-          python -m pytest -q -rs tests/fortran/assumed_types/end_to_end/test_openmpi_f08.py
+          python -m pytest -q -rs -s tests/fortran/assumed_types/end_to_end/test_openmpi_f08.py
+      - name: Upload matched Open MPI benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmpi-benchmark-${{ matrix.version }}-${{ matrix.runner }}
+          path: ${{ runner.temp }}/openmpi-benchmark/*.json
+          if-no-files-found: ignore

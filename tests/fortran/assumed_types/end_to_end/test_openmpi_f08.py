@@ -5,7 +5,8 @@ working directory as a reader would: generate a restricted contract from the
 configured Open MPI sources, replace its facade with the tutorial's edited
 one, build it against the installation without compiling any Open MPI source,
 save the tutorial's Python files beside the extension, and run its
-mpi4py-style program there under the Open MPI launcher.
+mpi4py-style program there under the Open MPI launcher. The same program then
+runs through mpi4py built against that installation.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ EDITED_FACADE = FIXTURES / "contracts" / "openmpi" / "mpi_f08.pyi"
 PROGRAM = (FIXTURES / "runtime" / "prik_mpi.py", FIXTURES / "runtime" / "mpi_example.py")
 # Not shown in the tutorial: shows MPI_STATUS_IGNORE reaches Open MPI as itself.
 STATUS_IGNORE_CHECK = FIXTURES / "runtime" / "mpi_status_ignore_check.py"
+BENCHMARK = Path(__file__).resolve().parents[4] / "benchmarks" / "openmpi_f08.py"
 # ``ompi_info`` reports these for the configure run that built the
 # installation, and a configured tree records the same values, so they
 # identify that run: its date, host, user, and exact command line.
@@ -236,12 +238,14 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             "2",
             "--json",
         ],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         timeout=300,
         cwd=tmp_path,
     )
+    if built.returncode:
+        pytest.fail(f"Open MPI contract replay build failed:\n{built.stdout}\n{built.stderr}")
     payload = json.loads(built.stdout)
     # Only PRIK's bridge and binding compile; Open MPI's own sources do not.
     assert payload["native_build_plan"]["compilation_units"] == []
@@ -270,10 +274,45 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
         )
         return sorted(completed.stdout.splitlines())
 
-    assert run("mpi_example.py") == [
+    prik_result = run("mpi_example.py")
+    assert prik_result == [
         "rank 0 max [2, 3]",
         "rank 0 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]",
         "rank 1 of 2: bcast [0, 1, 2], sum [3, 5], in place [3, 5]",
         "rank 1 received [0, 1, 2, 3]",
     ]
+    mpi4py_library = subprocess.run(
+        [sys.executable, "-c", "from mpi4py import MPI; print(MPI.Get_library_version().splitlines()[0])"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=tmp_path,
+    ).stdout
+    assert f"Open MPI v{_tree_configuration(source, build)['version']}" in mpi4py_library
+    example = (tmp_path / "mpi_example.py").read_text(encoding="utf-8")
+    assert example.count("import prik_mpi as MPI") == 1
+    (tmp_path / "mpi4py_example.py").write_text(
+        example.replace("import prik_mpi as MPI", "from mpi4py import MPI"), encoding="utf-8"
+    )
+    assert run("mpi4py_example.py") == prik_result
     assert run(STATUS_IGNORE_CHECK.name) == ["Mpi_Status: status tag 21, ignored status unchanged True"]
+
+    if os.environ.get("PRIK_OPENMPI_BENCHMARK") == "1":
+        shutil.copyfile(BENCHMARK, tmp_path / BENCHMARK.name)
+        report_dir = Path(os.environ["PRIK_OPENMPI_BENCHMARK_DIR"])
+        report_dir.mkdir(parents=True, exist_ok=True)
+        for backend in ("wrapped", "python", "mpi4py"):
+            result = subprocess.run(
+                [launcher, "-n", "2", sys.executable, BENCHMARK.name, backend],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=tmp_path,
+            )
+            if result.returncode:
+                pytest.fail(f"Open MPI {backend} benchmark failed:\n{result.stdout}\n{result.stderr}")
+            report = json.loads(result.stdout)
+            assert report["backend"] == backend
+            (report_dir / f"openmpi-{backend}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+            print(f"Open MPI {backend} benchmark: {result.stdout.strip()}", flush=True)
