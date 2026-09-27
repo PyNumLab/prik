@@ -86,26 +86,34 @@ end module forms_mod
     ("kind", "expected"),
     [
         pytest.param("selected_char_kind('ISO_10646')", "UString", id="iso-10646"),
-        pytest.param("4", "UString", id="kind-4"),
+        pytest.param("ucs4", "UString", id="iso-10646-parameter"),
         pytest.param("selected_char_kind('ASCII')", "String", id="ascii"),
         pytest.param("selected_char_kind('DEFAULT')", "String", id="default"),
         pytest.param("c_char", "String", id="c-char"),
     ],
 )
 def test_character_kind_selects_the_string_width(kind: str, expected: str):
-    """A character kind names UCS-4 or the one-byte kind without a compiler probe."""
+    """A character kind names UCS-4 or the one-byte kind without a compiler probe.
+
+    The kind is read from the character set it selects, never from a kind
+    number, which each compiler assigns for itself.
+    """
     parsed = parse_fortran_source(
         f"""
 module kinds
   use iso_c_binding, only: c_char
+  integer, parameter :: ucs4 = selected_char_kind('ISO_10646')
 contains
-  subroutine take(text)
+  function copy(text) result(out)
     character(kind={kind}, len=4), intent(in) :: text
-  end subroutine take
+    character(kind={kind}, len=4) :: out
+    out = text
+  end function copy
 end module kinds
 """
     )
 
-    func = get_function(fortran_module_to_semantic_module(parsed), "take")
+    func = get_function(fortran_module_to_semantic_module(parsed), "copy")
 
     assert func.arguments[0].semantic_type.name == expected
+    assert func.return_type.name == expected

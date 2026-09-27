@@ -170,8 +170,6 @@ FORTRAN_TYPE_MAP = {
     ("character", "selected_char_kind('default')"): "String",
     ("character", "selected_char_kind('ascii')"): "String",
     ("character", "selected_char_kind('iso_10646')"): "UString",
-    # Every compiler with a four-byte character kind numbers UCS-4 as kind 4.
-    ("character", "4"): "UString",
 }
 
 _FORTRAN_INTRINSIC_TYPES = frozenset({"integer", "real", "complex", "logical", "character"})
@@ -2799,7 +2797,14 @@ class FortranToIRConverter(ClassVisitor):
         declared = getattr(var, "character_kind_expression", None)
         if not declared:
             return None
-        return self._resolve_compile_time_text(str(declared)).strip().lower() or None
+        resolved = self._resolve_compile_time_text(str(declared)).strip().lower() or None
+        # The character set a kind selects is its identity; the number a
+        # compiler assigns to it is not portable, so a known selector is kept
+        # as written. Its probed value still reports a set the compiler lacks.
+        spelled = str(declared).strip().lower()
+        if ("character", spelled) in self.type_map and resolved != "-1":
+            return spelled
+        return resolved
 
     def _target_type_fact(self, var: FortranVariable) -> dict[str, object] | None:
         """Return legacy fixed-width or configured compiler facts for ``var``."""
