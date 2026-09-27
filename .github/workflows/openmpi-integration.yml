@@ -2,6 +2,10 @@ name: Open MPI Integration
 
 on:
   workflow_call:
+  push:
+    branches:
+      - main
+      - release/*
   workflow_dispatch:
 
 permissions:

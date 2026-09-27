@@ -37,7 +37,8 @@ release tags add a leading `v` to the package version.
   the Open MPI tutorial's extension drops from 245 to 164 ns.
 - Open MPI integration CI now runs the `mpi_f08` tutorial on Linux and macOS
   against Open MPI 4.1 and 5.0 with paired GNU C/Fortran compilers, and
-  compares its two-rank result with mpi4py built from the same installation.
+  compares its two-rank result with mpi4py built from the same installation,
+  on every pull request and on pushes to `main` and release branches.
   The tutorial provides a repeatable matched-installation benchmark and a
   labeled local results table comparing its wrapped API and mpi4py-style
   Python API with mpi4py, including relative timings. The benchmark binds
