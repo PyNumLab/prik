@@ -273,10 +273,11 @@ title: UString[8][()]
 ```
 
 A `UString[8]` length counts characters, not bytes, so it accepts any `str` of
-exactly eight characters. Declare the kind with
-`selected_char_kind('ISO_10646')`, and use a compiler that provides it: GNU
-Fortran and LLVM Flang do, Intel `ifx` does not. A kind that selects
-`'ASCII'` or `'DEFAULT'` is an ordinary `String`.
+exactly eight characters. A `str` argument is converted into four-byte call
+storage; pass NumPy `U<n>` storage to share memory with Fortran instead.
+Declare the kind with `selected_char_kind('ISO_10646')`, and use a compiler
+that provides it: GNU Fortran and LLVM Flang do, Intel `ifx` does not. A kind
+that selects `'ASCII'` or `'DEFAULT'` is an ordinary `String`.
 
 ## Allocatable And Pointer Scalar Strings
 
