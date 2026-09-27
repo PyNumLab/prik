@@ -52,6 +52,10 @@ class _ContractType(metaclass=_ContractTypeMeta):
     """Base for semantic contract types."""
 
 
+# NumPy dtype code for fixed-width character storage of each string contract.
+_CHARACTER_DTYPE_CODES: Final[dict[str, str]] = {"String": "S", "UString": "U"}
+
+
 class _ArrayContract:
     """Runtime description retained by a subscripted contract type."""
 
@@ -70,12 +74,14 @@ class _ArrayContract:
         self.character_array = character_array
 
     def __getitem__(self, item: object) -> _ArrayContract | _ContractExpression:
-        if self.element_type.__name__ == "String" and not self.character_array:
+        if self.element_type.__name__ in _CHARACTER_DTYPE_CODES and not self.character_array:
             length = self.shape
             if isinstance(length, int) and not isinstance(length, bool) and length > 0:
-                dtype = np.dtype(f"S{length}")
+                dtype = np.dtype(f"{_CHARACTER_DTYPE_CODES[self.element_type.__name__]}{length}")
             elif isinstance(length, slice) and length == slice(None):
-                dtype = None
+                # A deferred width reads from native state; ``U`` keeps its kind.
+                code = _CHARACTER_DTYPE_CODES[self.element_type.__name__]
+                dtype = None if code == "S" else np.dtype(code)
             else:
                 raise TypeError("character array contracts require a positive integer width or ':'")
             return _ArrayContract(
@@ -216,6 +222,7 @@ AnyNative = _contract_type(
 )
 SizeT = _contract_type("SizeT", _CONTRACT_NUMPY_FACTORIES["SizeT"])
 String = _contract_type("String", constructor_error="String requires an explicit native length and encoding contract")
+UString = _contract_type("UString", constructor_error="UString requires an explicit native length contract")
 UInt = _contract_type("UInt", constructor_error="UInt requires a resolved native width")
 UInt8 = _contract_type("UInt8", _CONTRACT_NUMPY_FACTORIES["UInt8"])
 UInt16 = _contract_type("UInt16", _CONTRACT_NUMPY_FACTORIES["UInt16"])
@@ -413,6 +420,7 @@ CONTRACT_SYMBOLS = frozenset(
         "SizeT",
         "SourceName",
         "String",
+        "UString",
         "Transfer",
         "UInt",
         "UInt8",
@@ -480,6 +488,7 @@ CONTRACT_TYPE_NAMES = frozenset(
         "Returns",
         "SizeT",
         "String",
+        "UString",
         "UInt",
         "UInt8",
         "UInt16",

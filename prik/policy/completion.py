@@ -14,7 +14,10 @@ import keyword
 import re
 from collections.abc import Iterable
 
-from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    SEMANTIC_SCALAR_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 from prik.utilities.declaration_expressions import declaration_extent_references
 from prik.policy.ownership import (
     CodegenAction,
@@ -1169,7 +1172,7 @@ def _complete_native_status_error_policy(function: models.SemanticFunction, owne
     message = None
     if message_name is not None:
         message = _native_status_output(function, owner_path, message_name, subject="message", allow_visible=True)
-        if message.rank != 0 or message.semantic_type_name != "String":
+        if message.rank != 0 or not is_string_semantic_type_name(message.semantic_type_name):
             raise ValueError(
                 f"Function {function.name!r} raises message target {message.name!r} "
                 "must be a scalar string hidden output or visible argument"
@@ -1577,7 +1580,7 @@ def _requires_fortran_array_owner(
     owner address or a live descriptor.
     Module variables and fields retain their existing native entity.
     """
-    return semantic_type.name == "String" and (context.is_argument or context.is_result)
+    return is_string_semantic_type_name(semantic_type.name) and (context.is_argument or context.is_result)
 
 
 def _native_array_owner_signature(descriptor_kind: str, semantic_type: models.SemanticType) -> int:
@@ -1842,7 +1845,10 @@ def _handle_releases_its_own_storage(handle_kind: str, context: OwnershipContext
 
 def _is_deferred_character_array(semantic_type: models.SemanticType) -> bool:
     """Return whether shape mutation also requires a runtime character length."""
-    return semantic_type.name == "String" and semantic_type.metadata.get("fortran_character_length") == ":"
+    return (
+        is_string_semantic_type_name(semantic_type.name)
+        and semantic_type.metadata.get("fortran_character_length") == ":"
+    )
 
 
 def _native_array_descriptor_interop_requirement(
@@ -1879,7 +1885,10 @@ def _native_array_descriptor_attribute(
     ordinary assumed-shape descriptor. The native entity remains allocatable
     or pointer; only the callback projection has the ``other`` attribute.
     """
-    fixed_character = semantic_type.name == "String" and declared_character_length(semantic_type.metadata) is not None
+    fixed_character = (
+        is_string_semantic_type_name(semantic_type.name)
+        and declared_character_length(semantic_type.metadata) is not None
+    )
     if fixed_character and (
         fortran_owner or handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor"}
     ):
@@ -2038,7 +2047,7 @@ def _is_primitive_scalar_value(
     allow_completed_projection: bool = False,
 ) -> bool:
     """Report whether a type is a plain scalar value or an allowed completed address projection."""
-    if semantic_type.rank != 0 or semantic_type.name == "String":
+    if semantic_type.rank != 0 or is_string_semantic_type_name(semantic_type.name):
         return False
     if (semantic_type.dtype or semantic_type.name) not in SEMANTIC_SCALAR_TYPE_NAMES:
         return False
@@ -2060,7 +2069,7 @@ def _is_visible_extent_source(semantic_type: models.SemanticType) -> bool:
     storage = semantic_type.storage
     return bool(
         semantic_type.rank == 0
-        and semantic_type.name != "String"
+        and not is_string_semantic_type_name(semantic_type.name)
         and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
         and storage is not None
         and storage.array is not None
@@ -2102,7 +2111,7 @@ def _validate_raw_address_type(
                 "rank and shape using literals or visible scalar arguments."
             )
         return
-    if semantic_type.name == "String":
+    if is_string_semantic_type_name(semantic_type.name):
         length = semantic_type.metadata.get("fortran_character_length")
         if length is None or not _is_resolved_extent(length, visible_scalar_names):
             raise ValueError(
@@ -2288,7 +2297,7 @@ def _callback_argument_ownership_context(argument: models.SemanticArgument) -> O
 def _validate_callback_argument_contract(argument: models.SemanticArgument) -> None:
     """Require reference callback strings to use mutable scalar character storage."""
     semantic_type = argument.semantic_type
-    if semantic_type.name != "String":
+    if not is_string_semantic_type_name(semantic_type.name):
         return
     if bool(getattr(argument.origin, "metadata", {}).get("value")):
         return

@@ -52,7 +52,10 @@ from prik.semantics.metadata import (
 )
 from prik.semantics.models import PYTHON_VALUE_IMMUTABLE, PYTHON_VALUE_MUTABILITY_METADATA
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 
 
 # Completed policy vocabulary
@@ -2643,7 +2646,7 @@ class OwnershipPolicyResolver:
         storage_metadata = getattr(storage, "metadata", {}) if storage is not None else {}
         name = str(getattr(semantic_type, "name", ""))
         rank = int(getattr(semantic_type, "rank", 0) or 0)
-        is_string = name == "String"
+        is_string = is_string_semantic_type_name(name)
         is_custom = rank == 0 and not is_string and name not in _STANDARD_SCALAR_TYPES | {"AnyNative"}
         return _StorageFacts(
             rank=rank,

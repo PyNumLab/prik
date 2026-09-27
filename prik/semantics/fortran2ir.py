@@ -65,6 +65,7 @@ from prik.semantics.scalar_types import (
     BOOLEAN_STORAGE_BITS,
     SEMANTIC_SCALAR_TYPE_NAMES,
     is_boolean_semantic_type_name,
+    is_string_semantic_type_name,
 )
 from prik.utilities.visitor import ClassVisitor
 
@@ -166,6 +167,11 @@ FORTRAN_TYPE_MAP = {
     ("character", None): "String",
     ("character", "1"): "String",
     ("character", "c_char"): "String",
+    ("character", "selected_char_kind('default')"): "String",
+    ("character", "selected_char_kind('ascii')"): "String",
+    ("character", "selected_char_kind('iso_10646')"): "UString",
+    # Every compiler with a four-byte character kind numbers UCS-4 as kind 4.
+    ("character", "4"): "UString",
 }
 
 _FORTRAN_INTRINSIC_TYPES = frozenset({"integer", "real", "complex", "logical", "character"})
@@ -780,7 +786,7 @@ class FortranToIRConverter(ClassVisitor):
             and not getattr(var, "pointer", False)
             and (
                 var.base_type.casefold() in {"integer", "real", "complex", "logical"}
-                or (semantic_type.name == "String" and self._character_length(var).isdigit())
+                or (is_string_semantic_type_name(semantic_type.name) and self._character_length(var).isdigit())
             )
         ):
             semantic_type.metadata["native_storage"] = True
@@ -1156,7 +1162,7 @@ class FortranToIRConverter(ClassVisitor):
             return
         semantic_type = callback_argument.semantic_type
         written_back = self._is_written_back_callback_scalar(source_argument, semantic_type)
-        if written_back or (semantic_type.name == "String" and semantic_type.rank == 0):
+        if written_back or (is_string_semantic_type_name(semantic_type.name) and semantic_type.rank == 0):
             semantic_type.storage = SemanticStorageContract(
                 kind="array",
                 read_only=False,
@@ -2739,6 +2745,11 @@ class FortranToIRConverter(ClassVisitor):
         semantic_type = self.type_map.get((base_type, kind))
         if semantic_type is None:
             type_text = base_type if kind is None else f"{base_type}(kind={kind})"
+            if base_type == "character" and kind == "-1":
+                raise ValueError(
+                    f"Unsupported Fortran semantic type for variable '{var.name}': {type_text}; "
+                    "this compiler does not provide the requested character set (selected_char_kind returned -1)"
+                )
             raise ValueError(f"Unsupported Fortran semantic type for variable '{var.name}': {type_text}")
         return semantic_type
 
@@ -4225,7 +4236,7 @@ class FortranToIRConverter(ClassVisitor):
         return bool(
             semantic_type is not None
             and semantic_type.rank == 0
-            and semantic_type.name != "String"
+            and not is_string_semantic_type_name(semantic_type.name)
             and semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
             and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
         )
@@ -4269,13 +4280,15 @@ class FortranToIRConverter(ClassVisitor):
             semantic_type is not None
             and semantic_type.rank == 0
             and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
-            and (semantic_type.name == "String" or semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES)
+            and semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
         )
 
     @staticmethod
     def _is_scalar_character(semantic_type: SemanticType | None) -> bool:
         """Return whether ``semantic_type`` is a rank-zero semantic string."""
-        return bool(semantic_type is not None and semantic_type.rank == 0 and semantic_type.name == "String")
+        return bool(
+            semantic_type is not None and semantic_type.rank == 0 and is_string_semantic_type_name(semantic_type.name)
+        )
 
     @staticmethod
     def _base_classes(dtype: FortranDerivedType) -> list[str]:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from prik.semantics.scalar_types import is_string_semantic_type_name
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.policy.models import (
     CallbackABIKind,
@@ -346,7 +347,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             pointer_depth=1,
             semantic_type_name=semantic_type_name,
             rank=handle.array.rank,
-            character_length=handle.array.itemsize if semantic_type_name == "String" else None,
+            character_length=handle.array.itemsize if is_string_semantic_type_name(semantic_type_name) else None,
             descriptor_kind=handle.descriptor_kind,
             intent=intent,
         )
@@ -723,6 +724,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                     pointer_depth=1,
                     const=True,
                     character_length=field.character_length,
+                    semantic_type_name=field.semantic_type_name,
                     intent="in",
                 )
                 if field.string_element
@@ -771,6 +773,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             NativeEntrypointABIValueKind.CHARACTER,
             pointer_depth=1,
             character_length=field.character_length,
+            semantic_type_name=field.semantic_type_name,
             intent="out",
         )
         operations = [
@@ -788,6 +791,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 pointer_depth=1,
                 const=True,
                 character_length=field.character_length,
+                semantic_type_name=field.semantic_type_name,
                 intent="in",
             )
             operations.append(
@@ -1220,6 +1224,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                         NativeEntrypointABIValueKind.CHARACTER,
                         pointer_depth=1,
                         character_length=variable.character_length,
+                        semantic_type_name=variable.semantic_type_name,
                         intent="out",
                     ),
                 )
@@ -1261,6 +1266,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 pointer_depth=1,
                 const=True,
                 character_length=variable.character_length,
+                semantic_type_name=variable.semantic_type_name,
                 intent="in",
             )
             return (value,), None

@@ -42,7 +42,10 @@ from prik.planning.models import (
     OverloadPlan,
     ResultPlan,
 )
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 
 
 _SCALAR_TYPES = {
@@ -56,6 +59,7 @@ _SCALAR_TYPES = {
     "Complex64": "complex64",
     "Complex128": "complex128",
     "String": "str",
+    "UString": "str",
 }
 
 # An aliased array reports the width its Fortran elements really occupy. NumPy
@@ -513,7 +517,9 @@ class WrapperDocstringBuilder:
             # A scalar view is a rank-zero array over the module's storage.
             type_name = variable.semantic_type_name
             element = (
-                "bytes" if type_name == "String" else _ARRAY_ELEMENT_TYPES.get(type_name, self._base_type(variable))
+                "bytes"
+                if is_string_semantic_type_name(type_name)
+                else _ARRAY_ELEMENT_TYPES.get(type_name, self._base_type(variable))
             )
             lines = [
                 f"{name} : ndarray[{element}]" + (" or None" if nullable else ""),
@@ -1018,7 +1024,7 @@ class WrapperDocstringBuilder:
             )
             return f"{prefix}[{array_element}]"
         if getattr(transfer, "array", None) is not None:
-            element = "bytes" if transfer.semantic_type_name == "String" else array_element
+            element = "bytes" if is_string_semantic_type_name(transfer.semantic_type_name) else array_element
             return f"ndarray[{self._exact_array_element_label(transfer, element)}]"
         return scalar
 

@@ -202,6 +202,28 @@ def _require_maybe_unallocated_function_result_support() -> None:
         pytest.skip("gfortran rejects allocatable function results as allocatable helper arguments")
 
 
+@cache
+def _supports_ucs4_characters() -> bool:
+    """Check that the test compiler provides the ``ISO_10646`` character kind."""
+    source = "module probe\n  character(kind=selected_char_kind('ISO_10646'), len=1) :: value\nend module probe\n"
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "probe.f90"
+        path.write_text(source, encoding="utf-8")
+        result = subprocess.run(
+            [_compiler(), "-c", str(path), "-o", str(Path(directory) / "probe.o")],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=directory,
+        )
+    return result.returncode == 0
+
+
+def _require_ucs4_character_support() -> None:
+    if not _supports_ucs4_characters():
+        pytest.skip("the Fortran compiler does not provide the ISO_10646 character kind")
+
+
 def _compile_native_object(source: Path, native_dir: Path) -> Path:
     native_dir.mkdir(parents=True, exist_ok=True)
     native_source = native_dir / source.name

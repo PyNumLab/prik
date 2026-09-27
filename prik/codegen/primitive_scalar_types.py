@@ -105,6 +105,7 @@ class NumpyDtypeRegistry:
             "Int64": "numpy.int64",
             "SizeT": "numpy.uintp",
             "String": "numpy.str_",
+            "UString": "numpy.str_",
             "UInt8": "numpy.uint8",
             "UInt16": "numpy.uint16",
             "UInt32": "numpy.uint32",

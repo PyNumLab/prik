@@ -67,7 +67,11 @@ from prik.policy.models import (
 from prik.codegen.c.naming import CBindingNames
 from prik.naming.generated_files import adapter_module_name, binding_module_name
 from prik.codegen.c.python_surface import PythonSurfaceContext, PythonSurfaceEmitter
-from prik.semantics.scalar_types import is_boolean_semantic_type_name
+from prik.semantics.scalar_types import (
+    character_width,
+    is_boolean_semantic_type_name,
+    is_string_semantic_type_name,
+)
 from prik.codegen.nodes import (
     CAllowThreadsBegin,
     CAllowThreadsEnd,
@@ -243,6 +247,64 @@ _SCALAR_OR_STORAGE_HELPERS = frozenset(
 )
 
 
+def _decode_terminated_text(data: str, semantic_type_name: str | None) -> str:
+    """Return the Python str built from one NUL-terminated native character copy."""
+    width = character_width(semantic_type_name or "")
+    if width == 1:
+        return f'Py_BuildValue("s", (const char *){data})'
+    return f"prik_character_decode_terminated({data}, {width})"
+
+
+def _uses_character_call_buffer(argument) -> bool:
+    """Return whether a string argument crosses in a binding-owned call buffer.
+
+    A mutable string copies in and out through one. A four-byte input needs
+    one too: a str holds no UCS-4 storage to lend, so its characters are
+    converted into the buffer instead of borrowed.
+    """
+    if argument.object_kind is not ObjectKind.STRING:
+        return False
+    action = argument.binding.codegen_action
+    return action is CodegenAction.COPY_IN_OUT or (
+        action is CodegenAction.CALL_LOCAL_INPUT and character_width(argument.semantic_type_name) == 4
+    )
+
+
+def _character_dtype(semantic_type_name: str | None) -> str:
+    """Return the NumPy type number of fixed-width storage for one string type."""
+    return "NPY_UNICODE" if character_width(semantic_type_name or "") == 4 else "NPY_STRING"
+
+
+def _character_itemsize(length: object, semantic_type_name: str | None) -> str:
+    """Return the NumPy itemsize of ``length`` characters of one string type."""
+    width = character_width(semantic_type_name or "")
+    return str(length) if width == 1 else f"({length}) * {width}"
+
+
+def _character_c_type(semantic_type_name: str | None) -> str:
+    """Return the C element type that holds one character of a string type."""
+    return "Py_UCS4" if character_width(semantic_type_name or "") == 4 else "char"
+
+
+def _dtype_code(semantic_type_name: str | None) -> str:
+    """Return the NumPy dtype letter of fixed-width storage for one string type."""
+    return "U" if character_width(semantic_type_name or "") == 4 else "S"
+
+
+def _terminator(buffer: str, length: int, semantic_type_name: str | None) -> str:
+    """Return the statement ending a native character copy with one NUL character."""
+    if character_width(semantic_type_name or "") == 1:
+        return f"{buffer}[{length}] = '\\0'"
+    return f"{buffer}[{length}] = 0"
+
+
+def _decode_text(data: str, length: str, semantic_type_name: str | None) -> str:
+    """Return the Python str built from ``length`` native characters at ``data``."""
+    if character_width(semantic_type_name or "") == 4:
+        return f"prik_character_decode({data}, (Py_ssize_t)({length}), 4)"
+    return f'PyUnicode_DecodeUTF8({data}, {length}, "strict")'
+
+
 class CBindingGenerator(ClassVisitor):
     """Build the CPython C half of a wrapper from validated binding-plan views.
 
@@ -276,7 +338,7 @@ class CBindingGenerator(ClassVisitor):
     def _require_derived_type_supported(self, derived: DerivedTypePlan) -> None:
         """Preflight primitive field types after shared plan validation."""
         for field in derived.fields:
-            if field.semantic_type_name != "String" and field.derived is None:
+            if not is_string_semantic_type_name(field.semantic_type_name) and field.derived is None:
                 PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
 
     @staticmethod
@@ -314,7 +376,10 @@ class CBindingGenerator(ClassVisitor):
                 *((argument.callback.result.transfer,) if argument.callback.result.transfer is not None else ()),
             )
             for transfer in transfers:
-                if transfer.semantic_type_name != "String" and transfer.derived_type_identity is None:
+                if (
+                    not is_string_semantic_type_name(transfer.semantic_type_name)
+                    and transfer.derived_type_identity is None
+                ):
                     PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
             return
         self._require_backend_type_supported(argument.semantic_type_name, argument.datatype_family)
@@ -453,7 +518,6 @@ class CBindingGenerator(ClassVisitor):
             NativeEntrypointABIValueKind.INT8: "int8_t",
             NativeEntrypointABIValueKind.INT64: "int64_t",
             NativeEntrypointABIValueKind.OPAQUE: "void",
-            NativeEntrypointABIValueKind.CHARACTER: "char",
             NativeEntrypointABIValueKind.DESCRIPTOR: "CFI_cdesc_t",
         }
         if value.kind is NativeEntrypointABIValueKind.SEMANTIC_SCALAR:
@@ -464,6 +528,10 @@ class CBindingGenerator(ClassVisitor):
             if value.c_type_name is None:
                 raise ValueError(f"Generated-support ABI callback {value.role!r} has no C typedef")
             base = value.c_type_name
+        elif value.kind is NativeEntrypointABIValueKind.CHARACTER:
+            if value.semantic_type_name is None:
+                raise ValueError(f"Generated-support ABI character {value.role!r} has no string type")
+            base = _character_c_type(value.semantic_type_name)
         else:
             try:
                 base = base_types[value.kind]
@@ -703,10 +771,7 @@ class CBindingGenerator(ClassVisitor):
         return any(
             result.scalar_descriptor is not None or result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY}
             for result in function.entrypoint.results
-        ) or any(
-            argument.object_kind is ObjectKind.STRING and argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
-            for argument in function.arguments
-        )
+        ) or any(_uses_character_call_buffer(argument) for argument in function.arguments)
 
     def _module_defines(self, plan: ModulePlan, needs_native_support: bool) -> tuple[CMacroDefinition, ...]:
         """Select native-support sections required by the completed module plan."""
@@ -1190,11 +1255,16 @@ class CBindingGenerator(ClassVisitor):
         """Build callback string nodes from the supplied local lowering values; emitted nodes only project completed binding actions."""
         base = self._callback_parameter_base_name(transfer)
         if transfer.adapter_action is CallbackTransferAction.COPY_IN:
-            expression = f"PyUnicode_FromStringAndSize((const char *){base}_data, (Py_ssize_t){base}_length)"
+            expression = (
+                f"PyUnicode_FromStringAndSize((const char *){base}_data, (Py_ssize_t){base}_length)"
+                if character_width(transfer.semantic_type_name) == 1
+                else _decode_text(f"{base}_data", f"{base}_length", transfer.semantic_type_name)
+            )
         else:
             expression = (
-                f"PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, {base}_data, "
-                f"(int){base}_length, NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
+                f"PyArray_New(&PyArray_Type, 0, NULL, {_character_dtype(transfer.semantic_type_name)}, NULL, "
+                f"{base}_data, {_character_itemsize(f'(int){base}_length', transfer.semantic_type_name)}, "
+                "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
             )
         return (CDeclaration(target, "PyObject *", CodeExpression(expression)),)
 
@@ -3223,12 +3293,12 @@ class CBindingGenerator(ClassVisitor):
         length = self._fixed_string_field_length(field)
         body = (
             *self._derived_owner_address_nodes(derived),
-            CDeclaration(f"value[{length + 1}]", "char"),
+            CDeclaration(f"value[{length + 1}]", _character_c_type(field.semantic_type_name)),
             CExpressionStatement(
                 CodeExpression(f"{self._derived_field_bridge_name(derived, field, 'get')}(owner_address, value)")
             ),
-            CExpressionStatement(CodeExpression(f"value[{length}] = '\\0'")),
-            CReturn(CodeExpression(f'PyUnicode_DecodeUTF8(value, {length}, "strict")')),
+            CExpressionStatement(CodeExpression(_terminator("value", length, field.semantic_type_name))),
+            CReturn(CodeExpression(_decode_text("value", str(length), field.semantic_type_name))),
         )
         return self._derived_private_method(self._derived_field_method_name(derived, field, "get"), body)
 
@@ -3246,6 +3316,7 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(
                 CodeExpression(f"{self._derived_field_bridge_name(derived, field, 'set')}(owner_address, value)")
             ),
+            *self._text_release_nodes(field.semantic_type_name),
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
         return self._derived_private_method(self._derived_field_method_name(derived, field, "set"), body)
@@ -3311,10 +3382,10 @@ class CBindingGenerator(ClassVisitor):
         body = (
             CDeclaration("owner_obj", "PyObject *"),
             CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
-            CDeclaration(f"value[{length + 1}]", "char"),
+            CDeclaration(f"value[{length + 1}]", _character_c_type(member.field.semantic_type_name)),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'get')}(value)")),
-            CExpressionStatement(CodeExpression(f"value[{length}] = '\\0'")),
-            CReturn(CodeExpression(f'PyUnicode_DecodeUTF8(value, {length}, "strict")')),
+            CExpressionStatement(CodeExpression(_terminator("value", length, member.field.semantic_type_name))),
+            CReturn(CodeExpression(_decode_text("value", str(length), member.field.semantic_type_name))),
         )
         return self._derived_private_method(self._module_member_method_name(variable, member, "get"), body)
 
@@ -3335,6 +3406,7 @@ class CBindingGenerator(ClassVisitor):
             ),
             *self._fixed_string_field_input_nodes(field, "value_obj"),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value)")),
+            *self._text_release_nodes(field.semantic_type_name),
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
         return self._derived_private_method(self._module_member_method_name(variable, member, "set"), body)
@@ -3350,7 +3422,11 @@ class CBindingGenerator(ClassVisitor):
     def _fixed_string_field_input_nodes(self, field: DerivedFieldPlan, object_name: str) -> tuple:
         """Require exact UTF-8 byte width and reject embedded NULs."""
         return self._text_input_nodes(
-            object_name, f"field {field.name}", self._fixed_string_field_length(field), "NULL"
+            object_name,
+            f"field {field.name}",
+            self._fixed_string_field_length(field),
+            "NULL",
+            field.semantic_type_name,
         )
 
     def _field_handle_backend_release_nodes(self, field: DerivedFieldPlan, prefix: str) -> tuple:
@@ -4279,7 +4355,7 @@ class CBindingGenerator(ClassVisitor):
     def _field_native_array_numpy_type(self, field: DerivedFieldPlan) -> str:
         """Return the NumPy element type one field handle's view is built with."""
         if field.string_element:
-            return "NPY_STRING"
+            return _character_dtype(field.semantic_type_name)
         return PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).array_numpy_type
 
     def _field_handle_associate_body(
@@ -4775,7 +4851,7 @@ class CBindingGenerator(ClassVisitor):
     def _module_native_array_numpy_type(self, variable: ModuleVariablePlan) -> str:
         """Return the NumPy element type one module array's view is built with."""
         if variable.datatype_family is DatatypeFamily.STRING:
-            return "NPY_STRING"
+            return _character_dtype(variable.semantic_type_name)
         # A wider logical is exposed with the integer dtype its elements
         # occupy, which is what the array projection already selected.
         return PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name).array_numpy_type
@@ -5316,7 +5392,7 @@ class CBindingGenerator(ClassVisitor):
         dispatch = self._owned_native_array_dispatch_name(None, argument)
         fixed_width = argument.projected_call_slot.character_length
         dtype_format = "O" if fixed_width is None else "s"
-        dtype_value = "Py_None" if fixed_width is None else f'"S{fixed_width}"'
+        dtype_value = "Py_None" if fixed_width is None else f'"{_dtype_code(argument.semantic_type_name)}{fixed_width}"'
         exposure = (
             f'"{handle.extraction_action.value}"'
             if handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
@@ -5569,8 +5645,9 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(
                 CodeExpression(
                     "view = PyArray_New(&PyArray_Type, "
-                    f"{handle.array.rank}, dimensions, NPY_STRING, strides, base_address, "
-                    "(int)element_length, NPY_ARRAY_WRITEABLE, NULL)"
+                    f"{handle.array.rank}, dimensions, {_character_dtype(argument.semantic_type_name)}, strides, "
+                    f"base_address, {_character_itemsize('(int)element_length', argument.semantic_type_name)}, "
+                    "NPY_ARRAY_WRITEABLE, NULL)"
                 )
             ),
             CIf(CodeExpression("view == NULL"), body=(CReturn(CodeExpression("NULL")),)),
@@ -5598,7 +5675,7 @@ class CBindingGenerator(ClassVisitor):
             *self._native_array_projection_call_nodes(
                 operation,
                 rank=handle.array.rank,
-                numpy_type="NPY_STRING",
+                numpy_type=_character_dtype(argument.semantic_type_name),
                 # A result has no call slot; the completed array facts carry the
                 # same declared width, and 0 means it is deferred in both.
                 element_size=str(self._owner_character_width(argument) or 0),
@@ -5821,7 +5898,7 @@ class CBindingGenerator(ClassVisitor):
     def _owned_native_array_numpy_type(self, plan: ArgumentTransferPlan | ResultPlan) -> str:
         """Return the NumPy element type one owned handle's view is built with."""
         if plan.datatype_family is DatatypeFamily.STRING:
-            return "NPY_STRING"
+            return _character_dtype(plan.semantic_type_name)
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_numpy_type
 
     def _owned_native_array_operation_handler(self, operation: NativeArrayOperation):
@@ -6357,7 +6434,8 @@ class CBindingGenerator(ClassVisitor):
         """
         if character_length is not None:
             view = (
-                f"PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, data, {character_length}, "
+                f"PyArray_New(&PyArray_Type, 0, NULL, {_character_dtype(semantic_type_name)}, NULL, data, "
+                f"{_character_itemsize(character_length, semantic_type_name)}, "
                 "NPY_ARRAY_ALIGNED | NPY_ARRAY_WRITEABLE, NULL)"
             )
         else:
@@ -6407,7 +6485,8 @@ class CBindingGenerator(ClassVisitor):
         that storage.
         """
         if character:
-            numpy_type, width = "NPY_STRING", "(int)length"
+            numpy_type = _character_dtype(semantic_type_name)
+            width = _character_itemsize("(int)length", semantic_type_name)
         else:
             numpy_type, width = PrimitiveScalarTypeRegistry.type_for(semantic_type_name).array_numpy_type, "0"
         arguments = ", ".join((*leading_arguments, *(("&length",) if character else ())))
@@ -6418,7 +6497,7 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression("data == NULL"),
                 body=(CExpressionStatement(CodeExpression("Py_RETURN_NONE")),),
             ),
-            *(self._nullable_character_view_width_nodes() if character else ()),
+            *(self._nullable_character_view_width_nodes(semantic_type_name) if character else ()),
             CDeclaration(
                 "result",
                 "PyObject *",
@@ -6431,7 +6510,7 @@ class CBindingGenerator(ClassVisitor):
         )
 
     @staticmethod
-    def _nullable_character_view_width_nodes() -> tuple[CIf, ...]:
+    def _nullable_character_view_width_nodes(semantic_type_name: str) -> tuple[CIf, ...]:
         """Reject an unrepresentable width and return empty text as a detached value.
 
         NumPy has no zero-width bytes dtype, so an allocated empty character
@@ -6454,11 +6533,18 @@ class CBindingGenerator(ClassVisitor):
                 body=(
                     CExpressionStatement(
                         CodeExpression(
-                            "PyObject *empty = PyArray_New(&PyArray_Type, 0, NULL, NPY_STRING, NULL, NULL, 1, 0, NULL)"
+                            f"PyObject *empty = PyArray_New(&PyArray_Type, 0, NULL, {_character_dtype(semantic_type_name)}, "
+                            f"NULL, NULL, {_character_itemsize(1, semantic_type_name)}, 0, NULL)"
                         )
                     ),
                     CIf(CodeExpression("empty == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-                    CExpressionStatement(CodeExpression("((char *)PyArray_DATA((PyArrayObject *)empty))[0] = '\\0'")),
+                    CExpressionStatement(
+                        CodeExpression(
+                            "((char *)PyArray_DATA((PyArrayObject *)empty))[0] = '\\0'"
+                            if character_width(semantic_type_name) == 1
+                            else "memset(PyArray_DATA((PyArrayObject *)empty), 0, (size_t)PyArray_ITEMSIZE((PyArrayObject *)empty))"
+                        )
+                    ),
                     CExpressionStatement(
                         CodeExpression("PyArray_CLEARFLAGS((PyArrayObject *)empty, NPY_ARRAY_WRITEABLE)")
                     ),
@@ -6483,10 +6569,10 @@ class CBindingGenerator(ClassVisitor):
                 "PyObject *",
                 storage="static",
                 body=(
-                    CDeclaration(f"value[{length + 1}]", "char"),
+                    CDeclaration(f"value[{length + 1}]", _character_c_type(plan.semantic_type_name)),
                     CExpressionStatement(CodeExpression(f"{self._module_bridge_getter_name(plan)}(value)")),
-                    CExpressionStatement(CodeExpression(f"value[{length}] = '\\0'")),
-                    CReturn(CodeExpression(f'PyUnicode_DecodeUTF8(value, {length}, "strict")')),
+                    CExpressionStatement(CodeExpression(_terminator("value", length, plan.semantic_type_name))),
+                    CReturn(CodeExpression(_decode_text("value", str(length), plan.semantic_type_name))),
                 ),
             ),
         )
@@ -6506,37 +6592,11 @@ class CBindingGenerator(ClassVisitor):
                 parameters=(CParameter("value_obj", "PyObject *"),),
                 storage="static",
                 body=(
-                    CIf(
-                        CodeExpression("!PyUnicode_Check(value_obj)"),
-                        body=(
-                            CExpressionStatement(
-                                CodeExpression(
-                                    f'PyErr_SetString(PyExc_TypeError, "Expected str for module variable {name}")'
-                                )
-                            ),
-                            CReturn(CodeExpression("-1")),
-                        ),
-                    ),
-                    CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
-                    CDeclaration(
-                        "value",
-                        "const char *",
-                        CodeExpression("PyUnicode_AsUTF8AndSize(value_obj, &value_length)"),
-                    ),
-                    CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression("-1")),)),
-                    CIf(
-                        CodeExpression(f"value_length != {length} || (Py_ssize_t)strlen(value) != value_length"),
-                        body=(
-                            CExpressionStatement(
-                                CodeExpression(
-                                    f'PyErr_SetString(PyExc_TypeError, "Module variable {name} must encode to '
-                                    f'exactly {length} bytes without embedded NUL")'
-                                )
-                            ),
-                            CReturn(CodeExpression("-1")),
-                        ),
+                    *self._text_input_nodes(
+                        "value_obj", f"module variable {name}", length, "-1", plan.semantic_type_name
                     ),
                     CExpressionStatement(CodeExpression(f"{self._module_bridge_setter_name(plan)}(value)")),
+                    *self._text_release_nodes(plan.semantic_type_name),
                     CReturn(CodeExpression("0")),
                 ),
             ),
@@ -6631,9 +6691,9 @@ class CBindingGenerator(ClassVisitor):
         # a NumPy scalar type macro.
         character = plan.datatype_family is DatatypeFamily.STRING
         if character:
-            element_size = "itemsize"
-            numpy_type = "NPY_STRING"
-            numpy_itemsize = "(int)itemsize"
+            element_size = _character_itemsize("itemsize", plan.semantic_type_name)
+            numpy_type = _character_dtype(plan.semantic_type_name)
+            numpy_itemsize = _character_itemsize("(int)itemsize", plan.semantic_type_name)
         else:
             scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
             element_size = f"sizeof({scalar.array_c_spelling})"
@@ -7074,9 +7134,11 @@ class CBindingGenerator(ClassVisitor):
         The bridge reports a disassociated pointer or a character width that
         differs from the pointer target's, which become Python exceptions here.
         """
+        release: tuple = ()
         if character:
-            conversion = self._text_input_nodes("value_obj", label, width, failure)
+            conversion = self._text_input_nodes("value_obj", label, width, failure, semantic_type_name)
             values = ("value", "(int64_t)value_length")
+            release = self._text_release_nodes(semantic_type_name)
         else:
             conversion = (
                 CDeclaration("value", PrimitiveScalarTypeRegistry.type_for(semantic_type_name).c_spelling),
@@ -7112,24 +7174,56 @@ class CBindingGenerator(ClassVisitor):
             else ()
         )
         call = f"{setter}({', '.join((*leading_arguments, *values))})"
-        return (*conversion, CDeclaration("status", "int", CodeExpression(call)), *failures)
+        return (*conversion, CDeclaration("status", "int", CodeExpression(call)), *release, *failures)
 
     @staticmethod
-    def _text_input_nodes(object_name: str, label: str, width: int | None, failure: str) -> tuple:
-        """Encode one Python string, requiring the declared width when there is one."""
+    def _text_input_nodes(
+        object_name: str,
+        label: str,
+        width: int | None,
+        failure: str,
+        semantic_type_name: str,
+    ) -> tuple:
+        """Encode one Python str as native characters, requiring the declared width when there is one.
+
+        One-byte characters borrow the str's UTF-8 bytes. Four-byte characters
+        are converted into a buffer that ``_text_release_nodes`` frees once the
+        native call has copied them.
+        """
+        subject = label[:1].upper() + label[1:]
+        type_check = CIf(
+            CodeExpression(f"!PyUnicode_Check({object_name})"),
+            body=(
+                CExpressionStatement(CodeExpression(f'PyErr_SetString(PyExc_TypeError, "Expected str for {label}")')),
+                CReturn(CodeExpression(failure)),
+            ),
+        )
+        if character_width(semantic_type_name) == 4:
+            width_check = f"value_length != {width} || " if width is not None else ""
+            width_text = f"exactly {width} characters" if width is not None else "characters"
+            return (
+                type_check,
+                CDeclaration("value_length", "Py_ssize_t", CodeExpression(f"PyUnicode_GetLength({object_name})")),
+                CIf(CodeExpression("value_length < 0"), body=(CReturn(CodeExpression(failure)),)),
+                CIf(
+                    CodeExpression(f"{width_check}PyUnicode_FindChar({object_name}, 0, 0, value_length, 1) >= 0"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(
+                                f'PyErr_SetString(PyExc_TypeError, "{subject} must contain '
+                                f'{width_text} without embedded NUL")'
+                            )
+                        ),
+                        CReturn(CodeExpression(failure)),
+                    ),
+                ),
+                CDeclaration("value", "Py_UCS4 *", CodeExpression(f"PyUnicode_AsUCS4Copy({object_name})")),
+                CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression(failure)),)),
+            )
         width_check = f"value_length != {width} || " if width is not None else ""
         width_text = f"exactly {width} bytes" if width is not None else "bytes"
-        subject = label[:1].upper() + label[1:]
         return (
-            CIf(
-                CodeExpression(f"!PyUnicode_Check({object_name})"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(f'PyErr_SetString(PyExc_TypeError, "Expected str for {label}")')
-                    ),
-                    CReturn(CodeExpression(failure)),
-                ),
-            ),
+            type_check,
             CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
             CDeclaration(
                 "value", "const char *", CodeExpression(f"PyUnicode_AsUTF8AndSize({object_name}, &value_length)")
@@ -7148,6 +7242,13 @@ class CBindingGenerator(ClassVisitor):
                 ),
             ),
         )
+
+    @staticmethod
+    def _text_release_nodes(semantic_type_name: str) -> tuple:
+        """Free a converted four-byte character buffer once the native call has used it."""
+        if character_width(semantic_type_name) == 4:
+            return (CExpressionStatement(CodeExpression("PyMem_Free(value)")),)
+        return ()
 
     def _lower_module_setter_reject_replacement(self, _plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Read-only descriptor rejection is emitted by module attribute routing."""
@@ -7998,9 +8099,9 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Dispatch one completed string input-storage action."""
         action = plan.binding.codegen_action
-        if action is CodegenAction.CALL_LOCAL_INPUT:
+        if action is CodegenAction.CALL_LOCAL_INPUT and not _uses_character_call_buffer(plan):
             return self._lower_argument_required_string_input(plan, context)
-        if action is CodegenAction.COPY_IN_OUT:
+        if action in {CodegenAction.CALL_LOCAL_INPUT, CodegenAction.COPY_IN_OUT}:
             return self._lower_argument_required_string_replacement(plan, context)
         raise ValueError(f"Unsupported required C string action for {plan.owner_path!r}: {action!r}")
 
@@ -8067,7 +8168,8 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(
                     f"if (prik_character_input({names.object_name}, {length}, "
                     f"{int(bool(plan.character_allows_embedded_nul))}, {writeable}, "
-                    f'"{plan.binding.python_name}", &{payload_name}, &{names.length_name}) < 0) {{ return NULL; }}'
+                    f'"{plan.binding.python_name}", &{payload_name}, &{names.length_name}, '
+                    f"{character_width(plan.semantic_type_name)}) < 0) {{ return NULL; }}"
                 )
             ),
         )
@@ -8079,11 +8181,29 @@ class CBindingGenerator(ClassVisitor):
         source_name: str,
         failure_cleanup: tuple[CExpressionStatement, ...],
     ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Allocate and copy one validated mutable string payload."""
+        """Allocate and fill one validated string call buffer."""
+        width = character_width(plan.semantic_type_name)
+        size = f"(size_t){names.length_name} + 1" if width == 1 else f"((size_t){names.length_name} + 1) * {width}"
+        fill: tuple = (
+            (
+                CExpressionStatement(
+                    CodeExpression(f"memcpy({names.value_name}, {source_name}, (size_t){names.length_name})")
+                ),
+                CExpressionStatement(CodeExpression(f"{names.value_name}[{names.length_name}] = '\\0'")),
+            )
+            if width == 1
+            else (
+                CIf(
+                    CodeExpression(
+                        f"prik_character_fill({names.value_name}, {names.object_name}, {source_name}, "
+                        f"{names.length_name}, {width}) < 0"
+                    ),
+                    body=(*failure_cleanup, CReturn(CodeExpression("NULL"))),
+                ),
+            )
+        )
         return (
-            CExpressionStatement(
-                CodeExpression(f"{names.value_name} = (char *)prik_malloc((size_t){names.length_name} + 1)")
-            ),
+            CExpressionStatement(CodeExpression(f"{names.value_name} = (char *)prik_malloc({size})")),
             CIf(
                 CodeExpression(f"{names.value_name} == NULL"),
                 body=(
@@ -8097,11 +8217,43 @@ class CBindingGenerator(ClassVisitor):
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
-            CExpressionStatement(
-                CodeExpression(f"memcpy({names.value_name}, {source_name}, (size_t){names.length_name})")
-            ),
-            CExpressionStatement(CodeExpression(f"{names.value_name}[{names.length_name}] = '\\0'")),
+            *fill,
         )
+
+    @staticmethod
+    def _required_wide_string_validation_nodes(
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        payload_name: str,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Measure one str in four-byte characters; the call buffer converts it."""
+        nodes = [
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (!PyUnicode_Check({names.object_name})) {{ "
+                    f'PyErr_Format(PyExc_TypeError, "Expected an argument of type str for argument '
+                    f"{plan.binding.python_name}. Received <class '%s'>\", "
+                    f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
+                )
+            ),
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (prik_character_text({names.object_name}, {int(bool(plan.character_allows_embedded_nul))}, "
+                    f'"{plan.binding.python_name}", &{payload_name}, &{names.length_name}, 4) < 0) return NULL'
+                )
+            ),
+        ]
+        if plan.character_length is not None:
+            nodes.append(
+                CExpressionStatement(
+                    CodeExpression(
+                        f"if ({names.length_name} != {plan.character_length}) {{ "
+                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must contain '
+                        f'exactly {plan.character_length} characters"); return NULL; }}'
+                    )
+                )
+            )
+        return tuple(nodes)
 
     def _required_string_validation_nodes(
         self,
@@ -8109,7 +8261,10 @@ class CBindingGenerator(ClassVisitor):
         names: _CArgumentNames,
         payload_name: str,
     ) -> tuple[CExpressionStatement, ...]:
-        """Return shared required-string type, UTF-8, NUL, and length checks."""
+        """Return shared required-string type, encoding, NUL, and length checks."""
+        width = character_width(plan.semantic_type_name)
+        if width == 4:
+            return self._required_wide_string_validation_nodes(plan, names, payload_name)
         nodes = [
             CExpressionStatement(
                 CodeExpression(
@@ -8202,12 +8357,16 @@ class CBindingGenerator(ClassVisitor):
             width_guard = (
                 CComment("A character dummy is matched on its declared width."),
                 CIf(
-                    CodeExpression(f"PyArray_ITEMSIZE((PyArrayObject *){names.object_name}) != {declared}"),
+                    CodeExpression(
+                        f"PyArray_ITEMSIZE((PyArrayObject *){names.object_name}) != "
+                        f"{_character_itemsize(declared, plan.semantic_type_name)}"
+                    ),
                     body=(
                         CExpressionStatement(
                             CodeExpression(
                                 "PyErr_Format(PyExc_TypeError, "
-                                f"\"{plan.binding.python_name} does not match expected dtype dtype('S%d')\", "
+                                f'"{plan.binding.python_name} does not match expected dtype '
+                                f"dtype('{_dtype_code(plan.semantic_type_name)}%d')\", "
                                 f"{declared})"
                             )
                         ),
@@ -9096,6 +9255,8 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[str, str]:
         """Return compact helper dtype selectors from completed array facts."""
         if plan.datatype_family is DatatypeFamily.STRING:
+            if character_width(plan.semantic_type_name) == 4:
+                return "NPY_UNICODE", f"numpy.str_[{handoff.itemsize}]"
             return "NPY_STRING", f"numpy.bytes_[{handoff.itemsize}]"
         return CBindingGenerator._numeric_array_dtype_selectors(plan)
 
@@ -9236,9 +9397,11 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = (int64_t)PyArray_NDIM({array})"))
             )
         if handoff.itemsize_role is not None:
-            nodes.append(
-                CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t)PyArray_ITEMSIZE({array})"))
+            width = character_width(plan.semantic_type_name) if plan.datatype_family is DatatypeFamily.STRING else 1
+            itemsize = (
+                f"(int64_t)PyArray_ITEMSIZE({array})" if width == 1 else f"(int64_t)PyArray_ITEMSIZE({array}) / {width}"
             )
+            nodes.append(CExpressionStatement(CodeExpression(f"{names.itemsize_name} = {itemsize}")))
             # An assumed width accepts whatever the caller's array declares; only
             # a stated width is checked against it.
             if handoff.itemsize is not None:
@@ -9485,13 +9648,15 @@ class CBindingGenerator(ClassVisitor):
         names = context.arguments[plan.owner_path]
         array = f"(PyArrayObject *){names.object_name}"
         length = plan.character_length
-        expected = f"S{length}" if length is not None else "S"
+        code = _dtype_code(plan.semantic_type_name)
+        expected = f"{code}{length}" if length is not None else code
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
             CExpressionStatement(
                 CodeExpression(
-                    f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != NPY_STRING || "
+                    f"if (!PyArray_Check({names.object_name}) || "
+                    f"PyArray_TYPE({array}) != {_character_dtype(plan.semantic_type_name)} || "
                     f"PyArray_NDIM({array}) != 0) {{ "
                     f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray with dtype {expected} '
                     f"for argument {plan.binding.python_name}. Received <class '%s'>\", "
@@ -9502,7 +9667,7 @@ class CBindingGenerator(ClassVisitor):
                 (
                     CExpressionStatement(
                         CodeExpression(
-                            f"if (PyArray_ITEMSIZE({array}) != {length}) {{ "
+                            f"if (PyArray_ITEMSIZE({array}) != {_character_itemsize(length, plan.semantic_type_name)}) {{ "
                             f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must use itemsize '
                             f'{length}"); return NULL; }}'
                         )
@@ -10007,9 +10172,13 @@ class CBindingGenerator(ClassVisitor):
         semantic_type_name: str,
         datatype_family: DatatypeFamily,
     ) -> str | None:
-        """Translate one completed array element family to a runtime dtype."""
+        """Translate one completed array element family to a runtime dtype.
+
+        A character element's width is read from native state; a four-byte
+        character passes the flexible ``U`` dtype so the width counts code points.
+        """
         if datatype_family is DatatypeFamily.STRING:
-            return None
+            return None if character_width(semantic_type_name) == 1 else "U"
         scalar_type = PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
         return {
             "NPY_BOOL": "bool",
@@ -10207,7 +10376,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(names.length_name, "Py_ssize_t", CodeExpression("0")),
         )
         action = plan.binding.codegen_action
-        if action is CodegenAction.CALL_LOCAL_INPUT:
+        if action is CodegenAction.CALL_LOCAL_INPUT and not _uses_character_call_buffer(plan):
             return (
                 *declarations,
                 CDeclaration(names.value_name, "const char *", CodeExpression("NULL")),
@@ -10220,7 +10389,7 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 ),
             )
-        if action is CodegenAction.COPY_IN_OUT:
+        if action in {CodegenAction.CALL_LOCAL_INPUT, CodegenAction.COPY_IN_OUT}:
             source_name = f"{names.value_name}_source"
             return (
                 *declarations,
@@ -10366,7 +10535,11 @@ class CBindingGenerator(ClassVisitor):
         prior_cleanup = self._decref_names(failure_cleanup)
         if plan.object_kind is ObjectKind.STRING:
             conversion = CodeExpression(
-                f'PyUnicode_DecodeUTF8((const char *){native_name}, (Py_ssize_t){native_name}_length, "strict")'
+                _decode_text(
+                    f"(const char *){native_name}", f"(Py_ssize_t){native_name}_length", plan.semantic_type_name
+                )
+                if character_width(plan.semantic_type_name) == 1
+                else _decode_text(native_name, f"{native_name}_length", plan.semantic_type_name)
             )
         else:
             scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
@@ -10712,8 +10885,9 @@ class CBindingGenerator(ClassVisitor):
             if handoff is None or handoff.itemsize is None or handoff.itemsize <= 0:
                 raise ValueError(f"Character array result {plan.owner_path!r} has no fixed itemsize")
             return CodeExpression(
-                f"(PyObject *)PyArray_New(&PyArray_Type, {rank}, {dims_name}, NPY_STRING, "
-                f"NULL, {native_name}, {handoff.itemsize}, {flags}, NULL)"
+                f"(PyObject *)PyArray_New(&PyArray_Type, {rank}, {dims_name}, "
+                f"{_character_dtype(plan.semantic_type_name)}, NULL, {native_name}, "
+                f"{_character_itemsize(handoff.itemsize, plan.semantic_type_name)}, {flags}, NULL)"
             )
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         if scalar_type.numpy_type_macro is None:
@@ -10783,7 +10957,9 @@ class CBindingGenerator(ClassVisitor):
                     ),
                     else_body=(
                         CExpressionStatement(
-                            CodeExpression(f'{python_name} = Py_BuildValue("s", (const char *){native_name})')
+                            CodeExpression(
+                                f"{python_name} = {_decode_terminated_text(native_name, plan.semantic_type_name)}"
+                            )
                         ),
                         CExpressionStatement(CodeExpression(f"free({native_name})")),
                         CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
@@ -10811,7 +10987,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 python_name,
                 "PyObject *",
-                CodeExpression(f'Py_BuildValue("s", (const char *){native_name})'),
+                CodeExpression(_decode_terminated_text(native_name, plan.semantic_type_name)),
             ),
             CExpressionStatement(CodeExpression(f"free({native_name})")),
             CExpressionStatement(CodeExpression(f"{native_name} = NULL")),
@@ -13368,7 +13544,7 @@ class CBindingGenerator(ClassVisitor):
         names = context.arguments[source.owner_path]
         target = context.python_results[action.owner_path]
         conversion = CExpressionStatement(
-            CodeExpression(f'{target} = Py_BuildValue("s", (const char *){names.value_name})')
+            CodeExpression(f"{target} = {_decode_terminated_text(names.value_name, source.semantic_type_name)}")
         )
         failure = CIf(
             CodeExpression(f"{target} == NULL"),
@@ -13384,7 +13560,7 @@ class CBindingGenerator(ClassVisitor):
             converted_value = CExpressionStatement(
                 CodeExpression(
                     f"{target} = prik_character_result({names.object_name}, &{names.value_name}, "
-                    f"(Py_ssize_t){names.length_name})"
+                    f"(Py_ssize_t){names.length_name}, {character_width(source.semantic_type_name)})"
                 )
             )
             if source.binding.optional_mode is OptionalMode.REQUIRED:
@@ -14486,13 +14662,8 @@ class CBindingGenerator(ClassVisitor):
 
     @staticmethod
     def _string_replacement_arguments(plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Return planned binding-owned mutable string buffers."""
-        return tuple(
-            argument
-            for argument in plan.arguments
-            if argument.object_kind is ObjectKind.STRING
-            and argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
-        )
+        """Return the binding-owned string buffers a call fills before it runs."""
+        return tuple(argument for argument in plan.arguments if _uses_character_call_buffer(argument))
 
     def _string_replacement_cleanup_nodes(
         self,
@@ -16086,7 +16257,8 @@ class CBindingGenerator(ClassVisitor):
                 array = f"(PyArrayObject *){value}"
                 predicate = (
                     f"({predicate} || (PyArray_Check({value}) && PyArray_NDIM({array}) == 0 "
-                    f"&& PyArray_TYPE({array}) == NPY_STRING && PyArray_ITEMSIZE({array}) == {match.character_length}))"
+                    f"&& PyArray_TYPE({array}) == {_character_dtype(match.semantic_type_name)} "
+                    f"&& PyArray_ITEMSIZE({array}) == {_character_itemsize(match.character_length, match.semantic_type_name)}))"
                 )
             return predicate
         if match.kind is OverloadMatchKind.NUMPY_SCALAR:
@@ -16766,8 +16938,10 @@ class CBindingGenerator(ClassVisitor):
         itemsize_name = f"{value_name}_itemsize"
         if character:
             allocation = (
-                f"(PyObject *)PyArray_New(&PyArray_Type, {array.rank}, {{dimensions}}, NPY_STRING, "
-                f"NULL, NULL, (int){itemsize_name}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
+                f"(PyObject *)PyArray_New(&PyArray_Type, {array.rank}, {{dimensions}}, "
+                f"{_character_dtype(variable.semantic_type_name)}, NULL, NULL, "
+                f"{_character_itemsize(f'(int){itemsize_name}', variable.semantic_type_name)}, "
+                "NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
             )
         else:
             scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)

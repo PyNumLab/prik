@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Fortran `character(kind=selected_char_kind('ISO_10646'))` (UCS-4) values are
+  supported through the new `UString` contract type, which takes every form
+  `String` does and maps storage to NumPy `U<n>` instead of `S<n>`. A
+  character kind given by `selected_char_kind('ASCII')` or `'DEFAULT'` is now
+  an ordinary `String` instead of an unsupported kind.
 - **Breaking:** scalar fields of a Fortran derived type read as live rank-zero
   NumPy views of the object's storage, as module variables do. A numeric or
   logical field returns a writable `T[()]` view instead of a NumPy scalar, and

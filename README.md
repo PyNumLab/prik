@@ -237,8 +237,7 @@ code generation with a diagnostic naming the boundary and the reason.
 
 - Arrays of derived types.
 - Parameterized derived types such as `type :: buffer_type(k, n)`.
-- Character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype.
+- `character` kinds other than the default kind and `ISO_10646` (UCS-4).
 - Real and complex storage wider than the target's `long double`. NumPy's
   `longdouble` is whatever the target C compiler provides, so `real(10)` and C
   `long double` are supported while IEEE quad `real(16)` is refused on a target

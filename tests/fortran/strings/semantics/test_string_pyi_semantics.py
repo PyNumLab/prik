@@ -5,17 +5,19 @@ from prik.printers import emit_module
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
-def test_string_length_and_shape_axes_round_trip():
+@pytest.mark.parametrize("name", ["String", "UString"])
+def test_string_length_and_shape_axes_round_trip(name: str):
+    """Both character widths spell every length and shape form the same way."""
     module = parse_pyi_text(
-        """
-def scalar_unknown(value: String) -> None: ...
-def scalar_fixed(value: String[8]) -> None: ...
-def array_unknown(values: String[:][:]) -> None: ...
-def array_fixed(values: String[8][:]) -> None: ...
-def scalar_storage(value: String[8][()]) -> None: ...
-def scalar_deferred(value: String[:]) -> None: ...
-def array_assumed(values: String[...][:]) -> None: ...
-def array_assumed_strided(values: String[...][::]) -> None: ...
+        f"""
+def scalar_unknown(value: {name}) -> None: ...
+def scalar_fixed(value: {name}[8]) -> None: ...
+def array_unknown(values: {name}[:][:]) -> None: ...
+def array_fixed(values: {name}[8][:]) -> None: ...
+def scalar_storage(value: {name}[8][()]) -> None: ...
+def scalar_deferred(value: {name}[:]) -> None: ...
+def array_assumed(values: {name}[...][:]) -> None: ...
+def array_assumed_strided(values: {name}[...][::]) -> None: ...
 """,
         module_name="string_axes",
     )
@@ -31,6 +33,7 @@ def array_assumed_strided(values: String[...][::]) -> None: ...
         array_assumed_strided,
     ) = module.functions
 
+    assert {function.arguments[0].semantic_type.name for function in module.functions} == {name}
     assert "fortran_character_length" not in scalar_unknown.arguments[0].semantic_type.metadata
     assert scalar_fixed.arguments[0].semantic_type.metadata["fortran_character_length"] == "8"
 
@@ -60,14 +63,14 @@ def array_assumed_strided(values: String[...][::]) -> None: ...
     assert array_assumed_strided.arguments[0].semantic_type.shape == ["::"]
 
     emitted = emit_module(module)
-    assert "value: String" in emitted
-    assert "value: String[8]" in emitted
-    assert "values: String[:][:]" in emitted
-    assert "values: String[8][:]" in emitted
-    assert "value: String[8][()]" in emitted
-    assert "value: String[:]" in emitted
-    assert "values: String[...][:]" in emitted
-    assert "values: String[...][::]" in emitted
+    assert f"value: {name}" in emitted
+    assert f"value: {name}[8]" in emitted
+    assert f"values: {name}[:][:]" in emitted
+    assert f"values: {name}[8][:]" in emitted
+    assert f"value: {name}[8][()]" in emitted
+    assert f"value: {name}[:]" in emitted
+    assert f"values: {name}[...][:]" in emitted
+    assert f"values: {name}[...][::]" in emitted
     assert parse_pyi_text(emitted, module_name="string_axes") == module
 
 

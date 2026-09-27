@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+import pytest
+
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from tests.fortran._support.semantic_conversion import get_function
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
@@ -78,3 +80,32 @@ end module forms_mod
     lengths = {item.name: item.semantic_type.metadata.get("fortran_character_length") for item in function.arguments}
 
     assert lengths == {"a": "16", "b": "8", "c": "*", "d": "6", "e": "1"}
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        pytest.param("selected_char_kind('ISO_10646')", "UString", id="iso-10646"),
+        pytest.param("4", "UString", id="kind-4"),
+        pytest.param("selected_char_kind('ASCII')", "String", id="ascii"),
+        pytest.param("selected_char_kind('DEFAULT')", "String", id="default"),
+        pytest.param("c_char", "String", id="c-char"),
+    ],
+)
+def test_character_kind_selects_the_string_width(kind: str, expected: str):
+    """A character kind names UCS-4 or the one-byte kind without a compiler probe."""
+    parsed = parse_fortran_source(
+        f"""
+module kinds
+  use iso_c_binding, only: c_char
+contains
+  subroutine take(text)
+    character(kind={kind}, len=4), intent(in) :: text
+  end subroutine take
+end module kinds
+"""
+    )
+
+    func = get_function(fortran_module_to_semantic_module(parsed), "take")
+
+    assert func.arguments[0].semantic_type.name == expected

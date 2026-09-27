@@ -66,6 +66,7 @@ SEMANTIC_SCALAR_TYPES: Final[Mapping[str, SemanticScalarSpec]] = MappingProxyTyp
         "Int64": SemanticScalarSpec(SemanticScalarFamily.SIGNED_INTEGER, 64),
         "SizeT": SemanticScalarSpec(SemanticScalarFamily.UNSIGNED_INTEGER),
         "String": SemanticScalarSpec(SemanticScalarFamily.CHARACTER),
+        "UString": SemanticScalarSpec(SemanticScalarFamily.CHARACTER),
         "UInt": SemanticScalarSpec(SemanticScalarFamily.UNSIGNED_INTEGER),
         "UInt8": SemanticScalarSpec(SemanticScalarFamily.UNSIGNED_INTEGER, 8),
         "UInt16": SemanticScalarSpec(SemanticScalarFamily.UNSIGNED_INTEGER, 16),
@@ -87,6 +88,25 @@ INTEGER_SEMANTIC_TYPE_NAMES: Final[frozenset[str]] = frozenset(
     for name, spec in SEMANTIC_SCALAR_TYPES.items()
     if spec.family in {SemanticScalarFamily.SIGNED_INTEGER, SemanticScalarFamily.UNSIGNED_INTEGER}
 )
+
+
+# Character semantic types and the native bytes one character occupies:
+# ``String`` for the default kind and ``UString`` for UCS-4 (``ISO_10646``).
+CHARACTER_WIDTHS: Final[Mapping[str, int]] = MappingProxyType({"String": 1, "UString": 4})
+STRING_SEMANTIC_TYPE_NAMES: Final[frozenset[str]] = frozenset(CHARACTER_WIDTHS)
+
+
+def is_string_semantic_type_name(name: str | None) -> bool:
+    """Return whether ``name`` identifies a character string of either width."""
+    return name in STRING_SEMANTIC_TYPE_NAMES
+
+
+def character_width(name: str) -> int:
+    """Return the native bytes one character of a string semantic type occupies.
+
+    Non-string names raise ``KeyError`` so callers cannot invent a width.
+    """
+    return CHARACTER_WIDTHS[name]
 
 
 def is_boolean_semantic_type_name(name: str | None) -> bool:
@@ -111,12 +131,16 @@ def boolean_storage_bits(name: str) -> int:
 __all__ = (
     "BOOLEAN_SEMANTIC_TYPE_NAMES",
     "BOOLEAN_STORAGE_BITS",
+    "CHARACTER_WIDTHS",
     "SEMANTIC_SCALAR_TYPES",
     "SEMANTIC_SCALAR_TYPE_NAMES",
+    "STRING_SEMANTIC_TYPE_NAMES",
     "SemanticScalarFamily",
     "SemanticScalarSpec",
     "boolean_storage_bits",
+    "character_width",
     "is_boolean_semantic_type_name",
+    "is_string_semantic_type_name",
 )
 
 

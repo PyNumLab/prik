@@ -25,6 +25,7 @@ from prik.preprocessing.probes.fortran_types import (
     fortran_type_probe_cache_key,
     fortran_type_probe_expressions,
     load_fortran_type_probe_report,
+    probe_can_resolve_expression,
     probe_fortran_type_expressions,
     probe_fortran_type_expressions_cached,
     resolve_fortran_logical_storage_types,
@@ -88,6 +89,16 @@ def test_fortran_type_probe_wraps_long_intrinsic_import_lists():
 def test_fortran_type_probe_rejects_statement_injection():
     with pytest.raises(FortranTypeProbeError, match="single initialization expression"):
         build_fortran_type_probe_source(["selected_real_kind(12); stop"])
+
+
+def test_fortran_type_probe_accepts_only_quoted_character_set_names():
+    """A kind selector may name a character set; any other quoted text stays refused."""
+    expression = "selected_char_kind('ISO_10646')"
+    assert expression in build_fortran_type_probe_source([expression])
+    assert probe_can_resolve_expression(expression)
+    for unsafe in ("selected_char_kind('ISO 10646')", 'selected_char_kind("ISO_10646")'):
+        with pytest.raises(FortranTypeProbeError, match="unsupported characters"):
+            build_fortran_type_probe_source([unsafe])
 
 
 def test_fortran_type_probe_requires_an_explicit_compiler():

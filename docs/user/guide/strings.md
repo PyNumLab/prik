@@ -250,6 +250,34 @@ b'Xlpha   '
 - `String[8][()]` and `String[8][count]` require dtype `S8`.
 - A dummy without `intent` uses the conservative `intent(inout)` behavior.
 
+## Unicode Strings
+
+A Fortran `character(kind=selected_char_kind('ISO_10646'))` declaration stores
+four bytes per character (UCS-4). Its contract uses `UString` wherever a
+default-kind declaration uses `String`, and every form above works the same
+way:
+
+| Contract | Python value |
+| --- | --- |
+| `UString[8]` | `str` or rank-zero NumPy `U8` array |
+| `UString[8][()]` | Rank-zero NumPy array with dtype `U8` |
+| `UString[8][count]` | NumPy array with dtype `U8` |
+
+```fortran
+integer, parameter :: ucs4 = selected_char_kind('ISO_10646')
+character(kind=ucs4, len=8) :: title
+```
+
+```python
+title: UString[8][()]
+```
+
+A `UString[8]` length counts characters, not bytes, so it accepts any `str` of
+exactly eight characters. Declare the kind with
+`selected_char_kind('ISO_10646')`, and use a compiler that provides it: GNU
+Fortran and LLVM Flang do, Intel `ifx` does not. A kind that selects
+`'ASCII'` or `'DEFAULT'` is an ordinary `String`.
+
 ## Allocatable And Pointer Scalar Strings
 
 A scalar `character` dummy may carry the `allocatable` or `pointer` attribute,

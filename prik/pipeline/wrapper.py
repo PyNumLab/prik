@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from prik.semantics.scalar_types import is_string_semantic_type_name
 from prik.utilities.declaration_expressions import RUNTIME_DIMENSION_MARKERS
 from prik.utilities.stage_values import StageRecord
 from prik.policy.ownership import (
@@ -5494,7 +5495,7 @@ class WrapperGenerator:
         if (
             action.codegen_action is CodegenAction.COPY_IN_OUT
             and action.object_kind is ObjectKind.STRING
-            and action.semantic_type_name == "String"
+            and is_string_semantic_type_name(action.semantic_type_name)
             and action.datatype_family is DatatypeFamily.STRING
             and action.result_position == argument.result_position
         ):

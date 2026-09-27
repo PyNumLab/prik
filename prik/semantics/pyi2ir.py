@@ -26,7 +26,7 @@ from prik.utilities.declaration_expressions import (
     is_declaration_expression_helper,
     is_public_declaration_expression,
 )
-from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES, is_string_semantic_type_name
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
     set_ownership_metadata,
@@ -1845,7 +1845,7 @@ class _PyiAstParser:
             return None
         if name == "String":
             raise ValueError('native_call string literals require String[length](value), for example String[1]("N")')
-        if name in SEMANTIC_SCALAR_TYPE_NAMES and name not in {"String", "Void"}:
+        if name in SEMANTIC_SCALAR_TYPE_NAMES and name != "Void" and not is_string_semantic_type_name(name):
             return name
         return None
 
@@ -2056,7 +2056,7 @@ class _PyiAstParser:
         if isinstance(node, ast.Call):
             raise ValueError(f"Unsupported semantic type call: {ast.unparse(node)!r}")
 
-        if isinstance(node, ast.Subscript) and self.matches_name(node.value, "String"):
+        if isinstance(node, ast.Subscript) and self.string_contract_name(node.value) is not None:
             # One subscription after String is always the character length; an
             # array adds its shape as a second subscription.
             return self._character_type(node)
@@ -2166,7 +2166,7 @@ class _PyiAstParser:
     def array_type(self, node: ast.Subscript) -> SemanticType:
         """Load a bracketed scalar type as an array or fixed-length character contract."""
         if isinstance(node.value, ast.Subscript):
-            if self.matches_name(node.value.value, "String"):
+            if self.string_contract_name(node.value.value) is not None:
                 semantic_type = self._character_type(node.value)
                 return self._array_type_from_dimensions(
                     semantic_type.name,
@@ -2384,11 +2384,12 @@ class _PyiAstParser:
         allocation, and ``String[...]`` is the assumed length that bare
         ``String`` also spells.
         """
+        name = self.string_contract_name(node.value)
         items = self.subscript_items(node)
         if len(items) != 1:
             raise ValueError("Character length uses one subscription: String[8], String[n], String[:], or String[...]")
         if isinstance(items[0], ast.Constant) and items[0].value is Ellipsis:
-            return SemanticType(name="String", dtype="String", metadata={"fortran_character_length": "*"})
+            return SemanticType(name=name, dtype=name, metadata={"fortran_character_length": "*"})
         if isinstance(items[0], ast.Slice) and not self._is_deferred_length_slice(node, items[0]):
             raw_items = self._source_dimension_items(node)
             spelling = raw_items[0].strip() if raw_items and len(raw_items) == 1 else self.dimension_text(items[0])
@@ -2398,8 +2399,8 @@ class _PyiAstParser:
             )
         length = self.dimension_text(items[0])
         return SemanticType(
-            name="String",
-            dtype="String",
+            name=name,
+            dtype=name,
             metadata={"fortran_character_length": length},
         )
 
@@ -2604,7 +2605,7 @@ class _PyiAstParser:
             raise ValueError("COPY_F requires a C-order Python array and targets Fortran order")
         if array.category in {"assumed_size", "assumed_rank", "runtime_rank"} or array.contiguous is not True:
             raise ValueError("COPY_F initially supports only dense concrete-shape arrays")
-        if semantic_type.name == "String" or native_array_descriptor_kind(semantic_type) is not None:
+        if is_string_semantic_type_name(semantic_type.name) or native_array_descriptor_kind(semantic_type) is not None:
             raise ValueError("COPY_F does not apply to character arrays or native descriptor handles")
 
     @staticmethod
@@ -2810,7 +2811,7 @@ class _PyiAstParser:
                         "bare primitive types are passed by value"
                     )
                 if (
-                    semantic_type.name == "String"
+                    is_string_semantic_type_name(semantic_type.name)
                     or semantic_type.storage is not None
                     or self._has_callback_descriptor_metadata(semantic_type)
                 ):
@@ -2845,7 +2846,8 @@ class _PyiAstParser:
         """Report whether a callback type is a plain native scalar passed by value."""
         return bool(
             semantic_type.rank == 0
-            and semantic_type.name not in {"String", "Void"}
+            and semantic_type.name != "Void"
+            and not is_string_semantic_type_name(semantic_type.name)
             and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
             and semantic_type.storage is None
             and not _PyiAstParser._has_callback_descriptor_metadata(semantic_type)
@@ -2868,7 +2870,7 @@ class _PyiAstParser:
     def _mark_callback_reference_type(semantic_type: SemanticType) -> None:
         """Mutate a callback argument type into writable reference-compatible storage."""
         storage = semantic_type.storage
-        if semantic_type.name == "String" and semantic_type.rank == 0:
+        if is_string_semantic_type_name(semantic_type.name) and semantic_type.rank == 0:
             semantic_type.storage = SemanticStorageContract(
                 kind="array",
                 read_only=False,
@@ -3069,6 +3071,11 @@ class _PyiAstParser:
         if not isinstance(node, ast.Name):
             return None
         return self._contract_bindings.get(node.id)
+
+    def string_contract_name(self, node: ast.AST) -> str | None:
+        """Return ``String`` or ``UString`` when ``node`` names a character contract."""
+        name = self.contract_name(node)
+        return name if is_string_semantic_type_name(name) else None
 
     def matches_name(self, node: ast.AST, name: str) -> bool:
         """Report whether an AST name resolves to a particular imported contract symbol."""
@@ -3359,7 +3366,7 @@ class _PyiAstParser:
                 semantic_type.name == "String"
                 and str(semantic_type.metadata.get("fortran_character_length", "")) == "1"
             )
-            if semantic_type.rank != 0 or (semantic_type.name == "String" and not is_c_char_value):
+            if semantic_type.rank != 0 or (is_string_semantic_type_name(semantic_type.name) and not is_c_char_value):
                 raise ValueError(
                     "Value(Arg(i)) is only valid for primitive scalars, String[1], "
                     "or exact rank-zero wrapped derived objects"

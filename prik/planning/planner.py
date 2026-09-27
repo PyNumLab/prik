@@ -150,7 +150,10 @@ from prik.planning.models import (
     TransformationPlan,
 )
 from prik.naming.native_symbols import NativeSymbolNames
-from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import (
+    BOOLEAN_SEMANTIC_TYPE_NAMES,
+    is_string_semantic_type_name,
+)
 from prik.utilities.visitor import ClassVisitor
 
 from prik.planning.entrypoints import (
@@ -246,6 +249,7 @@ _DATATYPE_FAMILIES = {
     "Complex128": DatatypeFamily.COMPLEX,
     "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
+    "UString": DatatypeFamily.STRING,
     "AnyNative": DatatypeFamily.ASSUMED_NATIVE,
 }
 
@@ -1722,7 +1726,7 @@ class WrapperPlanner(ClassVisitor):
             raise ValueError(f"Hidden entrypoint result {slot.owner_path!r} has incomplete type facts")
         character_capacity = (
             slot.character_length
-            if direct_c_abi and slot.semantic_type_name == "String" and slot.character_length
+            if direct_c_abi and is_string_semantic_type_name(slot.semantic_type_name) and slot.character_length
             else None
         )
         return NativeEntrypointResultPlan(

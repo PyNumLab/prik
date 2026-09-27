@@ -860,6 +860,7 @@ subscription for storage shape:
 | `String[:]` | Deferred | Scalar descriptor value, with `Allocatable` or `Pointer` policy. |
 | `String[n][()]` | Fixed `n` | Rank-zero NumPy bytes storage. |
 | `String[n][:]` | Fixed `n` | Rank-one NumPy bytes array. |
+| `UString[...]` forms | As for `String` | Four-byte (UCS-4) characters: a `str`, or NumPy `U<n>` storage where `String` uses `S<n>`. |
 | `String[:][:]` | Deferred | Rank-one character array contract. |
 
 A single `String[...]` subscription is always a length, never an array shape.
@@ -1108,7 +1109,7 @@ valid and whether it is buildable.
 | Group | Public names |
 | --- | --- |
 | Typing forms | `Annotated`, `Any`, `Final` |
-| Scalar types | `AnyNative`, `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Void` |
+| Scalar types | `AnyNative`, `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Byte`, `CEnum`, `Char`, `Complex64`, `Complex128`, `Complex256`, `Float16`, `Float32`, `Float64`, `Float128`, `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `SizeT`, `String`, `UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UString`, `Void` |
 | Storage and result types | `Addr`, `Allocatable`, `Pointer`, `Returns`, `private` |
 | Compatibility/category types | `Matrix`, `Vector`, `OpaqueHandle`, `WrappedType` |
 | Class and C inspection markers | `CAnonymous`, `CAnonymousMember`, `CStruct`, `CUnion`, `Opaque` |
