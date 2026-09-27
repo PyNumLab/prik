@@ -1,4 +1,3 @@
 include CHANGELOG.md
 include CITATION.cff
-include .artifacts/.gitignore
 recursive-include prik/cmake_modules *.cmake

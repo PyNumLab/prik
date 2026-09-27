@@ -10,6 +10,13 @@ release tags add a leading `v` to the package version.
 - The README now opens with a short terminal demo that builds a Fortran module
   and calls it from Python, followed by links to Colab, installation, and the
   real-library examples.
+- The repository root holds fewer files. Contributor notes moved to
+  `.github/CONTRIBUTING.md`, the pre-push hook to `tools/githooks/` (activate it
+  with `git config core.hooksPath tools/githooks`), and the documentation theme
+  to `tools/mkdocs-theme/`. Local builds write `prik.egg-info/` to the ignored
+  repository root; `.artifacts/` still holds the documentation site and
+  distributions. Subprocess coverage uses the startup hook that ships with
+  coverage, so `COVERAGE_PROCESS_START` works as before.
 
 ## 0.5.1 — 2026-09-27
 
