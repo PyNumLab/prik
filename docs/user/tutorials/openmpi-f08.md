@@ -27,8 +27,6 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# Buffers are np.int32 arrays, and ranks and tags are np.int32 too:
-# Get_rank returns one, and rank + 1 stays one.
 ROOT = np.int32(0)
 TAG = np.int32(77)
 
@@ -474,8 +472,6 @@ import numpy as np
 
 from prik_openmpi_f08 import mpi_f08 as _mpi
 
-# Ranks and tags are np.int32, the type the contract takes: the extension
-# returns them as np.int32, and so are these constants and defaults.
 ANY_SOURCE = _mpi.mpi_any_source
 ANY_TAG = _mpi.mpi_any_tag
 IN_PLACE = _mpi.mpi_in_place
@@ -528,9 +524,6 @@ atexit.register(_mpi.finalize)
   is one call to the wrapped API.
 - Every buffer is an `np.int32` array sent as `MPI_INT`, and `Recv` passes
   `MPI_STATUS_IGNORE`, as mpi4py does when given no status.
-- Ranks and tags are `np.int32`, the type the contract takes, from the start:
-  `Get_rank` returns one, and `rank + 1` stays one. They pass straight
-  through without conversion.
 - As with mpi4py, importing the module starts MPI, and exiting stops it.
 
 ## 7. Run it
