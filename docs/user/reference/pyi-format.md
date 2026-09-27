@@ -551,17 +551,20 @@ keyword-only, variadic, and untyped parameters are rejected outside the
 generated constructor form.
 
 Methods use the same rules plus an untyped `self`. `Pass()` places that object
-in an explicit native argument list. `@bind(...)` is needed only when the
-Python declaration and native callable names differ. For an `@overload(...)`
-declaration the native callable defaults to the linked specific, not the
-Python name; see [Generic Procedure Overloads](#generic-procedure-overloads).
+in an explicit native argument list. In a Fortran contract, a method without
+`@bind` calls the type-bound procedure of its own name; `@bind("procedure")`
+calls a module procedure, even when the names match; and
+`@bind("Class.binding")` selects a differently named type-bound procedure. For
+an `@overload(...)` declaration the native callable defaults to the linked
+specific, not the Python name; see
+[Generic Procedure Overloads](#generic-procedure-overloads).
 
 ### Function And Method Decorators
 
 | Decorator | Valid target | Language and meaning |
 | --- | --- | --- |
 | `@private` | Function or method | Shared: declaration remains available to contract dependencies but is not exported. |
-| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a different native name. A module-level Fortran procedure is called through the native module the contract module names, so the symbol may be any procedure or generic that module provides, including one it imports. |
+| `@bind("symbol")` | Function, method, constructor, prototype, or destructor | Shared: select a native target. A plain Fortran method target calls a module procedure; a class-qualified target calls a type-bound procedure. A module-level Fortran target may be any procedure or generic that module provides, including one it imports. |
 | `@native_abi("c")` | Function, method, or prototype | Fortran only: original declaration is `bind(C)`. |
 | `@standalone` | Module-level function | Fortran only: native procedure is outside a module. |
 | `@native_call([...], result=...)` | Function, method, or constructor | Shared: state the complete native argument order and optional native result mapping. |

@@ -230,15 +230,15 @@ class Point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
+    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` maps the Python-facing `translate` method to the native
-`move` procedure. `norm_squared` needs no `@bind` because its Python and
-native names already match. `Pass()` supplies the receiver (`self`) to the
-native call; `Addr(Arg(...))` passes the remaining arguments by address as
-required by the native calling convention.
+Both methods call module procedures, so each uses `@bind`: `translate` calls
+`move`, and `norm_squared` calls `norm_squared`. Without `@bind`, a method calls
+a type-bound procedure of its own name. `Pass()` supplies the receiver (`self`)
+to the native call; `Addr(Arg(...))` passes the remaining arguments by address.
 
 Build from the contract:
 

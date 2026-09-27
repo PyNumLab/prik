@@ -187,51 +187,12 @@ python3 -m pytest -q examples/fortran/prima/tests
 The suite checks a numerical result for each of the five exposed solvers,
 exact API selection, and callback behavior when optional arguments are
 present or omitted. It is not an exhaustive solver-option or constraint
-suite.
+suite. The [test file](../../../../examples/fortran/prima/tests/test_solvers.py)
+shows each solver case and checks COBYLA's optional progress callback.
 
 ---
 
-## 5. See how results are validated
-
-For the quadratic in section 3, the known minimizer `(1, -2)` is the primary
-numerical check. The COBYLA test below also confirms that its optional
-progress callback receives the expected argument shapes. The test file's
-`_objective` helper evaluates `(x[0] - 1)^2 + (x[1] + 2)^2`:
-
-<!-- prik-doc-source: examples/fortran/prima/tests/test_solvers.py::test_cobyla_runs_with_every_optional_callback_dummy_present -->
-```python
-def test_cobyla_runs_with_every_optional_callback_dummy_present(prima):
-    x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
-    observed = []
-
-    def objective_and_constraints(values, f, constraints):
-        _objective(values, f)
-
-    def progress(values, f, nf, tr, cstrv, nlconstr, terminate):
-        observed.append((f, nf, tr, cstrv, nlconstr.shape, terminate.shape))
-
-    prima.cobyla_mod.cobyla(
-        objective_and_constraints,
-        np.int32(0),
-        x,
-        maxfun=np.int32(100),
-        callback_fcn=progress,
-    )
-
-    np.testing.assert_allclose(x, np.array([1.0, -2.0]), atol=2.0e-3, rtol=0.0)
-    assert observed
-    assert observed[-1][4:] == ((0,), ())
-```
-
-SciPy 1.18's
-[COBYLA implementation](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-cobyla.html)
-also comes from PRIMA, so the optional SciPy test is a cross-interface parity
-check rather than an independent algorithmic oracle. Both results are also
-checked against the known minimizer `(1, -2)`.
-
----
-
-## 6. Run focused examples
+## 5. Run focused examples
 
 After building the extension, run one solver test or the optional SciPy
 comparison:
@@ -242,10 +203,9 @@ python3 -m pip install "scipy==1.18.0"
 python3 -m pytest -q examples/fortran/prima/tests/test_solvers.py::test_cobyla_agrees_with_scipy_on_a_quadratic
 ```
 
-The checked-in test file is a starting point for your own cases: add a
-`test_*` function there, or a `test_*.py` file beside it. The shared `prima`
-fixture imports the built extension. Change the objective, initial `x`, and
-expected result, then run your new test with the same pytest command.
+SciPy's COBYLA also uses PRIMA, so this is a cross-interface comparison; the
+known minimizer remains the independent numerical check. To test your own
+problem, add a case beside the checked-in tests and run it with pytest.
 
 - Solver and callback examples →
   [`test_solvers.py`](../../../../examples/fortran/prima/tests/test_solvers.py)

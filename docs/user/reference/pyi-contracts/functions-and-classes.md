@@ -150,7 +150,8 @@ Type-bound and magic methods follow the same rules:
 
 - keep a concrete native procedure declaration;
 - place `self` with `Pass()` when the native call needs it;
-- use `@bind(...)` when the Python and native names differ; and
+- use `@bind("procedure")` to call a module procedure, or a class-qualified
+  `@bind("Class.binding")` for a differently named type-bound procedure; and
 - use `@overload(...)` when one Python method accepts several native
   signatures.
 

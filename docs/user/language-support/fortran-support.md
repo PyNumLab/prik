@@ -75,10 +75,12 @@ native module. The [`.pyi` format reference](../reference/pyi-format.md#source-t
 contrasts that package with C's single-file output.
 
 Suffix matching is case-insensitive, and fixed-form and free-form sources can
-be mixed in one build. For multi-source projects, PRIK orders named sources
-from their module dependency graph. It does not discover files or external
-libraries that were not supplied explicitly; see [Building the Shared
-Library](../guide/building-shared-library.md).
+be mixed in one build. For multi-source projects, PRIK orders sources by their
+module dependency graph. Pass `--module-source-dir` to discover the sources of
+used modules under named directories; external libraries and their module
+directories must still be supplied explicitly. See
+[CLI commands](../reference/cli-commands.md#input-selection) and
+[Building the Shared Library](../guide/building-shared-library.md).
 
 The Python-facing entry points are:
 
