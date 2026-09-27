@@ -1,5 +1,5 @@
-# Intentional difference: reuse one module procedure as a direct constructor,
-# a renamed method, and a public module function.
+# Intentional difference: reuse module procedures as a direct constructor,
+# renamed and same-name methods, and public module functions.
 from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 
@@ -11,6 +11,14 @@ class vector:
     @bind("shift_vector")
     @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
     def shift(self, dx: Float64, dy: Float64) -> None: ...
+
+    @bind("shift_vector")
+    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
+    def shift_vector(self, dx: Float64, dy: Float64) -> None: ...
+
+    @bind("magnitude")
+    @native_call([Pass()])
+    def magnitude(self) -> Float64: ...
 
     x: Float64
     y: Float64
