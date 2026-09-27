@@ -693,13 +693,18 @@ with Open MPI 5.0.11 built using GNU Fortran 11.4 and mpi4py 4.1.2 built
 against that same installation. Each value is the median of three runs; each
 run takes the fastest of five timed batches with two ranks.
 
-| Operation | Generated API | `prik_mpi.py` | mpi4py |
+Time per call, compared with mpi4py:
+
+| Operation | mpi4py | Generated API | `prik_mpi.py` |
 | --- | ---: | ---: | ---: |
-| `Allreduce`, 1 `int32` | 0.851 µs | 0.987 µs | 1.106 µs |
-| `Allreduce`, 1,024 `int32` values | 3.262 µs | 3.494 µs | 3.652 µs |
-| `Allreduce`, 1,048,576 `int32` values | 2.279 ms | 2.379 ms | 2.424 ms |
-| `Barrier` | 0.443 µs | 0.507 µs | 0.342 µs |
-| `Get_rank` | 247 ns | 310 ns | 31 ns |
+| `Allreduce`, 1 `int32` | 1.106 µs | 0.851 µs (23% faster) | 0.987 µs (11% faster) |
+| `Allreduce`, 1,024 `int32` values | 3.652 µs | 3.262 µs (11% faster) | 3.494 µs (4% faster) |
+| `Allreduce`, 1,048,576 `int32` values | 2.424 ms | 2.279 ms (6% faster) | 2.379 ms (2% faster) |
+| `Barrier` | 0.342 µs | 0.443 µs (30% slower) | 0.507 µs (48% slower) |
+| `Get_rank` | 31 ns | 247 ns (about 8× slower) | 310 ns (10× slower) |
+
+The relative figures describe this local run; the differences for the largest
+`Allreduce` are small compared with its variation between runs.
 
 CI uploads JSON results for each Linux and macOS Open MPI job so you can
 compare its measurements with this local run.
