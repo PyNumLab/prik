@@ -214,7 +214,13 @@ print(points.Point.__init__.__doc__)
   instance and do not return it again.
 - **Missing intent**: A dummy without `intent` follows the same conservative
   in-place rule as `intent(inout)`.
-- **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
+- **Fields**: Public scalar numeric, logical, complex, and character fields
+  become Python attributes. A scalar `allocatable` or `pointer` field reads as
+  a live read-only rank-zero NumPy view, or `None` when it is unallocated or
+  disassociated. Assigning to it allocates an allocatable field or writes a
+  pointer field's current target, as for
+  [module variables](allocatables.md#key-concepts). The view keeps its parent
+  object alive; read the field again after its storage changes.
 - **Nested types**: Appear as generated objects tied to their parent.
 - **Results**: Derived-type function results create new independent objects.
   An `allocatable` result must be allocated when the function returns, as
@@ -223,7 +229,7 @@ print(points.Point.__init__.__doc__)
   cannot turn into `None`. A `pointer` result may be disassociated: the
   returned object then raises `ReferenceError` when its value is read.
 - **Default constructor**: Automatically generated from public, writable
-  primitive scalar fields.
+  primitive scalar fields that are not `allocatable` or `pointer`.
 - **Constructor fields**: Passed by keyword (`logical`, `integer`, `real`, and
   `complex`).
 

@@ -235,11 +235,11 @@ code generation with a diagnostic naming the boundary and the reason.
 
 **Types and arrays**
 
-- arrays of derived types and higher-rank assumed-size `type(*)` arrays;
-- parameterized derived types such as `type :: buffer_type(k, n)`;
-- character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype, and `allocatable` and `pointer` character *fields*.
-- real and complex storage wider than the target's `long double`. NumPy's
+- Arrays of derived types.
+- Parameterized derived types such as `type :: buffer_type(k, n)`.
+- Character arrays that cannot be represented as a fixed-width NumPy bytes
+  dtype.
+- Real and complex storage wider than the target's `long double`. NumPy's
   `longdouble` is whatever the target C compiler provides, so `real(10)` and C
   `long double` are supported while IEEE quad `real(16)` is refused on a target
   whose `long double` is x87 extended precision. The diagnostic names the
@@ -247,9 +247,9 @@ code generation with a diagnostic naming the boundary and the reason.
 
 **Procedures and polymorphism**
 
-- procedure-pointer module variables, and
-  callbacks retained after the wrapped call returns;
-- polymorphic outputs, mutable polymorphic arguments, polymorphic
+- Procedure-pointer module variables, and
+  callbacks retained after the wrapped call returns.
+- Polymorphic outputs, mutable polymorphic arguments, polymorphic
   `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`).
 
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)

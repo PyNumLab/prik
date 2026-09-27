@@ -10,7 +10,7 @@ actions already projected into the plan.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import re
 
 from prik.naming.native_symbols import NativeSymbolNames
@@ -82,6 +82,7 @@ from prik.codegen.nodes import (
     FortranTypeDefinition,
     FortranUse,
 )
+from prik.planning.planner import has_scalar_descriptor_fields, requires_address_capture
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -121,6 +122,27 @@ _MODULE_ARRAY_CAPTURE_NAME = "prik_capture_address"
 _MODULE_SCALAR_CAPTURE_NAME = "prik_capture_scalar_address"
 # A descriptor setter's result: 0 assigned, 1 no pointer target, 2 width differs.
 _MODULE_SETTER_STATUS = "prik_setter_status"
+# The inquiry reporting whether a scalar descriptor currently has storage,
+# keyed by the assignment its completed setter performs.
+_SCALAR_DESCRIPTOR_PRESENCE = {AssignmentMode.ALLOCATING_COPY: "allocated", AssignmentMode.TARGET_COPY: "associated"}
+
+
+@dataclass(frozen=True)
+class _ScalarDescriptorAccess:
+    """One scalar allocatable or pointer and how a bridge procedure reaches it.
+
+    ``native`` designates the entity once any owner is associated; a field's
+    owner arrives as ``parameters`` and is associated by ``prologue``.
+    """
+
+    native: str
+    presence: str
+    character: bool
+    semantic_type_name: str
+    parameters: tuple[FortranParameter, ...] = ()
+    declarations: tuple[FortranDeclaration, ...] = ()
+    prologue: tuple[FortranCall, ...] = ()
+
 
 # The binding answers these from the live descriptor the handle's entry point
 # supplies, so the bridge emits no procedure of its own for them.
@@ -3467,34 +3489,66 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _lower_module_getter_native_nullable_scalar_view(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Query a scalar descriptor's current storage for one attribute read."""
-        native = self._native_variable_name(plan)
+        return (self._scalar_descriptor_getter(self._module_bridge_getter_name(plan), self._module_descriptor(plan)),)
+
+    def _module_descriptor(self, plan: ModuleVariablePlan) -> _ScalarDescriptorAccess:
+        """Describe one scalar allocatable or pointer module variable."""
         present = {"allocatable": "allocated", "pointer": "associated"}.get(plan.entrypoint.descriptor_kind)
         if present is None:
             raise ValueError(f"Scalar descriptor {plan.owner_path!r} has no descriptor kind")
-        character = plan.datatype_family is DatatypeFamily.STRING
-        return (
-            FortranFunction(
-                name=self._module_bridge_getter_name(plan),
-                parameters=((FortranParameter("length", "integer(c_int64_t)", ("intent(out)",)),) if character else ()),
-                result_name="result",
-                result_type="type(c_ptr)",
-                bind_name=self._module_bridge_getter_name(plan),
-                body=(
-                    FortranAssignment("result", CodeExpression("c_null_ptr")),
-                    *((FortranAssignment("length", CodeExpression("0_c_int64_t")),) if character else ()),
-                    FortranIf(
-                        CodeExpression(f"{present}({native})"),
-                        body=(
-                            *(
-                                (FortranAssignment("length", CodeExpression(f"len({native}, kind=c_int64_t)")),)
-                                if character
-                                else ()
-                            ),
-                            FortranAssignment(
-                                "result",
-                                CodeExpression(f"{_MODULE_SCALAR_CAPTURE_NAME}({native})"),
-                            ),
+        return _ScalarDescriptorAccess(
+            native=self._native_variable_name(plan),
+            presence=present,
+            character=plan.datatype_family is DatatypeFamily.STRING,
+            semantic_type_name=plan.semantic_type_name,
+        )
+
+    @staticmethod
+    def _field_descriptor(field: DerivedFieldPlan, native: str, **owner) -> _ScalarDescriptorAccess:
+        """Describe one scalar allocatable or pointer field at ``native``."""
+        present = _SCALAR_DESCRIPTOR_PRESENCE.get(field.native_assignment)
+        if present is None:
+            raise ValueError(f"Scalar descriptor field {field.owner_path!r} has no descriptor assignment")
+        return _ScalarDescriptorAccess(
+            native=native,
+            presence=present,
+            character=field.string_element,
+            semantic_type_name=field.semantic_type_name,
+            **owner,
+        )
+
+    @staticmethod
+    def _scalar_descriptor_getter(name: str, access: _ScalarDescriptorAccess) -> FortranFunction:
+        """Return the current storage of a scalar descriptor, or a null address.
+
+        The address is captured on the C side because the storage need not be
+        a target, and a character also reports its current width.
+        """
+        native = access.native
+        character = access.character
+        return FortranFunction(
+            name=name,
+            parameters=(
+                *access.parameters,
+                *((FortranParameter("length", "integer(c_int64_t)", ("intent(out)",)),) if character else ()),
+            ),
+            result_name="result",
+            result_type="type(c_ptr)",
+            bind_name=name,
+            declarations=access.declarations,
+            body=(
+                *access.prologue,
+                FortranAssignment("result", CodeExpression("c_null_ptr")),
+                *((FortranAssignment("length", CodeExpression("0_c_int64_t")),) if character else ()),
+                FortranIf(
+                    CodeExpression(f"{access.presence}({native})"),
+                    body=(
+                        *(
+                            (FortranAssignment("length", CodeExpression(f"len({native}, kind=c_int64_t)")),)
+                            if character
+                            else ()
                         ),
+                        FortranAssignment("result", CodeExpression(f"{_MODULE_SCALAR_CAPTURE_NAME}({native})")),
                     ),
                 ),
             ),
@@ -3678,16 +3732,24 @@ class FortranBridgeGenerator(ClassVisitor):
             return f"{_MODULE_ARRAY_CAPTURE_NAME}({native})"
         raise ValueError(f"Module array view {plan.owner_path!r} has no completed address mechanism: {mechanism!r}")
 
-    def _requires_address_capture(self, plan: ModulePlan) -> bool:
-        """Report whether any borrowed view must take its address on the C side.
+    def _captures_scalar_address(self, plan: ModulePlan) -> bool:
+        """Report whether a scalar view or scalar descriptor field takes its address in C."""
+        return has_scalar_descriptor_fields(plan) or any(
+            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            and variable.bridge.native_getter_action
+            in {
+                ModuleGetterAction.NATIVE_SCALAR_VIEW,
+                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
+                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
+            }
+            for variable in self._variables(plan)
+        )
 
-        Both cases name their storage directly rather than reaching it through a
-        pointer, so neither has a Fortran route to its own address: a module
-        array whose declaration withheld ``target``, and an array member of a
-        plain module object, which is likewise not a target.
-        """
+    def _captures_array_address(self, plan: ModulePlan) -> bool:
+        """Report whether a module array view or plain-object array member takes its address in C."""
         return any(
             variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
+            and variable.bridge.native_getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
             for variable in self._variables(plan)
         ) or any(
             member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
@@ -3705,19 +3767,10 @@ class FortranBridgeGenerator(ClassVisitor):
         address, so C receives where the module variable lives and hands it
         straight back.  Nothing here claims a target or forms a Fortran pointer.
         """
-        if not self._requires_address_capture(plan):
+        if not requires_address_capture(plan):
             return ()
         procedures = []
-        if any(
-            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
-            and variable.bridge.native_getter_action
-            in {
-                ModuleGetterAction.NATIVE_SCALAR_VIEW,
-                ModuleGetterAction.NATIVE_CHARACTER_VIEW,
-                ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW,
-            }
-            for variable in self._variables(plan)
-        ):
+        if self._captures_scalar_address(plan):
             procedures.append(
                 FortranInterfaceProcedure(
                     name=_MODULE_SCALAR_CAPTURE_NAME,
@@ -3729,15 +3782,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     bind_c=True,
                 )
             )
-        if any(
-            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
-            and variable.bridge.native_getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW
-            for variable in self._variables(plan)
-        ) or any(
-            member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
-            for variable in self._derived_member_proxy_variables(plan)
-            for member in variable.derived.member_paths
-        ):
+        if self._captures_array_address(plan):
             procedures.append(
                 FortranInterfaceProcedure(
                     name=_MODULE_ARRAY_CAPTURE_NAME,
@@ -3874,52 +3919,42 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_setter_value_copy(plan)
             case AssignmentMode.CHARACTER_COPY:
                 return self._lower_module_setter_character_value(plan)
-            case AssignmentMode.ALLOCATING_COPY:
-                return self._lower_module_setter_allocating_copy(plan)
-            case AssignmentMode.TARGET_COPY:
-                return self._lower_module_setter_target_copy(plan)
+            case AssignmentMode.ALLOCATING_COPY | AssignmentMode.TARGET_COPY:
+                return (
+                    self._scalar_descriptor_setter(
+                        self._module_bridge_setter_name(plan), self._module_descriptor(plan)
+                    ),
+                )
         raise ValueError(f"Unsupported Fortran module setter assignment for {plan.owner_path!r}: {action!r}")
 
-    def _lower_module_setter_allocating_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
-        """Assign into a scalar allocatable; intrinsic assignment allocates it when needed."""
-        native = self._native_variable_name(plan)
-        return self._module_descriptor_setter(plan, (FortranAssignment(native, self._module_setter_value(plan)),))
+    @staticmethod
+    def _scalar_descriptor_setter(name: str, access: _ScalarDescriptorAccess) -> FortranFunction:
+        """Assign one value through a scalar descriptor and report the status.
 
-    def _lower_module_setter_target_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
-        """Copy into a scalar pointer's current target, reporting an absent or narrower target."""
-        native = self._native_variable_name(plan)
-        assignment: FortranAssignment | FortranIf = FortranAssignment(native, self._module_setter_value(plan))
-        if plan.datatype_family is DatatypeFamily.STRING:
-            assignment = FortranIf(
-                CodeExpression(f"len({native}, kind=c_int64_t) /= length"),
-                body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("2_c_int")),),
-                else_body=(assignment,),
-            )
-        return self._module_descriptor_setter(
-            plan,
-            (
-                FortranIf(
-                    CodeExpression(f"associated({native})"),
-                    body=(assignment,),
-                    else_body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("1_c_int")),),
-                ),
-            ),
-        )
-
-    def _module_descriptor_setter(
-        self,
-        plan: ModuleVariablePlan,
-        body: tuple[FortranAssignment | FortranIf, ...],
-    ) -> tuple[FortranFunction, ...]:
-        """Wrap one descriptor assignment in a setter that reports its status.
-
-        A character arrives as an address and a width, since a descriptor
-        character's width is only known when Python supplies the value.
+        An allocatable takes intrinsic assignment, which allocates it when
+        needed. A pointer's current target receives the value instead, and an
+        absent or differently sized target is reported. A character arrives as
+        an address and a width, since a descriptor character's width is only
+        known when Python supplies the value.
         """
-        name = self._module_bridge_setter_name(plan)
+        native = access.native
+        value = CodeExpression("transfer(bytes, repeat(' ', int(length)))" if access.character else "value")
+        body: FortranAssignment | FortranIf = FortranAssignment(native, value)
+        if access.presence == "associated":
+            if access.character:
+                body = FortranIf(
+                    CodeExpression(f"len({native}, kind=c_int64_t) /= length"),
+                    body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("2_c_int")),),
+                    else_body=(body,),
+                )
+            body = FortranIf(
+                CodeExpression(f"associated({native})"),
+                body=(body,),
+                else_body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("1_c_int")),),
+            )
         declarations: tuple[FortranDeclaration, ...] = ()
         prologue: tuple[FortranCall, ...] = ()
-        if plan.datatype_family is DatatypeFamily.STRING:
+        if access.character:
             parameters = (
                 FortranParameter("value", "type(c_ptr)", ("value",)),
                 FortranParameter("length", "integer(c_int64_t)", ("value",)),
@@ -3932,26 +3967,22 @@ class FortranBridgeGenerator(ClassVisitor):
                 ),
             )
         else:
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(access.semantic_type_name)
             parameters = (FortranParameter("value", scalar_type.fortran_spelling, ("value",)),)
-        return (
-            FortranFunction(
-                name=name,
-                parameters=parameters,
-                result_name=_MODULE_SETTER_STATUS,
-                result_type="integer(c_int)",
-                bind_name=name,
-                declarations=declarations,
-                body=(FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("0_c_int")), *prologue, *body),
+        return FortranFunction(
+            name=name,
+            parameters=(*access.parameters, *parameters),
+            result_name=_MODULE_SETTER_STATUS,
+            result_type="integer(c_int)",
+            bind_name=name,
+            declarations=(*access.declarations, *declarations),
+            body=(
+                FortranAssignment(_MODULE_SETTER_STATUS, CodeExpression("0_c_int")),
+                *access.prologue,
+                *prologue,
+                body,
             ),
         )
-
-    @staticmethod
-    def _module_setter_value(plan: ModuleVariablePlan) -> CodeExpression:
-        """Return the incoming value as the variable's native type."""
-        if plan.datatype_family is DatatypeFamily.STRING:
-            return CodeExpression("transfer(bytes, repeat(' ', int(length)))")
-        return CodeExpression("value")
 
     def _lower_module_setter_none(self, _plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Return no native setter when the bridge assignment is omitted."""
@@ -7740,6 +7771,20 @@ class FortranBridgeGenerator(ClassVisitor):
             return (getter, *((setter,) if setter is not None else ()))
         if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
             return self._direct_native_handle_field_procedures(derived, field)
+        if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+            access = self._field_descriptor(
+                field,
+                f"owner%{field.native_name}",
+                parameters=(FortranParameter("owner_address", "type(c_ptr)", ("value",)),),
+                declarations=(self._derived_owner_declaration(derived),),
+                prologue=(self._derived_owner_association(),),
+            )
+            return self._scalar_descriptor_field_procedures(
+                field,
+                access,
+                self._derived_field_bridge_name(derived, field, "get"),
+                self._derived_field_bridge_name(derived, field, "set"),
+            )
         if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
             getter = self._direct_ordinary_array_field_getter(derived, field)
             setter = self._direct_ordinary_array_field_setter(derived, field)
@@ -7766,6 +7811,13 @@ class FortranBridgeGenerator(ClassVisitor):
             return (getter, *((setter,) if setter is not None else ()))
         if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
             return self._module_native_handle_member_procedures(variable, member)
+        if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+            return self._scalar_descriptor_field_procedures(
+                field,
+                self._field_descriptor(field, self._module_member_expression(variable, member)),
+                self._module_member_bridge_name(variable, member, "get"),
+                self._module_member_bridge_name(variable, member, "set"),
+            )
         if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
             getter = self._module_ordinary_array_member_getter(variable, member)
             setter = self._module_ordinary_array_member_setter(variable, member)
@@ -7778,6 +7830,19 @@ class FortranBridgeGenerator(ClassVisitor):
             setter = self._module_nested_member_setter(variable, member)
             return (setter,) if setter is not None else ()
         raise ValueError(f"Unsupported Fortran module member lowering for {field.owner_path!r}")
+
+    def _scalar_descriptor_field_procedures(
+        self,
+        field: DerivedFieldPlan,
+        access: _ScalarDescriptorAccess,
+        getter_name: str,
+        setter_name: str,
+    ) -> tuple[FortranFunction, ...]:
+        """Lower a scalar allocatable or pointer field the way its module-variable form is lowered."""
+        getter = self._scalar_descriptor_getter(getter_name, access)
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter,)
+        return getter, self._scalar_descriptor_setter(setter_name, access)
 
     def _direct_string_field_getter(
         self,

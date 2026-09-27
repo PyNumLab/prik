@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Scalar `allocatable` and `pointer` fields of a derived type, numeric,
+  logical, complex, or character, are now wrapped like the matching module
+  variables: reading one returns a live read-only rank-zero NumPy view or
+  `None`, and assigning to it allocates an allocatable (resizing a
+  deferred-length character) or writes a pointer's current target. The view
+  keeps its parent object alive. These fields are not keywords of the default
+  constructor, in the built class and in the generated `.pyi` alike. Such a
+  type previously failed to build.
+- A derived object passed through a `pointer` dummy now reports a field it
+  cannot reach as a policy diagnostic, as an `allocatable` dummy already did,
+  instead of failing during wrapper planning.
 - Generated extension modules serve their module variables through
   descriptors on the module type, so looking up a function or any other
   ordinary attribute costs what it costs on a plain module instead of first

@@ -37,6 +37,7 @@ from prik.policy.models import (
     DirectResultABI,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
+    ModuleStorageAddressMechanism,
     ModuleVariablePolicy,
     NativeArraySourceKind,
     OverloadPolicy,
@@ -159,6 +160,43 @@ from prik.planning.entrypoints import (
 
 # Re-export reaches Python only where the published name is one exported object.
 _ALIASABLE_REEXPORT_KINDS = frozenset({"procedure", "generic", "derived_type"})
+
+
+def _member_proxy_fields(plan: ModulePlan) -> tuple[DerivedFieldPlan, ...]:
+    """Return the fields a plain module object reaches through its member proxy."""
+    return tuple(
+        member.field
+        for variable in plan.variables
+        if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
+        for member in variable.derived.member_paths
+    )
+
+
+def has_scalar_descriptor_fields(plan: ModulePlan) -> bool:
+    """Read whether a planned field lends scalar allocatable or pointer storage."""
+    fields = (
+        *(field for namespace in plan.namespaces for derived in namespace.derived_types for field in derived.fields),
+        *_member_proxy_fields(plan),
+    )
+    return any(field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW for field in fields)
+
+
+def requires_address_capture(plan: ModulePlan) -> bool:
+    """Read whether a borrowed view in the plan takes its storage address in C.
+
+    None of these names storage Fortran can take the address of: a module
+    variable whose declaration withheld ``target``, an array member of a plain
+    module object, and a scalar allocatable or pointer field, which need not be
+    a target either.
+    """
+    return (
+        any(variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS for variable in plan.variables)
+        or any(
+            field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
+            for field in _member_proxy_fields(plan)
+        )
+        or has_scalar_descriptor_fields(plan)
+    )
 
 
 def requires_cfi_header(namespaces: tuple[NamespacePlan, ...]) -> bool:

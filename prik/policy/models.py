@@ -377,9 +377,15 @@ class ModuleObjectAccessMechanism(str, Enum):
 
 
 class DerivedFieldAccessMechanism(str, Enum):
-    """Typed bridge mechanism for one public live derived field."""
+    """Typed bridge mechanism for one public live derived field.
+
+    ``SCALAR_DESCRIPTOR_VIEW`` lends a scalar allocatable or pointer field's
+    current storage as a read-only rank-zero view, or ``None``; Python writes
+    it only through the setter's allocating or target-copy assignment.
+    """
 
     SCALAR_VALUE = "scalar_value"
+    SCALAR_DESCRIPTOR_VIEW = "scalar_descriptor_view"
     FIXED_STRING_COPY = "fixed_string_copy"
     ORDINARY_ARRAY_DESCRIPTOR = "ordinary_array_descriptor"
     NATIVE_ARRAY_HANDLE = "native_array_handle"

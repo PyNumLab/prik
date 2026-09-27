@@ -1479,13 +1479,19 @@ class PyiPrinter(ClassVisitor):
 
     @staticmethod
     def _constructor_accepts_field(field: SemanticVariable) -> bool:
-        """Handle constructor accepts field for the current generation context."""
+        """Return whether the keyword-field constructor takes one field.
+
+        A scalar allocatable or pointer field starts without storage, so it is
+        assigned after construction rather than passed as a keyword.
+        """
         semantic_type = field.semantic_type
         return (
             field.visibility == "public"
             and semantic_type.rank == 0
             and semantic_type.name != "String"
             and semantic_type.name in NumpyDtypeRegistry.TYPES
+            and not semantic_type.metadata.get("fortran_allocatable")
+            and not semantic_type.metadata.get("fortran_pointer")
         )
 
     @staticmethod

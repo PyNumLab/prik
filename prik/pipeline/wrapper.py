@@ -881,6 +881,7 @@ class WrapperGenerator:
                 DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
                 DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE,
                 DerivedFieldAccessMechanism.NESTED_OBJECT,
+                DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW,
             }
             else DerivedOwnerRetention.NONE
         )
@@ -898,7 +899,12 @@ class WrapperGenerator:
             diagnostics = []
             if field.setter_role is None:
                 diagnostics.append(self._diagnostic(field.owner_path, "missing-derived-field-setter-role", None))
-            if field.native_assignment not in {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}:
+            assignments = (
+                {AssignmentMode.ALLOCATING_COPY, AssignmentMode.TARGET_COPY}
+                if field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+                else {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}
+            )
+            if field.native_assignment not in assignments:
                 diagnostics.append(
                     self._diagnostic(field.owner_path, "invalid-derived-field-assignment", field.native_assignment)
                 )
@@ -910,6 +916,10 @@ class WrapperGenerator:
     def _derived_field_family_diagnostics(self, field) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch field-facet consistency from its completed object kind."""
         match field.object_kind:
+            case ObjectKind.SCALAR | ObjectKind.STRING if (
+                field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+            ):
+                valid = field.getter_action is CodegenAction.BORROWED_VIEW and field.rank == 0
             case ObjectKind.SCALAR:
                 valid = self._valid_scalar_derived_field(field)
             case ObjectKind.STRING:

@@ -43,7 +43,6 @@ from prik.policy.models import (
     DerivedWriteback,
     DirectResultABI,
     ModuleObjectAccessMechanism,
-    ModuleStorageAddressMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorAttribute,
     NativeArrayDescriptorKind,
@@ -100,6 +99,7 @@ from prik.codegen.nodes import (
 )
 from prik.codegen.overloads import OverloadPlanQueries
 from prik.naming.native_symbols import COLLISION_ADAPTER_STORAGE
+from prik.planning.planner import requires_address_capture
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -728,27 +728,9 @@ class CBindingGenerator(ClassVisitor):
         # The bundled address-capture primitive needs external linkage for the
         # Fortran bridge to call it, so the header defines it only where this
         # macro opts in. Selecting it here keeps it in one translation unit.
-        if self._requires_address_capture(plan):
+        if requires_address_capture(plan):
             definitions.append(CMacroDefinition("PRIK_BINDING_CAPTURE_ADDRESS", "1"))
         return tuple(definitions)
-
-    def _requires_address_capture(self, plan: ModulePlan) -> bool:
-        """Report whether any borrowed view in this module takes its address in C.
-
-        Both cases name their storage directly rather than reaching it through a
-        pointer, so neither has a Fortran route to its own address: a module
-        array whose declaration withheld ``target``, and an array member of a
-        plain module object, which is likewise not a target.
-        """
-        return any(
-            variable.storage_address is ModuleStorageAddressMechanism.CAPTURED_ADDRESS
-            for variable in self._variables(plan)
-        ) or any(
-            member.field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR
-            for variable in self._variables(plan)
-            if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.MEMBER_PROXY
-            for member in variable.derived.member_paths
-        )
 
     def _module_includes(
         self,
@@ -2882,6 +2864,7 @@ class CBindingGenerator(ClassVisitor):
             DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._direct_handle_field_functions,
             DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._direct_array_field_functions,
             DerivedFieldAccessMechanism.SCALAR_VALUE: self._direct_scalar_field_functions,
+            DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._direct_scalar_descriptor_field_functions,
             DerivedFieldAccessMechanism.NESTED_OBJECT: self._direct_nested_field_functions,
         }
         try:
@@ -2900,6 +2883,7 @@ class CBindingGenerator(ClassVisitor):
             DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._module_handle_member_functions,
             DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._module_array_member_functions,
             DerivedFieldAccessMechanism.SCALAR_VALUE: self._module_scalar_member_functions,
+            DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW: self._module_scalar_descriptor_member_functions,
             DerivedFieldAccessMechanism.NESTED_OBJECT: self._module_nested_member_functions,
         }
         try:
@@ -2931,6 +2915,94 @@ class CBindingGenerator(ClassVisitor):
             self._direct_scalar_field_getter(derived, field),
             self._direct_scalar_field_setter(derived, field),
         )
+
+    def _direct_scalar_descriptor_field_functions(self, derived, field) -> tuple[CFunction, ...]:
+        """Lend a scalar allocatable or pointer field's storage and assign through it."""
+        return self._scalar_descriptor_field_functions(
+            field,
+            self._derived_field_bridge_name(derived, field, "get"),
+            self._derived_field_bridge_name(derived, field, "set"),
+            self._derived_field_method_name(derived, field, "get"),
+            self._derived_field_method_name(derived, field, "set"),
+            owner_nodes=self._derived_owner_address_nodes(derived),
+            owner_value_nodes=self._derived_owner_and_value_nodes(derived),
+            leading_arguments=("owner_address",),
+        )
+
+    def _module_scalar_descriptor_member_functions(self, variable, member) -> tuple[CFunction, ...]:
+        """Lend a module object's scalar allocatable or pointer member and assign through it."""
+        return self._scalar_descriptor_field_functions(
+            member.field,
+            self._module_member_bridge_name(variable, member, "get"),
+            self._module_member_bridge_name(variable, member, "set"),
+            self._module_member_method_name(variable, member, "get"),
+            self._module_member_method_name(variable, member, "set"),
+            owner_nodes=(
+                CDeclaration("owner_obj", "PyObject *"),
+                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &owner_obj)) return NULL')),
+            ),
+            owner_value_nodes=(
+                CDeclaration("owner_obj", "PyObject *"),
+                CDeclaration("value_obj", "PyObject *"),
+                CExpressionStatement(
+                    CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
+                ),
+            ),
+            leading_arguments=(),
+        )
+
+    def _scalar_descriptor_field_functions(
+        self,
+        field: DerivedFieldPlan,
+        getter: str,
+        setter: str,
+        getter_method: str,
+        setter_method: str,
+        *,
+        owner_nodes: tuple,
+        owner_value_nodes: tuple,
+        leading_arguments: tuple[str, ...],
+    ) -> tuple[CFunction, ...]:
+        """Build a scalar descriptor field's accessors the way its module-variable form is built."""
+        getter_function = self._derived_private_method(
+            getter_method,
+            (
+                *owner_nodes,
+                *self._scalar_descriptor_view_nodes(
+                    getter,
+                    leading_arguments,
+                    character=field.string_element,
+                    semantic_type_name=field.semantic_type_name,
+                    owner="owner_obj",
+                ),
+            ),
+        )
+        if field.setter_action is not SetterAction.WRITE_THROUGH:
+            return (getter_function,)
+        scalar = None if field.string_element else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
+        setter_function = self._derived_private_method(
+            setter_method,
+            (
+                *owner_value_nodes,
+                *self._scalar_descriptor_setter_nodes(
+                    setter,
+                    leading_arguments,
+                    label=f"field {field.name}",
+                    character=field.string_element,
+                    width=field.character_length,
+                    unpack=(
+                        None
+                        if scalar is None
+                        else self._scalar_field_unpack_statement(field, scalar, "value_obj", "value")
+                    ),
+                    semantic_type_name=field.semantic_type_name,
+                    target=field.native_assignment is AssignmentMode.TARGET_COPY,
+                    failure="NULL",
+                ),
+                CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
+            ),
+        )
+        return getter_function, setter_function
 
     def _direct_nested_field_functions(self, derived, field) -> tuple[CFunction, ...]:
         """Build direct nested field functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
@@ -3201,36 +3273,8 @@ class CBindingGenerator(ClassVisitor):
 
     def _fixed_string_field_input_nodes(self, field: DerivedFieldPlan, object_name: str) -> tuple:
         """Require exact UTF-8 byte width and reject embedded NULs."""
-        length = self._fixed_string_field_length(field)
-        return (
-            CIf(
-                CodeExpression(f"!PyUnicode_Check({object_name})"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(f'PyErr_SetString(PyExc_TypeError, "Expected str for field {field.name}")')
-                    ),
-                    CReturn(CodeExpression("NULL")),
-                ),
-            ),
-            CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
-            CDeclaration(
-                "value",
-                "const char *",
-                CodeExpression(f"PyUnicode_AsUTF8AndSize({object_name}, &value_length)"),
-            ),
-            CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression("NULL")),)),
-            CIf(
-                CodeExpression(f"value_length != {length} || (Py_ssize_t)strlen(value) != value_length"),
-                body=(
-                    CExpressionStatement(
-                        CodeExpression(
-                            f'PyErr_SetString(PyExc_TypeError, "Field {field.name} must encode to exactly '
-                            f'{length} bytes without embedded NUL")'
-                        )
-                    ),
-                    CReturn(CodeExpression("NULL")),
-                ),
-            ),
+        return self._text_input_nodes(
+            object_name, f"field {field.name}", self._fixed_string_field_length(field), "NULL"
         )
 
     def _field_handle_backend_release_nodes(self, field: DerivedFieldPlan, prefix: str) -> tuple:
@@ -6243,39 +6287,56 @@ class CBindingGenerator(ClassVisitor):
         The descriptor may be reallocated or reassociated after this read, so
         Python writes through the setter rather than through the view.
         """
-        owner = self._module_native_array_owner_name(plan)
-        character = plan.datatype_family is DatatypeFamily.STRING
-        getter = self._module_bridge_getter_name(plan)
-        if character:
-            numpy_type, width = "NPY_STRING", "(int)length"
-        else:
-            numpy_type, width = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).array_numpy_type, "0"
         return (
             CFunction(
                 self._module_getter_name(plan),
                 "PyObject *",
                 storage="static",
-                body=(
-                    *((CDeclaration("length", "int64_t", CodeExpression("0")),) if character else ()),
-                    CDeclaration(
-                        "data", "void *", CodeExpression(f"{getter}(&length)" if character else f"{getter}()")
-                    ),
-                    CIf(
-                        CodeExpression("data == NULL"),
-                        body=(CExpressionStatement(CodeExpression("Py_RETURN_NONE")),),
-                    ),
-                    *(self._nullable_character_view_width_nodes() if character else ()),
-                    CDeclaration(
-                        "result",
-                        "PyObject *",
-                        CodeExpression(
-                            f"PyArray_New(&PyArray_Type, 0, NULL, {numpy_type}, NULL, data, {width}, "
-                            "NPY_ARRAY_ALIGNED, NULL)"
-                        ),
-                    ),
-                    *self._ordinary_array_field_owner_nodes("result", owner),
+                body=self._scalar_descriptor_view_nodes(
+                    self._module_bridge_getter_name(plan),
+                    (),
+                    character=plan.datatype_family is DatatypeFamily.STRING,
+                    semantic_type_name=plan.semantic_type_name,
+                    owner=self._module_native_array_owner_name(plan),
                 ),
             ),
+        )
+
+    def _scalar_descriptor_view_nodes(
+        self,
+        getter: str,
+        leading_arguments: tuple[str, ...],
+        *,
+        character: bool,
+        semantic_type_name: str,
+        owner: str,
+    ) -> tuple:
+        """Lend one scalar descriptor's current storage read-only, or return ``None``.
+
+        The view keeps ``owner`` alive, which holds the descriptor: a module
+        variable's module or a field's parent object.
+        """
+        if character:
+            numpy_type, width = "NPY_STRING", "(int)length"
+        else:
+            numpy_type, width = PrimitiveScalarTypeRegistry.type_for(semantic_type_name).array_numpy_type, "0"
+        arguments = ", ".join((*leading_arguments, *(("&length",) if character else ())))
+        return (
+            *((CDeclaration("length", "int64_t", CodeExpression("0")),) if character else ()),
+            CDeclaration("data", "void *", CodeExpression(f"{getter}({arguments})")),
+            CIf(
+                CodeExpression("data == NULL"),
+                body=(CExpressionStatement(CodeExpression("Py_RETURN_NONE")),),
+            ),
+            *(self._nullable_character_view_width_nodes() if character else ()),
+            CDeclaration(
+                "result",
+                "PyObject *",
+                CodeExpression(
+                    f"PyArray_New(&PyArray_Type, 0, NULL, {numpy_type}, NULL, data, {width}, NPY_ARRAY_ALIGNED, NULL)"
+                ),
+            ),
+            *self._ordinary_array_field_owner_nodes("result", owner),
         )
 
     @staticmethod
@@ -6874,46 +6935,7 @@ class CBindingGenerator(ClassVisitor):
         differs from the pointer target's, which become Python exceptions here.
         """
         name = plan.owner_path.rsplit(".", 1)[-1]
-        setter = self._module_bridge_setter_name(plan)
-        if plan.datatype_family is DatatypeFamily.STRING:
-            conversion = self._module_setter_text_nodes(plan, name)
-            call = f"{setter}(value, (int64_t)value_length)"
-        else:
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-            conversion = (
-                CDeclaration("value", scalar_type.c_spelling),
-                self._module_setter_unpack_statement(plan, scalar_type),
-            )
-            call = f"{setter}(value)"
-        failures = (
-            (
-                CIf(
-                    CodeExpression("status == 1"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                f'PyErr_SetString(PyExc_ValueError, "Module variable {name} has no pointer target")'
-                            )
-                        ),
-                        CReturn(CodeExpression("-1")),
-                    ),
-                ),
-                CIf(
-                    CodeExpression("status == 2"),
-                    body=(
-                        CExpressionStatement(
-                            CodeExpression(
-                                f'PyErr_SetString(PyExc_TypeError, "Module variable {name} must encode to '
-                                "the pointer target's width\")"
-                            )
-                        ),
-                        CReturn(CodeExpression("-1")),
-                    ),
-                ),
-            )
-            if plan.binding.native_assignment is AssignmentMode.TARGET_COPY
-            else ()
-        )
+        character = plan.datatype_family is DatatypeFamily.STRING
         return (
             CFunction(
                 self._module_setter_name(plan),
@@ -6921,43 +6943,117 @@ class CBindingGenerator(ClassVisitor):
                 parameters=(CParameter("value_obj", "PyObject *"),),
                 storage="static",
                 body=(
-                    *conversion,
-                    CDeclaration("status", "int", CodeExpression(call)),
-                    *failures,
+                    *self._scalar_descriptor_setter_nodes(
+                        self._module_bridge_setter_name(plan),
+                        (),
+                        label=f"module variable {name}",
+                        character=character,
+                        width=plan.character_length,
+                        unpack=(
+                            None
+                            if character
+                            else self._module_setter_unpack_statement(
+                                plan, PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+                            )
+                        ),
+                        semantic_type_name=plan.semantic_type_name,
+                        target=plan.binding.native_assignment is AssignmentMode.TARGET_COPY,
+                        failure="-1",
+                    ),
                     CReturn(CodeExpression("0")),
                 ),
             ),
         )
 
+    def _scalar_descriptor_setter_nodes(
+        self,
+        setter: str,
+        leading_arguments: tuple[str, ...],
+        *,
+        label: str,
+        character: bool,
+        width: int | None,
+        unpack: CExpressionStatement | None,
+        semantic_type_name: str,
+        target: bool,
+        failure: str,
+    ) -> tuple:
+        """Validate one value and assign it through a scalar allocatable or pointer.
+
+        The bridge reports a disassociated pointer or a character width that
+        differs from the pointer target's, which become Python exceptions here.
+        """
+        if character:
+            conversion = self._text_input_nodes("value_obj", label, width, failure)
+            values = ("value", "(int64_t)value_length")
+        else:
+            conversion = (
+                CDeclaration("value", PrimitiveScalarTypeRegistry.type_for(semantic_type_name).c_spelling),
+                unpack,
+            )
+            values = ("value",)
+        subject = label[:1].upper() + label[1:]
+        failures = (
+            (
+                CIf(
+                    CodeExpression("status == 1"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(f'PyErr_SetString(PyExc_ValueError, "{subject} has no pointer target")')
+                        ),
+                        CReturn(CodeExpression(failure)),
+                    ),
+                ),
+                CIf(
+                    CodeExpression("status == 2"),
+                    body=(
+                        CExpressionStatement(
+                            CodeExpression(
+                                f'PyErr_SetString(PyExc_TypeError, "{subject} must encode to '
+                                "the pointer target's width\")"
+                            )
+                        ),
+                        CReturn(CodeExpression(failure)),
+                    ),
+                ),
+            )
+            if target
+            else ()
+        )
+        call = f"{setter}({', '.join((*leading_arguments, *values))})"
+        return (*conversion, CDeclaration("status", "int", CodeExpression(call)), *failures)
+
     @staticmethod
-    def _module_setter_text_nodes(plan: ModuleVariablePlan, name: str) -> tuple:
+    def _text_input_nodes(object_name: str, label: str, width: int | None, failure: str) -> tuple:
         """Encode one Python string, requiring the declared width when there is one."""
-        width = plan.character_length
         width_check = f"value_length != {width} || " if width is not None else ""
         width_text = f"exactly {width} bytes" if width is not None else "bytes"
+        subject = label[:1].upper() + label[1:]
         return (
             CIf(
-                CodeExpression("!PyUnicode_Check(value_obj)"),
+                CodeExpression(f"!PyUnicode_Check({object_name})"),
                 body=(
                     CExpressionStatement(
-                        CodeExpression(f'PyErr_SetString(PyExc_TypeError, "Expected str for module variable {name}")')
+                        CodeExpression(f'PyErr_SetString(PyExc_TypeError, "Expected str for {label}")')
                     ),
-                    CReturn(CodeExpression("-1")),
+                    CReturn(CodeExpression(failure)),
                 ),
             ),
             CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
-            CDeclaration("value", "const char *", CodeExpression("PyUnicode_AsUTF8AndSize(value_obj, &value_length)")),
-            CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression("-1")),)),
+            CDeclaration(
+                "value", "const char *", CodeExpression(f"PyUnicode_AsUTF8AndSize({object_name}, &value_length)")
+            ),
+            CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression(failure)),)),
             CIf(
                 CodeExpression(f"{width_check}(Py_ssize_t)strlen(value) != value_length"),
                 body=(
                     CExpressionStatement(
                         CodeExpression(
-                            f'PyErr_SetString(PyExc_TypeError, "Module variable {name} must encode to '
+                            f'PyErr_SetString(PyExc_TypeError, "{subject} must encode to '
                             f'{width_text} without embedded NUL")'
                         )
                     ),
-                    CReturn(CodeExpression("-1")),
+                    CReturn(CodeExpression(failure)),
                 ),
             ),
         )

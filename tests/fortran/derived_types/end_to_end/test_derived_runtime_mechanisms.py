@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import (
+    _build_generated_pyi_and_import,
     _build_source_and_import,
     _compile_native_object,
     _import_from_build_dir,
@@ -50,6 +51,7 @@ def current_label() -> String[8]: ...
 def reset_label() -> None: ...
 """
 VALUE_AND_OPTIONAL_SOURCE = (NATIVE_FIXTURES / "fderived_value_optional.f90").read_text(encoding="utf-8")
+SCALAR_DESCRIPTOR_FIELD_SOURCE = NATIVE_FIXTURES / "fderived_scalar_descriptor_fields.f90"
 VALUE_AND_OPTIONAL_CONTRACT = """\
 from prik.contracts import Arg, Float64, Returns, Value, native_abi, native_call
 
@@ -194,6 +196,71 @@ def test_fixed_string_fields_use_canonical_plan(tmp_path: Path):
     assert current.label == "native  "
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         current.label = "short"
+
+
+def _assert_scalar_descriptor_fields(module) -> None:
+    """Check live storage, assignment, and failures of scalar allocatable and pointer fields."""
+    record = module.Record()
+    assert (record.scale, record.weight, record.name, record.tag) == (None, None, None, None)
+    with pytest.raises(TypeError, match="unexpected keyword argument 'scale'"):
+        module.Record(scale=np.float64(1.0))
+    with pytest.raises(ValueError, match="Field weight has no pointer target"):
+        record.weight = np.float64(1.0)
+
+    module.fill(record)
+    weight = record.weight
+    assert weight.shape == () and weight.dtype == np.float64 and float(weight) == 2.5
+    assert record.name.dtype == np.dtype("S5") and record.name[()] == b"hello"
+    with pytest.raises(ValueError, match="read-only"):
+        weight[...] = 0.0
+
+    # Assignment allocates or writes the current target, and the earlier view
+    # of the pointer target sees the write.
+    record.scale = np.float64(10.0)
+    record.weight = np.float64(4.0)
+    record.name = "longer name"
+    assert float(weight) == 4.0
+    assert module.total(record) == 14.0
+    assert record.name[()] == b"longer name"
+    with pytest.raises(TypeError, match="exactly 4 bytes"):
+        record.tag = "toolong"
+    record.tag = "wxyz"
+    assert record.tag[()] == b"wxyz"
+
+    # A view keeps its parent alive.
+    scale = record.scale
+    del record
+    assert float(scale) == 10.0
+
+    # A plain module object reaches the same fields through its members.
+    shared = module.shared
+    assert shared.name is None
+    shared.name = "abc"
+    assert module.shared_name() == "abc"
+
+
+def test_scalar_descriptor_fields_lend_live_storage_in_source_and_contract_builds(tmp_path: Path):
+    source_module = _build_source_and_import(
+        SCALAR_DESCRIPTOR_FIELD_SOURCE,
+        tmp_path / "source",
+        {
+            "bind_c_fderived_scalar_descriptor_fields_wrapper.f90",
+            "fderived_scalar_descriptor_fields_wrapper.c",
+            "fderived_scalar_descriptor_fields_wrapper.h",
+        },
+    )
+    contract_module = _build_generated_pyi_and_import(SCALAR_DESCRIPTOR_FIELD_SOURCE, tmp_path / "contract")
+
+    for module in (source_module, contract_module):
+        _assert_scalar_descriptor_fields(module)
+
+    # The generated contract's constructor states the keywords both builds accept.
+    contract = (tmp_path / "contract" / "contracts" / "fderived_scalar_descriptor_fields").rglob("*.pyi")
+    constructor = next(
+        text for text in (path.read_text(encoding="utf-8") for path in contract) if "class Record" in text
+    )
+    assert "plain: Float64 = 0" in constructor
+    assert "scale: Allocatable[Float64]\n" in constructor and "scale: Allocatable[Float64] =" not in constructor
 
 
 def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Path):

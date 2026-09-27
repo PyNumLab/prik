@@ -1,5 +1,7 @@
 """Tests split by stable ownership concept from `test_handle_policy_dispatch.py`."""
 
+import pytest
+
 from prik.semantics.models import (
     RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA,
     SemanticClass,
@@ -20,6 +22,7 @@ from tests.fortran._support.ownership_policy import (
 
 from prik.semantics.models import (
     RESOLVED_DERIVED_TYPE_POLICY_METADATA,
+    RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
 
 
@@ -75,3 +78,24 @@ class holder:
     policy = module.classes[1].metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA]
     assert policy.supported is False
     assert "field 'values' is an unsupported array of derived values" in policy.blockers
+
+
+@pytest.mark.parametrize("holder", ["Allocatable", "Pointer"])
+def test_descriptor_holder_rejects_fields_it_cannot_reach(holder):
+    """A held object reaches only scalar-value fields, whichever descriptor holds it."""
+    module = parse_pyi_text(
+        f"""
+class item:
+    tag: String[4]
+    scale: Allocatable[Float64]
+
+@native_call([{holder}(Arg(0))])
+def attach(value: item | None) -> None: ...
+""",
+        module_name="descriptor_holder",
+    )
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert "argument 'value' holder field 'tag' requires unsupported fixed_string_copy access" in policy.blockers
+    assert "argument 'value' holder field 'scale' requires unsupported scalar_descriptor_view access" in policy.blockers

@@ -15,6 +15,7 @@ from prik.policy.models import (
     ArrayPythonLayout,
     ScalarActualMode,
     ClassConstructorKind,
+    DerivedFieldAccessMechanism,
     EntrypointOptionalityAction,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
@@ -569,6 +570,8 @@ class WrapperDocstringBuilder:
             lines.append("    The parent wrapper retains the descriptor owner.")
         elif field.array is not None:
             lines.append("    Borrowed native view retained by the parent wrapper.")
+        elif field.access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+            lines.append(f"    {_MODULE_SCALAR_VIEW_NOTES[ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW]}")
         if field.setter_action is SetterAction.WRITE_THROUGH:
             lines.append("    Assignment writes through to native storage.")
         elif field.setter_action is SetterAction.REJECT_REPLACEMENT:

@@ -355,9 +355,10 @@ def build_derived_field_policy(
         origin=DerivedObjectOrigin.BORROWED_FIELD,
     )
     array = _array_handoff_policy(field.semantic_type)
+    access = _derived_field_access_mechanism(getter, handle)
     blockers = (
         *_runtime_semantic_validation_blockers(field.semantic_type, f"field {field.name!r}"),
-        *_derived_field_blockers(field, getter, setter, handle, array),
+        *_derived_field_blockers(field, getter, setter, handle, array, access),
     )
     return DerivedFieldPolicy(
         owner_path=field_path,
@@ -367,13 +368,13 @@ def build_derived_field_policy(
         string_element=field.semantic_type.name == "String",
         rank=int(field.semantic_type.rank or 0),
         object_kind=getter.kind,
-        access=_derived_field_access_mechanism(getter.kind, handle),
+        access=access,
         getter=getter,
         setter=setter,
         getter_action=getter.codegen_action,
         setter_action=setter.setter_action,
         native_assignment=setter.assignment_mode,
-        owner_retention=_derived_field_owner_retention(getter.kind, handle),
+        owner_retention=_derived_field_owner_retention(getter.kind, access),
         character_length=_character_length(field.semantic_type),
         array=array,
         native_array_handle=handle,
@@ -384,26 +385,38 @@ def build_derived_field_policy(
 
 
 def _derived_field_access_mechanism(
-    object_kind: ObjectKind,
+    getter: OwnershipDecision,
     handle: NativeArrayHandleWrapperPolicy | None,
 ) -> DerivedFieldAccessMechanism:
-    """Complete the typed field bridge mechanism before wrapper planning."""
+    """Complete the typed field bridge mechanism before wrapper planning.
+
+    A nullable borrowed scalar or string getter is a scalar allocatable or
+    pointer field, which lends its current storage rather than a copy.
+    """
     if handle is not None:
         return DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE
+    if (
+        getter.kind in {ObjectKind.SCALAR, ObjectKind.STRING}
+        and getter.transfer is TransferMode.BORROWED_VIEW
+        and getter.nullable
+    ):
+        return DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
     return {
         ObjectKind.SCALAR: DerivedFieldAccessMechanism.SCALAR_VALUE,
         ObjectKind.STRING: DerivedFieldAccessMechanism.FIXED_STRING_COPY,
         ObjectKind.NUMPY_ARRAY: DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR,
         ObjectKind.DERIVED_TYPE: DerivedFieldAccessMechanism.NESTED_OBJECT,
-    }[object_kind]
+    }[getter.kind]
 
 
 def _derived_field_owner_retention(
     object_kind: ObjectKind,
-    handle: NativeArrayHandleWrapperPolicy | None,
+    access: DerivedFieldAccessMechanism,
 ) -> DerivedOwnerRetention:
     """Complete whether a returned field object must keep its parent alive."""
-    if handle is not None or object_kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
+    if access in {DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE, DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW}:
+        return DerivedOwnerRetention.PARENT_WRAPPER
+    if object_kind in {ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
         return DerivedOwnerRetention.PARENT_WRAPPER
     return DerivedOwnerRetention.NONE
 
@@ -687,7 +700,7 @@ def _class_constructor_policy(
             setter_action=field.setter_action,
         )
         for field in derived.fields
-        if field.object_kind is ObjectKind.SCALAR
+        if field.access is DerivedFieldAccessMechanism.SCALAR_VALUE
         and field.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
         and field.setter_action is SetterAction.WRITE_THROUGH
     )
@@ -843,13 +856,14 @@ def _derived_field_blockers(
     setter: OwnershipDecision,
     handle: NativeArrayHandleWrapperPolicy | None,
     array: ArrayHandoffPolicy | None,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return exact unsupported public-field forms before lowering."""
     return [
         *_derived_field_completed_policy_blockers(field, getter, setter),
         *_derived_field_descriptor_blockers(field, handle),
-        *_derived_field_object_kind_blockers(field, getter),
-        *_derived_field_setter_blockers(field, setter),
+        *_derived_field_object_kind_blockers(field, getter, access),
+        *_derived_field_setter_blockers(field, setter, access),
         *_persistent_array_extent_blockers(f"field {field.name!r}", array),
     ]
 
@@ -887,12 +901,16 @@ def _derived_field_descriptor_blockers(
 def _derived_field_object_kind_blockers(
     field: models.SemanticField,
     getter: OwnershipDecision,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return blockers selected by the completed public field object kind."""
     semantic_type = field.semantic_type
     rank = int(semantic_type.rank or 0)
     blockers: list[str] = []
-    if getter.kind is ObjectKind.NUMPY_ARRAY:
+    if access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW:
+        if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
+            blockers.append(f"field {field.name!r} is not a primitive or character scalar descriptor")
+    elif getter.kind is ObjectKind.NUMPY_ARRAY:
         if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
             blockers.append(f"field {field.name!r} is an unsupported array of derived values")
     elif getter.kind is ObjectKind.DERIVED_TYPE:
@@ -915,12 +933,15 @@ def _derived_field_object_kind_blockers(
 def _derived_field_setter_blockers(
     field: models.SemanticField,
     setter: OwnershipDecision,
+    access: DerivedFieldAccessMechanism,
 ) -> list[str]:
     """Return blockers for an incomplete native write-through assignment."""
-    if setter.setter_action is SetterAction.WRITE_THROUGH and setter.assignment_mode not in {
-        AssignmentMode.VALUE_COPY,
-        AssignmentMode.ALIAS,
-    }:
+    expected = (
+        _SCALAR_DESCRIPTOR_ASSIGNMENTS.get(_scalar_descriptor_kind(field.semantic_type) or "", set())
+        if access is DerivedFieldAccessMechanism.SCALAR_DESCRIPTOR_VIEW
+        else {AssignmentMode.VALUE_COPY, AssignmentMode.ALIAS}
+    )
+    if setter.setter_action is SetterAction.WRITE_THROUGH and setter.assignment_mode not in expected:
         return [f"field {field.name!r} has no completed native setter assignment"]
     return []
 
@@ -960,7 +981,7 @@ def build_module_variable_policy(
     # Gather semantic decisions shared by all module-variable policy families.
     getter = _ownership_decision(variable, models.RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA)
     setter = _ownership_decision(variable, models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
-    descriptor_kind = _scalar_module_descriptor_kind(variable)
+    descriptor_kind = _scalar_descriptor_kind(variable.semantic_type)
     constant = _is_scalar_module_constant(variable)
     native_array_handle = _native_array_handle_wrapper_policy(
         variable.semantic_type,
@@ -3472,10 +3493,13 @@ def _completed_argument_blockers(
     blockers.extend(_derived_argument_handoff_blockers(argument, derived, derived_types))
     requires_holder = bool(
         derived_call is not None
-        and any(case.action is DerivedCallAction.ALLOCATABLE_HOLDER for case in derived_call.cases)
+        and any(
+            case.action in {DerivedCallAction.ALLOCATABLE_HOLDER, DerivedCallAction.POINTER_HOLDER}
+            for case in derived_call.cases
+        )
     )
     blockers.extend(
-        _allocatable_holder_field_blockers(
+        _holder_field_blockers(
             f"argument {argument.name!r}",
             derived,
             derived_types,
@@ -3572,11 +3596,11 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
     )
     blockers.extend(_derived_type_definition_blockers("result", derived, context.derived_types))
     blockers.extend(
-        _allocatable_holder_field_blockers(
+        _holder_field_blockers(
             "result",
             derived,
             context.derived_types,
-            required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
+            required=bool(derived is not None and derived.storage in _HOLDER_STORAGE),
         )
     )
     return _ResultPolicyCandidate(
@@ -3794,11 +3818,11 @@ def _hidden_result_candidate(
     blockers = (
         *blockers,
         *_derived_type_definition_blockers(label, derived, context.derived_types),
-        *_allocatable_holder_field_blockers(
+        *_holder_field_blockers(
             label,
             derived,
             context.derived_types,
-            required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
+            required=bool(derived is not None and derived.storage in _HOLDER_STORAGE),
         ),
     )
 
@@ -4520,21 +4544,26 @@ def _derived_type_definition_blockers(
     return (f"{label} has no completed wrapper type definition for {derived.type_identity!r}",)
 
 
-def _allocatable_holder_field_blockers(
+# A derived object held through an allocatable or pointer descriptor reaches
+# its fields only through the holder's scalar-member procedures.
+_HOLDER_STORAGE = frozenset({DerivedObjectStorage.ALLOCATABLE_HOLDER, DerivedObjectStorage.POINTER_HOLDER})
+
+
+def _holder_field_blockers(
     label: str,
     derived: DerivedHandoffPolicy | None,
     derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
     *,
     required: bool,
 ) -> tuple[str, ...]:
-    """Keep the first holder slice within its completed scalar-member policy."""
+    """Keep an allocatable or pointer holder within its completed scalar-member policy."""
     if not required or derived is None:
         return ()
     type_policy = derived_types.get(derived.type_identity)
     if type_policy is None:
         return ()
     return tuple(
-        f"{label} allocatable holder field {field.name!r} requires unsupported {field.access.value} access"
+        f"{label} holder field {field.name!r} requires unsupported {field.access.value} access"
         for field in type_policy.fields
         if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE
     )
@@ -7112,7 +7141,7 @@ def _scalar_module_initializer_blockers(
     return tuple(blockers)
 
 
-_SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS = {
+_SCALAR_DESCRIPTOR_ASSIGNMENTS = {
     "allocatable": {AssignmentMode.ALLOCATING_COPY},
     "pointer": {AssignmentMode.TARGET_COPY},
 }
@@ -7129,7 +7158,7 @@ def _scalar_module_setter_blockers(
             return ("scalar constant must omit native setter assignment",)
         return ()
     if setter.setter_action is SetterAction.WRITE_THROUGH:
-        expected_assignments = _SCALAR_MODULE_DESCRIPTOR_ASSIGNMENTS.get(
+        expected_assignments = _SCALAR_DESCRIPTOR_ASSIGNMENTS.get(
             descriptor_kind,
             {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY},
         )
@@ -7158,7 +7187,7 @@ def _scalar_module_getter_action(
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
-    if _scalar_module_descriptor_kind(variable) is not None:
+    if _scalar_descriptor_kind(variable.semantic_type) is not None:
         return ModuleGetterAction.NATIVE_NULLABLE_SCALAR_VIEW
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
@@ -7210,16 +7239,6 @@ def _scalar_module_native_assignment(
     if setter.assignment_mode is AssignmentMode.VALUE_COPY and _is_fixed_length_character_scalar(variable):
         return AssignmentMode.CHARACTER_COPY
     return setter.assignment_mode
-
-
-def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | None:
-    """Return the scalar descriptor family recorded on a module variable, if any."""
-    metadata = variable.semantic_type.metadata
-    if metadata.get("fortran_allocatable"):
-        return "allocatable"
-    if metadata.get("fortran_pointer"):
-        return "pointer"
-    return None
 
 
 def _is_scalar_module_constant(variable: models.SemanticVariable) -> bool:
