@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Generated extension modules serve their module variables through
+  descriptors on the module type, so looking up a function or any other
+  ordinary attribute costs what it costs on a plain module instead of first
+  being compared with every module variable name. `mpi.comm_rank(comm)` on
+  the Open MPI tutorial's extension drops from 245 to 164 ns.
 - Open MPI integration CI now runs the `mpi_f08` tutorial on Linux and macOS
   against Open MPI 4.1 and 5.0 with paired GNU C/Fortran compilers, and
   compares its two-rank result with mpi4py built from the same installation.

@@ -697,11 +697,11 @@ Time per call, compared with mpi4py:
 
 | Operation | mpi4py | Generated API | `prik_mpi.py` |
 | --- | ---: | ---: | ---: |
-| `Allreduce`, 1 `int32` | 1.106 µs | 0.851 µs (23% faster) | 0.987 µs (11% faster) |
-| `Allreduce`, 1,024 `int32` values | 3.652 µs | 3.262 µs (11% faster) | 3.494 µs (4% faster) |
-| `Allreduce`, 1,048,576 `int32` values | 2.424 ms | 2.279 ms (6% faster) | 2.379 ms (2% faster) |
-| `Barrier` | 0.342 µs | 0.443 µs (30% slower) | 0.507 µs (48% slower) |
-| `Get_rank` | 31 ns | 247 ns (about 8× slower) | 310 ns (10× slower) |
+| `Allreduce`, 1 `int32` | 1.101 µs | 0.738 µs (33% faster) | 0.887 µs (19% faster) |
+| `Allreduce`, 1,024 `int32` values | 3.675 µs | 3.439 µs (6% faster) | 3.387 µs (8% faster) |
+| `Allreduce`, 1,048,576 `int32` values | 2.247 ms | 2.272 ms (1% slower) | 2.106 ms (6% faster) |
+| `Barrier` | 0.342 µs | 0.390 µs (14% slower) | 0.457 µs (34% slower) |
+| `Get_rank` | 32 ns | 164 ns (about 5× slower) | 233 ns (about 7× slower) |
 
 `Get_rank` is the cheapest call, so its time is almost all the overhead of
 making a call. That overhead is small, but higher through PRIK than through
