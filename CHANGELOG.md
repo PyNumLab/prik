@@ -8,8 +8,8 @@ release tags add a leading `v` to the package version.
 ## Unreleased
 
 - Open MPI integration CI now runs the `mpi_f08` tutorial on Linux and macOS
-  against Open MPI 4.1 and 5.0, and compares its two-rank result with mpi4py
-  built from the same installation.
+  against Open MPI 4.1 and 5.0 with paired GNU C/Fortran compilers, and
+  compares its two-rank result with mpi4py built from the same installation.
 - The test suite consolidates overlapping checks around compiled workflows and
   retains focused parser, semantic, diagnostic, and ABI boundary coverage;
   contributor guidance now favors observable behavior over implementation shape.

@@ -237,12 +237,14 @@ def test_openmpi_f08_contract_replay_and_two_rank_communication(tmp_path: Path) 
             "2",
             "--json",
         ],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         timeout=300,
         cwd=tmp_path,
     )
+    if built.returncode:
+        pytest.fail(f"Open MPI contract replay build failed:\n{built.stdout}\n{built.stderr}")
     payload = json.loads(built.stdout)
     # Only PRIK's bridge and binding compile; Open MPI's own sources do not.
     assert payload["native_build_plan"]["compilation_units"] == []

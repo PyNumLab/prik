@@ -83,18 +83,21 @@ This tutorial uses Open MPI 5.0.11. CI also tests Open MPI 4.1.8, on Linux and
 macOS. For each version, CI builds the PRIK wrapper and compares this page's
 two-rank program with mpi4py. Keep the source and configured build trees: PRIK
 reads them to generate the contract, then links the wrapper to that same
-installation. You need a C compiler, GNU Fortran 13, and Python with PRIK
+installation. You need GNU Fortran 13 and GCC 13, plus Python with PRIK
 installed. Run these commands in one shell, from a directory where you want
 the Open MPI source archive:
 
 ```bash
 OMPI_ROOT="$HOME/openmpi-5.0.11"
 TUTORIAL_DIR="$PWD"
-mkdir -p "$OMPI_ROOT/source" "$OMPI_ROOT/build"
+mkdir -p "$OMPI_ROOT/source" "$OMPI_ROOT/build" "$OMPI_ROOT/toolchain"
+ln -sf "$(command -v gfortran-13)" "$OMPI_ROOT/toolchain/gfortran"
+ln -sf "$(command -v gcc-13)" "$OMPI_ROOT/toolchain/gcc"
+export PATH="$OMPI_ROOT/toolchain:$PATH"
 curl -fsSLO https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.11.tar.bz2
 tar -xjf openmpi-5.0.11.tar.bz2 -C "$OMPI_ROOT/source" --strip-components=1
 cd "$OMPI_ROOT/build"
-../source/configure --prefix="$OMPI_ROOT/install" --enable-mpi-fortran=usempif08 FC=gfortran-13
+../source/configure --prefix="$OMPI_ROOT/install" --enable-mpi-fortran=usempif08 CC=gcc FC=gfortran
 make -j2 && make install
 cd "$TUTORIAL_DIR"
 export PATH="$OMPI_ROOT/install/bin:$PATH"

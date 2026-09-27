@@ -42,6 +42,7 @@ jobs:
       OPENMPI_VERSION: ${{ matrix.version }}
       OPENMPI_SERIES: ${{ matrix.series }}
       PRIK_GFORTRAN_BINARY: gfortran-13
+      PRIK_GCC_BINARY: gcc-13
       PYTHONPATH: .
     steps:
       - name: Checkout repository
@@ -58,33 +59,39 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --yes gfortran-13
+            sudo apt-get install --yes gfortran-13 gcc-13
           fi
           compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
           ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
+          "$compiler_dir/gcc" --version
       - name: Install pinned GFortran on macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
             brew install gcc@13
           fi
           compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
           ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
+          "$compiler_dir/gcc" --version
       - name: Restore the Open MPI source, configured build, and installation
         id: openmpi-cache
         uses: actions/cache@v4
         with:
           path: ~/prik-openmpi/${{ matrix.version }}
-          key: openmpi-${{ matrix.version }}-${{ matrix.runner }}-gfortran-13-v1
+          key: openmpi-${{ matrix.version }}-${{ matrix.runner }}-gcc-gfortran-13-v2
       - name: Build and install Open MPI
         if: steps.openmpi-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -95,7 +102,7 @@ jobs:
             | tar -xj -C "$root"
           mv "$root/openmpi-$OPENMPI_VERSION" "$root/source"
           cd "$root/build"
-          ../source/configure --prefix="$root/install" --enable-mpi-fortran=usempif08 FC=gfortran
+          ../source/configure --prefix="$root/install" --enable-mpi-fortran=usempif08 CC=gcc FC=gfortran
           make -j2
           make install
           # The test reads sources and generated headers from these trees and
