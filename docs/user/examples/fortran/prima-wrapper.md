@@ -73,10 +73,9 @@ Everything lives under
 
 PRIMA is compiled once. PRIK reads the same sources to learn the solvers'
 interfaces, but it generates bindings only for the five names in
-`export_symbols.txt` and links them to the library CMake already built. The
-same pattern works whenever a large Fortran library is already compiled as a
-static archive and you want to expose only a few of its entry points to
-Python:
+`export_symbols.txt` and links them to the library CMake already built. Use
+this pattern for any Fortran library built as a static archive when Python
+needs only a few of its entry points:
 
 ```text
 55 PRIMA sources ─┬─ cmake ──────────────────────> libprimaf.a ─┐
