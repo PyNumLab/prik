@@ -7,9 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- The README and the documentation homepage now open with a short terminal
-  demo that builds a Fortran module and calls it from Python, followed by links
-  to Colab, installation, and the real-library examples.
+- Improve the Open MPI `mpi_f08` tutorial
+- Improve the PRIMA example guide
+- The README and the documentation homepage now open with a short terminal demo.
 - The repository root holds fewer files. Contributor notes moved to
   `.github/CONTRIBUTING.md`, the pre-push hook to `tools/githooks/` (activate it
   with `git config core.hooksPath tools/githooks`), and the documentation theme

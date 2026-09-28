@@ -2,91 +2,88 @@
 title: Build and Validate PRIMA with PRIK
 audience: users, advanced users
 prerequisites: arrays, callbacks, packaging
-related: ../../guide/callbacks.md, ../../reference/cli-commands.md
+related: ../../guide/callbacks.md, ../../guide/optional-arguments.md, ../../reference/cli-commands.md
 status: maintained
 publication: reviewed
 ---
 
 # Build and Validate PRIMA with PRIK
 
-This example builds the checked-in [libPRIMA](https://github.com/libprima/prima)
-Fortran sources once and wraps five derivative-free solvers as one Python
-extension. Its numerical tests exercise Python callbacks and check known
-solutions.
+This example turns [PRIMA](https://github.com/libprima/prima), the modern
+Fortran implementation of Powell's derivative-free optimization solvers, into
+one Python extension. It compiles PRIMA once into a static library, asks PRIK
+to generate bindings only for the five solvers, and links those bindings
+against that library. Your objective function is an ordinary Python callable.
 
-### What this example shows
+### What you get
 
-- Select five `module::procedure` entrypoints while retaining the callback
-  declarations their signatures need.
-- Link a PRIK wrapper to a prebuilt static Fortran archive without compiling
-  the native sources twice.
-- Call the solvers from Python, including optional callbacks and optional
-  arguments inside callback interfaces.
+One extension, `prik_prima`, with exactly five solvers:
 
-You should already be comfortable with NumPy arrays, Python callables, and
-building a local Fortran extension.
-
----
-
-## Versions used
-
-| Component | Version / source |
-| --- | --- |
-| PRIK | current repository checkout |
-| PRIMA | [libprima/prima commit `1d76fb88`](https://github.com/libprima/prima/tree/1d76fb88aeffb427cd17ed1e9d0d3b34f414913f) |
-| Python | 3.12 in the dedicated CI job |
-| NumPy | 2.5.1 |
-| SciPy (optional comparison) | 1.18.0 in CI |
-| Native compilers | GNU Fortran 13 + GCC 13 in CI; compatible local compilers work |
-
-The source snapshot lives under `examples/fortran/prima/native/`; the build
-does not download PRIMA.
-
-## Tested platforms
-
-The Real Libraries Portability workflow builds and runs the numerical suite
-with Python 3.12 on:
-
-| Operating system | Architectures | Native toolchain |
+| Module | Solver | Problem type |
 | --- | --- | --- |
-| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
-| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
+| `uobyqa_mod` | `uobyqa` | Unconstrained |
+| `newuoa_mod` | `newuoa` | Unconstrained |
+| `bobyqa_mod` | `bobyqa` | Bound constraints |
+| `lincoa_mod` | `lincoa` | Linear constraints |
+| `cobyla_mod` | `cobyla` | Nonlinear constraints |
+
+Each solver takes your objective as a Python callback and updates a NumPy `x`
+in place. Every optional PRIMA argument stays optional in Python, including a
+progress callback that can stop the solver early.
 
 ---
 
-## 1. Prepare the repository and toolchain
+## Quick start
 
-Clone PRIK, create a virtual environment, and install the Python tools used by
-the dedicated CI job:
-
-```bash
-git clone https://github.com/PyNumLab/prik.git
-cd prik
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[qa]" "numpy==2.5.1"
-```
-
-Install CMake and GNU Fortran separately. On Ubuntu:
+From a PRIK checkout with PRIK installed, and with CMake and GNU Fortran on
+`PATH` (see [Set up a clean environment](#set-up-a-clean-environment)):
 
 ```bash
-sudo apt-get update
-sudo apt-get install --yes cmake gcc gfortran
-gfortran --version
+source examples/fortran/prima/build_all.sh
+python3 -m pytest -q examples/fortran/prima/tests
 ```
 
-All remaining commands run from the repository root in this shell with the
-virtual environment active. The runnable project lives under
-[`examples/fortran/prima/`](../../../../examples/fortran/prima/).
+The first command builds the extension and puts it on `PYTHONPATH` for this
+shell; use `source`, not `bash`, so that setting survives. The second runs the
+example's tests.
+
+After this, you can `import prik_prima` in the same shell and call the solvers
+as shown in [Use the generated API](#use-the-generated-api).
 
 ---
 
-## 2. Build the PRIK wrapper
+## Key files
 
-The build script compiles PRIMA into `libprimaf.a`, selects five public
-procedures for the generated `.pyi` contract, and links the wrapper against
-that archive:
+Everything lives under
+[`examples/fortran/prima/`](../../../../examples/fortran/prima/):
+
+| File | What it does |
+| --- | --- |
+| [`export_symbols.txt`](../../../../examples/fortran/prima/export_symbols.txt) | Names the five `module::procedure` solvers PRIK exposes. |
+| [`sources.txt`](../../../../examples/fortran/prima/sources.txt) | Lists the 55 PRIMA sources, used by both CMake and PRIK. |
+| [`CMakeLists.txt`](../../../../examples/fortran/prima/CMakeLists.txt) | Compiles those sources into the static library `libprimaf.a`. |
+| [`build_prik.sh`](../../../../examples/fortran/prima/build_prik.sh) | Runs the three build steps below. |
+| [`build_all.sh`](../../../../examples/fortran/prima/build_all.sh) | Runs `build_prik.sh` and adds the extension to `PYTHONPATH`. |
+| [`tests/test_solvers.py`](../../../../examples/fortran/prima/tests/test_solvers.py) | Checks every solver and the callbacks. |
+| [`native/`](../../../../examples/fortran/prima/native/) | The PRIMA source snapshot; the build downloads nothing. |
+
+---
+
+## How the build works
+
+PRIMA is compiled once. PRIK reads the same sources to learn the solvers'
+interfaces, but it generates bindings only for the five names in
+`export_symbols.txt` and links them to the library CMake already built. Use
+this pattern for any Fortran library built as a static archive when Python
+needs only a few of its entry points:
+
+```text
+55 PRIMA sources ─┬─ cmake ──────────────────────> libprimaf.a ─┐
+                  │                                             │
+                  └─ prik generate --pyi ──> contract/ ─ prik ──┴─> prik_prima
+```
+
+`build_prik.sh` runs those three steps:
 
 <!-- prik-doc-source: examples/fortran/prima/build_prik.sh -->
 ```bash
@@ -127,106 +124,164 @@ python3 -m prik "$PRIMA_BUILD_ROOT/contract/__init__.pyi" \
   --jobs 2
 ```
 
-CMake compiles the 55 native sources once. PRIK analyzes those same sources
-with matching real-precision and integer-kind settings, then links its
-generated wrapper to the archive.
+| Step | Command | Result |
+| --- | --- | --- |
+| 1. Compile PRIMA | `cmake` | `libprimaf.a` and its Fortran module files |
+| 2. Generate the contract | `prik generate --pyi` with `--export-symbols` | One `.pyi` file per solver module, plus the callback interfaces they use |
+| 3. Build the extension | `prik` with `--native-link-item archive:…` | `prik_prima`, linked to `libprimaf.a` without recompiling PRIMA |
 
-For normal use, source the convenience entrypoint:
+Steps 1 and 2 use the same `PRIMA_REAL_PRECISION=64` and
+`PRIMA_INTEGER_KIND=0`, so the contract describes the library that was
+actually compiled. Everything is written to the temporary `PRIMA_BUILD_ROOT`
+directory, not to the repository.
 
-```bash
-source examples/fortran/prima/build_all.sh
-```
-
-It builds the extension, exports its directory on `PYTHONPATH`, and records
-the temporary build directory in `PRIMA_BUILD_ROOT` for this shell.
+The generated contracts live in `$PRIMA_BUILD_ROOT/contract/`, one `.pyi`
+file per solver module. Open them to see each solver's exact Python signature,
+including every optional argument.
 
 ---
 
-## 3. Use the generated Python API
+## Use the generated API
 
-The public Python API has exactly these entries:
+Every solver follows the same pattern: the objective receives the current point
+and writes its value into `result`; the solver updates `x` in place. Pass `x`
+as a Fortran-ordered `float64` array and integer options as `np.int32`.
 
-| Module | Solver |
-| --- | --- |
-| `bobyqa_mod` | `bobyqa` |
-| `cobyla_mod` | `cobyla` |
-| `lincoa_mod` | `lincoa` |
-| `newuoa_mod` | `newuoa` |
-| `uobyqa_mod` | `uobyqa` |
-
-For example, UOBYQA minimizes a two-variable quadratic whose known minimum is
-at `(1, -2)`. After building the extension, run this in Python:
+UOBYQA minimizes a quadratic whose minimum is at `(1, -2)`:
 
 ```python
 import numpy as np
 import prik_prima
 
-x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
-
 def objective(values, result):
     result[...] = (values[0] - 1.0) ** 2 + (values[1] + 2.0) ** 2
 
+x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
 prik_prima.uobyqa_mod.uobyqa(objective, x, maxfun=np.int32(100))
-np.testing.assert_allclose(x, [1.0, -2.0], atol=2e-3, rtol=0)
-print(x)
+print(x)  # [ 1. -2.]
 ```
 
-The callback writes the objective value into `result`; the solver updates `x`
-in place. The assertion checks the result against the known minimum.
+`newuoa`, `bobyqa`, and `lincoa` take the same objective. `cobyla` handles
+nonlinear constraints: its callback also fills a `constraints` array, each
+entry meaning `constraint <= 0`, and its second argument `m_nlcon` is the
+number of constraints. Requiring `x[1] >= -1` moves the minimum to `(1, -1)`:
+
+```python
+def objective_and_constraints(values, result, constraints):
+    objective(values, result)
+    constraints[0] = -1.0 - values[1]  # x[1] >= -1, written as -1 - x[1] <= 0
+
+x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
+prik_prima.cobyla_mod.cobyla(objective_and_constraints, np.int32(1), x, maxfun=np.int32(200))
+print(x.round(3))  # [ 1. -1.]
+```
+
+**Progress callback.** Pass `callback_fcn` to follow each iteration. Setting
+`terminate[...] = True` stops the solver early; here UOBYQA stops after 8
+evaluations instead of 22:
+
+```python
+def progress(values, f, nf, tr, cstrv, nlconstr, terminate):
+    print(f"evaluation {nf}: f = {f:.3g}")
+    if f < 1e-6:
+        terminate[...] = True
+
+x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
+prik_prima.uobyqa_mod.uobyqa(objective, x, maxfun=np.int32(100), callback_fcn=progress)
+```
+
+Arguments that a solver does not use arrive as `None`; for example, `cstrv` and
+`nlconstr` are `None` in UOBYQA's callback.
+
+**Final value and evaluation count.** `f`, `nf`, and `info` are optional
+Fortran outputs. Pass rank-zero arrays to receive them; omitting them keeps them
+absent to PRIMA:
+
+```python
+f = np.zeros((), dtype=np.float64)
+nf = np.zeros((), dtype=np.int32)
+x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
+prik_prima.uobyqa_mod.uobyqa(objective, x, f=f, nf=nf, maxfun=np.int32(100))
+print(float(f), int(nf))
+```
 
 ---
 
-## 4. Run the complete test suite
-
-After the build finishes, run:
+## Run the tests
 
 ```bash
 python3 -m pytest -q examples/fortran/prima/tests
 ```
 
-The suite checks a numerical result for each of the five exposed solvers,
-exact API selection, and callback behavior when optional arguments are
-present or omitted. It is not an exhaustive solver-option or constraint
-suite. The [test file](../../../../examples/fortran/prima/tests/test_solvers.py)
-shows each solver case and checks COBYLA's optional progress callback.
+The suite checks each solver against the known minimum, that the extension
+exposes exactly the five solvers, and the progress callback with optional
+arguments present or omitted. It is not an exhaustive solver-option or
+constraint suite.
 
----
-
-## 5. Run focused examples
-
-After building the extension, run one solver test or the optional SciPy
-comparison:
+To compare COBYLA with SciPy's, which also comes from PRIMA:
 
 ```bash
-python3 -m pytest -q examples/fortran/prima/tests/test_solvers.py::test_lincoa_minimizes_a_quadratic
 python3 -m pip install "scipy==1.18.0"
 python3 -m pytest -q examples/fortran/prima/tests/test_solvers.py::test_cobyla_agrees_with_scipy_on_a_quadratic
 ```
 
-SciPy's COBYLA also uses PRIMA, so this is a cross-interface comparison; the
-known minimizer remains the independent numerical check. To test your own
-problem, add a case beside the checked-in tests and run it with pytest.
-
-- Solver and callback examples →
-  [`test_solvers.py`](../../../../examples/fortran/prima/tests/test_solvers.py)
-- Reviewed API selection →
-  [`export_symbols.txt`](../../../../examples/fortran/prima/export_symbols.txt)
-- Copyable build script →
-  [`build_prik.sh`](../../../../examples/fortran/prima/build_prik.sh)
-- Project instructions →
-  [`examples/fortran/prima/README.md`](../../../../examples/fortran/prima/README.md)
+To test your own problem, add a case beside the checked-in tests.
 
 ---
+
+## Set up a clean environment
+
+Clone PRIK, create a virtual environment, and install the Python tools used by
+the dedicated CI job:
+
+```bash
+git clone https://github.com/PyNumLab/prik.git
+cd prik
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[qa]" "numpy==2.5.1"
+```
+
+Install CMake and GNU Fortran separately. On Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes cmake gcc gfortran
+gfortran --version
+```
+
+Run the example's commands from the repository root with the virtual
+environment active.
+
+## Versions used
+
+| Component | Version / source |
+| --- | --- |
+| PRIK | current repository checkout |
+| PRIMA | [libprima/prima commit `1d76fb88`](https://github.com/libprima/prima/tree/1d76fb88aeffb427cd17ed1e9d0d3b34f414913f) |
+| Python | 3.12 in the dedicated CI job |
+| NumPy | 2.5.1 |
+| SciPy (optional comparison) | 1.18.0 in CI |
+| Native compilers | GNU Fortran 13 + GCC 13 in CI; compatible local compilers work |
+
+## Tested platforms
+
+The Real Libraries Portability workflow builds and runs the numerical suite
+with Python 3.12 on:
+
+| Operating system | Architectures | Native toolchain |
+| --- | --- | --- |
+| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
+| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
 
 ## Troubleshooting
 
 - Confirm that `cmake` and `gfortran` are available on `PATH`.
-- Use `source examples/fortran/prima/build_all.sh`; executing it in a child
-  shell does not preserve the exported `PYTHONPATH`.
+- Use `source examples/fortran/prima/build_all.sh`; running it with `bash`
+  starts a child shell, so the exported `PYTHONPATH` is lost.
 - SciPy is optional. The COBYLA comparison skips if it is not installed.
 - Run one failing solver test with `-vv -s` to see its output.
-
----
 
 ## Source provenance
 
