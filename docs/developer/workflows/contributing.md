@@ -10,13 +10,13 @@ publication: reviewed
 # Contributing Workflow
 
 This page is the practical path for changing PRIK. The root
-[`CONTRIBUTING.md`](../../../CONTRIBUTING.md) is the short public entrypoint.
+[`.github/CONTRIBUTING.md`](../../../.github/CONTRIBUTING.md) is the short public entrypoint.
 
 ## Prepare The Checkout
 
 ```bash
 python3 -m pip install -e ".[qa]"
-git config core.hooksPath .githooks
+git config core.hooksPath tools/githooks
 ```
 
 This enables PRIK's repository pre-push checks for this checkout.

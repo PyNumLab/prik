@@ -1,26 +1,42 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/PyNumLab/prik/main/docs/user/assets/prik-logo.png"
        alt="PRIK — Bring Native Code to Python"
-       width="450">
+       width="420">
+</p>
+
+<p align="center">
+  <b>Turn Fortran and C code into native Python extensions,<br>
+  then design the Python API by editing a <code>.pyi</code> contract.</b>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/PyNumLab/prik/main/docs/user/assets/prik-demo.gif"
+       alt="Terminal demo: a Fortran module with a derived type is built with one PRIK command, then imported and called from Python, printing 4.0 2.0 and 20.0"
+       width="720">
+</p>
+
+<p align="center">
+  <a href="https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb"><b>Try it in Colab</b></a>
+  ·
+  <a href="#installation--quick-start"><b>Install</b></a>
+  ·
+  <a href="#proven-on-real-libraries"><b>Explore real libraries</b></a>
+</p>
+
+<p align="center">
+  Tested on BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, PRIMA, Open MPI,
+  libm, and TA-Lib across Linux and macOS.
+</p>
+
+<p align="center">
+  <a href="https://github.com/PyNumLab/prik/actions/workflows/tests.yml"><img src="https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml"><img src="https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main" alt="Static Analysis"></a>
+  <a href="https://codecov.io/gh/PyNumLab/prik"><img src="https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6" alt="codecov"></a>
+  <a href="https://doi.org/10.5281/zenodo.21881987"><img src="https://zenodo.org/badge/1241799694.svg" alt="DOI"></a>
 </p>
 
 **PRIK (Python Runtime Interop Kit)** generates native Python bindings for
 Fortran and C code.
-
-[![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
-[![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)
-[![codecov](https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/prik)
-[![DOI](https://zenodo.org/badge/1241799694.svg)](https://doi.org/10.5281/zenodo.21881987)
-
-**Try it without installing anything.** The quickstart notebook compiles a
-Fortran cell and a C cell, then reshapes the generated API by editing its
-`.pyi` contract.
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb)
-
-It preserves modules, derived types, arrays, callbacks, and native behavior
-while letting you reshape the resulting Python API through editable `.pyi`
-contracts instead of writing low-level binding code.
 
 **Project status: Alpha.** Core Fortran workflows and the currently supported
 C wrapper features are implemented and tested across supported compilers, but

@@ -31,8 +31,9 @@ Install an editable checkout with development tools:
 python3 -m pip install -e ".[qa]"
 ```
 
-For the short public checklist (branch, tests, changelog, license), see the
-repository-root `CONTRIBUTING.md`. The full contributor path is in
+For the short public checklist (branch, tests, changelog, license), see
+`.github/CONTRIBUTING.md`, which GitHub links from new issues and pull
+requests. The full contributor path is in
 [Contributing workflow](workflows/contributing.md).
 
 ## For a specific change
