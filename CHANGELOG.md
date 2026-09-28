@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Improve the Reference BLAS example guide
+- Improve the LAPACK example guide
+- Improve the MINPACK example guide
+- Compare the MINPACK example's eight SciPy-exposed solvers with SciPy
+- Improve the FFTPACK example guide
+- Improve the BSPLINE-FORTRAN example guide
 - Improve the Open MPI `mpi_f08` tutorial
 - Improve the PRIMA example guide
 - The README and the documentation homepage now open with a short terminal demo.

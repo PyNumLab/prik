@@ -9,85 +9,89 @@ publication: reviewed
 
 # Build and Validate FFTPACK with PRIK
 
-This example takes the checked-in
-[fortran-lang/fftpack](https://github.com/fortran-lang/fftpack) sources and
-builds an importable Python extension containing all 31 public procedures from
-the `fftpack` module.
+This example turns [fortran-lang/fftpack](https://github.com/fortran-lang/fftpack),
+the modern Fortran FFTPACK, into one Python extension with all 31 public
+procedures of its `fftpack` module. It checks every procedure against NumPy,
+SciPy, or a known transform property.
 
-The example compares Fourier, cosine, sine, frequency, and spectrum operations
-with NumPy, SciPy, or known transform properties.
+### What you get
 
-### What this example shows
+One extension, `prik_reference_fftpack`, whose `fftpack` namespace holds:
 
-- Wrap a complete multi-file Fortran library as one Python extension.
-- Call both low-level and high-level transforms with NumPy arrays.
-- Check transform values, normalization, frequency ordering, dtype, and shape.
-
-You should already be comfortable with NumPy arrays and building a local
-Fortran extension.
-
----
-
-## Versions used
-
-| Component | Version / source |
+| Family | Procedures |
 | --- | --- |
-| PRIK | current repository checkout |
-| FFTPACK | [fortran-lang/fftpack commit `0fffe7c`](https://github.com/fortran-lang/fftpack/tree/0fffe7c05a918363a7cc12ae138a695afd115f36) |
-| Python | 3.12 in the dedicated CI job |
-| NumPy | 2.5.1 |
-| SciPy | 1.18.0 |
-| Fortran compiler | GNU Fortran 13 in CI; a compatible `gfortran` works locally |
+| High-level Fourier transforms | `fft`, `ifft`, `rfft`, `irfft` |
+| High-level cosine transforms | `dct`, `idct`, `dct_t1i`, `dct_t1`, `dct_t23i`, `dct_t2`, `dct_t3` |
+| Frequency and spectrum ordering | `fftfreq`, `rfftfreq`, `fftshift`, `ifftshift` |
+| Complex work-array transforms | `zffti`, `zfftf`, `zfftb` |
+| Real work-array transforms | `dffti`, `dfftf`, `dfftb`, `dzffti`, `dzfftf`, `dzfftb` |
+| Cosine and sine work-array transforms | `dcosqi`, `dcosqf`, `dcosqb`, `dcosti`, `dcost`, `dsinti`, `dsint` |
 
-The repository owns the checked-in source snapshot under
-`examples/fortran/fftpack/native/`, so the example does not download code during its
-build.
+---
 
-## Tested platforms
+## Quick start
 
-The Real Libraries Portability workflow builds and runs the complete numerical
-suite with Python 3.12 on:
+From a PRIK checkout with PRIK installed, GNU Fortran on `PATH`, and the pinned
+NumPy and SciPy (see [Set up a clean environment](#set-up-a-clean-environment)):
 
-| Operating system | Architectures | Native toolchain |
+```bash
+source examples/fortran/fftpack/build_all.sh
+python3 -m pytest -q examples/fortran/fftpack/tests
+```
+
+The first command builds the extension and puts it on `PYTHONPATH` for this
+shell; use `source`, not `bash`, so that setting survives. The second runs the
+tests.
+
+After this, the transforms import in the same shell:
+
+```python
+import prik_reference_fftpack
+
+fftpack = prik_reference_fftpack.fftpack
+```
+
+[Use the generated API](#use-the-generated-api) shows complete calls.
+
+---
+
+## Key files
+
+Everything lives under [`examples/fortran/fftpack/`](../../../../examples/fortran/fftpack/):
+
+| File | What it does |
+| --- | --- |
+| [`native/fftpack.f90`](../../../../examples/fortran/fftpack/native/fftpack.f90) | Declares the public `fftpack` module, which defines the Python API. |
+| [`native/rk.f90`](../../../../examples/fortran/fftpack/native/rk.f90) | Defines the real kind used by that API. |
+| `native/fftpack_*.f90` | Implement the module's procedures as Fortran submodules. |
+| The other files in [`native/`](../../../../examples/fortran/fftpack/native/) | The computational kernels, compiled and linked but not exposed to Python. |
+| [`build_prik.sh`](../../../../examples/fortran/fftpack/build_prik.sh) | Builds the extension with one PRIK command that gives each source its role. |
+| [`build_all.sh`](../../../../examples/fortran/fftpack/build_all.sh) | Runs `build_prik.sh` and adds the extension to `PYTHONPATH`. |
+| [`routine_inventory.py`](../../../../examples/fortran/fftpack/routine_inventory.py) | The list of the 31 procedures, grouped by family. |
+| [`tests/test_transforms.py`](../../../../examples/fortran/fftpack/tests/test_transforms.py) | One test per procedure, checked against NumPy, SciPy, or a transform property. |
+| [`tests/helpers.py`](../../../../examples/fortran/fftpack/tests/helpers.py) | Helpers such as converting between FFTPACK's and NumPy's real-FFT layouts. |
+| [`tests/test_routine_coverage.py`](../../../../examples/fortran/fftpack/tests/test_routine_coverage.py) | Checks that the inventory, the generated exports, and the tests stay in sync. |
+
+---
+
+## How the build works
+
+FFTPACK splits into public declarations, submodule implementations, and
+low-level kernels. One PRIK command compiles all of them once, but only the
+first group shapes the Python API:
+
+```text
+rk.f90, fftpack.f90, fftpack_*.f90 ── the Python API ──┐
+                                                       ├──prik──> prik_reference_fftpack
+the other .f90 kernels ── --native-fortran-sources ────┘
+```
+
+| Source group | Passed as | Role |
 | --- | --- | --- |
-| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
-| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
+| `rk.f90`, `fftpack.f90`, `fftpack_*.f90` | Positional sources | Define the Python-facing API and its implementation. |
+| The remaining `.f90` kernels | `--native-fortran-sources` | Satisfy native dependencies without adding their storage-level signatures to the Python API. |
 
----
-
-## 1. Prepare the repository and toolchain
-
-Clone PRIK, create a virtual environment, and install the Python tools used by
-the dedicated CI job:
-
-```bash
-git clone https://github.com/PyNumLab/prik.git
-cd prik
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[qa]" "numpy==2.5.1" "scipy==1.18.0"
-```
-
-Install GNU Fortran separately. On Ubuntu:
-
-```bash
-sudo apt-get update
-sudo apt-get install --yes gfortran
-gfortran --version
-```
-
-All remaining commands run from the repository root with the virtual
-environment active. The complete runnable project lives under
-[`examples/fortran/fftpack/`](../../../../examples/fortran/fftpack/).
-
----
-
-## 2. Build the PRIK wrapper
-
-FFTPACK uses public module declarations, submodule implementations, and
-link-only computational kernels. The build command gives each source the role
-it needs:
+`build_prik.sh` runs that command:
 
 <!-- prik-doc-source: examples/fortran/fftpack/build_prik.sh -->
 ```bash
@@ -121,37 +125,15 @@ python3 -m prik "${FFTPACK_PUBLIC_SOURCES[@]}" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-The example uses `-O0` so the tests focus on correct results. Every source is
-compiled once: positional files define the Python-facing API, while
-`--native-fortran-sources` adds implementation code without exposing it to
-Python.
-
-For normal use, source the convenience entrypoint:
-
-```bash
-source examples/fortran/fftpack/build_all.sh
-```
-
-It builds the extension and exports its directory on `PYTHONPATH` for the
-current shell.
+The example uses `-O0` so the tests focus on correct results. Everything is
+written to the temporary `FFTPACK_BUILD_ROOT` directory, not to the
+repository.
 
 ---
 
-## 3. Understand how sources define the API
+## Use the generated API
 
-The source groups have different roles:
-
-| Source group | Responsibility |
-| --- | --- |
-| `rk.f90` | Defines the real kind used by the public API. |
-| `fftpack.f90` | Declares the public FFTPACK module. |
-| `fftpack_*.f90` | Implements its procedures in Fortran submodules. |
-| Remaining `.f90` files | Supply linked computational kernels. |
-
-The public declarations define the Python types. For example, `zfftf` accepts
-an ordinary NumPy `complex128` array.
-
-High-level transform results that are allocatable in Fortran use PRIK's
+High-level transforms whose Fortran results are allocatable return PRIK's
 `AllocatableArray` handle. Read the NumPy view with `to_numpy()` and release
 the native allocation with `close()`:
 
@@ -167,41 +149,31 @@ finally:
     result.close()
 ```
 
-Fixed-shape frequency and shift results are returned directly as NumPy arrays.
+Fixed-shape frequency and shift results, such as `fftfreq`, return NumPy arrays
+directly. The work-array routines (`zffti`, `zfftf`, …) keep FFTPACK's
+initialize-then-transform pattern and update the caller's array in place; see
+the `zfftf` test [below](#how-results-are-validated).
+
+**FFTPACK's conventions differ from `numpy.fft`.** The same inputs give:
+
+| Call | FFTPACK | `numpy.fft` |
+| --- | --- | --- |
+| `fftfreq(4)` | `[0, 1, -2, -1]`: integer frequency indices | `[0, 0.25, -0.5, -0.25]`: the indices divided by `n` |
+| `ifft(fft(x))` | `n * x`: the inverse is not normalized | `x` |
+| `rfft([1, 2, 3, 4])` | `[10, -2, 2, -2]`: packed real and imaginary parts | `[10, -2+2j, -2]`: complex values |
+
+Divide an `ifft` result by `n` to recover the input. The tests convert the
+packed real layout with a helper in `tests/helpers.py`.
 
 ---
 
-## 4. Run the complete test suite
+## How results are validated
 
-After the build finishes, run:
-
-```bash
-python3 -m pytest -q examples/fortran/fftpack/tests
-```
-
-The tests cover all 31 public procedures:
-
-| Family | Procedures |
-| --- | ---: |
-| Complex work-array transforms | 3 |
-| Real work-array transforms | 6 |
-| Cosine and sine work-array transforms | 7 |
-| High-level Fourier transforms | 4 |
-| High-level cosine transforms | 7 |
-| Frequency and spectrum ordering | 4 |
-| **Total** | **31** |
-
-Each procedure is called with representative data and checked against NumPy,
-SciPy, or a known transform property.
-
----
-
-## 5. See how results are validated
-
-The suite compares transform results with independent NumPy or SciPy results
-and also checks in-place mutation, dtype, shape, normalization, and frequency
-ordering. For example, this `zfftf` test comes directly from the runnable
-suite:
+NumPy is the reference for the Fourier transforms, shifts, and frequency
+ordering; SciPy is the reference for the cosine and sine families. The suite
+also checks normalization, in-place mutation, preservation of high-level
+inputs, dtype, shape, frequency ordering, and release of allocatable results.
+For example, this `zfftf` test comes directly from the runnable suite:
 
 <!-- prik-doc-source: examples/fortran/fftpack/tests/test_transforms.py::test_zfftf -->
 ```python
@@ -221,34 +193,73 @@ in place, and compares the result with NumPy's independently implemented FFT.
 
 ---
 
-## 6. Run focused examples
+## Run the tests
 
-After building the extension, run a family or one procedure:
+Run the complete suite, one procedure, or every test that mentions a name:
 
 ```bash
-python3 -m pytest -q examples/fortran/fftpack/tests/test_transforms.py
+python3 -m pytest -q examples/fortran/fftpack/tests
 python3 -m pytest -q \
   examples/fortran/fftpack/tests/test_transforms.py::test_zfftf
 python3 -m pytest -q examples/fortran/fftpack/tests -k fftshift
 ```
 
-- Complete numerical examples →
-  [`test_transforms.py`](../../../../examples/fortran/fftpack/tests/test_transforms.py)
-- Public routine list →
-  [`routine_inventory.py`](../../../../examples/fortran/fftpack/routine_inventory.py)
-- Routine coverage check →
-  [`test_routine_coverage.py`](../../../../examples/fortran/fftpack/tests/test_routine_coverage.py)
-- Copyable project instructions →
-  [`examples/fortran/fftpack/README.md`](../../../../examples/fortran/fftpack/README.md)
-
 ---
+
+## Set up a clean environment
+
+Clone PRIK, create a virtual environment, and install the Python tools used by
+the dedicated CI job:
+
+```bash
+git clone https://github.com/PyNumLab/prik.git
+cd prik
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[qa]" "numpy==2.5.1" "scipy==1.18.0"
+```
+
+Install GNU Fortran separately. On Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes gfortran
+gfortran --version
+```
+
+Run the example's commands from the repository root with the virtual
+environment active.
+
+## Versions used
+
+| Component | Version / source |
+| --- | --- |
+| PRIK | current repository checkout |
+| FFTPACK | [fortran-lang/fftpack commit `0fffe7c`](https://github.com/fortran-lang/fftpack/tree/0fffe7c05a918363a7cc12ae138a695afd115f36) |
+| Python | 3.12 in the dedicated CI job |
+| NumPy | 2.5.1 |
+| SciPy | 1.18.0 |
+| Fortran compiler | GNU Fortran 13 in CI; a compatible `gfortran` works locally |
+
+## Tested platforms
+
+The Real Libraries Portability workflow builds and runs the complete numerical
+suite with Python 3.12 on:
+
+| Operating system | Architectures | Native toolchain |
+| --- | --- | --- |
+| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
+| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
 
 ## Troubleshooting
 
 - Confirm that `gfortran` is available on `PATH`.
-- Use `source examples/fortran/fftpack/build_all.sh`; executing it in a child shell
-  does not preserve the exported `PYTHONPATH`.
-- Run one failing procedure with `-vv -s` to retain its compiler and wrapper
+- Use `source examples/fortran/fftpack/build_all.sh`; running it with `bash`
+  starts a child shell, so the exported `PYTHONPATH` is lost.
+- A result off by a factor of `n`, or in an unexpected order: see the
+  [convention table](#use-the-generated-api) above.
+- Run one failing procedure with `-vv -s` to see its compiler and wrapper
   diagnostics.
 
 ---
