@@ -45,8 +45,10 @@ python3 -m pytest -q examples/fortran/prima/tests
 
 The first command builds the extension and puts it on `PYTHONPATH` for this
 shell; use `source`, not `bash`, so that setting survives. The second runs the
-example's tests. Then try the solvers from Python as shown in
-[Use the generated API](#use-the-generated-api).
+example's tests.
+
+After this, you can `import prik_prima` in the same shell and call the solvers
+as shown in [Use the generated API](#use-the-generated-api).
 
 ---
 
@@ -71,7 +73,10 @@ Everything lives under
 
 PRIMA is compiled once. PRIK reads the same sources to learn the solvers'
 interfaces, but it generates bindings only for the five names in
-`export_symbols.txt` and links them to the library CMake already built:
+`export_symbols.txt` and links them to the library CMake already built. The
+same pattern works whenever a large Fortran library is already compiled as a
+static archive and you want to expose only a few of its entry points to
+Python:
 
 ```text
 55 PRIMA sources ─┬─ cmake ──────────────────────> libprimaf.a ─┐
@@ -131,6 +136,10 @@ Steps 1 and 2 use the same `PRIMA_REAL_PRECISION=64` and
 actually compiled. Everything is written to the temporary `PRIMA_BUILD_ROOT`
 directory, not to the repository.
 
+The generated contracts live in `$PRIMA_BUILD_ROOT/contract/`, one `.pyi`
+file per solver module. Open them to see each solver's exact Python signature,
+including every optional argument.
+
 ---
 
 ## Use the generated API
@@ -154,16 +163,18 @@ print(x)  # [ 1. -2.]
 ```
 
 `newuoa`, `bobyqa`, and `lincoa` take the same objective. `cobyla` handles
-nonlinear constraints, so its callback also receives a constraint array, and
-its second argument is the number of constraints:
+nonlinear constraints: its callback also fills a `constraints` array, each
+entry meaning `constraint <= 0`, and its second argument `m_nlcon` is the
+number of constraints. Requiring `x[1] >= -1` moves the minimum to `(1, -1)`:
 
 ```python
 def objective_and_constraints(values, result, constraints):
     objective(values, result)
+    constraints[0] = -1.0 - values[1]  # x[1] >= -1, written as -1 - x[1] <= 0
 
 x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
-prik_prima.cobyla_mod.cobyla(objective_and_constraints, np.int32(0), x, maxfun=np.int32(100))
-print(x.round(3))  # [ 1. -2.]
+prik_prima.cobyla_mod.cobyla(objective_and_constraints, np.int32(1), x, maxfun=np.int32(200))
+print(x.round(3))  # [ 1. -1.]
 ```
 
 **Progress callback.** Pass `callback_fcn` to follow each iteration. Setting
@@ -194,9 +205,6 @@ x = np.asfortranarray(np.array([3.0, 0.0], dtype=np.float64))
 prik_prima.uobyqa_mod.uobyqa(objective, x, f=f, nf=nf, maxfun=np.int32(100))
 print(float(f), int(nf))
 ```
-
-The full signatures, with every optional argument, are in the generated
-contract under `$PRIMA_BUILD_ROOT/contract/`.
 
 ---
 
