@@ -7,6 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The Reference BLAS example guide now starts with a quick start, its key
+  files, and a short explanation of the shared-library build, and lists the
+  return-value differences between the PRIK and f2py wrappers in one table.
 - Improve the Open MPI `mpi_f08` tutorial
 - Improve the PRIMA example guide
 - The README and the documentation homepage now open with a short terminal demo.
