@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/PyNumLab/prik/readme-demo-gif/docs/user/assets/prik-demo.gif"
+  <img src="https://raw.githubusercontent.com/PyNumLab/prik/main/docs/user/assets/prik-demo.gif"
        alt="Terminal demo: a Fortran module with a derived type is built with one PRIK command, then imported and called from Python, printing 4.0 2.0 and 20.0"
        width="720">
 </p>
