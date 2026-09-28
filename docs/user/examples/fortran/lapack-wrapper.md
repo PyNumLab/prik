@@ -9,89 +9,96 @@ publication: reviewed
 
 # Build and Validate LAPACK with PRIK
 
-This example builds the complete Reference LAPACK library and wraps it with
-PRIK. It validates the 127 double-precision real routines also available
-through `scipy.linalg.lapack` in SciPy 1.18.0.
+This example wraps the complete Reference LAPACK with PRIK, and a comparison
+surface with NumPy's f2py, then checks both against SciPy and independent
+mathematical results. LAPACK is compiled once into a shared library that both
+wrappers link, so a difference between them comes from the wrapper, never from
+the numerics.
 
-### What this example shows
+### What you get
 
-- Build PRIK and f2py wrappers against the same compiled LAPACK library.
-- Call linear-system, factorization, eigenvalue, and singular-value routines
-  with NumPy arrays.
-- Compare results with SciPy and check solutions, residuals, reconstructions,
-  and other mathematical properties.
+- `prik_reference_lapack_example`: PRIK's wrapper of all 1,936 procedures in
+  Reference LAPACK's default, non-XBLAS source set.
+- `f2py_reference_lapack_example`: the f2py comparison wrapper.
+- A named test for each of the 127 double-precision real routines that SciPy
+  1.18.0 also exposes: linear systems, least squares, factorizations,
+  eigenvalue problems, and singular values. Each test checks PRIK, f2py, and
+  SciPy against an independent mathematical result.
 
-You should already be comfortable with the BLAS wrapper example, NumPy arrays, and basic packaging.
+This example builds on the [Reference BLAS example](blas-wrapper.md), which
+explains the same shared-library pattern in a smaller setting.
 
 ---
 
-## Versions used
+## Quick start
 
-| Component | Version / source |
+From a PRIK checkout with PRIK installed, GNU Fortran and the LAPACK and BLAS
+development libraries on the system, and the pinned NumPy, SciPy, Meson, and
+Ninja (see [Set up a clean environment](#set-up-a-clean-environment)):
+
+```bash
+source examples/fortran/lapack/build_all.sh
+python3 -m pytest -q examples/fortran/lapack/tests
+```
+
+The first command builds both wrappers and puts them on `PYTHONPATH` for this
+shell; use `source`, not `bash`, so that setting survives. The second runs the
+127-routine comparison.
+
+After this, `prik_reference_lapack_example` and
+`f2py_reference_lapack_example` import in the same shell. The
+[DGESV example](#dgesv-solve-a-general-linear-system) below shows a complete
+call through each wrapper.
+
+---
+
+## Key files
+
+Everything lives under
+[`examples/fortran/lapack/`](../../../../examples/fortran/lapack/):
+
+| File | What it does |
 | --- | --- |
-| PRIK | current repository checkout |
-| Reference LAPACK | Netlib LAPACK 3.12.1 |
-| Reference BLAS | BLAS snapshot shipped in LAPACK 3.12.1 |
-| Python | 3.12 or newer |
-| NumPy / f2py | NumPy 2.5.1 |
-| SciPy | exactly 1.18.0 |
-| Meson | 1.11.2 |
-| Ninja | 1.13.0 |
-| Fortran compiler | compatible `gfortran` |
-
-## Tested platforms
-
-The Real Libraries Portability workflow builds and runs this example with
-Python 3.12 on:
-
-| Operating system | Architectures | Native toolchain |
-| --- | --- | --- |
-| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
-| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
-
-The ordinary 127-routine validation suite runs on all four targets. The
-maintainer full-surface audit also runs on Linux x86-64.
+| [`native/`](../../../../examples/fortran/lapack/native/) | The Reference LAPACK 3.12.1 source snapshot; the build downloads nothing. |
+| [`xblas_sources.txt`](../../../../examples/fortran/lapack/xblas_sources.txt) | The sources left out of the default build because they need the separate XBLAS library. |
+| [`support/`](../../../../examples/fortran/lapack/support/) | Two workspace-rounding helpers from upstream `INSTALL/` that the default build needs. |
+| [`build_prik.sh`](../../../../examples/fortran/lapack/build_prik.sh) | Compiles LAPACK into one shared library and builds the PRIK wrapper against it. |
+| [`lapack.pyf`](../../../../examples/fortran/lapack/lapack.pyf) | The reviewed f2py signature file for the comparison routines and `la_constants`. |
+| [`lapack.f2cmap`](../../../../examples/fortran/lapack/lapack.f2cmap) | Tells f2py that `real(wp)` is a C `double`. |
+| [`build_f2py.sh`](../../../../examples/fortran/lapack/build_f2py.sh) | Builds the f2py wrapper from `lapack.pyf`, linked to the same library. |
+| [`build_all.sh`](../../../../examples/fortran/lapack/build_all.sh) | Runs both build scripts and adds both modules to `PYTHONPATH`. |
+| [`routine_inventory.py`](../../../../examples/fortran/lapack/routine_inventory.py) | The reviewed list of the 127 validated routines, grouped by LAPACK family. |
+| [`tests/`](../../../../examples/fortran/lapack/tests/) | One test file per routine family, plus [`test_routine_coverage.py`](../../../../examples/fortran/lapack/tests/test_routine_coverage.py), which checks the inventory against the tests. |
+| [`tests/helpers.py`](../../../../examples/fortran/lapack/tests/helpers.py) | The comparison helpers used by the tests. |
 
 ---
 
-## 1. Prepare the repository and toolchain
+## How the build works
 
-Clone PRIK, create a virtual environment, and install the pinned comparison and
-build tools:
+LAPACK is compiled once. Both wrappers link that one shared library:
 
-```bash
-git clone https://github.com/PyNumLab/prik.git
-cd prik
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[qa]" \
-  "numpy==2.5.1" "scipy==1.18.0" \
-  "meson==1.11.2" "ninja==1.13.0"
+```text
+LAPACK and BLAS sources ──compile once──> libprik_full_lapack
+                                                   │
+  PRIK API, read from the sources ─────────────────┼──> prik_reference_lapack_example
+  f2py API, from lapack.pyf ───────────────────────┴──> f2py_reference_lapack_example
 ```
 
-Install GNU Fortran and the LAPACK and BLAS development packages. On Ubuntu:
+1. `examples.native_library` compiles the bundled LAPACK and BLAS sources into
+   `libprik_full_lapack`, links the installed LAPACK and BLAS libraries for
+   support routines outside the bundled set, and keeps the compiler's module
+   files in `LAPACK_MODULE_DIR`.
+2. PRIK reads the same default, non-XBLAS sources to generate its Python API,
+   compiles no LAPACK source itself (`--no-compile-input-sources`), and links
+   the library.
+3. f2py builds its wrapper from the reviewed `lapack.pyf` and links the same
+   library.
 
-```bash
-sudo apt-get update
-sudo apt-get install --yes gfortran liblapack-dev libblas-dev
-gfortran --version
-```
+Both wrappers are built with `-O0` and use `LAPACK_MODULE_DIR` when they
+compile. `build_all.sh` runs these two scripts; each can also be reused on its
+own.
 
-All remaining commands run from the repository root with the virtual
-environment active.
-
-The runnable material is self-contained in the repository's
-[`examples/` directory](../../../../examples/). After PRIK and the listed tools
-are installed, you can copy that directory alone.
-
----
-
-## 2. Compile LAPACK once and build the PRIK wrapper
-
-Compile the native files once into a shared `.so` file so both wrappers can
-reuse it. The native builder links the installed LAPACK and BLAS development
-libraries for companion support symbols:
+**The PRIK build**, from `build_prik.sh`:
 
 <!-- prik-doc-source: examples/fortran/lapack/build_prik.sh -->
 ```bash
@@ -120,19 +127,7 @@ python -m prik "$LAPACK_SOURCE_ROOT" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-PRIK reads the sources to build the Python API, skips native implementation
-compilation, and links the shared library. The include path supplies the module
-metadata needed by the generated wrapper.
-
----
-
-## 3. Build the f2py comparison wrapper
-
-The committed [`lapack.pyf`](../../../../examples/fortran/lapack/lapack.pyf) contains the
-125 selected routines and the `la_constants` module signature. f2py compiles
-only this wrapper and links `LAPACK_SHARED_LIBRARY`.
-
-Run the same direct f2py command exercised by the test suite:
+**The f2py build**, from `build_f2py.sh`:
 
 <!-- prik-doc-source: examples/fortran/lapack/build_f2py.sh -->
 ```bash
@@ -159,66 +154,37 @@ python -m numpy.f2py -c \
   --opt=-O0
 ```
 
-`LAPACK_MODULE_DIR` provides the compiler-generated module files needed to
-compile each wrapper. Both wrappers link the existing shared library instead of
-recompiling LAPACK.
-
-The comparison excludes `dgees` and `dgges` because f2py 2.5.1 cannot generate
-their callback declarations correctly. Those two routines are still checked
-through PRIK, SciPy, and their Schur decompositions.
-
-Import the two built modules and SciPy's LAPACK module from the repository
-root:
-
-```python
-import os
-import sys
-
-sys.path.insert(0, f"{os.environ['LAPACK_BUILD_ROOT']}/prik")
-sys.path.insert(0, os.environ["LAPACK_F2PY_ROOT"])
-
-import f2py_reference_lapack_example
-import prik_reference_lapack_example
-from scipy.linalg import lapack as scipy_lapack
-```
-
-### SciPy comparison
-
-The tests use the 127 double-precision real LAPACK routines available in SciPy
-1.18.0 for `np.float64` arrays. Pinning that version keeps the comparison API
-and expected results reproducible.
+Everything is written to the temporary `LAPACK_BUILD_ROOT` directory, not to
+the repository.
 
 ---
 
-## 4. Run the complete test suite
+## PRIK, f2py, and SciPy differences
 
-Build both wrappers and run all 127 routine tests:
+All three compute the same results. They differ in how a call looks:
 
-```bash
-source examples/fortran/lapack/build_all.sh
-python3 -m pytest -q examples/fortran/lapack/tests
-```
+| Case | PRIK | f2py comparison wrapper | SciPy |
+| --- | --- | --- | --- |
+| A routine such as `dgesv` | Native argument order; updates arrays in place and returns the visible scalars, for example `(2, 1, 2, 2, 0)` | Updates arrays in place and returns `None` | Returns new arrays and `info` |
+| Character selectors such as `"L"` in `dpotrf` | Returned with the other scalars, because LAPACK declares no `intent` | Passed as `b"L"` | A keyword such as `lower=1` |
+| The 9 routines whose scalar outputs have no Fortran `intent` | Returns the writebacks directly | Typed NumPy 0-D arrays, because `lapack.pyf` records them as `intent(inout)` | — |
+| `dgees` and `dgges` | Wrapped and tested | Not in the comparison: f2py 2.5.1 cannot generate their selection callbacks | Used to verify the Schur decompositions |
 
-The suite covers linear systems, least squares, factorizations, eigenvalue
-problems, singular values, and related matrix operations.
+SciPy reports zero-based pivots, while LAPACK and both wrappers use one-based
+pivots.
 
 ---
 
-## 5. See how results are validated
+## How results are validated
 
 LAPACK outputs are not always unique. Eigenvectors and singular vectors may
 change sign, repeated eigenspaces may use a different orthonormal basis, and
-pivot ties may choose another valid permutation.
-Therefore byte-for-byte agreement is not the only oracle.
+pivot ties may choose another valid permutation, so byte-for-byte agreement is
+not the only oracle.
 
 Tests use explicit solutions, residuals, factor reconstructions, orthogonality,
-eigen equations, and storage checks. The two reusable checks shown below live
-in [`tests/helpers.py`](../../../../examples/fortran/lapack/tests/helpers.py).
-
-#### Test helper conventions
-
-The snippets use standard NumPy operations whenever the check is local. The
-two helpers in the displayed DPOTRF test keep its repeated checks consistent:
+eigen equations, and storage checks. The two helpers used below live in
+[`tests/helpers.py`](../../../../examples/fortran/lapack/tests/helpers.py):
 
 - `assert_allclose_float64` compares values using a tolerance appropriate for
   float64 arithmetic. Its `operation_size` argument is a rounding-error scale:
@@ -227,8 +193,8 @@ two helpers in the displayed DPOTRF test keep its repeated checks consistent:
 - `assert_storage_unchanged` compares storage exactly, including `NaN`
   sentinels in parts of an array LAPACK must not read or overwrite.
 
-The examples below show the PRIK, f2py, and SciPy calls together with a direct
-mathematical check. They come from the runnable suite.
+The examples below come from the runnable suite and show the PRIK, f2py, and
+SciPy calls together with a direct mathematical check.
 
 ### DGESV – solve a general linear system
 
@@ -307,35 +273,87 @@ The reconstruction `A = L @ L.T` confirms that the factor is correct.
 
 ---
 
-## 6. Run focused examples
+## Run the tests
 
-After building the wrappers, run a family or one routine:
+Run the complete suite, one family, one routine, or every test that mentions a
+routine name:
 
 ```bash
+python3 -m pytest -q examples/fortran/lapack/tests
 python3 -m pytest -q examples/fortran/lapack/tests/test_linear_general.py
 python3 -m pytest -q \
   examples/fortran/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
 python3 -m pytest -q examples/fortran/lapack/tests -k dgesvd
 ```
 
-- Full DGESV and related general-system tests → [`test_linear_general.py`](../../../../examples/fortran/lapack/tests/test_linear_general.py)
-- Cholesky and other positive-definite examples → [`test_linear_positive_definite.py`](../../../../examples/fortran/lapack/tests/test_linear_positive_definite.py)
-- Other families live under [`examples/fortran/lapack/tests/`](../../../../examples/fortran/lapack/tests/)
-- Public routine list → [`routine_inventory.py`](../../../../examples/fortran/lapack/routine_inventory.py)
-- Routine coverage check → [`test_routine_coverage.py`](../../../../examples/fortran/lapack/tests/test_routine_coverage.py)
-
-For the copyable build scripts, test commands, and source provenance, see the
-[`examples/fortran/lapack` project README](../../../../examples/fortran/lapack/README.md).
-
 ---
+
+## Set up a clean environment
+
+Clone PRIK, create a virtual environment, and install the pinned comparison and
+build tools:
+
+```bash
+git clone https://github.com/PyNumLab/prik.git
+cd prik
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[qa]" \
+  "numpy==2.5.1" "scipy==1.18.0" \
+  "meson==1.11.2" "ninja==1.13.0"
+```
+
+Install GNU Fortran and the LAPACK and BLAS development packages. On Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes gfortran liblapack-dev libblas-dev
+gfortran --version
+```
+
+Run the example's commands from the repository root with the virtual
+environment active.
+
+## Versions used
+
+| Component | Version / source |
+| --- | --- |
+| PRIK | current repository checkout |
+| Reference LAPACK | Netlib LAPACK 3.12.1 |
+| Reference BLAS | BLAS snapshot shipped in LAPACK 3.12.1 |
+| Python | 3.12 or newer |
+| NumPy / f2py | NumPy 2.5.1 |
+| SciPy | exactly 1.18.0 |
+| Meson | 1.11.2 |
+| Ninja | 1.13.0 |
+| Fortran compiler | compatible `gfortran` |
+
+SciPy is pinned to exactly 1.18.0 so its low-level comparison API and expected
+results stay reproducible.
+
+## Tested platforms
+
+The Real Libraries Portability workflow builds and runs this example with
+Python 3.12 on:
+
+| Operating system | Architectures | Native toolchain |
+| --- | --- | --- |
+| Linux | x86-64, ARM64 | GNU Fortran 13 + GCC 13 |
+| macOS | Intel, ARM64 | GNU Fortran 13 + GNU GCC 13 |
+
+The 127-routine validation suite runs on all four targets. A maintainer
+full-surface audit also runs on Linux x86-64.
 
 ## Troubleshooting
 
-- Confirm that `gfortran`, `ar`, `meson` and `ninja` are on `PATH`.
+- Confirm that `gfortran`, `ar`, `meson`, and `ninja` are on `PATH`.
 - Keep SciPy at **exactly 1.18.0** so its low-level comparison API matches this
   example.
 - On Python 3.12 or newer, let f2py use Meson; do not force the removed
   distutils backend.
+- Use `source examples/fortran/lapack/build_all.sh`; running it with `bash`
+  starts a child shell, so the exported `PYTHONPATH` is lost.
 - Rerun one named test with more detail and keep the build directory:
 
   ```bash
