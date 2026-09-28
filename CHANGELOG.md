@@ -7,18 +7,9 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
-- The Open MPI `mpi_f08` tutorial now explains its three steps up front, says
-  early that its mpi4py-style layer is deliberately minimal, states that it needs
-  Open MPI's source and build trees, and moves building Open MPI to the end. The
-  full edited contract and Python module are collapsible, with the key edits
-  shown inline.
-- The PRIMA example guide now starts with a quick start and its key files,
-  explains the build before showing it, and adds examples for COBYLA, the
-  progress callback with early termination, and the optional `f` and `nf`
-  outputs.
-- The README and the documentation homepage now open with a short terminal
-  demo that builds a Fortran module and calls it from Python, followed by links
-  to Colab, installation, and the real-library examples.
+- Improve the Open MPI `mpi_f08` tutorial
+- Improve the PRIMA example guide
+- The README and the documentation homepage now open with a short terminal demo.
 - The repository root holds fewer files. Contributor notes moved to
   `.github/CONTRIBUTING.md`, the pre-push hook to `tools/githooks/` (activate it
   with `git config core.hooksPath tools/githooks`), and the documentation theme
