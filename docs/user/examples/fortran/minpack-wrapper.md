@@ -66,6 +66,7 @@ Everything lives under [`examples/fortran/minpack/`](../../../../examples/fortra
 | [`tests/test_solvers.py`](../../../../examples/fortran/minpack/tests/test_solvers.py) | The root-finding and least-squares solvers, with Python callbacks. |
 | [`tests/test_diagnostics.py`](../../../../examples/fortran/minpack/tests/test_diagnostics.py) | The diagnostics and finite-difference helpers. |
 | [`tests/test_linear_algebra.py`](../../../../examples/fortran/minpack/tests/test_linear_algebra.py) | The factorization and update helpers. |
+| [`tests/test_scipy_comparison.py`](../../../../examples/fortran/minpack/tests/test_scipy_comparison.py) | Compares the eight solvers SciPy exposes with SciPy's MINPACK-based solvers. |
 | [`tests/test_routine_coverage.py`](../../../../examples/fortran/minpack/tests/test_routine_coverage.py) | Checks that the inventory, the generated exports, and the tests stay in sync. |
 
 ---
@@ -195,6 +196,20 @@ The complete suite applies the same pattern to the other root-finding and
 least-squares solvers, and checks the helpers with algebraic invariants. It
 also verifies callback counts, caller-array writebacks, and Fortran-order
 matrices.
+
+**SciPy cross-check.** SciPy's `root(method="hybr")` and
+`least_squares(method="lm")` are built on MINPACK, so the eight solvers they
+cover (`hybrd`, `hybrd1`, `hybrj`, `hybrj1`, `lmdif`, `lmdif1`, `lmder`,
+`lmder1`) are also compared with SciPy on the two nonlinear problems from
+[Use the generated API](#use-the-generated-api). Each case first checks PRIK's
+answer independently, then that PRIK and SciPy agree. The other 14 procedures
+have no public SciPy counterpart. The comparison skips if SciPy is not
+installed:
+
+```bash
+python3 -m pip install "scipy==1.18.0"
+python3 -m pytest -q examples/fortran/minpack/tests/test_scipy_comparison.py
+```
 
 ---
 

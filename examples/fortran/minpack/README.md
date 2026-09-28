@@ -83,6 +83,12 @@ caller-array writebacks, and Fortran-order matrices.
 The public routine list stays in sync with the generated exports, and every
 public procedure is exercised.
 
+The eight solvers SciPy exposes (`hybrd`, `hybrd1`, `hybrj`, `hybrj1`,
+`lmdif`, `lmdif1`, `lmder`, `lmder1`) are also compared with SciPy's
+MINPACK-based `root(method="hybr")` and `least_squares(method="lm")` on
+nonlinear problems in [`tests/test_scipy_comparison.py`](tests/test_scipy_comparison.py).
+That comparison skips if SciPy is not installed.
+
 ## Sources and license
 
 [`native/minpack.f90`](native/minpack.f90) matches upstream `src/minpack.f90`
