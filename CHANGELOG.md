@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.5.2 — 2026-09-28
+
+This release updates documentation, examples, and repository tooling. The `prik`
+library code is unchanged from 0.5.1.
+
 - Improve the Reference BLAS example guide
 - Improve the LAPACK example guide
 - Improve the MINPACK example guide
