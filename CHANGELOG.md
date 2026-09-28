@@ -7,6 +7,10 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The PRIMA example guide now starts with a quick start and its key files,
+  explains the build before showing it, and adds examples for COBYLA, the
+  progress callback with early termination, and the optional `f` and `nf`
+  outputs.
 - The README and the documentation homepage now open with a short terminal
   demo that builds a Fortran module and calls it from Python, followed by links
   to Colab, installation, and the real-library examples.
