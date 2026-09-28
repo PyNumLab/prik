@@ -28,7 +28,7 @@ publication: reviewed
 <p class="prik-notebook-actions prik-hero-actions" markdown>
 [▶&nbsp; Try it in Colab](https://colab.research.google.com/github/PyNumLab/prik/blob/main/examples/notebooks/quickstart.ipynb){ .prik-primary-cta }
 [Install](user/getting-started/installation.md){ .prik-secondary-cta }
-[Explore real libraries](user/examples/index.md){ .prik-secondary-cta }
+[Explore real libraries](#proven-on-real-libraries){ .prik-secondary-cta }
 </p>
 
 <p align="center">
